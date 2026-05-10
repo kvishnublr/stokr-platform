@@ -1,0 +1,53 @@
+package com.stokr.strategy.pipeline;
+
+import com.stokr.common.events.SignalPublishedEvent;
+import com.stokr.common.pipeline.PipelineQueues;
+import com.stokr.common.pipeline.messages.SignalPersistedMessage;
+import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.repository.StrategySignalRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class StrategySignalPipelineService {
+
+    private final StrategySignalRepository signalRepository;
+    private final RabbitTemplate rabbitTemplate;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Transactional
+    public StrategySignalEntity persistAndDispatch(StrategySignalEntity signal, String correlationId, String executionMode) {
+        StrategySignalEntity saved = signalRepository.save(signal);
+
+        String cid = (correlationId == null || correlationId.isBlank()) ? java.util.UUID.randomUUID().toString() : correlationId;
+
+        SignalPersistedMessage msg = new SignalPersistedMessage(
+                saved.getId(),
+                saved.getUserId(),
+                cid,
+                saved.getBacktestRunId(),
+                executionMode
+        );
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                rabbitTemplate.convertAndSend(PipelineQueues.STRATEGY_SIGNAL, msg);
+                rabbitTemplate.convertAndSend(PipelineQueues.OMS_ORDER, msg);
+                String sk = saved.getStrategyName() != null ? saved.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
+                eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
+                log.info("signal.dispatched signalId={}", saved.getId());
+            }
+        });
+
+        return saved;
+    }
+}

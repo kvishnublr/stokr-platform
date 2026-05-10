@@ -1,0 +1,113 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: stokr-platform
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:stokr_platform}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:root}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui
+
+stokr:
+  auth:
+    login:
+      max-failed-attempts: ${STOKR_AUTH_MAX_FAILED:5}
+      lock-duration-minutes: ${STOKR_AUTH_LOCK_MINUTES:15}
+      password-reset-hours-valid: ${STOKR_AUTH_PW_RESET_HOURS:1}
+  security:
+    jwt:
+      secret: ${JWT_SECRET:change-me-use-long-random-secret-for-development-only}
+      access-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:900}
+    refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS:1209600}
+  risk:
+    zone: ${STOKR_RISK_ZONE:Asia/Kolkata}
+    max-order-qty: ${STOKR_RISK_MAX_ORDER_QTY:100000}
+    max-order-notional: ${STOKR_RISK_MAX_ORDER_NOTIONAL:50000000}
+    max-open-positions: ${STOKR_RISK_MAX_OPEN_POSITIONS:100}
+    order-cooldown-ms: ${STOKR_RISK_ORDER_COOLDOWN_MS:0}
+    max-trades-per-day: ${STOKR_RISK_MAX_TRADES_PER_DAY:200}
+    trading-window-start: ${STOKR_RISK_TRADING_WINDOW_START:09:25}
+    trading-window-end: ${STOKR_RISK_TRADING_WINDOW_END:14:45}
+  strategy:
+    subscription-default-symbol: ${STOKR_STRATEGY_SUBSCRIPTION_SYMBOL:NIFTY_FUT}
+    mean-reversion:
+      enabled: ${STOKR_STRATEGY_MR_ENABLED:true}
+    poll-ms: ${STOKR_STRATEGY_POLL_MS:60000}
+    symbols: ${STOKR_STRATEGY_SYMBOLS:NIFTY_FUT,BANKNIFTY_FUT}
+    session:
+      zone: ${STOKR_STRATEGY_SESSION_ZONE:Asia/Kolkata}
+      start: ${STOKR_STRATEGY_SESSION_START:09:25}
+      end: ${STOKR_STRATEGY_SESSION_END:14:45}
+    system-user-id: ${STOKR_STRATEGY_SYSTEM_USER_ID:33333333-3333-3333-3333-333333333333}
+    default-quantity: ${STOKR_STRATEGY_DEFAULT_QTY:1}
+  simulation:
+    candle-timeframe: ${STOKR_SIM_TF:1m}
+    latency-ms: ${STOKR_SIM_LATENCY_MS:1500}
+    base-slippage-bps: ${STOKR_SIM_SLIPPAGE_BPS:1.0}
+    base-spread-bps: ${STOKR_SIM_SPREAD_BPS:1.0}
+    partial-fill-count: ${STOKR_SIM_PARTIAL_FILLS:1}
+    order-queue-delay-ms: ${STOKR_SIM_QUEUE_DELAY_MS:0}
+  execution:
+    max-attempts: ${STOKR_EXECUTION_MAX_ATTEMPTS:5}
+    live-trading-enabled: ${STOKR_LIVE_TRADING_ENABLED:false}
+  runtime:
+    live-heartbeat-stale-seconds: ${STOKR_RUNTIME_LIVE_STALE_SECONDS:600}
+  crypto:
+    field-key: ${STOKR_CRYPTO_FIELD_KEY:}
+  telegram:
+    bot-token: ${STOKR_TELEGRAM_BOT_TOKEN:}
+    bot-username: ${STOKR_TELEGRAM_BOT_USERNAME:}
+    webhook-secret: ${STOKR_TELEGRAM_WEBHOOK_SECRET:}
+    dry-run: ${STOKR_TELEGRAM_DRY_RUN:true}
+  broker:
+    zerodha:
+      api-key: ${STOKR_ZERODHA_API_KEY:}
+      api-secret: ${STOKR_ZERODHA_API_SECRET:}
+      redirect-url: ${STOKR_ZERODHA_REDIRECT_URL:http://localhost:8080/api/broker/zerodha/callback}
+      sync-enabled: ${STOKR_ZERODHA_SYNC_ENABLED:true}
+      sync-ms: ${STOKR_ZERODHA_SYNC_MS:300000}
+  ui:
+    public-base-url: ${STOKR_UI_PUBLIC_BASE_URL:http://localhost:5173}
+
+logging:
+  level:
+    root: INFO
+    com.stokr: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [%X{correlationId}] %logger{36} - %msg%n"

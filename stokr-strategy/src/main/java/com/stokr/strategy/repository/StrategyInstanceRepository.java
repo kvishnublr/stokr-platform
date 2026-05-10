@@ -1,0 +1,64 @@
+package com.stokr.strategy.repository;
+
+import com.stokr.strategy.domain.StrategyInstance;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+public interface StrategyInstanceRepository extends JpaRepository<StrategyInstance, UUID> {
+
+    long countByUserIdAndEnabledTrueAndDeletedFalse(UUID userId);
+
+    Optional<StrategyInstance> findByUserIdAndDefinition_IdAndDeletedFalse(UUID userId, UUID definitionId);
+
+    Optional<StrategyInstance> findByIdAndUserIdAndDeletedFalse(UUID id, UUID userId);
+
+    Page<StrategyInstance> findPageByUserIdAndDeletedFalse(UUID userId, Pageable pageable);
+
+    List<StrategyInstance> findAllByUserIdAndDeletedFalse(UUID userId);
+
+    @Query("select si from StrategyInstance si join fetch si.definition where si.userId = :userId and si.deleted = false")
+    List<StrategyInstance> findAllForUserWithDefinition(@Param("userId") UUID userId);
+
+    long countByRuntimeStateAndDeletedFalse(String runtimeState);
+
+    @Query("""
+            select si from StrategyInstance si
+            where si.runtimeState = 'RUNNING' and si.deleted = false
+            and (
+              (si.heartbeatAt is not null and si.heartbeatAt < :cutoff)
+              or (si.heartbeatAt is null and si.startedAt is not null and si.startedAt < :cutoff)
+            )
+            """)
+    List<StrategyInstance> findRunningWithStaleHeartbeat(@Param("cutoff") Instant cutoff);
+
+    List<StrategyInstance> findAllByRuntimeStateAndDeletedFalse(String runtimeState);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select si from StrategyInstance si where si.id = :id and si.deleted = false")
+    Optional<StrategyInstance> lockById(@Param("id") UUID id);
+
+    @Query("""
+            select case when count(si) > 0 then true else false end from StrategyInstance si
+            join si.definition d
+            where si.userId = :userId and si.deleted = false
+            and d.strategyKey = :strategyKey
+            and upper(si.executionMode) = 'LIVE'
+            and si.runtimeState = 'RUNNING'
+            and si.heartbeatAt is not null and si.heartbeatAt >= :cutoff
+            """)
+    boolean existsLiveHealthyRuntime(
+            @Param("userId") UUID userId,
+            @Param("strategyKey") String strategyKey,
+            @Param("cutoff") Instant cutoff
+    );
+}

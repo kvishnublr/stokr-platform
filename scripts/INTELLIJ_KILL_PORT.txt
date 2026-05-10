@@ -1,0 +1,20 @@
+IntelliJ: free port 8080 before Spring Boot Run/Debug
+======================================================
+
+1) Settings -> Tools -> External Tools -> +
+
+   Name:            Stokr kill 8080
+   Program:         powershell.exe
+   Arguments:       -NoProfile -ExecutionPolicy Bypass -File "$ProjectFileDir$/scripts/kill-ports.ps1" 8080
+   Working directory: $ProjectFileDir$
+
+   (Alt) Program: cmd.exe
+        Arguments: /c "$ProjectFileDir$/scripts/kill-8080.cmd"
+        Working directory: $ProjectFileDir$
+
+2) Run -> Edit Configurations -> your Spring Boot (StokrApplication)
+   -> Modify options -> Add before launch task -> Run External tool -> Stokr kill 8080
+   Put it FIRST (above Build). Order should be: kill 8080 -> Build -> run.
+
+3) If it still fails: another process may respawn on 8080, or kill needs Admin.
+   In an elevated PowerShell: netstat -ano | findstr :8080
