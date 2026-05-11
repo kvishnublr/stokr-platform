@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { api } from "../api/client";
 import { DataGrid } from "../components/data/DataGrid";
+import { useUiThemeStore } from "../state/uiTheme";
 
 type OrderRow = {
   id: string;
@@ -27,6 +28,7 @@ type PageResponse<T> = {
 
 export function OrdersPage(props?: { embedded?: boolean }) {
   const { embedded } = props ?? {};
+  const isLight = useUiThemeStore((s) => s.mode === "light");
   const [page, setPage] = useState(0);
   const [symbol, setSymbol] = useState("");
 
@@ -52,7 +54,7 @@ export function OrdersPage(props?: { embedded?: boolean }) {
         accessorKey: "state",
         header: "State",
         cell: ({ getValue }) => (
-          <span className="rounded-md bg-neutral-800 px-2 py-0.5 font-mono text-[10px] uppercase text-neutral-200">
+          <span className={isLight ? "rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-[10px] uppercase text-neutral-700" : "rounded-md bg-neutral-800 px-2 py-0.5 font-mono text-[10px] uppercase text-neutral-200"}>
             {String(getValue())}
           </span>
         ),
@@ -86,8 +88,8 @@ export function OrdersPage(props?: { embedded?: boolean }) {
       <div className="flex flex-wrap items-end justify-between gap-4">
         {!embedded ? (
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-white">Orders</h1>
-            <p className="mt-1 text-sm text-neutral-400">OMS history with server-side pagination and CSV export.</p>
+            <h1 className={isLight ? "text-2xl font-semibold tracking-tight text-neutral-900" : "text-2xl font-semibold tracking-tight text-white"}>Orders</h1>
+            <p className={isLight ? "mt-1 text-sm text-neutral-600" : "mt-1 text-sm text-neutral-400"}>OMS history with server-side pagination and CSV export.</p>
           </div>
         ) : (
           <div />
@@ -100,12 +102,12 @@ export function OrdersPage(props?: { embedded?: boolean }) {
               setPage(0);
               setSymbol(e.target.value);
             }}
-            className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm text-white outline-none focus:border-blue-600"
+            className={isLight ? "rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-900 outline-none focus:border-blue-500" : "rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm text-white outline-none focus:border-blue-600"}
           />
           <button
             type="button"
             onClick={() => exportCsv()}
-            className="inline-flex items-center gap-2 rounded-lg border border-neutral-700 px-3 py-1.5 text-xs font-semibold text-neutral-100 hover:bg-neutral-900"
+            className={isLight ? "inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50" : "inline-flex items-center gap-2 rounded-lg border border-neutral-700 px-3 py-1.5 text-xs font-semibold text-neutral-100 hover:bg-neutral-900"}
           >
             <Download className="h-3.5 w-3.5" />
             Export CSV
@@ -113,7 +115,7 @@ export function OrdersPage(props?: { embedded?: boolean }) {
         </div>
       </div>
 
-      <DataGrid columns={cols} data={q.data?.content ?? []} isLoading={q.isLoading} emptyLabel="No orders yet" />
+      <DataGrid columns={cols} data={q.data?.content ?? []} isLoading={q.isLoading} emptyLabel="No orders yet" variant={isLight ? "light" : "dark"} />
 
       <div className="flex items-center justify-between text-xs text-neutral-500">
         <span>
@@ -124,7 +126,7 @@ export function OrdersPage(props?: { embedded?: boolean }) {
             type="button"
             disabled={page <= 0}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
-            className="rounded-md border border-neutral-800 px-2 py-1 hover:bg-neutral-900 disabled:opacity-40"
+            className={isLight ? "rounded-md border border-neutral-200 px-2 py-1 hover:bg-neutral-50 disabled:opacity-40" : "rounded-md border border-neutral-800 px-2 py-1 hover:bg-neutral-900 disabled:opacity-40"}
           >
             Prev
           </button>
@@ -132,7 +134,7 @@ export function OrdersPage(props?: { embedded?: boolean }) {
             type="button"
             disabled={q.data != null && page >= q.data.totalPages - 1}
             onClick={() => setPage((p) => p + 1)}
-            className="rounded-md border border-neutral-800 px-2 py-1 hover:bg-neutral-900 disabled:opacity-40"
+            className={isLight ? "rounded-md border border-neutral-200 px-2 py-1 hover:bg-neutral-50 disabled:opacity-40" : "rounded-md border border-neutral-800 px-2 py-1 hover:bg-neutral-900 disabled:opacity-40"}
           >
             Next
           </button>

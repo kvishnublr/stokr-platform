@@ -1,4 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
+import { performLogout } from "../services/auth/logout";
 import { useSessionStore } from "../state/session";
 
 const CORRELATION_HEADER = "X-Correlation-Id";
@@ -51,7 +52,7 @@ api.interceptors.response.use(
       original._retry = true;
       const rt = localStorage.getItem("refreshToken");
       if (!rt) {
-        useSessionStore.getState().clearSession();
+        await performLogout();
         return Promise.reject(error);
       }
       try {
@@ -79,7 +80,7 @@ api.interceptors.response.use(
           return api(original);
         }
       } catch {
-        useSessionStore.getState().clearSession();
+        await performLogout();
       }
     }
     return Promise.reject(error);

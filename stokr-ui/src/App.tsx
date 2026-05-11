@@ -4,7 +4,6 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { ShellLayout } from "./layout/ShellLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
-import { DashboardPage } from "./pages/DashboardPage";
 import { OrdersPage } from "./pages/OrdersPage";
 import { TradesPage } from "./pages/TradesPage";
 import { ExecutionsPage } from "./pages/ExecutionsPage";
@@ -24,12 +23,17 @@ import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminStrategiesPage } from "./pages/AdminStrategiesPage";
 import { AdminOmsMonitorPage } from "./pages/AdminOmsMonitorPage";
 import { AdminOpsPage } from "./pages/AdminOpsPage";
+import { AdminSectionPage } from "./pages/AdminSectionPage";
 import { useSessionStore } from "./state/session";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { OnboardingWizardPage } from "./pages/OnboardingWizardPage";
 import { TerminalPage } from "./pages/TerminalPage";
 import { PageSkeleton } from "./components/ds/SkeletonLoader";
 import { ErrorBoundary } from "./components/ds/ErrorBoundary";
+import { ThemeHtmlSync } from "./components/theme/ThemeHtmlSync";
+import { SyncedToaster } from "./components/theme/SyncedToaster";
+import { TraderDashboard } from "./pages/trader/TraderDashboard";
+import { AdminDashboard } from "./pages/admin/AdminDashboard";
 
 /** Heavy chart surface — defer initial JS until navigation. */
 const BacktestReplayPage = lazy(async () => {
@@ -48,18 +52,61 @@ function Protected({ children }: { children: ReactNode }) {
 function AdminGate() {
   const ok = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
   if (!ok) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
   return <Outlet />;
+}
+
+function TraderGate() {
+  const isTrader = useSessionStore((s) => s.hasTraderAccess());
+  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
+  if (!isTrader && !isAdmin) {
+    return <Navigate to="/login" replace />;
+  }
+  return <TraderDashboard />;
+}
+
+function RootEntryRedirect() {
+  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
+  return <Navigate to={isAdmin ? "/admin" : "/dashboard"} replace />;
+}
+
+/** Kill-switch / emergency ops UI is not exposed to ROLE_TRADER. */
+function AdminOpsGate() {
+  const ok = useSessionStore((s) => s.canAccessKillSwitchOperations());
+  if (!ok) {
+    return <Navigate to="/admin" replace />;
+  }
+  return <AdminOpsPage />;
 }
 
 export default function App() {
   return (
     <ErrorBoundary>
+      <ThemeHtmlSync />
+      <SyncedToaster />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route
+          path="/dashboard"
+          element={
+            <Protected>
+              <TraderGate />
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <Protected>
+              <AdminGate />
+            </Protected>
+          }
+        >
+          <Route index element={<AdminDashboard />} />
+        </Route>
         <Route
           path="/"
           element={
@@ -68,7 +115,8 @@ export default function App() {
             </Protected>
           }
         >
-          <Route index element={<DashboardPage />} />
+          <Route index element={<RootEntryRedirect />} />
+          <Route path="watchlist" element={<Navigate to="/strategies" replace />} />
           <Route path="terminal" element={<TerminalPage />} />
           <Route path="onboarding" element={<OnboardingWizardPage />} />
           <Route path="orders" element={<OrdersPage />} />
@@ -102,7 +150,11 @@ export default function App() {
             <Route path="users" element={<AdminUsersPage />} />
             <Route path="strategies" element={<AdminStrategiesPage />} />
             <Route path="oms" element={<AdminOmsMonitorPage />} />
-            <Route path="ops" element={<AdminOpsPage />} />
+            <Route path="settings" element={<AdminSectionPage section="settings" />} />
+            <Route path="security" element={<AdminSectionPage section="security" />} />
+            <Route path="reports" element={<AdminSectionPage section="reports" />} />
+            <Route path="alerts" element={<AdminSectionPage section="alerts" />} />
+            <Route path="ops" element={<AdminOpsGate />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,18 +1,16 @@
 import { Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ActivitySquare,
   BarChart3,
-  Bell,
-  CircleUser,
-  ClipboardList,
-  FlaskConical,
+  Layers,
   LayoutDashboard,
-  LineChart,
   LogOut,
-  PanelsLeftRight,
+  MessageSquare,
   Settings2,
   Shield,
+  Star,
   TrendingUp,
   Users,
   Wallet,
@@ -24,19 +22,26 @@ import { useNotificationStore } from "../state/notifications";
 import { useSessionStore } from "../state/session";
 import { AppShell } from "./AppShell";
 import type { SidebarLink } from "./Sidebar";
-import { SidebarBrand, SidebarLinks, SidebarSection } from "./Sidebar";
-import { TopNav } from "./TopNav";
+import { SidebarAppearanceRow, SidebarBrand, SidebarLinks, SidebarSection } from "./Sidebar";
+import { cn } from "../lib/utils";
+import { useUiThemeStore } from "../state/uiTheme";
+import { WorkspaceTopNav } from "../components/workspace/WorkspaceTopNav";
+import { TraderAccountCard } from "../components/workspace/TraderAccountCard";
 import { NotificationDrawer } from "../components/ds/NotificationDrawer";
+import { performLogout } from "../services/auth/logout";
 
 export function ShellLayout() {
+  const isLightUi = useUiThemeStore((s) => s.mode === "light");
   const navigate = useNavigate();
   const username = useSessionStore((s) => s.username);
+  const displayName = useSessionStore((s) => s.displayName);
   const accessToken = useSessionStore((s) => s.accessToken);
   const userId = useSessionStore((s) => s.userId);
   const emailVerified = useSessionStore((s) => s.emailVerified);
   const onboardingComplete = useSessionStore((s) => s.onboardingComplete);
   const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
-  const clearSession = useSessionStore((s) => s.clearSession);
+  const canKillOpsConsole = useSessionStore((s) => s.canAccessKillSwitchOperations());
+  const liveTradingApproved = useSessionStore((s) => s.liveTradingApproved);
   const refreshToken = useSessionStore((s) => s.refreshToken);
   const pushNotification = useNotificationStore((s) => s.push);
   const unread = useNotificationStore((s) => s.unread);
@@ -46,45 +51,77 @@ export function ShellLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [resendingVerify, setResendingVerify] = useState(false);
 
-  const primaryLinks: SidebarLink[] = useMemo(
+  const portfolioSnapshot = useQuery({
+    queryKey: ["sidebar-portfolio-snapshot"],
+    queryFn: async () => {
+      const [dashboardRes, brokerRes] = await Promise.allSettled([
+        api.get("/api/portfolio/dashboard?equityPoints=8"),
+        api.get("/api/brokers/accounts"),
+      ]);
+
+      let equityValue = "—";
+      let marginValue = "—";
+
+      if (dashboardRes.status === "fulfilled") {
+        const overview = dashboardRes.value.data?.data?.overview as
+          | { totalEquity?: number; netWorth?: number; accountValue?: number }
+          | undefined;
+        const rawEquity = overview?.totalEquity ?? overview?.netWorth ?? overview?.accountValue;
+        if (typeof rawEquity === "number") {
+          equityValue = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(rawEquity);
+        }
+      }
+
+      if (brokerRes.status === "fulfilled") {
+        const rows = brokerRes.value.data?.data;
+        if (Array.isArray(rows) && rows.length > 0) {
+          const first = rows[0] as { cashAvailable?: number; availableMargin?: number };
+          const rawMargin = first.availableMargin ?? first.cashAvailable;
+          if (typeof rawMargin === "number") {
+            marginValue = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(rawMargin);
+          }
+        }
+      }
+
+      return { equityValue, marginValue };
+    },
+    refetchInterval: 30000,
+  });
+
+  const mainLinks: SidebarLink[] = useMemo(
     () => [
-      { to: "/", end: true, label: "Workstation", icon: LayoutDashboard },
-      { to: "/terminal", label: "Terminal", icon: PanelsLeftRight },
-      { to: "/onboarding", label: "Onboarding", icon: ClipboardList },
-      { to: "/orders", label: "Orders", icon: TrendingUp },
-      { to: "/trades", label: "Trades", icon: ActivitySquare },
-      { to: "/executions", label: "Executions", icon: LineChart },
-      { to: "/positions", label: "Positions", icon: LineChart },
+      { to: "/", end: true, label: "Dashboard", icon: LayoutDashboard },
       { to: "/strategies", label: "Strategies", icon: Wallet },
-      {
-        to: "/research/leaderboard",
-        label: "Research",
-        icon: BarChart3,
-        matchPrefix: "/research",
-      },
-      {
-        to: "/backtests/launch",
-        label: "Backtests",
-        icon: Settings2,
-        matchPrefix: "/backtests",
-      },
-      { to: "/brokers", label: "Broker connect", icon: Shield },
-      { to: "/paper", label: "Paper trading", icon: Wallet },
-      { to: "/debug", label: "Diagnostics", icon: FlaskConical },
+      { to: "/positions", label: "Positions", icon: Layers },
+      { to: "/orders", label: "Orders", icon: TrendingUp },
+      { to: "/executions", label: "Executions", icon: ActivitySquare },
+      { to: "/watchlist", label: "Watchlist", icon: Star },
+      { to: "/terminal", label: "Analytics", icon: BarChart3, matchPrefix: "/terminal" },
+      { to: "/backtests/launch", label: "Backtests", icon: Settings2, matchPrefix: "/backtests" },
     ],
     [],
   );
 
-  const adminLinks: SidebarLink[] = useMemo(
+  const integrationLinks: SidebarLink[] = useMemo(
     () => [
+      { to: "/brokers", label: "Broker Connect", icon: Shield },
+      { to: "/terminal", label: "Alerts & notifications", icon: MessageSquare },
+    ],
+    [],
+  );
+
+  const adminLinks: SidebarLink[] = useMemo(() => {
+    const core: SidebarLink[] = [
       { to: "/admin", end: true, label: "Overview", icon: Shield },
       { to: "/admin/users", label: "Traders", icon: Users },
       { to: "/admin/strategies", label: "Catalog", icon: Settings2 },
       { to: "/admin/oms", label: "OMS monitor", icon: TrendingUp },
-      { to: "/admin/ops", label: "Operations", icon: ActivitySquare },
-    ],
-    [],
-  );
+    ];
+    if (canKillOpsConsole) {
+      core.push({ to: "/admin/ops", label: "Risk & incidents", icon: ActivitySquare });
+    }
+    return core;
+  }, [canKillOpsConsole]);
 
   async function resendVerificationEmail() {
     setResendingVerify(true);
@@ -137,57 +174,79 @@ export function ShellLayout() {
   }, [accessToken, userId, pushNotification]);
 
   async function logout() {
-    try {
-      await api.post("/api/auth/logout", { refreshToken });
-    } catch {
-      /* ignore */
-    }
-    clearSession();
+    await performLogout({
+      remoteLogout: () => api.post("/api/auth/logout", { refreshToken }),
+    });
     navigate("/login", { replace: true });
   }
 
   const sidebar = (
-    <div className="flex flex-col">
-      <SidebarBrand />
-      <SidebarLinks links={primaryLinks} />
-      {isAdmin ? (
-        <SidebarSection title="Operations">
-          <SidebarLinks links={adminLinks} />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SidebarBrand title="Stokr Platform" subtitle="Trader workspace" />
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1 [-ms-overflow-style:none] [scrollbar-width:thin]">
+        <SidebarSection title="MAIN" first>
+          <SidebarLinks links={mainLinks} />
         </SidebarSection>
-      ) : null}
-      <button
-        type="button"
-        onClick={() => navigate("/")}
-        className="mt-8 hidden items-center gap-2 rounded-xl border border-neutral-800 px-3 py-2 text-left text-[12px] text-neutral-500 hover:bg-neutral-900 lg:flex"
-      >
-        <CircleUser className="h-4 w-4 shrink-0" />
-        Trader profile cues live in onboarding & brokers.
-      </button>
+        <SidebarSection title="INTEGRATIONS">
+          <SidebarLinks links={integrationLinks} />
+        </SidebarSection>
+        {isAdmin ? (
+          <SidebarSection title="Admin console">
+            <SidebarLinks links={adminLinks} />
+          </SidebarSection>
+        ) : null}
+      </div>
+      <TraderAccountCard
+        equityDisplay={portfolioSnapshot.data?.equityValue ?? "—"}
+        marginDisplay={portfolioSnapshot.data?.marginValue ?? "—"}
+      />
+      <SidebarAppearanceRow />
     </div>
   );
 
   const banners = (
     <>
       {!onboardingComplete ? (
-        <div className="flex flex-col gap-2 rounded-xl border border-blue-500/25 bg-blue-500/5 px-4 py-3 text-sm text-blue-100 sm:flex-row sm:items-center sm:justify-between">
+        <div
+          className={cn(
+            "flex flex-col gap-2 rounded-xl border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between",
+            isLightUi
+              ? "border-blue-200 bg-blue-50/90 text-blue-950"
+              : "border-blue-500/25 bg-blue-500/5 text-blue-100",
+          )}
+        >
           <span>
-            <span className="font-semibold text-white">Operational checklist · </span>
+            <span className={cn("font-semibold", isLightUi ? "text-neutral-950" : "text-white")}>
+              Operational checklist ·{" "}
+            </span>
             Finish onboarding to unlock gated LIVE routing and broker ergonomics.
           </span>
           <button
             type="button"
             onClick={() => navigate("/onboarding")}
-            className="rounded-lg border border-blue-400/35 px-3 py-1 text-xs font-semibold text-blue-50 hover:bg-blue-500/15"
+            className={cn(
+              "rounded-lg border px-3 py-1 text-xs font-semibold transition",
+              isLightUi
+                ? "border-blue-400/55 text-blue-800 hover:bg-blue-100"
+                : "border-blue-400/35 text-blue-50 hover:bg-blue-500/15",
+            )}
           >
             Open onboarding
           </button>
         </div>
       ) : null}
       {accessToken && !emailVerified ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
+        <div
+          className={cn(
+            "flex flex-col gap-3 rounded-xl border px-4 py-3 text-sm md:flex-row md:items-center md:justify-between",
+            isLightUi
+              ? "border-amber-200 bg-amber-50/95 text-amber-950"
+              : "border-amber-500/30 bg-amber-500/5 text-amber-100",
+          )}
+        >
           <div>
-            <div className="font-semibold text-amber-50">Email verification pending</div>
-            <div className="mt-1 text-xs text-amber-200/85">
+            <div className={cn("font-semibold", isLightUi ? "text-amber-950" : "text-amber-50")}>Email verification pending</div>
+            <div className={cn("mt-1 text-xs", isLightUi ? "text-amber-900/85" : "text-amber-200/85")}>
               Required before broker onboarding and escalation to operations review.
             </div>
           </div>
@@ -195,7 +254,12 @@ export function ShellLayout() {
             type="button"
             disabled={resendingVerify}
             onClick={() => void resendVerificationEmail()}
-            className="shrink-0 rounded-lg border border-amber-500/45 px-3 py-1.5 text-xs font-semibold text-amber-50 transition hover:bg-amber-500/10 disabled:opacity-50"
+            className={cn(
+              "shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50",
+              isLightUi
+                ? "border-amber-500/55 text-amber-950 hover:bg-amber-100"
+                : "border-amber-500/45 text-amber-50 hover:bg-amber-500/10",
+            )}
           >
             {resendingVerify ? "Sending…" : "Resend email"}
           </button>
@@ -209,36 +273,30 @@ export function ShellLayout() {
       <AppShell
         sidebar={sidebar}
         topNav={
-          <TopNav
-            right={
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDrawerOpen(true);
-                    markRead();
-                  }}
-                  aria-label={`Notifications ${unread > 0 ? `(${unread} unread)` : ""}`}
-                  className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-950/70 text-neutral-200 shadow-inner hover:bg-neutral-900"
-                >
-                  <Bell className="h-4 w-4" />
-                  {unread > 0 ? (
-                    <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-black text-white shadow-lg">
-                      {unread > 9 ? "9+" : unread}
-                    </span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void logout()}
-                  className="inline-flex items-center gap-2 rounded-xl border border-neutral-800 px-4 py-2 text-xs font-bold uppercase tracking-wide text-neutral-300 hover:bg-neutral-900"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  Sign out
-                </button>
-              </>
+          <WorkspaceTopNav
+            displayName={displayName}
+            username={username ?? undefined}
+            unread={unread}
+            liveApproved={liveTradingApproved}
+            onNotificationClick={() => {
+              setDrawerOpen(true);
+              markRead();
+            }}
+            rightExtra={
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-[11px] font-bold uppercase tracking-wide transition",
+                  isLightUi
+                    ? "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50"
+                    : "border-white/[0.1] bg-neutral-900/60 text-neutral-300 hover:border-neutral-600 hover:bg-neutral-800",
+                )}
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Sign out
+              </button>
             }
-            displayNameFallback={username ?? undefined}
           />
         }
         banners={banners}

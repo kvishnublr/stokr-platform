@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stokr Platform - Trading Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f8f9fa;
+      --bg-tertiary: #f0f2f5;
+      --text-primary: #1a1a1a;
+      --text-secondary: #666;
+      --text-tertiary: #999;
+      --border: #e8e8e8;
+      --accent: #4169ff;
+      --accent-dark: #3856d4;
+      --success: #34c759;
+      --danger: #ff3b30;
+      --warning: #ff9500;
+      --sidebar-bg: #f5f7fa;
+    }
+
+    body.dark-mode {
+      --bg-primary: #1a1a1a;
+      --bg-secondary: #242424;
+      --bg-tertiary: #2d2d2d;
+      --text-primary: #ffffff;
+      --text-secondary: #bbb;
+      --text-tertiary: #888;
+      --border: #333;
+      --sidebar-bg: #1f1f1f;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      overflow: hidden;
+    }
+
+    /* ============ NAVBAR ============ */
+    .navbar {
+      height: 60px;
+      background: var(--bg-primary);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 20px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .search-bar {
+      flex: 0.5;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(65, 105, 255, 0.1);
+    }
+
+    .tickers {
+      display: flex;
+      gap: 20px;
+      flex: 1;
+    }
+
+    .ticker {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .ticker-symbol {
+      color: var(--text-secondary);
+    }
+
+    .ticker-price {
+      color: var(--text-primary);
+      font-weight: 700;
+    }
+
+    .ticker-change {
+      color: var(--success);
+      font-size: 11px;
+    }
+
+    .ticker-change.negative {
+      color: var(--danger);
+    }
+
+    .navbar-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-left: auto;
+    }
+
+    .theme-toggle {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-size: 18px;
+    }
+
+    .profile-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    /* ============ LAYOUT ============ */
+    .container {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      height: calc(100vh - 60px);
+      gap: 0;
+    }
+
+    /* ============ SIDEBAR ============ */
+    .sidebar {
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
+      padding: 20px 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-section {
+      padding: 0 12px;
+      margin-bottom: 20px;
+    }
+
+    .sidebar-label {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 0 12px;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-item {
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-secondary);
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+
+    .sidebar-item:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .sidebar-item.active {
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+    }
+
+    /* ============ MAIN CONTENT ============ */
+    .main {
+      overflow-y: auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 20px;
+      background: var(--bg-secondary);
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      grid-column: 1 / -1;
+    }
+
+    .greeting {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .greeting-title {
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .greeting-sub {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    /* ============ STATS ============ */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+      grid-column: 1 / 2;
+    }
+
+    .stat-card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      transition: all 0.2s;
+    }
+
+    .stat-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-label {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .stat-change {
+      font-size: 11px;
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    .stat-change.negative {
+      color: var(--danger);
+    }
+
+    /* ============ CHART ============ */
+    .chart-card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      grid-column: 1 / 2;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .chart-title {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .chart-controls {
+      display: flex;
+      gap: 6px;
+    }
+
+    .tf-btn {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .tf-btn.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .chart-display {
+      height: 300px;
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      margin-bottom: 16px;
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-around;
+      padding: 20px 12px;
+      gap: 2px;
+    }
+
+    .candle {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      min-height: 2px;
+    }
+
+    .candle-body {
+      width: 100%;
+      background: var(--success);
+      border-radius: 2px;
+      min-height: 2px;
+    }
+
+    .candle-body.down {
+      background: var(--danger);
+    }
+
+    .chart-info {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      font-size: 11px;
+    }
+
+    .info-item {
+      background: var(--bg-tertiary);
+      padding: 8px;
+      border-radius: 6px;
+    }
+
+    .info-label {
+      color: var(--text-tertiary);
+      font-size: 9px;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    .info-value {
+      color: var(--text-primary);
+      font-weight: 700;
+    }
+
+    /* ============ BOTTOM SECTIONS ============ */
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      grid-column: 1 / 2;
+    }
+
+    .section {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .execution-item {
+      padding: 8px;
+      background: var(--bg-tertiary);
+      border-radius: 6px;
+      margin-bottom: 6px;
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+      font-size: 11px;
+      align-items: center;
+    }
+
+    .exec-symbol {
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .exec-side {
+      color: var(--text-secondary);
+    }
+
+    .exec-price {
+      font-weight: 700;
+      color: var(--success);
+    }
+
+    /* ============ RIGHT SIDEBAR ============ */
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .right-card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+    }
+
+    .right-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .right-title {
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .view-link {
+      font-size: 11px;
+      color: var(--accent);
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .item {
+      padding: 8px;
+      background: var(--bg-tertiary);
+      border-radius: 6px;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .item:hover {
+      background: var(--accent);
+      color: white;
+    }
+
+    .item-name {
+      font-weight: 600;
+    }
+
+    .item-value {
+      font-weight: 700;
+      color: var(--success);
+    }
+
+    .item-value.negative {
+      color: var(--danger);
+    }
+
+    .badge {
+      background: var(--success);
+      color: white;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 600;
+      margin-left: 6px;
+    }
+
+    .badge.paper {
+      background: var(--text-tertiary);
+    }
+
+    /* ============ SCROLLBAR ============ */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-tertiary);
+    }
+  </style>
+</head>
+<body>
+  <!-- NAVBAR -->
+  <div class="navbar">
+    <div class="logo">💎 Stokr Platform</div>
+    <div class="search-bar">
+      <input class="search-input" placeholder="Search markets, strategies, or orders..." type="text">
+    </div>
+    <div class="tickers">
+      <div class="ticker">
+        <span class="ticker-symbol">NIFTY 50</span>
+        <span class="ticker-price">24,325.10</span>
+        <span class="ticker-change">▲ 0.72%</span>
+      </div>
+      <div class="ticker">
+        <span class="ticker-symbol">BANKNIFTY</span>
+        <span class="ticker-price">52,963.40</span>
+        <span class="ticker-change">▲ 1.21%</span>
+      </div>
+      <div class="ticker">
+        <span class="ticker-symbol">SENSEX</span>
+        <span class="ticker-price">80,123.42</span>
+        <span class="ticker-change">▲ 0.68%</span>
+      </div>
+    </div>
+    <div class="navbar-actions">
+      <button class="theme-toggle" onclick="document.body.classList.toggle('dark-mode')">🌙</button>
+      <button class="nav-btn" style="background: none; border: none; cursor: pointer; font-size: 18px;">🔔</button>
+      <button class="nav-btn" style="background: none; border: none; cursor: pointer; font-size: 18px;">📍</button>
+      <button class="profile-btn">R</button>
+    </div>
+  </div>
+
+  <!-- MAIN CONTAINER -->
+  <div class="container">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-item active">📊 Dashboard</div>
+        <div class="sidebar-item">🎯 Strategies</div>
+        <div class="sidebar-item">💼 Positions</div>
+        <div class="sidebar-item">📋 Orders</div>
+        <div class="sidebar-item">⚡ Executions</div>
+        <div class="sidebar-item">📈 Analytics</div>
+        <div class="sidebar-item">📚 Backtests</div>
+        <div class="sidebar-item">📄 Paper Trading</div>
+        <div class="sidebar-item">👀 Watchlist</div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Integrations</div>
+        <div class="sidebar-item">🔗 Broker Connect</div>
+        <div class="sidebar-item">🔔 Alerts & Notifications</div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Account</div>
+        <div class="sidebar-item">⚙️ Settings</div>
+        <div class="sidebar-item">👤 Profile</div>
+      </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="main">
+      <!-- HEADER -->
+      <div class="header">
+        <div class="greeting">
+          <div class="greeting-title">Good morning, Rohan 👋</div>
+          <div class="greeting-sub">Here's what's happening in your portfolio today.</div>
+        </div>
+        <div class="action-buttons">
+          <button class="btn">PAPER</button>
+          <button class="btn primary">● LIVE</button>
+          <button class="btn">Customize</button>
+        </div>
+      </div>
+
+      <!-- STATS -->
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-label">Total P&L</div>
+          <div class="stat-value">₹ 1,24,567.90</div>
+          <div class="stat-change">▲ 2.45% Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Unrealized P&L</div>
+          <div class="stat-value">₹ 45,230.00</div>
+          <div class="stat-change">▲ 1.12%</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Realized P&L</div>
+          <div class="stat-value">₹ 79,337.90</div>
+          <div class="stat-change">▲ 3.21%</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Capital</div>
+          <div class="stat-value">₹ 12,45,000.00</div>
+          <div class="stat-change">Invested</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Risk Utilization</div>
+          <div class="stat-value">42%</div>
+          <div class="stat-change">Within Limits</div>
+        </div>
+      </div>
+
+      <!-- CHART -->
+      <div class="chart-card">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">NIFTY 50 - 5m - NSE</div>
+            <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">24,325.10 ▲ 173.20 (0.72%)</div>
+          </div>
+          <div class="chart-controls">
+            <button class="tf-btn">1m</button>
+            <button class="tf-btn">5m</button>
+            <button class="tf-btn active">15m</button>
+            <button class="tf-btn">1h</button>
+            <button class="tf-btn">4h</button>
+            <button class="tf-btn">1D</button>
+          </div>
+        </div>
+        <div class="chart-display">
+          <div class="candle"><div class="candle-body" style="height: 35%;"></div></div>
+          <div class="candle"><div class="candle-body" style="height: 52%;"></div></div>
+          <div class="candle"><div class="candle-body down" style="height: 42%;"></div></div>
+          <div class="candle"><div class="candle-body" style="height: 68%;"></div></div>
+          <div class="candle"><div class="candle-body" style="height: 58%;"></div></div>
+          <div class="candle"><div class="candle-body" style="height: 72%;"></div></div>
+          <div class="candle"><div class="candle-body" style="height: 85%;"></div></div>
+          <div class="candle"><div class="candle-body" style="height: 65%;"></div></div>
+          <div class="candle"><div class="candle-body" style="height: 78%;"></div></div>
+        </div>
+        <div class="chart-info">
+          <div class="info-item">
+            <div class="info-label">Open</div>
+            <div class="info-value">24,215.30</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">High</div>
+            <div class="info-value">24,365.80</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Low</div>
+            <div class="info-value">24,210.50</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Volume</div>
+            <div class="info-value">2.4M</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOTTOM SECTIONS -->
+      <div class="bottom-grid">
+        <div class="section">
+          <div class="section-title">Portfolio Overview</div>
+          <div style="height: 150px; background: var(--bg-tertiary); border-radius: 6px; margin-bottom: 12px;"></div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px;">
+            <div>
+              <div style="color: var(--text-tertiary); margin-bottom: 4px;">P&L</div>
+              <div style="font-weight: 700; font-size: 16px;">₹ 1,24,567</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="width: 60px; height: 60px; border-radius: 50%; background: conic-gradient(from 0deg, var(--accent) 0deg 260deg, var(--success) 260deg, var(--warning) 300deg); margin: 0 auto;"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Live Execution Feed</div>
+          <div class="execution-item">
+            <div class="exec-symbol">RELIANCE</div>
+            <div class="exec-side">BUY 10</div>
+            <div class="exec-price">₹ 2,450.10</div>
+          </div>
+          <div class="execution-item">
+            <div class="exec-symbol">INFY</div>
+            <div class="exec-side">SELL 5</div>
+            <div class="exec-price">₹ 1,450.00</div>
+          </div>
+          <div class="execution-item">
+            <div class="exec-symbol">TCS</div>
+            <div class="exec-side">BUY 8</div>
+            <div class="exec-price">₹ 3,950.00</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT PANEL -->
+      <div class="right-panel">
+        <div class="right-card">
+          <div class="right-header">
+            <div class="right-title">Active Strategies</div>
+            <div class="view-link">View all</div>
+          </div>
+          <div class="item">
+            <div class="item-name">Trend Hunter Pro</div>
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <span class="item-value">▲ 45,270</span>
+              <span class="badge">LIVE</span>
+            </div>
+          </div>
+          <div class="item">
+            <div class="item-name">Mean Reversion X</div>
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <span class="item-value negative">▼ 1,320</span>
+              <span class="badge">LIVE</span>
+            </div>
+          </div>
+          <div class="item">
+            <div class="item-name">Breakout Alpha</div>
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <span class="item-value">▲ 12,450</span>
+              <span class="badge">LIVE</span>
+            </div>
+          </div>
+          <div class="item">
+            <div class="item-name">VWAP Scalper</div>
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <span class="item-value negative">▼ 2,100</span>
+              <span class="badge paper">PAPER</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="right-card">
+          <div class="right-header">
+            <div class="right-title">Market Watch</div>
+            <div class="view-link">+</div>
+          </div>
+          <div class="item">
+            <div class="item-name">NIFTY 50</div>
+            <div style="text-align: right;">
+              <div style="font-weight: 700; font-size: 11px;">24,325.10</div>
+              <div class="item-value" style="font-size: 10px;">▲ +0.72%</div>
+            </div>
+          </div>
+          <div class="item">
+            <div class="item-name">BANKNIFTY</div>
+            <div style="text-align: right;">
+              <div style="font-weight: 700; font-size: 11px;">52,963.40</div>
+              <div class="item-value" style="font-size: 10px;">▲ +1.21%</div>
+            </div>
+          </div>
+          <div class="item">
+            <div class="item-name">SENSEX</div>
+            <div style="text-align: right;">
+              <div style="font-weight: 700; font-size: 11px;">80,123.42</div>
+              <div class="item-value" style="font-size: 10px;">▲ +0.68%</div>
+            </div>
+          </div>
+          <div class="item">
+            <div class="item-name">FINNIFTY</div>
+            <div style="text-align: right;">
+              <div style="font-weight: 700; font-size: 11px;">23,456.79</div>
+              <div class="item-value negative" style="font-size: 10px;">▼ −0.93%</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="right-card">
+          <div class="right-header">
+            <div class="right-title">Positions</div>
+            <div class="view-link">View all</div>
+          </div>
+          <div class="item">
+            <div>
+              <div class="item-name">RELIANCE</div>
+              <div style="font-size: 9px; color: var(--text-tertiary);">NSE • Qty 10</div>
+            </div>
+            <div class="item-value">₹ 2,450</div>
+          </div>
+          <div class="item">
+            <div>
+              <div class="item-name">INFY</div>
+              <div style="font-size: 9px; color: var(--text-tertiary);">NSE • Qty 5</div>
+            </div>
+            <div class="item-value">₹ 1,450</div>
+          </div>
+          <div class="item">
+            <div>
+              <div class="item-name">TCS</div>
+              <div style="font-size: 9px; color: var(--text-tertiary);">NSE • Qty 8</div>
+            </div>
+            <div class="item-value">₹ 3,950</div>
+          </div>
+        </div>
+
+        <div class="right-card">
+          <div class="right-header">
+            <div class="right-title">Recent Orders</div>
+            <div class="view-link">View all</div>
+          </div>
+          <div class="item">
+            <div class="item-name">RELIANCE</div>
+            <div style="display: flex; gap: 6px; align-items: center; font-size: 9px;">
+              <span class="badge">BUY</span>
+              <span style="color: var(--text-tertiary);">10:29:33</span>
+            </div>
+          </div>
+          <div class="item">
+            <div class="item-name">INFY</div>
+            <div style="display: flex; gap: 6px; align-items: center; font-size: 9px;">
+              <span class="badge" style="background: var(--danger);">SELL</span>
+              <span style="color: var(--text-tertiary);">10:28:11</span>
+            </div>
+          </div>
+          <div class="item">
+            <div class="item-name">TCS</div>
+            <div style="display: flex; gap: 6px; align-items: center; font-size: 9px;">
+              <span class="badge" style="background: var(--warning);">BUY</span>
+              <span style="color: var(--text-tertiary);">10:27:02</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="right-card">
+          <div class="right-header">
+            <div class="right-title">News & Alerts</div>
+          </div>
+          <div class="item">
+            <div style="flex: 1;">
+              <div class="item-name">High volatility in NIFTY options</div>
+              <div style="font-size: 9px; color: var(--text-tertiary); margin-top: 2px;">2m ago</div>
+            </div>
+            <span style="width: 6px; height: 6px; background: var(--danger); border-radius: 50%;"></span>
+          </div>
+          <div class="item">
+            <div style="flex: 1;">
+              <div class="item-name">Breakout Alpha hit TARGET</div>
+              <div style="font-size: 9px; color: var(--text-tertiary); margin-top: 2px;">5m ago</div>
+            </div>
+            <span style="width: 6px; height: 6px; background: var(--danger); border-radius: 50%;"></span>
+          </div>
+          <div class="item">
+            <div style="flex: 1;">
+              <div class="item-name">INFY options flow spike</div>
+              <div style="font-size: 9px; color: var(--text-tertiary); margin-top: 2px;">7m ago</div>
+            </div>
+            <span style="width: 6px; height: 6px; background: var(--danger); border-radius: 50%;"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

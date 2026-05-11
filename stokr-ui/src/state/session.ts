@@ -34,6 +34,11 @@ type SessionState = {
   hasRole: (role: string) => boolean;
   /** Traders: ROLE_TRADER (preferred) or legacy ROLE_USER; excludes admins-only tooling. */
   hasTraderAccess: () => boolean;
+  /**
+   * Kill-switch / emergency ops console — platform staff only.
+   * Traders never see this even if ROLE_ADMIN is mistakenly combined with ROLE_TRADER.
+   */
+  canAccessKillSwitchOperations: () => boolean;
 };
 
 function readRoles(): string[] {
@@ -131,5 +136,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   hasTraderAccess: () => {
     const roles = get().roles;
     return roles.some((r) => r === "ROLE_TRADER" || r === "ROLE_USER");
+  },
+  canAccessKillSwitchOperations: () => {
+    const roles = get().roles;
+    return roles.includes("ROLE_ADMIN") && !roles.includes("ROLE_TRADER");
   },
 }));

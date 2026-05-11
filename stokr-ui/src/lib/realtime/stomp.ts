@@ -7,6 +7,8 @@ export type RealtimeHandlers = {
   onStrategy?: (msg: IMessage) => void;
 };
 
+const activeClients = new Set<Client>();
+
 /**
  * STOMP over SockJS (`/ws` endpoint). Tear down via returned deactivate().
  */
@@ -28,6 +30,7 @@ export function connectStomp(token: string | null, userId: string | null, handle
       if (handlers.onStrategy) client.subscribe(`/topic/strategies.${userId}`, handlers.onStrategy);
     },
   });
+  activeClients.add(client);
   client.activate();
   return () => {
     try {
@@ -35,5 +38,17 @@ export function connectStomp(token: string | null, userId: string | null, handle
     } catch {
       /* ignore */
     }
+    activeClients.delete(client);
   };
+}
+
+export function disconnectAllStomp(): void {
+  activeClients.forEach((client) => {
+    try {
+      client.deactivate();
+    } catch {
+      /* ignore */
+    }
+  });
+  activeClients.clear();
 }

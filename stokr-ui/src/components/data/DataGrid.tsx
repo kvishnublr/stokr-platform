@@ -9,16 +9,20 @@ import {
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { useUiThemeStore } from "../../state/uiTheme";
 
 type Props<T> = {
   columns: ColumnDef<T, unknown>[];
   data: T[];
   isLoading?: boolean;
   emptyLabel?: string;
+  variant?: "auto" | "light" | "dark";
 };
 
-export function DataGrid<T>({ columns, data, isLoading, emptyLabel }: Props<T>) {
+export function DataGrid<T>({ columns, data, isLoading, emptyLabel, variant = "auto" }: Props<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const isLightTheme = useUiThemeStore((s) => s.mode === "light");
+  const isLight = variant === "light" || (variant === "auto" && isLightTheme);
   const cols = useMemo(() => columns, [columns]);
   const table = useReactTable({
     data,
@@ -30,17 +34,23 @@ export function DataGrid<T>({ columns, data, isLoading, emptyLabel }: Props<T>) 
   });
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-neutral-800 bg-neutral-950/40">
+    <div
+      className={cn(
+        "overflow-x-auto rounded-xl border",
+        isLight ? "border-neutral-200 bg-white" : "border-neutral-800 bg-neutral-950/40",
+      )}
+    >
       <table className="w-full min-w-[720px] border-collapse text-left text-xs">
-        <thead className="sticky top-0 z-10 bg-neutral-950/95 backdrop-blur">
+        <thead className={cn("sticky top-0 z-10 backdrop-blur", isLight ? "bg-white/95" : "bg-neutral-950/95")}>
           {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id} className="border-b border-neutral-800">
+            <tr key={hg.id} className={cn("border-b", isLight ? "border-neutral-200" : "border-neutral-800")}>
               {hg.headers.map((h) => (
                 <th
                   key={h.id}
                   className={cn(
-                    "whitespace-nowrap px-3 py-2 font-semibold uppercase tracking-wide text-neutral-500",
-                    h.column.getCanSort() && "cursor-pointer select-none hover:text-neutral-300",
+                    "whitespace-nowrap px-3 py-2 font-semibold uppercase tracking-wide",
+                    isLight ? "text-neutral-500" : "text-neutral-500",
+                    h.column.getCanSort() && (isLight ? "cursor-pointer select-none hover:text-neutral-700" : "cursor-pointer select-none hover:text-neutral-300"),
                   )}
                   onClick={h.column.getToggleSortingHandler()}
                 >
@@ -60,21 +70,21 @@ export function DataGrid<T>({ columns, data, isLoading, emptyLabel }: Props<T>) 
         <tbody>
           {isLoading ? (
             <tr>
-              <td colSpan={columns.length} className="px-3 py-10 text-center text-neutral-500">
+              <td colSpan={columns.length} className={cn("px-3 py-10 text-center", isLight ? "text-neutral-500" : "text-neutral-500")}>
                 Loading…
               </td>
             </tr>
           ) : table.getRowModel().rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-3 py-10 text-center text-neutral-500">
+              <td colSpan={columns.length} className={cn("px-3 py-10 text-center", isLight ? "text-neutral-500" : "text-neutral-500")}>
                 {emptyLabel ?? "No rows"}
               </td>
             </tr>
           ) : (
             table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="border-b border-neutral-900/80 hover:bg-neutral-900/40">
+              <tr key={row.id} className={cn("border-b", isLight ? "border-neutral-100 hover:bg-neutral-50" : "border-neutral-900/80 hover:bg-neutral-900/40")}>
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="whitespace-nowrap px-3 py-2 text-neutral-200">
+                  <td key={cell.id} className={cn("whitespace-nowrap px-3 py-2", isLight ? "text-neutral-700" : "text-neutral-200")}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}

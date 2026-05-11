@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stokr Platform - Trading Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    * {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      outline: none;
+      border: none;
+    }
+    html, body {
+      border: none !important;
+      outline: none !important;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background: #f8f9fa;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+} #app-root {
+  width: 80%;
+  height: 100%;
+  overflow: hidden;
+}
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f8f9fa;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #d1d5db;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #9ca3af;
+    }
+
+    .chart-candlestick {
+      display: inline-block;
+      width: 20px;
+      height: 80px;
+      background: linear-gradient(to bottom, #10b981 0%, #059669 100%);
+      margin: 0 2px;
+      border-radius: 1px;
+    }
+    .chart-candlestick.down {
+      background: linear-gradient(to bottom, #ef4444 0%, #dc2626 100%);
+    }
+    .accent-orange { color: #FF8C42; }
+    .bg-accent-orange { background-color: #FF8C42; }
+    .border-accent-orange { border-color: #FF8C42; }
+    .text-light-gray { color: #9CA3AF; }
+    .bg-light-gray { background-color: #F3F4F6; }
+    .sidebar-active {
+      background: #FEF3E2;
+      color: #FF8C42;
+      border-radius: 8px;
+    }
+    .stat-card {
+      background: white;
+      border: 1px solid #E5E7EB;
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+    .stat-card:hover {
+      border-color: #FF8C42;
+      box-shadow: 0 4px 12px rgba(255, 140, 66, 0.1);
+    }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div class="flex h-screen bg-gray-50">
+
+    <!-- LEFT SIDEBAR -->
+    <div class="w-52 bg-white border-r border-gray-200 overflow-y-auto">
+      <div class="p-5">
+        <div class="flex items-center gap-2 mb-8">
+          <div class="w-8 h-8 bg-orange-500 rounded flex items-center justify-center text-white font-bold">S</div>
+          <span class="font-bold text-lg">Stokr</span>
+        </div>
+
+        <!-- Main Navigation -->
+        <div class="space-y-2 mb-8">
+          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 mb-3">Main</div>
+          <div class="sidebar-active px-4 py-3 text-sm font-medium flex items-center gap-3">
+            <span>🏠</span>
+            <span>Dashboard</span>
+          </div>
+          <div class="px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer flex items-center gap-3">
+            <span>📊</span>
+            <span>Strategies</span>
+          </div>
+          <div class="px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer flex items-center gap-3">
+            <span>💼</span>
+            <span>Positions</span>
+          </div>
+          <div class="px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer flex items-center gap-3">
+            <span>📋</span>
+            <span>Orders</span>
+          </div>
+          <div class="px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer flex items-center gap-3">
+            <span>⚡</span>
+            <span>Executions</span>
+          </div>
+          <div class="px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer flex items-center gap-3">
+            <span>📈</span>
+            <span>Watchlist</span>
+          </div>
+          <div class="px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer flex items-center gap-3">
+            <span>📊</span>
+            <span>Analytics</span>
+          </div>
+          <div class="px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer flex items-center gap-3">
+            <span>🚀</span>
+            <span>Backtests</span>
+          </div>
+        </div>
+
+        <!-- Integrations -->
+        <div class="space-y-2 mb-8">
+          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 mb-3">Integrations</div>
+          <div class="px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer flex items-center gap-3">
+            <span>🔗</span>
+            <span>Broker Connect</span>
+            <span class="ml-auto w-2 h-2 bg-green-500 rounded-full"></span>
+          </div>
+          <div class="px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer flex items-center gap-3">
+            <span>🔔</span>
+            <span>Alerts & Notifications</span>
+          </div>
+        </div>
+
+        <!-- Portfolio Snapshot -->
+        <div class="bg-gray-50 rounded-lg p-4 space-y-4">
+          <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Portfolio Snapshot</div>
+
+          <div>
+            <div class="text-xs text-gray-500 mb-1">Total Equity</div>
+            <div class="text-xl font-bold text-gray-900">₹ 12,45,678.00</div>
+            <div class="text-xs text-green-600 font-medium mt-1">▲ 2.45% Today</div>
+          </div>
+
+          <div>
+            <div class="text-xs text-gray-500 mb-1">Available Margin</div>
+            <div class="text-lg font-bold text-gray-900">₹ 3,45,210.00</div>
+          </div>
+
+          <div>
+            <div class="text-xs text-gray-500 mb-2">Margin Used</div>
+            <div class="relative h-6 bg-white rounded-full overflow-hidden border border-gray-200">
+              <div class="h-full bg-accent-orange" style="width: 58%"></div>
+              <span class="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-700">58%</span>
+            </div>
+          </div>
+
+          <button class="w-full bg-accent-orange text-white font-medium py-2 rounded-lg hover:opacity-90 text-sm">+ Quick Order</button>
+        </div>
+
+        <!-- Bottom Icons -->
+        <div class="flex gap-4 justify-center mt-8 pt-6 border-t border-gray-200">
+          <button class="text-gray-400 hover:text-gray-600">⚙️</button>
+          <button class="text-gray-400 hover:text-gray-600">🌙</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+
+      <!-- TOP NAVBAR -->
+      <div class="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center gap-5">
+        <button class="text-gray-600 hover:text-gray-900">☰</button>
+
+        <div class="relative flex-1 max-w-sm">
+          <input type="text" placeholder="Search markets, strategies, or orders..."
+            class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-orange-500">
+          <span class="absolute right-3 top-2.5 text-gray-400">🔍</span>
+        </div>
+
+        <div class="flex items-center gap-6 flex-1">
+          <div class="flex gap-8 text-sm">
+            <div class="flex items-center gap-2">
+              <span class="text-gray-500 font-medium">NIFTY</span>
+              <span class="font-bold text-gray-900">24,325.10</span>
+              <span class="text-green-600 font-medium">▲ 0.72%</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-gray-500 font-medium">BANKNIFTY</span>
+              <span class="font-bold text-gray-900">52,163.42</span>
+              <span class="text-green-600 font-medium">▲ 0.68%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <div class="relative">
+            <span class="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center font-bold">1</span>
+            <button class="text-gray-600 text-xl">🔔</button>
+          </div>
+          <div class="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center font-bold text-gray-700">R</div>
+          <span class="text-sm font-medium">Rohan Trader</span>
+          <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">LIVE</span>
+          <button class="text-gray-600">⋮</button>
+        </div>
+      </div>
+
+      <!-- MAIN GRID -->
+      <div class="flex-1 overflow-auto flex gap-5 px-6 py-5">
+
+        <!-- CENTER COLUMN -->
+        <div class="flex-1 space-y-5">
+
+          <!-- GREETING & BUTTONS -->
+          <div class="flex justify-between items-center pb-2">
+            <div>
+              <h1 class="text-3xl font-bold text-gray-900">Good morning, Rohan 👋</h1>
+              <p class="text-sm text-gray-500 mt-1">Here's your trading overview</p>
+            </div>
+            <div class="flex gap-3">
+              <button class="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">PAPER</button>
+              <button class="px-4 py-2 bg-accent-orange text-white rounded-full text-sm font-medium">● LIVE</button>
+              <button class="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">⚙️ Customise</button>
+            </div>
+          </div>
+
+          <!-- KPI CARDS -->
+          <div class="grid grid-cols-4 gap-4 pt-1">
+            <div class="stat-card">
+              <div class="flex justify-between items-start">
+                <div>
+                  <div class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Total P&L</div>
+                  <div class="text-2xl font-bold text-gray-900 mt-2">₹ 1,24,567.90</div>
+                  <div class="text-xs text-green-600 font-medium mt-2">▲ 2.49% Today</div>
+                </div>
+                <button class="text-gray-400 text-lg">⋯</button>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="flex justify-between items-start">
+                <div>
+                  <div class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Unrealized P&L</div>
+                  <div class="text-2xl font-bold text-gray-900 mt-2">₹ 45,230.00</div>
+                  <div class="text-xs text-green-600 font-medium mt-2">▲ 1.12%</div>
+                </div>
+                <button class="text-gray-400 text-lg">⋯</button>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="flex justify-between items-start">
+                <div>
+                  <div class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Realized P&L</div>
+                  <div class="text-2xl font-bold text-gray-900 mt-2">₹ 79,337.90</div>
+                  <div class="text-xs text-green-600 font-medium mt-2">▲ 3.21%</div>
+                </div>
+                <button class="text-gray-400 text-lg">⋯</button>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="flex justify-between items-start">
+                <div>
+                  <div class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Total Capital</div>
+                  <div class="text-2xl font-bold text-gray-900 mt-2">₹ 12,45,000.00</div>
+                  <div class="text-xs text-gray-600 font-medium mt-2">Unused 42%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CHART SECTION -->
+          <div class="bg-white rounded-2xl border border-gray-200 p-6 pt-5">
+            <div class="flex justify-between items-start mb-5">
+              <div>
+                <h2 class="text-lg font-bold text-gray-900">NIFTY 50 - 5m - NSE</h2>
+                <div class="flex items-center gap-2 mt-2 text-sm">
+                  <span class="font-bold text-gray-900">24,325.10</span>
+                  <span class="text-green-600 font-medium">▲ 173.20 (0.72%)</span>
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <button class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">1m</button>
+                <button class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">5m</button>
+                <button class="px-3 py-1.5 text-xs font-medium text-white bg-accent-orange rounded-lg">15m</button>
+                <button class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">1H</button>
+                <button class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">4H</button>
+                <button class="text-gray-400 ml-2">⋮</button>
+              </div>
+            </div>
+
+            <!-- Chart Tools Sidebar -->
+            <div class="flex gap-6">
+              <div class="flex flex-col gap-3">
+                <button class="text-2xl text-gray-400 hover:text-gray-600">🔺</button>
+                <button class="text-2xl text-gray-400 hover:text-gray-600">✏️</button>
+                <button class="text-2xl text-gray-400 hover:text-gray-600">📐</button>
+                <button class="text-2xl text-gray-400 hover:text-gray-600">💬</button>
+                <button class="text-2xl text-gray-400 hover:text-gray-600">🔍</button>
+                <button class="text-2xl text-gray-400 hover:text-gray-600">📌</button>
+              </div>
+
+              <div class="flex-1">
+                <!-- Mock Chart -->
+                <div class="h-80 bg-gradient-to-b from-gray-50 to-white rounded-xl border border-gray-200 p-6 relative">
+                  <!-- Chart placeholder with candlesticks -->
+                  <svg width="100%" height="100%" class="absolute inset-0" style="opacity: 0.7;">
+                    <!-- Trend line -->
+                    <polyline points="50,280 100,260 150,240 200,220 250,200 300,180 350,160 400,140 450,120 500,100 550,90 600,80"
+                      stroke="#3b82f6" stroke-width="2" fill="none"/>
+                    <!-- Moving average -->
+                    <polyline points="50,240 100,230 150,220 200,210 250,200 300,195 350,190 400,185 450,180 500,175 550,172 600,170"
+                      stroke="#a78bfa" stroke-width="2" fill="none" stroke-dasharray="5,5"/>
+                    <!-- Volume bars -->
+                    <rect x="50" y="300" width="8" height="40" fill="#d1d5db" opacity="0.5"/>
+                    <rect x="70" y="300" width="8" height="50" fill="#d1d5db" opacity="0.5"/>
+                    <rect x="90" y="300" width="8" height="35" fill="#d1d5db" opacity="0.5"/>
+                    <rect x="110" y="300" width="8" height="60" fill="#d1d5db" opacity="0.5"/>
+                    <rect x="130" y="300" width="8" height="45" fill="#d1d5db" opacity="0.5"/>
+                    <rect x="150" y="300" width="8" height="70" fill="#d1d5db" opacity="0.5"/>
+                    <rect x="170" y="300" width="8" height="40" fill="#10b981" opacity="0.7"/>
+                    <rect x="190" y="300" width="8" height="55" fill="#10b981" opacity="0.7"/>
+                    <rect x="210" y="300" width="8" height="65" fill="#ef4444" opacity="0.7"/>
+                    <rect x="230" y="300" width="8" height="50" fill="#10b981" opacity="0.7"/>
+                  </svg>
+
+                  <!-- Buy/Sell tags -->
+                  <div class="absolute top-20 left-32">
+                    <span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-semibold">BUY</span>
+                  </div>
+                  <div class="absolute top-40 right-20">
+                    <span class="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-semibold">EXIT</span>
+                  </div>
+                  <div class="absolute bottom-20 right-32">
+                    <span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-semibold">BUY</span>
+                  </div>
+
+                  <!-- Time labels -->
+                  <div class="absolute bottom-0 left-0 right-0 flex justify-between px-6 text-xs text-gray-500 pt-2">
+                    <span>09:15</span>
+                    <span>10:00</span>
+                    <span>11:00</span>
+                    <span>12:00</span>
+                    <span>13:00</span>
+                    <span>14:00</span>
+                    <span>15:00</span>
+                    <span>15:29:35</span>
+                  </div>
+                </div>
+
+                <!-- Chart Info Grid -->
+                <div class="grid grid-cols-4 gap-3 mt-4">
+                  <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                    <div class="text-xs text-gray-500 font-semibold uppercase">Open</div>
+                    <div class="text-lg font-bold text-gray-900 mt-1">24,215.30</div>
+                  </div>
+                  <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                    <div class="text-xs text-gray-500 font-semibold uppercase">High</div>
+                    <div class="text-lg font-bold text-gray-900 mt-1">24,365.80</div>
+                  </div>
+                  <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                    <div class="text-xs text-gray-500 font-semibold uppercase">Low</div>
+                    <div class="text-lg font-bold text-gray-900 mt-1">24,210.50</div>
+                  </div>
+                  <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                    <div class="text-xs text-gray-500 font-semibold uppercase">Volume</div>
+                    <div class="text-lg font-bold text-gray-900 mt-1">2.4M</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BOTTOM CARDS -->
+          <div class="grid grid-cols-2 gap-5 pt-1">
+            <!-- Live Execution Feed -->
+            <div class="bg-white rounded-2xl border border-gray-200 p-5">
+              <div class="flex gap-6 mb-3 border-b border-gray-200 pb-3">
+                <button class="text-xs font-semibold text-gray-500 hover:text-gray-900 pb-2 border-b-2 border-accent-orange">All</button>
+                <button class="text-xs font-semibold text-gray-500 hover:text-gray-900">Orders</button>
+                <button class="text-xs font-semibold text-gray-500 hover:text-gray-900">Trades</button>
+                <button class="text-xs font-semibold text-gray-500 hover:text-gray-900">Alerts</button>
+              </div>
+              <div class="space-y-3 text-sm">
+                <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span class="text-gray-600">10-28-35</span>
+                  <span class="font-semibold text-gray-900">RELIANCE</span>
+                  <span class="text-green-600 font-semibold">BUY</span>
+                  <span class="text-gray-600">50</span>
+                  <span class="text-gray-600">MKT</span>
+                  <span class="text-gray-600">₹ 2,464.10</span>
+                  <span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-semibold">FILLED</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span class="text-gray-600">10-28-11</span>
+                  <span class="font-semibold text-gray-900">INFY</span>
+                  <span class="text-red-600 font-semibold">SELL</span>
+                  <span class="text-gray-600">5</span>
+                  <span class="text-gray-600">LMT</span>
+                  <span class="text-gray-600">₹ 1,450.00</span>
+                  <span class="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-semibold">PENDING</span>
+                </div>
+                <div class="flex justify-between items-center py-2">
+                  <span class="text-gray-600">10-27-02</span>
+                  <span class="font-semibold text-gray-900">TCS</span>
+                  <span class="text-green-600 font-semibold">BUY</span>
+                  <span class="text-gray-600">8</span>
+                  <span class="text-gray-600">LMT</span>
+                  <span class="text-gray-600">₹ 3,950.00</span>
+                  <span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-semibold">FILLED</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Risk Overview -->
+            <div class="bg-white rounded-2xl border border-gray-200 p-5">
+              <h3 class="font-bold text-gray-900 mb-5">Risk Overview</h3>
+              <div class="space-y-4">
+                <div>
+                  <div class="flex justify-between text-sm mb-2">
+                    <span class="text-gray-600">Max Daily Loss</span>
+                    <span class="font-bold text-gray-900">₹ 2,50,000</span>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-sm mb-2">
+                    <span class="text-gray-600">Today's Loss</span>
+                    <span class="font-bold text-gray-900">₹ 45,230</span>
+                  </div>
+                </div>
+                <div>
+                  <div class="flex justify-between text-sm mb-2">
+                    <span class="text-gray-600">Drawdown</span>
+                    <span class="font-bold text-gray-900">13.45%</span>
+                  </div>
+                </div>
+                <div class="mt-8 flex justify-center">
+                  <div class="relative w-40 h-40">
+                    <svg viewBox="0 0 120 120" class="w-full h-full">
+                      <circle cx="60" cy="60" r="50" fill="none" stroke="#e5e7eb" stroke-width="8"/>
+                      <circle cx="60" cy="60" r="50" fill="none" stroke="#06b6d4" stroke-width="8"
+                        stroke-dasharray="78.5 314" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                      <div class="text-center">
+                        <div class="text-3xl font-bold text-gray-900">42%</div>
+                        <div class="text-xs text-gray-600">Risk Utilization</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN -->
+        <div class="w-96 space-y-5 flex-shrink-0">
+
+          <!-- Active Strategies -->
+          <div class="bg-white rounded-2xl border border-gray-200 p-5">
+            <div class="flex justify-between items-center mb-4 pb-3 border-b border-gray-200">
+              <h3 class="font-bold text-gray-900">Active Strategies</h3>
+              <button class="text-accent-orange text-sm font-semibold hover:underline">View all</button>
+            </div>
+            <div class="space-y-3">
+              <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-full bg-blue-200"></div>
+                  <div>
+                    <div class="text-sm font-semibold text-gray-900">Trend Hunter Pro</div>
+                    <div class="text-xs text-gray-500">LIVE</div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-bold text-green-600">▲ 2.49%</div>
+                </div>
+              </div>
+              <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-full bg-purple-200"></div>
+                  <div>
+                    <div class="text-sm font-semibold text-gray-900">Mean Reversion X</div>
+                    <div class="text-xs text-gray-500">LIVE</div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-bold text-green-600">▲ 1.13%</div>
+                </div>
+              </div>
+              <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-full bg-green-200"></div>
+                  <div>
+                    <div class="text-sm font-semibold text-gray-900">Breakout Alpha</div>
+                    <div class="text-xs text-gray-500">LIVE</div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-bold text-green-600">▲ 3.21%</div>
+                </div>
+              </div>
+              <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-full bg-cyan-200"></div>
+                  <div>
+                    <div class="text-sm font-semibold text-gray-900">VWAP Scalper</div>
+                    <div class="text-xs text-gray-500">PAPER</div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-bold text-red-600">▼ 2.84%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Market Watch -->
+          <div class="bg-white rounded-2xl border border-gray-200 p-5">
+            <div class="flex justify-between items-center mb-4 pb-3 border-b border-gray-200">
+              <h3 class="font-bold text-gray-900">Market Watch</h3>
+              <div class="text-3 tabs gap-2">
+                <button class="text-xs font-semibold text-accent-orange hover:underline">Indices</button>
+                <button class="text-xs font-semibold text-gray-500">Stocks</button>
+                <button class="text-xs font-semibold text-gray-500">Futures</button>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <div class="text-sm font-semibold text-gray-900">NIFTY 50</div>
+                  <svg width="60" height="20" viewBox="0 0 60 20" class="mt-1">
+                    <polyline points="0,15 10,10 20,8 30,12 40,5 50,10 60,3" stroke="#10b981" fill="none" stroke-width="1.5"/>
+                  </svg>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-bold text-gray-900">24,325.10</div>
+                  <div class="text-xs text-green-600">▲ 0.72%</div>
+                </div>
+              </div>
+              <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <div class="text-sm font-semibold text-gray-900">BANKNIFTY</div>
+                  <svg width="60" height="20" viewBox="0 0 60 20" class="mt-1">
+                    <polyline points="0,10 10,8 20,12 30,6 40,9 50,5 60,8" stroke="#10b981" fill="none" stroke-width="1.5"/>
+                  </svg>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-bold text-gray-900">52,163.42</div>
+                  <div class="text-xs text-green-600">▲ 1.21%</div>
+                </div>
+              </div>
+              <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <div class="text-sm font-semibold text-gray-900">SENSEX</div>
+                  <svg width="60" height="20" viewBox="0 0 60 20" class="mt-1">
+                    <polyline points="0,12 10,10 20,14 30,8 40,11 50,6 60,9" stroke="#10b981" fill="none" stroke-width="1.5"/>
+                  </svg>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-bold text-gray-900">80,123.42</div>
+                  <div class="text-xs text-green-600">▲ 0.68%</div>
+                </div>
+              </div>
+              <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <div class="text-sm font-semibold text-gray-900">FINNIFTY</div>
+                  <svg width="60" height="20" viewBox="0 0 60 20" class="mt-1">
+                    <polyline points="0,8 10,10 20,6 30,9 40,5 50,8 60,3" stroke="#ef4444" fill="none" stroke-width="1.5"/>
+                  </svg>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm font-bold text-gray-900">23,654.70</div>
+                  <div class="text-xs text-red-600">▼ 0.89%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hello Rohan Card -->
+          <div class="bg-white rounded-2xl border border-gray-200 p-5">
+            <div class="flex justify-between items-center mb-3">
+              <h3 class="font-bold text-gray-900">Hello, Rohan 👋</h3>
+              <button class="text-gray-400">⋮</button>
+            </div>
+            <div class="flex gap-2 border-b border-gray-200 pb-3 mb-3">
+              <button class="text-xs font-semibold text-accent-orange pb-2 border-b-2 border-accent-orange">Overview</button>
+              <button class="text-xs font-semibold text-gray-500 pb-2">Positions</button>
+              <button class="text-xs font-semibold text-gray-500 pb-2">Orders</button>
+              <button class="text-xs font-semibold text-gray-500 pb-2">Alerts</button>
+            </div>
+            <div class="space-y-3">
+              <div>
+                <div class="text-xs text-gray-500 mb-1">Total P&L</div>
+                <div class="text-2xl font-bold text-gray-900">₹ 1,34,567.90</div>
+                <div class="text-xs text-green-600 font-medium mt-1">▲ 2.45% Today</div>
+              </div>
+              <svg width="100%" height="80" viewBox="0 0 100 80" class="mt-2">
+                <polyline points="0,60 10,45 20,50 30,30 40,35 50,20 60,25 70,15 80,20 90,10 100,5"
+                  stroke="#FF8C42" fill="none" stroke-width="2"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

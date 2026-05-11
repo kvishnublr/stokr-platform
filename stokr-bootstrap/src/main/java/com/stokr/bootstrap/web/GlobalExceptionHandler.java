@@ -4,6 +4,7 @@ import com.stokr.common.api.ApiError;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.common.exception.StokrException;
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -13,14 +14,17 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final String SUPPRESSED_CLIENT_DISCONNECT_CODE = "CLIENT_DISCONNECT_SUPPRESSED";
 
     @ExceptionHandler(StokrException.class)
     public ResponseEntity<ApiResponse<Void>> handleStokr(StokrException ex) {
@@ -44,6 +48,14 @@ public class GlobalExceptionHandler {
         FieldError fe = ex.getBindingResult().getFieldError();
         String msg = fe == null ? "Validation failed" : fe.getField() + ": " + fe.getDefaultMessage();
         String cid = CorrelationIdHolder.get();
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.fail(msg, cid, new ApiError("VALIDATION", msg)));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        String cid = CorrelationIdHolder.get();
+        String msg = "Invalid request parameter: " + ex.getName();
         return ResponseEntity.badRequest()
                 .body(ApiResponse.fail(msg, cid, new ApiError("VALIDATION", msg)));
     }
@@ -78,11 +90,51 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(msg, cid, new ApiError("CONFLICT", msg)));
     }
 
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
+        // Client disconnected while response body was being written.
+        // This is expected during navigation/tab close and should not go to error monitoring.
+        logClientDisconnectSuppressed(ex);
+        return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneric(Exception ex) {
+        if (shouldSuppressMonitoring(ex)) {
+            logClientDisconnectSuppressed(ex);
+            return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+        }
         log.error("Unhandled error", ex);
         String cid = CorrelationIdHolder.get();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.fail("Internal server error", cid, new ApiError("INTERNAL", ex.getMessage())));
+    }
+
+    private boolean shouldSuppressMonitoring(Throwable ex) {
+        Throwable cursor = ex;
+        while (cursor != null) {
+            String name = cursor.getClass().getName();
+            if (name.endsWith("ClientAbortException") || name.contains("AsyncRequestNotUsableException")) {
+                return true;
+            }
+            String msg = cursor.getMessage();
+            if (msg != null) {
+                String normalized = msg.toLowerCase(Locale.ROOT);
+                if (normalized.contains("broken pipe") || normalized.contains("connection reset by peer")) {
+                    return true;
+                }
+            }
+            cursor = cursor.getCause();
+        }
+        return false;
+    }
+
+    private void logClientDisconnectSuppressed(Throwable ex) {
+        String cid = CorrelationIdHolder.get();
+        log.debug("[{}] {} cid={} message={}",
+                SUPPRESSED_CLIENT_DISCONNECT_CODE,
+                ex.getClass().getSimpleName(),
+                cid,
+                ex.getMessage());
     }
 }
