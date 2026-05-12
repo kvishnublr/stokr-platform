@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -42,7 +43,7 @@ public class AdminUserController {
     @GetMapping
     @Operation(summary = "Search and page registered users")
     public ApiResponse<PageResponse<AdminUserSummaryDto>> list(
-            @PageableDefault(size = 20, sort = "createdAt,desc") Pageable pageable,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             @RequestParam(value = "search", required = false) String search,
             @RequestParam(value = "enabled", required = false) Boolean enabled,
             @RequestParam(value = "role", required = false) String role,

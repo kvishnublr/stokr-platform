@@ -1,6 +1,9 @@
 package com.stokr.user.service;
 
+import com.stokr.auth.domain.AuthUser;
+import com.stokr.auth.repository.AuthUserRepository;
 import com.stokr.common.exception.NotFoundException;
+import com.stokr.common.exception.BadRequestException;
 import com.stokr.user.domain.UserProfile;
 import com.stokr.user.dto.UserProfileDto;
 import com.stokr.user.dto.UserProfileUpdateRequest;
@@ -9,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.ZoneId;
+import java.time.zone.ZoneRulesException;
 import java.util.UUID;
 
 @Service
@@ -16,6 +21,7 @@ import java.util.UUID;
 public class UserProfileService {
 
     private final UserProfileRepository profileRepository;
+    private final AuthUserRepository authUserRepository;
 
     @Transactional(readOnly = true)
     public UserProfileDto get(UUID userId) {
@@ -37,6 +43,8 @@ public class UserProfileService {
 
     @Transactional
     public UserProfileDto update(UUID userId, UserProfileUpdateRequest req) {
+        AuthUser user = authUserRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User not found"));
         UserProfile p = profileRepository.findByUserIdAndDeletedFalse(userId)
                 .orElseGet(() -> {
                     UserProfile np = new UserProfile();
@@ -44,29 +52,29 @@ public class UserProfileService {
                     return profileRepository.save(np);
                 });
         if (req.displayName() != null) {
-            p.setDisplayName(req.displayName());
+            String displayName = req.displayName().trim();
+            if (displayName.isEmpty()) {
+                throw new BadRequestException("Display name cannot be empty");
+            }
+            p.setDisplayName(displayName);
+            user.setDisplayName(displayName);
         }
         if (req.timezone() != null) {
-            p.setTimezone(req.timezone());
+            String timezone = req.timezone().trim();
+            if (timezone.isEmpty()) {
+                throw new BadRequestException("Timezone cannot be empty");
+            }
+            try {
+                ZoneId.of(timezone);
+            } catch (ZoneRulesException e) {
+                throw new BadRequestException("Invalid timezone: " + timezone);
+            }
+            p.setTimezone(timezone);
         }
         if (req.preferencesJson() != null) {
             p.setPreferencesJson(req.preferencesJson());
         }
-        if (req.subscriptionPlan() != null) {
-            p.setSubscriptionPlan(req.subscriptionPlan());
-        }
-        if (req.riskProfile() != null) {
-            p.setRiskProfile(req.riskProfile());
-        }
-        if (req.accountStatus() != null) {
-            p.setAccountStatus(req.accountStatus());
-        }
-        if (req.brokerAccountPlaceholder() != null) {
-            p.setBrokerAccountPlaceholder(req.brokerAccountPlaceholder());
-        }
-        if (req.tradingPreferencesJson() != null) {
-            p.setTradingPreferencesJson(req.tradingPreferencesJson());
-        }
+        authUserRepository.save(user);
         return toDto(profileRepository.save(p));
     }
 

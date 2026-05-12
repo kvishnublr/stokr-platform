@@ -10,14 +10,31 @@ export const api = axios.create({
 
 function parseAxiosMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
+    if (!err.response) {
+      const code = err.code;
+      const msg = (err.message || "").toLowerCase();
+      if (
+        code === "ERR_NETWORK" ||
+        code === "ECONNREFUSED" ||
+        msg.includes("network error") ||
+        msg.includes("connection refused") ||
+        msg.includes("failed to fetch")
+      ) {
+        return "Cannot reach the API. Start Spring Boot (stokr-bootstrap) on port 8080 so Vite can proxy /api from this dev server — or set STOKR_BACKEND_ORIGIN (or STOKR_API_PROXY_TARGET) when starting Vite if the API uses another URL.";
+      }
+    }
     const d = err.response?.data as {
       message?: string;
-      error?: { message?: string; detail?: string };
+      error?: { message?: string; detail?: string; code?: string };
     } | undefined;
-    if (d?.message) return String(d.message);
     const nested = d?.error?.detail ?? d?.error?.message;
     if (nested) return String(nested);
+    if (d?.message) return String(d.message);
     if (err.response?.status === 401) return "Session expired — please sign in again.";
+    const st = err.response?.status;
+    if (st && st >= 500) {
+      return `Server error (${st}). Is the API running on port 8080? Check backend logs for the real cause.`;
+    }
   }
   if (err instanceof Error) return err.message;
   return "Request failed";
@@ -47,7 +64,9 @@ api.interceptors.response.use(
       !url.includes("/api/auth/login") &&
       !url.includes("/api/auth/register") &&
       !url.includes("/api/auth/refresh") &&
-      !url.includes("/api/auth/verify-email")
+      !url.includes("/api/auth/verify-email") &&
+      !url.includes("/api/auth/forgot-password") &&
+      !url.includes("/api/auth/reset-password")
     ) {
       original._retry = true;
       const rt = localStorage.getItem("refreshToken");

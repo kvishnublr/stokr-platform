@@ -7,6 +7,7 @@ import com.stokr.common.exception.StokrException;
 import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -88,6 +89,15 @@ public class GlobalExceptionHandler {
         String msg = "Resource conflict";
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.fail(msg, cid, new ApiError("CONFLICT", msg)));
+    }
+
+    @ExceptionHandler(DataAccessException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataAccess(DataAccessException ex) {
+        log.error("Database access error", ex);
+        String cid = CorrelationIdHolder.get();
+        String msg = "Database unavailable or misconfigured — check PostgreSQL is running and DB_* matches your instance.";
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse.fail(msg, cid, new ApiError("DATABASE", msg)));
     }
 
     @ExceptionHandler(AsyncRequestNotUsableException.class)

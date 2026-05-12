@@ -118,12 +118,12 @@ export function AppShell({
 
           <main
             className={cn(
-              "relative min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6 lg:px-10",
+              "relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-8 sm:px-6 lg:px-10",
               isLight ? "bg-[linear-gradient(180deg,#f9fafb_0%,transparent_28%)]" : "bg-[linear-gradient(180deg,rgba(10,10,10,0.2)_0%,transparent_32%)]",
             )}
           >
             {banners ? <div className="mx-auto mb-8 max-w-[1560px] space-y-4">{banners}</div> : null}
-            <div className="mx-auto max-w-[1560px]">{children}</div>
+            <div className="mx-auto flex min-h-0 w-full max-w-[1560px] flex-1 flex-col">{children}</div>
           </main>
         </div>
       </div>

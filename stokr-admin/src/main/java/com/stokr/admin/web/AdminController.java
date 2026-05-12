@@ -89,4 +89,13 @@ public class AdminController {
                 CorrelationIdHolder.get()
         );
     }
+
+    /**
+     * Placeholder until a dedicated incident feed exists; keeps admin dashboard and Alert Center from 404ing.
+     */
+    @GetMapping("/alerts")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<List<Map<String, Object>>> alerts() {
+        return ApiResponse.ok(List.of(), CorrelationIdHolder.get());
+    }
 }

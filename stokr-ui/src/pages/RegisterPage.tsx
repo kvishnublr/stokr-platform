@@ -43,7 +43,7 @@ export function RegisterPage() {
     if (Object.keys(inlineErrors).length > 0) return;
     setLoading(true);
     try {
-      await api.post("/api/auth/register", {
+      const reg = await api.post<{ data?: { verificationEmailStatus?: string } }>("/api/auth/register", {
         displayName,
         username,
         email,
@@ -53,7 +53,16 @@ export function RegisterPage() {
         ...(telegramUsername.trim() ? { telegramUsername: telegramUsername.trim().replace(/^@/, "") } : {}),
         ...(whatsAppNumber.trim() ? { whatsAppNumber: whatsAppNumber.trim() } : {}),
       });
-      toast.success("Account created — sign in with your credentials.");
+      const vStatus = reg.data?.data?.verificationEmailStatus;
+      if (vStatus === "SENT") {
+        toast.success("Account created — check your inbox to verify your email, then sign in.");
+      } else if (vStatus === "NOT_CONFIGURED") {
+        toast.message("SMTP not configured. Use verification URL from logs.", { duration: 12_000 });
+      } else if (vStatus === "SEND_FAILED") {
+        toast.error("Account created, but the verification email could not be sent. Configure SMTP or use resend after fixing mail.");
+      } else {
+        toast.success("Account created — sign in with your credentials.");
+      }
       navigate("/login", { replace: true });
     } catch (err: unknown) {
       toast.error(parseAxiosMessage(err));

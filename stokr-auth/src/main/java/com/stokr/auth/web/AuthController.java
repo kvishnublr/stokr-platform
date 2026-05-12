@@ -5,6 +5,7 @@ import com.stokr.auth.dto.LoginRequest;
 import com.stokr.auth.dto.ForgotPasswordRequest;
 import com.stokr.auth.dto.RefreshRequest;
 import com.stokr.auth.dto.RegisterRequest;
+import com.stokr.auth.dto.ResendVerificationResponse;
 import com.stokr.auth.dto.ResetPasswordRequest;
 import com.stokr.auth.security.StokrUserDetails;
 import com.stokr.auth.service.AuthService;
@@ -63,12 +64,11 @@ public class AuthController {
     }
 
     @PostMapping("/resend-verification")
-    public ApiResponse<Void> resendVerification(@AuthenticationPrincipal StokrUserDetails principal) {
+    public ApiResponse<ResendVerificationResponse> resendVerification(@AuthenticationPrincipal StokrUserDetails principal) {
         if (principal == null) {
             throw new UnauthorizedException("Authentication required");
         }
-        authService.resendEmailVerification(principal.getId());
-        return ApiResponse.ok(cid());
+        return ApiResponse.ok(authService.resendEmailVerification(principal.getId()), cid());
     }
 
     @PostMapping("/logout")

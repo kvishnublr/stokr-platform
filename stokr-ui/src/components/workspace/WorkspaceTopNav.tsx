@@ -65,7 +65,9 @@ export function WorkspaceTopNav({
     setPaperMode(!liveApproved);
   }, [liveApproved]);
 
-  const label = displayName || username || "Trader";
+  const sanitizedDisplayName =
+    displayName && displayName !== "Platform Admin" && displayName !== "Super Admin" ? displayName : null;
+  const label = sanitizedDisplayName || username || "Trader";
   const tickers: TickerRow[] = marketWatchQuery.data ?? [];
 
   function runSearch() {
@@ -191,7 +193,9 @@ export function WorkspaceTopNav({
               className={cn(
                 "rounded-lg px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition",
                 !paperMode
-                  ? "bg-blue-600 text-white shadow-md shadow-blue-500/25"
+                  ? isLight
+                    ? "bg-orange-500 text-white shadow-md shadow-orange-500/25"
+                    : "bg-orange-500 text-white shadow-md shadow-orange-600/30"
                   : isLight
                     ? "text-neutral-500 hover:text-neutral-800"
                     : "text-neutral-500 hover:text-neutral-300",

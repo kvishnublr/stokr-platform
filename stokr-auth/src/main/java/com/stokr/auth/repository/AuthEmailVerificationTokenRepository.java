@@ -10,4 +10,6 @@ import java.util.UUID;
 public interface AuthEmailVerificationTokenRepository extends JpaRepository<AuthEmailVerificationToken, UUID> {
 
     Optional<AuthEmailVerificationToken> findByTokenHashAndUsedFalseAndExpiresAtAfter(String tokenHash, Instant now);
+
+    Optional<AuthEmailVerificationToken> findFirstByUser_IdAndDeletedFalseOrderByCreatedAtDesc(UUID userId);
 }

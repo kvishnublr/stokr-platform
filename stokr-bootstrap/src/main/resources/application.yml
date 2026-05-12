@@ -4,8 +4,27 @@ server:
 spring:
   application:
     name: stokr-platform
+  mail:
+    host: ${SPRING_MAIL_HOST:}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SPRING_MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${SPRING_MAIL_SMTP_STARTTLS:true}
+          connectiontimeout: ${SPRING_MAIL_SMTP_CONNECTION_TIMEOUT_MS:10000}
+          timeout: ${SPRING_MAIL_SMTP_TIMEOUT_MS:10000}
+          writetimeout: ${SPRING_MAIL_SMTP_WRITE_TIMEOUT_MS:10000}
+  # Load repo-root .env in IntelliJ / CLI without hand-copying env vars (KEY=value = Java properties).
+  # CWD is often repo root or stokr-bootstrap — both paths are tried, optional if missing.
+  config:
+    import: optional:file:../.env[.properties],optional:file:./.env[.properties]
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:stokr_platform}
+    # Defaults match .env.example. Docker Compose sets DB_USER/DB_PASSWORD for the api service.
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:root}
   jpa:
@@ -27,6 +46,10 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        # Set false in .env when RabbitMQ is not running locally (API + login without full stack).
+        auto-startup: ${STOKR_RABBIT_LISTENERS_ENABLED:false}
 
 management:
   endpoints:
@@ -37,6 +60,11 @@ management:
     health:
       probes:
         enabled: true
+  health:
+    rabbit:
+      # Off by default: without RabbitMQ, actuator health was opening TCP to :5672 and logging a full stack trace.
+      # Set true in .env / Docker when brokers and AMQP are part of your deployment.
+      enabled: ${STOKR_RABBIT_HEALTH_ENABLED:false}
 
 springdoc:
   api-docs:
@@ -50,6 +78,10 @@ stokr:
       max-failed-attempts: ${STOKR_AUTH_MAX_FAILED:5}
       lock-duration-minutes: ${STOKR_AUTH_LOCK_MINUTES:15}
       password-reset-hours-valid: ${STOKR_AUTH_PW_RESET_HOURS:1}
+    # When spring.mail.host is unset, verification URL is logged at WARN for local dev (override if UI runs on another port).
+    email-verification-base-url: ${STOKR_EMAIL_VERIFY_BASE_URL:http://localhost:5173}
+    # Minimum seconds between authenticated resend-verification requests (same user). 0 = disabled (local dev).
+    verification-resend-cooldown-seconds: ${STOKR_AUTH_VERIFY_RESEND_COOLDOWN:0}
   security:
     jwt:
       secret: ${JWT_SECRET:change-me-use-long-random-secret-for-development-only}
@@ -102,6 +134,8 @@ stokr:
       redirect-url: ${STOKR_ZERODHA_REDIRECT_URL:http://localhost:8080/api/broker/zerodha/callback}
       sync-enabled: ${STOKR_ZERODHA_SYNC_ENABLED:true}
       sync-ms: ${STOKR_ZERODHA_SYNC_MS:300000}
+      test-order-enabled: ${STOKR_ZERODHA_TEST_ORDER_ENABLED:false}
+      test-order-dry-run: ${STOKR_ZERODHA_TEST_ORDER_DRY_RUN:true}
   ui:
     public-base-url: ${STOKR_UI_PUBLIC_BASE_URL:http://localhost:5173}
 

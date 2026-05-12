@@ -4,6 +4,8 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { ShellLayout } from "./layout/ShellLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { OrdersPage } from "./pages/OrdersPage";
 import { TradesPage } from "./pages/TradesPage";
 import { ExecutionsPage } from "./pages/ExecutionsPage";
@@ -18,7 +20,6 @@ import { ResearchLeaderboardPage } from "./pages/ResearchLeaderboardPage";
 import { PaperTradingPage } from "./pages/PaperTradingPage";
 import { DebugToolsPage } from "./pages/DebugToolsPage";
 import { BrokersPage } from "./pages/BrokersPage";
-import { AdminOverviewPage } from "./pages/AdminOverviewPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminStrategiesPage } from "./pages/AdminStrategiesPage";
 import { AdminOmsMonitorPage } from "./pages/AdminOmsMonitorPage";
@@ -33,7 +34,8 @@ import { ErrorBoundary } from "./components/ds/ErrorBoundary";
 import { ThemeHtmlSync } from "./components/theme/ThemeHtmlSync";
 import { SyncedToaster } from "./components/theme/SyncedToaster";
 import { TraderDashboard } from "./pages/trader/TraderDashboard";
-import { AdminDashboard } from "./pages/admin/AdminDashboard";
+import { AdminOverviewPage } from "./pages/AdminOverviewPage";
+import { ProfilePage } from "./pages/ProfilePage";
 
 /** Heavy chart surface — defer initial JS until navigation. */
 const BacktestReplayPage = lazy(async () => {
@@ -50,25 +52,31 @@ function Protected({ children }: { children: ReactNode }) {
 }
 
 function AdminGate() {
-  const ok = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
+  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
+  const isTrader = useSessionStore((s) => s.hasTraderAccess());
+  const ok = isAdmin && !isTrader;
   if (!ok) {
     return <Navigate to="/dashboard" replace />;
   }
   return <Outlet />;
 }
 
-function TraderGate() {
+function TraderDashboardRoute() {
   const isTrader = useSessionStore((s) => s.hasTraderAccess());
   const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
-  if (!isTrader && !isAdmin) {
-    return <Navigate to="/login" replace />;
+  if (!isTrader) {
+    return <Navigate to={isAdmin ? "/admin" : "/login"} replace />;
   }
   return <TraderDashboard />;
 }
 
 function RootEntryRedirect() {
+  const isTrader = useSessionStore((s) => s.hasTraderAccess());
   const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
-  return <Navigate to={isAdmin ? "/admin" : "/dashboard"} replace />;
+  if (isTrader) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <Navigate to={isAdmin ? "/admin" : "/login"} replace />;
 }
 
 /** Kill-switch / emergency ops UI is not exposed to ROLE_TRADER. */
@@ -80,6 +88,16 @@ function AdminOpsGate() {
   return <AdminOpsPage />;
 }
 
+/** Broker Connect is trader-only; platform admins without trader role are redirected. */
+function TraderBrokerRoute() {
+  const hasTrader = useSessionStore((s) => s.hasTraderAccess());
+  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
+  if (!hasTrader) {
+    return <Navigate to={isAdmin ? "/admin" : "/dashboard"} replace />;
+  }
+  return <BrokersPage />;
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -88,25 +106,9 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
-        <Route
-          path="/dashboard"
-          element={
-            <Protected>
-              <TraderGate />
-            </Protected>
-          }
-        />
-        <Route
-          path="/admin"
-          element={
-            <Protected>
-              <AdminGate />
-            </Protected>
-          }
-        >
-          <Route index element={<AdminDashboard />} />
-        </Route>
         <Route
           path="/"
           element={
@@ -116,6 +118,7 @@ export default function App() {
           }
         >
           <Route index element={<RootEntryRedirect />} />
+          <Route path="dashboard" element={<TraderDashboardRoute />} />
           <Route path="watchlist" element={<Navigate to="/strategies" replace />} />
           <Route path="terminal" element={<TerminalPage />} />
           <Route path="onboarding" element={<OnboardingWizardPage />} />
@@ -144,7 +147,8 @@ export default function App() {
           </Route>
           <Route path="paper" element={<PaperTradingPage />} />
           <Route path="debug" element={<DebugToolsPage />} />
-          <Route path="brokers" element={<BrokersPage />} />
+          <Route path="brokers" element={<TraderBrokerRoute />} />
+          <Route path="profile" element={<ProfilePage />} />
           <Route path="admin" element={<AdminGate />}>
             <Route index element={<AdminOverviewPage />} />
             <Route path="users" element={<AdminUsersPage />} />

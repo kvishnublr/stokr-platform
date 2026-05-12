@@ -2,11 +2,23 @@ import { cn } from "../../lib/utils";
 import type { AdminDashboardData } from "../../services/dashboard/types";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useSessionStore } from "../../state/session";
 
 const nav = ["Dashboard", "Users", "Analytics", "Backtests", "Settings", "Security", "Reports", "Alerts"];
 
 export function AdminSidebar() {
   const navigate = useNavigate();
+  const displayName = useSessionStore((s) => s.displayName);
+  const username = useSessionStore((s) => s.username);
+  const sanitizedDisplayName =
+    displayName &&
+    displayName.trim().length > 0 &&
+    displayName !== "Platform Admin" &&
+    displayName !== "Platform Trader" &&
+    displayName !== "Super Admin"
+      ? displayName
+      : null;
+  const accountLabel = sanitizedDisplayName ?? username ?? "Admin";
   const handleNav = (n: string) => {
     if (n === "Dashboard") return navigate("/admin");
     if (n === "Users") return navigate("/admin/users");
@@ -40,7 +52,7 @@ export function AdminSidebar() {
         </div>
         <div className="rounded-lg bg-gray-50 p-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Admin Account</div>
-          <div className="mt-3 text-sm font-bold text-gray-900">Super Admin</div>
+          <div className="mt-3 text-sm font-bold text-gray-900">{accountLabel}</div>
         </div>
       </div>
     </div>

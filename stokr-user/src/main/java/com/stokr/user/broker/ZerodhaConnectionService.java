@@ -18,7 +18,10 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.client.RestClient;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -26,7 +29,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.net.URLEncoder;
 import java.util.HexFormat;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -55,8 +57,15 @@ public class ZerodhaConnectionService {
         row.setExpiresAt(Instant.now().plus(15, ChronoUnit.MINUTES));
         row.setConsumed(false);
         oauthStateRepository.save(row);
+        String callbackUrlWithState = UriComponentsBuilder
+                .fromUriString(zerodhaBrokerProperties.getRedirectUrl())
+                .replaceQueryParam("state", state)
+                .build()
+                .toUriString();
         String loginUrl = "https://kite.zerodha.com/connect/login?v=3&api_key="
                 + URLEncoder.encode(zerodhaBrokerProperties.getApiKey(), StandardCharsets.UTF_8)
+                + "&redirect_url="
+                + URLEncoder.encode(callbackUrlWithState, StandardCharsets.UTF_8)
                 + "&state="
                 + URLEncoder.encode(state, StandardCharsets.UTF_8);
         return new ZerodhaAuthorizeDto(loginUrl, row.getExpiresAt());
@@ -84,18 +93,19 @@ public class ZerodhaConnectionService {
 
         String sessionBody;
         try {
+            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+            form.add("api_key", zerodhaBrokerProperties.getApiKey());
+            form.add("request_token", requestToken);
+            form.add("checksum", checksum);
             sessionBody = http.post()
                     .uri("https://api.kite.trade/session/token")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(objectMapper.writeValueAsString(Map.of(
-                            "api_key", zerodhaBrokerProperties.getApiKey(),
-                            "request_token", requestToken,
-                            "checksum", checksum
-                    )))
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(form)
                     .retrieve()
                     .body(String.class);
         } catch (Exception e) {
-            log.warn("zerodha.session.exchange_failed {}", e.toString());
+            // Do not log response bodies or tokens; message only for ops triage.
+            log.warn("zerodha.session.exchange_failed: {}", e.getClass().getSimpleName());
             throw new BadRequestException("Could not complete Zerodha login — try again.");
         }
 
@@ -111,6 +121,11 @@ public class ZerodhaConnectionService {
                 throw new BadRequestException("Missing access_token from Zerodha");
             }
 
+            String encryptedToken = fieldCipher.encrypt(accessToken);
+            if (encryptedToken == null || encryptedToken.isBlank()) {
+                throw new BadRequestException("Token encryption failed");
+            }
+
             BrokerAccount account = brokerAccountRepository
                     .findFirstByUserIdAndVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(userId, "ZERODHA")
                     .orElseGet(BrokerAccount::new);
@@ -119,17 +134,19 @@ public class ZerodhaConnectionService {
             account.setStatus("CONNECTED");
             account.setHealthStatus("HEALTHY");
             account.setBrokerUserId(kiteUserId);
-            account.setAccessTokenEnc(fieldCipher.encrypt(accessToken));
+            account.setAccessTokenEnc(encryptedToken);
             account.setTokenExpiresAt(Instant.now().plus(12, ChronoUnit.HOURS));
             account.setLastSyncAt(Instant.now());
-            brokerAccountRepository.save(account);
+            BrokerAccount saved = brokerAccountRepository.save(account);
 
-            eventPublisher.publishEvent(new AuthAuditEvents.BrokerZerodhaConnected(userId, account.getId(), Instant.now()));
+            log.info("zerodha.oauth.complete userId={} brokerUserId={} encryptedTokenLength={}",
+                    userId, kiteUserId, encryptedToken.length());
+            eventPublisher.publishEvent(new AuthAuditEvents.BrokerZerodhaConnected(userId, saved.getId(), Instant.now()));
             return userId;
         } catch (BadRequestException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("zerodha.parse.failed {}", e.toString());
+            log.warn("zerodha.parse.failed {}", e.getClass().getSimpleName());
             throw new BadRequestException("Invalid Zerodha response");
         }
     }

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { AdminMain, AdminRightRail, AdminSidebar, AdminTopbar } from "../../components/admin/AdminDashboardBlocks";
 import type { AdminDashboardData } from "../../services/dashboard/types";
 import { api } from "../../api/client";
@@ -11,6 +11,9 @@ import { performLogout } from "../../services/auth/logout";
 export function AdminDashboard() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const accessToken = useSessionStore((s) => s.accessToken);
+  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
+  const isTrader = useSessionStore((s) => s.hasTraderAccess());
   const refreshToken = useSessionStore((s) => s.refreshToken);
   const query = useQuery({
     queryKey: ["admin-dashboard-v2"],
@@ -39,6 +42,13 @@ export function AdminDashboard() {
       ),
     };
   }, [query.data, search]);
+
+  if (!accessToken) {
+    return <Navigate to="/login" replace />;
+  }
+  if (!isAdmin || isTrader) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   if (query.isError) {
     return (

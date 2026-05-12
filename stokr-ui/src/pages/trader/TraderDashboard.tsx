@@ -1,14 +1,19 @@
-import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Navigate } from "react-router-dom";
 import { TraderDashboardLayout } from "../../components/trader/TraderDashboardLayout";
-import { TraderMain, TraderRightRail, TraderSidebar, TraderTopbar } from "../../components/trader/TraderDashboardBlocks";
+import { TraderMain, TraderRightRail } from "../../components/trader/TraderDashboardBlocks";
 import { fetchTraderDashboardData } from "../../services/dashboard/traderDashboardService";
-import { useDashboardRealtime } from "../../services/dashboard/useDashboardRealtime";
 import { useSessionStore } from "../../state/session";
 
 export function TraderDashboard() {
-  const displayName = useSessionStore((s) => s.displayName) ?? useSessionStore((s) => s.username) ?? "Trader";
-  const realtime = useDashboardRealtime(true);
+  const accessToken = useSessionStore((s) => s.accessToken);
+  const hasTraderAccess = useSessionStore((s) => s.hasTraderAccess());
+  if (!accessToken) {
+    return <Navigate to="/login" replace />;
+  }
+  if (!hasTraderAccess) {
+    return <Navigate to="/login" replace />;
+  }
   const query = useQuery({
     queryKey: ["trader-dashboard-v2"],
     queryFn: fetchTraderDashboardData,
@@ -17,10 +22,6 @@ export function TraderDashboard() {
   });
 
   const data = query.data;
-  const realtimeConnected = useMemo(() => {
-    const t = realtime.lastOrderEventAt ?? realtime.lastPnlEventAt ?? realtime.lastStrategyEventAt;
-    return Boolean(t && Date.now() - t < 45_000);
-  }, [realtime]);
 
   if (query.isError) {
     return (
@@ -37,18 +38,6 @@ export function TraderDashboard() {
   }
 
   return (
-    <TraderDashboardLayout
-      sidebar={<TraderSidebar portfolio={data.portfolio} />}
-      topbar={
-        <TraderTopbar
-          name={displayName}
-          realtimeConnected={realtimeConnected}
-          unread={data.notifications.unread}
-          marketWatch={data.marketWatch}
-        />
-      }
-      main={<TraderMain data={data} />}
-      rightRail={<TraderRightRail data={data} />}
-    />
+    <TraderDashboardLayout main={<TraderMain data={data} />} rightRail={<TraderRightRail data={data} />} />
   );
 }

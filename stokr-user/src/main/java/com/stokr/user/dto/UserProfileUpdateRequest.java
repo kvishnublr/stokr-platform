@@ -1,17 +1,13 @@
 package com.stokr.user.dto;
 
-import com.stokr.user.domain.AccountStatus;
-import com.stokr.user.domain.RiskProfile;
-import com.stokr.user.domain.SubscriptionPlan;
+import jakarta.validation.constraints.Size;
 
 public record UserProfileUpdateRequest(
+        @Size(max = 200, message = "Display name cannot exceed 200 chars")
         String displayName,
+        @Size(max = 64, message = "Timezone cannot exceed 64 chars")
         String timezone,
-        String preferencesJson,
-        SubscriptionPlan subscriptionPlan,
-        RiskProfile riskProfile,
-        AccountStatus accountStatus,
-        String brokerAccountPlaceholder,
-        String tradingPreferencesJson
+        @Size(max = 5000, message = "Preferences payload too large")
+        String preferencesJson
 ) {
 }

@@ -50,4 +50,13 @@ public final class AuthAuditEvents {
 
     public record BrokerZerodhaConnected(UUID userId, UUID brokerAccountId, Instant at) {
     }
+
+    public record BrokerDisconnected(UUID userId, UUID brokerAccountId, Instant at) {
+    }
+
+    public record BrokerTestConnection(UUID userId, UUID brokerAccountId, boolean ok, Instant at) {
+    }
+
+    public record BrokerTestOrder(UUID userId, UUID brokerAccountId, String orderId, boolean dryRun, Instant at) {
+    }
 }

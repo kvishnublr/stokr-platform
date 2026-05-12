@@ -22,7 +22,7 @@ function ClockTick({ className }: { className?: string }) {
 
 export function TraderAccountCard({ equityDisplay, marginDisplay }: { equityDisplay: string; marginDisplay?: string }) {
   const isLight = useUiThemeStore((s) => s.mode === "light");
-  const margin = marginDisplay ?? "₹ 4,12,980.35";
+  const margin = marginDisplay ?? "—";
 
   return (
     <div className={cn("mt-auto border-t pt-4", isLight ? "border-neutral-200" : "border-white/[0.06]")}>

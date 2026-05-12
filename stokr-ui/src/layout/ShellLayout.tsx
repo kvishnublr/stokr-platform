@@ -12,6 +12,7 @@ import {
   Shield,
   Star,
   TrendingUp,
+  UserRound,
   Users,
   Wallet,
 } from "lucide-react";
@@ -40,6 +41,7 @@ export function ShellLayout() {
   const emailVerified = useSessionStore((s) => s.emailVerified);
   const onboardingComplete = useSessionStore((s) => s.onboardingComplete);
   const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
+  const hasTraderAccess = useSessionStore((s) => s.hasTraderAccess());
   const canKillOpsConsole = useSessionStore((s) => s.canAccessKillSwitchOperations());
   const liveTradingApproved = useSessionStore((s) => s.liveTradingApproved);
   const refreshToken = useSessionStore((s) => s.refreshToken);
@@ -48,8 +50,34 @@ export function ShellLayout() {
   const feed = useNotificationStore((s) => s.items);
   const markRead = useNotificationStore((s) => s.markRead);
   const clearFeed = useNotificationStore((s) => s.clear);
+  const patchProfileFlags = useSessionStore((s) => s.patchProfileFlags);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [resendingVerify, setResendingVerify] = useState(false);
+
+  /** Keep verification/onboarding flags aligned with DB (JWT does not carry them; localStorage can go stale after verify-email). */
+  const onboardingSync = useQuery({
+    queryKey: ["trader-onboarding-sync", userId],
+    queryFn: async () => {
+      const res = await api.get("/api/trader/me/onboarding-summary");
+      return res.data?.data as Record<string, unknown> | undefined;
+    },
+    enabled: Boolean(accessToken && userId),
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    if (!onboardingSync.isSuccess || !onboardingSync.data) return;
+    const d = onboardingSync.data;
+    const wv = d.whatsAppVerified ?? (d as { whatsappVerified?: boolean }).whatsappVerified;
+    patchProfileFlags({
+      emailVerified: Boolean(d.emailVerified),
+      telegramVerified: Boolean(d.telegramVerified),
+      whatsAppVerified: Boolean(wv),
+      onboardingComplete: Boolean(d.onboardingComplete),
+      liveTradingApproved: Boolean(d.liveTradingApproved),
+    });
+  }, [onboardingSync.isSuccess, onboardingSync.data, patchProfileFlags]);
 
   const portfolioSnapshot = useQuery({
     queryKey: ["sidebar-portfolio-snapshot"],
@@ -85,12 +113,13 @@ export function ShellLayout() {
 
       return { equityValue, marginValue };
     },
+    enabled: hasTraderAccess,
     refetchInterval: 30000,
   });
 
   const mainLinks: SidebarLink[] = useMemo(
     () => [
-      { to: "/", end: true, label: "Dashboard", icon: LayoutDashboard },
+      { to: "/dashboard", end: true, label: "Dashboard", icon: LayoutDashboard },
       { to: "/strategies", label: "Strategies", icon: Wallet },
       { to: "/positions", label: "Positions", icon: Layers },
       { to: "/orders", label: "Orders", icon: TrendingUp },
@@ -102,13 +131,15 @@ export function ShellLayout() {
     [],
   );
 
-  const integrationLinks: SidebarLink[] = useMemo(
-    () => [
-      { to: "/brokers", label: "Broker Connect", icon: Shield },
-      { to: "/terminal", label: "Alerts & notifications", icon: MessageSquare },
-    ],
-    [],
-  );
+  const integrationLinks: SidebarLink[] = useMemo(() => {
+    const links: SidebarLink[] = [];
+    if (hasTraderAccess) {
+      links.push({ to: "/brokers", label: "Broker Connect", icon: Shield });
+      links.push({ to: "/profile", label: "Profile", icon: UserRound });
+    }
+    links.push({ to: "/terminal", label: "Alerts & notifications", icon: MessageSquare });
+    return links;
+  }, [hasTraderAccess]);
 
   const adminLinks: SidebarLink[] = useMemo(() => {
     const core: SidebarLink[] = [
@@ -126,17 +157,47 @@ export function ShellLayout() {
   async function resendVerificationEmail() {
     setResendingVerify(true);
     try {
-      await api.post("/api/auth/resend-verification");
-      toast.success("Verification email sent — check your inbox.");
+      const res = await api.post<{ data?: { status?: string } }>("/api/auth/resend-verification");
+      const status = res.data?.data?.status;
+      if (status === "SENT") {
+        toast.success("Verification email sent — check your inbox.");
+      } else if (status === "NOT_CONFIGURED") {
+        toast.message("SMTP not configured. Use verification URL from logs.", { duration: 12_000 });
+      } else if (status === "SEND_FAILED") {
+        toast.error("Verification email could not be sent. Try again later or check SMTP settings.");
+      } else {
+        toast.message("Verification request completed.");
+      }
     } catch (e: unknown) {
-      toast.error(parseAxiosMessage(e));
+      const msg = parseAxiosMessage(e);
+      if (msg.toLowerCase().includes("already verified")) {
+        try {
+          const res = await api.get("/api/trader/me/onboarding-summary");
+          const d = res.data?.data as Record<string, unknown> | undefined;
+          if (d) {
+            const wv = d.whatsAppVerified ?? (d as { whatsappVerified?: boolean }).whatsappVerified;
+            patchProfileFlags({
+              emailVerified: Boolean(d.emailVerified),
+              telegramVerified: Boolean(d.telegramVerified),
+              whatsAppVerified: Boolean(wv),
+              onboardingComplete: Boolean(d.onboardingComplete),
+              liveTradingApproved: Boolean(d.liveTradingApproved),
+            });
+          }
+        } catch {
+          /* ignore */
+        }
+        toast.success("Email already verified — profile synced.");
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setResendingVerify(false);
     }
   }
 
   useEffect(() => {
-    if (!accessToken || !userId) return;
+    if (!accessToken || !userId || !hasTraderAccess) return;
     const off = connectStomp(accessToken, userId, {
       onOrder: (m) => {
         try {
@@ -171,7 +232,7 @@ export function ShellLayout() {
       },
     });
     return () => off();
-  }, [accessToken, userId, pushNotification]);
+  }, [accessToken, userId, hasTraderAccess, pushNotification]);
 
   async function logout() {
     await performLogout({
@@ -182,24 +243,30 @@ export function ShellLayout() {
 
   const sidebar = (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SidebarBrand title="Stokr Platform" subtitle="Trader workspace" />
+      <SidebarBrand title="Stokr Platform" subtitle={hasTraderAccess ? "Trader workspace" : "Console"} />
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1 [-ms-overflow-style:none] [scrollbar-width:thin]">
-        <SidebarSection title="MAIN" first>
-          <SidebarLinks links={mainLinks} />
-        </SidebarSection>
-        <SidebarSection title="INTEGRATIONS">
-          <SidebarLinks links={integrationLinks} />
-        </SidebarSection>
+        {hasTraderAccess ? (
+          <>
+            <SidebarSection title="MAIN" first>
+              <SidebarLinks links={mainLinks} />
+            </SidebarSection>
+            <SidebarSection title="INTEGRATIONS">
+              <SidebarLinks links={integrationLinks} />
+            </SidebarSection>
+          </>
+        ) : null}
         {isAdmin ? (
           <SidebarSection title="Admin console">
             <SidebarLinks links={adminLinks} />
           </SidebarSection>
         ) : null}
       </div>
-      <TraderAccountCard
-        equityDisplay={portfolioSnapshot.data?.equityValue ?? "—"}
-        marginDisplay={portfolioSnapshot.data?.marginValue ?? "—"}
-      />
+      {hasTraderAccess ? (
+        <TraderAccountCard
+          equityDisplay={portfolioSnapshot.data?.equityValue ?? "—"}
+          marginDisplay={portfolioSnapshot.data?.marginValue ?? "—"}
+        />
+      ) : null}
       <SidebarAppearanceRow />
     </div>
   );

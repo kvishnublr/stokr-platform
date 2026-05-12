@@ -1,21 +1,74 @@
 import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { ExternalLink, MessageCircle, ShieldCheck } from "lucide-react";
+import {
+  Activity,
+  ExternalLink,
+  Landmark,
+  MessageCircle,
+  PlugZap,
+  RefreshCw,
+  ShieldCheck,
+  Unplug,
+  Wrench,
+} from "lucide-react";
 import { toast } from "sonner";
+import {
+  BROKER_STATUS_QUERY_KEY,
+  fetchBrokerStatus,
+  fetchZerodhaConnectUrl,
+  postBrokerDisconnect,
+  postBrokerTestConnection,
+  postBrokerTestOrder,
+  validateTestTradingsymbol,
+  type BrokerTestConnectionDto,
+  type BrokerTestOrderDto,
+} from "../api/broker";
 import { api, parseAxiosMessage } from "../api/client";
+import { cn } from "../lib/utils";
 import { useSessionStore } from "../state/session";
+import { useUiThemeStore } from "../state/uiTheme";
 
 export function BrokersPage() {
+  const qc = useQueryClient();
+  const isLight = useUiThemeStore((s) => s.mode === "light");
   const emailVerified = useSessionStore((s) => s.emailVerified);
   const [tgLink, setTgLink] = useState<string | null>(null);
-  const [zerodhaUrl, setZerodhaUrl] = useState<string | null>(null);
+  const [tradeOpen, setTradeOpen] = useState(false);
+  const [symbol, setSymbol] = useState("INFY");
+  const [qty, setQty] = useState(1);
+  const [exchange, setExchange] = useState<"NSE" | "BSE">("NSE");
+  const [side, setSide] = useState<"BUY" | "SELL">("BUY");
+  const [product, setProduct] = useState<"CNC" | "MIS">("CNC");
+  const [lastTestOrder, setLastTestOrder] = useState<BrokerTestOrderDto | null>(null);
+  const [connectingOAuth, setConnectingOAuth] = useState(false);
+
+  const statusQuery = useQuery({
+    queryKey: BROKER_STATUS_QUERY_KEY,
+    queryFn: fetchBrokerStatus,
+    retry: 1,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: (q) => (q.state.error ? 5000 : false),
+  });
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const z = params.get("zerodha");
-    if (z === "ok") toast.success("Zerodha session linked");
-    if (z === "error") toast.error("Zerodha linking failed — try again");
-  }, []);
+    if (z !== "ok" && z !== "error") return;
+
+    if (z === "ok") {
+      toast.success("Zerodha session linked");
+      void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
+    } else {
+      toast.error("Zerodha linking failed — try again");
+    }
+
+    params.delete("zerodha");
+    const rest = params.toString();
+    const path = `${window.location.pathname}${rest ? `?${rest}` : ""}`;
+    window.history.replaceState(null, "", path);
+  }, [qc]);
 
   async function requestTelegramLink() {
     try {
@@ -31,74 +84,379 @@ export function BrokersPage() {
     }
   }
 
+  const testConnection = useMutation({
+    mutationFn: postBrokerTestConnection,
+    onSuccess: (data: BrokerTestConnectionDto) => {
+      void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
+      if (data.ok) toast.success("Broker connection OK");
+      else toast.error(data.message || "Test connection failed");
+    },
+    onError: (e) => toast.error(parseAxiosMessage(e)),
+  });
+
+  const disconnect = useMutation({
+    mutationFn: postBrokerDisconnect,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
+      setLastTestOrder(null);
+      toast.success("Broker disconnected");
+    },
+    onError: (e) => toast.error(parseAxiosMessage(e)),
+  });
+
+  const testOrder = useMutation({
+    mutationFn: () =>
+      postBrokerTestOrder({
+        variety: "REGULAR",
+        exchange,
+        tradingsymbol: symbol.trim().toUpperCase(),
+        side,
+        quantity: qty,
+        orderType: "MARKET",
+        product,
+      }),
+    onSuccess: (data: BrokerTestOrderDto) => {
+      setLastTestOrder(data);
+      void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
+      if (data.dryRun) toast.message("Dry run — no order sent");
+      else if (data.orderId) toast.success(`Order placed: ${data.orderId}`);
+      else toast.error(data.message || "Order rejected");
+    },
+    onError: (e) => toast.error(parseAxiosMessage(e)),
+  });
+
   async function openZerodhaConnect() {
+    if (connectingOAuth) return;
+    setConnectingOAuth(true);
     try {
-      const res = await api.get("/api/trader/broker/zerodha/authorize-url");
-      const payload = res.data?.data as { authorizeUrl?: string } | undefined;
-      const url = payload?.authorizeUrl;
-      if (url) {
-        setZerodhaUrl(url);
-        window.location.href = url;
-      }
+      const url = await fetchZerodhaConnectUrl();
+      window.location.href = url;
     } catch (e: unknown) {
       toast.error(parseAxiosMessage(e));
+      setConnectingOAuth(false);
     }
   }
 
+  function closeTradeModal() {
+    setTradeOpen(false);
+    setLastTestOrder(null);
+  }
+
+  function openTradeModal() {
+    setLastTestOrder(null);
+    setTradeOpen(true);
+  }
+
+  function fireTestTrade() {
+    const symErr = validateTestTradingsymbol(symbol);
+    if (symErr) {
+      toast.error(symErr);
+      return;
+    }
+    const q = Math.floor(Number(qty));
+    if (!Number.isFinite(q) || q < 1 || q > 5) {
+      toast.error("Quantity must be an integer from 1 to 5.");
+      return;
+    }
+    if (testOrder.isPending) return;
+    testOrder.mutate();
+  }
+
+  const st = statusQuery.data;
+  const loading = statusQuery.isLoading;
+  const needsReconnect = Boolean(st?.connected && !st?.tokenValid);
+  const sampleTradeDisabledReason =
+    st?.testTradeDisabledReason ?? (!st?.connected ? "Connect Zerodha first" : null);
+  const canUseSampleTrade = Boolean(st?.connected && st?.tokenValid && !sampleTradeDisabledReason);
+  const marginHint =
+    st?.marginSummary ??
+    (st?.connected ? "Run test connection to refresh funds snapshot." : "—");
+
+  const cardShell = isLight
+    ? "rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6"
+    : "rounded-2xl border border-neutral-800 bg-neutral-900/50 p-5 sm:p-6";
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 pb-8">
       <div>
-        <div className="text-xl font-semibold tracking-tight">Broker connections</div>
-        <p className="mt-2 max-w-2xl text-sm text-neutral-400">
+        <div className={cn("text-xl font-semibold tracking-tight", isLight ? "text-neutral-900" : "text-white")}>
+          Broker connections
+        </div>
+        <p className={cn("mt-2 max-w-2xl text-sm", isLight ? "text-neutral-600" : "text-neutral-400")}>
           Connect Zerodha via Kite OAuth (encrypted tokens server-side). Telegram verification is required before LIVE
           routing.
         </p>
       </div>
+
+      {needsReconnect ? (
+        <div
+          className={cn(
+            "flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+            isLight
+              ? "border-amber-200 bg-amber-50 text-amber-950"
+              : "border-amber-500/35 bg-amber-500/10",
+          )}
+          role="status"
+        >
+          <p className={cn("text-sm", isLight ? "text-amber-950/95" : "text-amber-100/95")}>
+            Your saved Zerodha session is missing or expired. Reconnect to refresh your token; then run{" "}
+            <span className={cn("font-medium", isLight ? "text-amber-950" : "text-white")}>Test connection</span> to verify
+            profile and margins.
+          </p>
+          {emailVerified ? (
+            <button
+              type="button"
+              disabled={connectingOAuth}
+              onClick={() => void openZerodhaConnect()}
+              className="shrink-0 rounded-lg bg-amber-500/90 px-3 py-2 text-xs font-semibold text-neutral-950 hover:bg-amber-400 disabled:opacity-50"
+            >
+              Reconnect Zerodha
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <motion.div
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         className="grid gap-6 lg:grid-cols-2"
       >
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-900/50 p-6">
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <ShieldCheck className="h-4 w-4 text-emerald-400" />
-            Zerodha (Kite Connect)
+        <div className={cardShell}>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className={cn(
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold",
+                  isLight ? "bg-[#387ed1]/15 text-[#2563eb]" : "bg-[#387ed1]/20 text-[#9ec5fe]",
+                )}
+              >
+                Z
+              </div>
+              <div className="min-w-0">
+                <div
+                  className={cn(
+                    "flex items-center gap-2 text-sm font-semibold",
+                    isLight ? "text-neutral-900" : "text-white",
+                  )}
+                >
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-500" />
+                  Zerodha (Kite Connect)
+                </div>
+                <p className={cn("mt-1 break-words text-xs", isLight ? "text-neutral-600" : "text-neutral-500")}>
+                  OAuth redirect; callback{" "}
+                  <code
+                    className={cn(
+                      "rounded px-1 py-0.5 font-mono text-[11px]",
+                      isLight ? "bg-neutral-100 text-neutral-800" : "text-neutral-300",
+                    )}
+                  >
+                    /api/broker/zerodha/callback
+                  </code>
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+              {loading ? (
+                <span className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-500")}>Loading…</span>
+              ) : (
+                <div
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                    st?.connected && st?.tokenValid
+                      ? isLight
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-emerald-500/15 text-emerald-200"
+                      : st?.connected
+                        ? isLight
+                          ? "bg-amber-100 text-amber-900"
+                          : "bg-amber-500/15 text-amber-100"
+                        : isLight
+                          ? "bg-neutral-100 text-neutral-600"
+                          : "bg-neutral-800 text-neutral-400",
+                  )}
+                >
+                  <Activity className="h-3 w-3" />
+                  {st?.connected ? (st.tokenValid ? "Connected" : "Reconnect") : "Disconnected"}
+                </div>
+              )}
+              <button
+                type="button"
+                title="Refresh broker status"
+                disabled={statusQuery.isFetching || statusQuery.isPending}
+                onClick={() => void statusQuery.refetch()}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold disabled:opacity-40",
+                  isLight
+                    ? "border-neutral-200 bg-white text-neutral-800 hover:bg-neutral-50"
+                    : "border-neutral-600 text-neutral-200 hover:bg-neutral-800",
+                )}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${statusQuery.isFetching ? "animate-spin" : ""}`} />
+                Retry
+              </button>
+            </div>
           </div>
-          <p className="mt-2 text-xs text-neutral-500">
-            Uses OAuth redirect to Zerodha; callback lands on <code className="text-neutral-300">/api/broker/zerodha/callback</code>{" "}
-            then returns you here.
-          </p>
+
+          <div
+            className={cn(
+              "mt-5 grid gap-3 text-xs sm:grid-cols-2",
+              isLight ? "text-neutral-700" : "text-neutral-400",
+            )}
+          >
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-wide text-neutral-500">Account</div>
+              <div className={cn("mt-0.5 truncate", isLight ? "text-neutral-900" : "text-neutral-200")}>
+                {st?.profileUserName ?? "—"}
+              </div>
+              <div className="truncate text-neutral-500">{st?.profileEmail ?? ""}</div>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-wide text-neutral-500">Broker user id</div>
+              <div
+                className={cn(
+                  "mt-0.5 break-all font-mono text-[11px]",
+                  isLight ? "text-neutral-900" : "text-neutral-200",
+                )}
+              >
+                {st?.accountId ?? "—"}
+              </div>
+            </div>
+            <div className="flex min-w-0 items-start gap-2 sm:col-span-2">
+              <Landmark className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-500" />
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-wide text-neutral-500">Funds snapshot</div>
+                <div className={cn("mt-0.5 break-words", isLight ? "text-neutral-800" : "text-neutral-200")}>
+                  {marginHint}
+                </div>
+              </div>
+            </div>
+            <div className="sm:col-span-2">
+              <div className="text-[10px] uppercase tracking-wide text-neutral-500">Last sync / token</div>
+              <div className={cn("mt-0.5 flex flex-wrap items-baseline gap-x-1 break-words", isLight ? "text-neutral-800" : "text-neutral-200")}>
+                <span>{formatInstant(st?.lastSyncAt ?? null)}</span>
+                <span className="text-neutral-500">·</span>
+                <span
+                  className={
+                    st?.tokenValid
+                      ? isLight
+                        ? "text-emerald-700"
+                        : "text-emerald-300/90"
+                      : isLight
+                        ? "text-amber-700"
+                        : "text-amber-200/90"
+                  }
+                >
+                  {st?.tokenValid ? "token valid" : "token invalid / expired"}
+                </span>
+                <span className="text-neutral-500">· health {st?.health ?? "—"}</span>
+              </div>
+            </div>
+          </div>
+
           {!emailVerified ? (
-            <p className="mt-4 text-xs text-amber-200/90">Verify email first (banner on every page).</p>
+            <p className={cn("mt-4 text-xs", isLight ? "text-amber-800" : "text-amber-200/90")}>
+              Verify email first (banner on every page).
+            </p>
           ) : (
-            <button
-              type="button"
-              onClick={() => void openZerodhaConnect()}
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
-            >
-              Connect Zerodha
-              <ExternalLink className="h-4 w-4" />
-            </button>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={connectingOAuth}
+                onClick={() => void openZerodhaConnect()}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {connectingOAuth ? "Redirecting…" : st?.connected ? "Reconnect Zerodha" : "Connect Zerodha"}
+                <ExternalLink className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                disabled={!st?.connected || !st?.tokenValid || testConnection.isPending}
+                title={!st?.connected ? "Connect Zerodha first" : !st?.tokenValid ? "Reconnect Zerodha first" : undefined}
+                onClick={() => testConnection.mutate()}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40",
+                  isLight
+                    ? "border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50"
+                    : "border-neutral-600 text-neutral-100 hover:bg-neutral-800",
+                )}
+              >
+                <Wrench className="h-4 w-4" />
+                Test connection
+              </button>
+              <button
+                type="button"
+                disabled={!canUseSampleTrade}
+                title={sampleTradeDisabledReason ?? undefined}
+                onClick={openTradeModal}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40",
+                  isLight
+                    ? "border-sky-300 bg-sky-50 text-sky-900 hover:bg-sky-100"
+                    : "border-sky-500/40 text-sky-100 hover:bg-sky-500/10",
+                )}
+              >
+                <PlugZap className="h-4 w-4" />
+                Sample trade
+              </button>
+              <button
+                type="button"
+                disabled={!st?.connected || disconnect.isPending}
+                onClick={() => disconnect.mutate()}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40",
+                  isLight
+                    ? "border-red-200 bg-white text-red-700 hover:bg-red-50"
+                    : "border-red-500/30 text-red-200/90 hover:bg-red-500/10",
+                )}
+              >
+                <Unplug className="h-4 w-4" />
+                Disconnect
+              </button>
+            </div>
           )}
-          {zerodhaUrl ? (
-            <p className="mt-3 break-all text-[11px] text-neutral-600">Last URL: {zerodhaUrl}</p>
+
+          <p className={cn("mt-3 text-xs", isLight ? "text-neutral-600" : "text-neutral-500")}>
+            Sample trade is for tiny validation orders (qty 1-5).{" "}
+            {st?.testOrderDryRun
+              ? "Current mode is DRY RUN, so no live order is sent."
+              : "Current mode can place a real order on Zerodha."}
+            {sampleTradeDisabledReason ? ` ${sampleTradeDisabledReason}.` : ""}
+          </p>
+
+          {statusQuery.isError ? (
+            <div className={cn("mt-3 flex flex-wrap items-center gap-2 text-xs", isLight ? "text-red-700" : "text-red-300/90")}>
+              <span>{parseAxiosMessage(statusQuery.error)}</span>
+              <button
+                type="button"
+                className={cn("font-semibold underline", isLight ? "text-red-800" : "text-red-200")}
+                onClick={() => void statusQuery.refetch()}
+              >
+                Retry
+              </button>
+            </div>
           ) : null}
         </div>
 
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-900/50 p-6">
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <MessageCircle className="h-4 w-4 text-sky-400" />
+        <div className={cardShell}>
+          <div
+            className={cn("flex items-center gap-2 text-sm font-semibold", isLight ? "text-neutral-900" : "text-white")}
+          >
+            <MessageCircle className="h-4 w-4 text-sky-500" />
             Telegram verification
           </div>
-          <p className="mt-2 text-xs text-neutral-500">
+          <p className={cn("mt-2 text-xs", isLight ? "text-neutral-600" : "text-neutral-500")}>
             Set your @username under profile contact, then generate a deep link and tap{" "}
-            <span className="text-neutral-300">Start</span> in the bot.
+            <span className={cn("font-medium", isLight ? "text-neutral-900" : "text-neutral-300")}>Start</span> in the bot.
           </p>
           <button
             type="button"
             onClick={() => void requestTelegramLink()}
-            className="mt-4 rounded-lg border border-sky-500/40 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-500/10"
+            className={cn(
+              "mt-4 rounded-lg border px-4 py-2 text-sm font-semibold",
+              isLight
+                ? "border-sky-300 bg-sky-50 text-sky-900 hover:bg-sky-100"
+                : "border-sky-500/40 text-sky-100 hover:bg-sky-500/10",
+            )}
           >
             Get Telegram link
           </button>
@@ -107,13 +465,207 @@ export function BrokersPage() {
               href={tgLink}
               target="_blank"
               rel="noreferrer"
-              className="mt-3 block break-all text-xs text-sky-300 underline"
+              className={cn(
+                "mt-3 block break-all text-xs underline",
+                isLight ? "text-sky-700" : "text-sky-300",
+              )}
             >
               {tgLink}
             </a>
           ) : null}
         </div>
       </motion.div>
+
+      {tradeOpen ? (
+        <div
+          className={cn(
+            "fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4 py-8 backdrop-blur-sm",
+            isLight ? "bg-black/40" : "bg-black/70",
+          )}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="test-trade-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeTradeModal();
+          }}
+        >
+          <div
+            className={cn(
+              "my-auto w-full max-w-md rounded-2xl border p-5 shadow-xl sm:p-6",
+              isLight ? "border-neutral-200 bg-white" : "border-neutral-700 bg-neutral-900",
+            )}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="test-trade-title" className={cn("text-lg font-semibold", isLight ? "text-neutral-900" : "text-white")}>
+              Sample trade (MARKET)
+            </h2>
+            <p className={cn("mt-1 text-xs", isLight ? "text-neutral-600" : "text-neutral-500")}>
+              Server uses MARKET orders only for this flow. Live orders require{" "}
+              <code className={cn(isLight ? "text-neutral-800" : "text-neutral-400")}>STOKR_ZERODHA_TEST_ORDER_ENABLED</code>{" "}
+              and respect dry-run settings. Keep quantity minimal while validating.
+            </p>
+            <div className="mt-4 max-h-[min(60vh,22rem)] space-y-3 overflow-y-auto pr-1">
+              <label className={cn("block text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>
+                Exchange
+                <select
+                  value={exchange}
+                  onChange={(e) => setExchange(e.target.value as "NSE" | "BSE")}
+                  className={cn(
+                    "mt-1 w-full rounded-lg border px-3 py-2 text-sm",
+                    isLight
+                      ? "border-neutral-200 bg-white text-neutral-900"
+                      : "border-neutral-700 bg-neutral-950 text-white",
+                  )}
+                >
+                  <option value="NSE">NSE</option>
+                  <option value="BSE">BSE</option>
+                </select>
+              </label>
+              <label className={cn("block text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>
+                Symbol
+                <input
+                  value={symbol}
+                  onChange={(e) => setSymbol(e.target.value)}
+                  autoComplete="off"
+                  className={cn(
+                    "mt-1 w-full rounded-lg border px-3 py-2 text-sm",
+                    isLight
+                      ? "border-neutral-200 bg-white text-neutral-900"
+                      : "border-neutral-700 bg-neutral-950 text-white",
+                  )}
+                />
+              </label>
+              <label className={cn("block text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>
+                Quantity (1–5)
+                <input
+                  type="number"
+                  min={1}
+                  max={5}
+                  step={1}
+                  value={qty}
+                  onChange={(e) => setQty(Number(e.target.value))}
+                  className={cn(
+                    "mt-1 w-full rounded-lg border px-3 py-2 text-sm",
+                    isLight
+                      ? "border-neutral-200 bg-white text-neutral-900"
+                      : "border-neutral-700 bg-neutral-950 text-white",
+                  )}
+                />
+              </label>
+              <label className={cn("block text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>
+                Product
+                <select
+                  value={product}
+                  onChange={(e) => setProduct(e.target.value as "CNC" | "MIS")}
+                  className={cn(
+                    "mt-1 w-full rounded-lg border px-3 py-2 text-sm",
+                    isLight
+                      ? "border-neutral-200 bg-white text-neutral-900"
+                      : "border-neutral-700 bg-neutral-950 text-white",
+                  )}
+                >
+                  <option value="CNC">CNC (delivery)</option>
+                  <option value="MIS">MIS (intraday)</option>
+                </select>
+              </label>
+              <div className="flex gap-2">
+                {(["BUY", "SELL"] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSide(s)}
+                    className={cn(
+                      "flex-1 rounded-lg border py-2 text-sm font-semibold",
+                      side === s
+                        ? s === "BUY"
+                          ? isLight
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                            : "border-emerald-500/60 bg-emerald-500/15 text-emerald-100"
+                          : isLight
+                            ? "border-red-400 bg-red-50 text-red-900"
+                            : "border-red-500/50 bg-red-500/10 text-red-100"
+                        : isLight
+                          ? "border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                          : "border-neutral-700 text-neutral-400 hover:bg-neutral-800",
+                    )}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {lastTestOrder ? (
+              <div
+                className={cn(
+                  "mt-4 rounded-lg border p-3 text-xs",
+                  isLight ? "border-neutral-200 bg-neutral-50" : "border-neutral-700 bg-neutral-950/80",
+                )}
+              >
+                <div className={cn("font-semibold", isLight ? "text-neutral-900" : "text-neutral-200")}>Result</div>
+                <div className={cn("mt-1 space-y-1", isLight ? "text-neutral-600" : "text-neutral-400")}>
+                  <div>
+                    <span className="text-neutral-500">Dry run:</span> {String(lastTestOrder.dryRun)}
+                  </div>
+                  <div>
+                    <span className="text-neutral-500">Order id:</span>{" "}
+                    <span className={cn("font-mono", isLight ? "text-neutral-900" : "text-neutral-200")}>
+                      {lastTestOrder.orderId || "—"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-neutral-500">Status:</span> {lastTestOrder.status}
+                  </div>
+                  <div>
+                    <span className="text-neutral-500">Message:</span> {lastTestOrder.message}
+                  </div>
+                  {lastTestOrder.rawStatus ? (
+                    <div>
+                      <span className="text-neutral-500">Raw:</span> {lastTestOrder.rawStatus}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            <div
+              className={cn(
+                "mt-5 flex flex-wrap justify-end gap-2 border-t pt-4",
+                isLight ? "border-neutral-200" : "border-neutral-800",
+              )}
+            >
+              <button
+                type="button"
+                onClick={closeTradeModal}
+                className={cn(
+                  "rounded-lg px-4 py-2 text-sm",
+                  isLight ? "text-neutral-700 hover:bg-neutral-100" : "text-neutral-300 hover:bg-neutral-800",
+                )}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={testOrder.isPending}
+                onClick={fireTestTrade}
+                className={cn(
+                  "rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50",
+                  isLight && "shadow-sm",
+                )}
+              >
+                {testOrder.isPending ? "Submitting..." : "Submit sample trade"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function formatInstant(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
 }

@@ -27,9 +27,4 @@ export async function performLogout(args?: LogoutArgs): Promise<void> {
   } catch {
     /* ignore */
   }
-  try {
-    localStorage.clear();
-  } catch {
-    /* ignore */
-  }
 }

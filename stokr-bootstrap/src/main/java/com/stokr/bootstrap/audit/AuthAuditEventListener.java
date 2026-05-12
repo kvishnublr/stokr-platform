@@ -87,6 +87,32 @@ public class AuthAuditEventListener {
         save(e.userId(), "AUTH_EMAIL_VERIFY_REQUEST_PLACEHOLDER", "AuthUser", e.userId().toString(), Map.of());
     }
 
+    @Async
+    @EventListener
+    public void onBrokerZerodhaConnected(AuthAuditEvents.BrokerZerodhaConnected e) {
+        save(e.userId(), "BROKER_ZERODHA_CONNECTED", "BrokerAccount", e.brokerAccountId().toString(), Map.of());
+    }
+
+    @Async
+    @EventListener
+    public void onBrokerDisconnected(AuthAuditEvents.BrokerDisconnected e) {
+        save(e.userId(), "BROKER_DISCONNECTED", "BrokerAccount", e.brokerAccountId().toString(), Map.of());
+    }
+
+    @Async
+    @EventListener
+    public void onBrokerTestConnection(AuthAuditEvents.BrokerTestConnection e) {
+        save(e.userId(), "BROKER_TEST_CONNECTION", "BrokerAccount", e.brokerAccountId().toString(),
+                Map.of("ok", e.ok()));
+    }
+
+    @Async
+    @EventListener
+    public void onBrokerTestOrder(AuthAuditEvents.BrokerTestOrder e) {
+        save(e.userId(), "BROKER_TEST_ORDER", "BrokerAccount", e.brokerAccountId().toString(),
+                Map.of("orderId", e.orderId(), "dryRun", e.dryRun()));
+    }
+
     private void save(UUID actorUserId, String action, String resourceType, String resourceId, Map<String, ?> payload) {
         AuditLog al = new AuditLog();
         al.setActorUserId(actorUserId);

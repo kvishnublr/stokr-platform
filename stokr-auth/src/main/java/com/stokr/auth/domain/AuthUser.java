@@ -10,6 +10,7 @@ import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 
 import java.time.Instant;
 import java.util.HashSet;
@@ -74,7 +75,12 @@ public class AuthUser extends BaseEntity {
     @Column(name = "live_trading_approved", nullable = false)
     private boolean liveTradingApproved;
 
-    @ManyToMany(fetch = FetchType.EAGER)
+    /**
+     * LAZY: eager fetch breaks {@code Page}+Specification pagination (admin user list).
+     * Batch loading avoids N+1 when mapping summaries inside {@code @Transactional}.
+     */
+    @BatchSize(size = 32)
+    @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "auth_user_roles",
             joinColumns = @JoinColumn(name = "user_id"),

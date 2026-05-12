@@ -7,10 +7,13 @@ import com.stokr.auth.domain.AuthRefreshToken;
 import com.stokr.auth.domain.AuthRole;
 import com.stokr.auth.domain.AuthUser;
 import com.stokr.auth.dto.AuthResponse;
+import com.stokr.auth.dto.ResendVerificationResponse;
 import com.stokr.auth.dto.LoginRequest;
 import com.stokr.auth.dto.RefreshRequest;
 import com.stokr.auth.dto.RegisterRequest;
 import com.stokr.auth.dto.ResetPasswordRequest;
+import com.stokr.auth.mail.VerificationEmailDeliveryService;
+import com.stokr.auth.mail.VerificationEmailSendOutcome;
 import com.stokr.auth.jwt.JwtService;
 import com.stokr.auth.repository.AuthEmailVerificationTokenRepository;
 import com.stokr.auth.repository.AuthPasswordResetTokenRepository;
@@ -35,12 +38,14 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.Set;
 import java.util.UUID;
@@ -66,7 +71,14 @@ public class AuthService {
     private final TokenBlacklistService tokenBlacklistService;
     private final ApplicationEventPublisher eventPublisher;
     private final AuthLoginPolicyProperties loginPolicy;
+    private final VerificationEmailDeliveryService verificationEmailDeliveryService;
     private final Environment environment;
+
+    @Value("${stokr.auth.email-verification-base-url:http://localhost:5173}")
+    private String emailVerificationBaseUrl;
+
+    @Value("${stokr.auth.verification-resend-cooldown-seconds:60}")
+    private int verificationResendCooldownSeconds;
 
     @Value("${stokr.security.refresh-ttl-seconds:1209600}")
     private long refreshTtlSeconds;
@@ -110,8 +122,8 @@ public class AuthService {
                 .findByEmailIgnoreCaseAndDeletedFalse(user.getEmail())
                 .orElseThrow(() -> new IllegalStateException("User not found after registration"));
         eventPublisher.publishEvent(new AuthAuditEvents.UserRegistered(persisted.getId(), persisted.getEmail(), Instant.now()));
-        issueEmailVerificationToken(persisted);
-        return issueTokens(persisted);
+        VerificationEmailSendOutcome emailOutcome = issueEmailVerificationToken(persisted, false);
+        return issueTokens(persisted, emailOutcome.name());
     }
 
     @Transactional
@@ -128,23 +140,33 @@ public class AuthService {
         user.setEmailVerified(true);
         userRepository.save(user);
         eventPublisher.publishEvent(new AuthAuditEvents.EmailVerified(user.getId(), user.getEmail(), Instant.now()));
-        return issueTokens(user);
+        return issueTokens(user, null);
     }
 
     /**
      * Authenticated user requests a fresh verification email.
      */
     @Transactional
-    public void resendEmailVerification(UUID userId) {
+    public ResendVerificationResponse resendEmailVerification(UUID userId) {
         AuthUser user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("User not found"));
         if (user.isEmailVerified()) {
             throw new BadRequestException("Email already verified");
         }
-        issueEmailVerificationToken(user);
+        VerificationEmailSendOutcome outcome = issueEmailVerificationToken(user, true);
+        return new ResendVerificationResponse(outcome.name());
     }
 
-    private void issueEmailVerificationToken(AuthUser user) {
+    private VerificationEmailSendOutcome issueEmailVerificationToken(AuthUser user, boolean enforceResendCooldown) {
+        if (enforceResendCooldown && verificationResendCooldownSeconds > 0) {
+            emailVerificationTokenRepository.findFirstByUser_IdAndDeletedFalseOrderByCreatedAtDesc(user.getId())
+                    .ifPresent(prev -> {
+                        Instant nextAllowed = prev.getCreatedAt().plusSeconds(verificationResendCooldownSeconds);
+                        if (nextAllowed.isAfter(Instant.now())) {
+                            throw new BadRequestException("Please wait before requesting another verification email.");
+                        }
+                    });
+        }
         String raw = generateRawSecret();
         AuthEmailVerificationToken t = new AuthEmailVerificationToken();
         t.setUser(user);
@@ -153,9 +175,26 @@ public class AuthService {
         t.setUsed(false);
         emailVerificationTokenRepository.save(t);
         eventPublisher.publishEvent(new AuthAuditEvents.EmailVerificationRequested(user.getId(), Instant.now()));
-        if (environment.acceptsProfiles(Profiles.of("dev", "local"))) {
-            log.warn("[DEV ONLY] Email verification for {} — raw token: {}", user.getEmail(), raw);
+        String base = emailVerificationBaseUrl.replaceAll("/+$", "");
+        String link = base + "/verify-email?token=" + URLEncoder.encode(raw, StandardCharsets.UTF_8);
+        VerificationEmailSendOutcome outcome = verificationEmailDeliveryService.sendVerificationEmail(
+                user.getEmail(),
+                link,
+                loginPolicy.getEmailVerificationHoursValid());
+        if (outcome == VerificationEmailSendOutcome.NOT_CONFIGURED) {
+            log.warn(
+                    "SMTP not configured (spring.mail.host is blank). Use verification URL from logs for {}.",
+                    user.getEmail());
+            log.warn(
+                    "Outbound email is not configured (set spring.mail.* to send). Verify {} using: {}",
+                    user.getEmail(),
+                    link);
+        } else if (outcome == VerificationEmailSendOutcome.SEND_FAILED) {
+            log.warn(
+                    "Verification email send failed for {}. Token is valid until expiry; user may resend after cooldown.",
+                    user.getEmail());
         }
+        return outcome;
     }
 
     @Transactional
@@ -179,7 +218,7 @@ public class AuthService {
         user.setLastLoginAt(now);
         userRepository.save(user);
         eventPublisher.publishEvent(new AuthAuditEvents.LoginSucceeded(user.getId(), user.getEmail(), now));
-        return issueTokens(user);
+        return issueTokens(user, null);
     }
 
     private void handleFailedPassword(AuthUser user, Instant now) {
@@ -205,11 +244,17 @@ public class AuthService {
         if (stored.isRevoked() || stored.getExpiresAt().isBefore(Instant.now())) {
             throw new UnauthorizedException("Invalid refresh token");
         }
-        stored.setRevoked(true);
-        refreshTokenRepository.save(stored);
+        try {
+            stored.setRevoked(true);
+            refreshTokenRepository.save(stored);
+        } catch (org.springframework.orm.ObjectOptimisticLockingFailureException ex) {
+            // Another request already revoked this token concurrently; token is consumed.
+            log.debug("Concurrent refresh detected; token already rotated");
+            throw new UnauthorizedException("Invalid refresh token");
+        }
         AuthUser user = stored.getUser();
         eventPublisher.publishEvent(new AuthAuditEvents.RefreshRotated(user.getId(), Instant.now()));
-        return issueTokens(user);
+        return issueTokens(user, null);
     }
 
     @Transactional
@@ -248,7 +293,7 @@ public class AuthService {
             passwordResetTokenRepository.save(t);
             eventPublisher.publishEvent(new AuthAuditEvents.PasswordResetRequested(user.getId(), user.getEmail(), Instant.now()));
             if (environment.acceptsProfiles(Profiles.of("dev", "local"))) {
-                log.warn("[DEV ONLY] Password reset token for {} — paste as reset token: {}", email, raw);
+                log.warn("[DEV ONLY] Password reset token for {} — paste as reset token: {}", user.getEmail(), raw);
             }
         });
     }
@@ -282,8 +327,9 @@ public class AuthService {
                 .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
     }
 
-    private AuthResponse issueTokens(AuthUser user) {
-        Set<String> roleNames = user.getRoles().stream()
+    private AuthResponse issueTokens(AuthUser user, String verificationEmailStatus) {
+        var roles = user.getRoles();
+        Set<String> roleNames = (roles == null ? Collections.<AuthRole>emptySet() : roles).stream()
                 .map(AuthRole::getName)
                 .collect(Collectors.toSet());
         String scope = String.join(" ", roleNames);
@@ -315,7 +361,8 @@ public class AuthService {
                 user.isLiveTradingApproved(),
                 access,
                 refreshRaw,
-                expiresInSeconds
+                expiresInSeconds,
+                verificationEmailStatus
         );
     }
 

@@ -1,11 +1,13 @@
 package com.stokr.auth.security;
 
+import com.stokr.auth.domain.AuthRole;
 import com.stokr.auth.domain.AuthUser;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -22,7 +24,7 @@ public class StokrUserDetails implements UserDetails {
         this.email = user.getEmail();
         this.password = user.getPasswordHash();
         this.enabled = user.isEnabled() && !user.isDeleted();
-        this.authorities = user.getRoles().stream()
+        this.authorities = (user.getRoles() == null ? Collections.<AuthRole>emptySet() : user.getRoles()).stream()
                 .map(r -> new SimpleGrantedAuthority(r.getName()))
                 .collect(Collectors.toSet());
     }

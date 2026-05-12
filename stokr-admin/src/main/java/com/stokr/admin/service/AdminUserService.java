@@ -9,6 +9,7 @@ import com.stokr.admin.dto.AdminUserSummaryDto;
 import com.stokr.admin.dto.UserStatusPatchRequest;
 import com.stokr.admin.repository.AuditLogRepository;
 import com.stokr.admin.spec.AdminUserSpecifications;
+import com.stokr.auth.domain.AuthRole;
 import com.stokr.auth.domain.AuthUser;
 import com.stokr.auth.repository.AuthUserRepository;
 import com.stokr.common.correlation.CorrelationIdHolder;
@@ -31,6 +32,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -60,7 +62,8 @@ public class AdminUserService {
     ) {
         Specification<AuthUser> spec =
                 AdminUserSpecifications.filter(search, enabled, role, registeredFrom, registeredTo);
-        return userRepository.findAll(spec, pageable).map(this::toSummary);
+        Page<AuthUser> userPage = userRepository.findAll(spec, pageable);
+        return userPage.map(this::toSummary);
     }
 
     @Transactional(readOnly = true)
@@ -146,7 +149,14 @@ public class AdminUserService {
     }
 
     private static Set<String> roleNames(AuthUser u) {
-        return u.getRoles().stream().map(r -> r.getName()).collect(Collectors.toSet());
+        if (u.getRoles() == null || u.getRoles().isEmpty()) {
+            return Set.of();
+        }
+        return u.getRoles().stream()
+                .filter(Objects::nonNull)
+                .map(AuthRole::getName)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
     }
 
     private void audit(UUID actorId, String action, String resourceType, String resourceId, Map<String, ?> payload) {

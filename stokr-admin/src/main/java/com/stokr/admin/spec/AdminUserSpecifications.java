@@ -2,6 +2,7 @@ package com.stokr.admin.spec;
 
 import com.stokr.auth.domain.AuthRole;
 import com.stokr.auth.domain.AuthUser;
+import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
@@ -31,11 +32,15 @@ public final class AdminUserSpecifications {
             }
             if (search != null && !search.isBlank()) {
                 String like = "%" + search.trim().toLowerCase() + "%";
-                parts.add(cb.or(
-                        cb.like(cb.lower(root.get("email")), like),
-                        cb.like(cb.lower(root.get("username")), like),
-                        cb.like(cb.lower(root.get("displayName")), like)
-                ));
+                Expression<String> email = root.get("email").as(String.class);
+                Expression<String> username = root.get("username").as(String.class);
+                Expression<String> displayName = root.get("displayName").as(String.class);
+                Predicate emailLike = cb.like(cb.lower(email), like);
+                Predicate usernameLike = cb.like(cb.lower(username), like);
+                Predicate displayNameLike = cb.and(
+                        cb.isNotNull(root.get("displayName")),
+                        cb.like(cb.lower(displayName), like));
+                parts.add(cb.or(emailLike, usernameLike, displayNameLike));
             }
             if (registeredFrom != null) {
                 parts.add(cb.greaterThanOrEqualTo(root.get("createdAt"), registeredFrom));

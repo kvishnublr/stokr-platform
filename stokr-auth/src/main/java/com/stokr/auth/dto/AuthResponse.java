@@ -3,6 +3,7 @@ package com.stokr.auth.dto;
 import java.util.Set;
 import java.util.UUID;
 
+/** {@code verificationEmailStatus} is non-null only on {@code /register}: NOT_CONFIGURED, SENT, SEND_FAILED. */
 public record AuthResponse(
         UUID userId,
         String username,
@@ -16,6 +17,7 @@ public record AuthResponse(
         boolean liveTradingApproved,
         String accessToken,
         String refreshToken,
-        long expiresInSeconds
+        long expiresInSeconds,
+        String verificationEmailStatus
 ) {
 }
