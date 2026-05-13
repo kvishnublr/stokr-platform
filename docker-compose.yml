@@ -31,6 +31,8 @@ services:
       # Avoid aggregate health DOWN when SMTP is only partly configured (e.g. host set, password missing).
       STOKR_MAIL_HEALTH_ENABLED: ${STOKR_MAIL_HEALTH_ENABLED:-false}
       MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
+      STOKR_ZERODHA_TEST_ORDER_ENABLED: ${STOKR_ZERODHA_TEST_ORDER_ENABLED:-false}
+      STOKR_ZERODHA_TEST_ORDER_DRY_RUN: ${STOKR_ZERODHA_TEST_ORDER_DRY_RUN:-true}
     ports:
       - "${API_PORT:-8080}:8080"
     depends_on:
