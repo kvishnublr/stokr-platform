@@ -3,7 +3,7 @@ package com.stokr.auth.mail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -22,26 +22,42 @@ public class VerificationEmailDeliveryService {
     private static final Logger log = LoggerFactory.getLogger(VerificationEmailDeliveryService.class);
 
     private final ObjectProvider<JavaMailSender> mailSenderProvider;
+    private final Environment environment;
 
-    @Value("${spring.mail.host:}")
-    private String mailHost;
-
-    @Value("${spring.mail.username:}")
-    private String mailUsername;
-
-    public VerificationEmailDeliveryService(ObjectProvider<JavaMailSender> mailSenderProvider) {
+    public VerificationEmailDeliveryService(ObjectProvider<JavaMailSender> mailSenderProvider, Environment environment) {
         this.mailSenderProvider = mailSenderProvider;
+        this.environment = environment;
+    }
+
+    private String resolveMailHost() {
+        String h = environment.getProperty("spring.mail.host");
+        if (StringUtils.hasText(h)) {
+            return h.trim();
+        }
+        String bridged = environment.getProperty("SPRING_MAIL_HOST");
+        return StringUtils.hasText(bridged) ? bridged.trim() : "";
+    }
+
+    private String resolveMailUsername() {
+        String u = environment.getProperty("spring.mail.username");
+        if (StringUtils.hasText(u)) {
+            return u.trim();
+        }
+        String legacy = environment.getProperty("SPRING_MAIL_USERNAME");
+        return StringUtils.hasText(legacy) ? legacy.trim() : "";
     }
 
     public VerificationEmailSendOutcome sendVerificationEmail(String toEmail, String verifyUrl, int hoursValid) {
-        if (!StringUtils.hasText(mailHost)) {
+        if (!StringUtils.hasText(resolveMailHost())) {
             return VerificationEmailSendOutcome.NOT_CONFIGURED;
         }
         JavaMailSender sender = mailSenderProvider.getIfAvailable();
         if (sender == null) {
-            log.warn("spring.mail.host is set but JavaMailSender bean is missing; cannot send verification email");
+            log.warn(
+                    "Mail host is configured (spring.mail.host / SPRING_MAIL_HOST) but JavaMailSender bean is missing; cannot send verification email");
             return VerificationEmailSendOutcome.SEND_FAILED;
         }
+        String mailUsername = resolveMailUsername();
         if (!StringUtils.hasText(mailUsername)) {
             log.warn("spring.mail.username is blank; cannot set From address for verification email");
             return VerificationEmailSendOutcome.SEND_FAILED;

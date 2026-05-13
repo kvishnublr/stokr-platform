@@ -5,7 +5,10 @@ spring:
   application:
     name: stokr-platform
   mail:
-    host: ${SPRING_MAIL_HOST:}
+    # spring.mail.host is intentionally omitted here so an unset host does not create a broken JavaMailSender.
+    # Use SPRING_MAIL_HOST / SPRING_MAIL_USERNAME / SPRING_MAIL_PASSWORD in repo-root .env (see .env.example),
+    # or dotted spring.mail.* in .env. When only SPRING_MAIL_HOST is set, StokrJavaMailSenderFallbackConfiguration
+    # supplies JavaMailSender if Boot mail auto-config does not.
     port: ${SPRING_MAIL_PORT:587}
     username: ${SPRING_MAIL_USERNAME:}
     password: ${SPRING_MAIL_PASSWORD:}
@@ -65,6 +68,11 @@ management:
       # Off by default: without RabbitMQ, actuator health was opening TCP to :5672 and logging a full stack trace.
       # Set true in .env / Docker when brokers and AMQP are part of your deployment.
       enabled: ${STOKR_RABBIT_HEALTH_ENABLED:false}
+    mail:
+      # Off by default: partial SMTP config (e.g. host set, no password) makes MailHealthIndicator fail and spam WARNs.
+      # Set STOKR_MAIL_HEALTH_ENABLED=true when SMTP is fully reachable (production, Mailtrap, or local Mailpit with matching auth).
+      # Mailpit: use SPRING_MAIL_SMTP_AUTH=false and SPRING_MAIL_SMTP_STARTTLS=false; From address still requires SPRING_MAIL_USERNAME.
+      enabled: ${STOKR_MAIL_HEALTH_ENABLED:false}
 
 springdoc:
   api-docs:

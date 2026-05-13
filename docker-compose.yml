@@ -101,6 +101,15 @@ services:
       timeout: 5s
       retries: 10
 
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: stokr-mailpit
+    profiles:
+      - tools
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+
   pgadmin:
     image: dpage/pgadmin4:8
     container_name: stokr-pgadmin

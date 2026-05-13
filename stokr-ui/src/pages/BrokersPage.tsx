@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
@@ -29,6 +29,8 @@ import { cn } from "../lib/utils";
 import { useSessionStore } from "../state/session";
 import { useUiThemeStore } from "../state/uiTheme";
 
+const ZERODHA_OAUTH_MESSAGE = "stokr-zerodha-oauth";
+
 export function BrokersPage() {
   const qc = useQueryClient();
   const isLight = useUiThemeStore((s) => s.mode === "light");
@@ -42,6 +44,8 @@ export function BrokersPage() {
   const [product, setProduct] = useState<"CNC" | "MIS">("CNC");
   const [lastTestOrder, setLastTestOrder] = useState<BrokerTestOrderDto | null>(null);
   const [connectingOAuth, setConnectingOAuth] = useState(false);
+  const oauthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const oauthHandledRef = useRef(false);
 
   const statusQuery = useQuery({
     queryKey: BROKER_STATUS_QUERY_KEY,
@@ -57,6 +61,24 @@ export function BrokersPage() {
     const z = params.get("zerodha");
     if (z !== "ok" && z !== "error") return;
 
+    // OAuth completed inside a popup: tell opener and close this window.
+    if (window.opener && !window.opener.closed) {
+      try {
+        window.opener.postMessage(
+          { type: ZERODHA_OAUTH_MESSAGE, status: z === "ok" ? "ok" : "error" },
+          window.location.origin,
+        );
+      } catch {
+        /* ignore cross-window errors */
+      }
+      params.delete("zerodha");
+      const rest = params.toString();
+      const path = `${window.location.pathname}${rest ? `?${rest}` : ""}`;
+      window.history.replaceState(null, "", path);
+      window.close();
+      return;
+    }
+
     if (z === "ok") {
       toast.success("Zerodha session linked");
       void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
@@ -69,6 +91,15 @@ export function BrokersPage() {
     const path = `${window.location.pathname}${rest ? `?${rest}` : ""}`;
     window.history.replaceState(null, "", path);
   }, [qc]);
+
+  useEffect(() => {
+    return () => {
+      if (oauthPollRef.current) {
+        clearInterval(oauthPollRef.current);
+        oauthPollRef.current = null;
+      }
+    };
+  }, []);
 
   async function requestTelegramLink() {
     try {
@@ -128,9 +159,52 @@ export function BrokersPage() {
   async function openZerodhaConnect() {
     if (connectingOAuth) return;
     setConnectingOAuth(true);
+    oauthHandledRef.current = false;
     try {
       const url = await fetchZerodhaConnectUrl();
-      window.location.href = url;
+      const features =
+        "popup=yes,width=560,height=820,scrollbars=yes,resizable=yes,status=no,toolbar=no,menubar=no,location=yes";
+      const popup = window.open(url, "stokr_zerodha_oauth", features);
+      if (!popup) {
+        toast.error("Pop-up was blocked. Allow pop-ups for this site, then try again.");
+        setConnectingOAuth(false);
+        return;
+      }
+
+      const onMessage = (ev: MessageEvent) => {
+        if (ev.origin !== window.location.origin) return;
+        const data = ev.data as { type?: string; status?: string } | undefined;
+        if (!data || data.type !== ZERODHA_OAUTH_MESSAGE) return;
+        oauthHandledRef.current = true;
+        window.removeEventListener("message", onMessage);
+        if (oauthPollRef.current) {
+          clearInterval(oauthPollRef.current);
+          oauthPollRef.current = null;
+        }
+        setConnectingOAuth(false);
+        if (data.status === "ok") {
+          toast.success("Zerodha session linked");
+          void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
+        } else {
+          toast.error("Zerodha linking failed — try again");
+        }
+      };
+      window.addEventListener("message", onMessage);
+
+      if (oauthPollRef.current) clearInterval(oauthPollRef.current);
+      oauthPollRef.current = setInterval(() => {
+        if (popup.closed) {
+          if (oauthPollRef.current) {
+            clearInterval(oauthPollRef.current);
+            oauthPollRef.current = null;
+          }
+          window.removeEventListener("message", onMessage);
+          if (!oauthHandledRef.current) {
+            setConnectingOAuth(false);
+            void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
+          }
+        }
+      }, 500);
     } catch (e: unknown) {
       toast.error(parseAxiosMessage(e));
       setConnectingOAuth(false);

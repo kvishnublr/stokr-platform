@@ -31,6 +31,8 @@ The platform requires **email verification before broker connection**. This is e
 
 **Status**: Check JWT token to see if `emailVerified: true`
 
+For local SMTP testing, run Mailpit (`docker compose --profile tools up mailpit`) and set the `SPRING_MAIL_*` variables shown in `.env.example` (Web UI at `http://localhost:8025`). Trigger mail by **registering** a new account or calling the authenticated **resend verification** API after login.
+
 ---
 
 ## 🔧 Configuration Steps
