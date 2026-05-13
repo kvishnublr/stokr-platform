@@ -8,7 +8,8 @@ public class ZerodhaBrokerProperties {
     private String apiKey = "";
     private String apiSecret = "";
     /**
-     * Registered Kite Connect redirect URL (must match app settings).
+     * Registered Kite Connect redirect URL (must match app settings). Zerodha only accepts https:// — see
+     * {@link com.stokr.user.broker.ZerodhaConnectionService#beginAuthorization}.
      */
     private String redirectUrl = "http://localhost:8080/api/broker/zerodha/callback";
 

@@ -142,7 +142,7 @@ stokr:
     zerodha:
       api-key: ${STOKR_ZERODHA_API_KEY:}
       api-secret: ${STOKR_ZERODHA_API_SECRET:}
-      # Keep localhost default for dev; override in .env on server deployments.
+      # Default is http for local Spring only; Kite Connect rejects non-HTTPS — set STOKR_ZERODHA_REDIRECT_URL to https://... in .env.
       redirect-url: ${STOKR_ZERODHA_REDIRECT_URL:http://localhost:8080/api/broker/zerodha/callback}
       sync-enabled: ${STOKR_ZERODHA_SYNC_ENABLED:true}
       sync-ms: ${STOKR_ZERODHA_SYNC_MS:300000}

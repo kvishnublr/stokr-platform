@@ -49,6 +49,7 @@ public class ZerodhaConnectionService {
         if (!zerodhaBrokerProperties.isConfigured()) {
             throw new BadRequestException("Zerodha API credentials are not configured");
         }
+        validateKiteRedirectUrl(zerodhaBrokerProperties.getRedirectUrl());
         AuthUser authUser = authUserRepository.findById(userId).orElseThrow(() -> new BadRequestException("User not found"));
         String state = UUID.randomUUID().toString();
         BrokerOauthState row = new BrokerOauthState();
@@ -148,6 +149,24 @@ public class ZerodhaConnectionService {
         } catch (Exception e) {
             log.warn("zerodha.parse.failed {}", e.getClass().getSimpleName());
             throw new BadRequestException("Invalid Zerodha response");
+        }
+    }
+
+    /**
+     * Kite Connect rejects non-HTTPS redirect URLs; fail fast instead of sending http:// to Zerodha.
+     */
+    private static void validateKiteRedirectUrl(String redirectUrl) {
+        String trimmed = redirectUrl == null ? "" : redirectUrl.strip();
+        if (trimmed.isEmpty()) {
+            throw new BadRequestException(
+                    "STOKR_ZERODHA_REDIRECT_URL is not set. Set it to the full HTTPS OAuth callback URL registered in your Kite app.");
+        }
+        if (!trimmed.regionMatches(true, 0, "https://", 0, 8)) {
+            throw new BadRequestException(
+                    "Kite Connect requires STOKR_ZERODHA_REDIRECT_URL to use https:// — Zerodha rejects http:// and other non-HTTPS "
+                            + "redirects (error: \"supplied redirect URL is not https\"). Expose your API callback over HTTPS "
+                            + "(for example ngrok or Cloudflare Tunnel to this service) or deploy the API behind TLS, and register "
+                            + "that exact URL in https://developers.kite.trade/apps .");
         }
     }
 
