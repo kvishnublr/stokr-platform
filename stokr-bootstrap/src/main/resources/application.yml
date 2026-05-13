@@ -1,5 +1,12 @@
 server:
   port: 8080
+  # Detect HTTPS behind reverse proxy (nginx sends X-Forwarded-Proto, X-Forwarded-Host, X-Forwarded-For).
+  # This is required for Zerodha OAuth to work behind HTTPS reverse proxy.
+  forward-headers-strategy: framework
+  tomcat:
+    remoteip:
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
 
 spring:
   application:
