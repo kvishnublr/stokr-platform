@@ -74,6 +74,27 @@ export async function postBrokerTestOrder(body: BrokerTestOrderPayload): Promise
   return data as BrokerTestOrderDto;
 }
 
+/** Ensures we only navigate the OAuth popup to Kite (avoids opening same-origin URLs that would postMessage+close instantly). */
+function parseZerodhaAuthorizeUrl(raw: string): string {
+  const trimmed = typeof raw === "string" ? raw.trim() : "";
+  if (!trimmed) {
+    throw new Error("Missing authorize URL from server");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error("Invalid authorize URL from server");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error("Invalid authorize URL from server");
+  }
+  if (parsed.hostname.toLowerCase() !== "kite.zerodha.com") {
+    throw new Error("Invalid authorize URL from server");
+  }
+  return parsed.toString();
+}
+
 export async function fetchZerodhaConnectUrl(): Promise<string> {
   const res = await api.get("/api/trader/broker/zerodha/connect-url");
   const data = res.data?.data as { authorizeUrl?: string } | undefined;
@@ -81,7 +102,7 @@ export async function fetchZerodhaConnectUrl(): Promise<string> {
   if (!url || typeof url !== "string") {
     throw new Error("Missing authorize URL from server");
   }
-  return url;
+  return parseZerodhaAuthorizeUrl(url);
 }
 
 /** Client-side guard matching server test-order tradingsymbol rules. */

@@ -46,6 +46,7 @@ export function BrokersPage() {
   const [connectingOAuth, setConnectingOAuth] = useState(false);
   const oauthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const oauthHandledRef = useRef(false);
+  const oauthCleanupRef = useRef<(() => void) | null>(null);
 
   const statusQuery = useQuery({
     queryKey: BROKER_STATUS_QUERY_KEY,
@@ -94,6 +95,8 @@ export function BrokersPage() {
 
   useEffect(() => {
     return () => {
+      oauthCleanupRef.current?.();
+      oauthCleanupRef.current = null;
       if (oauthPollRef.current) {
         clearInterval(oauthPollRef.current);
         oauthPollRef.current = null;
@@ -160,8 +163,11 @@ export function BrokersPage() {
     if (connectingOAuth) return;
     setConnectingOAuth(true);
     oauthHandledRef.current = false;
+    oauthCleanupRef.current?.();
+    oauthCleanupRef.current = null;
     try {
       const url = await fetchZerodhaConnectUrl();
+      // Do not add noopener: Zerodha completion loads this app in the popup and uses window.opener.postMessage.
       const features =
         "popup=yes,width=560,height=820,scrollbars=yes,resizable=yes,status=no,toolbar=no,menubar=no,location=yes";
       const popup = window.open(url, "stokr_zerodha_oauth", features);
@@ -181,6 +187,7 @@ export function BrokersPage() {
           clearInterval(oauthPollRef.current);
           oauthPollRef.current = null;
         }
+        oauthCleanupRef.current = null;
         setConnectingOAuth(false);
         if (data.status === "ok") {
           toast.success("Zerodha session linked");
@@ -191,16 +198,23 @@ export function BrokersPage() {
       };
       window.addEventListener("message", onMessage);
 
+      const tearDown = () => {
+        window.removeEventListener("message", onMessage);
+        if (oauthPollRef.current) {
+          clearInterval(oauthPollRef.current);
+          oauthPollRef.current = null;
+        }
+      };
+      oauthCleanupRef.current = tearDown;
+
       if (oauthPollRef.current) clearInterval(oauthPollRef.current);
       oauthPollRef.current = setInterval(() => {
         if (popup.closed) {
-          if (oauthPollRef.current) {
-            clearInterval(oauthPollRef.current);
-            oauthPollRef.current = null;
-          }
-          window.removeEventListener("message", onMessage);
+          tearDown();
+          oauthCleanupRef.current = null;
           if (!oauthHandledRef.current) {
             setConnectingOAuth(false);
+            toast.message("Zerodha login window closed before linking finished.");
             void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
           }
         }
