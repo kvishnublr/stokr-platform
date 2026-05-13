@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { randomUuid } from "../lib/utils";
 
 export type FeedEvent = {
   id: string;
@@ -23,7 +24,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   push: (e) => {
     const ev: FeedEvent = {
       ...e,
-      id: crypto.randomUUID(),
+      id: randomUuid(),
       ts: Date.now(),
     };
     set({

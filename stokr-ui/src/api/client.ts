@@ -1,4 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
+import { randomUuid } from "../lib/utils";
 import { performLogout } from "../services/auth/logout";
 import { useSessionStore } from "../state/session";
 
@@ -48,7 +49,7 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
   if (!config.headers[CORRELATION_HEADER]) {
-    config.headers[CORRELATION_HEADER] = crypto.randomUUID();
+    config.headers[CORRELATION_HEADER] = randomUuid();
   }
   return config;
 });
