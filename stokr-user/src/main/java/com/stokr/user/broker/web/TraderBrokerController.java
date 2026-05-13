@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/trader/broker")
 @RequiredArgsConstructor
@@ -22,6 +24,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class TraderBrokerController {
 
     private final ZerodhaBrokerOperationsService zerodhaBrokerOperationsService;
+
+    @GetMapping("/accounts")
+    public ApiResponse<List<ZerodhaBrokerOperationsService.BrokerAccountFundsDto>> accounts(
+            @AuthenticationPrincipal StokrUserDetails user) {
+        return ApiResponse.ok(zerodhaBrokerOperationsService.accountsFunds(user.getId()), CorrelationIdHolder.get());
+    }
 
     @GetMapping("/status")
     public ApiResponse<ZerodhaBrokerOperationsService.BrokerStatusDto> status(

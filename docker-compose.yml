@@ -23,7 +23,11 @@ services:
       JWT_REFRESH_TTL_SECONDS: ${JWT_REFRESH_TTL_SECONDS:-1209600}
       STOKR_RISK_ZONE: ${STOKR_RISK_ZONE:-Asia/Kolkata}
       STOKR_EXECUTION_MAX_ATTEMPTS: ${STOKR_EXECUTION_MAX_ATTEMPTS:-5}
-      STOKR_CORS_ALLOWED_ORIGINS: ${STOKR_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      STOKR_ZERODHA_API_KEY: ${STOKR_ZERODHA_API_KEY:-}
+      STOKR_ZERODHA_API_SECRET: ${STOKR_ZERODHA_API_SECRET:-}
+      STOKR_ZERODHA_REDIRECT_URL: ${STOKR_ZERODHA_REDIRECT_URL:-http://localhost:8080/api/broker/zerodha/callback}
+      STOKR_UI_PUBLIC_BASE_URL: ${STOKR_UI_PUBLIC_BASE_URL:-http://localhost:5173}
+      STOKR_CORS_ALLOWED_ORIGINS: ${STOKR_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175}
       # Avoid aggregate health DOWN when SMTP is only partly configured (e.g. host set, password missing).
       STOKR_MAIL_HEALTH_ENABLED: ${STOKR_MAIL_HEALTH_ENABLED:-false}
       MANAGEMENT_HEALTH_MAIL_ENABLED: "false"

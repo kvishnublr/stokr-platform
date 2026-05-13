@@ -18,6 +18,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -72,6 +73,23 @@ public class ZerodhaBrokerOperationsService {
     }
 
     public record BrokerTestOrderDto(boolean dryRun, String orderId, String status, String message, String rawStatus) {
+    }
+
+    /** Sidebar / shell: cash-like balance from last persisted margin snapshot (Kite equity.available.cash). */
+    public record BrokerAccountFundsDto(Double cashAvailable, Double availableMargin) {
+    }
+
+    @Transactional(readOnly = true)
+    public List<BrokerAccountFundsDto> accountsFunds(UUID userId) {
+        Optional<BrokerAccount> opt = brokerAccountRepository.findFirstByUserIdAndDeletedFalseOrderByUpdatedAtDesc(userId);
+        if (opt.isEmpty()) {
+            return List.of();
+        }
+        Double cash = extractEquityAvailableCash(opt.get().getMarginSnapshotJson());
+        if (cash == null) {
+            return List.of();
+        }
+        return List.of(new BrokerAccountFundsDto(cash, cash));
     }
 
     @Transactional(readOnly = true)
@@ -321,6 +339,29 @@ public class ZerodhaBrokerOperationsService {
         }
         String t = n.asText();
         return t != null && !t.isBlank() ? t : null;
+    }
+
+    private Double extractEquityAvailableCash(String marginSnapshotJson) {
+        if (marginSnapshotJson == null || marginSnapshotJson.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode data = objectMapper.readTree(marginSnapshotJson);
+            JsonNode cashNode = data.path("equity").path("available").path("cash");
+            if (cashNode == null || cashNode.isMissingNode() || cashNode.isNull()) {
+                return null;
+            }
+            if (cashNode.isNumber()) {
+                return cashNode.doubleValue();
+            }
+            String t = cashNode.asText();
+            if (t == null || t.isBlank()) {
+                return null;
+            }
+            return Double.parseDouble(t);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String summarizeMarginsJson(String marginSnapshotJson) {

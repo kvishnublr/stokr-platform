@@ -36,7 +36,7 @@ export async function fetchTraderDashboardData(): Promise<TraderDashboardData> {
     api.get("/api/strategies/runtime"),
     api.get("/api/executions/recent"),
     api.get("/api/alerts/feed"),
-    api.get("/api/brokers/status"),
+    api.get("/api/trader/broker/status"),
     api.get("/api/market/watch"),
     api.get("/api/runtime/status"),
     api.get("/api/notifications/unread-count"),
@@ -142,8 +142,10 @@ export async function fetchTraderDashboardData(): Promise<TraderDashboardData> {
     }
   }
   if (brokers.status === "fulfilled") {
-    const state = String(brokers.value.data?.data?.status ?? "HEALTHY").toUpperCase();
-    merged.brokerStatus = state === "DOWN" ? "DOWN" : state === "DEGRADED" ? "DEGRADED" : "HEALTHY";
+    const raw = brokers.value.data?.data as { health?: string; status?: string } | undefined;
+    const state = String(raw?.health ?? raw?.status ?? "HEALTHY").toUpperCase();
+    merged.brokerStatus =
+      state === "DOWN" ? "DOWN" : state === "DEGRADED" || state === "UNKNOWN" ? "DEGRADED" : "HEALTHY";
   }
   if (runtime.status === "fulfilled") {
     merged.runtimeStatus = safeString(runtime.value.data?.data?.state, "Unavailable");

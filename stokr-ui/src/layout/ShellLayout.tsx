@@ -84,7 +84,7 @@ export function ShellLayout() {
     queryFn: async () => {
       const [dashboardRes, brokerRes] = await Promise.allSettled([
         api.get("/api/portfolio/dashboard?equityPoints=8"),
-        api.get("/api/brokers/accounts"),
+        api.get("/api/trader/broker/accounts"),
       ]);
 
       let equityValue = "—";

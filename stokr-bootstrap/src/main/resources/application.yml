@@ -81,6 +81,9 @@ springdoc:
     path: /swagger-ui
 
 stokr:
+  # Single env: STOKR_CORS_ALLOWED_ORIGINS (comma-separated). Edit repo-root .env only — local + Docker + IntelliJ all load it.
+  cors:
+    allowed-origins: ${STOKR_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175}
   auth:
     login:
       max-failed-attempts: ${STOKR_AUTH_MAX_FAILED:5}
@@ -139,12 +142,14 @@ stokr:
     zerodha:
       api-key: ${STOKR_ZERODHA_API_KEY:}
       api-secret: ${STOKR_ZERODHA_API_SECRET:}
+      # Keep localhost default for dev; override in .env on server deployments.
       redirect-url: ${STOKR_ZERODHA_REDIRECT_URL:http://localhost:8080/api/broker/zerodha/callback}
       sync-enabled: ${STOKR_ZERODHA_SYNC_ENABLED:true}
       sync-ms: ${STOKR_ZERODHA_SYNC_MS:300000}
       test-order-enabled: ${STOKR_ZERODHA_TEST_ORDER_ENABLED:false}
       test-order-dry-run: ${STOKR_ZERODHA_TEST_ORDER_DRY_RUN:true}
   ui:
+    # Keep localhost default for dev; override in .env on server deployments.
     public-base-url: ${STOKR_UI_PUBLIC_BASE_URL:http://localhost:5173}
 
 logging:
