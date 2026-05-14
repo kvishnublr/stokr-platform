@@ -1,5 +1,5 @@
 import { Outlet, useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ActivitySquare,
@@ -45,7 +45,6 @@ export function ShellLayout() {
   const canKillOpsConsole = useSessionStore((s) => s.canAccessKillSwitchOperations());
   const liveTradingApproved = useSessionStore((s) => s.liveTradingApproved);
   const refreshToken = useSessionStore((s) => s.refreshToken);
-  const pushNotification = useNotificationStore((s) => s.push);
   const unread = useNotificationStore((s) => s.unread);
   const feed = useNotificationStore((s) => s.items);
   const markRead = useNotificationStore((s) => s.markRead);
@@ -53,6 +52,8 @@ export function ShellLayout() {
   const patchProfileFlags = useSessionStore((s) => s.patchProfileFlags);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [resendingVerify, setResendingVerify] = useState(false);
+  const lastBacktestToastAt = useRef(0);
+  const lastVerifyResendAt = useRef(0);
 
   /** Keep verification/onboarding flags aligned with DB (JWT does not carry them; localStorage can go stale after verify-email). */
   const onboardingSync = useQuery({
@@ -155,6 +156,12 @@ export function ShellLayout() {
   }, [canKillOpsConsole]);
 
   async function resendVerificationEmail() {
+    const now = Date.now();
+    if (now - lastVerifyResendAt.current < 30_000) {
+      toast.message("Please wait before requesting another verification email.", { duration: 4000 });
+      return;
+    }
+    lastVerifyResendAt.current = now;
     setResendingVerify(true);
     try {
       const res = await api.post<{ data?: { status?: string } }>("/api/auth/resend-verification");
@@ -203,7 +210,7 @@ export function ShellLayout() {
         try {
           const raw = m.body;
           const parsed = JSON.parse(raw) as Record<string, string>;
-          pushNotification({
+          useNotificationStore.getState().push({
             severity: "success",
             title: `Order ${parsed.state ?? "update"}`,
             detail: `${parsed.symbol ?? ""} ${parsed.orderId ?? ""}`,
@@ -211,28 +218,52 @@ export function ShellLayout() {
           });
           toast.message("Order update", { description: `${parsed.symbol ?? ""} ${parsed.state ?? ""}` });
         } catch {
-          pushNotification({ severity: "info", title: "Order event", topic: "orders" });
+          useNotificationStore.getState().push({ severity: "info", title: "Order event", topic: "orders" });
         }
       },
       onPnl: () => {
-        pushNotification({ severity: "info", title: "PnL snapshot refreshed", topic: "pnl" });
+        useNotificationStore.getState().push({ severity: "info", title: "PnL snapshot refreshed", topic: "pnl" });
       },
       onStrategy: (m) => {
         try {
           const parsed = JSON.parse(m.body) as Record<string, string>;
-          pushNotification({
+          useNotificationStore.getState().push({
             severity: "info",
             title: `Strategy ${parsed.runtimeState ?? ""}`,
             detail: parsed.instanceId,
             topic: "strategy",
           });
         } catch {
-          pushNotification({ severity: "info", title: "Strategy runtime", topic: "strategy" });
+          useNotificationStore.getState().push({ severity: "info", title: "Strategy runtime", topic: "strategy" });
+        }
+      },
+      onBacktestJob: (m) => {
+        try {
+          const parsed = JSON.parse(m.body) as Record<string, unknown>;
+          const status = String(parsed.status ?? "");
+          const pct = typeof parsed.progressPct === "number" ? parsed.progressPct : Number(parsed.progressPct);
+          const now = Date.now();
+          if (status === "COMPLETED" || status === "CANCELLED") {
+            toast.message("Backtest job", {
+              description: `${status}${Number.isFinite(pct) ? ` · ${pct}%` : ""}`,
+            });
+            return;
+          }
+          if (now - lastBacktestToastAt.current < 10_000) return;
+          lastBacktestToastAt.current = now;
+          const eta = parsed.etaSecondsRemaining;
+          const etaTxt =
+            typeof eta === "number" && Number.isFinite(eta) ? ` · ~${Math.round(eta)}s remaining` : "";
+          toast.message("Backtest progress", {
+            description: `${Number.isFinite(pct) ? `${pct}%` : "running"}${etaTxt}`,
+          });
+        } catch {
+          /* ignore malformed realtime payloads */
         }
       },
     });
     return () => off();
-  }, [accessToken, userId, hasTraderAccess, pushNotification]);
+  }, [accessToken, userId, hasTraderAccess]);
 
   async function logout() {
     await performLogout({

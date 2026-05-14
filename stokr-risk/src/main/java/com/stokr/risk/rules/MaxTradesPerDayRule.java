@@ -36,7 +36,7 @@ public class MaxTradesPerDayRule implements RiskRule {
         LocalDate day = ZonedDateTime.ofInstant(evalInstant, zone).toLocalDate();
         Instant start = day.atStartOfDay(zone).toInstant();
         Instant end = day.plusDays(1).atStartOfDay(zone).toInstant();
-        long count = omsOrderRepository.countByUserAndDay(context.userId(), start, end);
+        long count = omsOrderRepository.countByUserAndDayNonBacktest(context.userId(), start, end);
         if (count >= maxTradesPerDay) {
             return RiskDecision.reject(code(), "Max trades per day exceeded");
         }

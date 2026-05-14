@@ -10,4 +10,6 @@ import java.util.UUID;
 public interface BrokerOauthStateRepository extends JpaRepository<BrokerOauthState, UUID> {
 
     Optional<BrokerOauthState> findByStateTokenAndConsumedFalseAndExpiresAtAfter(String stateToken, Instant now);
+
+    Optional<BrokerOauthState> findByStateToken(String stateToken);
 }

@@ -3,6 +3,8 @@ package com.stokr.marketdata.service;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +54,17 @@ public class MarketDataQueryService {
     @Transactional(readOnly = true)
     public List<MarketdataCandle> rangeAsc(String symbol, String timeframe, Instant start, Instant end) {
         return candleRepository.findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(symbol, timeframe, start, end);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<MarketdataCandle> rangeAscPage(String symbol, String timeframe, Instant start, Instant end, Pageable pageable) {
+        return candleRepository.findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
+                symbol, timeframe, start, end, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public long rangeCount(String symbol, String timeframe, Instant start, Instant end) {
+        return candleRepository.countBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalse(symbol, timeframe, start, end);
     }
 
     public List<MarketdataCandle> replay(List<MarketdataCandle> candles) {

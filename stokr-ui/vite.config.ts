@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-/** Dev-only backend origin shared by HTTP + WS proxies. */
+/** Dev-only backend origin shared by HTTP + WS proxies (never used in production builds — nginx serves UI + proxies /api). */
 const backendTarget =
   process.env.STOKR_BACKEND_ORIGIN ??
   process.env.STOKR_API_PROXY_TARGET ??

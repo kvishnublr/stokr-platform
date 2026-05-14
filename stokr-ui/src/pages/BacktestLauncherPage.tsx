@@ -1,23 +1,17 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Calendar } from "lucide-react";
-import { useRef, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { launchReplay, type ReplayLaunchBody } from "../api/backtest";
+import { fetchStrategyMetadata } from "../api/strategyMetadata";
+import { launchReplay, type ExecutionRequest } from "../api/backtest";
 import { parseAxiosMessage } from "../api/client";
+import { DynamicStrategyFields } from "../components/strategy/DynamicStrategyFields";
+import { collectStrategyParameters, validateClientExecution } from "../lib/strategyExecutionForm";
+import { useSessionStore } from "../state/session";
 
-const STRATEGIES = [
-  { key: "MEAN_REVERSION_RANGE_FADE", label: "Mean reversion (range fade)" },
-  { key: "MEAN_REVERSION_V2", label: "Mean reversion v2 (relaxed bands)" },
-  { key: "OPENING_RANGE_BREAKOUT", label: "Opening range breakout" },
-  { key: "VWAP_MEAN_REVERSION", label: "VWAP mean reversion" },
-  { key: "MOMENTUM_BREAKOUT", label: "Momentum breakout" },
-  { key: "EMA_TREND_FOLLOW", label: "EMA trend following" },
-] as const;
+const MEAN_REVERSION_KEY = "MEAN_REVERSION_RANGE_FADE";
 
-const TIMEFRAMES = ["1m", "5m", "15m", "1h"] as const;
-
-/** Dark-theme picker; calendar button overlay handles opening (native glyph sits underneath). */
 const DATETIME_LOCAL_CLASS =
   "relative z-0 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 pr-11 text-sm text-white outline-none focus:border-neutral-600 " +
   "[color-scheme:dark] " +
@@ -32,18 +26,49 @@ function openDatetimePicker(input: HTMLInputElement | null) {
   }
 }
 
-function localInputToIso(localDatetime: string): string {
-  const d = new Date(localDatetime);
-  return d.toISOString();
+function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
 }
 
 export function BacktestLauncherPage() {
   const navigate = useNavigate();
+  const accessToken = useSessionStore((s) => s.accessToken);
   const startInputRef = useRef<HTMLInputElement>(null);
   const endInputRef = useRef<HTMLInputElement>(null);
+  const [clientErrors, setClientErrors] = useState<string | null>(null);
+
+  const metaQuery = useQuery({
+    queryKey: ["strategy-metadata", MEAN_REVERSION_KEY],
+    queryFn: () => fetchStrategyMetadata(MEAN_REVERSION_KEY),
+    enabled: Boolean(accessToken),
+    retry: false,
+  });
+
+  const feeOptions = useMemo(() => metaQuery.data?.allowedFeeModels ?? ["NONE", "PERCENT_2_BPS", "PERCENT_5_BPS"], [metaQuery.data]);
+  const slipOptions = useMemo(
+    () => metaQuery.data?.allowedSlippageModels ?? ["NONE", "SPREAD_PROXY", "VOL_SCALED"],
+    [metaQuery.data],
+  );
+  const profileOptions = useMemo(
+    () =>
+      metaQuery.data?.allowedExecutionProfiles ?? [
+        "SIMULATED_DEFAULT",
+        "SIMULATED_HIGH_LATENCY",
+        "REPLAY_RAW",
+        "CONSERVATIVE",
+        "BALANCED",
+        "AGGRESSIVE",
+      ],
+    [metaQuery.data],
+  );
+  const timeframeOptions = useMemo(() => metaQuery.data?.allowedTimeframes ?? ["1m", "5m", "15m", "1h"], [metaQuery.data]);
 
   const m = useMutation({
-    mutationFn: async (body: ReplayLaunchBody) => launchReplay(body),
+    mutationFn: async (body: ExecutionRequest) => launchReplay(body),
     onSuccess: (res) => {
       toast.success("Replay completed", {
         description: res.correlationId ? `Correlation ${res.correlationId}` : undefined,
@@ -55,32 +80,59 @@ export function BacktestLauncherPage() {
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const symbol = String(fd.get("symbol") || "").trim().toUpperCase();
-    const startLocal = String(fd.get("start") || "");
-    const endLocal = String(fd.get("end") || "");
-    const seed = Number(fd.get("seed") ?? 42);
-    const strategyKey = String(fd.get("strategyKey") || "MEAN_REVERSION_RANGE_FADE");
-    const timeframe = String(fd.get("timeframe") || "5m");
-    const executionProfile = String(fd.get("executionProfile") || "SIMULATED_DEFAULT");
-    const feeModel = String(fd.get("feeModel") || "PERCENT_2_BPS");
-    const slippageModel = String(fd.get("slippageModel") || "SPREAD_PROXY");
-
-    if (!symbol || !startLocal || !endLocal) {
-      toast.error("Symbol and date range are required.");
+    setClientErrors(null);
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    const meta = metaQuery.data;
+    if (!meta) {
+      toast.error("Strategy metadata not loaded yet.");
       return;
     }
 
-    const body: ReplayLaunchBody = {
+    const symbol = String(fd.get("symbol") || "").trim().toUpperCase();
+    const timeframe = String(fd.get("timeframe") || timeframeOptions[0] || "5m");
+    const capital = Number(fd.get("capital"));
+    const executionProfile = String(fd.get("executionProfile") || profileOptions[0]);
+    const feeModel = String(fd.get("feeModel") || feeOptions[0]);
+    const slippageModel = String(fd.get("slippageModel") || slipOptions[0]);
+    const seedRaw = fd.get("seed");
+    const seed = seedRaw === null || String(seedRaw).trim() === "" ? null : Number(seedRaw);
+    const startLocal = String(fd.get("start") || "");
+    const endLocal = String(fd.get("end") || "");
+
+    if (!symbol || !startLocal || !endLocal) {
+      setClientErrors("Symbol and date range are required.");
+      return;
+    }
+    if (!Number.isFinite(capital) || capital < 1) {
+      setClientErrors("Capital must be a number ≥ 1.");
+      return;
+    }
+
+    const strategyParameters = collectStrategyParameters(form, meta.parameters);
+    const cErr = validateClientExecution(meta, strategyParameters);
+    if (cErr) {
+      setClientErrors(cErr);
+      return;
+    }
+
+    const tz = browserTimeZone();
+    const body: ExecutionRequest = {
+      strategyKey: MEAN_REVERSION_KEY,
       symbol,
-      start: localInputToIso(startLocal),
-      end: localInputToIso(endLocal),
-      seed: Number.isFinite(seed) ? seed : 42,
-      strategyKey,
       timeframe,
+      executionMode: "BACKTEST",
       executionProfile,
+      capital,
       feeModel,
       slippageModel,
+      seed: Number.isFinite(seed as number) ? (seed as number) : null,
+      range: {
+        from: new Date(startLocal).toISOString(),
+        to: new Date(endLocal).toISOString(),
+        timezone: tz,
+      },
+      strategyParameters,
     };
     m.mutate(body);
   }
@@ -88,38 +140,33 @@ export function BacktestLauncherPage() {
   return (
     <form onSubmit={onSubmit} className="max-w-2xl space-y-6">
       <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-6">
+        <h2 className="mb-1 text-sm font-semibold text-neutral-200">{metaQuery.data?.displayName ?? "Mean reversion"}</h2>
+        <p className="mb-4 text-xs text-neutral-500">
+          Unified execution envelope (PR-2). Only BACKTEST synchronous replay is enabled. Metadata schema v
+          {metaQuery.data?.schemaVersion ?? "—"}.
+        </p>
+
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="text-neutral-400">Symbol</span>
             <input
               name="symbol"
-              defaultValue="SPY"
+              defaultValue="NIFTY 50"
               className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 font-mono text-sm text-white outline-none focus:border-neutral-600"
               required
             />
           </label>
           <label className="block text-sm">
-            <span className="text-neutral-400">Seed</span>
+            <span className="text-neutral-400">Capital (notional)</span>
             <input
-              name="seed"
+              name="capital"
               type="number"
-              defaultValue={42}
+              defaultValue={100000}
+              min={1}
+              step={100}
               className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 font-mono text-sm text-white outline-none focus:border-neutral-600"
+              required
             />
-          </label>
-          <label className="block text-sm sm:col-span-2">
-            <span className="text-neutral-400">Strategy</span>
-            <select
-              name="strategyKey"
-              defaultValue="MEAN_REVERSION_RANGE_FADE"
-              className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-neutral-600"
-            >
-              {STRATEGIES.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
           </label>
           <label className="block text-sm">
             <span className="text-neutral-400">Timeframe</span>
@@ -128,12 +175,21 @@ export function BacktestLauncherPage() {
               defaultValue="5m"
               className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-neutral-600"
             >
-              {TIMEFRAMES.map((tf) => (
+              {timeframeOptions.map((tf) => (
                 <option key={tf} value={tf}>
                   {tf}
                 </option>
               ))}
             </select>
+          </label>
+          <label className="block text-sm">
+            <span className="text-neutral-400">Execution mode</span>
+            <input
+              name="executionModeDisplay"
+              readOnly
+              value="BACKTEST"
+              className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-400 outline-none"
+            />
           </label>
           <label className="block text-sm">
             <span className="text-neutral-400">Execution profile</span>
@@ -142,21 +198,21 @@ export function BacktestLauncherPage() {
               defaultValue="SIMULATED_DEFAULT"
               className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-neutral-600"
             >
-              <option value="SIMULATED_DEFAULT">Simulated default</option>
-              <option value="SIMULATED_HIGH_LATENCY">Simulated high latency</option>
-              <option value="REPLAY_RAW">Replay raw</option>
+              {profileOptions.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
             </select>
           </label>
           <label className="block text-sm">
             <span className="text-neutral-400">Fee model</span>
-            <select
-              name="feeModel"
-              defaultValue="PERCENT_2_BPS"
-              className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-neutral-600"
-            >
-              <option value="NONE">None</option>
-              <option value="PERCENT_2_BPS">2 bps per side</option>
-              <option value="PERCENT_5_BPS">5 bps per side</option>
+            <select name="feeModel" defaultValue="PERCENT_2_BPS" className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-neutral-600">
+              {feeOptions.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
             </select>
           </label>
           <label className="block text-sm">
@@ -166,21 +222,25 @@ export function BacktestLauncherPage() {
               defaultValue="SPREAD_PROXY"
               className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-neutral-600"
             >
-              <option value="NONE">None</option>
-              <option value="SPREAD_PROXY">Spread proxy</option>
-              <option value="VOL_SCALED">Vol scaled</option>
+              {slipOptions.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
             </select>
+          </label>
+          <label className="block text-sm">
+            <span className="text-neutral-400">Seed (optional)</span>
+            <input
+              name="seed"
+              type="number"
+              className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 font-mono text-sm text-white outline-none focus:border-neutral-600"
+            />
           </label>
           <label className="block text-sm">
             <span className="text-neutral-400">Range start (local)</span>
             <div className="relative mt-1">
-              <input
-                ref={startInputRef}
-                name="start"
-                type="datetime-local"
-                className={DATETIME_LOCAL_CLASS}
-                required
-              />
+              <input ref={startInputRef} name="start" type="datetime-local" className={DATETIME_LOCAL_CLASS} required />
               <button
                 type="button"
                 className="absolute right-1.5 top-1/2 z-10 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-800 hover:text-white"
@@ -194,13 +254,7 @@ export function BacktestLauncherPage() {
           <label className="block text-sm">
             <span className="text-neutral-400">Range end (local)</span>
             <div className="relative mt-1">
-              <input
-                ref={endInputRef}
-                name="end"
-                type="datetime-local"
-                className={DATETIME_LOCAL_CLASS}
-                required
-              />
+              <input ref={endInputRef} name="end" type="datetime-local" className={DATETIME_LOCAL_CLASS} required />
               <button
                 type="button"
                 className="absolute right-1.5 top-1/2 z-10 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-800 hover:text-white"
@@ -213,16 +267,23 @@ export function BacktestLauncherPage() {
           </label>
         </div>
 
+        {metaQuery.isLoading ? <p className="mt-4 text-xs text-neutral-500">Loading strategy metadata…</p> : null}
+        {metaQuery.isError ? (
+          <p className="mt-4 text-xs text-rose-400">Could not load strategy metadata. Sign in and ensure migrations V15 are applied.</p>
+        ) : null}
+        {metaQuery.isSuccess ? <DynamicStrategyFields parameters={metaQuery.data.parameters} disabled={m.isPending} className="mt-6" /> : null}
+
+        {clientErrors ? <p className="mt-4 text-sm text-rose-400">{clientErrors}</p> : null}
+
         <button
           type="submit"
-          disabled={m.isPending}
+          disabled={m.isPending || metaQuery.isLoading || !metaQuery.isSuccess}
           className="mt-6 w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
         >
           {m.isPending ? "Running deterministic replay…" : "Run backtest"}
         </button>
         <p className="mt-3 text-xs text-neutral-500">
-          Replay executes synchronously on the API thread — large ranges may take noticeable time. Results persist metrics,
-          trades, equity curve, and replay integrity hash.
+          Full execution payload is validated server-side and persisted on the run row for audit and deterministic replay.
         </p>
       </div>
     </form>

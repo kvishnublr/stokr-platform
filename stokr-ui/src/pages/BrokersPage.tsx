@@ -444,7 +444,7 @@ export function BrokersPage() {
                 )}
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${statusQuery.isFetching ? "animate-spin" : ""}`} />
-                Retry
+                Refresh
               </button>
             </div>
           </div>
@@ -498,7 +498,11 @@ export function BrokersPage() {
                         : "text-amber-200/90"
                   }
                 >
-                  {st?.tokenValid ? "token valid" : "token invalid / expired"}
+                  {st?.tokenValid
+                    ? "token valid"
+                    : st?.connected
+                      ? "token invalid / expired"
+                      : "no broker session linked"}
                 </span>
                 <span className="text-neutral-500">· health {st?.health ?? "—"}</span>
               </div>

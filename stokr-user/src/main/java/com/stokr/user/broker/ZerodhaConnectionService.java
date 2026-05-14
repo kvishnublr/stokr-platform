@@ -29,6 +29,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.net.URLEncoder;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -79,9 +80,18 @@ public class ZerodhaConnectionService {
         }
         BrokerOauthState row = oauthStateRepository
                 .findByStateTokenAndConsumedFalseAndExpiresAtAfter(state, Instant.now())
-                .orElseThrow(() -> new BadRequestException("Invalid or expired OAuth state"));
-        row.setConsumed(true);
-        oauthStateRepository.save(row);
+                .orElse(null);
+        if (row == null) {
+            Optional<BrokerOauthState> replay = oauthStateRepository.findByStateToken(state);
+            if (replay.isPresent() && replay.get().isConsumed()) {
+                UUID uid = replay.get().getUser().getId();
+                if (hasActiveZerodhaSession(uid)) {
+                    log.info("zerodha.oauth.idempotent_replay userId={}", uid);
+                    return uid;
+                }
+            }
+            throw new BadRequestException("Invalid or expired OAuth state");
+        }
         UUID userId = row.getUser().getId();
 
         if (!zerodhaBrokerProperties.isConfigured()) {
@@ -140,6 +150,9 @@ public class ZerodhaConnectionService {
             account.setLastSyncAt(Instant.now());
             BrokerAccount saved = brokerAccountRepository.save(account);
 
+            row.setConsumed(true);
+            oauthStateRepository.save(row);
+
             log.info("zerodha.oauth.complete userId={} brokerUserId={} encryptedTokenLength={}",
                     userId, kiteUserId, encryptedToken.length());
             eventPublisher.publishEvent(new AuthAuditEvents.BrokerZerodhaConnected(userId, saved.getId(), Instant.now()));
@@ -150,6 +163,14 @@ public class ZerodhaConnectionService {
             log.warn("zerodha.parse.failed {}", e.getClass().getSimpleName());
             throw new BadRequestException("Invalid Zerodha response");
         }
+    }
+
+    private boolean hasActiveZerodhaSession(UUID userId) {
+        return brokerAccountRepository
+                .findFirstByUserIdAndVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(userId, "ZERODHA")
+                .filter(a -> a.getAccessTokenEnc() != null && !a.getAccessTokenEnc().isBlank())
+                .filter(a -> "CONNECTED".equalsIgnoreCase(Optional.ofNullable(a.getStatus()).orElse("")))
+                .isPresent();
     }
 
     /**

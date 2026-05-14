@@ -14,6 +14,18 @@ public final class RealtimeBridgeEvents {
     public record OrderUpdate(UUID userId, UUID orderId, String symbol, String orderState, Instant at) {
     }
 
+    public record BacktestJobProgress(
+            UUID userId,
+            UUID jobId,
+            UUID runId,
+            int processedBars,
+            int totalBars,
+            int progressPct,
+            Long etaSecondsRemaining,
+            String status
+    ) {
+    }
+
     public record PnlUpdated(UUID userId, Instant at) {
     }
 

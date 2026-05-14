@@ -5,8 +5,8 @@ import { cn } from "../../lib/utils";
  */
 export function ExecutionBadge({ state }: { state: string }) {
   const s = state.toUpperCase();
-  const ok = ["FILLED", "PARTIALLY_FILLED", "ACCEPTED", "QUEUED", "ACKNOWLEDGED", "SENT"].includes(s);
-  const warn = ["CREATED", "VALIDATING", "RISK_CHECK"].includes(s);
+  const ok = ["FILLED", "PARTIALLY_FILLED", "ACCEPTED", "PENDING_SUBMISSION", "SUBMITTED", "EXIT_FILLED"].includes(s);
+  const warn = ["CREATED", "VALIDATED", "RISK_CHECK"].includes(s);
   const bad = ["REJECTED", "CANCELLED"].includes(s);
   return (
     <span

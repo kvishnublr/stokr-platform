@@ -1,3 +1,6 @@
+# Production: set HTTPS/public URLs in .env (not committed) — e.g. STOKR_ZERODHA_REDIRECT_URL,
+# STOKR_UI_PUBLIC_BASE_URL, STOKR_CORS_ALLOWED_ORIGINS, STOKR_EMAIL_VERIFY_BASE_URL. Spring uses
+# server.forward-headers-strategy when TLS terminates at an edge proxy (see application.yml).
 services:
   api:
     build:
@@ -6,6 +9,7 @@ services:
     container_name: stokr-api
     profiles:
       - app
+    restart: unless-stopped
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -18,6 +22,8 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      # Compose stack includes RabbitMQ — consumers must run unless explicitly disabled.
+      STOKR_RABBIT_LISTENERS_ENABLED: ${STOKR_RABBIT_LISTENERS_ENABLED:-true}
       JWT_SECRET: ${JWT_SECRET:-change-me-use-long-random-secret-for-development-only}
       JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
       JWT_REFRESH_TTL_SECONDS: ${JWT_REFRESH_TTL_SECONDS:-1209600}
@@ -56,14 +62,22 @@ services:
     container_name: stokr-ui
     profiles:
       - app
+    restart: unless-stopped
     ports:
       - "${UI_PORT:-3000}:80"
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "test", "-f", "/usr/share/nginx/html/index.html"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     container_name: stokr-postgres
     environment:
       POSTGRES_DB: ${DB_NAME:-stokr_platform}
@@ -81,6 +95,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     container_name: stokr-redis
     ports:
       - "${REDIS_PORT:-6379}:6379"
@@ -95,6 +110,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    restart: unless-stopped
     container_name: stokr-rabbitmq
     ports:
       - "${RABBITMQ_PORT:-5672}:5672"

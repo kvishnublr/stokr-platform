@@ -5,6 +5,7 @@ export type RealtimeHandlers = {
   onOrder?: (msg: IMessage) => void;
   onPnl?: (msg: IMessage) => void;
   onStrategy?: (msg: IMessage) => void;
+  onBacktestJob?: (msg: IMessage) => void;
 };
 
 const activeClients = new Set<Client>();
@@ -19,6 +20,7 @@ export function connectStomp(token: string | null, userId: string | null, handle
     heartbeatOutgoing: 15000,
     webSocketFactory: () => {
       const qs = token ? `?access_token=${encodeURIComponent(token)}` : "";
+      // Same-origin `/ws`: HTTPS pages use WSS automatically; nginx must proxy `/ws` to the API (see stokr-ui/nginx.conf).
       return new SockJS(`/ws${qs}`) as unknown as WebSocket;
     },
     connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
@@ -28,6 +30,7 @@ export function connectStomp(token: string | null, userId: string | null, handle
       if (handlers.onOrder) client.subscribe(`/topic/orders.${userId}`, handlers.onOrder);
       if (handlers.onPnl) client.subscribe(`/topic/pnl.${userId}`, handlers.onPnl);
       if (handlers.onStrategy) client.subscribe(`/topic/strategies.${userId}`, handlers.onStrategy);
+      if (handlers.onBacktestJob) client.subscribe(`/topic/backtest.jobs.${userId}`, handlers.onBacktestJob);
     },
   });
   activeClients.add(client);

@@ -2,10 +2,13 @@ package com.stokr.execution.pipeline;
 
 import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
+import com.stokr.execution.risk.RiskContextFactory;
 import com.stokr.execution.service.ExecutionService;
+import com.stokr.oms.domain.ExecutionEventType;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
+import com.stokr.oms.service.ExecutionEventAppendService;
 import com.stokr.oms.service.OrderLifecycleService;
 import com.stokr.risk.model.RiskContext;
 import com.stokr.risk.model.RiskDecision;
@@ -27,9 +30,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
-import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -46,6 +50,8 @@ public class OrderIntentProcessor {
     private final ExecutionService executionService;
     private final LiveTradingTraderEligibilityService liveTradingTraderEligibilityService;
     private final ObjectProvider<NotificationPublisher> notificationPublisher;
+    private final ExecutionEventAppendService executionEventAppendService;
+    private final RiskContextFactory riskContextFactory;
 
     @Value("${stokr.risk.zone:Asia/Kolkata}")
     private String riskZone;
@@ -54,7 +60,7 @@ public class OrderIntentProcessor {
     private BigDecimal defaultQuantity;
 
     /**
-     * Creates OMS order from persisted signal, runs risk, then routes to execution (sync or async).
+     * Creates OMS order from persisted signal, runs risk, emits execution events, then routes to execution (sync or async).
      */
     @Transactional
     public void processSignalIntent(SignalPersistedMessage msg, boolean synchronousExecution) {
@@ -104,20 +110,24 @@ public class OrderIntentProcessor {
             return;
         }
 
-        order = orderLifecycleService.transition(order.getId(), OrderState.VALIDATING, null);
+        executionEventAppendService.append(order, ExecutionEventType.SIGNAL_GENERATED, Map.of(
+                "signalId", signal.getId().toString(),
+                "symbol", signal.getSymbol() != null ? signal.getSymbol() : ""
+        ));
+
+        executionEventAppendService.append(order, ExecutionEventType.ORDER_REQUESTED, Map.of(
+                "symbol", signal.getSymbol() != null ? signal.getSymbol() : "",
+                "side", mapSide(signal),
+                "executionMode", mode.name()
+        ));
+
+        order = orderLifecycleService.transition(order.getId(), OrderState.VALIDATED, null);
         order = orderLifecycleService.transition(order.getId(), OrderState.RISK_CHECK, null);
 
         ZoneId zone = ZoneId.of(riskZone);
         Instant evalInstant = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
-        RiskContext ctx = new RiskContext(
-                signal.getUserId(),
-                order,
-                BigDecimal.ZERO,
-                0,
-                LocalTime.ofInstant(evalInstant, zone),
-                zone,
-                evalInstant.toEpochMilli()
-        );
+        BigDecimal atrRatio = atrToCloseRatio(signal);
+        RiskContext ctx = riskContextFactory.build(signal.getUserId(), order, zone, evalInstant, atrRatio);
 
         RiskDecision decision = riskEngineService.evaluate(ctx);
         riskEvaluationTraceService.record(ctx, decision, order.getId());
@@ -129,12 +139,22 @@ public class OrderIntentProcessor {
                     "REJECT",
                     decision.message()
             );
-            orderLifecycleService.transition(order.getId(), OrderState.REJECTED, decision.message());
+            order = orderLifecycleService.transition(order.getId(), OrderState.REJECTED, decision.message());
+            executionEventAppendService.append(order, ExecutionEventType.EXECUTION_REJECTED, Map.of(
+                    "phase", "RISK",
+                    "reason", decision.message() != null ? decision.message() : ""
+            ));
             return;
         }
 
-        order = orderLifecycleService.transition(order.getId(), OrderState.ACCEPTED, null);
-        order = orderLifecycleService.transition(order.getId(), OrderState.QUEUED, null);
+        executionEventAppendService.append(order, ExecutionEventType.RISK_CHECK_PASSED, Map.of(
+                "riskReason", decision.message() != null ? decision.message() : "OK"
+        ));
+
+        order = orderLifecycleService.transition(order.getId(), OrderState.PENDING_SUBMISSION, null);
+
+        long fillKey = fillDeterminismKey(signal);
+        Instant anchor = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : order.getCreatedAt();
 
         executionService.dispatch(
                 new ExecutionDispatchMessage(
@@ -144,10 +164,20 @@ public class OrderIntentProcessor {
                         order.getBrokerVendor(),
                         0,
                         signal.getBacktestRunId(),
-                        msg.executionMode()
+                        msg.executionMode(),
+                        fillKey,
+                        anchor
                 ),
                 synchronousExecution
         );
+    }
+
+    private static long fillDeterminismKey(StrategySignalEntity signal) {
+        long k = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp().toEpochMilli() : 0L;
+        k ^= signal.getId().getMostSignificantBits();
+        k ^= signal.getId().getLeastSignificantBits();
+        k ^= signal.getUserId().getMostSignificantBits();
+        return k;
     }
 
     private OmsOrder buildDraftFromSignal(StrategySignalEntity signal, ExecutionMode mode) {
@@ -168,6 +198,16 @@ public class OrderIntentProcessor {
         return o;
     }
 
+    private static BigDecimal atrToCloseRatio(StrategySignalEntity signal) {
+        if (signal.getAtrValue() == null || signal.getEntryReferencePrice() == null) {
+            return null;
+        }
+        if (signal.getEntryReferencePrice().compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        return signal.getAtrValue().divide(signal.getEntryReferencePrice(), 8, RoundingMode.HALF_UP);
+    }
+
     private static String mapSide(StrategySignalEntity signal) {
         return switch (signal.getSignalType()) {
             case BUY -> "BUY";
@@ -181,7 +221,14 @@ public class OrderIntentProcessor {
         if (executionMode == null) {
             return ExecutionMode.SIMULATED;
         }
-        return "LIVE".equalsIgnoreCase(executionMode) ? ExecutionMode.LIVE : ExecutionMode.SIMULATED;
+        String m = executionMode.trim().toUpperCase();
+        if ("LIVE".equals(m)) {
+            return ExecutionMode.LIVE;
+        }
+        if ("PAPER".equals(m)) {
+            return ExecutionMode.PAPER;
+        }
+        return ExecutionMode.SIMULATED;
     }
 
     private void notifyEligibility(UUID userId, LiveTraderEligibilityResult gate) {
@@ -189,10 +236,10 @@ public class OrderIntentProcessor {
                 "IN_APP",
                 "TRADER_ELIGIBILITY_BLOCK",
                 userId,
-                Map.of(
+                new LinkedHashMap<>(Map.of(
                         "reasonCode", gate.reasonCode() != null ? gate.reasonCode() : "",
                         "message", gate.message() != null ? gate.message() : ""
-                )
+                ))
         )));
     }
 }

@@ -14,6 +14,9 @@ function parseAxiosMessage(err: unknown): string {
     if (!err.response) {
       const code = err.code;
       const msg = (err.message || "").toLowerCase();
+      const isLocalDev =
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
       if (
         code === "ERR_NETWORK" ||
         code === "ECONNREFUSED" ||
@@ -21,7 +24,10 @@ function parseAxiosMessage(err: unknown): string {
         msg.includes("connection refused") ||
         msg.includes("failed to fetch")
       ) {
-        return "Cannot reach the API. Start Spring Boot (stokr-bootstrap) on port 8080 so Vite can proxy /api from this dev server — or set STOKR_BACKEND_ORIGIN (or STOKR_API_PROXY_TARGET) when starting Vite if the API uses another URL.";
+        if (isLocalDev) {
+          return "Cannot reach the API. Start Spring Boot (stokr-bootstrap) on port 8080 so Vite can proxy /api from this dev server — or set STOKR_BACKEND_ORIGIN (or STOKR_API_PROXY_TARGET) when starting Vite if the API uses another URL.";
+        }
+        return "Cannot reach the API. Check that the UI proxy/nginx routes /api to the backend and that the API process is running.";
       }
     }
     const d = err.response?.data as {
@@ -34,7 +40,13 @@ function parseAxiosMessage(err: unknown): string {
     if (err.response?.status === 401) return "Session expired — please sign in again.";
     const st = err.response?.status;
     if (st && st >= 500) {
-      return `Server error (${st}). Is the API running on port 8080? Check backend logs for the real cause.`;
+      const isLocalDev =
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+      if (isLocalDev) {
+        return `Server error (${st}). Is the API running on port 8080? Check backend logs for the real cause.`;
+      }
+      return `Server error (${st}). Check backend logs and reverse-proxy routing to the API.`;
     }
   }
   if (err instanceof Error) return err.message;

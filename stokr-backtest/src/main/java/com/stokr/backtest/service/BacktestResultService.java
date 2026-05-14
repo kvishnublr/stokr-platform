@@ -1,5 +1,7 @@
 package com.stokr.backtest.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.backtest.domain.BacktestEquityCurvePoint;
 import com.stokr.backtest.domain.BacktestMetrics;
 import com.stokr.backtest.domain.BacktestResult;
@@ -40,6 +42,7 @@ public class BacktestResultService {
     private final EquityCurveService equityCurveService;
     private final ReplayValidationService replayValidationService;
     private final MetricsCalculator metricsCalculator;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public BacktestReplayOutcome persistForRun(BacktestRun run) {
@@ -56,7 +59,9 @@ public class BacktestResultService {
         for (int i = 0; i < curve.size(); i++) {
             EquityCurveService.EquityPoint p = curve.get(i);
             TradeFact fact = facts.get(i);
-            Instant pt = fact.trade().getClosedAt() != null ? fact.trade().getClosedAt() : Instant.now();
+            Instant pt = fact.trade().getClosedAt() != null ? fact.trade().getClosedAt()
+                    : (fact.trade().getOpenedAt() != null ? fact.trade().getOpenedAt()
+                    : (run.getRangeEnd() != null ? run.getRangeEnd() : Instant.EPOCH));
             BacktestEquityCurvePoint row = new BacktestEquityCurvePoint();
             row.setRun(run);
             row.setPointTime(pt);
@@ -102,7 +107,7 @@ public class BacktestResultService {
         result.setWinRate(winRate);
         result.setSharpeRatio(sharpe);
         result.setMaxDrawdown(maxDrawdown);
-        result.setRoi(metricsCalculator.roi(totalPnl, BigDecimal.valueOf(100_000)));
+        result.setRoi(metricsCalculator.roi(totalPnl, startingCapital(run)));
         resultRepository.save(result);
 
         List<BacktestTrade> persistedTrades = tradeRepository.findByRun_IdAndDeletedFalseOrderByCreatedAtAsc(run.getId());
@@ -179,6 +184,22 @@ public class BacktestResultService {
                         c.getDrawdown()
                 )).toList()
         );
+    }
+
+    private BigDecimal startingCapital(BacktestRun run) {
+        String json = run.getExecutionRequestJson();
+        if (json == null || json.isBlank()) {
+            return BigDecimal.valueOf(100_000);
+        }
+        try {
+            JsonNode cap = objectMapper.readTree(json).get("capital");
+            if (cap == null || cap.isNull() || cap.isMissingNode()) {
+                return BigDecimal.valueOf(100_000);
+            }
+            return cap.decimalValue();
+        } catch (Exception e) {
+            return BigDecimal.valueOf(100_000);
+        }
     }
 
     private static List<TradeFact> buildFacts(List<OmsExecution> executions, BacktestRun run) {

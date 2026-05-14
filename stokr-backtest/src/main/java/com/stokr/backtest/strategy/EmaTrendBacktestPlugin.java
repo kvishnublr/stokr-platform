@@ -1,13 +1,12 @@
 package com.stokr.backtest.strategy;
 
+import com.stokr.backtest.execution.BacktestEvaluationContext;
+import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.keys.StrategyKeys;
 import com.stokr.strategy.ematrend.EmaTrendFollowingSignalGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-
-import java.time.Instant;
-import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -22,13 +21,18 @@ public class EmaTrendBacktestPlugin implements BacktestStrategyPlugin {
 
     @Override
     public StrategySignalEntity evaluateAtOpen(
-            String symbol,
-            UUID userId,
-            UUID runId,
-            String pipeline,
-            Instant barOpen,
-            String timeframe
+            BacktestEvaluationContext ctx,
+            MarketdataCandle bar,
+            int barIndex,
+            String stepTimeframe
     ) {
-        return generator.evaluatePersistableAtOpen(symbol, userId, runId, pipeline, barOpen, timeframe);
+        return generator.evaluatePersistableAtOpen(
+                ctx.execution().symbol(),
+                ctx.execution().userId(),
+                ctx.execution().runId(),
+                ctx.pipeline(),
+                bar.getOpenTime(),
+                stepTimeframe
+        );
     }
 }

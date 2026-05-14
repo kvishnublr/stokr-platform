@@ -49,4 +49,23 @@ public class BacktestRun extends BaseEntity {
     /** UX label e.g. SIMULATED_SLIPPAGE_DEFAULT — does not change execution pipeline unless wired. */
     @Column(name = "execution_profile", length = 32)
     private String executionProfile;
+
+    /** Canonical PR-2 execution envelope JSON (sorted keys in persistence layer). */
+    @Column(name = "execution_request_json", columnDefinition = "text")
+    private String executionRequestJson;
+
+    @Column(name = "metadata_schema_version")
+    private Integer metadataSchemaVersion;
+
+    @Column(name = "strategy_definition_version")
+    private Long strategyDefinitionVersion;
+
+    @Column(name = "execution_mode", length = 32)
+    private String executionMode;
+
+    @Column(name = "fee_model", length = 64)
+    private String feeModel;
+
+    @Column(name = "slippage_model", length = 64)
+    private String slippageModel;
 }

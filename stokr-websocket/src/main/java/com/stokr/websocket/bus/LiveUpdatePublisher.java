@@ -12,6 +12,10 @@ public class LiveUpdatePublisher {
 
     private final SimpMessagingTemplate messagingTemplate;
 
+    public void publishBacktestJob(String userId, Map<String, Object> payload) {
+        messagingTemplate.convertAndSend("/topic/backtest.jobs." + userId, payload);
+    }
+
     public void publishOrderUpdate(String userId, Map<String, Object> payload) {
         messagingTemplate.convertAndSend("/topic/orders." + userId, payload);
     }

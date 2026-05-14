@@ -28,7 +28,9 @@ public class RetryHandler {
                 msg.brokerVendor(),
                 msg.attempt() + 1,
                 msg.backtestRunId(),
-                msg.executionMode()
+                msg.executionMode(),
+                msg.fillDeterminismKey(),
+                msg.deterministicAnchor()
         );
         rabbitTemplate.convertAndSend(PipelineQueues.EXECUTION, next);
     }

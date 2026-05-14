@@ -62,4 +62,10 @@ public class StrategyDefinition extends BaseEntity {
 
     @Column(name = "announcement_banner", length = 500)
     private String announcementBanner;
+
+    /**
+     * JSON document: schemaVersion, executionCapabilities, parameters[] (metadata-driven launch / backtest).
+     */
+    @Column(name = "parameter_metadata_json", columnDefinition = "text")
+    private String parameterMetadataJson;
 }

@@ -25,6 +25,7 @@ public class StompTopicAuthorizationInterceptor implements ChannelInterceptor {
     private static final String PREFIX_PNL = "/topic/pnl.";
     private static final String PREFIX_SIGNALS = "/topic/signals.";
     private static final String PREFIX_STRATEGIES = "/topic/strategies.";
+    private static final String PREFIX_BACKTEST_JOBS = "/topic/backtest.jobs.";
     private static final String PREFIX_MARKET = "/topic/market.";
     private static final String PREFIX_ADMIN = "/topic/admin.";
 
@@ -69,7 +70,8 @@ public class StompTopicAuthorizationInterceptor implements ChannelInterceptor {
                 || matchesUserScoped(dest, PREFIX_POSITIONS, userId)
                 || matchesUserScoped(dest, PREFIX_PNL, userId)
                 || matchesUserScoped(dest, PREFIX_SIGNALS, userId)
-                || matchesUserScoped(dest, PREFIX_STRATEGIES, userId)) {
+                || matchesUserScoped(dest, PREFIX_STRATEGIES, userId)
+                || matchesUserScoped(dest, PREFIX_BACKTEST_JOBS, userId)) {
             return message;
         }
         log.warn("stomp.forbidden.unknown dest={} userId={}", dest, userId);

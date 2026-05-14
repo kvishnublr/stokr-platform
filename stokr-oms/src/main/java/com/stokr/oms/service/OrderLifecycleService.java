@@ -10,6 +10,7 @@ import com.stokr.common.exception.NotFoundException;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
+import com.stokr.oms.execution.OrderStateMachine;
 import com.stokr.oms.repository.OmsOrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -55,35 +56,36 @@ public class OrderLifecycleService {
     @Transactional
     public OmsOrder transition(UUID orderId, OrderState newState, String rejectReason) {
         OmsOrder order = orderRepository.findById(orderId).orElseThrow(() -> new NotFoundException("Order not found"));
+        OrderStateMachine.validate(order.getState(), newState);
         order.setState(newState);
         order.setRejectReason(rejectReason);
         return orderRepository.save(order);
     }
 
     /**
-     * LIVE routing only: moves QUEUED → SENT using broker adapter (immutable broker truth captured separately).
+     * LIVE routing only: {@link OrderState#PENDING_SUBMISSION} → {@link OrderState#SUBMITTED} via broker adapter.
      */
     @Transactional
     public OmsOrder submitToBroker(OmsOrder order, String brokerVendor) {
         if (order.getExecutionMode() != ExecutionMode.LIVE) {
             throw new ConflictException("Broker routing only supported for LIVE execution mode");
         }
-        if (order.getState() != OrderState.QUEUED) {
-            throw new ConflictException("Order must be QUEUED before broker submission");
+        if (order.getState() != OrderState.PENDING_SUBMISSION) {
+            throw new ConflictException("Order must be PENDING_SUBMISSION before broker submission");
         }
+        OmsOrder submitted = transition(order.getId(), OrderState.SUBMITTED, null);
         BrokerAdapter adapter = brokerAdapterRegistry.get(brokerVendor);
         BrokerOrderRequest req = new BrokerOrderRequest(
-                order.getSymbol(),
-                order.getSide(),
-                order.getOrderType(),
-                order.getQuantity(),
-                order.getLimitPrice(),
-                order.getId() != null ? order.getId().toString() : null
+                submitted.getSymbol(),
+                submitted.getSide(),
+                submitted.getOrderType(),
+                submitted.getQuantity(),
+                submitted.getLimitPrice(),
+                submitted.getId() != null ? submitted.getId().toString() : null
         );
         BrokerOrderResponse res = adapter.placeOrder(req);
-        order.setBrokerVendor(brokerVendor);
-        order.setBrokerOrderId(res.brokerOrderId());
-        order.setState(OrderState.SENT);
-        return orderRepository.save(order);
+        submitted.setBrokerVendor(brokerVendor);
+        submitted.setBrokerOrderId(res.brokerOrderId());
+        return orderRepository.save(submitted);
     }
 }

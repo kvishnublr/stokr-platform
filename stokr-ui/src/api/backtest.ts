@@ -69,21 +69,30 @@ export type SpringPage<T> = {
   size: number;
 };
 
-export type ReplayLaunchBody = {
-  symbol: string;
-  start: string;
-  end: string;
-  seed: number;
+export type ExecutionTimeRange = {
+  from: string;
+  to: string;
+  timezone: string;
+};
+
+/** PR-2 unified synchronous backtest envelope (matches `ExecutionRequestDto`). */
+export type ExecutionRequest = {
   strategyKey: string;
+  symbol: string;
   timeframe: string;
+  executionMode: string;
   executionProfile: string;
+  capital: number;
   feeModel: string;
   slippageModel: string;
+  seed?: number | null;
+  range: ExecutionTimeRange;
+  strategyParameters: Record<string, unknown>;
 };
 
 type ApiEnvelope<T> = { data?: T; correlationId?: string };
 
-export async function launchReplay(body: ReplayLaunchBody) {
+export async function launchReplay(body: ExecutionRequest) {
   const res = await api.post<ApiEnvelope<BacktestReplayOutcome>>("/api/backtest/replay", body);
   const env = res.data;
   return {

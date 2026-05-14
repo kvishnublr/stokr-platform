@@ -22,6 +22,22 @@ public class RealtimeBridgeListener {
 
     @Async
     @EventListener
+    public void onBacktestJob(RealtimeBridgeEvents.BacktestJobProgress e) {
+        String uid = e.userId().toString();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "BACKTEST_JOB");
+        payload.put("jobId", e.jobId().toString());
+        payload.put("runId", e.runId() != null ? e.runId().toString() : null);
+        payload.put("processedBars", e.processedBars());
+        payload.put("totalBars", e.totalBars());
+        payload.put("progressPct", e.progressPct());
+        payload.put("etaSecondsRemaining", e.etaSecondsRemaining());
+        payload.put("status", e.status());
+        publisher.publishBacktestJob(uid, payload);
+    }
+
+    @Async
+    @EventListener
     public void onOrder(RealtimeBridgeEvents.OrderUpdate e) {
         String uid = e.userId().toString();
         Map<String, Object> payload = new LinkedHashMap<>();

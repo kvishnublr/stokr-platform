@@ -3,6 +3,9 @@ package com.stokr.strategy.meanreversion;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.meanreversion.runtime.MeanReversionEvaluationEnvelope;
+import com.stokr.strategy.meanreversion.runtime.MeanReversionReplayState;
+import com.stokr.strategy.meanreversion.runtime.MeanReversionRuntimeParams;
 import com.stokr.strategy.signals.SignalType;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -45,57 +48,106 @@ public abstract class AbstractMeanReversionSignalGenerator {
         List<MarketdataCandle> bars5m = marketDataQueryService.lastBarsAsc(symbol, "5m", 120);
         ZonedDateTime evaluationZ = ZonedDateTime.now(zone);
         LocalDate vwapDay = evaluationZ.toLocalDate();
-        return evaluateFromBars(symbol, bars1m, bars5m, userId, backtestRunId, pipeline, evaluationZ, vwapDay);
+        return evaluateFromBars(symbol, bars1m, bars5m, userId, backtestRunId, pipeline, evaluationZ, vwapDay, null);
     }
 
     /**
-     * Deterministic evaluation at a historical 1m candle open time (replay/backtests).
+     * Deterministic evaluation at a historical candle open time (replay/backtests).
      */
-    public StrategySignalEntity evaluatePersistableAtOpen(String symbol, java.util.UUID userId, java.util.UUID backtestRunId, String pipeline, Instant barOpenTime) {
-        List<MarketdataCandle> bars1m = marketDataQueryService.lastBarsAscEndingAt(symbol, "1m", 240, barOpenTime);
-        List<MarketdataCandle> bars5m = marketDataQueryService.lastBarsAscEndingAt(symbol, "5m", 120, barOpenTime);
-        ZonedDateTime evaluationZ = barOpenTime.atZone(zone);
+    public StrategySignalEntity evaluatePersistableAtOpen(
+            String symbol,
+            java.util.UUID userId,
+            java.util.UUID backtestRunId,
+            String pipeline,
+            Instant barOpenTime
+    ) {
+        return evaluatePersistableAtOpen(symbol, userId, backtestRunId, pipeline, barOpenTime, "1m", null);
+    }
+
+    /**
+     * @param primaryTimeframe candle series used for microstructure (e.g. {@code 1m} for range fade)
+     * @param env              when non-null, {@link MeanReversionRuntimeParams} and session overrides apply; shared {@link MeanReversionReplayState} carries cooldown / confirmation across bars
+     */
+    public StrategySignalEntity evaluatePersistableAtOpen(
+            String symbol,
+            java.util.UUID userId,
+            java.util.UUID backtestRunId,
+            String pipeline,
+            Instant barOpenTime,
+            String primaryTimeframe,
+            MeanReversionEvaluationEnvelope env
+    ) {
+        String primary = primaryTimeframe != null && !primaryTimeframe.isBlank() ? primaryTimeframe : "1m";
+        String higher = env != null && env.higherTimeframe() != null && !env.higherTimeframe().isBlank()
+                ? env.higherTimeframe()
+                : ("1m".equals(primary) ? "5m" : primary);
+        List<MarketdataCandle> barsPrimary = marketDataQueryService.lastBarsAscEndingAt(symbol, primary, 240, barOpenTime);
+        List<MarketdataCandle> barsHigher = marketDataQueryService.lastBarsAscEndingAt(symbol, higher, 120, barOpenTime);
+        ZoneId z = env != null ? env.zone() : zone;
+        ZonedDateTime evaluationZ = barOpenTime.atZone(z);
         LocalDate vwapDay = evaluationZ.toLocalDate();
-        return evaluateFromBars(symbol, bars1m, bars5m, userId, backtestRunId, pipeline, evaluationZ, vwapDay);
+        return evaluateFromBars(symbol, barsPrimary, barsHigher, userId, backtestRunId, pipeline, evaluationZ, vwapDay, env);
     }
 
     private StrategySignalEntity evaluateFromBars(
             String symbol,
-            List<MarketdataCandle> bars1m,
-            List<MarketdataCandle> bars5m,
+            List<MarketdataCandle> barsPrimary,
+            List<MarketdataCandle> barsHigher,
             java.util.UUID userId,
             java.util.UUID backtestRunId,
             String pipeline,
             ZonedDateTime evaluationZ,
-            LocalDate vwapDay
+            LocalDate vwapDay,
+            MeanReversionEvaluationEnvelope env
     ) {
-        MeanReversionParams p = variant();
-        if (bars1m.size() < 60 || bars5m.size() < 10) {
+        MeanReversionParams catalog = variant();
+        MeanReversionRuntimeParams rp = env != null
+                ? env.params()
+                : MeanReversionRuntimeParams.fromVariant(catalog);
+        MeanReversionReplayState st = env != null ? env.state() : new MeanReversionReplayState();
+        int barIndex = env != null ? env.barIndex() : 0;
+
+        ZoneId z = env != null ? env.zone() : zone;
+        LocalTime sessStart = env != null ? env.sessionStart() : sessionStart;
+        LocalTime sessEnd = env != null ? env.sessionEnd() : sessionEnd;
+
+        st.beginBar(barIndex, rp.maxHoldingCandles());
+        if (!st.canEmitSignal(barIndex, rp)) {
+            return null;
+        }
+
+        int minBars = 60 + Math.max(0, rp.confirmationCandles());
+        if (barsPrimary.size() < minBars || barsHigher.size() < 10) {
             return null;
         }
 
         LocalTime lt = evaluationZ.toLocalTime();
-        if (lt.isBefore(sessionStart) || lt.isAfter(sessionEnd)) {
+        if (lt.isBefore(sessStart) || lt.isAfter(sessEnd)) {
             return null;
         }
 
-        MarketdataCandle last = bars1m.getLast();
-        List<BigDecimal> closes = closes(bars1m);
+        MarketdataCandle last = barsPrimary.getLast();
+        if (!candleOhlcFinite(last)) {
+            return null;
+        }
+
+        List<BigDecimal> closes = closes(barsPrimary);
 
         BigDecimal rsi = WilderRsi.last(closes, 14);
-        BigDecimal atr = WilderAtr.last(bars1m, 14);
+        BigDecimal atr = WilderAtr.last(barsPrimary, 14);
         BigDecimal ema20 = Ema.last(closes, 20);
 
-        SessionVwap vwap = SessionVwap.compute(bars1m, zone, vwapDay);
+        SessionVwap vwap = SessionVwap.compute(barsPrimary, z, vwapDay);
 
-        RangeBounds range = RangeBounds.lastN(bars1m, 20);
+        RangeBounds range = RangeBounds.lastN(barsPrimary, 20);
 
-        MarketRegime regime = MarketRegimeDetector.detect(bars1m, bars5m, atr, ema20, vwap.value(), range);
+        MarketRegime regime = MarketRegimeDetector.detect(barsPrimary, barsHigher, atr, ema20, vwap.value(), range);
 
         BigDecimal widthPct = range.width().divide(last.getClosePrice(), MC).multiply(BigDecimal.valueOf(100), MC);
 
+        BigDecimal atrCutoff = rp.atrCompressionCutoff();
         boolean atrCompressed = atr.compareTo(BigDecimal.ZERO) > 0
-                && atr.divide(last.getClosePrice(), MC).compareTo(new BigDecimal("0.004")) < 0;
+                && atr.divide(last.getClosePrice(), MC).compareTo(atrCutoff) < 0;
 
         boolean nearVwap = vwap.value().compareTo(BigDecimal.ZERO) > 0
                 && last.getClosePrice().subtract(vwap.value()).abs()
@@ -106,18 +158,29 @@ public abstract class AbstractMeanReversionSignalGenerator {
                 .divide(last.getClosePrice(), MC)
                 .compareTo(new BigDecimal("0.0025")) < 0;
 
+        BigDecimal effWidthCap = rp.effectiveEntryWidthCap(catalog);
         boolean sideways =
                 regime == MarketRegime.SIDEWAYS
                         && atrCompressed
                         && emaFlat
                         && nearVwap
-                        && widthPct.compareTo(p.maxRangeWidthPct()) < 0;
+                        && widthPct.compareTo(effWidthCap) < 0;
 
+        st.trackSidewaysRegime(sideways);
         if (!sideways) {
             return null;
         }
+        if (!st.confirmationMet(rp.confirmationCandles())) {
+            return null;
+        }
 
-        BigDecimal eps = last.getClosePrice().multiply(new BigDecimal("0.0005"), MC).max(new BigDecimal("0.5"));
+        if (!volumeGateOk(barsPrimary, last, rp)) {
+            return null;
+        }
+
+        BigDecimal spreadBps = rp.spreadToleranceBps() != null ? rp.spreadToleranceBps() : BigDecimal.ZERO;
+        BigDecimal baseEps = last.getClosePrice().multiply(new BigDecimal("0.0005"), MC).max(new BigDecimal("0.5"));
+        BigDecimal eps = baseEps.multiply(BigDecimal.ONE.add(spreadBps.movePointLeft(4), MC), MC);
 
         boolean touchLow = last.getLowPrice().subtract(range.low()).abs().compareTo(eps) <= 0;
         boolean touchHigh = last.getHighPrice().subtract(range.high()).abs().compareTo(eps) <= 0;
@@ -132,8 +195,8 @@ public abstract class AbstractMeanReversionSignalGenerator {
         boolean aboveVwap = last.getClosePrice().compareTo(vwap.value()) > 0;
 
         StrategySignalEntity sig = new StrategySignalEntity();
-        sig.setStrategyName(p.catalogStrategyKey());
-        sig.setStrategyVersion(p.strategyVersion());
+        sig.setStrategyName(catalog.catalogStrategyKey());
+        sig.setStrategyVersion(catalog.strategyVersion());
         sig.setSymbol(symbol);
         sig.setUserId(userId != null ? userId : systemUserId);
         sig.setBacktestRunId(backtestRunId);
@@ -147,52 +210,140 @@ public abstract class AbstractMeanReversionSignalGenerator {
         sig.setVwapDistance(last.getClosePrice().subtract(vwap.value()).divide(last.getClosePrice(), MC));
 
         String indicatorSnap = "{\"rsi\":\"" + rsi.toPlainString() + "\",\"atr\":\"" + atr.toPlainString()
-                + "\",\"rangeHigh\":\"" + range.high().toPlainString() + "\",\"rangeLow\":\"" + range.low().toPlainString() + "\"}";
-        sig.setParameterSnapshotJson(p.toSnapshotJson());
+                + "\",\"rangeHigh\":\"" + range.high().toPlainString() + "\",\"rangeLow\":\"" + range.low().toPlainString()
+                + "\",\"widthPct\":\"" + widthPct.toPlainString() + "\"}";
+        sig.setParameterSnapshotJson(rp.toExecutionSnapshotJson(catalog));
         sig.setIndicatorSnapshotJson(indicatorSnap);
 
-        if (touchLow && rsi.compareTo(p.rsiBuyMax()) < 0 && bullishRejection && belowVwap) {
+        BigDecimal conf = rp.scaledConfidence();
+
+        if (touchLow && rsi.compareTo(rp.rsiBuyMax()) < 0 && bullishRejection && belowVwap) {
             sig.setSignalType(SignalType.BUY);
-            sig.setConfidenceScore(p.confidenceScore());
+            sig.setConfidenceScore(conf);
             sig.setRejectionPattern("BULL_REJECTION");
-            sig.setReasonText("Range-low fade long (" + p.catalogStrategyKey() + ")");
-            BigDecimal stop = last.getLowPrice().min(last.getOpenPrice());
+            sig.setReasonText("Range-low fade long (" + catalog.catalogStrategyKey() + ")");
+            BigDecimal structuralStop = last.getLowPrice().min(last.getOpenPrice());
+            BigDecimal stop = resolveLongStop(last, atr, structuralStop, rp);
             sig.setStopPrice(stop);
             BigDecimal mid = range.mid();
-            BigDecimal rrTarget = computeMinRrTarget(last.getClosePrice(), stop, mid, true);
+            BigDecimal rrTarget = computeRrTarget(last.getClosePrice(), stop, mid, true, rp);
             sig.setTargetPrice(rrTarget);
             sig.setEntryReferencePrice(last.getClosePrice());
             sig.setSuggestedQty(BigDecimal.ONE);
+            st.recordSignalEmitted(barIndex);
             return sig;
         }
 
-        if (touchHigh && rsi.compareTo(p.rsiSellMin()) > 0 && bearishRejection && aboveVwap) {
+        if (touchHigh && rsi.compareTo(rp.rsiSellMin()) > 0 && bearishRejection && aboveVwap) {
             sig.setSignalType(SignalType.SELL);
-            sig.setConfidenceScore(p.confidenceScore());
+            sig.setConfidenceScore(conf);
             sig.setRejectionPattern("BEAR_REJECTION");
-            sig.setReasonText("Range-high fade short (" + p.catalogStrategyKey() + ")");
-            BigDecimal stop = last.getHighPrice().max(last.getOpenPrice());
+            sig.setReasonText("Range-high fade short (" + catalog.catalogStrategyKey() + ")");
+            BigDecimal structuralStop = last.getHighPrice().max(last.getOpenPrice());
+            BigDecimal stop = resolveShortStop(last, atr, structuralStop, rp);
             sig.setStopPrice(stop);
             BigDecimal mid = range.mid();
-            BigDecimal rrTarget = computeMinRrTarget(last.getClosePrice(), stop, mid, false);
+            BigDecimal rrTarget = computeRrTarget(last.getClosePrice(), stop, mid, false, rp);
             sig.setTargetPrice(rrTarget);
             sig.setEntryReferencePrice(last.getClosePrice());
             sig.setSuggestedQty(BigDecimal.ONE);
+            st.recordSignalEmitted(barIndex);
             return sig;
         }
 
         return null;
     }
 
-    private static BigDecimal computeMinRrTarget(BigDecimal entry, BigDecimal stop, BigDecimal midpoint, boolean isLong) {
-        BigDecimal risk = entry.subtract(stop).abs();
-        BigDecimal rrMinTarget = isLong ? entry.add(risk.multiply(new BigDecimal("1.5"))) : entry.subtract(risk.multiply(new BigDecimal("1.5")));
-        if (isLong) {
-            BigDecimal best = midpoint.max(rrMinTarget);
-            return best.min(entry.add(entry.multiply(new BigDecimal("0.02")))); // sanity cap
+    private static boolean candleOhlcFinite(MarketdataCandle c) {
+        return c.getOpenPrice() != null && c.getHighPrice() != null && c.getLowPrice() != null && c.getClosePrice() != null
+                && c.getOpenPrice().signum() > 0 && c.getClosePrice().signum() > 0;
+    }
+
+    private static boolean volumeGateOk(List<MarketdataCandle> bars, MarketdataCandle last, MeanReversionRuntimeParams rp) {
+        if (rp.volumeFilter() == com.stokr.strategy.meanreversion.runtime.VolumeFilterMode.OFF) {
+            return true;
         }
-        BigDecimal best = midpoint.min(rrMinTarget);
-        return best.max(entry.subtract(entry.multiply(new BigDecimal("0.02"))));
+        int n = Math.min(20, bars.size() - 1);
+        if (n <= 0 || last.getVolume() == null) {
+            return true;
+        }
+        int from = bars.size() - n;
+        BigDecimal sum = BigDecimal.ZERO;
+        int count = 0;
+        for (int i = from; i < bars.size(); i++) {
+            MarketdataCandle b = bars.get(i);
+            if (b.getVolume() != null) {
+                sum = sum.add(b.getVolume());
+                count++;
+            }
+        }
+        if (count == 0) {
+            return true;
+        }
+        BigDecimal avg = sum.divide(BigDecimal.valueOf(count), MC);
+        if (avg.compareTo(BigDecimal.ZERO) == 0) {
+            return true;
+        }
+        BigDecimal rel = last.getVolume().divide(avg, MC);
+        return switch (rp.volumeFilter()) {
+            case OFF -> true;
+            case RELAXED -> rel.compareTo(rp.volumeRelaxedFloor()) >= 0;
+            case STRICT -> rel.compareTo(rp.volumeStrictFloor()) >= 0;
+        };
+    }
+
+    private static BigDecimal resolveLongStop(MarketdataCandle last, BigDecimal atr, BigDecimal structuralStop, MeanReversionRuntimeParams rp) {
+        BigDecimal pctStop = last.getClosePrice().multiply(BigDecimal.ONE.subtract(rp.stopLossPercent().movePointLeft(2), MC), MC);
+        if ("ATR_MULTIPLE".equalsIgnoreCase(rp.stopLossType()) && atr.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal mult = rp.stopLossPercent().max(new BigDecimal("0.5")).min(new BigDecimal("6"));
+            BigDecimal atrStop = last.getClosePrice().subtract(atr.multiply(mult, MC), MC);
+            return structuralStop.max(pctStop).max(atrStop);
+        }
+        return structuralStop.max(pctStop);
+    }
+
+    private static BigDecimal resolveShortStop(MarketdataCandle last, BigDecimal atr, BigDecimal structuralStop, MeanReversionRuntimeParams rp) {
+        BigDecimal pctStop = last.getClosePrice().multiply(BigDecimal.ONE.add(rp.stopLossPercent().movePointLeft(2), MC), MC);
+        if ("ATR_MULTIPLE".equalsIgnoreCase(rp.stopLossType()) && atr.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal mult = rp.stopLossPercent().max(new BigDecimal("0.5")).min(new BigDecimal("6"));
+            BigDecimal atrStop = last.getClosePrice().add(atr.multiply(mult, MC), MC);
+            return structuralStop.min(pctStop).min(atrStop);
+        }
+        return structuralStop.min(pctStop);
+    }
+
+    private static BigDecimal computeRrTarget(
+            BigDecimal entry,
+            BigDecimal stop,
+            BigDecimal midpoint,
+            boolean isLong,
+            MeanReversionRuntimeParams rp
+    ) {
+        BigDecimal risk = entry.subtract(stop).abs();
+        BigDecimal rrMult = rp.rrRiskMultiplier();
+        BigDecimal rrMinTarget = isLong ? entry.add(risk.multiply(rrMult, MC)) : entry.subtract(risk.multiply(rrMult, MC), MC);
+        BigDecimal tpPct = rp.takeProfitPercent().movePointLeft(2);
+        BigDecimal tpCap = isLong
+                ? entry.multiply(BigDecimal.ONE.add(tpPct, MC), MC)
+                : entry.multiply(BigDecimal.ONE.subtract(tpPct, MC), MC);
+        if (isLong) {
+            BigDecimal best = midpoint.max(rrMinTarget).min(tpCap);
+            if (rp.partialExitEnabled()) {
+                best = entry.add(best.subtract(entry, MC).multiply(new BigDecimal("0.75"), MC), MC);
+            }
+            if (rp.trailingStopEnabled()) {
+                best = best.multiply(new BigDecimal("1.01"), MC);
+            }
+            return best.min(entry.add(entry.multiply(new BigDecimal("0.02"), MC), MC));
+        }
+        BigDecimal best = midpoint.min(rrMinTarget).max(tpCap);
+        if (rp.partialExitEnabled()) {
+            best = entry.subtract(entry.subtract(best, MC).multiply(new BigDecimal("0.75"), MC), MC);
+        }
+        if (rp.trailingStopEnabled()) {
+            best = best.multiply(new BigDecimal("0.99"), MC);
+        }
+        return best.max(entry.subtract(entry.multiply(new BigDecimal("0.02"), MC), MC));
     }
 
     private static List<BigDecimal> closes(List<MarketdataCandle> bars) {

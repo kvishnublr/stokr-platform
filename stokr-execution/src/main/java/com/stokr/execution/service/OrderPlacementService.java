@@ -2,6 +2,7 @@ package com.stokr.execution.service;
 
 import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
 import com.stokr.execution.dto.CreateOrderRequest;
+import com.stokr.execution.risk.RiskContextFactory;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
@@ -14,9 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.UUID;
 
@@ -27,6 +26,7 @@ public class OrderPlacementService {
     private final OrderLifecycleService orderLifecycleService;
     private final RiskEngineService riskEngineService;
     private final ExecutionService executionService;
+    private final RiskContextFactory riskContextFactory;
 
     @Value("${stokr.risk.zone:Asia/Kolkata}")
     private String riskZone;
@@ -54,27 +54,18 @@ public class OrderPlacementService {
             return order;
         }
 
-        order = orderLifecycleService.transition(order.getId(), OrderState.VALIDATING, null);
+        order = orderLifecycleService.transition(order.getId(), OrderState.VALIDATED, null);
         order = orderLifecycleService.transition(order.getId(), OrderState.RISK_CHECK, null);
 
         ZoneId zone = ZoneId.of(riskZone);
-        RiskContext ctx = new RiskContext(
-                userId,
-                order,
-                BigDecimal.ZERO,
-                0,
-                LocalTime.now(zone),
-                zone,
-                Instant.now().toEpochMilli()
-        );
+        RiskContext ctx = riskContextFactory.build(userId, order, zone, Instant.now(), null);
 
         RiskDecision decision = riskEngineService.evaluate(ctx);
         if (!decision.allowed()) {
             return orderLifecycleService.transition(order.getId(), OrderState.REJECTED, decision.message());
         }
 
-        order = orderLifecycleService.transition(order.getId(), OrderState.ACCEPTED, null);
-        order = orderLifecycleService.transition(order.getId(), OrderState.QUEUED, null);
+        order = orderLifecycleService.transition(order.getId(), OrderState.PENDING_SUBMISSION, null);
 
         executionService.dispatch(
                 new ExecutionDispatchMessage(
@@ -84,7 +75,9 @@ public class OrderPlacementService {
                         order.getBrokerVendor(),
                         0,
                         null,
-                        mode.name()
+                        mode.name(),
+                        order.getId().getMostSignificantBits() ^ order.getId().getLeastSignificantBits(),
+                        order.getCreatedAt()
                 ),
                 false
         );

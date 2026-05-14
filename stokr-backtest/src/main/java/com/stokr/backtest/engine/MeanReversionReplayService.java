@@ -1,14 +1,22 @@
 package com.stokr.backtest.engine;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.stokr.backtest.domain.BacktestRun;
 import com.stokr.backtest.domain.BacktestStatus;
+import com.stokr.backtest.execution.BacktestEvaluationContext;
+import com.stokr.backtest.execution.BacktestExecutionStages;
+import com.stokr.backtest.execution.BacktestRiskGate;
+import com.stokr.backtest.execution.CandleStreamQualityValidator;
+import com.stokr.backtest.execution.ExecutionContext;
 import com.stokr.backtest.repository.BacktestRunRepository;
 import com.stokr.backtest.service.BacktestReplayOutcome;
 import com.stokr.backtest.service.BacktestResultService;
 import com.stokr.backtest.strategy.BacktestStrategyRegistry;
+import com.stokr.backtest.web.dto.ExecutionRequestDto;
+import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.common.exception.BadRequestException;
 import com.stokr.execution.pipeline.SignalExecutionBridge;
 import com.stokr.marketdata.domain.MarketdataCandle;
@@ -19,19 +27,27 @@ import com.stokr.oms.journal.StreamKeys;
 import com.stokr.oms.journal.domain.EventStoreEntry;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.keys.StrategyKeys;
+import com.stokr.strategy.meanreversion.runtime.MeanReversionReplayState;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
  * Candle replay orchestrator: routes to registered {@link com.stokr.backtest.strategy.BacktestStrategyPlugin}s.
+ * <p>PR-3: chunked candle loading, immutable {@link ExecutionContext}, mean-reversion runtime parameters
+ * wired through plugins, staged pipeline logging, and deterministic correlation IDs per bar.</p>
+ * <p>PR-4: execution lifecycle states, append-only {@code oms_execution_events}, resume-safe mean-reversion
+ * strategy state in recovery metadata, and candle stream quality validation.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -39,6 +55,7 @@ import java.util.UUID;
 public class MeanReversionReplayService {
 
     private static final int META_VERSION = 1;
+    private static final int CANDLE_PAGE_SIZE = 2500;
 
     private final SignalExecutionBridge signalExecutionBridge;
     private final BacktestRunRepository runRepository;
@@ -53,18 +70,32 @@ public class MeanReversionReplayService {
     private UUID systemUserId;
 
     public BacktestReplayOutcome runReplay(
-            String symbol,
-            Instant start,
-            Instant end,
+            ExecutionRequestDto request,
             UUID userId,
-            long seed,
-            String strategyKey,
-            String timeframe,
-            String executionProfile
+            int metadataSchemaVersion,
+            long strategyDefinitionVersion
     ) {
-        String sk = normalizeStrategyKey(strategyKey);
-        String tf = timeframe != null && !timeframe.isBlank() ? timeframe.trim() : "1m";
+        return runReplay(request, userId, metadataSchemaVersion, strategyDefinitionVersion, null);
+    }
+
+    public BacktestReplayOutcome runReplay(
+            ExecutionRequestDto request,
+            UUID userId,
+            int metadataSchemaVersion,
+            long strategyDefinitionVersion,
+            ReplayProgressCallback progress
+    ) {
+        String sk = normalizeStrategyKey(request.strategyKey());
+        String tf = request.timeframe().trim();
         String stepTf = effectiveStepTimeframe(sk, tf);
+        Instant start = request.range().from();
+        Instant end = request.range().to();
+        long seed = request.seed() != null ? request.seed() : 0L;
+        String symbol = request.symbol().trim();
+        String executionProfile = request.executionProfile();
+        String correlationId = Optional.ofNullable(CorrelationIdHolder.get())
+                .filter(s -> !s.isBlank())
+                .orElseGet(() -> UUID.randomUUID().toString());
 
         BacktestRun run = new BacktestRun();
         run.setStrategyKey(sk);
@@ -76,32 +107,70 @@ public class MeanReversionReplayService {
         run.setRangeStart(start);
         run.setRangeEnd(end);
         run.setExecutionProfile(executionProfile);
+        run.setExecutionRequestJson(canonicalExecutionJson(request));
+        run.setMetadataSchemaVersion(metadataSchemaVersion);
+        run.setStrategyDefinitionVersion(strategyDefinitionVersion);
+        run.setExecutionMode(request.executionMode().toUpperCase());
+        run.setFeeModel(request.feeModel());
+        run.setSlippageModel(request.slippageModel());
         run = runRepository.save(run);
         UUID runId = run.getId();
         UUID uid = run.getUserId();
 
+        if (progress != null) {
+            progress.onRunPersisted(runId);
+        }
+
+        log.info(
+                "backtest.execution.run runId={} strategyKey={} metadataSchemaVersion={} strategyDefinitionVersion={} seed={} correlationId={}",
+                runId,
+                sk,
+                metadataSchemaVersion,
+                strategyDefinitionVersion,
+                seed,
+                correlationId
+        );
+
         try {
-            List<MarketdataCandle> candles = marketDataQueryService.rangeAsc(symbol, stepTf, start, end);
-            log.info("backtest.replay.start runId={} strategy={} stepTf={} bars={}", runId, sk, stepTf, candles.size());
+            long totalBars = marketDataQueryService.rangeCount(symbol, stepTf, start, end);
+            log.info("backtest.replay.start runId={} strategy={} stepTf={} totalBars={}", runId, sk, stepTf, totalBars);
 
             EventStoreEntry started = appendJournal(runId, uid, symbol, sk, "BACKTEST_RUN_STARTED", Map.of(
                     "seed", seed,
                     "start", start.toString(),
                     "end", end.toString(),
-                    "barCount", candles.size(),
+                    "barCount", totalBars,
                     "strategyKey", sk,
                     "timeframe", tf,
-                    "stepTimeframe", stepTf
+                    "stepTimeframe", stepTf,
+                    "metadataSchemaVersion", metadataSchemaVersion,
+                    "strategyDefinitionVersion", strategyDefinitionVersion,
+                    "correlationId", correlationId
             ));
-            upsertCp(runId, uid, started, metaJson(sk, symbol, start, end, seed, uid, tf, stepTf, 0, candles.size()));
+            int totalBarsInt = totalBars > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) totalBars;
+            if (progress != null) {
+                progress.onTotalsKnown(runId, totalBarsInt);
+            }
+            MeanReversionReplayState mrState = StrategyKeys.MEAN_REVERSION_RANGE_FADE.equals(sk) ? new MeanReversionReplayState() : null;
+            upsertCp(runId, uid, started, metaJson(sk, symbol, start, end, seed, uid, tf, stepTf, 0, totalBarsInt, mrState));
+            BacktestEvaluationContext evalCtx = buildEvaluationContext(run, correlationId, mrState);
 
-            BacktestReplayOutcome outcome = executeLoop(run, candles, 0, uid, start, end, seed, sk, tf, stepTf);
+            BacktestReplayOutcome outcome = executeLoop(
+                    run, evalCtx, uid, start, end, seed, sk, tf, stepTf, 0, totalBarsInt, correlationId, progress);
             run.setStatus(BacktestStatus.COMPLETED);
             runRepository.save(run);
             EventStoreEntry done = appendJournal(runId, uid, symbol, sk, "BACKTEST_RUN_COMPLETED", Map.of("status", "COMPLETED"));
-            upsertCp(runId, uid, done, metaJson(sk, symbol, start, end, seed, uid, tf, stepTf, candles.size(), candles.size()));
+            upsertCp(runId, uid, done, metaJson(sk, symbol, start, end, seed, uid, tf, stepTf, totalBarsInt, totalBarsInt, mrState));
             log.info("backtest.replay.done runId={}", runId);
             return outcome;
+        } catch (ReplayCancelledException cx) {
+            appendJournal(runId, uid, symbol, sk, "BACKTEST_RUN_CANCELLED", Map.of(
+                    "message", "User cancelled async replay",
+                    "correlationId", correlationId
+            ));
+            backtestResultService.persistForRun(run);
+            log.warn("backtest.replay.cancelled runId={}", runId);
+            throw cx;
         } catch (RuntimeException ex) {
             log.error("backtest.replay.failed runId={}", runId, ex);
             run.setStatus(BacktestStatus.FAILED);
@@ -111,6 +180,16 @@ public class MeanReversionReplayService {
                     "message", ex.getMessage() != null ? ex.getMessage() : ""
             ));
             throw ex;
+        }
+    }
+
+    private String canonicalExecutionJson(ExecutionRequestDto request) {
+        try {
+            return objectMapper.copy()
+                    .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                    .writeValueAsString(request);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("execution request serialization failed", e);
         }
     }
 
@@ -132,22 +211,33 @@ public class MeanReversionReplayService {
         UUID uid = meta.userId();
         String stepTf = effectiveStepTimeframe(meta.strategyKey(), meta.timeframe());
         String symbol = meta.symbol() != null && !meta.symbol().isBlank() ? meta.symbol() : run.getSymbol();
-        List<MarketdataCandle> candles = marketDataQueryService.rangeAsc(symbol, stepTf, meta.start(), meta.end());
-        if (candles.size() != meta.totalBars()) {
-            log.warn("backtest.resume.bar_count_mismatch runId={} expected={} actual={}", runId, meta.totalBars(), candles.size());
+        long totalBars = marketDataQueryService.rangeCount(symbol, stepTf, meta.start(), meta.end());
+        if (totalBars != meta.totalBars()) {
+            log.warn("backtest.resume.bar_count_mismatch runId={} expected={} actual={}", runId, meta.totalBars(), totalBars);
         }
-        int startIndex = Math.min(meta.nextCandleIndex(), candles.size());
+        int startIndex = Math.min(meta.nextCandleIndex(), totalBars > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) totalBars);
         run.setStatus(BacktestStatus.RUNNING);
         runRepository.save(run);
+        String correlationId = Optional.ofNullable(CorrelationIdHolder.get())
+                .filter(s -> !s.isBlank())
+                .orElseGet(() -> UUID.randomUUID().toString());
         try {
-            BacktestReplayOutcome outcome = executeLoop(run, candles, startIndex, uid, meta.start(), meta.end(), meta.seed(),
-                    meta.strategyKey(), meta.timeframe(), stepTf);
+            int totalBarsInt = totalBars > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) totalBars;
+            MeanReversionReplayState mrState = StrategyKeys.MEAN_REVERSION_RANGE_FADE.equals(meta.strategyKey())
+                    ? new MeanReversionReplayState()
+                    : null;
+            if (mrState != null && meta.meanReversionStateSnapshot() != null && !meta.meanReversionStateSnapshot().isBlank()) {
+                mrState.applySnapshotOrReset(meta.meanReversionStateSnapshot());
+            }
+            BacktestEvaluationContext evalCtx = buildEvaluationContext(run, correlationId, mrState);
+            BacktestReplayOutcome outcome = executeLoop(run, evalCtx, uid, meta.start(), meta.end(), meta.seed(),
+                    meta.strategyKey(), meta.timeframe(), stepTf, startIndex, totalBarsInt, correlationId, null);
             run.setStatus(BacktestStatus.COMPLETED);
             runRepository.save(run);
             EventStoreEntry done = appendJournal(runId, uid, symbol, meta.strategyKey(), "BACKTEST_RUN_COMPLETED",
                     Map.of("status", "COMPLETED", "resumed", Boolean.TRUE));
             upsertCp(runId, uid, done, metaJson(meta.strategyKey(), symbol, meta.start(), meta.end(), meta.seed(), uid,
-                    meta.timeframe(), stepTf, candles.size(), candles.size()));
+                    meta.timeframe(), stepTf, totalBarsInt, totalBarsInt, mrState));
             log.info("backtest.replay.resume.done runId={} completedJournalSeq={}", runId, done.getSequenceNum());
             return outcome;
         } catch (RuntimeException ex) {
@@ -163,41 +253,128 @@ public class MeanReversionReplayService {
         }
     }
 
+    private ExecutionRequestDto parseExecutionRequest(BacktestRun run) {
+        String json = run.getExecutionRequestJson();
+        if (json == null || json.isBlank()) {
+            throw new IllegalStateException("Backtest run " + run.getId() + " has no execution_request_json");
+        }
+        try {
+            return objectMapper.readValue(json, ExecutionRequestDto.class);
+        } catch (Exception e) {
+            throw new IllegalStateException("Invalid execution_request_json", e);
+        }
+    }
+
+    private BacktestEvaluationContext buildEvaluationContext(BacktestRun run, String correlationId, MeanReversionReplayState mrState) {
+        ExecutionRequestDto envelope = parseExecutionRequest(run);
+        int meta = run.getMetadataSchemaVersion() != null ? run.getMetadataSchemaVersion() : 0;
+        long sv = run.getStrategyDefinitionVersion() != null ? run.getStrategyDefinitionVersion() : 0L;
+        ExecutionContext ec = ExecutionContext.from(run, envelope, meta, sv, correlationId);
+        return new BacktestEvaluationContext(ec, mrState, "BACKTEST");
+    }
+
     private BacktestReplayOutcome executeLoop(
             BacktestRun run,
-            List<MarketdataCandle> candles,
-            int startIndex,
+            BacktestEvaluationContext ctx,
             UUID uid,
             Instant rangeStart,
             Instant rangeEnd,
             long seed,
             String strategyKey,
             String timeframe,
-            String stepTf
+            String stepTf,
+            int startIndex,
+            int totalBars,
+            String correlationId,
+            ReplayProgressCallback progress
     ) {
         UUID runId = run.getId();
         String symbol = run.getSymbol();
         var plugin = strategyRegistry.require(strategyKey);
-        for (int i = startIndex; i < candles.size(); i++) {
-            MarketdataCandle bar = candles.get(i);
-            StrategySignalEntity sig = plugin.evaluateAtOpen(symbol, uid, runId, "BACKTEST", bar.getOpenTime(), stepTf);
-            if (sig != null) {
-                StrategySignalEntity saved =
-                        signalExecutionBridge.persistAndExecuteSynchronously(sig, UUID.randomUUID().toString(), "SIMULATED");
-                EventStoreEntry sigTail = appendJournal(runId, uid, symbol, strategyKey, "BACKTEST_SIGNAL_GENERATED", Map.of(
-                        "barOpenTime", bar.getOpenTime().toString(),
-                        "signalId", saved.getId().toString()
-                ));
-                upsertCp(runId, uid, sigTail, metaJson(strategyKey, symbol, rangeStart, rangeEnd, seed, uid, timeframe, stepTf, i + 1, candles.size()));
-            } else {
-                EventStoreEntry prog = appendJournal(runId, uid, symbol, strategyKey, "BACKTEST_CANDLE_PASSED", Map.of(
-                        "barOpenTime", bar.getOpenTime().toString(),
-                        "index", i
-                ));
-                upsertCp(runId, uid, prog, metaJson(strategyKey, symbol, rangeStart, rangeEnd, seed, uid, timeframe, stepTf, i + 1, candles.size()));
+        BacktestExecutionStages stages = new BacktestExecutionStages(runId, correlationId);
+        BacktestRiskGate riskGate = new BacktestRiskGate();
+        int globalIndex = 0;
+        int processed = 0;
+        int page = 0;
+        while (true) {
+            Page<MarketdataCandle> pg = marketDataQueryService.rangeAscPage(
+                    symbol,
+                    stepTf,
+                    rangeStart,
+                    rangeEnd,
+                    PageRequest.of(page, CANDLE_PAGE_SIZE, Sort.by(Sort.Direction.ASC, "openTime"))
+            );
+            if (pg.isEmpty()) {
+                break;
+            }
+            CandleStreamQualityValidator.QualityReport q = CandleStreamQualityValidator.validatePage(pg.getContent(), null);
+            for (String issue : q.issues()) {
+                if (issue.startsWith("invalid_ohlc") || issue.startsWith("out_of_order")) {
+                    throw new BadRequestException("Market data quality failed: " + issue);
+                }
+            }
+            if (!q.issues().isEmpty()) {
+                log.warn("backtest.data.quality_soft runId={} score={} issues={}", runId, q.score100(), q.issues());
+            }
+            for (MarketdataCandle bar : pg.getContent()) {
+                if (globalIndex < startIndex) {
+                    globalIndex++;
+                    reportReplayProgress(progress, runId, globalIndex, totalBars);
+                    continue;
+                }
+                long tOpen = System.nanoTime();
+                stages.candleValidated(bar);
+                StrategySignalEntity sig = plugin.evaluateAtOpen(ctx, bar, globalIndex, stepTf);
+                stages.signalEvaluated(sig != null, globalIndex);
+                if (sig != null) {
+                    stages.riskChecked(riskGate.allowNewExposure(ctx.execution(), 0));
+                    String sigCid = ctx.execution().correlationId() + ":bar:" + globalIndex;
+                    StrategySignalEntity saved =
+                            signalExecutionBridge.persistAndExecuteSynchronously(
+                                    sig, sigCid, ctx.execution().executionMode());
+                    stages.orderSimulated("sync_bridge");
+                    stages.fillModeled("engine_default");
+                    EventStoreEntry sigTail = appendJournal(runId, uid, symbol, strategyKey, "BACKTEST_SIGNAL_GENERATED", Map.of(
+                            "barOpenTime", bar.getOpenTime().toString(),
+                            "signalId", saved.getId().toString(),
+                            "correlationId", correlationId,
+                            "barIndex", globalIndex
+                    ));
+                    upsertCp(runId, uid, sigTail, metaJson(strategyKey, symbol, rangeStart, rangeEnd, seed, uid, timeframe, stepTf, globalIndex + 1, totalBars, ctx.meanReversionState()));
+                } else {
+                    EventStoreEntry prog = appendJournal(runId, uid, symbol, strategyKey, "BACKTEST_CANDLE_PASSED", Map.of(
+                            "barOpenTime", bar.getOpenTime().toString(),
+                            "index", globalIndex,
+                            "correlationId", correlationId
+                    ));
+                    upsertCp(runId, uid, prog, metaJson(strategyKey, symbol, rangeStart, rangeEnd, seed, uid, timeframe, stepTf, globalIndex + 1, totalBars, ctx.meanReversionState()));
+                }
+                globalIndex++;
+                processed++;
+                if (log.isTraceEnabled()) {
+                    log.trace("backtest.bar.timing runId={} barIndex={} nanos={}", runId, globalIndex - 1, System.nanoTime() - tOpen);
+                }
+                reportReplayProgress(progress, runId, globalIndex, totalBars);
+            }
+            if (!pg.hasNext()) {
+                break;
+            }
+            page++;
+        }
+        stages.timingSummary(processed);
+        return backtestResultService.persistForRun(run);
+    }
+
+    private static void reportReplayProgress(ReplayProgressCallback cb, UUID runId, int barsCompleted, int totalBars) {
+        if (cb == null) {
+            return;
+        }
+        if (barsCompleted % 250 == 0 || barsCompleted >= totalBars) {
+            if (cb.isCancelled()) {
+                throw new ReplayCancelledException();
             }
         }
-        return backtestResultService.persistForRun(run);
+        cb.onBarProgress(runId, barsCompleted, totalBars);
     }
 
     private static String normalizeStrategyKey(String strategyKey) {
@@ -229,7 +406,8 @@ public class MeanReversionReplayService {
             String timeframe,
             String stepTf,
             int nextIndex,
-            int totalBars
+            int totalBars,
+            MeanReversionReplayState meanReversionState
     ) {
         try {
             ObjectMapper deterministic = objectMapper.copy().configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
@@ -245,6 +423,9 @@ public class MeanReversionReplayService {
             m.put("userId", userId.toString());
             m.put("nextCandleIndex", nextIndex);
             m.put("totalBars", totalBars);
+            if (meanReversionState != null) {
+                m.put("meanReversionState", meanReversionState.toSnapshotLine());
+            }
             return deterministic.writeValueAsString(m);
         } catch (Exception e) {
             throw new IllegalStateException("recovery metadata serialization failed", e);
@@ -267,6 +448,7 @@ public class MeanReversionReplayService {
             String tf = n.hasNonNull("timeframe") ? n.get("timeframe").asText("1m") : "1m";
             String stepTf = n.hasNonNull("stepTimeframe") ? n.get("stepTimeframe").asText(tf) : effectiveStepTimeframe(sk, tf);
             String sym = n.path("symbol").asText("");
+            String mrSnap = n.hasNonNull("meanReversionState") ? n.get("meanReversionState").asText() : null;
             return new RecoveryMeta(
                     META_VERSION,
                     sk,
@@ -278,7 +460,8 @@ public class MeanReversionReplayService {
                     n.get("seed").asLong(),
                     UUID.fromString(n.get("userId").asText()),
                     n.get("nextCandleIndex").asInt(),
-                    n.get("totalBars").asInt()
+                    n.get("totalBars").asInt(),
+                    mrSnap
             );
         } catch (Exception e) {
             throw new IllegalStateException("invalid recovery metadata", e);
@@ -296,7 +479,8 @@ public class MeanReversionReplayService {
             long seed,
             UUID userId,
             int nextCandleIndex,
-            int totalBars
+            int totalBars,
+            String meanReversionStateSnapshot
     ) {
     }
 

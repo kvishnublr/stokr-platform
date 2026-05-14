@@ -1,9 +1,11 @@
 package com.stokr.execution.simulation;
 
 import com.stokr.common.events.realtime.RealtimeBridgeEvents;
+import com.stokr.common.execution.DeterministicExecutionRng;
 import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
+import com.stokr.oms.domain.ExecutionEventType;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OmsTrade;
@@ -14,9 +16,12 @@ import com.stokr.common.notification.NotificationPublisher;
 import com.stokr.risk.model.LiveTraderEligibilityResult;
 import com.stokr.risk.service.LiveTradingTraderEligibilityService;
 import com.stokr.risk.service.RiskEventRecorder;
+import com.stokr.oms.service.ExecutionEventAppendService;
 import com.stokr.oms.service.OrderLifecycleService;
 import com.stokr.oms.service.ExecutionLedgerService;
 import com.stokr.oms.portfolio.PortfolioAccountingService;
+import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.repository.StrategySignalRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -29,13 +34,17 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class ExecutionSimulator {
+
+    private static final java.math.MathContext MC = new java.math.MathContext(12, RoundingMode.HALF_UP);
 
     private final OrderLifecycleService orderLifecycleService;
     private final MarketdataCandleRepository candleRepository;
@@ -46,6 +55,8 @@ public class ExecutionSimulator {
     private final LiveTradingTraderEligibilityService liveTradingTraderEligibilityService;
     private final RiskEventRecorder riskEventRecorder;
     private final ObjectProvider<NotificationPublisher> notificationPublisher;
+    private final ExecutionEventAppendService executionEventAppendService;
+    private final StrategySignalRepository strategySignalRepository;
 
     @Value("${stokr.simulation.candle-timeframe:1m}")
     private String candleTimeframe;
@@ -68,50 +79,82 @@ public class ExecutionSimulator {
     @Transactional
     public void process(ExecutionDispatchMessage msg) {
         OmsOrder order = orderLifecycleService.getRequired(msg.orderId());
-        if (order.getState() != OrderState.QUEUED) {
+        if (order.getState() != OrderState.PENDING_SUBMISSION) {
             log.info("execution.skip state={} orderId={}", order.getState(), order.getId());
             return;
         }
 
         if (order.getExecutionMode() == ExecutionMode.LIVE) {
             String vendor = msg.brokerVendor() != null ? msg.brokerVendor() : order.getBrokerVendor();
+            final UUID liveUserId = order.getUserId();
             LiveTraderEligibilityResult gate = liveTradingTraderEligibilityService.evaluateForLiveOrder(
-                    order.getUserId(),
+                    liveUserId,
                     order.getStrategyKey(),
                     vendor != null ? vendor : "ZERODHA"
             );
             if (!gate.allowed()) {
                 log.warn("execution.sim.live_blocked orderId={} reason={}", order.getId(), gate.reasonCode());
-                riskEventRecorder.record(order.getUserId(), order.getId(), gate.reasonCode(), "REJECT", gate.message());
+                riskEventRecorder.record(liveUserId, order.getId(), gate.reasonCode(), "REJECT", gate.message());
                 notificationPublisher.ifAvailable(pub -> pub.publish(new NotificationEvent(
                         "IN_APP",
                         "TRADER_ELIGIBILITY_BLOCK",
-                        order.getUserId(),
-                        Map.of(
+                        liveUserId,
+                        new LinkedHashMap<>(Map.of(
                                 "reasonCode", gate.reasonCode() != null ? gate.reasonCode() : "",
                                 "message", gate.message() != null ? gate.message() : ""
-                        )
+                        ))
                 )));
                 orderLifecycleService.transition(order.getId(), OrderState.REJECTED, gate.message());
+                executionEventAppendService.append(order, ExecutionEventType.EXECUTION_REJECTED, Map.of(
+                        "phase", "LIVE_GATE",
+                        "reason", gate.message() != null ? gate.message() : ""
+                ));
                 return;
             }
             orderLifecycleService.submitToBroker(order, vendor != null ? vendor : "ZERODHA");
+            executionEventAppendService.append(order, ExecutionEventType.ORDER_ACCEPTED, Map.of(
+                    "brokerVendor", vendor != null ? vendor : "ZERODHA",
+                    "channel", "LIVE"
+            ));
+            Instant ts = msg.deterministicAnchor() != null ? msg.deterministicAnchor() : order.getCreatedAt();
+            eventPublisher.publishEvent(new RealtimeBridgeEvents.OrderUpdate(
+                    liveUserId,
+                    order.getId(),
+                    order.getSymbol(),
+                    OrderState.SUBMITTED.name(),
+                    ts
+            ));
+            log.info("execution.live.submitted orderId={}", order.getId());
             return;
         }
 
-        orderLifecycleService.transition(order.getId(), OrderState.SENT, null);
-        orderLifecycleService.transition(order.getId(), OrderState.ACKNOWLEDGED, null);
+        order = orderLifecycleService.transition(order.getId(), OrderState.SUBMITTED, null);
+        order = orderLifecycleService.transition(order.getId(), OrderState.ACCEPTED, null);
+        String simChannel = order.getExecutionMode() != null ? order.getExecutionMode().name() : "SIMULATED";
+        executionEventAppendService.append(order, ExecutionEventType.ORDER_ACCEPTED, Map.of("channel", simChannel));
 
-        Instant fillAnchor = (order.getCreatedAt() != null ? order.getCreatedAt() : Instant.now()).plusMillis(orderQueueDelayMs);
+        long fillKey = msg.fillDeterminismKey() != null ? msg.fillDeterminismKey()
+                : (order.getId().getMostSignificantBits() ^ order.getId().getLeastSignificantBits());
+        Instant anchor = msg.deterministicAnchor() != null ? msg.deterministicAnchor() : order.getCreatedAt();
+
+        StrategySignalEntity sig = order.getSignalId() != null
+                ? strategySignalRepository.findById(order.getSignalId()).orElse(null)
+                : null;
+        BigDecimal atr = sig != null ? sig.getAtrValue() : null;
+
         List<BigDecimal> fillLots = splitQuantity(order.getQuantity(), Math.max(1, partialFillCount));
         BigDecimal lastFillPrice = null;
         for (int i = 0; i < fillLots.size(); i++) {
-            MarketdataCandle fillCandle = selectFillCandle(order.getSymbol(), fillAnchor.plusMillis((long) i * latencyMs));
+            Instant fillAnchor = anchor.plusMillis(orderQueueDelayMs + (long) i * latencyMs);
+            MarketdataCandle fillCandle = selectFillCandle(order.getSymbol(), fillAnchor);
             BigDecimal ref = fillCandle != null ? fillCandle.getClosePrice() : safePrice(order);
-            BigDecimal fillPrice = applyExecutionCosts(ref, order.getSide());
+            BigDecimal fillPrice = applyExecutionCosts(ref, order.getSide(), atr, fillKey, i);
             lastFillPrice = fillPrice;
-            Instant ts = fillCandle != null ? fillCandle.getOpenTime().plusMillis(latencyMs) : Instant.now().plusMillis(latencyMs);
+            Instant ts = fillCandle != null
+                    ? fillCandle.getOpenTime().plusMillis(latencyMs)
+                    : anchor.plusMillis(latencyMs + (long) i * latencyMs);
 
+            String replaySource = order.getExecutionMode() != null ? order.getExecutionMode().name() : "SIMULATED";
             var ex = executionLedgerService.appendExecution(
                     order,
                     "sim-" + order.getId() + "-" + (i + 1),
@@ -120,10 +163,10 @@ public class ExecutionSimulator {
                     "SIM",
                     ts,
                     latencyMs,
-                    baseSlippageBps,
+                    effectiveSlippageBps(atr, ref, fillKey, i),
                     baseSpreadBps,
                     ref,
-                    "SIMULATED",
+                    replaySource,
                     order.getBacktestRunId()
             );
 
@@ -133,16 +176,37 @@ public class ExecutionSimulator {
             tr.setQuantity(fillLots.get(i));
             tr.setPrice(fillPrice);
             tradeRepository.save(tr);
+
+            executionEventAppendService.append(order, ExecutionEventType.PARTIAL_FILL, Map.of(
+                    "leg", i + 1,
+                    "quantity", fillLots.get(i).toPlainString(),
+                    "price", fillPrice.toPlainString()
+            ));
+
+            if (fillLots.size() > 1 && i < fillLots.size() - 1) {
+                order = orderLifecycleService.transition(order.getId(), OrderState.PARTIALLY_FILLED, null);
+            }
         }
 
-        orderLifecycleService.transition(order.getId(), OrderState.FILLED, null);
-        portfolioAccountingService.applyFill(order.getUserId(), order.getSymbol());
+        order = orderLifecycleService.transition(order.getId(), OrderState.FILLED, null);
+        executionEventAppendService.append(order, ExecutionEventType.ORDER_FILLED, Map.of(
+                "fills", fillLots.size(),
+                "lastFillPrice", lastFillPrice != null ? lastFillPrice.toPlainString() : ""
+        ));
+        executionEventAppendService.append(order, ExecutionEventType.POSITION_CLOSED, Map.of(
+                "reason", "SIM_ENTRY_COMPLETE"
+        ));
+
+        if (order.getBacktestRunId() == null) {
+            portfolioAccountingService.applyFill(order.getUserId(), order.getSymbol());
+        }
+        Instant bridgeTs = anchor.plusMillis(latencyMs * fillLots.size());
         eventPublisher.publishEvent(new RealtimeBridgeEvents.OrderUpdate(
                 order.getUserId(),
                 order.getId(),
                 order.getSymbol(),
                 OrderState.FILLED.name(),
-                Instant.now()
+                bridgeTs
         ));
         log.info("execution.simulated orderId={} lastFillPrice={} fills={}", order.getId(), lastFillPrice, fillLots.size());
     }
@@ -177,8 +241,20 @@ public class ExecutionSimulator {
         return 60_000L;
     }
 
-    private BigDecimal applyExecutionCosts(BigDecimal referencePrice, String side) {
-        BigDecimal slip = referencePrice.multiply(baseSlippageBps).divide(BigDecimal.valueOf(10_000), 8, RoundingMode.HALF_UP);
+    private BigDecimal effectiveSlippageBps(BigDecimal atr, BigDecimal refPrice, long fillKey, int leg) {
+        BigDecimal slip = baseSlippageBps;
+        if (atr != null && refPrice != null && refPrice.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal atrPct = atr.divide(refPrice, MC).multiply(BigDecimal.valueOf(10_000), MC);
+            slip = slip.add(atrPct.multiply(new BigDecimal("0.35"), MC), MC);
+        }
+        double u = DeterministicExecutionRng.nextUnit(fillKey, leg, 42);
+        BigDecimal jitter = BigDecimal.valueOf(0.97 + u * 0.06);
+        return slip.multiply(jitter, MC).max(BigDecimal.ZERO);
+    }
+
+    private BigDecimal applyExecutionCosts(BigDecimal referencePrice, String side, BigDecimal atr, long fillKey, int leg) {
+        BigDecimal slipBps = effectiveSlippageBps(atr, referencePrice, fillKey, leg);
+        BigDecimal slip = referencePrice.multiply(slipBps).divide(BigDecimal.valueOf(10_000), 8, RoundingMode.HALF_UP);
         BigDecimal halfSpread = referencePrice.multiply(baseSpreadBps).divide(BigDecimal.valueOf(20_000), 8, RoundingMode.HALF_UP);
         if ("BUY".equalsIgnoreCase(side)) {
             return referencePrice.add(slip).add(halfSpread).setScale(8, RoundingMode.HALF_UP);

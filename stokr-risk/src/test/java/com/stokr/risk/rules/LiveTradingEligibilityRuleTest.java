@@ -50,6 +50,6 @@ class LiveTradingEligibilityRuleTest {
     }
 
     private static RiskContext ctx(OmsOrder o) {
-        return new RiskContext(UUID.randomUUID(), o, BigDecimal.ZERO, 0, LocalTime.NOON, ZoneId.of("UTC"), 0L);
+        return RiskContext.forTests(UUID.randomUUID(), o, BigDecimal.ZERO, 0, LocalTime.NOON, ZoneId.of("UTC"), 0L);
     }
 }

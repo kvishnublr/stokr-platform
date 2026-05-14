@@ -53,6 +53,10 @@ public class RiskEvaluationTraceService {
             m.put("mode", ctx.order().getExecutionMode() != null ? ctx.order().getExecutionMode().name() : null);
             m.put("dayPnl", ctx.dayPnl());
             m.put("openPositionCount", ctx.openPositionCount());
+            m.put("ordersCreatedLast60Seconds", ctx.ordersCreatedLast60Seconds());
+            m.put("signalAtrToCloseRatio", ctx.signalAtrToCloseRatio());
+            m.put("brokerCircuitHalt", ctx.brokerCircuitHalt());
+            m.put("portfolioDrawdownPct", ctx.portfolioDrawdownPct());
             m.put("evalInstantMs", ctx.lastOrderEpochMs());
             m.put("allowed", decision.allowed());
             m.put("reasonCode", decision.reasonCode());
