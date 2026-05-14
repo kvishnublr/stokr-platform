@@ -656,7 +656,8 @@ export function BrokersPage() {
               Sample trade (MARKET)
             </h2>
             <p className={cn("mt-1 text-xs", isLight ? "text-neutral-600" : "text-neutral-500")}>
-              Server uses MARKET orders only for this flow. Live orders require{" "}
+              Server uses MARKET with Zerodha automatic market protection (required by Kite for API market orders).
+              Live orders require{" "}
               <code className={cn(isLight ? "text-neutral-800" : "text-neutral-400")}>STOKR_ZERODHA_TEST_ORDER_ENABLED</code>{" "}
               and respect dry-run settings. Keep quantity minimal while validating.
             </p>

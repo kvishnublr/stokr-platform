@@ -74,6 +74,11 @@ public class ZerodhaKiteApiClient {
         fields.put("order_type", orderType);
         fields.put("product", product);
         fields.put("validity", "DAY");
+        // Kite rejects MARKET/SL-M via API without market_protection (InputException). -1 = exchange guidelines.
+        String ot = orderType == null ? "" : orderType.trim();
+        if ("MARKET".equalsIgnoreCase(ot) || "SL-M".equalsIgnoreCase(ot)) {
+            fields.put("market_protection", "-1");
+        }
         String formBody = encodeForm(fields);
 
         String body = http.post()
