@@ -1,5 +1,6 @@
 package com.stokr.admin.service;
 
+import com.stokr.common.runtime.ExecutionPipelineRuntimeReadinessService;
 import com.stokr.risk.service.KillSwitchService;
 import com.stokr.risk.service.LiveTradingGate;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ public class PlatformReadinessService {
 
     private final KillSwitchService killSwitchService;
     private final LiveTradingGate liveTradingGate;
+    private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
 
     @Value("${stokr.execution.live-trading-enabled:false}")
     private boolean liveTradingEnvEnabled;
@@ -22,16 +24,23 @@ public class PlatformReadinessService {
     public ReadinessSnapshot snapshot() {
         boolean killOn = killSwitchService.isEnabled();
         boolean livePrimed = liveTradingEnvEnabled && liveTradingGate.liveOrdersAllowed();
+        var pipeline = executionPipelineRuntimeReadinessService.snapshot();
 
         Map<String, ReadinessCheck> checks = new LinkedHashMap<>();
         checks.put("kill_switch_disarmed", new ReadinessCheck(!killOn, killOn ? "Kill switch engaged" : "OK"));
-        checks.put("live_not_hot", new ReadinessCheck(!livePrimed,
-                livePrimed ? "Live trading env enabled AND Redis armed — verify before production" : "OK"));
+        checks.put("live_not_hot", new ReadinessCheck(
+                !livePrimed,
+                livePrimed ? "Live trading env enabled AND Redis armed - verify before production" : "OK"
+        ));
+        checks.put("execution_pipeline_active", new ReadinessCheck(
+                pipeline.executionPipelineActive(),
+                pipeline.detail()
+        ));
         checks.put("replay_append_only_journal", new ReadinessCheck(true, "Journal rows append-only by convention"));
         checks.put("stomp_auth", new ReadinessCheck(true, "JWT handshake + topic guards"));
         checks.put("risk_ordered_rules", new ReadinessCheck(true, "@Order on synchronous risk rules"));
 
-        boolean blocking = killOn;
+        boolean blocking = killOn || !pipeline.executionPipelineActive();
         return new ReadinessSnapshot(checks, blocking);
     }
 

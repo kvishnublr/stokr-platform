@@ -14,6 +14,8 @@ export type OpsSnapshot = {
   incidents?: Array<Record<string, unknown>>;
   marketPlane?: Record<string, unknown>;
   operationalHistory?: Record<string, unknown>;
+  /** Cascade: platform tape → scanner → signals → OMS (backend-computed). */
+  operationalLifecycle?: Record<string, unknown>;
   /** Admin-owned platform market feed (per vendor), from platform_broker_feed_sessions. */
   platformMarketFeed?: Record<string, unknown>;
 };
@@ -43,10 +45,12 @@ export function badgeClassForStatus(status: string): string {
   if (s === "ON") return "border-red-600/60 bg-red-600/15 text-red-800 dark:text-red-100";
   if (s === "OFF") return "border-emerald-600/50 bg-emerald-600/10 text-emerald-800 dark:text-emerald-100";
   if (s === "ARMED") return "border-amber-600/50 bg-amber-600/15 text-amber-900 dark:text-amber-100";
-  if (s === "CONNECTED" || s === "OK" || s === "COMPLETED" || s === "DISARMED" || s === "READY" || s === "RUNNING")
+  if (s === "CONNECTED" || s === "OK" || s === "COMPLETED" || s === "DISARMED" || s === "READY" || s === "RUNNING" || s === "OPERATIONAL")
     return "border-emerald-600/50 bg-emerald-600/10 text-emerald-900 dark:text-emerald-100";
   if (s === "STALE" || s === "DEGRADED" || s === "BACKFILLING" || s === "RECONNECTING")
     return "border-amber-600/50 bg-amber-600/12 text-amber-950 dark:text-amber-100";
+  if (s === "UNAVAILABLE")
+    return "border-red-600/50 bg-red-600/12 text-red-900 dark:text-red-100";
   if (s === "SATURATED") return "border-orange-600/50 bg-orange-600/15 text-orange-950 dark:text-orange-100";
   if (s === "DISCONNECTED" || s === "FAILED" || s === "OFFLINE")
     return "border-red-600/55 bg-red-600/12 text-red-900 dark:text-red-100";

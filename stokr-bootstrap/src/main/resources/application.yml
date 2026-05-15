@@ -133,7 +133,11 @@ stokr:
     mean-reversion:
       enabled: ${STOKR_STRATEGY_MR_ENABLED:true}
     poll-ms: ${STOKR_STRATEGY_POLL_MS:60000}
+    # PAPER (default), LIVE, or SIMULATED — passed to OMS/execution via SignalPersistedMessage (OrderIntentProcessor).
+    poll-execution-mode: ${STOKR_STRATEGY_POLL_EXECUTION_MODE:PAPER}
     symbols: ${STOKR_STRATEGY_SYMBOLS:NIFTY_FUT,BANKNIFTY_FUT}
+    # Skip mean-reversion poll when platform Zerodha tape is not operational (no silent stale scans).
+    require-operational-live-path: ${STOKR_STRATEGY_REQUIRE_OPERATIONAL_LIVE_PATH:true}
     session:
       zone: ${STOKR_STRATEGY_SESSION_ZONE:Asia/Kolkata}
       start: ${STOKR_STRATEGY_SESSION_START:09:25}

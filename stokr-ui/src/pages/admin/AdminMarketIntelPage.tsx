@@ -3,6 +3,7 @@ import {
   MarketFreshnessPanel,
   MarketIntelligenceGrid,
 } from "../../components/admin/cockpit/AdminCockpitPanels";
+import { PlatformLiveInfrastructurePanel } from "../../components/admin/PlatformLiveInfrastructurePanel";
 import { BrokerConnectionControlCenter } from "../../components/admin/BrokerConnectionControlCenter";
 import { SystemReadinessBanner } from "../../components/admin/SystemReadinessBanner";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../../lib/adminQueryKeys";
@@ -22,8 +23,9 @@ export function AdminMarketIntelPage() {
           Centralized candle store + broker OAuth plane. Orchestration actions live in the broker control center below.
         </p>
       </div>
-      <SystemReadinessBanner snapshot={snapshot.data} />
+      <PlatformLiveInfrastructurePanel snapshot={snapshot.data} />
       <BrokerConnectionControlCenter snapshot={snapshot.data} dense />
+      <SystemReadinessBanner snapshot={snapshot.data} />
       <MarketIntelligenceGrid snapshot={snapshot.data} />
       <MarketFreshnessPanel snapshot={snapshot.data} />
     </div>

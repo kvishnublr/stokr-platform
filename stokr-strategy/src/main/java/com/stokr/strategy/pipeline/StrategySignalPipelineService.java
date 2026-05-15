@@ -4,6 +4,7 @@ import com.stokr.common.events.OperationalRealtimeEvent;
 import com.stokr.common.events.SignalPublishedEvent;
 import com.stokr.common.pipeline.PipelineQueues;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
+import com.stokr.common.runtime.ExecutionPipelineRuntimeReadinessService;
 import com.stokr.common.telemetry.SignalDistributionTelemetryService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
@@ -25,9 +26,15 @@ public class StrategySignalPipelineService {
     private final RabbitTemplate rabbitTemplate;
     private final ApplicationEventPublisher eventPublisher;
     private final SignalDistributionTelemetryService signalDistributionTelemetryService;
+    private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
 
     @Transactional
     public StrategySignalEntity persistAndDispatch(StrategySignalEntity signal, String correlationId, String executionMode) {
+        if (!executionPipelineRuntimeReadinessService.canRouteExecutionMode(executionMode)) {
+            throw new IllegalStateException(
+                    "Execution pipeline disabled: Rabbit listeners are OFF. Signal routing and OMS execution are inactive."
+            );
+        }
         StrategySignalEntity saved = signalRepository.save(signal);
 
         String cid = (correlationId == null || correlationId.isBlank()) ? java.util.UUID.randomUUID().toString() : correlationId;

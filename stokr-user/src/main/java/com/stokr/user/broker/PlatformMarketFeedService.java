@@ -291,6 +291,11 @@ public class PlatformMarketFeedService {
         m.put("ingestionPauseEnforcedByWorkers", false);
         m.put("instrumentSyncState", s.getInstrumentSyncState());
         m.put("telemetryJson", s.getTelemetryJson());
+        overlayDecodedTelemetry(m, s.getTelemetryJson());
+        Instant hbAt = s.getLastHeartbeatAt();
+        m.put("heartbeatAgeSeconds", hbAt == null ? null : Duration.between(hbAt, Instant.now()).getSeconds());
+        Instant tickAt = s.getLastTickAt();
+        m.put("latestTickAgeSeconds", tickAt == null ? null : Duration.between(tickAt, Instant.now()).getSeconds());
         String ws = s.getWebsocketState() != null ? s.getWebsocketState() : "";
         m.put("websocketConnected", ws.equalsIgnoreCase("OPEN") || ws.equalsIgnoreCase("CONNECTED"));
 
@@ -305,9 +310,12 @@ public class PlatformMarketFeedService {
         boolean packetsFlowing = pps > 0.05;
         int subs = s.getSubscriptionCount();
         boolean subsOk = subs > 0;
-        boolean operationalLivePath = tokenValid && wsLive && tickFresh && packetsFlowing && subsOk;
+        boolean notPaused = !s.isIngestionPaused();
+        boolean operationalLivePath = notPaused && tokenValid && wsLive && tickFresh && packetsFlowing && subsOk;
         m.put("operationalLivePath", operationalLivePath);
-        if (!tokenValid) {
+        if (!notPaused) {
+            m.put("operationalLivePathDetail", "Operator paused platform ingestion (ingestionPaused=true)");
+        } else if (!tokenValid) {
             m.put("operationalLivePathDetail", !configured ? "No OAuth token on platform session" : "Access token expired or missing expiry");
         } else if (!wsLive) {
             m.put("operationalLivePathDetail", "Vendor websocket not open (state=" + ws + ")");
@@ -321,6 +329,21 @@ public class PlatformMarketFeedService {
             m.put("operationalLivePathDetail", "Token valid, WS open, ticks fresh, packets and subscriptions present");
         }
         return m;
+    }
+
+    private void overlayDecodedTelemetry(Map<String, Object> m, String telemetryJson) {
+        if (telemetryJson == null || telemetryJson.isBlank()) {
+            return;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(telemetryJson);
+            String sym = root.path("streamingSymbols").asText(null);
+            if (sym != null && !sym.isBlank()) {
+                m.put("streamingSymbols", sym);
+            }
+        } catch (Exception e) {
+            log.debug("platform.feed.telemetry_parse {}", e.toString());
+        }
     }
 
     private static double toDouble(Number n) {

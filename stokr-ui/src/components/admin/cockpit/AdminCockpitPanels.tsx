@@ -213,12 +213,21 @@ export function BrokerInfrastructureGrid({ snapshot }: { snapshot: OpsSnapshot |
 export function MarketFreshnessPanel({ snapshot }: { snapshot: OpsSnapshot | undefined }) {
   const m = asRecord(snapshot?.marketFreshness);
   const infra = asRecord(snapshot?.marketInfra);
+  const life = asRecord(snapshot?.operationalLifecycle);
   const worst = asArray(m?.worstSymbols1m) ?? [];
+  const ticks60 = infra?.ticksIngestedLast60sPlatformWs;
+  const pathOk = life?.livePathOperational === true;
+  const wsPacketsLabel =
+    typeof ticks60 === "number" && Number.isFinite(ticks60)
+      ? `${fmtInt(ticks60)} ticks / 60s (PLATFORM_ZERODHA_WS)`
+      : pathOk
+        ? "0 ticks / 60s (PLATFORM_ZERODHA_WS) — feed quiet or symbols idle"
+        : "— (platform tape offline — no live tick plane)";
 
   return (
     <OpsPanel
       title="Market data health"
-      subtitle="DB candle store freshness — vendor packet rates remain NOT_INSTRUMENTED."
+      subtitle="DB candle store freshness plus platform tick counters from operations snapshot (no invented rates)."
     >
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-2 font-mono text-[11px] text-muted-foreground">
@@ -238,7 +247,9 @@ export function MarketFreshnessPanel({ snapshot }: { snapshot: OpsSnapshot | und
           </div>
           <div className="flex justify-between gap-2">
             <span>WS packets/sec</span>
-            <span className="text-foreground">NOT_INSTRUMENTED</span>
+            <span className="max-w-[14rem] truncate text-right text-foreground" title={String(wsPacketsLabel)}>
+              {wsPacketsLabel}
+            </span>
           </div>
           <div className="flex justify-between gap-2">
             <span>Distinct symbols</span>

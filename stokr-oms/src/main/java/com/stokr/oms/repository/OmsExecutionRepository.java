@@ -61,6 +61,13 @@ public interface OmsExecutionRepository extends JpaRepository<OmsExecution, UUID
     );
 
     @Query("""
+            select avg(e.latencyMs) from OmsExecution e join e.order o
+            where e.deleted = false and o.deleted = false
+            and e.latencyMs is not null
+            """)
+    Double averageLatencyMsAll();
+
+    @Query("""
             select avg(e.slippageBps) from OmsExecution e join e.order o
             where e.deleted = false and o.deleted = false
             and e.slippageBps is not null

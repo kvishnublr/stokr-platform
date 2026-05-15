@@ -10,11 +10,13 @@ import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +36,8 @@ public class TraderTerminalViewService {
     private final StrategySignalRepository strategySignalRepository;
     private final OmsOrderRepository omsOrderRepository;
     private final BacktestJobRepository backtestJobRepository;
+    @Value("${stokr.strategy.symbols:NIFTY_FUT,BANKNIFTY_FUT}")
+    private String strategySymbolsCsv;
 
     public TraderTerminalViewService(
             MarketDataQueryService marketDataQueryService,
@@ -48,7 +52,30 @@ public class TraderTerminalViewService {
     }
 
     public List<Map<String, Object>> marketWatchProjection() {
-        return List.of();
+        List<String> symbols = Arrays.stream(strategySymbolsCsv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (String symbol : symbols) {
+            List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, "5m", 2);
+            if (bars.isEmpty()) {
+                continue;
+            }
+            MarketdataCandle last = bars.get(bars.size() - 1);
+            MarketdataCandle prev = bars.size() > 1 ? bars.get(bars.size() - 2) : null;
+            double lastClose = bd(last.getClosePrice());
+            double prevClose = prev != null ? bd(prev.getClosePrice()) : lastClose;
+            double pct = prevClose == 0d ? 0d : ((lastClose - prevClose) / prevClose) * 100d;
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("symbol", symbol);
+            row.put("price", String.format("%.2f", lastClose));
+            row.put("changePct", String.format("%.2f", pct));
+            row.put("lastOpenTime", last.getOpenTime() != null ? last.getOpenTime().toString() : null);
+            out.add(row);
+        }
+        return out;
     }
 
     public List<Map<String, Object>> chartSeries(String symbol, String intervalOrTf, int limit) {

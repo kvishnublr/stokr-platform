@@ -78,6 +78,9 @@ export type DependencyStep = {
 
 export function buildDependencyChain(s: OpsSnapshot | undefined): DependencyStep[] {
   const brokerLive = hasActiveBrokerMarketFeed(s);
+  const life = asRecord(s?.operationalLifecycle);
+  const pathOk = life?.livePathOperational === true;
+  const tapeReason = life?.platformTapeReason != null ? String(life.platformTapeReason) : "";
   const fresh = asRecord(s?.marketFreshness);
   const mp = asRecord(s?.marketPlane);
   const scan = asRecord(s?.scannerTelemetry);
@@ -100,40 +103,59 @@ export function buildDependencyChain(s: OpsSnapshot | undefined): DependencyStep
 
   const brokerState: ChainLinkState = !dbOk
     ? "UNAVAILABLE"
-    : !brokerLive
+    : life && !pathOk
       ? "OFFLINE"
-      : stale
-        ? "DEGRADED"
-        : "OK";
+      : !brokerLive
+        ? "OFFLINE"
+        : stale
+          ? "DEGRADED"
+          : "OK";
   const brokerDetail = !dbOk
     ? "Cannot evaluate broker rows — database probe failed."
-    : !brokerLive
-      ? "No active market pipe: connect platform feed (admin OAuth) and/or trader broker_accounts with CONNECTED sessions."
-      : stale
-        ? "Sessions connected but candle store is stale vs wall clock."
-        : platformFed && !traderAccounts
-          ? "Platform market feed session active (admin OAuth). Trader execution broker_accounts optional for this plane."
-          : "OAuth sessions connected; ingestion may proceed.";
+    : life && !pathOk
+      ? tapeReason || "Platform Zerodha tape is not operational (websocket, ticks, or subscriptions)."
+      : !brokerLive
+        ? "No active market pipe: connect platform feed (admin OAuth) and/or trader broker_accounts with CONNECTED sessions."
+        : stale
+          ? "Sessions connected but candle store is stale vs wall clock."
+          : platformFed && !traderAccounts
+            ? "Platform market feed session active (admin OAuth). Trader execution broker_accounts optional for this plane."
+            : "OAuth sessions connected; ingestion may proceed.";
 
-  const ingestionState: ChainLinkState = !dbOk ? "UNAVAILABLE" : !brokerLive ? "OFFLINE" : stale ? "DEGRADED" : "OK";
-  const ingestionDetail = !brokerLive
-    ? "Live candles require an active market pipe (platform feed OAuth and/or CONNECTED trader broker_accounts)."
-    : stale
-      ? `1m store lag ≈ ${fresh?.latest1mLagSeconds ?? mp?.latest1mLagSeconds ?? "—"}s`
-      : "Candle store advancing within tolerance.";
+  const ingestionState: ChainLinkState = !dbOk ? "UNAVAILABLE" : life && !pathOk ? "OFFLINE" : !brokerLive ? "OFFLINE" : stale ? "DEGRADED" : "OK";
+  const ingestionDetail =
+    life && !pathOk
+      ? "Live ingestion paused — platform market path offline."
+      : !brokerLive
+        ? "Live candles require an active market pipe (platform feed OAuth and/or CONNECTED trader broker_accounts)."
+        : stale
+          ? `1m store lag ≈ ${fresh?.latest1mLagSeconds ?? mp?.latest1mLagSeconds ?? "—"}s`
+          : "Candle store advancing within tolerance.";
 
   const aggState = ingestionState === "OK" ? "OK" : ingestionState;
   const aggDetail = ingestionState === "OK" ? "Aggregates follow ingestion plane (same freshness probe)." : ingestionDetail;
 
-  const scanState: ChainLinkState = !brokerLive ? "PAUSED" : running > 0 ? "OK" : "DEGRADED";
-  const scanDetail = !brokerLive
-    ? "Scanners cannot consume live ticks without broker connectivity."
-    : running > 0
-      ? `${running} RUNNING strategy instance(s).`
-      : "No RUNNING scanners — catalog idle or schedules outside market.";
+  const scanEngine = String(life?.scannerEngineState ?? "").toUpperCase();
+  const scanState: ChainLinkState =
+    life && scanEngine === "PAUSED" ? "PAUSED" : !brokerLive ? "PAUSED" : running > 0 ? "OK" : "DEGRADED";
+  const scanDetail =
+    life && scanEngine === "PAUSED"
+      ? String(life.scannerPollSkipReason ?? "Scanner poll skipped — platform tape not operational.")
+      : !brokerLive
+        ? "Scanners cannot consume live ticks without broker connectivity."
+        : running > 0
+          ? `${running} RUNNING strategy instance(s).`
+          : "No RUNNING scanners — catalog idle or schedules outside market.";
 
-  const sigState: ChainLinkState = !brokerLive ? "PAUSED" : running > 0 ? "OK" : "DEGRADED";
-  const sigDetail = !brokerLive ? "Signals are not emitted on live rails without broker feed." : scanDetail;
+  const sigEngine = String(life?.signalGenerationState ?? "").toUpperCase();
+  const sigState: ChainLinkState =
+    life && sigEngine === "UNAVAILABLE" ? "UNAVAILABLE" : !brokerLive ? "PAUSED" : running > 0 ? "OK" : "DEGRADED";
+  const sigDetail =
+    life && sigEngine === "UNAVAILABLE"
+      ? "Live signal generation unavailable until platform tape is operational."
+      : !brokerLive
+        ? "Signals are not emitted on live rails without broker feed."
+        : scanDetail;
 
   const stuck = typeof oms?.stuckOrdersApprox === "number" ? oms.stuckOrdersApprox : Number(oms?.stuckOrdersApprox ?? 0);
   const rej = typeof oms?.rejectRateApprox === "number" ? oms.rejectRateApprox : Number(oms?.rejectRateApprox ?? 0);
@@ -148,13 +170,16 @@ export function buildDependencyChain(s: OpsSnapshot | undefined): DependencyStep
         : `Reject rate ≈ ${rej.toFixed(2)}%`;
 
   let replayState: ChainLinkState = jq > 80 ? "BACKFILLING" : "OK";
-  if (!brokerLive && replayState === "OK") replayState = "DEGRADED";
+  if (life && String(life.replayCouplingState ?? "").toUpperCase() === "STALE") replayState = "DEGRADED";
+  else if (!brokerLive && replayState === "OK") replayState = "DEGRADED";
   const replayDetail =
     jq > 80
       ? `Replay backlog · queued ${jq} · running ${jr}`
-      : !brokerLive
-        ? "Replay can run historically; live freshness coupling is degraded without broker feed."
-        : `Replay queue idle · queued ${jq} · running ${jr}`;
+      : life && String(life.replayCouplingState ?? "").toUpperCase() === "STALE"
+        ? String(life.replayCouplingDetail ?? "Live replay coupling stale — platform tape offline.")
+        : !brokerLive
+          ? "Replay can run historically; live freshness coupling is degraded without broker feed."
+          : `Replay queue idle · queued ${jq} · running ${jr}`;
 
   return [
     { id: "brk", label: "Broker feed", state: brokerState, detail: brokerDetail },
@@ -191,6 +216,8 @@ export function computeSystemReadiness(s: OpsSnapshot | undefined): {
   const dbOk = String(db?.status ?? "").toUpperCase() === "CONNECTED";
   const redisOk = String(redis?.status ?? "").toUpperCase() === "CONNECTED";
   const brokerConnected = hasActiveBrokerMarketFeed(s);
+  const life = asRecord(s.operationalLifecycle);
+  const tapeOperational = life?.livePathOperational !== false;
   const fresh = asRecord(s.marketFreshness);
   const mp = asRecord(s.marketPlane);
   const freshSt = String(fresh?.status ?? mp?.freshnessStatus ?? "UNKNOWN").toUpperCase();
@@ -216,6 +243,16 @@ export function computeSystemReadiness(s: OpsSnapshot | undefined): {
       subline:
         "No active market pipe. Open Broker infrastructure to establish the platform feed (admin OAuth), and/or connect trader broker_accounts until at least one vendor shows CONNECTED sessions in the operations snapshot.",
       brokerConnected: false,
+      killSwitch: kill,
+    };
+  }
+
+  if (life && !tapeOperational) {
+    return {
+      level: "OFFLINE",
+      headline: String(life.headline ?? "Live market path not operational"),
+      subline: String(life.platformTapeReason ?? "Platform Zerodha tape failed operational checks (websocket, ticks, subscriptions, or pause flag)."),
+      brokerConnected: true,
       killSwitch: kill,
     };
   }

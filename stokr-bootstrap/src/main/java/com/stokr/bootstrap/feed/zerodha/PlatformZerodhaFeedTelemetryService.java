@@ -1,5 +1,7 @@
 package com.stokr.bootstrap.feed.zerodha;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
 import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
 import lombok.RequiredArgsConstructor;
@@ -7,12 +9,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class PlatformZerodhaFeedTelemetryService {
 
     private final PlatformBrokerFeedSessionRepository sessionRepository;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public void saveWindow(String vendor, PlatformFeedWindowMetrics m) {
@@ -40,7 +45,25 @@ public class PlatformZerodhaFeedTelemetryService {
         if (m.tickProcessingLatencyMs() != null) {
             s.setTickProcessingLatencyMs(m.tickProcessingLatencyMs());
         }
+        s.setTelemetryJson(encodeTelemetryJson(m));
         sessionRepository.save(s);
+    }
+
+    private String encodeTelemetryJson(PlatformFeedWindowMetrics m) {
+        Map<String, Object> tel = new LinkedHashMap<>();
+        tel.put("capturedAt", Instant.now().toString());
+        tel.put("packetsPerSec", m.packetsPerSec());
+        tel.put("ticksPerSec", m.ticksPerSec());
+        tel.put("subscriptionCount", m.subscriptionCount());
+        tel.put("websocketState", m.websocketState());
+        if (m.streamingSymbolsCsv() != null && !m.streamingSymbolsCsv().isBlank()) {
+            tel.put("streamingSymbols", m.streamingSymbolsCsv());
+        }
+        try {
+            return objectMapper.writeValueAsString(tel);
+        } catch (JsonProcessingException e) {
+            return "{\"error\":\"telemetry_json_encode_failed\"}";
+        }
     }
 
     @Transactional
@@ -93,7 +116,8 @@ public class PlatformZerodhaFeedTelemetryService {
             Instant lastTickAt,
             Instant lastHeartbeatAt,
             Integer feedLagMs,
-            Integer tickProcessingLatencyMs
+            Integer tickProcessingLatencyMs,
+            String streamingSymbolsCsv
     ) {
     }
 }

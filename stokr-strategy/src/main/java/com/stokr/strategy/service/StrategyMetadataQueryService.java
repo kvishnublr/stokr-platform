@@ -63,7 +63,7 @@ public class StrategyMetadataQueryService {
         }
         StrategyDeploymentDefaultsDto dd = dto.deploymentDefaults();
         if (dd == null) {
-            dd = new StrategyDeploymentDefaultsDto("NIFTY 50", "5m", "SIMULATED_DEFAULT", "PERCENT_2_BPS", "SPREAD_PROXY");
+            dd = new StrategyDeploymentDefaultsDto("NIFTY_FUT", "5m", "SIMULATED_DEFAULT", "PERCENT_2_BPS", "SPREAD_PROXY");
         }
         StrategyPreviewMetricsDto pm = dto.previewMetrics();
         if (pm == null) {

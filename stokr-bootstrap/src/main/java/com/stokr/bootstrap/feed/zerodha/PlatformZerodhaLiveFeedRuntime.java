@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executors;
@@ -254,6 +255,9 @@ public class PlatformZerodhaLiveFeedRuntime {
         double tps = tk / (double) elapsed;
         int subs = subscribedTokens.size();
         String wsState = wsOpen.get() ? "OPEN" : "CLOSED";
+        String streamingSymbolsCsv = subscribedTokens.stream()
+                .map(tok -> tokenSymbols.getOrDefault(tok, "TOKEN_" + tok))
+                .collect(Collectors.joining(","));
         telemetryService.saveWindow(
                 VENDOR,
                 new PlatformZerodhaFeedTelemetryService.PlatformFeedWindowMetrics(
@@ -266,7 +270,8 @@ public class PlatformZerodhaLiveFeedRuntime {
                         lastTickAt,
                         lastHeartbeatAt,
                         null,
-                        null
+                        null,
+                        streamingSymbolsCsv
                 )
         );
     }

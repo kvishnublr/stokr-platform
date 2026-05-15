@@ -14,6 +14,7 @@ import { api, parseAxiosMessage } from "../api/client";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
 import { fetchAdminOpsSnapshotMerged } from "../lib/fetchAdminOpsSnapshotMerged";
 import { BrokerConnectionControlCenter } from "../components/admin/BrokerConnectionControlCenter";
+import { PlatformLiveInfrastructurePanel } from "../components/admin/PlatformLiveInfrastructurePanel";
 import { SystemReadinessBanner } from "../components/admin/SystemReadinessBanner";
 import { computeSystemReadiness, hasActiveBrokerMarketFeed } from "../components/admin/adminReadinessModel";
 import { GlassPanel } from "../components/ds/GlassPanel";
@@ -114,8 +115,9 @@ export function AdminOverviewPage() {
 
   return (
     <div className="space-y-8">
-      <SystemReadinessBanner snapshot={operationsSnapshot.data} />
+      <PlatformLiveInfrastructurePanel snapshot={operationsSnapshot.data} />
       <BrokerConnectionControlCenter snapshot={operationsSnapshot.data} />
+      <SystemReadinessBanner snapshot={operationsSnapshot.data} />
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex flex-wrap items-start justify-between gap-6">

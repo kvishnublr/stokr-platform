@@ -25,6 +25,7 @@ public record OperationsSnapshotDto(
         List<Map<String, Object>> incidents,
         Map<String, Object> marketPlane,
         Map<String, Object> operationalHistory,
+        Map<String, Object> operationalLifecycle,
         @JsonProperty("platformMarketFeed")
         @JsonInclude(JsonInclude.Include.ALWAYS)
         Map<String, Object> platformMarketFeed

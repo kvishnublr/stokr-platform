@@ -11,6 +11,7 @@ import com.stokr.backtest.domain.BacktestJob;
 import com.stokr.backtest.domain.BacktestJobStatus;
 import com.stokr.backtest.repository.BacktestJobRepository;
 import com.stokr.common.pipeline.PipelineQueues;
+import com.stokr.common.runtime.ExecutionPipelineRuntimeReadinessService;
 import com.stokr.common.telemetry.SignalDistributionTelemetryService;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
@@ -30,6 +31,7 @@ import jakarta.persistence.EntityManager;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.connection.RedisConnection;
@@ -47,7 +49,9 @@ import java.lang.management.MemoryMXBean;
 import java.lang.management.OperatingSystemMXBean;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -91,6 +95,10 @@ public class AdminOperationalSnapshotService {
     private final OperationalHistoryService operationalHistoryService;
     private final ScannerExecutionTelemetryService scannerExecutionTelemetryService;
     private final PlatformMarketFeedService platformMarketFeedService;
+    private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
+
+    @Value("${stokr.strategy.symbols:NIFTY_FUT,BANKNIFTY_FUT}")
+    private String strategySymbolsCsv;
 
     @Autowired
     public AdminOperationalSnapshotService(
@@ -117,7 +125,8 @@ public class AdminOperationalSnapshotService {
             MarketPlaneMonitorService marketPlaneMonitorService,
             OperationalHistoryService operationalHistoryService,
             ScannerExecutionTelemetryService scannerExecutionTelemetryService,
-            PlatformMarketFeedService platformMarketFeedService
+            PlatformMarketFeedService platformMarketFeedService,
+            ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService
     ) {
         this.killSwitchService = killSwitchService;
         this.liveTradingArmingService = liveTradingArmingService;
@@ -143,6 +152,7 @@ public class AdminOperationalSnapshotService {
         this.operationalHistoryService = operationalHistoryService;
         this.scannerExecutionTelemetryService = scannerExecutionTelemetryService;
         this.platformMarketFeedService = platformMarketFeedService;
+        this.executionPipelineRuntimeReadinessService = executionPipelineRuntimeReadinessService;
     }
 
     @Transactional(readOnly = true)
@@ -159,6 +169,7 @@ public class AdminOperationalSnapshotService {
         Map<String, Object> traderExecutionHealth = traderExecutionHealth();
         Map<String, Object> marketPlane = marketPlaneMonitorService.snapshot(now);
         Map<String, Object> operationalHistory = operationalHistoryService.snapshotSection();
+        Map<String, Object> operationalLifecycle = operationalLifecycleSection(now, system, marketFreshness, scannerTelemetry);
         Map<String, Object> platformMarketFeed = canonicalPlatformMarketFeedSnapshot(now);
         @SuppressWarnings("unchecked")
         Map<String, Object> rabbit = (Map<String, Object>) system.get("rabbitQueues");
@@ -184,8 +195,38 @@ public class AdminOperationalSnapshotService {
                 incidents,
                 marketPlane,
                 operationalHistory,
+                operationalLifecycle,
                 platformMarketFeed
         );
+    }
+
+    private Map<String, Object> operationalLifecycleSection(
+            Instant now,
+            Map<String, Object> system,
+            Map<String, Object> marketFreshness,
+            Map<String, Object> scannerTelemetry
+    ) {
+        var pipeline = executionPipelineRuntimeReadinessService.snapshot();
+        boolean pollSkipped = Boolean.TRUE.equals(scannerTelemetry.get("lastPollWasSkipped"));
+        String pollSkipReason = scannerTelemetry.get("lastPollSkipReason") != null
+                ? String.valueOf(scannerTelemetry.get("lastPollSkipReason"))
+                : null;
+        String freshSt = String.valueOf(marketFreshness != null ? marketFreshness.getOrDefault("status", "UNKNOWN") : "UNKNOWN")
+                .toUpperCase();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("collectedAt", now.toString());
+        out.put("executionPipelineActive", pipeline.executionPipelineActive());
+        out.put("executionPipelineDetail", pipeline.detail());
+        out.put("scannerPollSkipped", pollSkipped);
+        out.put("scannerPollSkipReason", pollSkipReason);
+        out.put("candleFreshnessStatus", freshSt);
+        out.put(
+                "headline",
+                pipeline.executionPipelineActive()
+                        ? "Operational lifecycle nominal for execution pipeline."
+                        : "EXECUTION PIPELINE DISABLED - Rabbit listeners are OFF. Signal routing and OMS execution are inactive."
+        );
+        return out;
     }
 
     /**
@@ -298,6 +339,7 @@ public class AdminOperationalSnapshotService {
 
     private Map<String, Object> omsSection(Instant now) {
         Map<String, Object> m = new LinkedHashMap<>();
+        var pipeline = executionPipelineRuntimeReadinessService.snapshot();
         long orders = omsOrderRepository.countByDeletedFalse();
         long rejected = omsOrderRepository.countByDeletedFalseAndState(OrderState.REJECTED);
         long failed = omsOrderRepository.countByDeletedFalseAndState(OrderState.FAILED);
@@ -305,7 +347,7 @@ public class AdminOperationalSnapshotService {
         m.put("ordersRejected", rejected);
         m.put("ordersFailed", failed);
         m.put("rejectRateApprox", orders <= 0 ? 0.0 : (rejected * 100.0) / orders);
-        Double avgLat = omsExecutionRepository.averageLatencyMs(null, null, null);
+        Double avgLat = omsExecutionRepository.averageLatencyMsAll();
         m.put("executionAvgLatencyMs", avgLat);
         m.put("signalsPersistedTotal", strategySignalRepository.countByDeletedFalse());
         Instant since1m = now.minusSeconds(60);
@@ -315,15 +357,28 @@ public class AdminOperationalSnapshotService {
         Instant stuckBefore = now.minusSeconds(300);
         m.put("stuckOrdersApprox", omsOrderRepository.countStuckOrders(STUCK_ORDER_STATES, stuckBefore));
         m.put("recentFailures", recentOmsFailureRows());
+        if (!pipeline.executionPipelineActive()) {
+            m.put("omsPlaneState", "DEGRADED");
+            m.put("degradationReason", pipeline.detail());
+        } else {
+            m.put("omsPlaneState", "OPERATIONAL");
+            m.put("degradationReason", null);
+        }
         return m;
     }
 
     private Map<String, Object> scannerTelemetry(Instant now) {
         Map<String, Object> m = new LinkedHashMap<>();
         Instant since = now.minus(Duration.ofMinutes(60));
+        List<String> configuredSymbols = Arrays.stream(strategySymbolsCsv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
         m.put("signalsEmittedLast60m", strategySignalRepository.countByCreatedAtAfterAndDeletedFalse(since));
         m.put("runningStrategyInstances", strategyInstanceRepository.countByRuntimeStateAndDeletedFalse("RUNNING"));
         m.put("catalogStrategies", strategyDefinitionRepository.countByDeletedFalse());
+        m.put("configuredSymbols", configuredSymbols);
+        m.put("symbolDataReadiness", scannerSymbolDataReadiness(configuredSymbols, now));
         m.put("strategyRows", scannerStrategyRows(now));
         m.put("note", "Per-scan latency histogram not instrumented — strategyRows + DB counts are authoritative for this build.");
         m.putAll(scannerExecutionTelemetryService.snapshotOverlay(now));
@@ -332,6 +387,67 @@ public class AdminOperationalSnapshotService {
                         sig -> m.put("lastSignalCreatedAt", sig.getCreatedAt() != null ? sig.getCreatedAt().toString() : null),
                         () -> m.put("lastSignalCreatedAt", null));
         return m;
+    }
+
+    private List<Map<String, Object>> scannerSymbolDataReadiness(List<String> symbols, Instant now) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (String symbol : symbols) {
+            long candles60m = candlesCountSince(symbol, now.minus(60, ChronoUnit.MINUTES));
+            String lastOpen = latestOpenTime(symbol);
+            String status;
+            String reason;
+            if (candles60m <= 0) {
+                status = "NO_CANDLES";
+                reason = "No 1m candles for symbol in last 60m; scanner cannot evaluate.";
+            } else {
+                status = "READY";
+                reason = "Recent 1m candles present.";
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("symbol", symbol);
+            row.put("candles1mLast60m", candles60m);
+            row.put("latestOpenTime1m", lastOpen);
+            row.put("status", status);
+            row.put("reason", reason);
+            out.add(row);
+        }
+        return out;
+    }
+
+    private long candlesCountSince(String symbol, Instant since) {
+        try {
+            Object r = entityManager.createNativeQuery("""
+                            select count(*)::bigint
+                            from marketdata_candles
+                            where deleted = false
+                              and timeframe = '1m'
+                              and symbol = :symbol
+                              and open_time >= :since
+                            """)
+                    .setParameter("symbol", symbol)
+                    .setParameter("since", since)
+                    .getSingleResult();
+            return r instanceof Number n ? n.longValue() : 0L;
+        } catch (DataAccessException | IllegalArgumentException ex) {
+            return -1L;
+        }
+    }
+
+    private String latestOpenTime(String symbol) {
+        try {
+            Object r = entityManager.createNativeQuery("""
+                            select max(open_time)
+                            from marketdata_candles
+                            where deleted = false
+                              and timeframe = '1m'
+                              and symbol = :symbol
+                            """)
+                    .setParameter("symbol", symbol)
+                    .getSingleResult();
+            return r != null ? r.toString() : null;
+        } catch (DataAccessException | IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private Map<String, Object> signalDistribution(Instant now) {
@@ -373,8 +489,16 @@ public class AdminOperationalSnapshotService {
 
     private Map<String, Object> systemSection(Instant collectedAt) {
         Map<String, Object> m = new LinkedHashMap<>();
+        var pipeline = executionPipelineRuntimeReadinessService.snapshot();
         m.put("killSwitch", killSwitchService.isEnabled());
         m.put("liveTradingArmed", liveTradingArmingService.isArmed());
+        m.put("executionPipeline", Map.of(
+                "pollExecutionMode", pipeline.pollExecutionMode(),
+                "pollModeRequiresRabbit", pipeline.pollModeRequiresRabbit(),
+                "rabbitListenersEnabled", pipeline.rabbitListenersEnabled(),
+                "executionPipelineActive", pipeline.executionPipelineActive(),
+                "detail", pipeline.detail()
+        ));
         m.put("uptimeSeconds", ManagementFactory.getRuntimeMXBean().getUptime() / 1000);
         MemoryMXBean mem = ManagementFactory.getMemoryMXBean();
         m.put("heapUsedBytes", mem.getHeapMemoryUsage().getUsed());

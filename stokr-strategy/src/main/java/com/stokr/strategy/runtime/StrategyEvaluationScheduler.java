@@ -1,11 +1,17 @@
 package com.stokr.strategy.runtime;
 
+import com.stokr.common.market.LiveMarketPathAssessment;
+import com.stokr.common.market.LiveMarketPathOperationalGate;
+import com.stokr.common.runtime.ExecutionPipelineRuntimeReadinessService;
+import com.stokr.strategy.telemetry.ScannerExecutionTelemetryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 
@@ -15,19 +21,69 @@ import java.util.List;
 public class StrategyEvaluationScheduler {
 
     private final MeanReversionEvaluationService evaluationService;
+    private final ScannerExecutionTelemetryService scannerExecutionTelemetryService;
+    private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
+    private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
 
+    /**
+     * When true (default), mean-reversion poll skips if {@link LiveMarketPathOperationalGate} reports non-operational
+     * platform tape — avoids silent evaluation on stale rails.
+     */
+    @Value("${stokr.strategy.require-operational-live-path:true}")
+    private boolean requireOperationalLivePath;
+
+    /**
+     * Comma-separated symbols for the mean-reversion poll loop. Must match tradingsymbol keys stored in
+     * {@code marketdata_candles} (e.g. index NIFTY 50 vs futures NIFTY_FUT). Platform Zerodha LTP tokens are separate
+     * ({@code stokr.platform.zerodha.instrument-tokens}); align feed instruments with these symbols if you need tape parity.
+     */
     @Value("${stokr.strategy.symbols:NIFTY_FUT,BANKNIFTY_FUT}")
     private String symbolsCsv;
 
     @Scheduled(fixedDelayString = "${stokr.strategy.poll-ms:60000}")
     public void poll() {
+        Instant tick = Instant.now();
+        var pipeline = executionPipelineRuntimeReadinessService.snapshot();
+        if (!pipeline.executionPipelineActive()) {
+            scannerExecutionTelemetryService.recordPollSkipped(tick, pipeline.detail());
+            log.warn("strategy.poll.blocked {}", pipeline.detail());
+            return;
+        }
+        LiveMarketPathOperationalGate gate = liveMarketPathOperationalGate.getIfAvailable();
+        if (requireOperationalLivePath && gate != null) {
+            LiveMarketPathAssessment a = gate.assess(tick);
+            if (!a.operational()) {
+                scannerExecutionTelemetryService.recordPollSkipped(
+                        tick,
+                        a.platformTapeState() + ": " + a.reason()
+                );
+                log.info("strategy.poll.skipped tapeState={} reason={}", a.platformTapeState(), a.reason());
+                return;
+            }
+        }
+        long wallStart = System.nanoTime();
         List<String> symbols = Arrays.stream(symbolsCsv.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        int signals = 0;
+        int failures = 0;
         for (String symbol : symbols) {
             try {
-                evaluationService.evaluateSymbol(symbol, null);
+                MeanReversionEvaluationService.SymbolEvalResult r = evaluationService.evaluateSymbol(symbol, null);
+                if (r == MeanReversionEvaluationService.SymbolEvalResult.EMITTED) {
+                    signals++;
+                } else if (r == MeanReversionEvaluationService.SymbolEvalResult.FAILED) {
+                    failures++;
+                }
             } catch (Exception ex) {
+                failures++;
                 log.warn("strategy.poll.failed symbol={}", symbol, ex);
             }
         }
+        scannerExecutionTelemetryService.recordPollCycleFinished(
+                Instant.now(),
+                symbols.size(),
+                signals,
+                failures,
+                System.nanoTime() - wallStart
+        );
     }
 }
