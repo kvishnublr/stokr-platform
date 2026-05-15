@@ -11,6 +11,7 @@ import org.springframework.web.client.RestClient;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -61,6 +62,32 @@ public class ZerodhaKiteApiClient {
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
                 .retrieve()
                 .body(String.class);
+    }
+
+    /**
+     * Historical candles endpoint (Kite): returns raw payload so adapters can map broker-specific schema safely.
+     */
+    public JsonNode getHistoricalCandles(
+            String apiKey,
+            String accessToken,
+            long instrumentToken,
+            String interval,
+            Instant fromInclusive,
+            Instant toInclusive
+    ) {
+        String itv = interval == null || interval.isBlank() ? "minute" : interval.trim().toLowerCase();
+        String from = URLEncoder.encode(fromInclusive.toString(), StandardCharsets.UTF_8);
+        String to = URLEncoder.encode(toInclusive.toString(), StandardCharsets.UTF_8);
+        String url = BASE + "/instruments/historical/" + instrumentToken + "/" + itv
+                + "?from=" + from
+                + "&to=" + to
+                + "&oi=0";
+        String body = http.get()
+                .uri(url)
+                .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
+                .retrieve()
+                .body(String.class);
+        return readJson(body);
     }
 
     /**

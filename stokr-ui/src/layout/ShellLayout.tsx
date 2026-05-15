@@ -162,20 +162,21 @@ export function ShellLayout() {
   const adminOpsCenterLinks: SidebarLink[] = useMemo(() => {
     const links: SidebarLink[] = [
       { to: "/admin", end: true, label: "Overview", icon: LayoutDashboard },
-      { to: "/admin/broker-infrastructure", label: "Broker infrastructure", icon: RadioTower },
-      { to: "/admin/market", label: "Market intelligence", icon: Radio },
-      { to: "/admin/replay", label: "Replay infrastructure", icon: RotateCcw },
-      { to: "/admin/signals", label: "Signal distribution", icon: Share2 },
-      { to: "/admin/execution", label: "OMS / execution", icon: Gauge },
-      { to: "/admin/traders-health", label: "Trader execution health", icon: Stethoscope },
-      { to: "/admin/backfill", label: "Backfill operations", icon: Database },
+      { to: "/admin/market", label: "Market", icon: Radio },
+      { to: "/admin/signals", label: "Signals", icon: Share2 },
+      { to: "/admin/execution", label: "OMS", icon: Gauge },
+      { to: "/admin/replay", label: "Replay", icon: RotateCcw },
       { to: "/admin/infrastructure", label: "Infrastructure", icon: Server },
-      { to: "/admin/history", label: "Operational history", icon: History },
-      { to: "/admin/audit", label: "Audit & governance", icon: ScrollText },
-      { to: "/admin/controls", label: "Settings & controls", icon: SlidersHorizontal },
+      { to: "/admin/history", label: "Incidents", icon: ActivitySquare },
+      { to: "/admin/controls", label: "Settings", icon: SlidersHorizontal },
+      { to: "/admin/broker-infrastructure", label: "Broker", icon: RadioTower },
+      { to: "/admin/traders-health", label: "Trader health", icon: Stethoscope },
+      { to: "/admin/backfill", label: "Backfill", icon: Database },
+      { to: "/admin/history", label: "History", icon: History },
+      { to: "/admin/audit", label: "Audit", icon: ScrollText },
     ];
     if (canKillOpsConsole) {
-      links.splice(1, 0, { to: "/admin/ops", label: "Operations cockpit", icon: ActivitySquare });
+      // already listed as Incidents entry for compact operational IA
     }
     return links;
   }, [canKillOpsConsole]);

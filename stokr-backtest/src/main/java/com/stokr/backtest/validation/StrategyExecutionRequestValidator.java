@@ -27,12 +27,22 @@ public class StrategyExecutionRequestValidator {
     private static final Set<String> RESERVED_PARAMETER_KEYS = Set.of(
             "symbol", "timeframe", "capital", "executionmode", "executionprofile", "feemodel", "slippagemodel", "seed", "range"
     );
+    private static final Set<String> SUPPORTED_BACKTEST_STRATEGY_KEYS = Set.of(
+            StrategyKeys.MEAN_REVERSION_RANGE_FADE,
+            StrategyKeys.MEAN_REVERSION_V2,
+            StrategyKeys.EMA_TREND_FOLLOW,
+            StrategyKeys.MOMENTUM_BREAKOUT
+    );
 
     private final StrategyMetadataQueryService strategyMetadataQueryService;
 
     public StrategyMetadataResponseDto validateAndLoadMetadata(ExecutionRequestDto req) {
-        if (!StrategyKeys.MEAN_REVERSION_RANGE_FADE.equalsIgnoreCase(req.strategyKey())) {
-            throw new BadRequestException("Only strategyKey=" + StrategyKeys.MEAN_REVERSION_RANGE_FADE + " is supported in this release");
+        if (req.strategyKey() == null || req.strategyKey().isBlank()) {
+            throw new BadRequestException("strategyKey is required");
+        }
+        String strategyKey = req.strategyKey().trim();
+        if (!SUPPORTED_BACKTEST_STRATEGY_KEYS.contains(strategyKey)) {
+            throw new BadRequestException("Unsupported strategyKey for backtest: " + strategyKey);
         }
         if (!"BACKTEST".equalsIgnoreCase(req.executionMode())) {
             throw new BadRequestException("Synchronous replay requires executionMode=BACKTEST");

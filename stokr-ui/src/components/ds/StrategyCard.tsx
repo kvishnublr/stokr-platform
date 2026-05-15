@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
-import { Shield, Sparkles } from "lucide-react";
-import { RiskBadge } from "./RiskBadge";
+import { Clock3, Shield, Sparkles } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { RiskBadge } from "./RiskBadge";
 
 export type StrategyCatalogCard = {
   id: string;
@@ -11,102 +11,129 @@ export type StrategyCatalogCard = {
   riskLevel: string;
   subscribed: boolean;
   subscriptionEnabled: boolean;
+  runtimeTag?: "RUNNING" | "PAUSED" | "BLOCKED" | "DEGRADED" | "NO_DATA" | "OFFLINE";
+  runtimeNote?: string;
+  executionMode?: "PAPER" | "LIVE";
+  signalsToday?: number;
+  lastSignalAt?: string | null;
+  lastEvaluationAt?: string | null;
+  assignedSymbols?: string[];
+  candleReadiness?: string;
+  omsState?: string;
 };
+
+type ActionId = "BACKTEST" | "PAPER" | "LIVE" | "PAUSE" | "UNSUBSCRIBE";
+
+function statusTone(tag: StrategyCatalogCard["runtimeTag"], isLight: boolean): string {
+  if (!tag) return isLight ? "bg-neutral-100 text-neutral-700" : "bg-neutral-800 text-neutral-300";
+  if (tag === "RUNNING") return isLight ? "bg-emerald-100 text-emerald-800" : "bg-emerald-500/15 text-emerald-300";
+  if (tag === "PAUSED") return isLight ? "bg-amber-100 text-amber-800" : "bg-amber-500/15 text-amber-300";
+  if (tag === "BLOCKED" || tag === "OFFLINE") return isLight ? "bg-rose-100 text-rose-800" : "bg-rose-500/15 text-rose-300";
+  return isLight ? "bg-orange-100 text-orange-800" : "bg-orange-500/15 text-orange-300";
+}
 
 export function StrategyCard({
   strategy,
   index,
-  onToggle,
-  actionDisabled,
+  onAction,
   actionBusy,
+  actionDisabled,
   variant = "dark",
 }: {
   strategy: StrategyCatalogCard;
   index: number;
-  onToggle: () => void;
-  actionDisabled: boolean;
-  actionBusy: boolean;
+  onAction: (action: ActionId) => void;
+  actionBusy?: ActionId | null;
+  actionDisabled?: boolean;
   variant?: "dark" | "light";
 }) {
   const isLight = variant === "light";
+  const busy = !!actionBusy;
+  const actions: Array<{ id: ActionId; label: string }> = [
+    { id: "BACKTEST", label: "Backtest" },
+    { id: "PAPER", label: "Paper" },
+    { id: "LIVE", label: "Live" },
+    { id: "PAUSE", label: strategy.subscriptionEnabled ? "Pause" : "Resume" },
+    { id: "UNSUBSCRIBE", label: strategy.subscribed ? "Unsubscribe" : "Subscribe" },
+  ];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index * 0.04, 0.4) }}
       className={cn(
-        "group relative overflow-hidden rounded-2xl p-5",
-        isLight
-          ? "border border-neutral-200 bg-gradient-to-br from-white via-neutral-50 to-white shadow-[0_8px_30px_-18px_rgba(15,23,42,0.28)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_40px_-20px_rgba(59,130,246,0.3)]"
-          : "border border-neutral-800/90 bg-gradient-to-br from-neutral-900/95 via-neutral-950 to-neutral-950 shadow-[0_20px_50px_-30px_rgba(0,0,0,0.9)]",
+        "rounded-2xl border p-4",
+        isLight ? "border-border bg-card text-foreground" : "border-neutral-800 bg-neutral-950 text-white",
       )}
     >
-      <div
-        className={cn(
-          "pointer-events-none absolute inset-px rounded-2xl",
-          isLight
-            ? "bg-[linear-gradient(135deg,rgba(255,255,255,0.9),rgba(255,255,255,0)_45%)]"
-            : "bg-[linear-gradient(135deg,rgba(255,255,255,0.06),transparent_40%)]",
-        )}
-      />
-      <div className="absolute right-4 top-4 flex items-center gap-2">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <div className={cn("rounded-lg p-2 ring-1", isLight ? "bg-blue-50 ring-blue-200" : "bg-blue-500/10 ring-blue-500/20")}>
+            <Sparkles className={cn("h-4 w-4", isLight ? "text-blue-600" : "text-blue-300")} />
+          </div>
+          <div className="min-w-0">
+            <div className={cn("truncate text-base font-semibold", isLight ? "text-foreground" : "text-white")}>{strategy.name}</div>
+            <div className={cn("truncate font-mono text-[11px]", isLight ? "text-muted-foreground" : "text-neutral-400")}>{strategy.code}</div>
+          </div>
+        </div>
         <RiskBadge level={strategy.riskLevel} variant={variant} />
       </div>
-      <div className="relative flex items-start gap-3 pt-6">
-        <div
-          className={cn(
-            "rounded-xl p-2.5 ring-1",
-            isLight ? "bg-blue-50 ring-blue-200" : "bg-blue-500/12 ring-blue-500/25",
-          )}
-        >
-          <Sparkles className={cn("h-5 w-5", isLight ? "text-blue-600" : "text-blue-400")} />
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className={cn("rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide", statusTone(strategy.runtimeTag, isLight))}>
+          {strategy.runtimeTag ?? "NO_DATA"}
+        </span>
+        <span className={cn("rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide", isLight ? "bg-sky-100 text-sky-800" : "bg-sky-500/15 text-sky-300")}>
+          {strategy.executionMode ?? "PAPER"}
+        </span>
+        <span className={cn("inline-flex items-center gap-1 text-[11px]", isLight ? "text-muted-foreground" : "text-neutral-400")}>
+          <Clock3 className="h-3 w-3" />
+          last signal {strategy.lastSignalAt ?? "-"}
+        </span>
+      </div>
+
+      <div className={cn("grid grid-cols-2 gap-2 border-y py-3 text-[11px]", isLight ? "border-border" : "border-neutral-800")}>
+        <div>
+          <div className={isLight ? "text-muted-foreground" : "text-neutral-400"}>Signals today</div>
+          <div className="font-semibold">{strategy.signalsToday ?? 0}</div>
         </div>
-        <div className="min-w-0 flex-1">
-          <div className={cn("text-[15px] font-semibold leading-snug tracking-tight", isLight ? "text-neutral-900" : "text-white")}>
-            {strategy.name}
-          </div>
-          <div className={cn("mt-1 font-mono text-[11px]", isLight ? "text-neutral-500" : "text-neutral-500")}>{strategy.code}</div>
-          <p className={cn("mt-3 line-clamp-3 text-sm leading-relaxed", isLight ? "text-neutral-600" : "text-neutral-400")}>
-            {strategy.description ??
-              "Systematic playbook with risk controls, replay lineage, and OMS-backed execution readiness."}
-          </p>
+        <div>
+          <div className={isLight ? "text-muted-foreground" : "text-neutral-400"}>Candle readiness</div>
+          <div className="font-semibold">{strategy.candleReadiness ?? "-"}</div>
+        </div>
+        <div>
+          <div className={isLight ? "text-muted-foreground" : "text-neutral-400"}>Assigned symbols</div>
+          <div className="truncate font-semibold">{strategy.assignedSymbols?.join(", ") || "-"}</div>
+        </div>
+        <div>
+          <div className={isLight ? "text-muted-foreground" : "text-neutral-400"}>OMS state</div>
+          <div className="font-semibold">{strategy.omsState ?? "-"}</div>
         </div>
       </div>
 
-      <div className={cn("relative mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4", isLight ? "border-neutral-200" : "border-neutral-800/80")}>
-        <div className={cn("flex items-center gap-2 text-[11px]", isLight ? "text-neutral-500" : "text-neutral-500")}>
-          <Shield className={cn("h-3.5 w-3.5", isLight ? "text-neutral-400" : "text-neutral-600")} aria-hidden />
-          <span className="max-w-[12rem] truncate">
-            {strategy.subscribed
-              ? strategy.subscriptionEnabled
-                ? "Runtime eligible · subscription enabled"
-                : "Paused subscription"
-              : "Not subscribed"}
-          </span>
-        </div>
-        <button
-          type="button"
-          disabled={actionDisabled || actionBusy}
-          onClick={onToggle}
-          className={cn(
-            "rounded-lg px-4 py-2 text-xs font-semibold transition",
-            actionDisabled && "cursor-not-allowed opacity-45",
-            !actionDisabled &&
-              (isLight
-                ? "bg-blue-600 text-white shadow hover:bg-blue-500 active:scale-[0.98]"
-                : "bg-white text-neutral-950 shadow hover:bg-neutral-100 active:scale-[0.98]"),
-          )}
-        >
-          {actionBusy ? "…" : strategy.subscribed ? (strategy.subscriptionEnabled ? "Pause" : "Resume") : "Subscribe"}
-        </button>
+      <div className={cn("mt-2 text-[11px]", isLight ? "text-muted-foreground" : "text-neutral-400")}>
+        <Shield className="mr-1 inline h-3 w-3" />
+        {strategy.runtimeNote ?? "Runtime eligible"}
       </div>
 
-      <div
-        className={cn(
-          "pointer-events-none absolute -bottom-10 -right-10 h-40 w-40 rounded-full blur-3xl",
-          isLight ? "bg-blue-500/[0.08]" : "bg-blue-600/[0.04]",
-        )}
-      />
+      <div className="mt-3 flex flex-wrap gap-2">
+        {actions.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            disabled={actionDisabled || busy}
+            onClick={() => onAction(a.id)}
+            className={cn(
+              "rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold",
+              isLight ? "border-border bg-background text-foreground hover:bg-card" : "border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800",
+              (actionDisabled || busy) && "cursor-not-allowed opacity-60",
+            )}
+          >
+            {actionBusy === a.id ? "Working..." : a.label}
+          </button>
+        ))}
+      </div>
     </motion.div>
   );
 }

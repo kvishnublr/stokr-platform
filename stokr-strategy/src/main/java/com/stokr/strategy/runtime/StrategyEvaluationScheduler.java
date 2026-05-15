@@ -20,7 +20,8 @@ import java.util.List;
 @Slf4j
 public class StrategyEvaluationScheduler {
 
-    private final MeanReversionEvaluationService evaluationService;
+    private final UnifiedStrategyRuntimeService unifiedStrategyRuntimeService;
+    private final SymbolReadinessService symbolReadinessService;
     private final ScannerExecutionTelemetryService scannerExecutionTelemetryService;
     private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
     private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
@@ -66,13 +67,16 @@ public class StrategyEvaluationScheduler {
         int signals = 0;
         int failures = 0;
         for (String symbol : symbols) {
+            SymbolReadinessService.Readiness readiness = symbolReadinessService.assess(symbol, Instant.now());
+            if (!readiness.ready()) {
+                scannerExecutionTelemetryService.recordPollSkipped(tick, readiness.reason() + " for " + symbol);
+                failures++;
+                continue;
+            }
             try {
-                MeanReversionEvaluationService.SymbolEvalResult r = evaluationService.evaluateSymbol(symbol, null);
-                if (r == MeanReversionEvaluationService.SymbolEvalResult.EMITTED) {
-                    signals++;
-                } else if (r == MeanReversionEvaluationService.SymbolEvalResult.FAILED) {
-                    failures++;
-                }
+                UnifiedStrategyRuntimeService.EvalStats stats = unifiedStrategyRuntimeService.evaluateSymbolAllStrategies(symbol);
+                signals += Math.max(0, stats.emitted());
+                failures += Math.max(0, stats.failed());
             } catch (Exception ex) {
                 failures++;
                 log.warn("strategy.poll.failed symbol={}", symbol, ex);

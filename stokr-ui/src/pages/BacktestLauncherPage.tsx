@@ -1,11 +1,14 @@
 import { StrategyExecutionLauncher } from "../components/strategy/execution/StrategyExecutionLauncher";
 import { cn } from "../lib/utils";
 import { useUiThemeStore } from "../state/uiTheme";
+import { useSearchParams } from "react-router-dom";
 
-const MEAN_REVERSION_KEY = "MEAN_REVERSION_RANGE_FADE";
+const DEFAULT_STRATEGY_KEY = "MEAN_REVERSION_V2";
 
 export function BacktestLauncherPage() {
   const isLight = useUiThemeStore((s) => s.mode === "light");
+  const [params] = useSearchParams();
+  const strategyKey = (params.get("strategyKey") ?? DEFAULT_STRATEGY_KEY).trim() || DEFAULT_STRATEGY_KEY;
 
   return (
     <div
@@ -41,7 +44,7 @@ export function BacktestLauncherPage() {
               : "border-[rgba(255,255,255,0.06)] bg-[#111827]",
           )}
         >
-          <StrategyExecutionLauncher strategyKey={MEAN_REVERSION_KEY} />
+          <StrategyExecutionLauncher strategyKey={strategyKey} />
         </div>
       </div>
     </div>
