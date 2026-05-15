@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.stokr.backtest.web.dto.ExecutionRequestDto;
 import com.stokr.backtest.web.dto.TimeRangeDto;
 import com.stokr.common.exception.BadRequestException;
+import com.stokr.marketdata.repository.MarketDataCoverageRepository;
 import com.stokr.strategy.dto.metadata.StrategyMetadataResponseDto;
 import com.stokr.strategy.dto.metadata.StrategyParameterFieldDto;
 import com.stokr.strategy.keys.StrategyKeys;
@@ -35,6 +36,7 @@ public class StrategyExecutionRequestValidator {
     );
 
     private final StrategyMetadataQueryService strategyMetadataQueryService;
+    private final MarketDataCoverageRepository marketDataCoverageRepository;
 
     public StrategyMetadataResponseDto validateAndLoadMetadata(ExecutionRequestDto req) {
         if (req.strategyKey() == null || req.strategyKey().isBlank()) {
@@ -83,7 +85,25 @@ public class StrategyExecutionRequestValidator {
             }
             validateField(p, raw);
         }
+        validateCoverage(req);
         return meta;
+    }
+
+    private void validateCoverage(ExecutionRequestDto req) {
+        var c = marketDataCoverageRepository
+                .findBySymbolAndTimeframeAndDeletedFalse(req.symbol(), req.timeframe())
+                .orElseThrow(() -> new BadRequestException("NOT_BACKFILLED: no historical coverage for symbol/timeframe"));
+        if (c.getCoveredFrom() == null || c.getCoveredTo() == null
+                || c.getCoveredFrom().isAfter(req.range().from())
+                || c.getCoveredTo().isBefore(req.range().to())) {
+            throw new BadRequestException("INCOMPLETE_RANGE: requested replay window is outside covered market range");
+        }
+        if (c.isGapsPresent()) {
+            throw new BadRequestException("GAPS_PRESENT: repair gaps before replay");
+        }
+        if (!"READY".equalsIgnoreCase(c.getCompleteness())) {
+            throw new BadRequestException(c.getCompleteness() + ": replay not ready");
+        }
     }
 
     private static void assertInList(String value, List<String> allowed, String field) {

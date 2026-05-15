@@ -33,6 +33,11 @@ public class AdminMarketBackfillController {
         return ApiResponse.ok(backfillService.capabilityMatrix(), CorrelationIdHolder.get());
     }
 
+    @GetMapping("/coverage")
+    public ApiResponse<Object> coverage() {
+        return ApiResponse.ok(backfillService.capabilityMatrix().get("coverage"), CorrelationIdHolder.get());
+    }
+
     @PostMapping("/jobs")
     public ApiResponse<Map<String, Object>> create(
             @AuthenticationPrincipal StokrUserDetails user,

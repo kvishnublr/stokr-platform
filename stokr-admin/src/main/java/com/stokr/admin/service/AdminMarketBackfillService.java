@@ -1,5 +1,7 @@
 package com.stokr.admin.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.admin.domain.MarketBackfillFailure;
 import com.stokr.admin.domain.MarketBackfillGap;
 import com.stokr.admin.domain.MarketBackfillJob;
@@ -16,6 +18,8 @@ import com.stokr.common.exception.NotFoundException;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
 import com.stokr.marketdata.service.CandleFinalizationService;
+import com.stokr.marketdata.service.MarketDataCoverageService;
+import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.user.broker.historical.BrokerHistoricalAdapterRegistry;
 import com.stokr.user.broker.historical.BrokerHistoricalDataAdapter;
 import com.stokr.user.broker.historical.HistoricalCandlePoint;
@@ -37,10 +41,12 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -55,7 +61,10 @@ public class AdminMarketBackfillService {
     private final MarketBackfillFailureRepository failureRepository;
     private final MarketdataCandleRepository candleRepository;
     private final CandleFinalizationService candleFinalizationService;
+    private final MarketDataCoverageService marketDataCoverageService;
     private final BrokerHistoricalAdapterRegistry historicalAdapterRegistry;
+    private final StrategyDefinitionRepository strategyDefinitionRepository;
+    private final ObjectMapper objectMapper;
 
     private static final List<String> ALLOWED_TIMEFRAMES = List.of("1m", "5m", "15m", "1h", "1d");
     private static final int MAX_FETCH_RETRIES = 3;
@@ -122,6 +131,19 @@ public class AdminMarketBackfillService {
                 return;
             }
             processed++;
+            boolean alreadyReady = marketDataCoverageService.isRangeAlreadyReady(
+                    row.getSymbol(),
+                    sourceTf,
+                    job.getRangeStart(),
+                    job.getRangeEnd()
+            );
+            if (alreadyReady) {
+                row.setStatus(MarketBackfillSymbolStatus.SKIPPED);
+                row.setMessage("Historical coverage already available");
+                jobSymbolRepository.save(row);
+                updateProgress(jobId, processed, failures, totalCandles, totalGaps, latestCandle);
+                continue;
+            }
             row.setMessage("Fetching from " + adapter.brokerCode());
             jobSymbolRepository.save(row);
 
@@ -174,6 +196,13 @@ public class AdminMarketBackfillService {
                 row.setStatus(MarketBackfillSymbolStatus.FETCHED);
                 row.setMessage("Fetched");
             }
+            var coverage = marketDataCoverageService.validateAndUpsert(
+                    row.getSymbol(),
+                    sourceTf,
+                    job.getRangeStart(),
+                    job.getRangeEnd()
+            );
+            row.setMessage(row.getMessage() + " · " + coverage.replayReadiness());
             jobSymbolRepository.save(row);
 
             if (!"1m".equals(targetTf)) {
@@ -324,9 +353,10 @@ public class AdminMarketBackfillService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("brokers", historicalAdapterRegistry.capabilityMatrix());
         m.put("timeframes", ALLOWED_TIMEFRAMES);
-        m.put("symbolGroups", List.of("NIFTY_50", "NIFTY_100", "NIFTY_200", "ALL_EQUITY", "CUSTOM"));
+        m.put("symbolGroups", List.of("NIFTY_50", "NIFTY_100", "NIFTY_200", "BANKNIFTY", "FINNIFTY", "ALL_ACTIVE_STRATEGY_SYMBOLS", "ALL_EQUITY", "CUSTOM"));
         m.put("sourceOfTruth", "marketdata_candles:1m");
         m.put("derivedTimeframes", List.of("5m", "15m", "1h", "1d"));
+        m.put("coverage", marketDataCoverageService.recentCoverage());
         return m;
     }
 
@@ -371,6 +401,15 @@ public class AdminMarketBackfillService {
         }
         if ("NIFTY_50".equals(g)) {
             return List.of("RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "ITC", "LT", "SBIN", "BHARTIARTL", "HINDUNILVR");
+        }
+        if ("BANKNIFTY".equals(g)) {
+            return List.of("BANKNIFTY_FUT");
+        }
+        if ("FINNIFTY".equals(g)) {
+            return List.of("FINNIFTY_FUT");
+        }
+        if ("ALL_ACTIVE_STRATEGY_SYMBOLS".equals(g)) {
+            return resolveStrategySymbols();
         }
         if ("NIFTY_100".equals(g) || "NIFTY_200".equals(g) || "ALL_EQUITY".equals(g)) {
             return List.of("NIFTY_FUT", "BANKNIFTY_FUT", "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY");
@@ -469,6 +508,34 @@ public class AdminMarketBackfillService {
         f.setRetryable(retryable);
         f.setLastOccurredAt(Instant.now());
         failureRepository.save(f);
+    }
+
+    private List<String> resolveStrategySymbols() {
+        Set<String> out = new HashSet<>();
+        strategyDefinitionRepository.findAllByDeletedFalseAndEnabledTrueAndVisibleToUsersTrue(org.springframework.data.domain.Pageable.ofSize(200))
+                .forEach(def -> {
+                    String cfg = def.getConfigJson();
+                    if (cfg == null || cfg.isBlank()) {
+                        return;
+                    }
+                    try {
+                        JsonNode root = objectMapper.readTree(cfg);
+                        JsonNode symbols = root.path("symbols");
+                        if (symbols.isArray()) {
+                            symbols.forEach(n -> {
+                                String s = n.asText("").trim();
+                                if (!s.isBlank()) {
+                                    out.add(s);
+                                }
+                            });
+                        }
+                    } catch (Exception ignored) {
+                    }
+                });
+        if (out.isEmpty()) {
+            return List.of("NIFTY_FUT", "BANKNIFTY_FUT");
+        }
+        return out.stream().sorted().toList();
     }
 
     private HistoricalFetchResult fetchChunkedWithRetry(

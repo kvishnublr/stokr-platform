@@ -17,7 +17,7 @@ export function AdminReplayInfraPage() {
         <p className="mt-1 text-xs text-muted-foreground">
           Queue, job telemetry, and terminal diagnoses. Open{" "}
           <Link className="font-mono text-primary underline-offset-2 hover:underline" to="/admin/backfill">
-            Backfill operations
+            Market backfill
           </Link>{" "}
           for historical repair workflows.
         </p>

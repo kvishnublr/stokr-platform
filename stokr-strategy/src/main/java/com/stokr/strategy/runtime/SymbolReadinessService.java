@@ -1,6 +1,7 @@
 package com.stokr.strategy.runtime;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
+import com.stokr.marketdata.repository.MarketDataCoverageRepository;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,6 +16,7 @@ import java.util.List;
 public class SymbolReadinessService {
 
     private final MarketdataCandleRepository candleRepository;
+    private final MarketDataCoverageRepository coverageRepository;
 
     @Value("${stokr.strategy.readiness.stale-seconds:600}")
     private long staleSeconds;
@@ -23,6 +25,21 @@ public class SymbolReadinessService {
      * Validates 1m continuity/freshness for a symbol before scanner evaluation.
      */
     public Readiness assess(String symbol, Instant now) {
+        var coverage = coverageRepository.findBySymbolAndTimeframeAndDeletedFalse(symbol, "1m").orElse(null);
+        if (coverage != null) {
+            if ("NOT_BACKFILLED".equalsIgnoreCase(coverage.getCompleteness())) {
+                return new Readiness(false, "NOT_BACKFILLED");
+            }
+            if (coverage.isGapsPresent() || "GAPS_PRESENT".equalsIgnoreCase(coverage.getCompleteness())) {
+                return new Readiness(false, "GAPS_PRESENT");
+            }
+            if ("STALE".equalsIgnoreCase(coverage.getFreshness())) {
+                return new Readiness(false, "STALE");
+            }
+            if (!"READY".equalsIgnoreCase(coverage.getCompleteness())) {
+                return new Readiness(false, "INCOMPLETE_RANGE");
+            }
+        }
         List<MarketdataCandle> bars = candleRepository.findTop500BySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbol, "1m");
         if (bars.isEmpty()) {
             return new Readiness(false, "NO_DATA");

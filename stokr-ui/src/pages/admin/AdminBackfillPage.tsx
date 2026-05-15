@@ -21,6 +21,20 @@ type BackfillJob = {
   message: string;
   updatedAt: string | null;
 };
+type CoverageRow = {
+  symbol: string;
+  timeframe: string;
+  coveredFrom: string | null;
+  coveredTo: string | null;
+  latestCandleAt: string | null;
+  completeness: string;
+  freshness: string;
+  replayReadiness: string;
+  scannerReadiness: string;
+  gapsPresent: boolean;
+  gapCount: number;
+  completionPct: string | number | null;
+};
 
 function pct(p: number, t: number): number {
   if (!t) return 0;
@@ -45,6 +59,11 @@ export function AdminBackfillPage() {
     queryKey: ["admin-market-backfill-jobs"],
     queryFn: async () => (await api.get("/api/admin/market/backfill/jobs?limit=30")).data?.data as BackfillJob[],
     refetchInterval: 10_000,
+  });
+  const coverage = useQuery({
+    queryKey: ["admin-market-backfill-coverage"],
+    queryFn: async () => (await api.get("/api/admin/market/backfill/coverage")).data?.data as CoverageRow[],
+    refetchInterval: 15_000,
   });
 
   const createJob = useMutation({
@@ -122,7 +141,7 @@ export function AdminBackfillPage() {
             ))}
           </select>
           <select value={symbolGroup} onChange={(e) => setSymbolGroup(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-sm">
-            {["NIFTY_50", "NIFTY_100", "NIFTY_200", "ALL_EQUITY", "CUSTOM"].map((g) => (
+            {["NIFTY_50", "NIFTY_100", "NIFTY_200", "BANKNIFTY", "FINNIFTY", "ALL_ACTIVE_STRATEGY_SYMBOLS", "ALL_EQUITY", "CUSTOM"].map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
@@ -174,6 +193,24 @@ export function AdminBackfillPage() {
             );
           })}
           {jobs.data && jobs.data.length === 0 ? <div className="text-sm text-muted-foreground">No backfill jobs.</div> : null}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-3">
+        <div className="mb-2 text-sm font-semibold">Coverage state</div>
+        <div className="space-y-2">
+          {(coverage.data ?? []).slice(0, 24).map((c) => (
+            <div key={`${c.symbol}-${c.timeframe}`} className="rounded-lg border border-border p-2 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="font-semibold">{c.symbol} · {c.timeframe}</div>
+                <div className="text-muted-foreground">{c.completeness} · {c.freshness}</div>
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                replay {c.replayReadiness} · scanners {c.scannerReadiness} · gaps {c.gapCount} · completion {c.completionPct ?? "-"}%
+              </div>
+            </div>
+          ))}
+          {coverage.data && coverage.data.length === 0 ? <div className="text-sm text-muted-foreground">No coverage rows yet.</div> : null}
         </div>
       </div>
     </div>
