@@ -62,6 +62,11 @@ type JobDetail = {
   failures: JobFailureDetail[];
 };
 
+type SymbolGroupPreview = {
+  count: number;
+  symbols: string[];
+};
+
 function pct(p: number, t: number): number {
   if (!t) return 0;
   return Math.max(0, Math.min(100, Math.round((p / t) * 100)));
@@ -177,6 +182,36 @@ export function AdminBackfillPage() {
     return rows.filter((f) => failedSet.has(f.symbol));
   }, [jobDetail.data?.failures, failedOnly, filteredSymbols]);
 
+  const groupPreview = useMemo(() => {
+    const root = (caps.data?.symbolGroupPreview ?? {}) as Record<string, SymbolGroupPreview>;
+    return root[symbolGroup] ?? { count: 0, symbols: [] };
+  }, [caps.data, symbolGroup]);
+
+  const failureCodeSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of filteredFailures) {
+      set.add(String(f.failureCode ?? "").toUpperCase());
+    }
+    return set;
+  }, [filteredFailures]);
+
+  const guidance = useMemo(() => {
+    const hints: string[] = [];
+    if (failureCodeSet.has("NO_PLATFORM_SESSION") || failureCodeSet.has("TOKEN_DECRYPT_FAILED") || failureCodeSet.has("BROKER_NOT_CONFIGURED")) {
+      hints.push("Platform session issue: reconnect broker session, then Retry failed.");
+    }
+    if (failureCodeSet.has("SYMBOL_NOT_MAPPED")) {
+      hints.push("Symbol mapping issue: use ALL_ACTIVE_STRATEGY_SYMBOLS or CUSTOM with exact symbols.");
+    }
+    if (failureCodeSet.has("RATE_LIMITED") || failureCodeSet.has("BROKER_FETCH_FAILED")) {
+      hints.push("Transient broker issue: retry failed symbols after a short wait.");
+    }
+    if (failureCodeSet.has("PARTIAL_FETCH") || failureCodeSet.has("INCOMPLETE_RANGE") || failureCodeSet.has("NO_CANDLES_RETURNED")) {
+      hints.push("Incomplete range: run Repair gaps or narrow range and retry.");
+    }
+    return hints;
+  }, [failureCodeSet]);
+
   function failureCodeClass(code: string): string {
     const c = String(code ?? "").toUpperCase();
     if (c.includes("RATE") || c.includes("TIMEOUT") || c.includes("5XX") || c.includes("TEMP")) {
@@ -287,13 +322,25 @@ export function AdminBackfillPage() {
           </select>
           <input value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-sm" placeholder="rangeStart ISO" />
           <input value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-sm" placeholder="rangeEnd ISO" />
-          <input value={customSymbols} onChange={(e) => setCustomSymbols(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-sm" placeholder="CSV symbols for CUSTOM" disabled={symbolGroup !== "CUSTOM"} />
+          {symbolGroup === "CUSTOM" ? (
+            <input value={customSymbols} onChange={(e) => setCustomSymbols(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-sm" placeholder="CSV symbols for CUSTOM" />
+          ) : (
+            <div className="rounded border border-border bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
+              Custom symbols are used only when group = CUSTOM.
+            </div>
+          )}
         </div>
         <div className="mt-2 flex items-center gap-2">
           <button type="button" onClick={() => createJob.mutate()} disabled={createJob.isPending} className="rounded border border-border bg-background px-3 py-1 text-sm font-semibold disabled:opacity-50">
             Start
           </button>
           <span className="text-xs text-muted-foreground">Source of truth: 1m candles. Higher TF derived from 1m.</span>
+        </div>
+        <div className="mt-2 rounded border border-border bg-muted/20 p-2">
+          <div className="text-xs font-semibold">Symbols in this launch ({groupPreview.count})</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {groupPreview.symbols.length > 0 ? groupPreview.symbols.join(", ") : symbolGroup === "CUSTOM" ? "Will use custom CSV symbols." : "No preview available."}
+          </div>
         </div>
       </div>
 
@@ -355,6 +402,17 @@ export function AdminBackfillPage() {
           {jobDetail.isError ? <div className="text-sm text-red-600">Failed to load details.</div> : null}
           {jobDetail.data ? (
             <div className="space-y-3">
+              {guidance.length > 0 ? (
+                <div className="rounded border border-amber-300 bg-amber-50 p-2">
+                  <div className="text-xs font-semibold text-amber-900">Operator guidance</div>
+                  <div className="mt-1 space-y-1 text-xs text-amber-900">
+                    {guidance.map((g) => (
+                      <div key={g}>• {g}</div>
+                    ))}
+                    <div>• Replay/backtest only after candles &gt; 0 and coverage is READY.</div>
+                  </div>
+                </div>
+              ) : null}
               <div>
                 <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Symbol outcomes</div>
                 <div className="max-h-56 overflow-auto rounded border border-border">
@@ -363,21 +421,26 @@ export function AdminBackfillPage() {
                       <tr>
                         <th className="px-2 py-1">Symbol</th>
                         <th className="px-2 py-1">Status</th>
+                        <th className="px-2 py-1">Coverage</th>
                         <th className="px-2 py-1">Candles</th>
                         <th className="px-2 py-1">Failures</th>
                         <th className="px-2 py-1">Reason</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredSymbols.map((s) => (
+                      {filteredSymbols.map((s) => {
+                        const cov = (coverage.data ?? []).find((c) => c.symbol === s.symbol && c.timeframe === timeframe);
+                        const covBadge = cov ? `${cov.completeness}/${cov.replayReadiness}` : "NOT_BACKFILLED";
+                        return (
                         <tr key={s.symbol} className="border-t border-border">
                           <td className="px-2 py-1 font-semibold">{s.symbol}</td>
                           <td className="px-2 py-1">{s.status}</td>
+                          <td className="px-2 py-1">{covBadge}</td>
                           <td className="px-2 py-1">{s.candlesFetched}</td>
                           <td className="px-2 py-1">{s.failureCount}</td>
                           <td className="px-2 py-1 text-muted-foreground">{s.message}</td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
@@ -394,6 +457,7 @@ export function AdminBackfillPage() {
                           <th className="px-2 py-1">Symbol</th>
                           <th className="px-2 py-1">Code</th>
                           <th className="px-2 py-1">Retryable</th>
+                          <th className="px-2 py-1">Latest retry</th>
                           <th className="px-2 py-1">Message</th>
                         </tr>
                       </thead>
@@ -407,6 +471,7 @@ export function AdminBackfillPage() {
                               </span>
                             </td>
                             <td className="px-2 py-1">{f.retryable ? "Yes" : "No"}</td>
+                            <td className="px-2 py-1">{f.lastOccurredAt ? new Date(f.lastOccurredAt).toLocaleString() : "-"}</td>
                             <td className="px-2 py-1 text-muted-foreground">{f.message}</td>
                           </tr>
                         ))}

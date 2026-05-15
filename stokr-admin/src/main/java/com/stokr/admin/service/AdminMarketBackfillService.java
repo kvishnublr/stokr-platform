@@ -148,13 +148,13 @@ public class AdminMarketBackfillService {
             jobSymbolRepository.save(row);
 
             HistoricalFetchResult fetch = fetchChunkedWithRetry(adapter, row.getSymbol(), sourceTf, job.getRangeStart(), job.getRangeEnd());
-            if (!fetch.success()) {
+            if (!fetch.success() && fetch.candles().isEmpty()) {
                 failures++;
                 row.setStatus(MarketBackfillSymbolStatus.FAILED);
                 row.setFailureCount(row.getFailureCount() + 1);
                 row.setMessage(fetch.code() + ": " + fetch.detail());
                 jobSymbolRepository.save(row);
-                saveFailure(jobId, row.getSymbol(), fetch.code(), fetch.detail(), true);
+                saveFailure(jobId, row.getSymbol(), fetch.code(), fetch.detail(), isRetryableCode(fetch.code()));
                 updateProgress(jobId, processed, failures, totalCandles, totalGaps, latestCandle);
                 continue;
             }
@@ -173,7 +173,13 @@ public class AdminMarketBackfillService {
                     job.getRangeStart(),
                     job.getRangeEnd()
             );
-            if (!gaps.isEmpty()) {
+            if (!fetch.success()) {
+                failures++;
+                row.setStatus(MarketBackfillSymbolStatus.FAILED);
+                row.setFailureCount(row.getFailureCount() + 1);
+                row.setMessage(fetch.code() + ": " + fetch.detail() + " (partial candles persisted)");
+                saveFailure(jobId, row.getSymbol(), fetch.code(), fetch.detail(), isRetryableCode(fetch.code()));
+            } else if (!gaps.isEmpty()) {
                 row.setStatus(MarketBackfillSymbolStatus.GAP_DETECTED);
                 row.setGapCount(gaps.size());
                 row.setMessage("Detected " + gaps.size() + " gap(s)");
@@ -225,7 +231,7 @@ public class AdminMarketBackfillService {
             done.setMessage("Cancelled by admin");
         } else if (failures > 0 || totalGaps > 0) {
             done.setStatus(MarketBackfillJobStatus.PARTIAL);
-            done.setMessage("Completed with failures/gaps");
+            done.setMessage(buildPartialSummary(jobId, failures, totalGaps));
         } else {
             done.setStatus(MarketBackfillJobStatus.COMPLETED);
             done.setMessage("Completed");
@@ -351,13 +357,51 @@ public class AdminMarketBackfillService {
     @Transactional(readOnly = true)
     public Map<String, Object> capabilityMatrix() {
         Map<String, Object> m = new LinkedHashMap<>();
+        List<String> groups = List.of("NIFTY_50", "NIFTY_100", "NIFTY_200", "BANKNIFTY", "FINNIFTY", "ALL_ACTIVE_STRATEGY_SYMBOLS", "ALL_EQUITY", "CUSTOM");
         m.put("brokers", historicalAdapterRegistry.capabilityMatrix());
         m.put("timeframes", ALLOWED_TIMEFRAMES);
-        m.put("symbolGroups", List.of("NIFTY_50", "NIFTY_100", "NIFTY_200", "BANKNIFTY", "FINNIFTY", "ALL_ACTIVE_STRATEGY_SYMBOLS", "ALL_EQUITY", "CUSTOM"));
+        m.put("symbolGroups", groups);
         m.put("sourceOfTruth", "marketdata_candles:1m");
         m.put("derivedTimeframes", List.of("5m", "15m", "1h", "1d"));
         m.put("coverage", marketDataCoverageService.recentCoverage());
+        Map<String, Object> preview = new LinkedHashMap<>();
+        for (String g : groups) {
+            if ("CUSTOM".equals(g)) {
+                preview.put(g, Map.of("count", 0, "symbols", List.of()));
+                continue;
+            }
+            List<String> symbols = resolveSymbols(g, List.of());
+            preview.put(g, Map.of(
+                    "count", symbols.size(),
+                    "symbols", symbols.stream().limit(20).toList()
+            ));
+        }
+        m.put("symbolGroupPreview", preview);
         return m;
+    }
+
+    @Transactional
+    public Map<String, Object> readinessAuthority(String symbol, String timeframe, Instant from, Instant to, String useCase) {
+        var a = marketDataCoverageService.assessReadiness(
+                symbol,
+                timeframe,
+                from,
+                to,
+                useCase == null || useCase.isBlank() ? "REPLAY" : useCase.trim().toUpperCase(Locale.ROOT),
+                true
+        );
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("symbol", a.symbol());
+        out.put("timeframe", a.timeframe());
+        out.put("useCase", a.useCase());
+        out.put("ready", a.ready());
+        out.put("state", a.state());
+        out.put("detail", a.detail());
+        out.put("latestCandleAt", a.latestCandleAt() != null ? a.latestCandleAt().toString() : null);
+        out.put("freshnessAgeSeconds", a.freshnessAgeSeconds());
+        out.put("coverageStart", a.coverageStart() != null ? a.coverageStart().toString() : null);
+        out.put("coverageEnd", a.coverageEnd() != null ? a.coverageEnd().toString() : null);
+        return out;
     }
 
     private Map<String, Object> toJobRow(MarketBackfillJob j) {
@@ -500,14 +544,30 @@ public class AdminMarketBackfillService {
     }
 
     private void saveFailure(UUID jobId, String symbol, String code, String detail, boolean retryable) {
-        MarketBackfillFailure f = new MarketBackfillFailure();
-        f.setJobId(jobId);
-        f.setSymbol(symbol);
-        f.setFailureCode(code != null ? code : "ERROR");
+        String failureCode = code != null ? code : "ERROR";
+        MarketBackfillFailure f = failureRepository
+                .findByJobIdAndSymbolAndFailureCodeAndDeletedFalse(jobId, symbol, failureCode)
+                .orElseGet(MarketBackfillFailure::new);
+        if (f.getId() == null) {
+            f.setJobId(jobId);
+            f.setSymbol(symbol);
+            f.setFailureCode(failureCode);
+            f.setAttemptCount(0);
+        }
         f.setMessage(detail);
         f.setRetryable(retryable);
+        f.setAttemptCount(f.getAttemptCount() + 1);
         f.setLastOccurredAt(Instant.now());
         failureRepository.save(f);
+    }
+
+    private String buildPartialSummary(UUID jobId, int failures, int gaps) {
+        List<MarketBackfillFailure> all = failureRepository.findByJobIdAndDeletedFalseOrderByUpdatedAtDesc(jobId);
+        String topCode = all.isEmpty() ? null : all.get(0).getFailureCode();
+        if (topCode == null || topCode.isBlank()) {
+            return "Completed with " + failures + " failures, " + gaps + " gaps";
+        }
+        return "Completed with " + failures + " failures, " + gaps + " gaps · top reason " + topCode;
     }
 
     private List<String> resolveStrategySymbols() {
@@ -587,11 +647,16 @@ public class AdminMarketBackfillService {
             cursor = nextCursor;
         }
         if (merged.isEmpty()) {
-            return HistoricalFetchResult.fail("INCOMPLETE_RANGE", "No candles returned");
+            return HistoricalFetchResult.fail("NO_CANDLES_RETURNED", "No candles returned");
         }
         if (hadChunkIssues) {
             log.warn("market.backfill.partial {} {} {} candles={} lastIssue={}",
                     adapter.brokerCode(), symbol, timeframe, merged.size(), lastChunkIssue);
+            return HistoricalFetchResult.failWithCandles(
+                    "PARTIAL_FETCH",
+                    lastChunkIssue == null ? "Partial chunk fetch" : "Partial chunk fetch: " + lastChunkIssue,
+                    merged
+            );
         }
         return HistoricalFetchResult.ok(merged);
     }
@@ -678,3 +743,5 @@ public class AdminMarketBackfillService {
         };
     }
 }
+
+

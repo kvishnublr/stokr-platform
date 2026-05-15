@@ -8,7 +8,7 @@ import {
   pollReplayJobUntilTerminal,
   type ExecutionRequest,
 } from "../../../api/backtest";
-import { parseAxiosMessage } from "../../../api/client";
+import { api, parseAxiosMessage } from "../../../api/client";
 import { fetchStrategyMetadata } from "../../../api/strategyMetadata";
 import { buildStrategyParametersFromDefaults, validateClientExecution } from "../../../lib/strategyExecutionForm";
 import { cn } from "../../../lib/utils";
@@ -54,6 +54,15 @@ const PRESET_SUMMARY: Record<DateRangePreset, string> = {
 
 type Props = {
   strategyKey: string;
+};
+
+type ReadinessAuthority = {
+  symbol: string;
+  timeframe: string;
+  useCase: string;
+  ready: boolean;
+  state: string;
+  detail: string;
 };
 
 export function StrategyExecutionLauncher({ strategyKey }: Props) {
@@ -116,6 +125,33 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
     },
   });
 
+  const coverageQuery = useQuery({
+    queryKey: ["backtest-launch-coverage-readiness", dd?.symbol, dd?.timeframe, from.toISOString(), to.toISOString()],
+    queryFn: async () =>
+      (
+        await api.get("/api/admin/market/backfill/readiness", {
+          params: {
+            symbol: dd?.symbol,
+            timeframe: dd?.timeframe,
+            from: from.toISOString(),
+            to: to.toISOString(),
+            useCase: "REPLAY",
+          },
+        })
+      ).data?.data as ReadinessAuthority,
+    enabled: Boolean(accessToken && dd?.symbol && dd?.timeframe),
+    refetchInterval: 20_000,
+    retry: 1,
+  });
+
+  const opsQuery = useQuery({
+    queryKey: ["backtest-launch-ops"],
+    queryFn: async () => (await api.get("/api/admin/operations/snapshot")).data?.data as Record<string, any>,
+    enabled: Boolean(accessToken),
+    refetchInterval: 20_000,
+    retry: 1,
+  });
+
   function handlePresetChange(p: DateRangePreset) {
     setPreset(p);
     setRange(computePresetRange(p));
@@ -131,6 +167,30 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
     const atd = meta?.previewMetrics?.avgTradesPerDay ?? 4;
     return estimateReplaySummary(from, to, tf, atd);
   }, [from, to, dd?.timeframe, meta?.previewMetrics?.avgTradesPerDay]);
+
+  const preflightBlocker = useMemo(() => {
+    if (!dd) return null;
+    if (coverageQuery.isError) return null;
+    const row = coverageQuery.data;
+    const brokerState = String(
+      opsQuery.data?.platformMarketFeed?.vendors?.ZERODHA?.connectionState ??
+      opsQuery.data?.operationalLifecycle?.platformTapeState ??
+      "",
+    ).toUpperCase();
+    if (brokerState === "AUTH_EXPIRED" || brokerState === "TOKEN_INVALID") {
+      return { code: "TOKEN_INVALID", detail: "Platform broker token invalid/expired." };
+    }
+    if (brokerState === "OFFLINE" || brokerState === "DISCONNECTED") {
+      return { code: "PLATFORM_FEED_OFFLINE", detail: "Platform broker feed is offline." };
+    }
+    if (!row) {
+      return { code: "NO_DATA", detail: "Historical data unavailable. Admin market backfill required." };
+    }
+    if (!row.ready) {
+      return { code: String(row.state || "BLOCKED").toUpperCase(), detail: row.detail || `Replay blocked for ${dd.symbol} ${dd.timeframe}.` };
+    }
+    return null;
+  }, [dd, coverageQuery.data, coverageQuery.isError, opsQuery.data]);
 
   function runBacktest() {
     if (!meta || !dd) {
@@ -173,7 +233,7 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
   }
 
   const loading = metaQuery.isLoading;
-  const blocked = loading || !meta || !dd || m.isPending;
+  const blocked = loading || !meta || !dd || m.isPending || Boolean(preflightBlocker);
 
   return (
     <div className="relative min-h-[70vh] pb-28">
@@ -215,6 +275,18 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
 
       {meta && dd ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="space-y-5">
+          {preflightBlocker ? (
+            <div
+              className={cn(
+                "rounded-xl border p-3 text-sm",
+                isLight ? "border-amber-300 bg-amber-50 text-amber-900" : "border-amber-500/40 bg-amber-950/30 text-amber-100",
+              )}
+            >
+              <div className="font-semibold">Historical data unavailable</div>
+              <div className="mt-1">Blocker: {preflightBlocker.code}</div>
+              <div className="text-xs mt-1 opacity-90">{preflightBlocker.detail}</div>
+            </div>
+          ) : null}
           <StrategyPreviewCard meta={meta} />
 
           <div className="grid gap-5 lg:grid-cols-3">

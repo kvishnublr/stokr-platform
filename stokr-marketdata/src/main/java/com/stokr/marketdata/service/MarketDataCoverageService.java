@@ -28,6 +28,8 @@ public class MarketDataCoverageService {
 
     @Value("${stokr.strategy.readiness.stale-seconds:600}")
     private long staleSeconds;
+    @Value("${stokr.market.coverage.authority.revalidate-seconds:180}")
+    private long authorityRevalidateSeconds;
 
     @Transactional
     public CoverageAssessment validateAndUpsert(String symbol, String timeframe, Instant from, Instant to) {
@@ -59,21 +61,33 @@ public class MarketDataCoverageService {
         String scannerReadiness = ("READY".equals(completeness) && "FRESH".equals(freshness)) ? "READY_FOR_SCANNERS" : replayReadiness;
         BigDecimal completionPct = expected <= 0L ? BigDecimal.ZERO :
                 BigDecimal.valueOf(actual).multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(expected), 4, RoundingMode.HALF_UP);
+        boolean replayReady = "READY_FOR_BACKTEST".equals(replayReadiness);
+        boolean scannerReady = "READY_FOR_SCANNERS".equals(scannerReadiness);
+        boolean partialCoverage = "PARTIAL".equals(completeness) || "GAPS_PRESENT".equals(completeness);
 
         MarketDataCoverage row = coverageRepository.findBySymbolAndTimeframeAndDeletedFalse(symbol, timeframe).orElseGet(MarketDataCoverage::new);
         row.setSymbol(symbol);
         row.setTimeframe(timeframe);
         row.setCoveredFrom(from);
         row.setCoveredTo(to);
+        row.setCoverageStart(from);
+        row.setCoverageEnd(to);
         row.setLatestCandleAt(latest);
+        row.setFreshnessAgeSeconds(lag == Long.MAX_VALUE ? Long.MAX_VALUE : Math.max(0L, lag));
         row.setCompleteness(completeness);
         row.setFreshness(freshness);
+        row.setStaleState(freshness);
         row.setGapsPresent(!gaps.isEmpty());
         row.setGapCount(gaps.size());
         row.setReplayReadiness(replayReadiness);
         row.setScannerReadiness(scannerReadiness);
+        row.setReplayReady(replayReady);
+        row.setScannerReady(scannerReady);
+        row.setPartialCoverage(partialCoverage);
         row.setCompletionPct(completionPct);
         row.setLastValidationAt(Instant.now());
+        row.setValidatedRangeStart(from);
+        row.setValidatedRangeEnd(to);
         row.setNote("expected=" + expected + " actual=" + actual + " lagSec=" + (lag == Long.MAX_VALUE ? -1 : lag));
         coverageRepository.save(row);
 
@@ -82,18 +96,7 @@ public class MarketDataCoverageService {
 
     @Transactional(readOnly = true)
     public boolean isRangeAlreadyReady(String symbol, String timeframe, Instant from, Instant to) {
-        MarketDataCoverage c = coverageRepository.findBySymbolAndTimeframeAndDeletedFalse(symbol, timeframe).orElse(null);
-        if (c == null) {
-            return false;
-        }
-        if (!"READY".equalsIgnoreCase(c.getCompleteness()) || !"READY_FOR_BACKTEST".equalsIgnoreCase(c.getReplayReadiness())) {
-            return false;
-        }
-        return !c.isGapsPresent()
-                && c.getCoveredFrom() != null
-                && c.getCoveredTo() != null
-                && !c.getCoveredFrom().isAfter(from)
-                && !c.getCoveredTo().isBefore(to);
+        return assessReadiness(symbol, timeframe, from, to, "REPLAY", true).ready();
     }
 
     @Transactional(readOnly = true)
@@ -104,16 +107,89 @@ public class MarketDataCoverageService {
             m.put("timeframe", c.getTimeframe());
             m.put("coveredFrom", c.getCoveredFrom() != null ? c.getCoveredFrom().toString() : null);
             m.put("coveredTo", c.getCoveredTo() != null ? c.getCoveredTo().toString() : null);
+            m.put("coverageStart", c.getCoverageStart() != null ? c.getCoverageStart().toString() : null);
+            m.put("coverageEnd", c.getCoverageEnd() != null ? c.getCoverageEnd().toString() : null);
             m.put("latestCandleAt", c.getLatestCandleAt() != null ? c.getLatestCandleAt().toString() : null);
+            m.put("freshnessAgeSeconds", c.getFreshnessAgeSeconds());
             m.put("completeness", c.getCompleteness());
             m.put("freshness", c.getFreshness());
+            m.put("staleState", c.getStaleState());
             m.put("replayReadiness", c.getReplayReadiness());
             m.put("scannerReadiness", c.getScannerReadiness());
+            m.put("replayReady", c.isReplayReady());
+            m.put("scannerReady", c.isScannerReady());
+            m.put("partialCoverage", c.isPartialCoverage());
             m.put("gapsPresent", c.isGapsPresent());
             m.put("gapCount", c.getGapCount());
             m.put("completionPct", c.getCompletionPct());
+            m.put("validatedAt", c.getLastValidationAt() != null ? c.getLastValidationAt().toString() : null);
+            m.put("validatedRangeStart", c.getValidatedRangeStart() != null ? c.getValidatedRangeStart().toString() : null);
+            m.put("validatedRangeEnd", c.getValidatedRangeEnd() != null ? c.getValidatedRangeEnd().toString() : null);
             return m;
         }).toList();
+    }
+
+    @Transactional
+    public AuthorityAssessment assessReadiness(String symbol, String timeframe, Instant from, Instant to, String useCase, boolean autoRefresh) {
+        String tf = timeframe == null || timeframe.isBlank() ? "1m" : timeframe.trim();
+        MarketDataCoverage row = coverageRepository.findBySymbolAndTimeframeAndDeletedFalse(symbol, tf).orElse(null);
+        if (autoRefresh && needsRevalidation(row, from, to)) {
+            validateAndUpsert(symbol, tf, from, to);
+            row = coverageRepository.findBySymbolAndTimeframeAndDeletedFalse(symbol, tf).orElse(null);
+        }
+        if (row == null) {
+            return new AuthorityAssessment(symbol, tf, useCase, false, "NO_DATA", "Coverage row missing", null, null, null, null);
+        }
+        return toAuthorityAssessment(row, from, to, useCase);
+    }
+
+    private boolean needsRevalidation(MarketDataCoverage row, Instant from, Instant to) {
+        if (row == null || row.getLastValidationAt() == null) {
+            return true;
+        }
+        if (Duration.between(row.getLastValidationAt(), Instant.now()).getSeconds() > authorityRevalidateSeconds) {
+            return true;
+        }
+        if (row.getValidatedRangeStart() == null || row.getValidatedRangeEnd() == null) {
+            return true;
+        }
+        return row.getValidatedRangeStart().isAfter(from) || row.getValidatedRangeEnd().isBefore(to);
+    }
+
+    private AuthorityAssessment toAuthorityAssessment(MarketDataCoverage row, Instant from, Instant to, String useCase) {
+        if ("NOT_BACKFILLED".equalsIgnoreCase(row.getCompleteness())) {
+            return new AuthorityAssessment(row.getSymbol(), row.getTimeframe(), useCase, false, "NO_DATA", "Not backfilled", row.getLatestCandleAt(), row.getFreshnessAgeSeconds(), row.getCoverageStart(), row.getCoverageEnd());
+        }
+        if (row.getCoverageStart() == null || row.getCoverageEnd() == null || row.getCoverageStart().isAfter(from) || row.getCoverageEnd().isBefore(to)) {
+            return new AuthorityAssessment(row.getSymbol(), row.getTimeframe(), useCase, false, "INCOMPLETE_RANGE", "Requested range not fully covered", row.getLatestCandleAt(), row.getFreshnessAgeSeconds(), row.getCoverageStart(), row.getCoverageEnd());
+        }
+        if (row.isGapsPresent() || "GAPS_PRESENT".equalsIgnoreCase(row.getCompleteness())) {
+            return new AuthorityAssessment(row.getSymbol(), row.getTimeframe(), useCase, false, "GAPS_PRESENT", "Coverage contains continuity gaps", row.getLatestCandleAt(), row.getFreshnessAgeSeconds(), row.getCoverageStart(), row.getCoverageEnd());
+        }
+        if ("SCANNER".equalsIgnoreCase(useCase) && !"READY_FOR_SCANNERS".equalsIgnoreCase(row.getScannerReadiness())) {
+            return new AuthorityAssessment(row.getSymbol(), row.getTimeframe(), useCase, false, normalizeState(row.getScannerReadiness()), "Scanner readiness not satisfied", row.getLatestCandleAt(), row.getFreshnessAgeSeconds(), row.getCoverageStart(), row.getCoverageEnd());
+        }
+        if ("REPLAY".equalsIgnoreCase(useCase) && !"READY_FOR_BACKTEST".equalsIgnoreCase(row.getReplayReadiness())) {
+            return new AuthorityAssessment(row.getSymbol(), row.getTimeframe(), useCase, false, normalizeState(row.getReplayReadiness()), "Replay readiness not satisfied", row.getLatestCandleAt(), row.getFreshnessAgeSeconds(), row.getCoverageStart(), row.getCoverageEnd());
+        }
+        if ("STALE".equalsIgnoreCase(row.getFreshness()) && !"REPLAY".equalsIgnoreCase(useCase)) {
+            return new AuthorityAssessment(row.getSymbol(), row.getTimeframe(), useCase, false, "STALE", "Freshness threshold exceeded", row.getLatestCandleAt(), row.getFreshnessAgeSeconds(), row.getCoverageStart(), row.getCoverageEnd());
+        }
+        if (row.isPartialCoverage() || "PARTIAL".equalsIgnoreCase(row.getCompleteness())) {
+            return new AuthorityAssessment(row.getSymbol(), row.getTimeframe(), useCase, false, "PARTIAL", "Coverage is partial", row.getLatestCandleAt(), row.getFreshnessAgeSeconds(), row.getCoverageStart(), row.getCoverageEnd());
+        }
+        return new AuthorityAssessment(row.getSymbol(), row.getTimeframe(), useCase, true, "READY", "Coverage authority satisfied", row.getLatestCandleAt(), row.getFreshnessAgeSeconds(), row.getCoverageStart(), row.getCoverageEnd());
+    }
+
+    private static String normalizeState(String value) {
+        if (value == null || value.isBlank()) {
+            return "UNKNOWN";
+        }
+        String v = value.trim().toUpperCase(Locale.ROOT);
+        if ("READY_FOR_BACKTEST".equals(v) || "READY_FOR_SCANNERS".equals(v)) {
+            return "READY";
+        }
+        return v;
     }
 
     private long expectedBars(String timeframe, Instant from, Instant to) {
@@ -146,5 +222,18 @@ public class MarketDataCoverageService {
             Instant latestCandleAt
     ) {
     }
-}
 
+    public record AuthorityAssessment(
+            String symbol,
+            String timeframe,
+            String useCase,
+            boolean ready,
+            String state,
+            String detail,
+            Instant latestCandleAt,
+            Long freshnessAgeSeconds,
+            Instant coverageStart,
+            Instant coverageEnd
+    ) {
+    }
+}

@@ -9,6 +9,7 @@ import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -104,10 +105,38 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
                 out.add(new HistoricalCandlePoint(openTime, open, high, low, close, volume));
             }
             return HistoricalFetchResult.ok(out);
+        } catch (RestClientResponseException ex) {
+            return mapHttpFailure(request.symbol(), ex);
         } catch (Exception ex) {
             log.warn("zerodha.historical.fetch_failed symbol={} {}", request.symbol(), ex.toString());
             return HistoricalFetchResult.fail("BROKER_FETCH_FAILED", ex.getClass().getSimpleName() + ": " + ex.getMessage());
         }
+    }
+
+    private HistoricalFetchResult mapHttpFailure(String symbol, RestClientResponseException ex) {
+        int status = ex.getStatusCode().value();
+        String body = ex.getResponseBodyAsString();
+        String detail = status + " " + safeText(body, ex.getMessage());
+        String upper = (detail == null ? "" : detail.toUpperCase(Locale.ROOT));
+        log.warn("zerodha.historical.http_failed symbol={} status={} body={}", symbol, status, safeText(body, ex.getMessage()));
+        if (status == 401 || status == 403 || upper.contains("TOKEN") || upper.contains("AUTH")) {
+            return HistoricalFetchResult.fail("TOKEN_INVALID", detail);
+        }
+        if (status == 429 || upper.contains("RATE")) {
+            return HistoricalFetchResult.fail("RATE_LIMITED", detail);
+        }
+        if (status >= 500) {
+            return HistoricalFetchResult.fail("BROKER_5XX", detail);
+        }
+        return HistoricalFetchResult.fail("BROKER_FETCH_FAILED", detail);
+    }
+
+    private static String safeText(String body, String fallback) {
+        if (body != null && !body.isBlank()) {
+            String trimmed = body.replaceAll("\\s+", " ").trim();
+            return trimmed.length() > 240 ? trimmed.substring(0, 240) : trimmed;
+        }
+        return fallback == null ? "unknown" : fallback;
     }
 
     private long resolveInstrumentToken(String apiKey, String accessToken, String symbol) {

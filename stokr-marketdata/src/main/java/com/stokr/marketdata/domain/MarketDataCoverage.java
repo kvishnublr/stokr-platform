@@ -28,8 +28,17 @@ public class MarketDataCoverage extends BaseEntity {
     @Column(name = "covered_to", nullable = false)
     private Instant coveredTo;
 
+    @Column(name = "coverage_start")
+    private Instant coverageStart;
+
+    @Column(name = "coverage_end")
+    private Instant coverageEnd;
+
     @Column(name = "latest_candle_at")
     private Instant latestCandleAt;
+
+    @Column(name = "freshness_age_seconds")
+    private Long freshnessAgeSeconds;
 
     @Column(name = "completeness", nullable = false, length = 24)
     private String completeness;
@@ -55,7 +64,24 @@ public class MarketDataCoverage extends BaseEntity {
     @Column(name = "last_validation_at", nullable = false)
     private Instant lastValidationAt;
 
+    @Column(name = "validated_range_start")
+    private Instant validatedRangeStart;
+
+    @Column(name = "validated_range_end")
+    private Instant validatedRangeEnd;
+
+    @Column(name = "replay_ready", nullable = false)
+    private boolean replayReady;
+
+    @Column(name = "scanner_ready", nullable = false)
+    private boolean scannerReady;
+
+    @Column(name = "partial_coverage", nullable = false)
+    private boolean partialCoverage;
+
+    @Column(name = "stale_state", nullable = false, length = 24)
+    private String staleState;
+
     @Column(name = "note", length = 500)
     private String note;
 }
-

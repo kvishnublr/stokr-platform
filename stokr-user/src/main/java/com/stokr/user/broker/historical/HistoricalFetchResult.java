@@ -15,4 +15,8 @@ public record HistoricalFetchResult(
     public static HistoricalFetchResult fail(String code, String detail) {
         return new HistoricalFetchResult(false, code, detail, List.of());
     }
+
+    public static HistoricalFetchResult failWithCandles(String code, String detail, List<HistoricalCandlePoint> candles) {
+        return new HistoricalFetchResult(false, code, detail, candles == null ? List.of() : candles);
+    }
 }

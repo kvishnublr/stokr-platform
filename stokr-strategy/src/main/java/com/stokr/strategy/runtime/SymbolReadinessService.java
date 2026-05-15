@@ -1,72 +1,41 @@
 package com.stokr.strategy.runtime;
 
-import com.stokr.marketdata.domain.MarketdataCandle;
-import com.stokr.marketdata.repository.MarketDataCoverageRepository;
-import com.stokr.marketdata.repository.MarketdataCandleRepository;
+import com.stokr.marketdata.service.MarketDataCoverageService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 
 @Service
 @RequiredArgsConstructor
 public class SymbolReadinessService {
 
-    private final MarketdataCandleRepository candleRepository;
-    private final MarketDataCoverageRepository coverageRepository;
-
-    @Value("${stokr.strategy.readiness.stale-seconds:600}")
-    private long staleSeconds;
+    private final MarketDataCoverageService marketDataCoverageService;
 
     /**
      * Validates 1m continuity/freshness for a symbol before scanner evaluation.
      */
     public Readiness assess(String symbol, Instant now) {
-        var coverage = coverageRepository.findBySymbolAndTimeframeAndDeletedFalse(symbol, "1m").orElse(null);
-        if (coverage != null) {
-            if ("NOT_BACKFILLED".equalsIgnoreCase(coverage.getCompleteness())) {
-                return new Readiness(false, "NOT_BACKFILLED");
-            }
-            if (coverage.isGapsPresent() || "GAPS_PRESENT".equalsIgnoreCase(coverage.getCompleteness())) {
-                return new Readiness(false, "GAPS_PRESENT");
-            }
-            if ("STALE".equalsIgnoreCase(coverage.getFreshness())) {
-                return new Readiness(false, "STALE");
-            }
-            if (!"READY".equalsIgnoreCase(coverage.getCompleteness())) {
-                return new Readiness(false, "INCOMPLETE_RANGE");
-            }
+        Instant from = scannerWindowStart(now);
+        var authority = marketDataCoverageService.assessReadiness(symbol, "1m", from, now, "SCANNER", true);
+        if (!authority.ready()) {
+            return new Readiness(false, authority.state());
         }
-        List<MarketdataCandle> bars = candleRepository.findTop500BySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbol, "1m");
-        if (bars.isEmpty()) {
-            return new Readiness(false, "NO_DATA");
-        }
-        MarketdataCandle latest = bars.get(0);
-        if (latest.getOpenTime() == null) {
-            return new Readiness(false, "NO_DATA");
-        }
-        long lag = Duration.between(latest.getOpenTime(), now).getSeconds();
-        if (lag > staleSeconds) {
-            return new Readiness(false, "STALE");
-        }
+        return new Readiness(true, "READY");
+    }
 
-        Instant prev = latest.getOpenTime();
-        int checks = Math.min(120, bars.size() - 1);
-        for (int i = 1; i <= checks; i++) {
-            Instant t = bars.get(i).getOpenTime();
-            if (t == null) {
-                continue;
-            }
-            long delta = Duration.between(t, prev).getSeconds();
-            if (delta > 120) {
-                return new Readiness(false, "GAPS_PRESENT");
-            }
-            prev = t;
+    private Instant scannerWindowStart(Instant now) {
+        ZonedDateTime z = now.atZone(ZoneId.of("Asia/Kolkata"));
+        ZonedDateTime open = z.withHour(9).withMinute(15).withSecond(0).withNano(0);
+        if (z.isBefore(open)) {
+            open = open.minusDays(1);
         }
-        return new Readiness(true, "OK");
+        while (open.getDayOfWeek().getValue() >= 6) {
+            open = open.minusDays(1);
+        }
+        return open.toInstant();
     }
 
     public record Readiness(boolean ready, String reason) {

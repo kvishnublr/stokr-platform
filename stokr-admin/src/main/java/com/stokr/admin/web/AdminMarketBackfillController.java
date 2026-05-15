@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,6 +37,17 @@ public class AdminMarketBackfillController {
     @GetMapping("/coverage")
     public ApiResponse<Object> coverage() {
         return ApiResponse.ok(backfillService.capabilityMatrix().get("coverage"), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/readiness")
+    public ApiResponse<Map<String, Object>> readiness(
+            @RequestParam("symbol") String symbol,
+            @RequestParam("timeframe") String timeframe,
+            @RequestParam("from") Instant from,
+            @RequestParam("to") Instant to,
+            @RequestParam(value = "useCase", defaultValue = "REPLAY") String useCase
+    ) {
+        return ApiResponse.ok(backfillService.readinessAuthority(symbol, timeframe, from, to, useCase), CorrelationIdHolder.get());
     }
 
     @PostMapping("/jobs")
