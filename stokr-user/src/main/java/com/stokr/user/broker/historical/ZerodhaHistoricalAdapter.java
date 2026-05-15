@@ -64,11 +64,15 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
                 return HistoricalFetchResult.fail("TOKEN_DECRYPT_FAILED", "Could not decrypt platform access token");
             }
 
-            long instrumentToken = resolveInstrumentToken(
+            TokenResolution tokenResolution = resolveInstrumentToken(
                     zerodhaBrokerProperties.getApiKey(),
                     accessToken,
                     request.symbol()
             );
+            if (tokenResolution.errorCode() != null) {
+                return HistoricalFetchResult.fail(tokenResolution.errorCode(), tokenResolution.errorDetail());
+            }
+            long instrumentToken = tokenResolution.instrumentToken();
             if (instrumentToken <= 0L) {
                 return HistoricalFetchResult.fail("SYMBOL_NOT_MAPPED", "Could not resolve instrument token for " + request.symbol());
             }
@@ -139,23 +143,49 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         return fallback == null ? "unknown" : fallback;
     }
 
-    private long resolveInstrumentToken(String apiKey, String accessToken, String symbol) {
+    private TokenResolution resolveInstrumentToken(String apiKey, String accessToken, String symbol) {
         String target = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
         if (target.isBlank()) {
-            return -1L;
+            return new TokenResolution(-1L, "SYMBOL_NOT_MAPPED", "Blank symbol");
         }
+        boolean loadedAnyMaster = false;
+        String lastErrorCode = null;
+        String lastErrorDetail = null;
         for (String exchange : List.of("NSE", "NFO")) {
             try {
                 String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, exchange);
+                loadedAnyMaster = true;
                 long tok = parseInstrumentToken(csv, target);
                 if (tok > 0L) {
-                    return tok;
+                    return new TokenResolution(tok, null, null);
+                }
+            } catch (RestClientResponseException ex) {
+                int status = ex.getStatusCode().value();
+                String body = ex.getResponseBodyAsString();
+                String detail = "instrument master " + exchange + " " + status + " " + safeText(body, ex.getMessage());
+                if (status == 401 || status == 403) {
+                    lastErrorCode = "TOKEN_INVALID";
+                    lastErrorDetail = detail;
+                } else if (status == 429) {
+                    lastErrorCode = "RATE_LIMITED";
+                    lastErrorDetail = detail;
+                } else if (status >= 500) {
+                    lastErrorCode = "BROKER_5XX";
+                    lastErrorDetail = detail;
+                } else {
+                    lastErrorCode = "INSTRUMENT_MASTER_UNAVAILABLE";
+                    lastErrorDetail = detail;
                 }
             } catch (Exception ex) {
+                lastErrorCode = "INSTRUMENT_MASTER_UNAVAILABLE";
+                lastErrorDetail = "instrument master " + exchange + " " + ex.getClass().getSimpleName() + ": " + ex.getMessage();
                 log.debug("zerodha.historical.instruments_parse exchange={} {}", exchange, ex.toString());
             }
         }
-        return -1L;
+        if (!loadedAnyMaster && lastErrorCode != null) {
+            return new TokenResolution(-1L, lastErrorCode, lastErrorDetail);
+        }
+        return new TokenResolution(-1L, null, null);
     }
 
     private static long parseInstrumentToken(String csv, String symbolUpper) {
@@ -166,7 +196,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         if (lines.length < 2) {
             return -1L;
         }
-        String[] hdr = lines[0].split(",");
+        String[] hdr = splitCsvLine(lines[0]);
         Map<String, Integer> idx = new LinkedHashMap<>();
         for (int i = 0; i < hdr.length; i++) {
             idx.put(hdr[i].trim().toLowerCase(Locale.ROOT), i);
@@ -181,7 +211,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
             if (line == null || line.isBlank()) {
                 continue;
             }
-            String[] p = line.split(",");
+            String[] p = splitCsvLine(line);
             if (p.length <= Math.max(tokIdx, symIdx)) {
                 continue;
             }
@@ -196,6 +226,27 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
             }
         }
         return -1L;
+    }
+
+    private static String[] splitCsvLine(String line) {
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+            if (ch == '"') {
+                inQuotes = !inQuotes;
+                continue;
+            }
+            if (ch == ',' && !inQuotes) {
+                out.add(cur.toString());
+                cur.setLength(0);
+                continue;
+            }
+            cur.append(ch);
+        }
+        out.add(cur.toString());
+        return out.toArray(new String[0]);
     }
 
     private static String mapInterval(String timeframe) {
@@ -237,5 +288,8 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         } catch (Exception ex) {
             return BigDecimal.ZERO;
         }
+    }
+
+    private record TokenResolution(long instrumentToken, String errorCode, String errorDetail) {
     }
 }
