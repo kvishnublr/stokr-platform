@@ -28,23 +28,12 @@ public class CandleFinalizationService {
 
     private final CandleAggregator candleAggregator;
     private final MarketdataCandleRepository candleRepository;
-    private final ZoneId marketZone;
-    private final LocalTime marketOpen;
-    private final LocalTime marketClose;
-
-    public CandleFinalizationService(
-            CandleAggregator candleAggregator,
-            MarketdataCandleRepository candleRepository,
-            @Value("${stokr.strategy.session.zone:Asia/Kolkata}") String marketZoneId,
-            @Value("${stokr.market.session.open:09:15}") String marketOpenRaw,
-            @Value("${stokr.market.session.close:15:30}") String marketCloseRaw
-    ) {
-        this.candleAggregator = candleAggregator;
-        this.candleRepository = candleRepository;
-        this.marketZone = ZoneId.of(marketZoneId);
-        this.marketOpen = LocalTime.parse(marketOpenRaw);
-        this.marketClose = LocalTime.parse(marketCloseRaw);
-    }
+    @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
+    private String marketZoneId;
+    @Value("${stokr.market.session.open:09:15}")
+    private String marketOpenRaw;
+    @Value("${stokr.market.session.close:15:30}")
+    private String marketCloseRaw;
 
     /**
      * Drops in-memory partial buckets older than cutoff (does not delete persisted finalized candles).
@@ -126,6 +115,9 @@ public class CandleFinalizationService {
 
     private Deque<Instant> buildExpectedOpenTimes(Instant start, Instant end, String timeframe) {
         Deque<Instant> out = new ArrayDeque<>();
+        ZoneId marketZone = ZoneId.of(marketZoneId);
+        LocalTime marketOpen = LocalTime.parse(marketOpenRaw);
+        LocalTime marketClose = LocalTime.parse(marketCloseRaw);
         String tf = timeframe == null ? "1m" : timeframe.trim().toLowerCase();
         if ("1d".equals(tf)) {
             ZonedDateTime z = start.atZone(marketZone).withHour(0).withMinute(0).withSecond(0).withNano(0);
