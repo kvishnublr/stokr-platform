@@ -28,7 +28,10 @@ export function hasPlatformMarketFeedConnected(s: OpsSnapshot | undefined): bool
   const vendors = asRecord(root?.vendors) ?? {};
   for (const raw of Object.values(vendors)) {
     const v = asRecord(raw);
-    if (String(v?.connectionState ?? "").toUpperCase() === "CONNECTED" && v?.configured === true) {
+    const cfg = v?.configured;
+    const configuredOk = cfg === true || cfg === "true";
+    const st = String(v?.connectionState ?? "").toUpperCase();
+    if (st === "CONNECTED" && configuredOk) {
       return true;
     }
   }
@@ -72,7 +75,6 @@ export type DependencyStep = {
 
 export function buildDependencyChain(s: OpsSnapshot | undefined): DependencyStep[] {
   const brokerLive = hasActiveBrokerMarketFeed(s);
-  const hasAccounts = anyBrokerAccountRows(s);
   const fresh = asRecord(s?.marketFreshness);
   const mp = asRecord(s?.marketPlane);
   const scan = asRecord(s?.scannerTelemetry);
@@ -90,20 +92,29 @@ export function buildDependencyChain(s: OpsSnapshot | undefined): DependencyStep
   const jq = typeof replay?.jobsQueued === "number" ? replay.jobsQueued : Number(replay?.jobsQueued ?? 0);
   const jr = typeof replay?.jobsRunning === "number" ? replay.jobsRunning : Number(replay?.jobsRunning ?? 0);
 
-  const brokerState: ChainLinkState = !dbOk ? "UNAVAILABLE" : !hasAccounts ? "OFFLINE" : brokerLive ? (stale ? "DEGRADED" : "OK") : "OFFLINE";
+  const platformFed = hasPlatformMarketFeedConnected(s);
+  const traderAccounts = anyBrokerAccountRows(s);
+
+  const brokerState: ChainLinkState = !dbOk
+    ? "UNAVAILABLE"
+    : !brokerLive
+      ? "OFFLINE"
+      : stale
+        ? "DEGRADED"
+        : "OK";
   const brokerDetail = !dbOk
     ? "Cannot evaluate broker rows — database probe failed."
-    : !hasAccounts
-      ? "No broker_accounts rows — traders have not linked a vendor."
-      : brokerLive
-        ? stale
-          ? "Sessions connected but candle store is stale vs wall clock."
-          : "OAuth sessions connected; ingestion may proceed."
-        : "Accounts exist but none are CONNECTED — refresh OAuth or reconnect.";
+    : !brokerLive
+      ? "No active market pipe: connect platform feed (admin OAuth) and/or trader broker_accounts with CONNECTED sessions."
+      : stale
+        ? "Sessions connected but candle store is stale vs wall clock."
+        : platformFed && !traderAccounts
+          ? "Platform market feed session active (admin OAuth). Trader execution broker_accounts optional for this plane."
+          : "OAuth sessions connected; ingestion may proceed.";
 
   const ingestionState: ChainLinkState = !dbOk ? "UNAVAILABLE" : !brokerLive ? "OFFLINE" : stale ? "DEGRADED" : "OK";
   const ingestionDetail = !brokerLive
-    ? "Live vendor packets / candles require at least one CONNECTED broker session."
+    ? "Live candles require an active market pipe (platform feed OAuth and/or CONNECTED trader broker_accounts)."
     : stale
       ? `1m store lag ≈ ${fresh?.latest1mLagSeconds ?? mp?.latest1mLagSeconds ?? "—"}s`
       : "Candle store advancing within tolerance.";
@@ -196,13 +207,11 @@ export function computeSystemReadiness(s: OpsSnapshot | undefined): {
   }
 
   if (!brokerConnected) {
-    const hasAccounts = anyBrokerAccountRows(s);
     return {
       level: "OFFLINE",
       headline: "Live market infrastructure offline",
-      subline: hasAccounts
-        ? "Broker accounts exist but no CONNECTED OAuth sessions. Live ingestion, scanners, and live-tape signals are unavailable until traders refresh sessions or you reconnect feeds."
-        : "No broker_accounts rows — no vendor OAuth linkage. Connect a broker from the trader roster (or onboard traders) before expecting live telemetry.",
+      subline:
+        "No active market pipe. Open Broker infrastructure to establish the platform feed (admin OAuth), and/or connect trader broker_accounts until at least one vendor shows CONNECTED sessions in the operations snapshot.",
       brokerConnected: false,
       killSwitch: kill,
     };

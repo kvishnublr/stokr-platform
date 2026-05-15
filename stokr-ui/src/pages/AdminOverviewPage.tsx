@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api, parseAxiosMessage } from "../api/client";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
+import { fetchAdminOpsSnapshotMerged } from "../lib/fetchAdminOpsSnapshotMerged";
 import { BrokerConnectionControlCenter } from "../components/admin/BrokerConnectionControlCenter";
 import { SystemReadinessBanner } from "../components/admin/SystemReadinessBanner";
 import { computeSystemReadiness, hasActiveBrokerMarketFeed } from "../components/admin/adminReadinessModel";
@@ -58,10 +59,7 @@ export function AdminOverviewPage() {
 
   const operationsSnapshot = useQuery({
     queryKey: ADMIN_OPS_SNAPSHOT_KEY,
-    queryFn: async () => {
-      const res = await api.get("/api/admin/operations/snapshot");
-      return res.data?.data as OpsSnapshot;
-    },
+    queryFn: fetchAdminOpsSnapshotMerged,
     staleTime: 15_000,
     retry: 2,
   });

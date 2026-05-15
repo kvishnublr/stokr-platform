@@ -1,16 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { asRecord, fmtInt, type OpsSnapshot } from "../../components/admin/cockpit/opsTypes";
+import { asRecord, fmtInt } from "../../components/admin/cockpit/opsTypes";
 import { ProjectionHealthPanel, QueueDepthMonitor } from "../../components/admin/cockpit/AdminCockpitPanels";
-import { api } from "../../api/client";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../../lib/adminQueryKeys";
+import { fetchAdminOpsSnapshotMerged } from "../../lib/fetchAdminOpsSnapshotMerged";
 
 export function AdminInfrastructurePage() {
   const snapshot = useQuery({
     queryKey: ADMIN_OPS_SNAPSHOT_KEY,
-    queryFn: async () => {
-      const res = await api.get("/api/admin/operations/snapshot");
-      return res.data?.data as OpsSnapshot;
-    },
+    queryFn: fetchAdminOpsSnapshotMerged,
     staleTime: 60_000,
   });
   const s = snapshot.data;

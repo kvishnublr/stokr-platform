@@ -1,11 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
-import { api } from "../api/client";
 import { AdminGlobalOpsHeader } from "../components/admin/AdminGlobalOpsHeader";
-import type { OpsSnapshot } from "../components/admin/cockpit/opsTypes";
 import { subscribeAdminOperationsSse } from "../hooks/useAdminOperationsSse";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
+import { fetchAdminOpsSnapshotMerged } from "../lib/fetchAdminOpsSnapshotMerged";
 
 /**
  * Wraps all `/admin/*` content: shared operations snapshot + SSE, persistent global ops header.
@@ -18,10 +17,7 @@ export function AdminConsoleLayout() {
 
   const snapshot = useQuery({
     queryKey: ADMIN_OPS_SNAPSHOT_KEY,
-    queryFn: async () => {
-      const res = await api.get("/api/admin/operations/snapshot");
-      return res.data?.data as OpsSnapshot;
-    },
+    queryFn: fetchAdminOpsSnapshotMerged,
     refetchInterval: opsStreamLive ? false : 8000,
     retry: 2,
     staleTime: 1500,

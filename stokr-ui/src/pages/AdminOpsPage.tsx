@@ -3,8 +3,8 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api/client";
 import { AdminOperationsCockpit } from "../components/admin/cockpit/AdminOperationsCockpit";
-import type { OpsSnapshot } from "../components/admin/cockpit/opsTypes";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
+import { fetchAdminOpsSnapshotMerged } from "../lib/fetchAdminOpsSnapshotMerged";
 import { cn } from "../lib/utils";
 
 type ReadinessSnapshot = {
@@ -17,10 +17,7 @@ export function AdminOpsPage() {
 
   const snapshot = useQuery({
     queryKey: ADMIN_OPS_SNAPSHOT_KEY,
-    queryFn: async () => {
-      const res = await api.get("/api/admin/operations/snapshot");
-      return res.data?.data as OpsSnapshot;
-    },
+    queryFn: fetchAdminOpsSnapshotMerged,
     staleTime: 1500,
     retry: 2,
   });

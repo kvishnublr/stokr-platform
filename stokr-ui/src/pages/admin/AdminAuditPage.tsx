@@ -1,17 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { OperationalHistoryStrip } from "../../components/admin/cockpit/AdminCockpitPanels";
-import type { OpsSnapshot } from "../../components/admin/cockpit/opsTypes";
-import { api } from "../../api/client";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../../lib/adminQueryKeys";
+import { fetchAdminOpsSnapshotMerged } from "../../lib/fetchAdminOpsSnapshotMerged";
 
 export function AdminAuditPage() {
   const snapshot = useQuery({
     queryKey: ADMIN_OPS_SNAPSHOT_KEY,
-    queryFn: async () => {
-      const res = await api.get("/api/admin/operations/snapshot");
-      return res.data?.data as OpsSnapshot;
-    },
+    queryFn: fetchAdminOpsSnapshotMerged,
     staleTime: 60_000,
   });
   return (

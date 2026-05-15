@@ -3,19 +3,15 @@ import {
   MarketFreshnessPanel,
   MarketIntelligenceGrid,
 } from "../../components/admin/cockpit/AdminCockpitPanels";
-import type { OpsSnapshot } from "../../components/admin/cockpit/opsTypes";
 import { BrokerConnectionControlCenter } from "../../components/admin/BrokerConnectionControlCenter";
 import { SystemReadinessBanner } from "../../components/admin/SystemReadinessBanner";
-import { api } from "../../api/client";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../../lib/adminQueryKeys";
+import { fetchAdminOpsSnapshotMerged } from "../../lib/fetchAdminOpsSnapshotMerged";
 
 export function AdminMarketIntelPage() {
   const snapshot = useQuery({
     queryKey: ADMIN_OPS_SNAPSHOT_KEY,
-    queryFn: async () => {
-      const res = await api.get("/api/admin/operations/snapshot");
-      return res.data?.data as OpsSnapshot;
-    },
+    queryFn: fetchAdminOpsSnapshotMerged,
     staleTime: 60_000,
   });
   return (
