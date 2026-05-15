@@ -1,5 +1,8 @@
 package com.stokr.admin.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +25,8 @@ public record OperationsSnapshotDto(
         List<Map<String, Object>> incidents,
         Map<String, Object> marketPlane,
         Map<String, Object> operationalHistory,
+        @JsonProperty("platformMarketFeed")
+        @JsonInclude(JsonInclude.Include.ALWAYS)
         Map<String, Object> platformMarketFeed
 ) {
 }

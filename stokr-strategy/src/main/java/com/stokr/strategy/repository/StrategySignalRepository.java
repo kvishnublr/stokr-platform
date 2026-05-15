@@ -46,4 +46,6 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             where s.deleted = false and s.createdAt >= :since and s.backtestRunId is not null
             """)
     long countByCreatedAtAfterAndDeletedFalseAndBacktestRunIdNotNull(@Param("since") Instant since);
+
+    Optional<StrategySignalEntity> findFirstByDeletedFalseOrderByCreatedAtDesc();
 }

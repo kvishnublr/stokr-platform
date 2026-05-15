@@ -22,6 +22,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
@@ -264,6 +265,8 @@ public class PlatformMarketFeedService {
             m.put("connectionState", "DISCONNECTED");
             m.put("websocketState", "CLOSED");
             m.put("configured", false);
+            m.put("operationalLivePath", false);
+            m.put("operationalLivePathDetail", "No platform session row — connect OAuth from admin broker infrastructure.");
             m.put("detail", "No platform session row — use Connect (Zerodha) from admin broker infrastructure.");
             return m;
         }
@@ -283,7 +286,39 @@ public class PlatformMarketFeedService {
         m.put("ingestionPauseEnforcedByWorkers", false);
         m.put("instrumentSyncState", s.getInstrumentSyncState());
         m.put("telemetryJson", s.getTelemetryJson());
+
+        boolean configured = Boolean.TRUE.equals(m.get("configured"));
+        Instant exp = s.getTokenExpiresAt();
+        boolean tokenValid = configured && exp != null && exp.isAfter(Instant.now());
+        String ws = s.getWebsocketState() != null ? s.getWebsocketState() : "";
+        boolean wsLive = ws.equalsIgnoreCase("OPEN") || ws.equalsIgnoreCase("CONNECTED");
+        Instant lastTick = s.getLastTickAt();
+        long tickAgeSec = lastTick == null ? Long.MAX_VALUE : Duration.between(lastTick, Instant.now()).getSeconds();
+        boolean tickFresh = lastTick != null && tickAgeSec <= 120;
+        double pps = toDouble(s.getPacketsPerSec());
+        boolean packetsFlowing = pps > 0.05;
+        int subs = s.getSubscriptionCount();
+        boolean subsOk = subs > 0;
+        boolean operationalLivePath = tokenValid && wsLive && tickFresh && packetsFlowing && subsOk;
+        m.put("operationalLivePath", operationalLivePath);
+        if (!tokenValid) {
+            m.put("operationalLivePathDetail", !configured ? "No OAuth token on platform session" : "Access token expired or missing expiry");
+        } else if (!wsLive) {
+            m.put("operationalLivePathDetail", "Vendor websocket not open (state=" + ws + ")");
+        } else if (!tickFresh) {
+            m.put("operationalLivePathDetail", "No tick within freshness window (~120s since lastTickAt)");
+        } else if (!packetsFlowing) {
+            m.put("operationalLivePathDetail", "No measurable packet rate (packetsPerSec)");
+        } else if (!subsOk) {
+            m.put("operationalLivePathDetail", "No active instrument subscriptions");
+        } else {
+            m.put("operationalLivePathDetail", "Token valid, WS open, ticks fresh, packets and subscriptions present");
+        }
         return m;
+    }
+
+    private static double toDouble(Number n) {
+        return n == null ? 0.0 : n.doubleValue();
     }
 
     private static String normalizeVendor(String vendor) {

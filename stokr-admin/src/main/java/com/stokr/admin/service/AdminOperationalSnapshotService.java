@@ -38,6 +38,10 @@ import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.sql.DataSource;
+import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.HikariPoolMXBean;
+
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.OperatingSystemMXBean;
@@ -68,6 +72,7 @@ public class AdminOperationalSnapshotService {
     private final RabbitAdmin rabbitAdmin;
     private final ObjectProvider<SimpUserRegistry> simpUserRegistry;
     private final ObjectProvider<StringRedisTemplate> stringRedisTemplate;
+    private final ObjectProvider<DataSource> dataSource;
     private final AuthUserRepository authUserRepository;
     private final StrategyInstanceRepository strategyInstanceRepository;
     private final StrategyDefinitionRepository strategyDefinitionRepository;
@@ -94,6 +99,7 @@ public class AdminOperationalSnapshotService {
             RabbitAdmin rabbitAdmin,
             ObjectProvider<SimpUserRegistry> simpUserRegistry,
             ObjectProvider<StringRedisTemplate> stringRedisTemplate,
+            ObjectProvider<DataSource> dataSource,
             AuthUserRepository authUserRepository,
             StrategyInstanceRepository strategyInstanceRepository,
             StrategyDefinitionRepository strategyDefinitionRepository,
@@ -118,6 +124,7 @@ public class AdminOperationalSnapshotService {
         this.rabbitAdmin = rabbitAdmin;
         this.simpUserRegistry = simpUserRegistry;
         this.stringRedisTemplate = stringRedisTemplate;
+        this.dataSource = dataSource;
         this.authUserRepository = authUserRepository;
         this.strategyInstanceRepository = strategyInstanceRepository;
         this.strategyDefinitionRepository = strategyDefinitionRepository;
@@ -152,7 +159,7 @@ public class AdminOperationalSnapshotService {
         Map<String, Object> traderExecutionHealth = traderExecutionHealth();
         Map<String, Object> marketPlane = marketPlaneMonitorService.snapshot(now);
         Map<String, Object> operationalHistory = operationalHistoryService.snapshotSection();
-        Map<String, Object> platformMarketFeed = platformMarketFeedService.infrastructureSnapshot();
+        Map<String, Object> platformMarketFeed = canonicalPlatformMarketFeedSnapshot(now);
         @SuppressWarnings("unchecked")
         Map<String, Object> rabbit = (Map<String, Object>) system.get("rabbitQueues");
         List<Map<String, Object>> incidents = operationalIncidentService.evaluate(
@@ -179,6 +186,49 @@ public class AdminOperationalSnapshotService {
                 operationalHistory,
                 platformMarketFeed
         );
+    }
+
+    /**
+     * Identical payload shape to {@link com.stokr.user.broker.PlatformMarketFeedService#infrastructureSnapshot()}
+     * (same service call). Never null; on failure returns explicit DISCONNECTED vendor rows plus {@code error}.
+     */
+    private Map<String, Object> canonicalPlatformMarketFeedSnapshot(Instant collectedAt) {
+        try {
+            Map<String, Object> m = platformMarketFeedService.infrastructureSnapshot();
+            if (m == null || m.isEmpty()) {
+                return minimalFailedPlatform("infrastructureSnapshot returned null/empty", collectedAt);
+            }
+            Object vObj = m.get("vendors");
+            if (!(vObj instanceof Map<?, ?> v) || v.isEmpty()) {
+                return minimalFailedPlatform("infrastructureSnapshot missing vendors map", collectedAt);
+            }
+            return m;
+        } catch (Exception ex) {
+            return minimalFailedPlatform(ex.getClass().getSimpleName() + ": " + ex.getMessage(), collectedAt);
+        }
+    }
+
+    private Map<String, Object> minimalFailedPlatform(String reason, Instant collectedAt) {
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("collectedAt", collectedAt.toString());
+        root.put("plane", "PLATFORM_MARKET_FEED");
+        root.put("error", reason);
+        root.put("note", "Platform vendor map failed during operations snapshot assembly.");
+        Map<String, Object> vendors = new LinkedHashMap<>();
+        for (String code : List.of("ZERODHA", "UPSTOX", "ANGEL", "DHAN")) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("vendorCode", code);
+            row.put("role", "PLATFORM_MARKET_FEED");
+            row.put("connectionState", "DISCONNECTED");
+            row.put("websocketState", "CLOSED");
+            row.put("configured", false);
+            row.put("operationalLivePath", false);
+            row.put("operationalLivePathDetail", reason);
+            row.put("detail", reason);
+            vendors.put(code, row);
+        }
+        root.put("vendors", vendors);
+        return root;
     }
 
     private Map<String, Object> marketInfra(Instant collectedAt, Map<String, Object> freshness) {
@@ -275,6 +325,10 @@ public class AdminOperationalSnapshotService {
         m.put("strategyRows", scannerStrategyRows(now));
         m.put("note", "Per-scan latency histogram not instrumented — strategyRows + DB counts are authoritative for this build.");
         m.putAll(scannerExecutionTelemetryService.snapshotOverlay(now));
+        strategySignalRepository.findFirstByDeletedFalseOrderByCreatedAtDesc()
+                .ifPresentOrElse(
+                        sig -> m.put("lastSignalCreatedAt", sig.getCreatedAt() != null ? sig.getCreatedAt().toString() : null),
+                        () -> m.put("lastSignalCreatedAt", null));
         return m;
     }
 
@@ -338,32 +392,92 @@ public class AdminOperationalSnapshotService {
         if (redis == null) {
             return Map.of("status", "UNKNOWN", "reason", "StringRedisTemplate not available in this context");
         }
+        Map<String, Object> out = new LinkedHashMap<>();
         long t0 = System.nanoTime();
         try (RedisConnection c = redis.getConnectionFactory().getConnection()) {
             String pong = c.ping();
             long ms = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
-            return Map.of("status", "CONNECTED", "pingMs", ms, "pong", pong != null ? pong : "");
+            out.put("status", "CONNECTED");
+            out.put("pingMs", ms);
+            out.put("pong", pong != null ? pong : "");
+            try {
+                Properties mem = c.serverCommands().info("memory");
+                if (mem != null) {
+                    out.put("usedMemoryHuman", mem.getProperty("used_memory_human"));
+                    long used = parseLongSafe(mem.getProperty("used_memory"));
+                    if (used >= 0) {
+                        out.put("usedMemoryBytes", used);
+                    }
+                    long rss = parseLongSafe(mem.getProperty("used_memory_rss"));
+                    if (rss >= 0) {
+                        out.put("usedMemoryRssBytes", rss);
+                    }
+                }
+                Properties stats = c.serverCommands().info("stats");
+                if (stats != null) {
+                    out.put("instantaneousOpsPerSec", stats.getProperty("instantaneous_ops_per_sec"));
+                    long pubsub = parseLongSafe(stats.getProperty("pubsub_channels"));
+                    if (pubsub >= 0) {
+                        out.put("pubsubChannelsApprox", pubsub);
+                    }
+                }
+            } catch (Exception ex) {
+                out.put("extendedInfo", "unavailable: " + ex.getClass().getSimpleName());
+            }
+            return out;
         } catch (Exception ex) {
             return Map.of("status", "DISCONNECTED", "error", ex.getClass().getSimpleName() + ": " + ex.getMessage());
         }
     }
 
     private Map<String, Object> databasePing() {
+        Map<String, Object> m = new LinkedHashMap<>();
         long t0 = System.nanoTime();
         try {
             Object one = entityManager.createNativeQuery("select 1").getSingleResult();
             long ms = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
-            return Map.of("status", "CONNECTED", "pingMs", ms, "probe", one != null ? one.toString() : "");
+            m.put("status", "CONNECTED");
+            m.put("pingMs", ms);
+            m.put("probe", one != null ? one.toString() : "");
         } catch (Exception ex) {
-            return Map.of("status", "DISCONNECTED", "error", ex.getClass().getSimpleName() + ": " + ex.getMessage());
+            m.put("status", "DISCONNECTED");
+            m.put("error", ex.getClass().getSimpleName() + ": " + ex.getMessage());
+            return m;
         }
+        DataSource ds = dataSource.getIfAvailable();
+        if (ds instanceof HikariDataSource hds) {
+            HikariPoolMXBean pool = hds.getHikariPoolMXBean();
+            if (pool != null) {
+                m.put("poolActiveConnections", pool.getActiveConnections());
+                m.put("poolIdleConnections", pool.getIdleConnections());
+                m.put("poolTotalConnections", pool.getTotalConnections());
+                m.put("poolThreadsAwaitingConnection", pool.getThreadsAwaitingConnection());
+            }
+            m.put("poolName", hds.getPoolName());
+            m.put("poolMaximumSize", hds.getMaximumPoolSize());
+        }
+        try {
+            Object row = entityManager.createNativeQuery(
+                    "select version, description from flyway_schema_history where success = true order by installed_rank desc limit 1"
+            ).getSingleResult();
+            if (row instanceof Object[] arr && arr.length >= 2) {
+                m.put("flywayVersion", arr[0] != null ? arr[0].toString() : null);
+                m.put("flywayDescription", arr[1] != null ? arr[1].toString() : null);
+            }
+        } catch (Exception ex) {
+            m.put("flywayLookup", "unavailable: " + ex.getClass().getSimpleName());
+        }
+        return m;
     }
 
     private Map<String, Object> rabbitQueues() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put(PipelineQueues.STRATEGY_SIGNAL, queueProps(PipelineQueues.STRATEGY_SIGNAL));
+        out.put(PipelineQueues.STRATEGY_SIGNAL_DLQ, queueProps(PipelineQueues.STRATEGY_SIGNAL_DLQ));
         out.put(PipelineQueues.OMS_ORDER, queueProps(PipelineQueues.OMS_ORDER));
+        out.put(PipelineQueues.OMS_ORDER_DLQ, queueProps(PipelineQueues.OMS_ORDER_DLQ));
         out.put(PipelineQueues.EXECUTION, queueProps(PipelineQueues.EXECUTION));
+        out.put(PipelineQueues.EXECUTION_DLQ, queueProps(PipelineQueues.EXECUTION_DLQ));
         return out;
     }
 
@@ -371,16 +485,48 @@ public class AdminOperationalSnapshotService {
         try {
             Properties p = rabbitAdmin.getQueueProperties(queue);
             Map<String, Object> map = new LinkedHashMap<>();
+            map.put("queueName", queue);
             if (p != null) {
                 for (String name : p.stringPropertyNames()) {
                     map.put(name, p.getProperty(name));
                 }
+                enrichQueueDepthFromProps(p, map);
             } else {
                 map.put("status", "UNKNOWN");
+                map.put("detail", "RabbitAdmin returned null queue properties (queue missing or broker unreachable)");
             }
             return map;
         } catch (Exception ex) {
-            return Map.of("status", "ERROR", "error", ex.getClass().getSimpleName() + ": " + ex.getMessage());
+            return Map.of("queueName", queue, "status", "ERROR", "error", ex.getClass().getSimpleName() + ": " + ex.getMessage());
+        }
+    }
+
+    private static void enrichQueueDepthFromProps(Properties p, Map<String, Object> map) {
+        for (String name : p.stringPropertyNames()) {
+            String upper = name.toUpperCase();
+            String val = p.getProperty(name);
+            if (val == null) {
+                continue;
+            }
+            if ((upper.contains("MESSAGE") || upper.contains("MESSAGES")) && upper.contains("COUNT")) {
+                map.putIfAbsent("messageCountApprox", parseLongSafe(val));
+            }
+            if (upper.contains("CONSUMER") && upper.contains("COUNT")) {
+                map.putIfAbsent("consumerCountApprox", parseLongSafe(val));
+            }
+        }
+    }
+
+    private static long parseLongSafe(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return -1L;
+        }
+        try {
+            int dot = raw.indexOf('.');
+            String n = dot > 0 ? raw.substring(0, dot) : raw;
+            return Long.parseLong(n.trim());
+        } catch (NumberFormatException ex) {
+            return -1L;
         }
     }
 

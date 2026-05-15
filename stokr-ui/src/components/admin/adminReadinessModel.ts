@@ -22,12 +22,15 @@ export function vendorDisplayName(vendor: string): string {
   }
 }
 
-/** True when any vendor in platformMarketFeed snapshot is CONNECTED with a configured token. */
+/** True when any platform vendor has a live market path (prefers backend operationalLivePath when set). */
 export function hasPlatformMarketFeedConnected(s: OpsSnapshot | undefined): boolean {
   const root = asRecord(s?.platformMarketFeed);
   const vendors = asRecord(root?.vendors) ?? {};
   for (const raw of Object.values(vendors)) {
     const v = asRecord(raw);
+    const op = v?.operationalLivePath;
+    if (op === true || op === "true") return true;
+    if (op === false || op === "false") continue;
     const cfg = v?.configured;
     const configuredOk = cfg === true || cfg === "true";
     const st = String(v?.connectionState ?? "").toUpperCase();
