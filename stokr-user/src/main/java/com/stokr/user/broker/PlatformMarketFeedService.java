@@ -276,21 +276,27 @@ public class PlatformMarketFeedService {
         m.put("websocketState", s.getWebsocketState());
         m.put("tokenExpiresAt", s.getTokenExpiresAt() != null ? s.getTokenExpiresAt().toString() : null);
         m.put("lastTickAt", s.getLastTickAt() != null ? s.getLastTickAt().toString() : null);
+        m.put("lastPacketAt", s.getLastPacketAt() != null ? s.getLastPacketAt().toString() : null);
+        m.put("lastHeartbeatAt", s.getLastHeartbeatAt() != null ? s.getLastHeartbeatAt().toString() : null);
         m.put("lastSyncAt", s.getLastSyncAt() != null ? s.getLastSyncAt().toString() : null);
         m.put("reconnectCount", s.getReconnectCount());
         m.put("subscriptionCount", s.getSubscriptionCount());
         m.put("packetsPerSec", s.getPacketsPerSec());
         m.put("ticksPerSec", s.getTicksPerSec());
         m.put("feedLagMs", s.getFeedLagMs());
+        m.put("disconnectReason", s.getDisconnectReason());
+        m.put("reconnecting", s.isReconnecting());
+        m.put("tickProcessingLatencyMs", s.getTickProcessingLatencyMs());
         m.put("ingestionPaused", s.isIngestionPaused());
         m.put("ingestionPauseEnforcedByWorkers", false);
         m.put("instrumentSyncState", s.getInstrumentSyncState());
         m.put("telemetryJson", s.getTelemetryJson());
+        String ws = s.getWebsocketState() != null ? s.getWebsocketState() : "";
+        m.put("websocketConnected", ws.equalsIgnoreCase("OPEN") || ws.equalsIgnoreCase("CONNECTED"));
 
         boolean configured = Boolean.TRUE.equals(m.get("configured"));
         Instant exp = s.getTokenExpiresAt();
         boolean tokenValid = configured && exp != null && exp.isAfter(Instant.now());
-        String ws = s.getWebsocketState() != null ? s.getWebsocketState() : "";
         boolean wsLive = ws.equalsIgnoreCase("OPEN") || ws.equalsIgnoreCase("CONNECTED");
         Instant lastTick = s.getLastTickAt();
         long tickAgeSec = lastTick == null ? Long.MAX_VALUE : Duration.between(lastTick, Instant.now()).getSeconds();

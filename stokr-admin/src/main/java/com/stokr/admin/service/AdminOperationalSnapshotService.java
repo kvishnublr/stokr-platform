@@ -234,8 +234,10 @@ public class AdminOperationalSnapshotService {
     private Map<String, Object> marketInfra(Instant collectedAt, Map<String, Object> freshness) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("plane", "MONOLITH_DB");
-        m.put("note", "Vendor websocket packet rates not wired — candle store + broker_sessions are authoritative for this build.");
+        m.put("note", "Live platform Zerodha websocket (when enabled) persists ticks with source PLATFORM_ZERODHA_WS; candle store remains authoritative for freshness.");
         m.put("collectedAt", collectedAt.toString());
+        Instant since60 = collectedAt.minusSeconds(60);
+        m.put("ticksIngestedLast60sPlatformWs", countTicksSince(since60, "PLATFORM_ZERODHA_WS"));
         m.put("distinctSymbols", queryLong("select count(distinct symbol) from marketdata_candles where deleted = false"));
         m.put("candles1mTotal", queryLong("select count(*) from marketdata_candles where deleted = false and timeframe = '1m'"));
         m.put("candles5mTotal", queryLong("select count(*) from marketdata_candles where deleted = false and timeframe = '5m'"));
@@ -705,6 +707,22 @@ public class AdminOperationalSnapshotService {
             return Long.parseLong(o.toString().trim());
         } catch (NumberFormatException ex) {
             return 0L;
+        }
+    }
+
+    private long countTicksSince(Instant since, String source) {
+        try {
+            Object r = entityManager.createNativeQuery(
+                            "select count(*)::bigint from marketdata_ticks where deleted = false and source = :src and created_at >= :since")
+                    .setParameter("src", source)
+                    .setParameter("since", since)
+                    .getSingleResult();
+            if (r instanceof Number n) {
+                return n.longValue();
+            }
+            return 0L;
+        } catch (DataAccessException | IllegalArgumentException ex) {
+            return -1L;
         }
     }
 

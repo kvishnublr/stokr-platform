@@ -39,6 +39,12 @@ public class PlatformBrokerFeedSession extends BaseEntity {
     @Column(name = "last_tick_at")
     private Instant lastTickAt;
 
+    @Column(name = "last_packet_at")
+    private Instant lastPacketAt;
+
+    @Column(name = "last_heartbeat_at")
+    private Instant lastHeartbeatAt;
+
     @Column(name = "last_sync_at")
     private Instant lastSyncAt;
 
@@ -56,6 +62,15 @@ public class PlatformBrokerFeedSession extends BaseEntity {
 
     @Column(name = "feed_lag_ms")
     private Integer feedLagMs;
+
+    @Column(name = "disconnect_reason", length = 512)
+    private String disconnectReason;
+
+    @Column(name = "reconnecting", nullable = false)
+    private boolean reconnecting;
+
+    @Column(name = "tick_processing_latency_ms")
+    private Integer tickProcessingLatencyMs;
 
     @Column(name = "ingestion_paused", nullable = false)
     private boolean ingestionPaused;

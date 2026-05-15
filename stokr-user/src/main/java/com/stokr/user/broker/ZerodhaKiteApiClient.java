@@ -52,6 +52,18 @@ public class ZerodhaKiteApiClient {
     }
 
     /**
+     * Full instrument dump for one exchange (CSV). Used to map instrument_token → tradingsymbol for platform WS ticks.
+     */
+    public String getInstrumentsCsv(String apiKey, String accessToken, String exchange) {
+        String ex = exchange == null || exchange.isBlank() ? "NSE" : exchange.trim().toUpperCase();
+        return http.get()
+                .uri(BASE + "/instruments/" + ex)
+                .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
+                .retrieve()
+                .body(String.class);
+    }
+
+    /**
      * Places a regular (exchange) order. Caller must enforce safety limits.
      */
     public JsonNode placeRegularOrder(
