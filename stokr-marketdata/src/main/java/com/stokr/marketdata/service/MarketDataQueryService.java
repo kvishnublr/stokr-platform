@@ -4,6 +4,8 @@ import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,22 +35,21 @@ public class MarketDataQueryService {
 
     /**
      * Bars with {@code open_time <= endOpenTimeInclusive}, oldest-first, capped at {@code maxBars}.
-     * Used for deterministic replay/backtests so later candles do not leak into earlier evaluations.
+     * Uses an index-friendly bounded query at the replay instant — not "latest 500 rows in DB then filter",
+     * which breaks historical replay when the DB tail is newer than {@code endOpenTimeInclusive}.
      */
     @Transactional(readOnly = true)
     public List<MarketdataCandle> lastBarsAscEndingAt(String symbol, String timeframe, int maxBars, Instant endOpenTimeInclusive) {
-        List<MarketdataCandle> desc = candleRepository.findTop500BySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbol, timeframe);
-        List<MarketdataCandle> filtered = new ArrayList<>();
-        for (MarketdataCandle c : desc) {
-            if (!c.getOpenTime().isAfter(endOpenTimeInclusive)) {
-                filtered.add(c);
-            }
-        }
-        filtered.sort(Comparator.comparing(MarketdataCandle::getOpenTime));
-        if (filtered.size() <= maxBars) {
-            return filtered;
-        }
-        return filtered.subList(filtered.size() - maxBars, filtered.size());
+        Page<MarketdataCandle> page = candleRepository.findBySymbolAndTimeframeAndOpenTimeLessThanEqualAndDeletedFalse(
+                symbol,
+                timeframe,
+                endOpenTimeInclusive,
+                PageRequest.of(0, maxBars, Sort.by(Sort.Direction.DESC, "openTime"))
+        );
+        List<MarketdataCandle> desc = page.getContent();
+        ArrayList<MarketdataCandle> asc = new ArrayList<>(desc);
+        Collections.reverse(asc);
+        return asc;
     }
 
     @Transactional(readOnly = true)

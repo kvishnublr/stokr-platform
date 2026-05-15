@@ -19,4 +19,6 @@ public interface StrategyDefinitionRepository extends JpaRepository<StrategyDefi
     Page<StrategyDefinition> findAllByDeletedFalseAndEnabledTrueAndVisibleToUsersTrue(Pageable pageable);
 
     Optional<StrategyDefinition> findByStrategyKeyAndDeletedFalse(String strategyKey);
+
+    long countByDeletedFalse();
 }

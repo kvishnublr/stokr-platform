@@ -40,7 +40,7 @@ public class ZerodhaBrokerOperationsService {
     private static final Pattern TEST_SYMBOL = Pattern.compile("^[A-Z0-9]{1,25}$");
     private static final Set<String> TEST_EXCHANGES = Set.of("NSE", "BSE");
     private static final Set<String> TEST_PRODUCTS = Set.of("CNC", "MIS");
-    private static final Set<String> TEST_VARIETIES = Set.of("REGULAR");
+    private static final Set<String> TEST_VARIETIES = Set.of("REGULAR", "AMO");
 
     public record BrokerStatusDto(
             boolean connected,
@@ -237,7 +237,7 @@ public class ZerodhaBrokerOperationsService {
         Session s = requireSession(userId);
         String variety = req != null && req.variety() != null && !req.variety().isBlank() ? req.variety().trim().toUpperCase() : "REGULAR";
         if (!TEST_VARIETIES.contains(variety)) {
-            throw new BadRequestException("variety must be REGULAR for test orders");
+            throw new BadRequestException("variety must be REGULAR or AMO for test orders");
         }
         String exchange = req != null && req.exchange() != null && !req.exchange().isBlank() ? req.exchange().trim().toUpperCase() : "NSE";
         if (!TEST_EXCHANGES.contains(exchange)) {

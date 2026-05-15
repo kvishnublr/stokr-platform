@@ -1,8 +1,10 @@
 package com.stokr.strategy.metadata;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.stokr.strategy.dto.metadata.StrategyDeploymentDefaultsDto;
 import com.stokr.strategy.dto.metadata.StrategyMetadataResponseDto;
 import com.stokr.strategy.dto.metadata.StrategyParameterFieldDto;
+import com.stokr.strategy.dto.metadata.StrategyPreviewMetricsDto;
 
 import java.math.BigDecimal;
 import java.util.HashSet;
@@ -75,6 +77,58 @@ public final class StrategyMetadataDocumentValidator {
         validateAllowedList("allowedFeeModels", m.allowedFeeModels());
         validateAllowedList("allowedSlippageModels", m.allowedSlippageModels());
         validateAllowedList("allowedExecutionProfiles", m.allowedExecutionProfiles());
+        validateDeploymentDefaults(m);
+        validatePreviewMetrics(m);
+    }
+
+    private static void validateDeploymentDefaults(StrategyMetadataResponseDto m) {
+        StrategyDeploymentDefaultsDto d = m.deploymentDefaults();
+        if (d == null) {
+            return;
+        }
+        if (d.symbol() == null || d.symbol().isBlank()) {
+            throw new IllegalStateException("metadata: deploymentDefaults.symbol is blank for " + m.strategyKey());
+        }
+        if (d.timeframe() == null || d.timeframe().isBlank()) {
+            throw new IllegalStateException("metadata: deploymentDefaults.timeframe is blank for " + m.strategyKey());
+        }
+        assertValueInAllowedList(m.allowedTimeframes(), d.timeframe(), "deploymentDefaults.timeframe", m.strategyKey());
+        assertValueInAllowedList(m.allowedExecutionProfiles(), d.executionProfile(), "deploymentDefaults.executionProfile", m.strategyKey());
+        assertValueInAllowedList(m.allowedFeeModels(), d.feeModel(), "deploymentDefaults.feeModel", m.strategyKey());
+        assertValueInAllowedList(m.allowedSlippageModels(), d.slippageModel(), "deploymentDefaults.slippageModel", m.strategyKey());
+    }
+
+    private static void validatePreviewMetrics(StrategyMetadataResponseDto m) {
+        StrategyPreviewMetricsDto p = m.previewMetrics();
+        if (p == null) {
+            return;
+        }
+        if (p.riskLevel() == null || p.riskLevel().isBlank()) {
+            throw new IllegalStateException("metadata: previewMetrics.riskLevel is blank for " + m.strategyKey());
+        }
+        requireFinite(p.avgMonthlyReturnPct(), "previewMetrics.avgMonthlyReturnPct", m.strategyKey());
+        requireFinite(p.winRatePct(), "previewMetrics.winRatePct", m.strategyKey());
+        requireFinite(p.maxDrawdownPct(), "previewMetrics.maxDrawdownPct", m.strategyKey());
+        requireFinite(p.avgTradesPerDay(), "previewMetrics.avgTradesPerDay", m.strategyKey());
+    }
+
+    private static void requireFinite(Double v, String label, String strategyKey) {
+        if (v == null || v.isNaN() || v.isInfinite()) {
+            throw new IllegalStateException("metadata: " + label + " must be a finite number for " + strategyKey);
+        }
+    }
+
+    private static void assertValueInAllowedList(List<String> allowed, String value, String label, String strategyKey) {
+        if (allowed == null || allowed.isEmpty()) {
+            return;
+        }
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("metadata: " + label + " is blank for " + strategyKey);
+        }
+        boolean ok = allowed.stream().anyMatch(v -> v.equalsIgnoreCase(value.trim()));
+        if (!ok) {
+            throw new IllegalStateException("metadata: " + label + " has unsupported value '" + value + "' for " + strategyKey);
+        }
     }
 
     private static void validateAllowedList(String name, List<String> list) {

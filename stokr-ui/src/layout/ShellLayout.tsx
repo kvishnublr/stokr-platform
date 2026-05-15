@@ -4,12 +4,25 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ActivitySquare,
   BarChart3,
+  Bell,
+  Database,
+  FileBarChart,
+  Gauge,
+  History,
   Layers,
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  Radio,
+  RotateCcw,
+  ScrollText,
+  Server,
+  Settings,
   Settings2,
+  Share2,
   Shield,
+  SlidersHorizontal,
+  Stethoscope,
   Star,
   TrendingUp,
   UserRound,
@@ -142,18 +155,44 @@ export function ShellLayout() {
     return links;
   }, [hasTraderAccess]);
 
-  const adminLinks: SidebarLink[] = useMemo(() => {
-    const core: SidebarLink[] = [
-      { to: "/admin", end: true, label: "Overview", icon: Shield },
-      { to: "/admin/users", label: "Traders", icon: Users },
-      { to: "/admin/strategies", label: "Catalog", icon: Settings2 },
-      { to: "/admin/oms", label: "OMS monitor", icon: TrendingUp },
+  const adminOpsCenterLinks: SidebarLink[] = useMemo(() => {
+    const links: SidebarLink[] = [
+      { to: "/admin", end: true, label: "Overview", icon: LayoutDashboard },
+      { to: "/admin/market", label: "Market intelligence", icon: Radio },
+      { to: "/admin/replay", label: "Replay infrastructure", icon: RotateCcw },
+      { to: "/admin/signals", label: "Signal distribution", icon: Share2 },
+      { to: "/admin/execution", label: "OMS / execution", icon: Gauge },
+      { to: "/admin/traders-health", label: "Trader execution health", icon: Stethoscope },
+      { to: "/admin/backfill", label: "Backfill operations", icon: Database },
+      { to: "/admin/infrastructure", label: "Infrastructure", icon: Server },
+      { to: "/admin/history", label: "Operational history", icon: History },
+      { to: "/admin/audit", label: "Audit & governance", icon: ScrollText },
+      { to: "/admin/controls", label: "Settings & controls", icon: SlidersHorizontal },
     ];
     if (canKillOpsConsole) {
-      core.push({ to: "/admin/ops", label: "Risk & incidents", icon: ActivitySquare });
+      links.splice(1, 0, { to: "/admin/ops", label: "Operations cockpit", icon: ActivitySquare });
     }
-    return core;
+    return links;
   }, [canKillOpsConsole]);
+
+  const adminPlatformLinks: SidebarLink[] = useMemo(
+    () => [
+      { to: "/admin/settings", label: "Settings", icon: Settings },
+      { to: "/admin/security", label: "Security", icon: Shield },
+      { to: "/admin/reports", label: "Reports", icon: FileBarChart },
+      { to: "/admin/alerts", label: "Alerts", icon: Bell },
+    ],
+    [],
+  );
+
+  const adminUserMgmtLinks: SidebarLink[] = useMemo(
+    () => [
+      { to: "/admin/users", label: "Traders", icon: Users },
+      { to: "/admin/strategies", label: "Strategy catalog", icon: Settings2 },
+      { to: "/admin/oms", label: "OMS monitor", icon: TrendingUp },
+    ],
+    [],
+  );
 
   async function resendVerificationEmail() {
     const now = Date.now();
@@ -275,30 +314,59 @@ export function ShellLayout() {
   const sidebar = (
     <div className="flex min-h-0 flex-1 flex-col">
       <SidebarBrand title="Stokr Platform" subtitle={hasTraderAccess ? "Trader workspace" : "Console"} />
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1 [-ms-overflow-style:none] [scrollbar-width:thin]">
-        {hasTraderAccess ? (
-          <>
-            <SidebarSection title="MAIN" first>
-              <SidebarLinks links={mainLinks} />
-            </SidebarSection>
-            <SidebarSection title="INTEGRATIONS">
-              <SidebarLinks links={integrationLinks} />
-            </SidebarSection>
-          </>
-        ) : null}
-        {isAdmin ? (
-          <SidebarSection title="Admin console">
-            <SidebarLinks links={adminLinks} />
-          </SidebarSection>
-        ) : null}
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-0.5 [scrollbar-gutter:stable]",
+          "[scrollbar-width:thin] [-ms-overflow-style:auto]",
+          "[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent",
+          "dark:[&::-webkit-scrollbar-thumb]:rounded-full dark:[&::-webkit-scrollbar-thumb]:bg-neutral-700/90",
+          "dark:[&::-webkit-scrollbar-thumb:hover]:bg-neutral-600",
+          "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-neutral-300",
+          "[&::-webkit-scrollbar-thumb:hover]:bg-neutral-400",
+        )}
+      >
+        <div className="flex min-h-full flex-col">
+          <div className="min-h-0 flex-1">
+            {hasTraderAccess ? (
+              <>
+                <SidebarSection title="MAIN" first>
+                  <SidebarLinks links={mainLinks} />
+                </SidebarSection>
+                <SidebarSection title="INTEGRATIONS">
+                  <SidebarLinks links={integrationLinks} />
+                </SidebarSection>
+              </>
+            ) : null}
+            {isAdmin ? (
+              <>
+                <SidebarSection title="Operations center" first={!hasTraderAccess}>
+                  <SidebarLinks links={adminOpsCenterLinks} />
+                </SidebarSection>
+                <SidebarSection title="Platform">
+                  <SidebarLinks links={adminPlatformLinks} />
+                </SidebarSection>
+                <SidebarSection title="User management">
+                  <SidebarLinks links={adminUserMgmtLinks} />
+                </SidebarSection>
+              </>
+            ) : null}
+          </div>
+          <div
+            className={cn(
+              "mt-auto border-t pt-4",
+              isLightUi ? "border-neutral-200" : "border-white/[0.06]",
+            )}
+          >
+            {hasTraderAccess ? (
+              <TraderAccountCard
+                equityDisplay={portfolioSnapshot.data?.equityValue ?? "—"}
+                marginDisplay={portfolioSnapshot.data?.marginValue ?? "—"}
+              />
+            ) : null}
+            <SidebarAppearanceRow />
+          </div>
+        </div>
       </div>
-      {hasTraderAccess ? (
-        <TraderAccountCard
-          equityDisplay={portfolioSnapshot.data?.equityValue ?? "—"}
-          marginDisplay={portfolioSnapshot.data?.marginValue ?? "—"}
-        />
-      ) : null}
-      <SidebarAppearanceRow />
     </div>
   );
 

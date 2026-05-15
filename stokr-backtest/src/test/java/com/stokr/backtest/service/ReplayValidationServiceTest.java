@@ -41,6 +41,8 @@ class ReplayValidationServiceTest {
 
         assertThat(a.replayHash()).isEqualTo(b.replayHash());
         assertThat(a.replayHash()).isNotBlank();
+        assertThat(a.strategySignalCount()).isEqualTo(1L);
+        assertThat(a.executionEventCount()).isEqualTo(1L);
     }
 
     @Test

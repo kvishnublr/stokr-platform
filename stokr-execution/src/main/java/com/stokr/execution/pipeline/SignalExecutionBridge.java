@@ -43,7 +43,13 @@ public class SignalExecutionBridge {
 
         String sk = saved.getStrategyName() != null ? saved.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
         eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
-        log.info("signal.sync.executed signalId={}", saved.getId());
+        log.info(
+                "replay.sync.signal signalId={} runId={} symbol={} mode={}",
+                saved.getId(),
+                saved.getBacktestRunId(),
+                saved.getSymbol(),
+                executionMode
+        );
 
         return saved;
     }

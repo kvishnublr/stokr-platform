@@ -94,6 +94,9 @@ stokr:
     # Gates @RabbitListener registration (see stokr-execution messaging). Same env as spring.rabbitmq.listener.*.auto-startup.
     # false = no AMQP consumer reconnect loop when RabbitMQ is down (typical local IntelliJ + DB only).
     listeners-enabled: ${STOKR_RABBIT_LISTENERS_ENABLED:false}
+  admin:
+    ops:
+      sse-tick-ms: ${STOKR_ADMIN_OPS_SSE_TICK_MS:3000}
   # Single env: STOKR_CORS_ALLOWED_ORIGINS (comma-separated). Edit repo-root .env only — local + Docker + IntelliJ all load it.
   cors:
     allowed-origins: ${STOKR_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175}
@@ -169,6 +172,10 @@ stokr:
   ui:
     # Keep localhost default for dev; override in .env on server deployments.
     public-base-url: ${STOKR_UI_PUBLIC_BASE_URL:http://localhost:5173}
+  replay:
+    # When true, inserts deterministic NIFTY 50 / 1m candles for ~45d ending "now" if the DB has fewer than 5k bars (local/Docker).
+    # Disable in production (ingest real market data instead).
+    seed-synthetic-candles: ${STOKR_REPLAY_SEED_SYNTHETIC:false}
 
 logging:
   level:

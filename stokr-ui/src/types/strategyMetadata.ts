@@ -20,6 +20,23 @@ export type StrategyParameterField = {
   visibleWhen?: Record<string, unknown> | null;
 };
 
+export type StrategyDeploymentDefaults = {
+  symbol: string;
+  timeframe: string;
+  executionProfile: string;
+  feeModel: string;
+  slippageModel: string;
+};
+
+export type StrategyPreviewMetrics = {
+  avgMonthlyReturnPct: number;
+  winRatePct: number;
+  maxDrawdownPct: number;
+  riskLevel: string;
+  avgTradesPerDay: number;
+  tradeFrequency?: string | null;
+};
+
 export type StrategyMetadataResponse = {
   schemaVersion: number;
   strategyKey: string;
@@ -35,4 +52,8 @@ export type StrategyMetadataResponse = {
   allowedFeeModels?: string[] | null;
   allowedSlippageModels?: string[] | null;
   allowedExecutionProfiles?: string[] | null;
+  /** Strategy-owned replay defaults (symbol, timeframe, cost models). */
+  deploymentDefaults?: StrategyDeploymentDefaults | null;
+  /** Read-only confidence metrics for the launcher card. */
+  previewMetrics?: StrategyPreviewMetrics | null;
 };

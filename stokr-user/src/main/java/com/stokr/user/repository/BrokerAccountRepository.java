@@ -2,6 +2,7 @@ package com.stokr.user.repository;
 
 import com.stokr.user.domain.BrokerAccount;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
 import java.util.Optional;
@@ -19,4 +20,7 @@ public interface BrokerAccountRepository extends JpaRepository<BrokerAccount, UU
     Optional<BrokerAccount> findFirstByUserIdAndDeletedFalseOrderByUpdatedAtDesc(UUID userId);
 
     List<BrokerAccount> findAllByVendorCodeIgnoreCaseAndDeletedFalse(String vendorCode);
+
+    @Query("select count(distinct b.userId) from BrokerAccount b where b.deleted = false and lower(b.status) = 'connected'")
+    long countDistinctUserIdsWithConnectedBroker();
 }

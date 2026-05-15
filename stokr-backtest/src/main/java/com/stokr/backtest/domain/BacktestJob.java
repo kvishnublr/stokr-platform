@@ -61,4 +61,22 @@ public class BacktestJob extends BaseEntity {
 
     @Column(name = "cancelled", nullable = false)
     private boolean cancelled;
+
+    @Column(name = "replay_diagnosis", length = 32)
+    private String replayDiagnosis;
+
+    @Column(name = "replay_candles_expected", nullable = false)
+    private int replayCandlesExpected;
+
+    @Column(name = "replay_candles_processed", nullable = false)
+    private int replayCandlesProcessed;
+
+    @Column(name = "replay_signals_emitted", nullable = false)
+    private int replaySignalsEmitted;
+
+    @Column(name = "replay_execution_events", nullable = false)
+    private int replayExecutionEvents;
+
+    @Column(name = "replay_duration_ms")
+    private Long replayDurationMs;
 }

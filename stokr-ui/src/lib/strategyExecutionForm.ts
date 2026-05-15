@@ -69,3 +69,23 @@ export function validateClientExecution(
   }
   return null;
 }
+
+/** Build strategyParameters from published defaults only (no form fields). */
+export function buildStrategyParametersFromDefaults(meta: StrategyMetadataResponse): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const p of meta.parameters) {
+    const dv = p.defaultValue;
+    if (dv !== undefined && dv !== null) {
+      out[p.id] = dv;
+      continue;
+    }
+    if (p.type === "boolean") {
+      out[p.id] = false;
+    } else if (p.type === "integer" || p.type === "number") {
+      out[p.id] = 0;
+    } else {
+      out[p.id] = "";
+    }
+  }
+  return out;
+}

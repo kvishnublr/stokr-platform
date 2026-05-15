@@ -93,7 +93,13 @@ public class BacktestJobEnqueueService {
                 job.getCreatedAt(),
                 job.getUpdatedAt(),
                 job.getStartedAt(),
-                computeEtaSeconds(job.getStartedAt(), job.getProcessedBars(), job.getTotalBars())
+                computeEtaSeconds(job.getStartedAt(), job.getProcessedBars(), job.getTotalBars()),
+                job.getReplayDiagnosis(),
+                job.getReplayCandlesExpected(),
+                job.getReplayCandlesProcessed(),
+                job.getReplaySignalsEmitted(),
+                job.getReplayExecutionEvents(),
+                job.getReplayDurationMs()
         );
     }
 

@@ -14,4 +14,6 @@ public interface OmsExecutionEventRepository extends JpaRepository<OmsExecutionE
     long maxStreamSequence(@Param("orderId") UUID orderId);
 
     long countByBacktestRunIdAndEventTypeAndDeletedFalse(UUID backtestRunId, ExecutionEventType eventType);
+
+    java.util.List<OmsExecutionEvent> findByOrder_IdAndDeletedFalseOrderByStreamSequenceAsc(UUID orderId);
 }

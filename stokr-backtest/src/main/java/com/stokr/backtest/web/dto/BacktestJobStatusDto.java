@@ -19,6 +19,12 @@ public record BacktestJobStatusDto(
         Instant createdAt,
         Instant updatedAt,
         Instant startedAt,
-        Long etaSecondsRemaining
+        Long etaSecondsRemaining,
+        String replayDiagnosis,
+        Integer replayCandlesExpected,
+        Integer replayCandlesProcessed,
+        Integer replaySignalsEmitted,
+        Integer replayExecutionEvents,
+        Long replayDurationMs
 ) {
 }

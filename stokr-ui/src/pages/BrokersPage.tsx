@@ -55,6 +55,7 @@ export function BrokersPage() {
   const [symbol, setSymbol] = useState("INFY");
   const [qty, setQty] = useState(1);
   const [exchange, setExchange] = useState<"NSE" | "BSE">("NSE");
+  const [variety, setVariety] = useState<"REGULAR" | "AMO">("REGULAR");
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [product, setProduct] = useState<"CNC" | "MIS">("CNC");
   const [lastTestOrder, setLastTestOrder] = useState<BrokerTestOrderDto | null>(null);
@@ -163,7 +164,7 @@ export function BrokersPage() {
   const testOrder = useMutation({
     mutationFn: () =>
       postBrokerTestOrder({
-        variety: "REGULAR",
+        variety,
         exchange,
         tradingsymbol: symbol.trim().toUpperCase(),
         side,
@@ -657,6 +658,7 @@ export function BrokersPage() {
             </h2>
             <p className={cn("mt-1 text-xs", isLight ? "text-neutral-600" : "text-neutral-500")}>
               Server uses MARKET with Zerodha automatic market protection (required by Kite for API market orders).
+              Choose REGULAR during the session, or AMO for after-market placement per Kite rules.
               Live orders require{" "}
               <code className={cn(isLight ? "text-neutral-800" : "text-neutral-400")}>STOKR_ZERODHA_TEST_ORDER_ENABLED</code>{" "}
               and respect dry-run settings. Keep quantity minimal while validating.
@@ -676,6 +678,22 @@ export function BrokersPage() {
                 >
                   <option value="NSE">NSE</option>
                   <option value="BSE">BSE</option>
+                </select>
+              </label>
+              <label className={cn("block text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>
+                Order variety
+                <select
+                  value={variety}
+                  onChange={(e) => setVariety(e.target.value as "REGULAR" | "AMO")}
+                  className={cn(
+                    "mt-1 w-full rounded-lg border px-3 py-2 text-sm",
+                    isLight
+                      ? "border-neutral-200 bg-white text-neutral-900"
+                      : "border-neutral-700 bg-neutral-950 text-white",
+                  )}
+                >
+                  <option value="REGULAR">REGULAR (market session)</option>
+                  <option value="AMO">AMO (after market)</option>
                 </select>
               </label>
               <label className={cn("block text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>

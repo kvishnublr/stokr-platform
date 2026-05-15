@@ -37,11 +37,11 @@ export async function fetchTraderDashboardData(): Promise<TraderDashboardData> {
     api.get("/api/executions/recent"),
     api.get("/api/alerts/feed"),
     api.get("/api/trader/broker/status"),
-    api.get("/api/market/watch"),
+    api.get("/api/trader/terminal/market/watch"),
     api.get("/api/runtime/status"),
     api.get("/api/notifications/unread-count"),
     api.get("/api/ws/metrics"),
-    api.get("/api/market/candles?symbol=NIFTY%2050&interval=5m&limit=120"),
+    api.get("/api/trader/terminal/market/chart?symbol=NIFTY%2050&interval=5m&limit=120"),
     api.get("/api/analytics/overview"),
     api.get("/api/backtests/recent"),
   ]);

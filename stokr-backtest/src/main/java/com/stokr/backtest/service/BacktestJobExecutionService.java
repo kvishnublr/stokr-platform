@@ -8,6 +8,7 @@ import com.stokr.backtest.engine.ReplayCancelledException;
 import com.stokr.backtest.repository.BacktestJobRepository;
 import com.stokr.backtest.web.dto.ExecutionRequestDto;
 import com.stokr.common.events.realtime.RealtimeBridgeEvents;
+import com.stokr.common.exception.BadRequestException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -63,7 +64,7 @@ public class BacktestJobExecutionService {
                     job.getStrategyDefinitionVersion() != null ? job.getStrategyDefinitionVersion() : 0L,
                     tracker
             );
-            statusWriter.markCompleted(jobId, outcome.runId());
+            statusWriter.markCompleted(jobId, outcome);
             BacktestJob done = jobRepository.findById(jobId).orElseThrow();
             eventPublisher.publishEvent(new RealtimeBridgeEvents.BacktestJobProgress(
                     done.getUserId(),
@@ -91,10 +92,14 @@ public class BacktestJobExecutionService {
                         "CANCELLED"
                 ));
             }
+        } catch (BadRequestException e) {
+            log.warn("backtest.job.bad_request jobId={} msg={}", jobId, e.getMessage());
+            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            statusWriter.markFailed(jobId, msg, ReplayDiagnosisClassifier.fromFailureMessage(msg));
         } catch (Exception e) {
             log.error("backtest.job.failed jobId={}", jobId, e);
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            statusWriter.markFailed(jobId, msg);
+            statusWriter.markFailed(jobId, msg, ReplayDiagnosisClassifier.fromFailureMessage(msg));
         }
     }
 }

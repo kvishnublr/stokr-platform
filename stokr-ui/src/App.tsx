@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { AdminConsoleLayout } from "./layout/AdminConsoleLayout";
 import { ShellLayout } from "./layout/ShellLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
@@ -25,6 +26,16 @@ import { AdminStrategiesPage } from "./pages/AdminStrategiesPage";
 import { AdminOmsMonitorPage } from "./pages/AdminOmsMonitorPage";
 import { AdminOpsPage } from "./pages/AdminOpsPage";
 import { AdminSectionPage } from "./pages/AdminSectionPage";
+import { AdminAuditPage } from "./pages/admin/AdminAuditPage";
+import { AdminBackfillPage } from "./pages/admin/AdminBackfillPage";
+import { AdminControlsPage } from "./pages/admin/AdminControlsPage";
+import { AdminExecutionPage } from "./pages/admin/AdminExecutionPage";
+import { AdminHistoryPage } from "./pages/admin/AdminHistoryPage";
+import { AdminInfrastructurePage } from "./pages/admin/AdminInfrastructurePage";
+import { AdminMarketIntelPage } from "./pages/admin/AdminMarketIntelPage";
+import { AdminReplayInfraPage } from "./pages/admin/AdminReplayInfraPage";
+import { AdminSignalsPage } from "./pages/admin/AdminSignalsPage";
+import { AdminTraderHealthPage } from "./pages/admin/AdminTraderHealthPage";
 import { useSessionStore } from "./state/session";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { OnboardingWizardPage } from "./pages/OnboardingWizardPage";
@@ -150,15 +161,27 @@ export default function App() {
           <Route path="brokers" element={<TraderBrokerRoute />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="admin" element={<AdminGate />}>
-            <Route index element={<AdminOverviewPage />} />
-            <Route path="users" element={<AdminUsersPage />} />
-            <Route path="strategies" element={<AdminStrategiesPage />} />
-            <Route path="oms" element={<AdminOmsMonitorPage />} />
-            <Route path="settings" element={<AdminSectionPage section="settings" />} />
-            <Route path="security" element={<AdminSectionPage section="security" />} />
-            <Route path="reports" element={<AdminSectionPage section="reports" />} />
-            <Route path="alerts" element={<AdminSectionPage section="alerts" />} />
-            <Route path="ops" element={<AdminOpsGate />} />
+            <Route element={<AdminConsoleLayout />}>
+              <Route index element={<AdminOverviewPage />} />
+              <Route path="market" element={<AdminMarketIntelPage />} />
+              <Route path="replay" element={<AdminReplayInfraPage />} />
+              <Route path="signals" element={<AdminSignalsPage />} />
+              <Route path="execution" element={<AdminExecutionPage />} />
+              <Route path="traders-health" element={<AdminTraderHealthPage />} />
+              <Route path="backfill" element={<AdminBackfillPage />} />
+              <Route path="infrastructure" element={<AdminInfrastructurePage />} />
+              <Route path="history" element={<AdminHistoryPage />} />
+              <Route path="audit" element={<AdminAuditPage />} />
+              <Route path="controls" element={<AdminControlsPage />} />
+              <Route path="users" element={<AdminUsersPage />} />
+              <Route path="strategies" element={<AdminStrategiesPage />} />
+              <Route path="oms" element={<AdminOmsMonitorPage />} />
+              <Route path="settings" element={<AdminSectionPage section="settings" />} />
+              <Route path="security" element={<AdminSectionPage section="security" />} />
+              <Route path="reports" element={<AdminSectionPage section="reports" />} />
+              <Route path="alerts" element={<AdminSectionPage section="alerts" />} />
+              <Route path="ops" element={<AdminOpsGate />} />
+            </Route>
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

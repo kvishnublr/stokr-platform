@@ -6,12 +6,27 @@ import { api } from "../api/client";
 import { fetchRunJournal, getRunDetail } from "../api/backtest";
 
 type CandleDto = {
-  openTime: string;
-  openPrice: string;
-  highPrice: string;
-  lowPrice: string;
-  closePrice: string;
+  openTime?: string;
+  open_time?: string;
+  openPrice?: string | number;
+  open_price?: string | number;
+  highPrice?: string | number;
+  high_price?: string | number;
+  lowPrice?: string | number;
+  low_price?: string | number;
+  closePrice?: string | number;
+  close_price?: string | number;
 };
+
+function candleOpenTimeIso(c: CandleDto): string {
+  const v = c.openTime ?? c.open_time;
+  return typeof v === "string" ? v : "";
+}
+
+function num(v: string | number | undefined | null): number {
+  if (v == null) return 0;
+  return typeof v === "number" ? v : Number(v);
+}
 
 function toUnixTime(iso: string): Time {
   return Math.floor(new Date(iso).getTime() / 1000) as Time;
@@ -44,11 +59,35 @@ export function BacktestReplayPage() {
         start: start!,
         end: end!,
       });
-      const res = await api.get(`/api/marketdata/candles/range?${params.toString()}`);
+      const res = await api.get(`/api/trader/terminal/replay/candles-range?${params.toString()}`);
       return (res.data?.data ?? []) as CandleDto[];
     },
     enabled: !!symbol && !!start && !!end,
   });
+
+  const replayExplain = useMemo(() => {
+    const o = outcome;
+    if (!o?.validation) return null;
+    const bars = candlesQ.data?.length ?? 0;
+    const sig = o.validation.strategySignalCount ?? 0;
+    const ex = o.validation.executionEventCount ?? 0;
+    const trades = o.metrics?.totalTrades ?? 0;
+    let diagnosis = "COMPLETED";
+    const reasons: string[] = [];
+    if (bars === 0) {
+      diagnosis = "NO_DATA";
+      reasons.push("No candles returned for this window — verify ingestion or synthetic seeding for the replay symbol.");
+    } else if (trades > 0 || ex > 0) {
+      diagnosis = "COMPLETED";
+    } else if (sig > 0) {
+      diagnosis = "EXECUTION_BLOCKED";
+      reasons.push("Signals exist in the journal/store but executions are empty — inspect OMS bridge, execution mode, and risk gates.");
+    } else {
+      diagnosis = "NO_SIGNALS";
+      reasons.push("Bars advanced but no persisted signals — strategy filters may be too strict, timeframe legs missing (e.g. 5m), or regime mismatch.");
+    }
+    return { diagnosis, bars, sig, ex, trades, reasons, loop: o.loopTelemetry };
+  }, [outcome, candlesQ.data?.length]);
 
   const journalQ = useQuery({
     queryKey: ["backtest-journal", runId],
@@ -58,11 +97,11 @@ export function BacktestReplayPage() {
 
   const candleData: CandlestickData[] = useMemo(() => {
     return (candlesQ.data ?? []).map((c) => ({
-      time: toUnixTime(c.openTime),
-      open: Number(c.openPrice),
-      high: Number(c.highPrice),
-      low: Number(c.lowPrice),
-      close: Number(c.closePrice),
+      time: toUnixTime(candleOpenTimeIso(c as CandleDto)),
+      open: num((c as CandleDto).openPrice ?? (c as CandleDto).open_price),
+      high: num((c as CandleDto).highPrice ?? (c as CandleDto).high_price),
+      low: num((c as CandleDto).lowPrice ?? (c as CandleDto).low_price),
+      close: num((c as CandleDto).closePrice ?? (c as CandleDto).close_price),
     }));
   }, [candlesQ.data]);
 
@@ -160,6 +199,42 @@ export function BacktestReplayPage() {
           </p>
         </div>
       </div>
+
+      {replayExplain && !candlesQ.isLoading ? (
+        <div className="rounded-xl border border-neutral-700 bg-neutral-900/80 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-300">Replay explainability</div>
+          <div className="mt-2 font-mono text-sm text-white">{replayExplain.diagnosis}</div>
+          <dl className="mt-3 grid gap-2 text-xs text-neutral-400 sm:grid-cols-2">
+            <div>
+              <dt className="text-neutral-500">Candles loaded (chart)</dt>
+              <dd className="font-mono text-neutral-200">{replayExplain.bars}</dd>
+            </div>
+            <div>
+              <dt className="text-neutral-500">Signals (persisted)</dt>
+              <dd className="font-mono text-neutral-200">{replayExplain.sig}</dd>
+            </div>
+            <div>
+              <dt className="text-neutral-500">OMS executions</dt>
+              <dd className="font-mono text-neutral-200">{replayExplain.ex}</dd>
+            </div>
+            <div>
+              <dt className="text-neutral-500">Closed trades (metrics)</dt>
+              <dd className="font-mono text-neutral-200">{replayExplain.trades}</dd>
+            </div>
+          </dl>
+          {replayExplain.loop ? (
+            <div className="mt-3 font-mono text-[11px] text-neutral-500">
+              Loop: processed {replayExplain.loop.candlesProcessed ?? "—"} / expected {replayExplain.loop.candlesExpected ?? "—"} · emitted{" "}
+              {replayExplain.loop.signalsEmitted ?? "—"}
+            </div>
+          ) : null}
+          <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-neutral-400">
+            {replayExplain.reasons.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-4">
         <div ref={chartRef} className="h-[420px] w-full" />

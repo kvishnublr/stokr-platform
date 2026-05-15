@@ -25,7 +25,7 @@ export function TraderAccountCard({ equityDisplay, marginDisplay }: { equityDisp
   const margin = marginDisplay ?? "—";
 
   return (
-    <div className={cn("mt-auto border-t pt-4", isLight ? "border-neutral-200" : "border-white/[0.06]")}>
+    <div>
       <div
         className={cn(
           "rounded-2xl p-4 ring-1 transition-shadow",

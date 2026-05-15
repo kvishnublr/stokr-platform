@@ -34,7 +34,7 @@ export type BrokerTestOrderDto = {
 };
 
 export type BrokerTestOrderPayload = {
-  variety: "REGULAR";
+  variety: "REGULAR" | "AMO";
   exchange: "NSE" | "BSE";
   tradingsymbol: string;
   side: "BUY" | "SELL";

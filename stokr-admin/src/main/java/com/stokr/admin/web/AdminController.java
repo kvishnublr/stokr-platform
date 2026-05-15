@@ -2,6 +2,7 @@ package com.stokr.admin.web;
 
 import com.stokr.admin.domain.AuditLog;
 import com.stokr.admin.repository.AuditLogRepository;
+import com.stokr.admin.service.AdminOperationalSnapshotService;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.common.pipeline.PipelineQueues;
@@ -33,6 +34,7 @@ public class AdminController {
     private final StrategyToggleService strategyToggleService;
     private final StrategyEmergencyStopService strategyEmergencyStopService;
     private final AuditLogRepository auditLogRepository;
+    private final AdminOperationalSnapshotService adminOperationalSnapshotService;
 
     @GetMapping("/health")
     @PreAuthorize("hasRole('ADMIN')")
@@ -91,11 +93,11 @@ public class AdminController {
     }
 
     /**
-     * Placeholder until a dedicated incident feed exists; keeps admin dashboard and Alert Center from 404ing.
+     * Rule-derived incidents (same evaluator as operations snapshot). Lightweight clients can poll this without full snapshot.
      */
     @GetMapping("/alerts")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<List<Map<String, Object>>> alerts() {
-        return ApiResponse.ok(List.of(), CorrelationIdHolder.get());
+        return ApiResponse.ok(adminOperationalSnapshotService.snapshot().incidents(), CorrelationIdHolder.get());
     }
 }

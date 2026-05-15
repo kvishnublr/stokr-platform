@@ -20,10 +20,11 @@ export function TraderMain({ data }: { data: TraderDashboardData }) {
             isLight ? "text-neutral-900" : "text-white",
           )}
         >
-          Good morning, {data.greetingName} 👋
+          Execution overview
         </h1>
         <p className={cn("mt-1 text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>
-          Here&apos;s your trading overview
+          {data.greetingName ? <>Signed in as {data.greetingName}. </> : null}
+          Strategies, broker status, and portfolio signals — platform operations live in the admin cockpit.
         </p>
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">

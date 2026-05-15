@@ -6,6 +6,14 @@
   --font-display: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", monospace;
 
+  /* Semantic surfaces (admin cockpit + future UI) */
+  --color-background: oklch(0.125 0.014 264);
+  --color-foreground: oklch(0.97 0.01 264);
+  --color-card: oklch(0.179 0.012 264);
+  --color-card-foreground: oklch(0.97 0.01 264);
+  --color-border: oklch(0.32 0.01 264);
+  --color-muted-foreground: oklch(0.72 0.02 264);
+
   --color-surface-deep: oklch(0.145 0.01 264);
   --color-surface-raised: oklch(0.179 0.012 264);
   --color-surface-glass: oklch(0.2 0.015 264 / 0.55);
@@ -39,11 +47,25 @@
 
 html[data-stokr-theme="light"] {
   color-scheme: light;
+  --color-background: #f4f6f8;
+  --color-foreground: rgb(15 23 42);
+  --color-card: #ffffff;
+  --color-card-foreground: rgb(15 23 42);
+  --color-border: rgb(226 232 240);
+  --color-muted-foreground: rgb(71 85 105);
+  --color-surface-deep: #e8ecf1;
+  --color-surface-raised: #ffffff;
+  --color-surface-glass: rgb(255 255 255 / 0.72);
+  --color-edge: rgb(203 213 225);
+  --color-edge-strong: rgb(148 163 184);
+  --color-text-primary: rgb(15 23 42);
+  --color-text-muted: rgb(71 85 105);
+  --color-text-faint: rgb(100 116 139);
 }
 
 html[data-stokr-theme="light"] body {
-  background: #f4f6f8;
-  color: rgb(17 24 39);
+  background: var(--color-background);
+  color: var(--color-foreground);
 }
 
 html[data-stokr-theme="light"] ::selection {
@@ -64,8 +86,8 @@ html {
 
 body {
   margin: 0;
-  background: oklch(0.125 0.014 264);
-  color: var(--color-text-primary);
+  background: var(--color-background);
+  color: var(--color-foreground);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   width: 100%;

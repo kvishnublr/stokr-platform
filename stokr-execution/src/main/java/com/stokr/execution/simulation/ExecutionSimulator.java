@@ -11,12 +11,13 @@ import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OmsTrade;
 import com.stokr.oms.domain.OrderState;
 import com.stokr.oms.repository.OmsTradeRepository;
+import com.stokr.common.events.OperationalRealtimeEvent;
 import com.stokr.common.notification.NotificationEvent;
 import com.stokr.common.notification.NotificationPublisher;
 import com.stokr.risk.model.LiveTraderEligibilityResult;
 import com.stokr.risk.service.LiveTradingTraderEligibilityService;
 import com.stokr.risk.service.RiskEventRecorder;
-import com.stokr.oms.service.ExecutionEventAppendService;
+import com.stokr.oms.trace.ExecutionTraceService;
 import com.stokr.oms.service.OrderLifecycleService;
 import com.stokr.oms.service.ExecutionLedgerService;
 import com.stokr.oms.portfolio.PortfolioAccountingService;
@@ -55,7 +56,7 @@ public class ExecutionSimulator {
     private final LiveTradingTraderEligibilityService liveTradingTraderEligibilityService;
     private final RiskEventRecorder riskEventRecorder;
     private final ObjectProvider<NotificationPublisher> notificationPublisher;
-    private final ExecutionEventAppendService executionEventAppendService;
+    private final ExecutionTraceService executionTraceService;
     private final StrategySignalRepository strategySignalRepository;
 
     @Value("${stokr.simulation.candle-timeframe:1m}")
@@ -105,14 +106,17 @@ public class ExecutionSimulator {
                         ))
                 )));
                 orderLifecycleService.transition(order.getId(), OrderState.REJECTED, gate.message());
-                executionEventAppendService.append(order, ExecutionEventType.EXECUTION_REJECTED, Map.of(
+                executionTraceService.trace(order, ExecutionEventType.EXECUTION_REJECTED, Map.of(
                         "phase", "LIVE_GATE",
                         "reason", gate.message() != null ? gate.message() : ""
                 ));
                 return;
             }
             orderLifecycleService.submitToBroker(order, vendor != null ? vendor : "ZERODHA");
-            executionEventAppendService.append(order, ExecutionEventType.ORDER_ACCEPTED, Map.of(
+            executionTraceService.trace(order, ExecutionEventType.BROKER_SUBMITTED, Map.of(
+                    "brokerVendor", vendor != null ? vendor : "ZERODHA"
+            ));
+            executionTraceService.trace(order, ExecutionEventType.ORDER_ACCEPTED, Map.of(
                     "brokerVendor", vendor != null ? vendor : "ZERODHA",
                     "channel", "LIVE"
             ));
@@ -125,13 +129,21 @@ public class ExecutionSimulator {
                     ts
             ));
             log.info("execution.live.submitted orderId={}", order.getId());
+            eventPublisher.publishEvent(new OperationalRealtimeEvent("broker_submit", Map.of(
+                    "orderId", order.getId().toString(),
+                    "userId", liveUserId.toString(),
+                    "symbol", order.getSymbol() != null ? order.getSymbol() : "",
+                    "mode", "LIVE"
+            )));
             return;
         }
 
         order = orderLifecycleService.transition(order.getId(), OrderState.SUBMITTED, null);
         order = orderLifecycleService.transition(order.getId(), OrderState.ACCEPTED, null);
         String simChannel = order.getExecutionMode() != null ? order.getExecutionMode().name() : "SIMULATED";
-        executionEventAppendService.append(order, ExecutionEventType.ORDER_ACCEPTED, Map.of("channel", simChannel));
+        executionTraceService.trace(order, ExecutionEventType.BROKER_SUBMITTED, Map.of("channel", simChannel));
+        executionTraceService.trace(order, ExecutionEventType.ORDER_ACCEPTED, Map.of("channel", simChannel));
+        executionTraceService.trace(order, ExecutionEventType.EXCHANGE_ACK, Map.of("channel", simChannel));
 
         long fillKey = msg.fillDeterminismKey() != null ? msg.fillDeterminismKey()
                 : (order.getId().getMostSignificantBits() ^ order.getId().getLeastSignificantBits());
@@ -177,7 +189,7 @@ public class ExecutionSimulator {
             tr.setPrice(fillPrice);
             tradeRepository.save(tr);
 
-            executionEventAppendService.append(order, ExecutionEventType.PARTIAL_FILL, Map.of(
+            executionTraceService.trace(order, ExecutionEventType.PARTIAL_FILL, Map.of(
                     "leg", i + 1,
                     "quantity", fillLots.get(i).toPlainString(),
                     "price", fillPrice.toPlainString()
@@ -189,11 +201,11 @@ public class ExecutionSimulator {
         }
 
         order = orderLifecycleService.transition(order.getId(), OrderState.FILLED, null);
-        executionEventAppendService.append(order, ExecutionEventType.ORDER_FILLED, Map.of(
+        executionTraceService.trace(order, ExecutionEventType.ORDER_FILLED, Map.of(
                 "fills", fillLots.size(),
                 "lastFillPrice", lastFillPrice != null ? lastFillPrice.toPlainString() : ""
         ));
-        executionEventAppendService.append(order, ExecutionEventType.POSITION_CLOSED, Map.of(
+        executionTraceService.trace(order, ExecutionEventType.POSITION_CLOSED, Map.of(
                 "reason", "SIM_ENTRY_COMPLETE"
         ));
 
@@ -208,6 +220,12 @@ public class ExecutionSimulator {
                 OrderState.FILLED.name(),
                 bridgeTs
         ));
+        eventPublisher.publishEvent(new OperationalRealtimeEvent("execution_fill_complete", Map.of(
+                "orderId", order.getId().toString(),
+                "userId", order.getUserId().toString(),
+                "symbol", order.getSymbol() != null ? order.getSymbol() : "",
+                "fills", fillLots.size()
+        )));
         log.info("execution.simulated orderId={} lastFillPrice={} fills={}", order.getId(), lastFillPrice, fillLots.size());
     }
 

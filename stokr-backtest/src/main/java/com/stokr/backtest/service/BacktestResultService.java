@@ -45,7 +45,7 @@ public class BacktestResultService {
     private final ObjectMapper objectMapper;
 
     @Transactional
-    public BacktestReplayOutcome persistForRun(BacktestRun run) {
+    public BacktestReplayOutcome persistForRun(BacktestRun run, ReplayLoopTelemetry loopTelemetry) {
         tradeRepository.softDeleteForRun(run.getId());
         equityCurveRepository.softDeleteForRun(run.getId());
         List<OmsExecution> executions = executionRepository.findAllForBacktestRunOrdered(run.getId());
@@ -114,7 +114,7 @@ public class BacktestResultService {
         List<BacktestEquityCurvePoint> persistedCurve = equityCurveRepository.findByRun_IdAndDeletedFalseOrderByPointTimeAsc(run.getId());
         BacktestMetrics persistedMetrics = metricsRepository.findByRun_IdAndDeletedFalse(run.getId()).orElseThrow();
 
-        return toOutcome(run, report, persistedMetrics, persistedTrades, persistedCurve, true);
+        return toOutcome(run, report, persistedMetrics, persistedTrades, persistedCurve, true, loopTelemetry);
     }
 
     @Transactional(readOnly = true)
@@ -122,16 +122,16 @@ public class BacktestResultService {
         ReplayValidationService.ReplayValidationReport report = replayValidationService.validateRun(run.getId());
         Optional<BacktestMetrics> mOpt = metricsRepository.findByRun_IdAndDeletedFalse(run.getId());
         if (mOpt.isEmpty()) {
-            return partialOutcome(run, report);
+            return partialOutcome(run, report, null);
         }
         List<BacktestTrade> persistedTrades = tradeRepository.findByRun_IdAndDeletedFalseOrderByCreatedAtAsc(run.getId());
         List<BacktestEquityCurvePoint> persistedCurve =
                 equityCurveRepository.findByRun_IdAndDeletedFalseOrderByPointTimeAsc(run.getId());
-        return toOutcome(run, report, mOpt.get(), persistedTrades, persistedCurve, true);
+        return toOutcome(run, report, mOpt.get(), persistedTrades, persistedCurve, true, null);
     }
 
-    private BacktestReplayOutcome partialOutcome(BacktestRun run, ReplayValidationService.ReplayValidationReport report) {
-        return toOutcome(run, report, null, List.of(), List.of(), false);
+    private BacktestReplayOutcome partialOutcome(BacktestRun run, ReplayValidationService.ReplayValidationReport report, ReplayLoopTelemetry loopTelemetry) {
+        return toOutcome(run, report, null, List.of(), List.of(), false, loopTelemetry);
     }
 
     private BacktestReplayOutcome toOutcome(
@@ -140,7 +140,8 @@ public class BacktestResultService {
             BacktestMetrics persistedMetrics,
             List<BacktestTrade> persistedTrades,
             List<BacktestEquityCurvePoint> persistedCurve,
-            boolean materialized
+            boolean materialized,
+            ReplayLoopTelemetry loopTelemetry
     ) {
         BacktestReplayOutcome.MetricsSnapshot snap = persistedMetrics == null
                 ? BacktestReplayOutcome.MetricsSnapshot.empty()
@@ -182,7 +183,8 @@ public class BacktestResultService {
                         c.getPointTime(),
                         c.getCumulativePnl(),
                         c.getDrawdown()
-                )).toList()
+                )).toList(),
+                loopTelemetry
         );
     }
 

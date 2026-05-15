@@ -36,7 +36,7 @@ public class ReplayValidationService {
             chain.append(e.getAvgPrice()).append("|");
         }
         String replayHash = sha256(chain.toString());
-        return new ReplayValidationReport(true, 0, BigDecimal.ZERO, 0, replayHash);
+        return new ReplayValidationReport(true, 0, BigDecimal.ZERO, 0, replayHash, signalCount, executions.size());
     }
 
     @Transactional(readOnly = true)
@@ -49,7 +49,9 @@ public class ReplayValidationService {
                 deterministic ? 0 : 1,
                 deterministic ? BigDecimal.ZERO : BigDecimal.ONE,
                 deterministic ? 0 : 1,
-                sha256(a.replayHash() + "|" + b.replayHash())
+                sha256(a.replayHash() + "|" + b.replayHash()),
+                a.strategySignalCount(),
+                a.executionEventCount()
         );
     }
 
@@ -67,7 +69,11 @@ public class ReplayValidationService {
             int signalMismatchCount,
             BigDecimal pnlMismatch,
             int executionMismatch,
-            String replayHash
+            String replayHash,
+            /** Persisted strategy_signal rows for this backtest run (observability). */
+            long strategySignalCount,
+            /** OMS execution rows linked to this run (observability). */
+            long executionEventCount
     ) {
     }
 }

@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Legacy {@code /api/market/*} paths kept for the UI until all clients use {@code /api/marketdata/*}.
+ * Legacy {@code /api/market/*} paths — prefer {@code /api/trader/terminal/market/*} for trader UI; admin/ops tools may still use marketdata module APIs.
  */
 @RestController
 @RequestMapping("/api/market")

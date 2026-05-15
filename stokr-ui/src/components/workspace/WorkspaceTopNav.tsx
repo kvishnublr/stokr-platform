@@ -48,7 +48,7 @@ export function WorkspaceTopNav({
   const marketWatchQuery = useQuery<TickerRow[]>({
     queryKey: ["workspace-topnav-watch"],
     queryFn: async () => {
-      const res = await api.get("/api/market/watch");
+      const res = await api.get("/api/trader/terminal/market/watch");
       const rows = Array.isArray(res.data?.data) ? res.data.data : [];
       return rows.slice(0, 3).map((row: any) => ({
         sym: String(row.symbol ?? "—"),

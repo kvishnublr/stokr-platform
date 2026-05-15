@@ -20,6 +20,8 @@ public record StrategyMetadataResponseDto(
         List<String> allowedExecutionModes,
         List<String> allowedFeeModels,
         List<String> allowedSlippageModels,
-        List<String> allowedExecutionProfiles
+        List<String> allowedExecutionProfiles,
+        StrategyDeploymentDefaultsDto deploymentDefaults,
+        StrategyPreviewMetricsDto previewMetrics
 ) {
 }

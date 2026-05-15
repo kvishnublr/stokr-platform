@@ -246,7 +246,9 @@ public class AuthService {
         }
         try {
             stored.setRevoked(true);
-            refreshTokenRepository.save(stored);
+            // Flush here so concurrent refresh races surface inside this try (otherwise Hibernate defers
+            // the UPDATE to commit and the optimistic lock blows up as an unhandled DB error).
+            refreshTokenRepository.saveAndFlush(stored);
         } catch (org.springframework.orm.ObjectOptimisticLockingFailureException ex) {
             // Another request already revoked this token concurrently; token is consumed.
             log.debug("Concurrent refresh detected; token already rotated");

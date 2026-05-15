@@ -2,13 +2,14 @@ package com.stokr.execution.pipeline;
 
 import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
+import com.stokr.common.telemetry.SignalDistributionTelemetryService;
 import com.stokr.execution.risk.RiskContextFactory;
 import com.stokr.execution.service.ExecutionService;
 import com.stokr.oms.domain.ExecutionEventType;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
-import com.stokr.oms.service.ExecutionEventAppendService;
+import com.stokr.oms.trace.ExecutionTraceService;
 import com.stokr.oms.service.OrderLifecycleService;
 import com.stokr.risk.model.RiskContext;
 import com.stokr.risk.model.RiskDecision;
@@ -50,8 +51,9 @@ public class OrderIntentProcessor {
     private final ExecutionService executionService;
     private final LiveTradingTraderEligibilityService liveTradingTraderEligibilityService;
     private final ObjectProvider<NotificationPublisher> notificationPublisher;
-    private final ExecutionEventAppendService executionEventAppendService;
+    private final ExecutionTraceService executionTraceService;
     private final RiskContextFactory riskContextFactory;
+    private final SignalDistributionTelemetryService signalDistributionTelemetryService;
 
     @Value("${stokr.risk.zone:Asia/Kolkata}")
     private String riskZone;
@@ -87,6 +89,7 @@ public class OrderIntentProcessor {
                 );
                 riskEventRecorder.record(signal.getUserId(), null, gate.reasonCode(), "REJECT", gate.message());
                 notifyEligibility(signal.getUserId(), gate);
+                signalDistributionTelemetryService.recordGateRejected(signal.getUserId(), signal.getId(), "LIVE_GATE");
                 return;
             }
         } else {
@@ -99,6 +102,7 @@ public class OrderIntentProcessor {
                 );
                 riskEventRecorder.record(signal.getUserId(), null, paper.reasonCode(), "REJECT", paper.message());
                 notifyEligibility(signal.getUserId(), paper);
+                signalDistributionTelemetryService.recordGateRejected(signal.getUserId(), signal.getId(), "PAPER_GATE");
                 return;
             }
         }
@@ -107,15 +111,17 @@ public class OrderIntentProcessor {
         OmsOrder order = orderLifecycleService.createOrGetIdempotent(signal.getUserId(), idempotencyKey, draft);
         if (order.getState() != OrderState.CREATED) {
             log.info("order.idempotent.hit orderId={} state={}", order.getId(), order.getState());
+            signalDistributionTelemetryService.recordIdempotentHit(signal.getUserId());
             return;
         }
 
-        executionEventAppendService.append(order, ExecutionEventType.SIGNAL_GENERATED, Map.of(
+        signalDistributionTelemetryService.recordOrderCreatedFromSignal(signal.getUserId(), order.getId(), signal.getId());
+        executionTraceService.trace(order, ExecutionEventType.SIGNAL_GENERATED, Map.of(
                 "signalId", signal.getId().toString(),
                 "symbol", signal.getSymbol() != null ? signal.getSymbol() : ""
         ));
 
-        executionEventAppendService.append(order, ExecutionEventType.ORDER_REQUESTED, Map.of(
+        executionTraceService.trace(order, ExecutionEventType.ORDER_REQUESTED, Map.of(
                 "symbol", signal.getSymbol() != null ? signal.getSymbol() : "",
                 "side", mapSide(signal),
                 "executionMode", mode.name()
@@ -140,14 +146,15 @@ public class OrderIntentProcessor {
                     decision.message()
             );
             order = orderLifecycleService.transition(order.getId(), OrderState.REJECTED, decision.message());
-            executionEventAppendService.append(order, ExecutionEventType.EXECUTION_REJECTED, Map.of(
+            executionTraceService.trace(order, ExecutionEventType.EXECUTION_REJECTED, Map.of(
                     "phase", "RISK",
                     "reason", decision.message() != null ? decision.message() : ""
             ));
+            signalDistributionTelemetryService.recordRiskRejected(signal.getUserId(), signal.getId());
             return;
         }
 
-        executionEventAppendService.append(order, ExecutionEventType.RISK_CHECK_PASSED, Map.of(
+        executionTraceService.trace(order, ExecutionEventType.RISK_CHECK_PASSED, Map.of(
                 "riskReason", decision.message() != null ? decision.message() : "OK"
         ));
 
@@ -170,6 +177,10 @@ public class OrderIntentProcessor {
                 ),
                 synchronousExecution
         );
+        executionTraceService.trace(order, ExecutionEventType.EXECUTION_DISPATCHED, Map.of(
+                "channel", synchronousExecution ? "SYNC" : "RABBIT_EXECUTION",
+                "attempt", 0
+        ));
     }
 
     private static long fillDeterminismKey(StrategySignalEntity signal) {

@@ -1,13 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Radio } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { useState } from "react";
 import { api } from "../api/client";
-
-type OpsStatus = {
-  registeredUsers: number;
-  runningStrategies: number;
-  websocketUsersApprox: number;
-  rabbitQueues: Record<string, Record<string, string>>;
-};
+import { AdminOperationsCockpit } from "../components/admin/cockpit/AdminOperationsCockpit";
+import type { OpsSnapshot } from "../components/admin/cockpit/opsTypes";
+import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
+import { cn } from "../lib/utils";
 
 type ReadinessSnapshot = {
   checks: Record<string, { ok: boolean; detail: string }>;
@@ -15,12 +13,16 @@ type ReadinessSnapshot = {
 };
 
 export function AdminOpsPage() {
-  const q = useQuery({
-    queryKey: ["admin-ops-status"],
+  const [readinessOpen, setReadinessOpen] = useState(true);
+
+  const snapshot = useQuery({
+    queryKey: ADMIN_OPS_SNAPSHOT_KEY,
     queryFn: async () => {
-      const res = await api.get("/api/admin/ops/status");
-      return res.data?.data as OpsStatus;
+      const res = await api.get("/api/admin/operations/snapshot");
+      return res.data?.data as OpsSnapshot;
     },
+    staleTime: 1500,
+    retry: 2,
   });
 
   const readiness = useQuery({
@@ -29,72 +31,61 @@ export function AdminOpsPage() {
       const res = await api.get("/api/admin/readiness");
       return res.data?.data as ReadinessSnapshot;
     },
+    refetchInterval: 30_000,
+    retry: 1,
   });
 
-  const d = q.data;
   const r = readiness.data;
 
   return (
-    <div className="space-y-8">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 text-foreground">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-white">Operations center</h1>
-        <p className="mt-1 text-sm text-neutral-400">Live counts, queue introspection, and websocket footprint.</p>
+        <h1 className="text-xl font-semibold tracking-tight">Operations cockpit</h1>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Main control plane — global status strip is pinned above. SSE + snapshot share one cache (
+          <span className="font-mono">admin-operations-snapshot/global</span>).
+        </p>
       </div>
 
-      <div
-        className={
-          "rounded-2xl border p-5 " +
-          (r?.blocking ? "border-red-900/80 bg-red-950/30" : "border-neutral-800 bg-neutral-950/60")
-        }
-      >
-        <div className="text-sm font-medium text-white">Live-trading readiness (pre-broker)</div>
-        {readiness.isLoading ? (
-          <div className="mt-3 text-sm text-neutral-400">Loading readiness…</div>
-        ) : readiness.isError ? (
-          <div className="mt-3 text-sm text-red-400">Could not load readiness (admin only).</div>
-        ) : (
-          <ul className="mt-4 space-y-2 text-sm">
-            {r
-              ? Object.entries(r.checks).map(([k, v]) => (
-                  <li key={k} className="flex flex-wrap justify-between gap-2 border-b border-neutral-900 pb-2 last:border-0">
-                    <span className="font-mono text-xs text-neutral-400">{k}</span>
-                    <span className={v.ok ? "text-emerald-400" : "text-amber-300"}>{v.detail}</span>
-                  </li>
-                ))
-              : null}
-          </ul>
+      <section
+        className={cn(
+          "overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm",
+          r?.blocking ? "border-red-500/50" : "border-border",
         )}
-      </div>
+      >
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-2 border-b border-border px-4 py-2.5 text-left text-sm font-medium hover:bg-background/50"
+          onClick={() => setReadinessOpen((o) => !o)}
+        >
+          <span>Live-trading readiness (pre-broker)</span>
+          {readinessOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+        </button>
+        {readinessOpen ? (
+          <div className="px-4 py-3">
+            {readiness.isLoading ? (
+              <div className="text-sm text-muted-foreground">Loading readiness…</div>
+            ) : readiness.isError ? (
+              <div className="text-sm text-red-600 dark:text-red-400">Could not load readiness (admin only).</div>
+            ) : (
+              <ul className="space-y-2 text-sm">
+                {r
+                  ? Object.entries(r.checks).map(([k, v]) => (
+                      <li key={k} className="flex flex-wrap justify-between gap-2 border-b border-border pb-2 last:border-0">
+                        <span className="font-mono text-xs text-muted-foreground">{k}</span>
+                        <span className={v.ok ? "text-emerald-600 dark:text-emerald-400" : "text-amber-700 dark:text-amber-300"}>
+                          {v.detail}
+                        </span>
+                      </li>
+                    ))
+                  : null}
+              </ul>
+            )}
+          </div>
+        ) : null}
+      </section>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-5">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-            <Activity className="h-4 w-4" />
-            Users
-          </div>
-          <div className="mt-3 font-mono text-3xl text-white">{d?.registeredUsers ?? "—"}</div>
-        </div>
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-5">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-            <Radio className="h-4 w-4" />
-            Running strategies
-          </div>
-          <div className="mt-3 font-mono text-3xl text-white">{d?.runningStrategies ?? "—"}</div>
-        </div>
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-5">
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">WebSocket users</div>
-          <div className="mt-3 font-mono text-3xl text-white">
-            {d?.websocketUsersApprox === -1 ? "n/a" : (d?.websocketUsersApprox ?? "—")}
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-5">
-        <div className="text-sm font-medium text-white">RabbitMQ queues</div>
-        <pre className="mt-4 max-h-[420px] overflow-auto rounded-lg bg-neutral-950 p-4 text-[11px] text-neutral-300">
-          {JSON.stringify(d?.rabbitQueues ?? {}, null, 2)}
-        </pre>
-      </div>
+      <AdminOperationsCockpit snapshot={snapshot.data} isFetching={snapshot.isFetching} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 package com.stokr.execution.messaging;
 
+import com.stokr.common.events.ExecutionDispatchFailedEvent;
 import com.stokr.common.pipeline.PipelineQueues;
 import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
 import com.stokr.execution.service.RetryHandler;
@@ -8,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -18,6 +20,7 @@ public class ExecutionConsumer {
 
     private final ExecutionSimulator executionSimulator;
     private final RetryHandler retryHandler;
+    private final ApplicationEventPublisher eventPublisher;
 
     @RabbitListener(queues = PipelineQueues.EXECUTION)
     public void onMessage(ExecutionDispatchMessage msg) {
@@ -25,6 +28,17 @@ public class ExecutionConsumer {
             executionSimulator.process(msg);
         } catch (Exception ex) {
             log.error("execution.failed orderId={}", msg.orderId(), ex);
+            String reason = ex.getClass().getSimpleName() + ": "
+                    + (ex.getMessage() != null ? ex.getMessage() : "");
+            if (reason.length() > 500) {
+                reason = reason.substring(0, 500);
+            }
+            eventPublisher.publishEvent(new ExecutionDispatchFailedEvent(
+                    msg.orderId(),
+                    msg.userId(),
+                    msg.signalId(),
+                    reason
+            ));
             retryHandler.retryOrDlq(msg, ex);
         }
     }

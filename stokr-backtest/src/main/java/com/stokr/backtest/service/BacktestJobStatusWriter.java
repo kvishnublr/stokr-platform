@@ -1,15 +1,20 @@
 package com.stokr.backtest.service;
 
+import com.stokr.common.events.OperationalRealtimeEvent;
 import com.stokr.backtest.domain.BacktestJob;
 import com.stokr.backtest.domain.BacktestJobStatus;
+import com.stokr.backtest.domain.ReplayTerminalDiagnosis;
 import com.stokr.backtest.repository.BacktestJobRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Short REQUIRES_NEW transactions so long-running replay does not hold DB locks.
@@ -19,6 +24,8 @@ import java.util.UUID;
 public class BacktestJobStatusWriter {
 
     private final BacktestJobRepository jobRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ConcurrentHashMap<UUID, Integer> lastReplaySsePct = new ConcurrentHashMap<>();
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public boolean isJobCancelled(UUID jobId) {
@@ -45,7 +52,14 @@ public class BacktestJobStatusWriter {
         job.setProcessedBars(0);
         job.setStartedAt(Instant.now());
         job.setMessage(null);
+        job.setReplayDiagnosis(null);
+        job.setReplayCandlesExpected(0);
+        job.setReplayCandlesProcessed(0);
+        job.setReplaySignalsEmitted(0);
+        job.setReplayExecutionEvents(0);
+        job.setReplayDurationMs(null);
         jobRepository.save(job);
+        publishReplay("replay_running", jobId, 0, "RUNNING");
     }
 
     /**
@@ -71,27 +85,58 @@ public class BacktestJobStatusWriter {
         job.setProcessedBars(clamped);
         job.setProgress(pct);
         jobRepository.save(job);
+        maybePublishReplayProgress(jobId, pct);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void markCompleted(UUID jobId, UUID runId) {
+    public void markCompleted(UUID jobId, BacktestReplayOutcome outcome) {
         BacktestJob job = jobRepository.findById(jobId).orElseThrow();
         job.setStatus(BacktestJobStatus.COMPLETED);
-        job.setRunId(runId);
+        job.setRunId(outcome.runId());
         job.setProgress(100);
         if (job.getTotalBars() > 0) {
             job.setProcessedBars(job.getTotalBars());
         }
         job.setMessage(null);
+        ReplayTerminalDiagnosis diagnosis = ReplayDiagnosisClassifier.classifySuccess(outcome);
+        job.setReplayDiagnosis(diagnosis.name());
+        ReplayLoopTelemetry lt = outcome.loopTelemetry();
+        if (lt != null) {
+            job.setReplayCandlesExpected(lt.candlesExpected());
+            job.setReplayCandlesProcessed(lt.candlesProcessed());
+            job.setReplaySignalsEmitted(lt.signalsEmitted());
+            job.setReplayDurationMs(lt.durationMs(Instant.now()));
+        } else {
+            job.setReplayCandlesExpected(Math.max(job.getTotalBars(), 0));
+            job.setReplayCandlesProcessed(Math.max(job.getProcessedBars(), 0));
+            job.setReplaySignalsEmitted(0);
+            job.setReplayDurationMs(null);
+        }
+        if (outcome.validation() != null) {
+            long ex = outcome.validation().executionEventCount();
+            job.setReplayExecutionEvents((int) Math.min(Integer.MAX_VALUE, ex));
+        } else {
+            job.setReplayExecutionEvents(0);
+        }
         jobRepository.save(job);
+        publishReplay("replay_completed", jobId, 100, "COMPLETED");
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markFailed(UUID jobId, String message) {
+        markFailed(jobId, message, ReplayTerminalDiagnosis.FAILED);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markFailed(UUID jobId, String message, ReplayTerminalDiagnosis diagnosis) {
         BacktestJob job = jobRepository.findById(jobId).orElseThrow();
         job.setStatus(BacktestJobStatus.FAILED);
         job.setMessage(truncate(message, 4000));
+        if (diagnosis != null) {
+            job.setReplayDiagnosis(diagnosis.name());
+        }
         jobRepository.save(job);
+        publishReplay("replay_failed", jobId, job.getProgress(), "FAILED");
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -122,5 +167,27 @@ public class BacktestJobStatusWriter {
             return null;
         }
         return s.length() <= max ? s : s.substring(0, max);
+    }
+
+    private void maybePublishReplayProgress(UUID jobId, int pct) {
+        if (pct <= 0 || pct >= 100) {
+            return;
+        }
+        if (pct % 10 != 0) {
+            return;
+        }
+        Integer prev = lastReplaySsePct.put(jobId, pct);
+        if (prev != null && prev >= pct) {
+            return;
+        }
+        publishReplay("replay_progress", jobId, pct, "RUNNING");
+    }
+
+    private void publishReplay(String topic, UUID jobId, int progressPct, String status) {
+        eventPublisher.publishEvent(new OperationalRealtimeEvent(topic, Map.of(
+                "jobId", jobId.toString(),
+                "progressPct", progressPct,
+                "status", status
+        )));
     }
 }

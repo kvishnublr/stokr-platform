@@ -6,6 +6,9 @@ export type ReplayValidationReport = {
   pnlMismatch: string;
   executionMismatch: number;
   replayHash: string;
+  /** Present on API ≥ fix; older servers omit these. */
+  strategySignalCount?: number;
+  executionEventCount?: number;
 };
 
 export type BacktestReplayOutcome = {
@@ -46,6 +49,12 @@ export type BacktestReplayOutcome = {
     cumulativePnl: string;
     drawdown: string;
   }[];
+  loopTelemetry?: {
+    candlesExpected: number;
+    candlesProcessed: number;
+    signalsEmitted: number;
+    loopStartedAt: string | null;
+  } | null;
 };
 
 export type BacktestRunSummary = {
@@ -99,6 +108,72 @@ export async function launchReplay(body: ExecutionRequest) {
     outcome: env?.data as BacktestReplayOutcome,
     correlationId: (res.headers["x-correlation-id"] as string | undefined) ?? env?.correlationId,
   };
+}
+
+/** Async worker replay — avoids blocking the browser on long 1m candle walks (see POST /api/backtest/jobs). */
+export async function enqueueReplayJob(body: ExecutionRequest): Promise<string> {
+  const res = await api.post<ApiEnvelope<string>>("/api/backtest/jobs", body);
+  const env = res.data;
+  const raw = env?.data;
+  if (raw == null || raw === "") {
+    throw new Error("Backtest job was not assigned an id");
+  }
+  return typeof raw === "string" ? raw : String(raw);
+}
+
+export type BacktestJobStatus = {
+  id: string;
+  status: string;
+  progress: number;
+  totalBars: number;
+  processedBars: number;
+  runId: string | null;
+  message: string | null;
+  cancelled: boolean;
+  metadataSchemaVersion: number | null;
+  strategyDefinitionVersion: number | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  etaSecondsRemaining: number | null;
+  replayDiagnosis?: string | null;
+  replayCandlesExpected?: number | null;
+  replayCandlesProcessed?: number | null;
+  replaySignalsEmitted?: number | null;
+  replayExecutionEvents?: number | null;
+  replayDurationMs?: number | null;
+};
+
+export async function getReplayJobStatus(jobId: string): Promise<BacktestJobStatus> {
+  const res = await api.get<ApiEnvelope<BacktestJobStatus>>(`/api/backtest/jobs/${jobId}`);
+  const env = res.data;
+  if (!env?.data) {
+    throw new Error("Job status response missing data");
+  }
+  return env.data as BacktestJobStatus;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function pollReplayJobUntilTerminal(
+  jobId: string,
+  opts?: { intervalMs?: number; maxWaitMs?: number; onProgress?: (s: BacktestJobStatus) => void },
+): Promise<BacktestJobStatus> {
+  const intervalMs = opts?.intervalMs ?? 2000;
+  const maxWaitMs = opts?.maxWaitMs ?? 3 * 60 * 60 * 1000;
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const s = await getReplayJobStatus(jobId);
+    opts?.onProgress?.(s);
+    const st = String(s.status).toUpperCase();
+    if (st === "COMPLETED" || st === "FAILED" || st === "CANCELLED") {
+      return s;
+    }
+    await sleep(intervalMs);
+  }
+  throw new Error("Replay job timed out — try a shorter date range or check API logs.");
 }
 
 export async function listRuns(page = 0, size = 20) {

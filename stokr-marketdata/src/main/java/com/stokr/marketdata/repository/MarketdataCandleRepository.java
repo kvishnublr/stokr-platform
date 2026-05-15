@@ -41,4 +41,14 @@ public interface MarketdataCandleRepository extends JpaRepository<MarketdataCand
             Instant start,
             Instant end
     );
+
+    /**
+     * Newest candles first, {@code open_time <= endInclusive}, for replay lookbacks (not "global tail then filter").
+     */
+    Page<MarketdataCandle> findBySymbolAndTimeframeAndOpenTimeLessThanEqualAndDeletedFalse(
+            String symbol,
+            String timeframe,
+            Instant endInclusive,
+            Pageable pageable
+    );
 }

@@ -14,6 +14,7 @@ import com.stokr.backtest.execution.ExecutionContext;
 import com.stokr.backtest.repository.BacktestRunRepository;
 import com.stokr.backtest.service.BacktestReplayOutcome;
 import com.stokr.backtest.service.BacktestResultService;
+import com.stokr.backtest.service.ReplayLoopTelemetry;
 import com.stokr.backtest.strategy.BacktestStrategyRegistry;
 import com.stokr.backtest.web.dto.ExecutionRequestDto;
 import com.stokr.common.correlation.CorrelationIdHolder;
@@ -56,6 +57,11 @@ public class MeanReversionReplayService {
 
     private static final int META_VERSION = 1;
     private static final int CANDLE_PAGE_SIZE = 2500;
+    /**
+     * For bars with no signal, skip journal + resume checkpoint most iterations — otherwise long 1m replays
+     * issue O(bars) DB writes and appear "stuck" in RUNNING for tens of minutes. Signals always checkpoint.
+     */
+    private static final int NO_SIGNAL_CHECKPOINT_EVERY = 250;
 
     private final SignalExecutionBridge signalExecutionBridge;
     private final BacktestRunRepository runRepository;
@@ -97,6 +103,36 @@ public class MeanReversionReplayService {
                 .filter(s -> !s.isBlank())
                 .orElseGet(() -> UUID.randomUUID().toString());
 
+        long totalBars = marketDataQueryService.rangeCount(symbol, stepTf, start, end);
+        log.info(
+                "backtest.replay.preflight symbol={} stepTf={} displayTf={} rangeStart={} rangeEnd={} candleCount={} correlationId={}",
+                symbol,
+                stepTf,
+                tf,
+                start,
+                end,
+                totalBars,
+                correlationId
+        );
+        if (totalBars <= 0) {
+            log.warn(
+                    "backtest.replay.no_candles symbol={} stepTf={} rangeStart={} rangeEnd={} correlationId={}",
+                    symbol,
+                    stepTf,
+                    start,
+                    end,
+                    correlationId
+            );
+            throw new BadRequestException(
+                    "No market data for replay: symbol \""
+                            + symbol
+                            + "\" has no "
+                            + stepTf
+                            + " candles between the requested timestamps. "
+                            + "For local development set STOKR_REPLAY_SEED_SYNTHETIC=true (Docker default) or ingest ticks via POST /api/marketdata/ticks."
+            );
+        }
+
         BacktestRun run = new BacktestRun();
         run.setStrategyKey(sk);
         run.setSymbol(symbol);
@@ -132,9 +168,6 @@ public class MeanReversionReplayService {
         );
 
         try {
-            long totalBars = marketDataQueryService.rangeCount(symbol, stepTf, start, end);
-            log.info("backtest.replay.start runId={} strategy={} stepTf={} totalBars={}", runId, sk, stepTf, totalBars);
-
             EventStoreEntry started = appendJournal(runId, uid, symbol, sk, "BACKTEST_RUN_STARTED", Map.of(
                     "seed", seed,
                     "start", start.toString(),
@@ -157,6 +190,15 @@ public class MeanReversionReplayService {
 
             BacktestReplayOutcome outcome = executeLoop(
                     run, evalCtx, uid, start, end, seed, sk, tf, stepTf, 0, totalBarsInt, correlationId, progress);
+            log.info(
+                    "backtest.replay.outcome runId={} materialized={} totalTrades={} tradeRows={} equityPoints={} totalPnl={}",
+                    runId,
+                    outcome.materialized(),
+                    outcome.metrics() != null ? outcome.metrics().totalTrades() : -1,
+                    outcome.trades() != null ? outcome.trades().size() : -1,
+                    outcome.equityCurve() != null ? outcome.equityCurve().size() : -1,
+                    outcome.metrics() != null ? outcome.metrics().totalPnl() : "n/a"
+            );
             run.setStatus(BacktestStatus.COMPLETED);
             runRepository.save(run);
             EventStoreEntry done = appendJournal(runId, uid, symbol, sk, "BACKTEST_RUN_COMPLETED", Map.of("status", "COMPLETED"));
@@ -168,7 +210,7 @@ public class MeanReversionReplayService {
                     "message", "User cancelled async replay",
                     "correlationId", correlationId
             ));
-            backtestResultService.persistForRun(run);
+            backtestResultService.persistForRun(run, null);
             log.warn("backtest.replay.cancelled runId={}", runId);
             throw cx;
         } catch (RuntimeException ex) {
@@ -290,11 +332,13 @@ public class MeanReversionReplayService {
     ) {
         UUID runId = run.getId();
         String symbol = run.getSymbol();
+        Instant loopStartedAt = Instant.now();
         var plugin = strategyRegistry.require(strategyKey);
         BacktestExecutionStages stages = new BacktestExecutionStages(runId, correlationId);
         BacktestRiskGate riskGate = new BacktestRiskGate();
         int globalIndex = 0;
         int processed = 0;
+        int signalsEmitted = 0;
         int page = 0;
         while (true) {
             Page<MarketdataCandle> pg = marketDataQueryService.rangeAscPage(
@@ -327,6 +371,7 @@ public class MeanReversionReplayService {
                 StrategySignalEntity sig = plugin.evaluateAtOpen(ctx, bar, globalIndex, stepTf);
                 stages.signalEvaluated(sig != null, globalIndex);
                 if (sig != null) {
+                    signalsEmitted++;
                     stages.riskChecked(riskGate.allowNewExposure(ctx.execution(), 0));
                     String sigCid = ctx.execution().correlationId() + ":bar:" + globalIndex;
                     StrategySignalEntity saved =
@@ -342,12 +387,17 @@ public class MeanReversionReplayService {
                     ));
                     upsertCp(runId, uid, sigTail, metaJson(strategyKey, symbol, rangeStart, rangeEnd, seed, uid, timeframe, stepTf, globalIndex + 1, totalBars, ctx.meanReversionState()));
                 } else {
-                    EventStoreEntry prog = appendJournal(runId, uid, symbol, strategyKey, "BACKTEST_CANDLE_PASSED", Map.of(
-                            "barOpenTime", bar.getOpenTime().toString(),
-                            "index", globalIndex,
-                            "correlationId", correlationId
-                    ));
-                    upsertCp(runId, uid, prog, metaJson(strategyKey, symbol, rangeStart, rangeEnd, seed, uid, timeframe, stepTf, globalIndex + 1, totalBars, ctx.meanReversionState()));
+                    int nextIndex = globalIndex + 1;
+                    boolean tailBar = nextIndex >= totalBars;
+                    boolean periodic = nextIndex % NO_SIGNAL_CHECKPOINT_EVERY == 0;
+                    if (periodic || tailBar) {
+                        EventStoreEntry prog = appendJournal(runId, uid, symbol, strategyKey, "BACKTEST_CANDLE_PASSED", Map.of(
+                                "barOpenTime", bar.getOpenTime().toString(),
+                                "index", globalIndex,
+                                "correlationId", correlationId
+                        ));
+                        upsertCp(runId, uid, prog, metaJson(strategyKey, symbol, rangeStart, rangeEnd, seed, uid, timeframe, stepTf, nextIndex, totalBars, ctx.meanReversionState()));
+                    }
                 }
                 globalIndex++;
                 processed++;
@@ -362,7 +412,16 @@ public class MeanReversionReplayService {
             page++;
         }
         stages.timingSummary(processed);
-        return backtestResultService.persistForRun(run);
+        log.info(
+                "backtest.replay.loop_done runId={} barsProcessed={} totalBarsExpected={} signalsEmitted={} correlationId={}",
+                runId,
+                processed,
+                totalBars,
+                signalsEmitted,
+                correlationId
+        );
+        ReplayLoopTelemetry loopTelemetry = new ReplayLoopTelemetry(totalBars, processed, signalsEmitted, loopStartedAt);
+        return backtestResultService.persistForRun(run, loopTelemetry);
     }
 
     private static void reportReplayProgress(ReplayProgressCallback cb, UUID runId, int barsCompleted, int totalBars) {
