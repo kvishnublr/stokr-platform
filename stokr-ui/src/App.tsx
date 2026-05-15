@@ -41,6 +41,7 @@ import { useSessionStore } from "./state/session";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { OnboardingWizardPage } from "./pages/OnboardingWizardPage";
 import { TerminalPage } from "./pages/TerminalPage";
+import { SignalsPage } from "./pages/SignalsPage";
 import { PageSkeleton } from "./components/ds/SkeletonLoader";
 import { ErrorBoundary } from "./components/ds/ErrorBoundary";
 import { ThemeHtmlSync } from "./components/theme/ThemeHtmlSync";
@@ -133,6 +134,7 @@ export default function App() {
           <Route path="dashboard" element={<TraderDashboardRoute />} />
           <Route path="watchlist" element={<Navigate to="/strategies" replace />} />
           <Route path="terminal" element={<TerminalPage />} />
+          <Route path="signals" element={<SignalsPage />} />
           <Route path="onboarding" element={<OnboardingWizardPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="trades" element={<TradesPage />} />

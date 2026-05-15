@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { cn } from "../../lib/utils";
 import { useUiThemeStore } from "../../state/uiTheme";
 
@@ -20,9 +20,23 @@ function ClockTick({ className }: { className?: string }) {
   );
 }
 
-export function TraderAccountCard({ equityDisplay, marginDisplay }: { equityDisplay: string; marginDisplay?: string }) {
+export function TraderAccountCard({
+  equityDisplay,
+  marginDisplay,
+  brokerConnected = false,
+}: {
+  equityDisplay: string;
+  marginDisplay?: string;
+  brokerConnected?: boolean;
+}) {
+  const navigate = useNavigate();
   const isLight = useUiThemeStore((s) => s.mode === "light");
-  const margin = marginDisplay ?? "—";
+  const margin = marginDisplay ?? "-";
+  const [depositOpen, setDepositOpen] = useState(false);
+  const [amount, setAmount] = useState("");
+
+  const parsedAmount = useMemo(() => Number(amount), [amount]);
+  const amountValid = Number.isFinite(parsedAmount) && parsedAmount > 0;
 
   return (
     <div>
@@ -59,13 +73,75 @@ export function TraderAccountCard({ equityDisplay, marginDisplay }: { equityDisp
             {margin}
           </span>
         </div>
-        <Link
-          to="/brokers"
+        <button
+          type="button"
+          onClick={() => setDepositOpen(true)}
           className="mt-3 flex w-full items-center justify-center rounded-2xl bg-blue-600 py-2.5 text-[12px] font-bold text-white shadow-[0_10px_24px_-12px_rgba(37,99,235,0.6)] transition hover:bg-blue-500"
         >
           Deposit funds
-        </Link>
+        </button>
       </div>
+      {depositOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div
+            className={cn(
+              "w-full max-w-md rounded-2xl border p-5 shadow-xl",
+              isLight ? "border-neutral-200 bg-white" : "border-neutral-700 bg-neutral-900",
+            )}
+          >
+            <div className={cn("text-sm font-semibold", isLight ? "text-neutral-900" : "text-white")}>Add broker funds</div>
+            <div className={cn("mt-2 text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>
+              Available broker margin: <span className={cn("font-mono font-semibold", isLight ? "text-neutral-900" : "text-neutral-100")}>{margin}</span>
+            </div>
+            <div className={cn("mt-1 text-xs", isLight ? "text-neutral-500" : "text-neutral-500")}>
+              {brokerConnected
+                ? "Funding happens at broker side. Enter amount, then continue to Broker Connect."
+                : "No connected broker account found. Connect broker first, then add funds."}
+            </div>
+            <label className={cn("mt-4 block text-[11px] font-semibold uppercase tracking-wide", isLight ? "text-neutral-600" : "text-neutral-400")}>
+              Deposit amount (INR)
+            </label>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="e.g. 50000"
+              className={cn(
+                "mt-2 w-full rounded-xl border px-3 py-2 text-sm outline-none",
+                isLight
+                  ? "border-neutral-200 bg-white text-neutral-900 placeholder:text-neutral-400"
+                  : "border-neutral-700 bg-neutral-950 text-white placeholder:text-neutral-500",
+              )}
+            />
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDepositOpen(false)}
+                className={cn(
+                  "rounded-xl border px-3 py-2 text-xs font-semibold",
+                  isLight ? "border-neutral-200 text-neutral-700 hover:bg-neutral-50" : "border-neutral-700 text-neutral-200 hover:bg-neutral-800",
+                )}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!amountValid}
+                onClick={() => {
+                  const q = encodeURIComponent(amount.trim());
+                  setDepositOpen(false);
+                  navigate(`/brokers?depositAmount=${q}`);
+                }}
+                className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div
         className={cn(
           "mt-3 flex flex-wrap items-center justify-between gap-1 px-1 text-[10px]",

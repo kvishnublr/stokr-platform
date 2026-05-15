@@ -28,6 +28,7 @@ import { api, parseAxiosMessage } from "../api/client";
 import { cn } from "../lib/utils";
 import { useSessionStore } from "../state/session";
 import { useUiThemeStore } from "../state/uiTheme";
+import { useSearchParams } from "react-router-dom";
 
 const ZERODHA_OAUTH_MESSAGE = "stokr-zerodha-oauth";
 
@@ -48,6 +49,7 @@ function isTrustedZerodhaOauthMessageOrigin(origin: string): boolean {
 
 export function BrokersPage() {
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const emailVerified = useSessionStore((s) => s.emailVerified);
   const [tgLink, setTgLink] = useState<string | null>(null);
@@ -324,6 +326,7 @@ export function BrokersPage() {
   const marginHint =
     st?.marginSummary ??
     (st?.connected ? "Run test connection to refresh funds snapshot." : "—");
+  const requestedDepositAmount = searchParams.get("depositAmount");
 
   const cardShell = isLight
     ? "rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6"
@@ -340,6 +343,18 @@ export function BrokersPage() {
           routing.
         </p>
       </div>
+
+      {requestedDepositAmount ? (
+        <div
+          className={cn(
+            "rounded-xl border px-4 py-3 text-sm",
+            isLight ? "border-blue-200 bg-blue-50 text-blue-900" : "border-blue-500/35 bg-blue-500/10 text-blue-100",
+          )}
+        >
+          Deposit request: <span className="font-mono font-semibold">₹ {requestedDepositAmount}</span>. Complete funding in your broker account portal, then run{" "}
+          <span className="font-semibold">Test connection</span> to refresh margin snapshot.
+        </div>
+      ) : null}
 
       {needsReconnect ? (
         <div
@@ -844,3 +859,5 @@ function formatInstant(iso: string | null): string {
     return iso;
   }
 }
+
+

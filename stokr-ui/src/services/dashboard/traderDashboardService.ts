@@ -1,21 +1,21 @@
-import { api } from "../../api/client";
+ï»¿import { api } from "../../api/client";
 import type { TraderDashboardData } from "./types";
 
 const EMPTY_TRADER_DASHBOARD: TraderDashboardData = {
   greetingName: "Trader",
   kpis: [
-    { label: "Total P&L", value: "—", delta: "No data available", positive: false },
-    { label: "Unrealized P&L", value: "—", delta: "No data available", positive: false },
-    { label: "Realized P&L", value: "—", delta: "No data available", positive: false },
-    { label: "Total Capital", value: "—", delta: "No data available", positive: false },
+    { label: "Total P&L", value: "-", delta: "No data available", positive: false },
+    { label: "Unrealized P&L", value: "-", delta: "No data available", positive: false },
+    { label: "Realized P&L", value: "-", delta: "No data available", positive: false },
+    { label: "Total Capital", value: "-", delta: "No data available", positive: false },
   ],
-  chart: { symbol: "No market data", last: "—", change: "—" },
+  chart: { symbol: "No market data", last: "-", change: "-" },
   strategies: [],
   positions: [],
   orders: [],
   alerts: [],
   marketWatch: [],
-  portfolio: { equity: "—", margin: "—", marginUsedPct: 0 },
+  portfolio: { equity: "-", margin: "-", marginUsedPct: 0 },
   brokerStatus: "DEGRADED",
   runtimeStatus: "Unavailable",
   notifications: { unread: 0 },
@@ -29,10 +29,14 @@ function safeString(value: unknown, fallback: string): string {
 }
 
 export async function fetchTraderDashboardData(): Promise<TraderDashboardData> {
+  const modeRes = await api.get("/api/trader/me/execution-mode").catch(() => null);
+  const selectedMode = String(modeRes?.data?.data?.executionMode ?? "PAPER").toUpperCase();
+
   const requests = await Promise.allSettled([
     api.get("/api/portfolio/dashboard?equityPoints=60"),
-    api.get("/api/oms/orders?page=0&size=4"),
+    api.get(`/api/oms/orders?page=0&size=4&executionMode=${encodeURIComponent(selectedMode)}`),
     api.get("/api/strategies/runtime-metrics"),
+    api.get("/api/strategies/catalog?size=48"),
     api.get("/api/trader/strategy-feed"),
     api.get("/api/trader/execution-summary"),
     api.get("/api/trader/replay-summary"),
@@ -46,7 +50,7 @@ export async function fetchTraderDashboardData(): Promise<TraderDashboardData> {
     kpis: [...EMPTY_TRADER_DASHBOARD.kpis],
   };
 
-  const [portfolio, orders, strategies, signalFeed, executionSummary, replaySummary, brokers, watch, candles] = requests;
+  const [portfolio, orders, strategies, catalog, signalFeed, executionSummary, replaySummary, brokers, watch, candles] = requests;
 
   if (portfolio.status === "fulfilled") {
     const root = portfolio.value.data?.data;
@@ -56,32 +60,32 @@ export async function fetchTraderDashboardData(): Promise<TraderDashboardData> {
       merged.kpis = [
         {
           label: "Total P&L",
-          value: safeString(ov.mtmPnl, "—"),
+          value: safeString(ov.mtmPnl, "-"),
           delta: safeString(ov.mtmPnlDeltaLabel ?? ov.dayChangeLabel, "No P&L delta"),
           positive: Number(ov.mtmPnl ?? 0) >= 0,
         },
         {
           label: "Unrealized P&L",
-          value: safeString(ov.unrealizedPnl, "—"),
+          value: safeString(ov.unrealizedPnl, "-"),
           delta: safeString(ov.unrealizedPnlDeltaLabel, "No unrealized delta"),
           positive: Number(ov.unrealizedPnl ?? 0) >= 0,
         },
         {
           label: "Realized P&L",
-          value: safeString(ov.realizedPnl, "—"),
+          value: safeString(ov.realizedPnl, "-"),
           delta: safeString(ov.realizedPnlDeltaLabel, "No realized delta"),
           positive: Number(ov.realizedPnl ?? 0) >= 0,
         },
         {
           label: "Total Capital",
-          value: safeString(ov.totalCapital ?? ov.accountValue, "—"),
+          value: safeString(ov.totalCapital ?? ov.accountValue, "-"),
           delta: safeString(ov.capitalUsageLabel ?? "No capital usage data", "No capital usage data"),
           positive: true,
         },
       ];
       merged.portfolio = {
-        equity: safeString(ov.totalEquity ?? ov.accountValue, "—"),
-        margin: safeString(ov.availableMargin ?? ov.cashAvailable, "—"),
+        equity: safeString(ov.totalEquity ?? ov.accountValue, "-"),
+        margin: safeString(ov.availableMargin ?? ov.cashAvailable, "-"),
         marginUsedPct: Math.max(0, Math.min(100, Number(ov.marginUsedPct ?? 0) || 0)),
       };
     }
@@ -92,35 +96,46 @@ export async function fetchTraderDashboardData(): Promise<TraderDashboardData> {
 
   if (orders.status === "fulfilled" && Array.isArray(orders.value.data?.data?.content)) {
     merged.orders = orders.value.data.data.content.slice(0, 4).map((o: any) => ({
-      symbol: safeString(o.symbol, "—"),
+      symbol: safeString(o.symbol, "-"),
       side: String(o.side).toUpperCase() === "SELL" ? "SELL" : "BUY",
-      time: safeString(o.createdAt, "—"),
+      time: safeString(o.createdAt, "-"),
       status: String(o.state).toUpperCase().includes("PEND") ? "PENDING" : "FILLED",
     }));
   }
 
   if (strategies.status === "fulfilled" && Array.isArray(strategies.value.data?.data)) {
-    merged.strategies = strategies.value.data.data.slice(0, 4).map((s: any) => ({
+    const filtered = strategies.value.data.data.filter((s: any) => String(s.executionMode ?? "").toUpperCase() === selectedMode);
+    merged.strategies = filtered.slice(0, 4).map((s: any) => ({
       name: safeString(s.strategyKey ?? s.name, "Strategy"),
-      mode: String(s.executionMode).toUpperCase() === "PAPER" ? "PAPER" : "LIVE",
+      mode: String(s.executionMode).toUpperCase() === "LIVE" ? "LIVE" : "PAPER",
       pnl: safeString(s.unrealizedPnl, "0"),
       positive: Number(s.unrealizedPnl ?? 0) >= 0,
+    }));
+  }
+
+  if (merged.strategies.length === 0 && catalog.status === "fulfilled" && Array.isArray(catalog.value.data?.data?.content)) {
+    const subscribed = catalog.value.data.data.content.filter((r: any) => r.subscribed === true);
+    merged.strategies = subscribed.slice(0, 4).map((s: any) => ({
+      name: safeString(s.code ?? s.name, "Strategy"),
+      mode: String(s.executionMode ?? selectedMode).toUpperCase() === "LIVE" ? "LIVE" : "PAPER",
+      pnl: "0",
+      positive: true,
     }));
   }
 
   if (signalFeed.status === "fulfilled" && Array.isArray(signalFeed.value.data?.data)) {
     merged.alerts = signalFeed.value.data.data.slice(0, 3).map((a: any) => ({
       level: "info",
-      title: `${safeString(a.strategyName, "Strategy")} · ${safeString(a.symbol, "—")} · ${safeString(a.signalType, "SIGNAL")}`,
+      title: `${safeString(a.strategyName, "Strategy")} - ${safeString(a.symbol, "-")} - ${safeString(a.signalType, "SIGNAL")}`,
       detail: safeString(a.createdAt, ""),
     }));
   }
 
   if (watch.status === "fulfilled" && Array.isArray(watch.value.data?.data)) {
     merged.marketWatch = watch.value.data.data.slice(0, 4).map((m: any) => ({
-      symbol: safeString(m.symbol, "—"),
-      price: safeString(m.price, "—"),
-      change: safeString(m.changePct, "—"),
+      symbol: safeString(m.symbol, "-"),
+      price: safeString(m.price, "-"),
+      change: safeString(m.changePct, "-"),
       positive: Number(m.changePct ?? 0) >= 0,
     }));
     const first = merged.marketWatch[0];
@@ -141,7 +156,7 @@ export async function fetchTraderDashboardData(): Promise<TraderDashboardData> {
 
   if (executionSummary.status === "fulfilled") {
     const row = executionSummary.value.data?.data as Record<string, unknown> | undefined;
-    merged.runtimeStatus = `Orders ${safeString(row?.ordersTotal, "0")} · Rejected ${safeString(row?.rejectedOrders, "0")}`;
+    merged.runtimeStatus = `${selectedMode} - Orders ${safeString(row?.ordersTotal, "0")} - Rejected ${safeString(row?.rejectedOrders, "0")}`;
   }
 
   if (replaySummary.status === "fulfilled") {

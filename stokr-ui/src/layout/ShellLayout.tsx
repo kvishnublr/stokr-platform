@@ -104,6 +104,7 @@ export function ShellLayout() {
 
       let equityValue = "—";
       let marginValue = "—";
+      let brokerConnected = false;
 
       if (dashboardRes.status === "fulfilled") {
         const overview = dashboardRes.value.data?.data?.overview as
@@ -118,6 +119,7 @@ export function ShellLayout() {
       if (brokerRes.status === "fulfilled") {
         const rows = brokerRes.value.data?.data;
         if (Array.isArray(rows) && rows.length > 0) {
+          brokerConnected = true;
           const first = rows[0] as { cashAvailable?: number; availableMargin?: number };
           const rawMargin = first.availableMargin ?? first.cashAvailable;
           if (typeof rawMargin === "number") {
@@ -126,7 +128,7 @@ export function ShellLayout() {
         }
       }
 
-      return { equityValue, marginValue };
+      return { equityValue, marginValue, brokerConnected };
     },
     enabled: hasTraderAccess,
     refetchInterval: 30000,
@@ -151,6 +153,7 @@ export function ShellLayout() {
     if (hasTraderAccess) {
       links.push({ to: "/brokers", label: "Broker Connect", icon: Shield });
       links.push({ to: "/profile", label: "Profile", icon: UserRound });
+      links.push({ to: "/signals", label: "Signals", icon: MessageSquare });
     }
     links.push({ to: "/terminal", label: "Alerts & notifications", icon: MessageSquare });
     return links;
@@ -363,6 +366,7 @@ export function ShellLayout() {
               <TraderAccountCard
                 equityDisplay={portfolioSnapshot.data?.equityValue ?? "—"}
                 marginDisplay={portfolioSnapshot.data?.marginValue ?? "—"}
+                brokerConnected={Boolean(portfolioSnapshot.data?.brokerConnected)}
               />
             ) : null}
             <SidebarAppearanceRow />
@@ -483,3 +487,7 @@ export function ShellLayout() {
     </>
   );
 }
+
+
+
+

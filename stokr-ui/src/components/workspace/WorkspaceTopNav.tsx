@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Bell,
   MessageSquare,
@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 import { cn } from "../../lib/utils";
 import { useUiThemeStore } from "../../state/uiTheme";
+import { toast } from "sonner";
 
 type TickerRow = {
   sym: string;
@@ -61,9 +62,37 @@ export function WorkspaceTopNav({
     refetchInterval: 20_000,
   });
 
+  const executionModeQuery = useQuery<"PAPER" | "LIVE">({
+    queryKey: ["trader-execution-mode-pref"],
+    queryFn: async () => {
+      const res = await api.get("/api/trader/me/execution-mode");
+      const mode = String(res.data?.data?.executionMode ?? "PAPER").toUpperCase();
+      return mode === "LIVE" ? "LIVE" : "PAPER";
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const updateMode = useMutation({
+    mutationFn: async (next: "PAPER" | "LIVE") => {
+      await api.put("/api/trader/me/execution-mode", { executionMode: next });
+      return next;
+    },
+    onError: () => {
+      toast.error("Could not update execution mode.");
+    },
+    onSuccess: () => {
+      navigate("/signals");
+    },
+  });
+
   useEffect(() => {
+    if (executionModeQuery.data) {
+      setPaperMode(executionModeQuery.data !== "LIVE");
+      return;
+    }
     setPaperMode(!liveApproved);
-  }, [liveApproved]);
+  }, [liveApproved, executionModeQuery.data]);
 
   const sanitizedDisplayName =
     displayName && displayName !== "Platform Admin" && displayName !== "Super Admin" ? displayName : null;
@@ -77,9 +106,26 @@ export function WorkspaceTopNav({
     if (term.includes("position")) return navigate("/positions");
     if (term.includes("execut")) return navigate("/executions");
     if (term.includes("strateg")) return navigate("/strategies");
+    if (term.includes("signal")) return navigate("/signals");
     if (term.includes("backtest")) return navigate("/backtests/launch");
     if (term.includes("broker")) return navigate("/brokers");
     navigate("/terminal");
+  }
+
+  function selectPaper() {
+    if (updateMode.isPending) return;
+    setPaperMode(true);
+    updateMode.mutate("PAPER");
+  }
+
+  function selectLive() {
+    if (!liveApproved) {
+      toast.message("LIVE not approved yet. Complete onboarding and ops approval.");
+      return;
+    }
+    if (updateMode.isPending) return;
+    setPaperMode(false);
+    updateMode.mutate("LIVE");
   }
 
   return (
@@ -173,7 +219,7 @@ export function WorkspaceTopNav({
           >
             <button
               type="button"
-              onClick={() => setPaperMode(true)}
+              onClick={selectPaper}
               className={cn(
                 "rounded-lg px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition",
                 paperMode
@@ -189,7 +235,8 @@ export function WorkspaceTopNav({
             </button>
             <button
               type="button"
-              onClick={() => setPaperMode(false)}
+              onClick={selectLive}
+              disabled={!liveApproved}
               className={cn(
                 "rounded-lg px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition",
                 !paperMode
@@ -199,6 +246,7 @@ export function WorkspaceTopNav({
                   : isLight
                     ? "text-neutral-500 hover:text-neutral-800"
                     : "text-neutral-500 hover:text-neutral-300",
+                !liveApproved ? "cursor-not-allowed opacity-50" : "",
               )}
             >
               Live
