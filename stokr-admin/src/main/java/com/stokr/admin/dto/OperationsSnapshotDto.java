@@ -21,6 +21,7 @@ public record OperationsSnapshotDto(
         Map<String, Object> traderExecutionHealth,
         List<Map<String, Object>> incidents,
         Map<String, Object> marketPlane,
-        Map<String, Object> operationalHistory
+        Map<String, Object> operationalHistory,
+        Map<String, Object> platformMarketFeed
 ) {
 }

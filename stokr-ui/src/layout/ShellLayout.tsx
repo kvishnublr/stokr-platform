@@ -14,6 +14,7 @@ import {
   LogOut,
   MessageSquare,
   Radio,
+  RadioTower,
   RotateCcw,
   ScrollText,
   Server,
@@ -158,6 +159,7 @@ export function ShellLayout() {
   const adminOpsCenterLinks: SidebarLink[] = useMemo(() => {
     const links: SidebarLink[] = [
       { to: "/admin", end: true, label: "Overview", icon: LayoutDashboard },
+      { to: "/admin/broker-infrastructure", label: "Broker infrastructure", icon: RadioTower },
       { to: "/admin/market", label: "Market intelligence", icon: Radio },
       { to: "/admin/replay", label: "Replay infrastructure", icon: RotateCcw },
       { to: "/admin/signals", label: "Signal distribution", icon: Share2 },

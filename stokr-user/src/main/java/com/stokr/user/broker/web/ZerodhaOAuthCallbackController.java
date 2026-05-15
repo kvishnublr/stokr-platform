@@ -1,5 +1,6 @@
 package com.stokr.user.broker.web;
 
+import com.stokr.user.broker.PlatformMarketFeedService;
 import com.stokr.user.broker.ZerodhaConnectionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.view.RedirectView;
 import jakarta.servlet.http.HttpServletRequest;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 @Controller
@@ -20,6 +23,7 @@ import java.util.UUID;
 public class ZerodhaOAuthCallbackController {
 
     private final ZerodhaConnectionService zerodhaConnectionService;
+    private final PlatformMarketFeedService platformMarketFeedService;
 
     @Value("${stokr.ui.public-base-url:http://localhost:5173}")
     private String uiPublicBaseUrl;
@@ -52,14 +56,27 @@ public class ZerodhaOAuthCallbackController {
         }
 
         try {
+            if (platformMarketFeedService.tryCompleteZerodhaFromOAuthCallback(resolvedState, resolvedRequestToken)) {
+                log.info("zerodha.callback.platform_feed.success");
+                return redirectAdmin("?platform_feed=ok");
+            }
             UUID userId = zerodhaConnectionService.completeOAuth(resolvedState, resolvedRequestToken);
             log.info("zerodha.callback.success userId={}", userId);
             return redirect("?zerodha=ok");
         } catch (Exception e) {
             log.error("zerodha.callback.failed error={} message={}",
                     e.getClass().getSimpleName(), e.getMessage());
-            return redirect("?zerodha=error&reason=" + e.getClass().getSimpleName());
+            if (platformMarketFeedService.isPlatformOauthState(resolvedState)) {
+                String reason = URLEncoder.encode(e.getClass().getSimpleName(), StandardCharsets.UTF_8);
+                return redirectAdmin("?platform_feed=error&reason=" + reason);
+            }
+            return redirect("?zerodha=error&reason=" + URLEncoder.encode(e.getClass().getSimpleName(), StandardCharsets.UTF_8));
         }
+    }
+
+    private RedirectView redirectAdmin(String query) {
+        String url = uiPublicBaseUrl.replaceAll("/+$", "") + "/admin/broker-infrastructure" + query;
+        return new RedirectView(url);
     }
 
     private RedirectView redirect(String query) {

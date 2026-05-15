@@ -1,7 +1,10 @@
+import { Link } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../../../api/client";
+import { ADMIN_OPS_SNAPSHOT_KEY } from "../../../lib/adminQueryKeys";
+import { BROKER_CONTROL_CENTER_ORDER, hasActiveBrokerMarketFeed, vendorDisplayName, worstSymbolsFromSnapshot } from "../adminReadinessModel";
 import { OpsPanel } from "./OpsPanel";
 import { asArray, asRecord, badgeClassForStatus, fmtInt, fmtNum, type OpsSnapshot } from "./opsTypes";
 
@@ -76,11 +79,11 @@ export function BrokerInfrastructureGrid({ snapshot }: { snapshot: OpsSnapshot |
   const qc = useQueryClient();
   const root = asRecord(snapshot?.brokerSessions);
   const vendors = asRecord(root?.vendors) ?? {};
-  const vendorKeys = ["ZERODHA", "DHAN", "UPSTOX", "ANGEL"] as const;
+  const vendorKeys = BROKER_CONTROL_CENTER_ORDER;
   const [userPick, setUserPick] = useState<Record<string, string>>({});
 
   const invalidate = useCallback(() => {
-    void qc.invalidateQueries({ queryKey: ["admin-operations-snapshot", "cockpit"] });
+    void qc.invalidateQueries({ queryKey: ADMIN_OPS_SNAPSHOT_KEY });
   }, [qc]);
 
   const runZerodha = useCallback(
@@ -110,7 +113,7 @@ export function BrokerInfrastructureGrid({ snapshot }: { snapshot: OpsSnapshot |
           return (
             <div key={vk} className="rounded-lg border border-border bg-background/60 p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-bold tracking-wide text-foreground">{vk}</span>
+                <span className="text-xs font-bold tracking-wide text-foreground">{vendorDisplayName(vk)}</span>
                 <span className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${badgeClassForStatus(status)}`}>{status}</span>
               </div>
               <div className="mt-2 space-y-1">
@@ -305,33 +308,159 @@ export function MarketFreshnessPanel({ snapshot }: { snapshot: OpsSnapshot | und
 
 export function MarketIntelligenceGrid({ snapshot }: { snapshot: OpsSnapshot | undefined }) {
   const mp = asRecord(snapshot?.marketPlane);
-  const vendors = mp?.brokerVendors;
+  const scan = asRecord(snapshot?.scannerTelemetry);
+  const brokerLive = hasActiveBrokerMarketFeed(snapshot);
+  const root = asRecord(snapshot?.brokerSessions);
+  const vendors = asRecord(root?.vendors) ?? {};
+  const freshness = String(mp?.freshnessStatus ?? "—");
+  const worst = worstSymbolsFromSnapshot(snapshot);
+  const running = typeof scan?.runningStrategyInstances === "number" ? scan.runningStrategyInstances : Number(scan?.runningStrategyInstances ?? 0);
+  const sig60 = typeof scan?.signalsEmittedLast60m === "number" ? scan.signalsEmittedLast60m : Number(scan?.signalsEmittedLast60m ?? 0);
+
   return (
-    <OpsPanel title="Market intelligence plane" subtitle="Central store + broker session hints (not vendor packet taps).">
-      <div className="grid gap-2 font-mono text-[11px] text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded border border-border bg-background/50 px-2 py-1">
-          <div>Freshness</div>
-          <div className={`text-[10px] ${badgeClassForStatus(String(mp?.freshnessStatus === "OK" ? "CONNECTED" : mp?.freshnessStatus ?? "UNKNOWN"))}`}>
-            {String(mp?.freshnessStatus ?? "—")}
+    <OpsPanel
+      title="Market intelligence plane"
+      subtitle="DB candle store + broker_accounts OAuth plane. Packet-level vendor taps are not in this build."
+    >
+      {!brokerLive ? (
+        <div className="mb-4 rounded-lg border-2 border-orange-500/50 bg-orange-500/10 px-3 py-3 text-sm text-foreground">
+          <div className="font-bold uppercase tracking-wide text-orange-950 dark:text-orange-100">Ingestion unavailable</div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            No CONNECTED broker sessions — live ticks, scanner freshness, and tape-grade signals cannot be asserted. Use the broker
+            control center to restore OAuth, then verify 1m lag and worst-symbol table below.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-lg border border-border bg-card px-3 py-2">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Freshness (plane)</div>
+          <div className={`mt-1 inline-flex rounded border px-2 py-0.5 font-mono text-[11px] font-bold ${badgeClassForStatus(freshness === "OK" ? "CONNECTED" : freshness === "STALE" ? "STALE" : "DEGRADED")}`}>
+            {freshness}
           </div>
         </div>
-        <div className="rounded border border-border bg-background/50 px-2 py-1">
-          <div>1m lag</div>
-          <div className="text-foreground">{mp?.latest1mLagSeconds != null ? `${fmtNum(mp.latest1mLagSeconds, 0)}s` : "—"}</div>
+        <div className="rounded-lg border border-border bg-card px-3 py-2">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">1m lag (wall − store)</div>
+          <div className="mt-1 font-mono text-sm font-semibold text-foreground">
+            {mp?.latest1mLagSeconds != null ? `${fmtNum(mp.latest1mLagSeconds, 0)}s` : "—"}
+          </div>
         </div>
-        <div className="rounded border border-border bg-background/50 px-2 py-1">
-          <div>1m rows / min</div>
-          <div className="text-foreground">{fmtNum(mp?.candles1mPerMinuteApprox, 2)}</div>
+        <div className="rounded-lg border border-border bg-card px-3 py-2">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">1m rows / min</div>
+          <div className="mt-1 font-mono text-sm font-semibold text-foreground">{fmtNum(mp?.candles1mPerMinuteApprox, 2)}</div>
         </div>
-        <div className="rounded border border-border bg-background/50 px-2 py-1">
-          <div>Feed-paused accounts</div>
-          <div className="text-foreground">{fmtInt(mp?.adminFeedPausedAccountsApprox)}</div>
+        <div className="rounded-lg border border-border bg-card px-3 py-2">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Ops feed-paused (approx)</div>
+          <div className="mt-1 font-mono text-sm font-semibold text-foreground">{fmtInt(mp?.adminFeedPausedAccountsApprox)}</div>
         </div>
       </div>
-      <div className="mt-2 text-[10px] text-muted-foreground">
-        Vendors snapshot keys: {vendors != null && typeof vendors === "object" ? `${Object.keys(vendors as object).length} rails` : "—"}
+
+      <div className="mt-4">
+        <div className="text-xs font-semibold text-foreground">A. Feed ownership (per broker)</div>
+        <div className="mt-2 overflow-x-auto rounded-lg border border-border">
+          <table className="w-full min-w-[640px] border-collapse text-left font-mono text-[11px]">
+            <thead className="bg-muted/50 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="border-b border-border px-2 py-2">Broker</th>
+                <th className="border-b border-border px-2 py-2">Plane</th>
+                <th className="border-b border-border px-2 py-2">WS (admin)</th>
+                <th className="border-b border-border px-2 py-2">Token expiry</th>
+                <th className="border-b border-border px-2 py-2">HB age</th>
+                <th className="border-b border-border px-2 py-2">Connected</th>
+                <th className="border-b border-border px-2 py-2">Paused</th>
+              </tr>
+            </thead>
+            <tbody>
+              {BROKER_CONTROL_CENTER_ORDER.map((vk) => {
+                const v = asRecord(vendors[vk]) ?? {};
+                const st = String(v.status ?? "—").toUpperCase();
+                const ws = String(v.websocketStatus ?? "UNKNOWN").toUpperCase() === "UNKNOWN" ? "NOT_INSTRUMENTED" : String(v.websocketStatus ?? "—");
+                return (
+                  <tr key={vk} className="border-b border-border/80">
+                    <td className="px-2 py-1.5 font-semibold text-foreground">{vendorDisplayName(vk)}</td>
+                    <td className="px-2 py-1.5">
+                      <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${badgeClassForStatus(st)}`}>{st}</span>
+                    </td>
+                    <td className="px-2 py-1.5 text-foreground">{ws}</td>
+                    <td className="px-2 py-1.5 text-muted-foreground">{v.tokenExpiryNearest != null ? String(v.tokenExpiryNearest).slice(0, 19) : "—"}</td>
+                    <td className="px-2 py-1.5 text-foreground">{v.heartbeatAgeSeconds != null ? `${fmtInt(v.heartbeatAgeSeconds)}s` : "—"}</td>
+                    <td className="px-2 py-1.5 text-foreground">
+                      {fmtInt(v.connectedRows)}/{fmtInt(v.accountRows)}
+                    </td>
+                    <td className="px-2 py-1.5 text-foreground">{fmtInt(v.adminFeedPausedAccounts)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
-      <p className="mt-1 text-[10px] text-muted-foreground">{String(mp?.note ?? "")}</p>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div>
+          <div className="text-xs font-semibold text-foreground">B. Symbol freshness (1m store)</div>
+          <div className="mt-2 max-h-56 overflow-auto rounded-lg border border-border">
+            <table className="w-full border-collapse text-left font-mono text-[11px]">
+              <thead className="sticky top-0 bg-card text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="border-b border-border px-2 py-1.5">Symbol</th>
+                  <th className="border-b border-border px-2 py-1.5">Latest open</th>
+                  <th className="border-b border-border px-2 py-1.5">Rank</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!brokerLive ? (
+                  <tr>
+                    <td colSpan={3} className="px-2 py-4 text-sm text-muted-foreground">
+                      No market telemetry — broker feed offline. Stale-symbol ranking requires live ingestion path.
+                    </td>
+                  </tr>
+                ) : worst.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="px-2 py-4 text-sm text-muted-foreground">
+                      No worst-symbol rows returned (empty store or SQL probe returned zero).
+                    </td>
+                  </tr>
+                ) : (
+                  worst.slice(0, 40).map((row, i) => {
+                    const r = asRecord(row) ?? {};
+                    const sym = String(r.symbol ?? "");
+                    return (
+                      <tr key={`${sym}-${i}`} className="border-b border-border/80">
+                        <td className="px-2 py-1 text-foreground">{sym}</td>
+                        <td className="px-2 py-1 text-muted-foreground">{String(r.latestOpenTime ?? "—").slice(0, 19)}</td>
+                        <td className="px-2 py-1 text-muted-foreground">#{i + 1}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div className="text-xs font-semibold text-foreground">C. Aggregation + D. Scanner ownership</div>
+          <dl className="mt-2 space-y-2 rounded-lg border border-border bg-card p-3 font-mono text-[11px] text-muted-foreground">
+            <div className="flex justify-between gap-2">
+              <dt>1m ingestion</dt>
+              <dd className={`font-bold ${brokerLive ? "text-foreground" : "text-orange-700 dark:text-orange-200"}`}>
+                {brokerLive ? (freshness === "OK" ? "NOMINAL" : String(freshness)) : "BLOCKED"}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt>5m / aggregates</dt>
+              <dd className="text-foreground">{brokerLive ? "Follows 1m plane (same probe)" : "BLOCKED"}</dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt>Scans / engine</dt>
+              <dd className="text-foreground">
+                {brokerLive ? `${running} RUNNING · ${sig60} sig / 60m` : "PAUSED (no broker feed)"}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">{String(mp?.note ?? "")}</p>
+        </div>
+      </div>
     </OpsPanel>
   );
 }
@@ -1093,27 +1222,56 @@ export function LiveSignalFeed({ snapshot }: { snapshot: OpsSnapshot | undefined
   );
 }
 
-export function BackfillOperationsPanel() {
+export function BackfillOperationsPanel({ snapshot }: { snapshot: OpsSnapshot | undefined }) {
+  const brokerLive = hasActiveBrokerMarketFeed(snapshot);
+  const replay = asRecord(snapshot?.replayInfra);
+  const jq = typeof replay?.jobsQueued === "number" ? replay.jobsQueued : Number(replay?.jobsQueued ?? 0);
+  const jr = typeof replay?.jobsRunning === "number" ? replay.jobsRunning : Number(replay?.jobsRunning ?? 0);
+
   return (
-    <OpsPanel
-      title="Backfill control center"
-      subtitle="Historical rebuild / repair jobs are not exposed as admin mutations in this build."
-    >
-      <div className="flex flex-wrap gap-2">
-        {["Backfill NIFTY 200", "Rebuild aggregates", "Repair gaps", "Rebuild candles"].map((label) => (
-          <button
-            key={label}
-            type="button"
-            className="rounded border border-dashed border-border bg-background px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
-            onClick={() => notWired(label)}
-          >
-            {label}
-          </button>
-        ))}
+    <OpsPanel title="Backfill control center" subtitle="Replay job queue from operations snapshot — historical job mutations are not on admin HTTP yet.">
+      {!brokerLive ? (
+        <div className="mb-3 rounded-lg border border-orange-500/45 bg-orange-500/10 px-3 py-2 text-xs text-foreground">
+          <span className="font-semibold">Live coupling degraded · </span>
+          Without CONNECTED broker sessions, gap repair against live tape and freshness baselines cannot be validated from this
+          console.
+        </div>
+      ) : null}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-border bg-card px-3 py-2">
+          <div className="text-[10px] font-bold uppercase text-muted-foreground">Replay queued</div>
+          <div className="mt-1 font-mono text-lg font-semibold text-foreground">{fmtInt(jq)}</div>
+        </div>
+        <div className="rounded-lg border border-border bg-card px-3 py-2">
+          <div className="text-[10px] font-bold uppercase text-muted-foreground">Replay running</div>
+          <div className="mt-1 font-mono text-lg font-semibold text-foreground">{fmtInt(jr)}</div>
+        </div>
+        <div className="rounded-lg border border-border bg-card px-3 py-2">
+          <div className="text-[10px] font-bold uppercase text-muted-foreground">Broker feed</div>
+          <div className={`mt-1 inline-flex rounded border px-2 py-0.5 font-mono text-[11px] font-bold ${badgeClassForStatus(brokerLive ? "CONNECTED" : "OFFLINE")}`}>
+            {brokerLive ? "CONNECTED" : "OFFLINE"}
+          </div>
+        </div>
       </div>
-      <p className="mt-3 text-[11px] text-muted-foreground">
-        Progress, ETA, failed symbols, and throughput will bind to admin job APIs when the ingestion control plane is split from the monolith.
+      <p className="mt-4 text-[11px] leading-relaxed text-muted-foreground">
+        Bulk backfill / aggregate rebuild / gap repair <span className="font-semibold text-foreground">admin mutations</span> are not
+        exposed in this build. When APIs land, actions will bind here with progress + ETA. Until then, use DB tooling or worker
+        consoles outside this UI.
       </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Link
+          to="/admin/replay"
+          className="rounded-lg border border-border bg-background px-3 py-1.5 text-[11px] font-semibold text-foreground hover:bg-muted"
+        >
+          Replay infrastructure
+        </Link>
+        <Link
+          to="/admin/users"
+          className="rounded-lg border border-border bg-background px-3 py-1.5 text-[11px] font-semibold text-foreground hover:bg-muted"
+        >
+          Trader roster
+        </Link>
+      </div>
     </OpsPanel>
   );
 }

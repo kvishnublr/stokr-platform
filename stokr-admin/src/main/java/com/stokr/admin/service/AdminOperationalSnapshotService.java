@@ -24,6 +24,7 @@ import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.telemetry.ScannerExecutionTelemetryService;
+import com.stokr.user.broker.PlatformMarketFeedService;
 import com.stokr.user.repository.BrokerAccountRepository;
 import jakarta.persistence.EntityManager;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
@@ -84,6 +85,7 @@ public class AdminOperationalSnapshotService {
     private final MarketPlaneMonitorService marketPlaneMonitorService;
     private final OperationalHistoryService operationalHistoryService;
     private final ScannerExecutionTelemetryService scannerExecutionTelemetryService;
+    private final PlatformMarketFeedService platformMarketFeedService;
 
     @Autowired
     public AdminOperationalSnapshotService(
@@ -108,7 +110,8 @@ public class AdminOperationalSnapshotService {
             SignalDistributionTelemetryService signalDistributionTelemetryService,
             MarketPlaneMonitorService marketPlaneMonitorService,
             OperationalHistoryService operationalHistoryService,
-            ScannerExecutionTelemetryService scannerExecutionTelemetryService
+            ScannerExecutionTelemetryService scannerExecutionTelemetryService,
+            PlatformMarketFeedService platformMarketFeedService
     ) {
         this.killSwitchService = killSwitchService;
         this.liveTradingArmingService = liveTradingArmingService;
@@ -132,6 +135,7 @@ public class AdminOperationalSnapshotService {
         this.marketPlaneMonitorService = marketPlaneMonitorService;
         this.operationalHistoryService = operationalHistoryService;
         this.scannerExecutionTelemetryService = scannerExecutionTelemetryService;
+        this.platformMarketFeedService = platformMarketFeedService;
     }
 
     @Transactional(readOnly = true)
@@ -148,6 +152,7 @@ public class AdminOperationalSnapshotService {
         Map<String, Object> traderExecutionHealth = traderExecutionHealth();
         Map<String, Object> marketPlane = marketPlaneMonitorService.snapshot(now);
         Map<String, Object> operationalHistory = operationalHistoryService.snapshotSection();
+        Map<String, Object> platformMarketFeed = platformMarketFeedService.infrastructureSnapshot();
         @SuppressWarnings("unchecked")
         Map<String, Object> rabbit = (Map<String, Object>) system.get("rabbitQueues");
         List<Map<String, Object>> incidents = operationalIncidentService.evaluate(
@@ -171,7 +176,8 @@ public class AdminOperationalSnapshotService {
                 traderExecutionHealth,
                 incidents,
                 marketPlane,
-                operationalHistory
+                operationalHistory,
+                platformMarketFeed
         );
     }
 

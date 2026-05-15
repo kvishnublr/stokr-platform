@@ -26,6 +26,7 @@ import { AdminStrategiesPage } from "./pages/AdminStrategiesPage";
 import { AdminOmsMonitorPage } from "./pages/AdminOmsMonitorPage";
 import { AdminOpsPage } from "./pages/AdminOpsPage";
 import { AdminSectionPage } from "./pages/AdminSectionPage";
+import { AdminBrokerInfrastructurePage } from "./pages/admin/AdminBrokerInfrastructurePage";
 import { AdminAuditPage } from "./pages/admin/AdminAuditPage";
 import { AdminBackfillPage } from "./pages/admin/AdminBackfillPage";
 import { AdminControlsPage } from "./pages/admin/AdminControlsPage";
@@ -163,6 +164,8 @@ export default function App() {
           <Route path="admin" element={<AdminGate />}>
             <Route element={<AdminConsoleLayout />}>
               <Route index element={<AdminOverviewPage />} />
+              <Route path="broker-infrastructure" element={<AdminBrokerInfrastructurePage />} />
+              <Route path="market-connectivity" element={<Navigate to="../broker-infrastructure" replace />} />
               <Route path="market" element={<AdminMarketIntelPage />} />
               <Route path="replay" element={<AdminReplayInfraPage />} />
               <Route path="signals" element={<AdminSignalsPage />} />

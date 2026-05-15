@@ -12,6 +12,9 @@ import {
 } from "lucide-react";
 import { api, parseAxiosMessage } from "../api/client";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
+import { BrokerConnectionControlCenter } from "../components/admin/BrokerConnectionControlCenter";
+import { SystemReadinessBanner } from "../components/admin/SystemReadinessBanner";
+import { computeSystemReadiness, hasActiveBrokerMarketFeed } from "../components/admin/adminReadinessModel";
 import { GlassPanel } from "../components/ds/GlassPanel";
 import { MetricCard } from "../components/ds/MetricCard";
 import { StatusChip } from "../components/ds/StatusChip";
@@ -21,24 +24,7 @@ import { Link } from "react-router-dom";
 import { useSessionStore } from "../state/session";
 import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
-
-type OpsSnapshot = {
-  collectedAt: string;
-  marketInfra: Record<string, unknown>;
-  replayInfra: Record<string, unknown>;
-  oms: Record<string, unknown>;
-  system: Record<string, unknown>;
-  brokerSessions?: Record<string, unknown>;
-  marketFreshness?: Record<string, unknown>;
-  scannerTelemetry?: Record<string, unknown>;
-  signalDistribution?: Record<string, unknown>;
-  traderExecutionHealth?: Record<string, unknown>;
-  incidents?: Array<Record<string, unknown>>;
-};
-
-function asRecord(v: unknown): Record<string, unknown> | undefined {
-  return v != null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
-}
+import { asRecord, type OpsSnapshot } from "../components/admin/cockpit/opsTypes";
 
 /** Coarse status for admin cards — extends as more probes are added. */
 function infraPlaneStatus(snapshot: OpsSnapshot | undefined): "online" | "offline" | "degraded" | "unknown" {
@@ -103,16 +89,40 @@ export function AdminOverviewPage() {
 
   const panel = isLight ? ("light" as const) : ("dark" as const);
 
+  const readiness = computeSystemReadiness(operationsSnapshot.data);
+  const brokerLive = hasActiveBrokerMarketFeed(operationsSnapshot.data);
+
+  let overviewChipStatus: "online" | "degraded" | "offline" = "online";
+  let overviewChipLabel = "Platform ready";
+  if (!brokerLive) {
+    overviewChipStatus = "offline";
+    overviewChipLabel = "System not ready";
+  } else if (killOn && showRiskConsole) {
+    overviewChipStatus = "offline";
+    overviewChipLabel = "Kill armed";
+  } else if (readiness.level !== "READY") {
+    overviewChipStatus = readiness.level === "OFFLINE" ? "offline" : "degraded";
+    overviewChipLabel =
+      readiness.level === "BACKFILLING"
+        ? "Replay saturation"
+        : readiness.level === "LIMITED"
+          ? "Limited readiness"
+          : readiness.headline.length > 48
+            ? `${readiness.headline.slice(0, 45)}…`
+            : readiness.headline;
+  } else if (!showRiskConsole) {
+    overviewChipLabel = "Staff console";
+  }
+
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
+      <SystemReadinessBanner snapshot={operationsSnapshot.data} />
+      <BrokerConnectionControlCenter snapshot={operationsSnapshot.data} />
+
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div>
-            {showRiskConsole ? (
-              <StatusChip status={killOn ? "offline" : "online"} label={killOn ? "Kill armed" : "Markets tolerant"} />
-            ) : (
-              <StatusChip status="online" label="Staff console" />
-            )}
+            <StatusChip status={overviewChipStatus} label={overviewChipLabel} />
             <h1
               className={cn(
                 "mt-6 text-[32px] font-semibold tracking-tight",

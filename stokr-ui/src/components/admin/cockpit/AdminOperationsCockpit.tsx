@@ -77,7 +77,7 @@ export function AdminOperationsCockpit({
           <LiveSignalFeed snapshot={snapshot} />
         </div>
         <div className="xl:col-span-6">
-          <BackfillOperationsPanel />
+          <BackfillOperationsPanel snapshot={snapshot} />
         </div>
         <div className="xl:col-span-6">
           <ProjectionHealthPanel snapshot={snapshot} />

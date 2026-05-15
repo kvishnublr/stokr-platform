@@ -1,3 +1,4 @@
+import { hasActiveBrokerMarketFeed, hasPlatformMarketFeedConnected } from "./adminReadinessModel";
 import { asRecord, type OpsSnapshot } from "./cockpit/opsTypes";
 
 export type AdminOpsPill = {
@@ -25,7 +26,8 @@ function fmtSec(v: unknown): string {
 }
 
 function rabbitAggregate(rabbit: Record<string, unknown> | undefined): { status: string; hint?: string; maxDepth: number } {
-  if (!rabbit || Object.keys(rabbit).length === 0) return { status: "UNKNOWN", hint: "no queue props", maxDepth: -1 };
+  if (!rabbit || Object.keys(rabbit).length === 0)
+    return { status: "DEGRADED", hint: "Rabbit queue props not in snapshot — workers may still be healthy", maxDepth: -1 };
   let worst: "OK" | "DEGRADED" | "DOWN" | "SATURATED" = "OK";
   const hints: string[] = [];
   let maxDepth = -1;
@@ -51,22 +53,26 @@ function rabbitAggregate(rabbit: Record<string, unknown> | undefined): { status:
 }
 
 function brokerRailAggregate(vendors: Record<string, unknown> | undefined): { status: string; hint?: string } {
-  if (!vendors || Object.keys(vendors).length === 0) return { status: "UNKNOWN" };
+  if (!vendors || Object.keys(vendors).length === 0) return { status: "OFFLINE", hint: "no vendor snapshot" };
   let hasAccounts = false;
   let connected = 0;
   let degraded = 0;
+  let authExpired = false;
   for (const [, raw] of Object.entries(vendors)) {
     const v = asRecord(raw);
     const rows = typeof v?.accountRows === "number" ? v.accountRows : Number(v?.accountRows ?? 0);
     if (rows > 0) hasAccounts = true;
     const st = String(v?.status ?? "").toUpperCase();
+    const auth = String(v?.authStatus ?? "");
+    if (auth.includes("TOKENS_EXPIRED")) authExpired = true;
     if (st === "CONNECTED") connected++;
     if (st === "DEGRADED") degraded++;
   }
-  if (!hasAccounts) return { status: "DISCONNECTED", hint: "no broker_accounts rows" };
-  if (degraded > 0 && connected === 0) return { status: "DEGRADED" };
+  if (!hasAccounts) return { status: "OFFLINE", hint: "no broker_accounts rows" };
+  if (connected === 0 && authExpired) return { status: "AUTH_EXPIRED", hint: "tokens expired — refresh OAuth" };
+  if (degraded > 0 && connected === 0) return { status: "DEGRADED", hint: "sessions unhealthy" };
   if (connected > 0) return { status: "CONNECTED" };
-  return { status: "DISCONNECTED" };
+  return { status: "OFFLINE", hint: "no CONNECTED sessions" };
 }
 
 export function buildAdminOpsPills(
@@ -83,26 +89,33 @@ export function buildAdminOpsPills(
   const scan = asRecord(s?.scannerTelemetry);
   const brokersRoot = asRecord(s?.brokerSessions);
   const vendors = asRecord(brokersRoot?.vendors);
+  const brokerLive = hasActiveBrokerMarketFeed(s);
 
-  const redisSt = String(redis?.status ?? "UNKNOWN").toUpperCase();
+  const redisStRaw = String(redis?.status ?? "").toUpperCase();
   const dbSt = String(db?.status ?? "UNKNOWN").toUpperCase();
+  const redisSt = redisStRaw === "CONNECTED" ? "CONNECTED" : redisStRaw === "UNKNOWN" || redisStRaw === "" ? "DEGRADED" : "DISCONNECTED";
   const redisMs = redis?.pingMs != null ? `${redis.pingMs}ms` : undefined;
+  const redisHint = redisStRaw === "UNKNOWN" || redisStRaw === "" ? "probe missing — treat as degraded" : redisMs;
+
   const dbMs = db?.pingMs != null ? `${db.pingMs}ms` : undefined;
 
   const marketStRaw = String(fresh?.status ?? "UNKNOWN").toUpperCase();
-  const marketSt =
-    marketStRaw === "OK"
-      ? "CONNECTED"
-      : marketStRaw === "STALE"
-        ? "STALE"
-        : marketStRaw === "UNKNOWN"
-          ? "DEGRADED"
-          : "DEGRADED";
-  const lag = fresh?.latest1mLagSeconds != null ? `lag ${fmtSec(fresh.latest1mLagSeconds)}` : undefined;
+  let marketSt: string;
+  let lag = fresh?.latest1mLagSeconds != null ? `lag ${fmtSec(fresh.latest1mLagSeconds)}` : undefined;
+  if (!brokerLive) {
+    marketSt = "OFFLINE";
+    lag = [lag, "no CONNECTED broker sessions"].filter(Boolean).join(" · ");
+  } else if (marketStRaw === "OK") {
+    marketSt = "CONNECTED";
+  } else if (marketStRaw === "STALE") {
+    marketSt = "STALE";
+  } else {
+    marketSt = "DEGRADED";
+  }
 
   const stuck = typeof oms?.stuckOrdersApprox === "number" ? oms.stuckOrdersApprox : Number(oms?.stuckOrdersApprox ?? 0);
   const rej = typeof oms?.rejectRateApprox === "number" ? oms.rejectRateApprox : Number(oms?.rejectRateApprox ?? 0);
-  let omsSt = "CONNECTED";
+  let omsSt = "READY";
   if (redisSt !== "CONNECTED" || dbSt !== "CONNECTED") omsSt = "DEGRADED";
   else if (stuck > 0 || rej > 5) omsSt = "DEGRADED";
 
@@ -112,17 +125,34 @@ export function buildAdminOpsPills(
 
   const running = typeof scan?.runningStrategyInstances === "number" ? scan.runningStrategyInstances : 0;
   const sig60 = typeof scan?.signalsEmittedLast60m === "number" ? scan.signalsEmittedLast60m : 0;
-  const signalSt = running > 0 ? "CONNECTED" : sig60 > 0 ? "DEGRADED" : "DEGRADED";
-  const signalHint = running > 0 ? `${running} RUNNING inst.` : sig60 > 0 ? `${sig60} sig / 60m` : "no RUNNING scanners";
+  let signalSt: string;
+  let signalHint: string;
+  if (!brokerLive) {
+    signalSt = "PAUSED";
+    signalHint = "no broker feed";
+  } else if (running > 0) {
+    signalSt = "RUNNING";
+    signalHint = `${running} RUNNING inst.`;
+  } else if (sig60 > 0) {
+    signalSt = "DEGRADED";
+    signalHint = `${sig60} sig / 60m · no RUNNING`;
+  } else {
+    signalSt = "PAUSED";
+    signalHint = "no RUNNING scanners";
+  }
 
   const jq = typeof replay?.jobsQueued === "number" ? replay.jobsQueued : Number(replay?.jobsQueued ?? 0);
   const jr = typeof replay?.jobsRunning === "number" ? replay.jobsRunning : Number(replay?.jobsRunning ?? 0);
-  let replaySt = "CONNECTED";
+  let replaySt: string;
   if (jq > 80) replaySt = "BACKFILLING";
   else if (jq > 20) replaySt = "DEGRADED";
+  else if (!brokerLive) replaySt = "WAITING_FOR_MARKET_DATA";
+  else replaySt = "READY";
   const replayHint = `queued ${jq} · running ${jr}`;
 
-  const br = brokerRailAggregate(vendors);
+  const br = hasPlatformMarketFeedConnected(s)
+    ? { status: "CONNECTED", hint: "platform market feed session (admin OAuth)" }
+    : brokerRailAggregate(vendors);
 
   const armed = Boolean(sys?.liveTradingArmed);
   const kill = Boolean(sys?.killSwitch);
@@ -147,7 +177,7 @@ export function buildAdminOpsPills(
   return [
     { key: "mkt", label: "Market feed", status: marketSt, hint: lag },
     { key: "oms", label: "OMS", status: omsSt, hint: stuck > 0 ? `stuck≈${stuck}` : `rej ${rej.toFixed(2)}%` },
-    { key: "redis", label: "Redis", status: redisSt === "CONNECTED" ? "CONNECTED" : redisSt === "UNKNOWN" ? "UNKNOWN" : "DISCONNECTED", hint: redisMs },
+    { key: "redis", label: "Redis", status: redisSt, hint: redisHint },
     { key: "mq", label: "RabbitMQ", status: rb.status, hint: mqHint },
     { key: "pg", label: "PostgreSQL", status: dbSt === "CONNECTED" ? "CONNECTED" : "DISCONNECTED", hint: dbMs },
     { key: "rpq", label: "Replay queue", status: replaySt, hint: replayHint },
