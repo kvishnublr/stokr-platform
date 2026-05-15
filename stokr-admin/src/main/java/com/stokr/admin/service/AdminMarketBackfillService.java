@@ -391,7 +391,7 @@ public class AdminMarketBackfillService {
             List<String> symbols = resolveSymbols(g, List.of());
             preview.put(g, Map.of(
                     "count", symbols.size(),
-                    "symbols", symbols.stream().limit(20).toList()
+                    "symbols", symbols
             ));
         }
         m.put("symbolGroupPreview", preview);
