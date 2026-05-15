@@ -32,6 +32,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -48,6 +49,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
@@ -71,6 +73,22 @@ public class AdminMarketBackfillService {
 
     @Value("${stokr.market.backfill.zerodha.chunk-minutes:1000}")
     private int zerodhaChunkMinutes;
+
+    @Value("${stokr.market.universe.cache-seconds:3600}")
+    private long universeCacheSeconds;
+    @Value("${stokr.market.universe.nifty50-url:https://niftyindices.com/IndexConstituent/ind_nifty50list.csv}")
+    private String nifty50Url;
+    @Value("${stokr.market.universe.nifty100-url:https://niftyindices.com/IndexConstituent/ind_nifty100list.csv}")
+    private String nifty100Url;
+    @Value("${stokr.market.universe.nifty200-url:https://niftyindices.com/IndexConstituent/ind_nifty200list.csv}")
+    private String nifty200Url;
+    @Value("${stokr.market.universe.banknifty-url:https://niftyindices.com/IndexConstituent/ind_niftybanklist.csv}")
+    private String bankNiftyUrl;
+    @Value("${stokr.market.universe.finnifty-url:https://niftyindices.com/IndexConstituent/ind_niftyfinancelist.csv}")
+    private String finNiftyUrl;
+
+    private final RestClient restClient = RestClient.builder().build();
+    private final Map<String, UniverseCacheRow> universeCache = new ConcurrentHashMap<>();
 
     @Transactional
     public UUID createAndStart(UUID adminUserId, MarketBackfillCreateRequest req) {
@@ -444,21 +462,107 @@ public class AdminMarketBackfillService {
             return custom.stream().filter(s -> s != null && !s.isBlank()).map(String::trim).distinct().toList();
         }
         if ("NIFTY_50".equals(g)) {
-            return List.of("RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "ITC", "LT", "SBIN", "BHARTIARTL", "HINDUNILVR");
+            return loadUniverse("NIFTY_50", nifty50Url, fallbackNifty50());
         }
         if ("BANKNIFTY".equals(g)) {
-            return List.of("BANKNIFTY_FUT");
+            return loadUniverse("BANKNIFTY", bankNiftyUrl, fallbackBankNifty());
         }
         if ("FINNIFTY".equals(g)) {
-            return List.of("FINNIFTY_FUT");
+            return loadUniverse("FINNIFTY", finNiftyUrl, fallbackFinNifty());
         }
         if ("ALL_ACTIVE_STRATEGY_SYMBOLS".equals(g)) {
             return resolveStrategySymbols();
         }
-        if ("NIFTY_100".equals(g) || "NIFTY_200".equals(g) || "ALL_EQUITY".equals(g)) {
-            return List.of("NIFTY_FUT", "BANKNIFTY_FUT", "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY");
+        if ("NIFTY_100".equals(g)) {
+            return loadUniverse("NIFTY_100", nifty100Url, fallbackNifty100());
+        }
+        if ("NIFTY_200".equals(g)) {
+            return loadUniverse("NIFTY_200", nifty200Url, fallbackNifty200());
+        }
+        if ("ALL_EQUITY".equals(g)) {
+            return loadUniverse("NIFTY_200", nifty200Url, fallbackNifty200());
         }
         throw new BadRequestException("Unsupported symbolGroup: " + g);
+    }
+
+    private List<String> loadUniverse(String key, String url, List<String> fallback) {
+        UniverseCacheRow cached = universeCache.get(key);
+        if (cached != null && Duration.between(cached.loadedAt(), Instant.now()).getSeconds() < universeCacheSeconds && !cached.symbols().isEmpty()) {
+            return cached.symbols();
+        }
+        try {
+            String csv = restClient.get().uri(url).retrieve().body(String.class);
+            List<String> parsed = parseSymbolsFromCsv(csv);
+            if (!parsed.isEmpty()) {
+                universeCache.put(key, new UniverseCacheRow(parsed, Instant.now()));
+                return parsed;
+            }
+        } catch (Exception ex) {
+            log.warn("market.universe.fetch_failed group={} url={} err={}", key, url, ex.toString());
+        }
+        universeCache.put(key, new UniverseCacheRow(fallback, Instant.now()));
+        return fallback;
+    }
+
+    private List<String> parseSymbolsFromCsv(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return List.of();
+        }
+        String[] lines = csv.split("\\R");
+        if (lines.length < 2) {
+            return List.of();
+        }
+        String[] hdr = lines[0].split(",");
+        int symbolIdx = -1;
+        for (int i = 0; i < hdr.length; i++) {
+            String h = hdr[i].replace("\"", "").trim().toUpperCase(Locale.ROOT);
+            if ("SYMBOL".equals(h)) {
+                symbolIdx = i;
+                break;
+            }
+        }
+        if (symbolIdx < 0) {
+            return List.of();
+        }
+        Set<String> out = new HashSet<>();
+        for (int i = 1; i < lines.length; i++) {
+            String line = lines[i];
+            if (line == null || line.isBlank()) {
+                continue;
+            }
+            String[] row = line.split(",");
+            if (row.length <= symbolIdx) {
+                continue;
+            }
+            String s = row[symbolIdx].replace("\"", "").trim().toUpperCase(Locale.ROOT);
+            if (!s.isBlank()) {
+                out.add(s);
+            }
+        }
+        return out.stream().sorted().toList();
+    }
+
+    private static List<String> fallbackNifty50() {
+        return List.of("RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "ITC", "LT", "SBIN", "BHARTIARTL", "HINDUNILVR");
+    }
+
+    private static List<String> fallbackNifty100() {
+        return fallbackNifty50();
+    }
+
+    private static List<String> fallbackNifty200() {
+        return fallbackNifty100();
+    }
+
+    private static List<String> fallbackBankNifty() {
+        return List.of("HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK", "INDUSINDBK", "BANKBARODA", "PNB", "CANBK", "AUBANK", "IDFCFIRSTB", "FEDERALBNK");
+    }
+
+    private static List<String> fallbackFinNifty() {
+        return List.of("HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK", "BAJFINANCE", "BAJAJFINSV", "HDFCLIFE", "SBILIFE", "HDFCAMC");
+    }
+
+    private record UniverseCacheRow(List<String> symbols, Instant loadedAt) {
     }
 
     private boolean isCancelled(UUID jobId) {
