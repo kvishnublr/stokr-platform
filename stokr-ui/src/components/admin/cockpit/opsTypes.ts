@@ -1,4 +1,4 @@
-/** Shape of `GET /api/admin/operations/snapshot` — sections are intentionally loose (maps). */
+﻿/** Shape of `GET /api/admin/operations/snapshot` â€” sections are intentionally loose (maps). */
 
 export type OpsSnapshot = {
   collectedAt: string;
@@ -14,7 +14,7 @@ export type OpsSnapshot = {
   incidents?: Array<Record<string, unknown>>;
   marketPlane?: Record<string, unknown>;
   operationalHistory?: Record<string, unknown>;
-  /** Cascade: platform tape → scanner → signals → OMS (backend-computed). */
+  /** Cascade: platform tape â†’ scanner â†’ signals â†’ OMS (backend-computed). */
   operationalLifecycle?: Record<string, unknown>;
   /** Admin-owned platform market feed (per vendor), from platform_broker_feed_sessions. */
   platformMarketFeed?: Record<string, unknown>;
@@ -31,13 +31,13 @@ export function asArray(v: unknown): unknown[] | undefined {
 export function fmtNum(v: unknown, digits = 2): string {
   if (typeof v === "number" && Number.isFinite(v)) return v.toFixed(digits);
   if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return Number(v).toFixed(digits);
-  return "—";
+  return "â€”";
 }
 
 export function fmtInt(v: unknown): string {
   if (typeof v === "number" && Number.isFinite(v)) return String(Math.round(v));
   if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return String(Math.round(Number(v)));
-  return "—";
+  return "â€”";
 }
 
 export function badgeClassForStatus(status: string): string {
@@ -56,9 +56,10 @@ export function badgeClassForStatus(status: string): string {
     return "border-red-600/55 bg-red-600/12 text-red-900 dark:text-red-100";
   if (s === "AUTH_EXPIRED" || s === "RATE_LIMITED" || s === "LIMITED")
     return "border-amber-700/55 bg-amber-600/15 text-amber-950 dark:text-amber-50";
-  if (s === "PAUSED" || s === "WAITING_FOR_MARKET_DATA")
+  if (s === "PAUSED" || s === "WAITING_FOR_MARKET_DATA" || s === "IDLE")
     return "border-orange-600/50 bg-orange-500/12 text-orange-950 dark:text-orange-100";
   if (s === "UNKNOWN" || s === "NOT_INSTRUMENTED")
     return "border-dashed border-border bg-muted/40 text-foreground/80 dark:text-muted-foreground";
   return "border-border bg-card text-foreground";
 }
+

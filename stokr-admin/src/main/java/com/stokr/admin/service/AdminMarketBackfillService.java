@@ -551,8 +551,8 @@ public class AdminMarketBackfillService {
         }
         Instant cursor = rangeStart;
         List<HistoricalCandlePoint> merged = new ArrayList<>();
-        boolean partial = false;
-        String partialReason = null;
+        boolean hadChunkIssues = false;
+        String lastChunkIssue = null;
         while (cursor.isBefore(rangeEnd)) {
             Instant chunkEnd = cursor.plus(Duration.ofMinutes(Math.max(60, zerodhaChunkMinutes)));
             if (chunkEnd.isAfter(rangeEnd)) {
@@ -563,29 +563,35 @@ public class AdminMarketBackfillService {
                 if (merged.isEmpty()) {
                     return chunk;
                 }
-                partial = true;
-                partialReason = chunk.code() + ":" + chunk.detail();
-                break;
+                // Preserve already-fetched candles and continue with the next chunk boundary.
+                hadChunkIssues = true;
+                lastChunkIssue = chunk.code() + ":" + chunk.detail();
+                cursor = chunkEnd;
+                continue;
             }
             if (chunk.candles().isEmpty()) {
-                partial = true;
-                partialReason = "EMPTY_CHUNK";
-                break;
+                // Empty chunk can occur in non-trading intervals; move forward instead of failing symbol.
+                hadChunkIssues = true;
+                lastChunkIssue = "EMPTY_CHUNK";
+                cursor = chunkEnd;
+                continue;
             }
             merged.addAll(chunk.candles());
             Instant nextCursor = chunk.candles().get(chunk.candles().size() - 1).openTime().plusSeconds(60);
             if (!nextCursor.isAfter(cursor)) {
-                partial = true;
-                partialReason = "NON_ADVANCING_CURSOR";
-                break;
+                hadChunkIssues = true;
+                lastChunkIssue = "NON_ADVANCING_CURSOR";
+                cursor = chunkEnd;
+                continue;
             }
             cursor = nextCursor;
         }
         if (merged.isEmpty()) {
             return HistoricalFetchResult.fail("INCOMPLETE_RANGE", "No candles returned");
         }
-        if (partial) {
-            return HistoricalFetchResult.fail("PARTIAL_FETCH", "Fetched " + merged.size() + " candles before " + partialReason);
+        if (hadChunkIssues) {
+            log.warn("market.backfill.partial {} {} {} candles={} lastIssue={}",
+                    adapter.brokerCode(), symbol, timeframe, merged.size(), lastChunkIssue);
         }
         return HistoricalFetchResult.ok(merged);
     }

@@ -1,8 +1,8 @@
-import { Link } from "react-router-dom";
+﻿import { Link } from "react-router-dom";
 import { asRecord, badgeClassForStatus, fmtInt, type OpsSnapshot } from "./cockpit/opsTypes";
 
 /**
- * Institutional-first panel: admin platform market tape (Zerodha) — precedes trader broker_accounts cards.
+ * Institutional-first panel: admin platform market tape (Zerodha) â€” precedes trader broker_accounts cards.
  */
 export function PlatformLiveInfrastructurePanel({ snapshot }: { snapshot: OpsSnapshot | undefined }) {
   const life = asRecord(snapshot?.operationalLifecycle);
@@ -14,8 +14,10 @@ export function PlatformLiveInfrastructurePanel({ snapshot }: { snapshot: OpsSna
   const pathOk = life?.livePathOperational === true;
   const headline = life?.headline != null ? String(life.headline) : null;
   const reason = life?.platformTapeReason != null ? String(life.platformTapeReason) : String(z.operationalLivePathDetail ?? "");
-  const scannerSt = String(life?.scannerEngineState ?? (pathOk ? "RUNNING" : "PAUSED")).toUpperCase();
-  const sigSt = String(life?.signalGenerationState ?? "UNAVAILABLE").toUpperCase();
+  const scannerRaw = String(life?.scannerEngineState ?? (pathOk ? "IDLE" : "PAUSED")).toUpperCase();
+  const scannerSt = scannerRaw === "PAUSED" && pathOk ? "IDLE" : scannerRaw;
+  const sigRaw = String(life?.signalGenerationState ?? "UNAVAILABLE").toUpperCase();
+  const sigSt = sigRaw === "PAUSED" && pathOk ? "IDLE" : sigRaw;
   const omsSt = String(life?.omsPlaneState ?? "UNKNOWN").toUpperCase();
   const replaySt = String(life?.replayCouplingState ?? "UNKNOWN").toUpperCase();
   const blocked = Array.isArray(life?.blockedDependencySummary)
@@ -37,7 +39,7 @@ export function PlatformLiveInfrastructurePanel({ snapshot }: { snapshot: OpsSna
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Platform live market infrastructure</div>
-          <h2 className="mt-1 text-lg font-bold tracking-tight">Centralized market tape · Zerodha</h2>
+          <h2 className="mt-1 text-lg font-bold tracking-tight">Centralized market tape Â· Zerodha</h2>
           {headline ? <p className="mt-2 max-w-4xl text-sm leading-relaxed text-foreground">{headline}</p> : null}
           {!pathOk && blocked.length > 0 ? (
             <div className="mt-3 rounded-lg border border-border bg-background/80 px-3 py-2">
@@ -85,11 +87,11 @@ export function PlatformLiveInfrastructurePanel({ snapshot }: { snapshot: OpsSna
           </div>
           <div className="flex justify-between gap-2 text-muted-foreground">
             <dt>Packets/sec</dt>
-            <dd className="text-foreground">{typeof pps === "number" && Number.isFinite(pps) ? pps.toFixed(2) : "—"}</dd>
+            <dd className="text-foreground">{typeof pps === "number" && Number.isFinite(pps) ? pps.toFixed(2) : "â€”"}</dd>
           </div>
           <div className="flex justify-between gap-2 text-muted-foreground">
             <dt>Tick / HB age</dt>
-            <dd className="text-foreground">{hb != null ? `${fmtInt(hb)}s` : "—"}</dd>
+            <dd className="text-foreground">{hb != null ? `${fmtInt(hb)}s` : "â€”"}</dd>
           </div>
           <div className="flex justify-between gap-2 text-muted-foreground">
             <dt>Ticks (60s)</dt>
@@ -107,8 +109,8 @@ export function PlatformLiveInfrastructurePanel({ snapshot }: { snapshot: OpsSna
           </div>
           <div className="text-[10px] leading-snug text-muted-foreground">
             {life?.scannerPollSkipped === true && life?.scannerPollSkipReason
-              ? `Last poll: skipped — ${String(life.scannerPollSkipReason)}`
-              : "Poll telemetry reflects the most recent scheduler cycle."}
+              ? `Last poll: skipped â€” ${String(life.scannerPollSkipReason)}`
+              : "Latest scheduler cycle status."}
           </div>
         </dl>
         <dl className="space-y-1 rounded-lg border border-border bg-background/60 px-3 py-2 font-mono text-[11px]">
@@ -121,7 +123,7 @@ export function PlatformLiveInfrastructurePanel({ snapshot }: { snapshot: OpsSna
             <dd className={`font-bold ${badgeClassForStatus(replaySt === "OK" ? "CONNECTED" : "STALE")}`}>{replaySt}</dd>
           </div>
           <div className="text-[10px] leading-snug text-muted-foreground">
-            {life?.replayCouplingDetail ? String(life.replayCouplingDetail) : "—"}
+            {life?.replayCouplingDetail ? String(life.replayCouplingDetail) : "â€”"}
           </div>
         </dl>
         <dl className="space-y-1 rounded-lg border border-border bg-background/60 px-3 py-2 font-mono text-[11px]">
@@ -136,7 +138,7 @@ export function PlatformLiveInfrastructurePanel({ snapshot }: { snapshot: OpsSna
           <div className="flex justify-between gap-2 text-muted-foreground">
             <dt>Symbols (telemetry)</dt>
             <dd className="truncate text-right text-foreground" title={String(z.streamingSymbols ?? "")}>
-              {z.streamingSymbols != null ? String(z.streamingSymbols) : "—"}
+              {z.streamingSymbols != null ? String(z.streamingSymbols) : "â€”"}
             </dd>
           </div>
         </dl>
@@ -144,3 +146,5 @@ export function PlatformLiveInfrastructurePanel({ snapshot }: { snapshot: OpsSna
     </section>
   );
 }
+
+
