@@ -269,7 +269,7 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
               : "border-rose-500/30 bg-rose-950/20 text-rose-200",
           )}
         >
-          Could not load strategy metadata. Sign in and ensure the strategy catalog migrations are applied.
+          Could not load strategy metadata. {parseAxiosMessage(metaQuery.error)}
         </p>
       ) : null}
 

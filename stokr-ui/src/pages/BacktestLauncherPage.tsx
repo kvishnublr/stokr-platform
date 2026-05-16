@@ -3,7 +3,7 @@ import { cn } from "../lib/utils";
 import { useUiThemeStore } from "../state/uiTheme";
 import { useSearchParams } from "react-router-dom";
 
-const DEFAULT_STRATEGY_KEY = "MEAN_REVERSION_V2";
+const DEFAULT_STRATEGY_KEY = "MEAN_REVERSION_RANGE_FADE";
 
 export function BacktestLauncherPage() {
   const isLight = useUiThemeStore((s) => s.mode === "light");

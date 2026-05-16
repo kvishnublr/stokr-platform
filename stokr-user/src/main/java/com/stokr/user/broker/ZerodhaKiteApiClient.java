@@ -12,6 +12,8 @@ import org.springframework.web.client.RestClient;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -24,6 +26,8 @@ import java.util.Map;
 public class ZerodhaKiteApiClient {
 
     private static final String BASE = "https://api.kite.trade";
+    private static final ZoneId INDIA = ZoneId.of("Asia/Kolkata");
+    private static final DateTimeFormatter KITE_DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final ObjectMapper objectMapper;
     private final RestClient http = RestClient.builder().build();
@@ -85,8 +89,8 @@ public class ZerodhaKiteApiClient {
             Instant toInclusive
     ) {
         String itv = interval == null || interval.isBlank() ? "minute" : interval.trim().toLowerCase();
-        String from = URLEncoder.encode(fromInclusive.toString(), StandardCharsets.UTF_8);
-        String to = URLEncoder.encode(toInclusive.toString(), StandardCharsets.UTF_8);
+        String from = URLEncoder.encode(KITE_DT.format(fromInclusive.atZone(INDIA)), StandardCharsets.UTF_8);
+        String to = URLEncoder.encode(KITE_DT.format(toInclusive.atZone(INDIA)), StandardCharsets.UTF_8);
         String url = BASE + "/instruments/historical/" + instrumentToken + "/" + itv
                 + "?from=" + from
                 + "&to=" + to

@@ -34,6 +34,15 @@ public class StrategyMetadataQueryService {
                 .orElseThrow(() -> new NotFoundException("Strategy definition not found: " + key));
         String raw = def.getParameterMetadataJson();
         if (raw == null || raw.isBlank()) {
+            // Operational fallback: legacy/variant keys may not have dedicated metadata docs yet.
+            // Reuse the canonical mean-reversion metadata so launcher is still usable.
+            if (StrategyKeys.MEAN_REVERSION_V2.equalsIgnoreCase(key)) {
+                raw = definitionRepository.findByStrategyKeyAndDeletedFalse(StrategyKeys.MEAN_REVERSION_RANGE_FADE)
+                        .map(StrategyDefinition::getParameterMetadataJson)
+                        .orElse(null);
+            }
+        }
+        if (raw == null || raw.isBlank()) {
             throw new BadRequestException("No parameter metadata published for strategy: " + key);
         }
         try {
