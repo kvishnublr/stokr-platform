@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.bootstrap.config.PlatformZerodhaFeedProperties;
 import com.stokr.common.crypto.FieldCipher;
+import com.stokr.user.broker.PlatformMarketFeedService;
 import com.stokr.user.broker.ZerodhaKiteApiClient;
 import com.stokr.user.config.ZerodhaBrokerProperties;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
@@ -59,6 +60,7 @@ public class PlatformZerodhaLiveFeedRuntime {
     private final ZerodhaKiteApiClient kiteApiClient;
     private final FieldCipher fieldCipher;
     private final PlatformBrokerFeedSessionRepository sessionRepository;
+    private final PlatformMarketFeedService platformMarketFeedService;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformZerodhaFeedTelemetryService telemetryService;
     private final ObjectMapper objectMapper;
@@ -120,6 +122,12 @@ public class PlatformZerodhaLiveFeedRuntime {
             return;
         }
         PlatformBrokerFeedSession session = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(VENDOR).orElse(null);
+        if (session == null) {
+            boolean bootstrapped = platformMarketFeedService.ensureSessionFromTraderFallback(VENDOR);
+            if (bootstrapped) {
+                session = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(VENDOR).orElse(null);
+            }
+        }
         if (session == null || session.isIngestionPaused()) {
             closeActive(session == null ? "no_platform_session" : "ingestion_paused");
             return;

@@ -109,6 +109,13 @@ function extractAuthSource(message: string | null | undefined): string {
   return match?.[1]?.toUpperCase() ?? "UNKNOWN";
 }
 
+function parseCustomSymbols(input: string): string[] {
+  return input
+    .split(/[\s,]+/)
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+}
+
 export function AdminBackfillPage() {
   const qc = useQueryClient();
   const [brokerSource, setBrokerSource] = useState("ZERODHA");
@@ -156,13 +163,7 @@ export function AdminBackfillPage() {
         timeframe,
         rangeStart,
         rangeEnd,
-        customSymbols:
-          symbolGroup === "CUSTOM"
-            ? customSymbols
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : [],
+        customSymbols: symbolGroup === "CUSTOM" ? parseCustomSymbols(customSymbols) : [],
       }),
     onSuccess: async () => {
       toast.success("Backfill job queued");
@@ -204,9 +205,13 @@ export function AdminBackfillPage() {
   }, [jobDetail.data?.failures, failedOnly, filteredSymbols]);
 
   const groupPreview = useMemo(() => {
+    if (symbolGroup === "CUSTOM") {
+      const symbols = parseCustomSymbols(customSymbols);
+      return { count: symbols.length, symbols };
+    }
     const root = (caps.data?.symbolGroupPreview ?? {}) as Record<string, SymbolGroupPreview>;
     return root[symbolGroup] ?? { count: 0, symbols: [] };
-  }, [caps.data, symbolGroup]);
+  }, [caps.data, symbolGroup, customSymbols]);
 
   const strategyAudit = useQuery({
     queryKey: ["admin-backfill-strategy-audit", auditFrom, auditTo, timeframe],

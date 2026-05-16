@@ -59,9 +59,9 @@ spring:
     listener:
       simple:
         # Set false in .env when RabbitMQ is not running locally (API + login without full stack).
-        auto-startup: ${STOKR_RABBIT_LISTENERS_ENABLED:false}
+        auto-startup: ${STOKR_RABBIT_LISTENERS_ENABLED:true}
       direct:
-        auto-startup: ${STOKR_RABBIT_LISTENERS_ENABLED:false}
+        auto-startup: ${STOKR_RABBIT_LISTENERS_ENABLED:true}
 
 management:
   endpoints:
@@ -93,7 +93,7 @@ stokr:
   rabbit:
     # Gates @RabbitListener registration (see stokr-execution messaging). Same env as spring.rabbitmq.listener.*.auto-startup.
     # false = no AMQP consumer reconnect loop when RabbitMQ is down (typical local IntelliJ + DB only).
-    listeners-enabled: ${STOKR_RABBIT_LISTENERS_ENABLED:false}
+    listeners-enabled: ${STOKR_RABBIT_LISTENERS_ENABLED:true}
   admin:
     ops:
       sse-tick-ms: ${STOKR_ADMIN_OPS_SSE_TICK_MS:3000}

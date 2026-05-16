@@ -27,8 +27,13 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
     Optional<StrategySignalEntity> findFirstByInstance_IdAndDeletedFalseOrderByCreatedAtDesc(UUID instanceId);
 
     @Query("""
-            select s from StrategySignalEntity s join s.instance i
-            where i.userId = :userId and s.deleted = false and i.deleted = false
+            select s from StrategySignalEntity s
+            left join s.instance i
+            where s.deleted = false
+              and (
+                    (i is not null and i.deleted = false and i.userId = :userId)
+                    or s.userId = :userId
+                  )
             order by s.createdAt desc
             """)
     List<StrategySignalEntity> findRecentForTrader(@Param("userId") UUID userId, Pageable pageable);

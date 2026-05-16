@@ -107,7 +107,8 @@ public class ZerodhaBrokerOperationsService {
         }
         BrokerAccount account = opt.get();
         Double cash = extractEquityAvailableCash(account.getMarginSnapshotJson());
-        if (cash == null) {
+        Double availableMargin = extractEquityAvailableMargin(account.getMarginSnapshotJson());
+        if (cash == null && availableMargin == null) {
             // Backfill missing snapshot from live broker when session exists, so sidebar margin is not blank.
             try {
                 Session s = requireSession(userId);
@@ -119,15 +120,18 @@ public class ZerodhaBrokerOperationsService {
                     account.setHealthStatus("HEALTHY");
                     brokerAccountRepository.save(account);
                     cash = extractEquityAvailableCash(account.getMarginSnapshotJson());
+                    availableMargin = extractEquityAvailableMargin(account.getMarginSnapshotJson());
                 }
             } catch (Exception ex) {
                 log.debug("broker.accounts_funds.live_fetch_skipped userId={} reason={}", userId, ex.getClass().getSimpleName());
             }
         }
-        if (cash == null) {
+        if (cash == null && availableMargin == null) {
             return List.of();
         }
-        return List.of(new BrokerAccountFundsDto(cash, cash));
+        Double normalizedCash = cash != null ? cash : availableMargin;
+        Double normalizedMargin = availableMargin != null ? availableMargin : cash;
+        return List.of(new BrokerAccountFundsDto(normalizedCash, normalizedMargin));
     }
 
     @Transactional(readOnly = true)
@@ -422,17 +426,32 @@ public class ZerodhaBrokerOperationsService {
         try {
             JsonNode data = objectMapper.readTree(marginSnapshotJson);
             JsonNode cashNode = data.path("equity").path("available").path("cash");
-            if (cashNode == null || cashNode.isMissingNode() || cashNode.isNull()) {
-                return null;
+            return asDoubleOrNull(cashNode);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Kite may report zero for available.cash while usable headroom appears in live/opening balance fields.
+     */
+    private Double extractEquityAvailableMargin(String marginSnapshotJson) {
+        if (marginSnapshotJson == null || marginSnapshotJson.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode data = objectMapper.readTree(marginSnapshotJson);
+            JsonNode available = data.path("equity").path("available");
+            Double liveBalance = asDoubleOrNull(available.path("live_balance"));
+            Double openingBalance = asDoubleOrNull(available.path("opening_balance"));
+            Double cash = asDoubleOrNull(available.path("cash"));
+            if (liveBalance != null) {
+                return liveBalance;
             }
-            if (cashNode.isNumber()) {
-                return cashNode.doubleValue();
+            if (openingBalance != null) {
+                return openingBalance;
             }
-            String t = cashNode.asText();
-            if (t == null || t.isBlank()) {
-                return null;
-            }
-            return Double.parseDouble(t);
+            return cash;
         } catch (Exception e) {
             return null;
         }
@@ -450,7 +469,8 @@ public class ZerodhaBrokerOperationsService {
             }
             String net = eq.path("net").asText("");
             String cash = eq.path("available").path("cash").asText("");
-            return "equity.net=" + net + ", equity.available.cash=" + cash;
+            String liveBalance = eq.path("available").path("live_balance").asText("");
+            return "equity.net=" + net + ", equity.available.cash=" + cash + ", equity.available.live_balance=" + liveBalance;
         } catch (Exception e) {
             return null;
         }
@@ -463,7 +483,26 @@ public class ZerodhaBrokerOperationsService {
         JsonNode eq = data.path("equity");
         String net = eq.path("net").asText("");
         String cash = eq.path("available").path("cash").asText("");
-        return "equity.net=" + net + ", equity.available.cash=" + cash;
+        String liveBalance = eq.path("available").path("live_balance").asText("");
+        return "equity.net=" + net + ", equity.available.cash=" + cash + ", equity.available.live_balance=" + liveBalance;
+    }
+
+    private static Double asDoubleOrNull(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        if (node.isNumber()) {
+            return node.doubleValue();
+        }
+        String t = node.asText();
+        if (t == null || t.isBlank()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(t);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private String deriveTestTradeDisabledReason(boolean connected, boolean tokenValid) {

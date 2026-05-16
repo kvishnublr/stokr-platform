@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.common.crypto.FieldCipher;
 import com.stokr.common.exception.BadRequestException;
 import com.stokr.user.config.ZerodhaBrokerProperties;
+import com.stokr.user.domain.BrokerAccount;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
 import com.stokr.user.domain.PlatformBrokerOauthState;
+import com.stokr.user.repository.BrokerAccountRepository;
 import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
 import com.stokr.user.repository.PlatformBrokerOauthStateRepository;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +49,7 @@ public class PlatformMarketFeedService {
     private final ObjectMapper objectMapper;
     private final PlatformBrokerFeedSessionRepository sessionRepository;
     private final PlatformBrokerOauthStateRepository oauthStateRepository;
+    private final BrokerAccountRepository brokerAccountRepository;
     private final ZerodhaKiteApiClient kiteApiClient;
     private final RestClient http = RestClient.builder().build();
 
@@ -260,6 +263,7 @@ public class PlatformMarketFeedService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("vendorCode", vendor);
         m.put("role", "PLATFORM_MARKET_FEED");
+        ensureSessionFromTraderFallback(vendor);
         Optional<PlatformBrokerFeedSession> opt = sessionRepository.findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(vendor);
         if (opt.isEmpty()) {
             m.put("connectionState", "DISCONNECTED");
@@ -329,6 +333,41 @@ public class PlatformMarketFeedService {
             m.put("operationalLivePathDetail", "Token valid, WS open, ticks fresh, packets and subscriptions present");
         }
         return m;
+    }
+
+    @Transactional
+    public boolean ensureSessionFromTraderFallback(String vendor) {
+        String normalized = normalizeVendor(vendor);
+        if (!"ZERODHA".equals(normalized)) {
+            return false;
+        }
+        PlatformBrokerFeedSession existing = sessionRepository
+                .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(normalized)
+                .orElse(null);
+        if (existing != null && existing.getAccessTokenEnc() != null && !existing.getAccessTokenEnc().isBlank()) {
+            return false;
+        }
+        BrokerAccount trader = brokerAccountRepository
+                .findFirstByVendorCodeIgnoreCaseAndDeletedFalseAndStatusIgnoreCaseAndAccessTokenEncIsNotNullOrderByUpdatedAtDesc(
+                        normalized,
+                        "CONNECTED"
+                )
+                .orElse(null);
+        if (trader == null || trader.getAccessTokenEnc() == null || trader.getAccessTokenEnc().isBlank()) {
+            return false;
+        }
+        PlatformBrokerFeedSession target = existing != null ? existing : new PlatformBrokerFeedSession();
+        target.setVendorCode(normalized);
+        target.setAccessTokenEnc(trader.getAccessTokenEnc());
+        target.setRefreshTokenEnc(trader.getRefreshTokenEnc());
+        target.setTokenExpiresAt(trader.getTokenExpiresAt());
+        target.setConnectionState("CONNECTED");
+        target.setWebsocketState("CLOSED");
+        target.setInstrumentSyncState("UNKNOWN");
+        target.setLastSyncAt(Instant.now());
+        sessionRepository.save(target);
+        log.info("platform.feed.session_bootstrap_from_trader vendor={} brokerUserId={}", normalized, trader.getBrokerUserId());
+        return true;
     }
 
     private void overlayDecodedTelemetry(Map<String, Object> m, String telemetryJson) {

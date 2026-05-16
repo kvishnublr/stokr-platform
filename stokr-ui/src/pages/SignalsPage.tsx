@@ -56,7 +56,7 @@ export function SignalsPage() {
             Signals
           </h1>
           <p className={isLight ? "mt-1 text-sm text-neutral-600" : "mt-1 text-sm text-neutral-400"}>
-            Live trader signal feed by strategy and symbol.
+            Live and historical trader signals by strategy and symbol.
           </p>
         </div>
         <input
@@ -66,7 +66,7 @@ export function SignalsPage() {
           className={isLight ? "rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-900 outline-none focus:border-blue-500" : "rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm text-white outline-none focus:border-blue-600"}
         />
       </div>
-      <DataGrid columns={cols} data={rows} isLoading={q.isLoading} emptyLabel="No signals yet" variant={isLight ? "light" : "dark"} />
+      <DataGrid columns={cols} data={rows} isLoading={q.isLoading} emptyLabel="No live/history signals found yet" variant={isLight ? "light" : "dark"} />
     </div>
   );
 }

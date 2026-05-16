@@ -312,7 +312,7 @@ export function TerminalPage() {
       ) : null}
 
       <div className={cn("rounded-2xl border p-4", isLight ? "border-neutral-200 bg-white" : "border-neutral-800 bg-neutral-950/60")}>
-        <WorkspaceTabs tabs={TABS} active={tab} onChange={setTab} />
+        <WorkspaceTabs tabs={TABS} active={tab} onChange={setTab} variant={isLight ? "light" : "dark"} />
 
         <WorkspaceTabPanel id="open" active={tab}>
           <Table

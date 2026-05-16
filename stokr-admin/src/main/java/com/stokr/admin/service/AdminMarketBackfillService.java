@@ -524,7 +524,11 @@ public class AdminMarketBackfillService {
             if (custom == null) {
                 return List.of();
             }
-            return custom.stream().filter(s -> s != null && !s.isBlank()).map(String::trim).distinct().toList();
+            return custom.stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .map(s -> s.trim().toUpperCase(Locale.ROOT))
+                    .distinct()
+                    .toList();
         }
         if ("NIFTY_50".equals(g)) {
             return loadUniverse("NIFTY_50", nifty50Url, fallbackNifty50());
