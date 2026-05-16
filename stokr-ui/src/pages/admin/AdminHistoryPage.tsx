@@ -13,7 +13,7 @@ export function AdminHistoryPage() {
     <div className="space-y-3 text-foreground">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Operational history</h1>
-        <p className="mt-1 text-xs text-muted-foreground">Recent admin orchestration events — extend with time-series analytics as data lands.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Recent admin orchestration events - extend with time-series analytics as data lands.</p>
       </div>
       <OperationalHistoryStrip snapshot={snapshot.data} />
     </div>

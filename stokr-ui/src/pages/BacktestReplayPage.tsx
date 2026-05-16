@@ -76,15 +76,15 @@ export function BacktestReplayPage() {
     const reasons: string[] = [];
     if (bars === 0) {
       diagnosis = "NO_DATA";
-      reasons.push("No candles returned for this window — verify ingestion or synthetic seeding for the replay symbol.");
+      reasons.push("No candles returned for this window - verify ingestion or synthetic seeding for the replay symbol.");
     } else if (trades > 0 || ex > 0) {
       diagnosis = "COMPLETED";
     } else if (sig > 0) {
       diagnosis = "EXECUTION_BLOCKED";
-      reasons.push("Signals exist in the journal/store but executions are empty — inspect OMS bridge, execution mode, and risk gates.");
+      reasons.push("Signals exist in the journal/store but executions are empty - inspect OMS bridge, execution mode, and risk gates.");
     } else {
       diagnosis = "NO_SIGNALS";
-      reasons.push("Bars advanced but no persisted signals — strategy filters may be too strict, timeframe legs missing (e.g. 5m), or regime mismatch.");
+      reasons.push("Bars advanced but no persisted signals - strategy filters may be too strict, timeframe legs missing (e.g. 5m), or regime mismatch.");
     }
     return { diagnosis, bars, sig, ex, trades, reasons, loop: o.loopTelemetry };
   }, [outcome, candlesQ.data?.length]);
@@ -184,18 +184,18 @@ export function BacktestReplayPage() {
   }, [markers, candleData.length]);
 
   if (!runId) return null;
-  if (detailQ.isLoading) return <div className="text-sm text-neutral-400">Loading run…</div>;
+  if (detailQ.isLoading) return <div className="text-sm text-neutral-400">Loading run...</div>;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <Link to={`/backtests/${runId}`} className="text-xs text-neutral-500 hover:text-neutral-300">
-            ← Run metrics
+            â† Run metrics
           </Link>
           <h2 className="mt-2 text-xl font-semibold text-white">Replay visualization</h2>
           <p className="mt-1 font-mono text-xs text-neutral-400">
-            {symbol} {tf} {detailQ.data?.correlationId ? `· corr ${detailQ.data.correlationId}` : ""}
+            {symbol} {tf} {detailQ.data?.correlationId ? ` ·  corr ${detailQ.data.correlationId}` : ""}
           </p>
         </div>
       </div>
@@ -224,8 +224,8 @@ export function BacktestReplayPage() {
           </dl>
           {replayExplain.loop ? (
             <div className="mt-3 font-mono text-[11px] text-neutral-500">
-              Loop: processed {replayExplain.loop.candlesProcessed ?? "—"} / expected {replayExplain.loop.candlesExpected ?? "—"} · emitted{" "}
-              {replayExplain.loop.signalsEmitted ?? "—"}
+              Loop: processed {replayExplain.loop.candlesProcessed ?? "-"} / expected {replayExplain.loop.candlesExpected ?? "-"}  ·  emitted{" "}
+              {replayExplain.loop.signalsEmitted ?? "-"}
             </div>
           ) : null}
           <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-neutral-400">
@@ -238,9 +238,9 @@ export function BacktestReplayPage() {
 
       <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-4">
         <div ref={chartRef} className="h-[420px] w-full" />
-        {candlesQ.isLoading ? <div className="mt-2 text-xs text-neutral-500">Loading candles…</div> : null}
+        {candlesQ.isLoading ? <div className="mt-2 text-xs text-neutral-500">Loading candles...</div> : null}
         {candlesQ.data?.length === 0 ? (
-          <div className="mt-2 text-xs text-amber-300">No candles in range — ingest market data for this symbol/tf.</div>
+          <div className="mt-2 text-xs text-amber-300">No candles in range - ingest market data for this symbol/tf.</div>
         ) : null}
       </div>
 

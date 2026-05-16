@@ -37,7 +37,7 @@ const STEPS = [
   "Email verified",
   "Telegram",
   "WhatsApp",
-  "Broker · Zerodha",
+  "Broker  ·  Zerodha",
   "Risk profile",
   "Strategy",
   "Mode",
@@ -60,7 +60,7 @@ export function OnboardingWizardPage() {
     enabled: !!accessToken,
   });
 
-  /** Sync workstation session flags when polling returns new truth — keeps nav banners accurate. */
+  /** Sync workstation session flags when polling returns new truth - keeps nav banners accurate. */
   useEffect(() => {
     const s = q.data;
     if (!s || !accessToken || !refreshToken) return;
@@ -100,7 +100,7 @@ export function OnboardingWizardPage() {
     if (s.whatsAppVerified) n++;
     if (s.zerodhaBrokerConnected) n++;
     n++; // risk profile placeholder counted when onboarding flags progress
-    n++; // strategy — user-controlled
+    n++; // strategy - user-controlled
     n++; // mode
     n++; // allocation
     if (s.onboardingComplete && s.liveTradingApproved) n++; // simplified runtime gate
@@ -173,7 +173,7 @@ export function OnboardingWizardPage() {
             <ChecklistTile
               done={Boolean(s?.telegramVerified)}
               title="Telegram binding"
-              desc={s?.telegramUsername ? `@${s.telegramUsername}` : "Configure @username · deep-link bot handshake."}
+              desc={s?.telegramUsername ? `@${s.telegramUsername}` : "Configure @username  ·  deep-link bot handshake."}
               icon={Radio}
               to="/brokers"
             />
@@ -186,7 +186,7 @@ export function OnboardingWizardPage() {
             <ChecklistTile
               done={Boolean(s?.zerodhaBrokerConnected)}
               title="Zerodha session"
-              desc="Encrypted Kite OAuth · margin snapshots & health pings."
+              desc="Encrypted Kite OAuth  ·  margin snapshots & health pings."
               icon={Shield}
               to="/brokers"
             />
@@ -200,7 +200,7 @@ export function OnboardingWizardPage() {
               done={Boolean(s?.liveTradingApproved)}
               title="Administrative LIVE approval"
               icon={Target}
-              desc="Operations must flip live_trading_approved · arm stack + Redis still required at execution time."
+              desc="Operations must flip live_trading_approved  ·  arm stack + Redis still required at execution time."
               warn={!s?.liveTradingApproved}
             />
 
@@ -222,14 +222,14 @@ export function OnboardingWizardPage() {
               <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
                 <div className="text-xs font-semibold text-white">Paper vs LIVE</div>
                 <p className="mt-2 text-xs text-neutral-500">
-                  Operate deterministic SIM until onboarding matrix is green · flip execution mode inside running strategy
+                  Operate deterministic SIM until onboarding matrix is green  ·  flip execution mode inside running strategy
                   shells only once checks pass.
                 </p>
               </div>
               <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
                 <div className="text-xs font-semibold text-white">Allocation policy</div>
                 <p className="mt-2 text-xs text-neutral-500">
-                  Configure multiples and max loss envelopes per instance — risk engine rejects unknown strategy keys &
+                  Configure multiples and max loss envelopes per instance - risk engine rejects unknown strategy keys &
                   degraded broker health.
                 </p>
               </div>
@@ -255,7 +255,7 @@ export function OnboardingWizardPage() {
               <div>
                 <div className="font-semibold text-rose-50">LIVE awaits operations</div>
                 <div className="mt-2 text-xs text-rose-200/90">
-                  Administrators must explicitly approve routed broker orders regardless of onboarding completion · contact
+                  Administrators must explicitly approve routed broker orders regardless of onboarding completion  ·  contact
                   your desk if stuck in paper-only mode with green checks.
                 </div>
               </div>
@@ -266,7 +266,7 @@ export function OnboardingWizardPage() {
               <div>
                 <div className="font-semibold text-emerald-50">Ready class profile</div>
                 <div className="mt-2 text-xs text-emerald-200/90">
-                  Green stack · maintain broker session health · monitor kill switch telemetry from the operations console.
+                  Green stack  ·  maintain broker session health  ·  monitor kill switch telemetry from the operations console.
                 </div>
               </div>
             </GlassPanel>
@@ -306,7 +306,7 @@ function ChecklistTile({
           <p className="mt-2 text-xs leading-relaxed text-neutral-500">{desc}</p>
           {to && !done ? (
             <Link to={to} className="mt-3 inline-block text-[11px] font-bold uppercase tracking-widest text-blue-400">
-              Open lane →
+              Open lane â†’
             </Link>
           ) : null}
         </div>

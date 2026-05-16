@@ -9,16 +9,22 @@ import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.concurrent.TimeoutException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 @RequiredArgsConstructor
@@ -29,6 +35,8 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
     private final PlatformBrokerFeedSessionRepository platformSessionRepository;
     private final FieldCipher fieldCipher;
     private final ZerodhaKiteApiClient kiteApiClient;
+    private final Map<String, InstrumentCacheRow> instrumentCacheByExchange = new ConcurrentHashMap<>();
+    private static final long INSTRUMENT_CACHE_TTL_SECONDS = 600L;
 
     @Override
     public String brokerCode() {
@@ -111,9 +119,23 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
             return HistoricalFetchResult.ok(out);
         } catch (RestClientResponseException ex) {
             return mapHttpFailure(request.symbol(), ex);
+        } catch (ResourceAccessException ex) {
+            String msg = ex.getMessage() == null ? "resource access error" : ex.getMessage();
+            String code = isTimeoutMessage(msg, ex) ? "BROKER_TIMEOUT" : "BROKER_NETWORK_ERROR";
+            return HistoricalFetchResult.fail(code, msg);
+        } catch (RestClientException ex) {
+            String msg = ex.getMessage() == null ? "rest client error" : ex.getMessage();
+            return HistoricalFetchResult.fail("BROKER_CLIENT_ERROR", msg);
         } catch (Exception ex) {
             log.warn("zerodha.historical.fetch_failed symbol={} {}", request.symbol(), ex.toString());
-            return HistoricalFetchResult.fail("BROKER_FETCH_FAILED", ex.getClass().getSimpleName() + ": " + ex.getMessage());
+            String msg = ex.getClass().getSimpleName() + ": " + ex.getMessage();
+            if (isTimeoutMessage(msg, ex)) {
+                return HistoricalFetchResult.fail("BROKER_TIMEOUT", msg);
+            }
+            if (msg.toUpperCase(Locale.ROOT).contains("JSON") || msg.toUpperCase(Locale.ROOT).contains("PARSE")) {
+                return HistoricalFetchResult.fail("BROKER_PAYLOAD_PARSE_FAILED", msg);
+            }
+            return HistoricalFetchResult.fail("BROKER_FETCH_FAILED", msg);
         }
     }
 
@@ -153,10 +175,10 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         String lastErrorDetail = null;
         for (String exchange : List.of("NSE", "NFO")) {
             try {
-                String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, exchange);
+                Map<String, Long> tokenMap = loadInstrumentTokenMap(apiKey, accessToken, exchange);
                 loadedAnyMaster = true;
-                long tok = parseInstrumentToken(csv, target);
-                if (tok > 0L) {
+                Long tok = tokenMap.get(target);
+                if (tok != null && tok > 0L) {
                     return new TokenResolution(tok, null, null);
                 }
             } catch (RestClientResponseException ex) {
@@ -188,13 +210,26 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         return new TokenResolution(-1L, null, null);
     }
 
-    private static long parseInstrumentToken(String csv, String symbolUpper) {
+    private Map<String, Long> loadInstrumentTokenMap(String apiKey, String accessToken, String exchange) {
+        String ex = exchange == null ? "NSE" : exchange.trim().toUpperCase(Locale.ROOT);
+        InstrumentCacheRow cached = instrumentCacheByExchange.get(ex);
+        if (cached != null && Duration.between(cached.loadedAt(), Instant.now()).getSeconds() < INSTRUMENT_CACHE_TTL_SECONDS) {
+            return cached.tokenBySymbol();
+        }
+        String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, ex);
+        Map<String, Long> parsed = parseInstrumentTokenMap(csv);
+        instrumentCacheByExchange.put(ex, new InstrumentCacheRow(parsed, Instant.now()));
+        return parsed;
+    }
+
+    private static Map<String, Long> parseInstrumentTokenMap(String csv) {
+        Map<String, Long> out = new HashMap<>();
         if (csv == null || csv.isBlank()) {
-            return -1L;
+            return out;
         }
         String[] lines = csv.split("\\R");
         if (lines.length < 2) {
-            return -1L;
+            return out;
         }
         String[] hdr = splitCsvLine(lines[0]);
         Map<String, Integer> idx = new LinkedHashMap<>();
@@ -204,7 +239,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         Integer tokIdx = idx.get("instrument_token");
         Integer symIdx = idx.get("tradingsymbol");
         if (tokIdx == null || symIdx == null) {
-            return -1L;
+            return out;
         }
         for (int i = 1; i < lines.length; i++) {
             String line = lines[i];
@@ -216,16 +251,18 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
                 continue;
             }
             String sym = p[symIdx].trim().toUpperCase(Locale.ROOT);
-            if (!symbolUpper.equals(sym)) {
+            if (sym.isBlank()) {
                 continue;
             }
             try {
-                return Long.parseLong(p[tokIdx].trim());
+                long tok = Long.parseLong(p[tokIdx].trim());
+                if (tok > 0L) {
+                    out.put(sym, tok);
+                }
             } catch (NumberFormatException ignored) {
-                return -1L;
             }
         }
-        return -1L;
+        return out;
     }
 
     private static String[] splitCsvLine(String line) {
@@ -247,6 +284,21 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         }
         out.add(cur.toString());
         return out.toArray(new String[0]);
+    }
+
+    private static boolean isTimeoutMessage(String msg, Throwable ex) {
+        String m = msg == null ? "" : msg.toUpperCase(Locale.ROOT);
+        if (m.contains("TIMEOUT") || m.contains("TIMED OUT") || m.contains("READ TIMED OUT") || m.contains("CONNECT TIMED OUT")) {
+            return true;
+        }
+        Throwable cur = ex;
+        while (cur != null) {
+            if (cur instanceof TimeoutException) {
+                return true;
+            }
+            cur = cur.getCause();
+        }
+        return false;
     }
 
     private static String mapInterval(String timeframe) {
@@ -291,5 +343,8 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
     }
 
     private record TokenResolution(long instrumentToken, String errorCode, String errorDetail) {
+    }
+
+    private record InstrumentCacheRow(Map<String, Long> tokenBySymbol, Instant loadedAt) {
     }
 }

@@ -27,7 +27,7 @@ export function RegisterPage() {
     const e: Record<string, string> = {};
     if (email && !EMAIL_RE.test(email)) e.email = "Enter a valid email address.";
     if (username && !/^[a-zA-Z][a-zA-Z0-9_]{2,31}$/.test(username)) {
-      e.username = "3–32 characters; letters, digits, underscore; start with a letter.";
+      e.username = "3â€“32 characters; letters, digits, underscore; start with a letter.";
     }
     if (password && password.length < 12) e.password = "At least 12 characters.";
     if (confirm && confirm !== password) e.confirm = "Passwords must match.";
@@ -55,13 +55,13 @@ export function RegisterPage() {
       });
       const vStatus = reg.data?.data?.verificationEmailStatus;
       if (vStatus === "SENT") {
-        toast.success("Account created — check your inbox to verify your email, then sign in.");
+        toast.success("Account created - check your inbox to verify your email, then sign in.");
       } else if (vStatus === "NOT_CONFIGURED") {
         toast.message("SMTP not configured. Use verification URL from logs.", { duration: 12_000 });
       } else if (vStatus === "SEND_FAILED") {
         toast.error("Account created, but the verification email could not be sent. Configure SMTP or use resend after fixing mail.");
       } else {
-        toast.success("Account created — sign in with your credentials.");
+        toast.success("Account created - sign in with your credentials.");
       }
       navigate("/login", { replace: true });
     } catch (err: unknown) {
@@ -83,7 +83,7 @@ export function RegisterPage() {
           <div className="mb-8 text-center">
             <div className="text-3xl font-semibold tracking-tight text-white">Join Stokr</div>
             <p className="mt-2 text-sm text-neutral-400">
-              Self-service signup · assigned <span className="font-mono text-neutral-300">ROLE_TRADER</span>
+              Self-service signup  ·  assigned <span className="font-mono text-neutral-300">ROLE_TRADER</span>
             </p>
           </div>
 
@@ -125,7 +125,7 @@ export function RegisterPage() {
                     value={mobilePhone}
                     onChange={(e) => setMobilePhone(e.target.value)}
                     autoComplete="tel"
-                    placeholder="+1…"
+                    placeholder="+1..."
                   />
                 </div>
                 <div>
@@ -147,7 +147,7 @@ export function RegisterPage() {
                     className="mt-2 w-full rounded-lg border border-neutral-800 bg-neutral-900/80 px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/30"
                     value={whatsAppNumber}
                     onChange={(e) => setWhatsAppNumber(e.target.value)}
-                    placeholder="E.164 e.g. +9198…"
+                    placeholder="E.164 e.g. +9198..."
                   />
                 </div>
               </div>
@@ -212,7 +212,7 @@ export function RegisterPage() {
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-white py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-200 disabled:opacity-50"
               >
                 <UserPlus className="h-4 w-4" />
-                {loading ? "Creating…" : "Create account"}
+                {loading ? "Creating..." : "Create account"}
               </button>
 
               <p className="text-center text-sm text-neutral-500">

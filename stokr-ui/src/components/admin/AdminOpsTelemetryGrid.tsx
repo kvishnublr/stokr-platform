@@ -7,7 +7,7 @@ function asRec(v: unknown): Record<string, unknown> | undefined {
   return v != null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
 }
 
-/** Compact ops readout driven by `/api/admin/operations/snapshot` — no decorative charts. */
+/** Compact ops readout driven by `/api/admin/operations/snapshot` - no decorative charts. */
 export function AdminOpsTelemetryGrid({ snapshot, isLight }: { snapshot: Snap; isLight: boolean }) {
   const mf = asRec(snapshot.marketFreshness);
   const bi = asRec(snapshot.brokerSessions);
@@ -36,46 +36,46 @@ export function AdminOpsTelemetryGrid({ snapshot, isLight }: { snapshot: Snap; i
       ? Object.entries(vendors as Record<string, unknown>)
           .map(([k, v]) => {
             const vr = asRec(v);
-            return `${k}: ${String(vr?.status ?? "?")} · rows ${String(vr?.accountRows ?? "?")}`;
+            return `${k}: ${String(vr?.status ?? "?")}  ·  rows ${String(vr?.accountRows ?? "?")}`;
           })
           .join("\n")
-      : "—";
+      : "-";
 
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       {cell(
         "Market freshness",
         <>
-          status {String(mf?.status ?? "—")}
+          status {String(mf?.status ?? "-")}
           <br />
-          lag1m {mf?.latest1mLagSeconds != null ? `${Number(mf.latest1mLagSeconds).toFixed(0)}s` : "—"}
+          lag1m {mf?.latest1mLagSeconds != null ? `${Number(mf.latest1mLagSeconds).toFixed(0)}s` : "-"}
         </>,
       )}
       {cell("Brokers (DB projection)", vendorLines)}
       {cell(
         "Scanner / signals",
         <>
-          sig/60m {String(scan?.signalsEmittedLast60m ?? "—")}
+          sig/60m {String(scan?.signalsEmittedLast60m ?? "-")}
           <br />
-          running {String(scan?.runningStrategyInstances ?? "—")}
+          running {String(scan?.runningStrategyInstances ?? "-")}
         </>,
       )}
       {cell(
         "OMS / execution",
         <>
-          orders/s ~{oms?.ordersPerSecApprox != null ? Number(oms.ordersPerSecApprox).toFixed(3) : "—"}
+          orders/s ~{oms?.ordersPerSecApprox != null ? Number(oms.ordersPerSecApprox).toFixed(3) : "-"}
           <br />
-          stuck ~{String(oms?.stuckOrdersApprox ?? "—")}
+          stuck ~{String(oms?.stuckOrdersApprox ?? "-")}
           <br />
-          sig total {String(sig?.signalsPersistedTotal ?? "—")}
+          sig total {String(sig?.signalsPersistedTotal ?? "-")}
         </>,
       )}
       {cell(
         "Trader health",
         <>
-          live-approved {String(te?.liveTradingApprovedUsers ?? "—")}
+          live-approved {String(te?.liveTradingApprovedUsers ?? "-")}
           <br />
-          broker-linked users {String(te?.distinctUsersBrokerConnected ?? "—")}
+          broker-linked users {String(te?.distinctUsersBrokerConnected ?? "-")}
         </>,
       )}
       {cell(

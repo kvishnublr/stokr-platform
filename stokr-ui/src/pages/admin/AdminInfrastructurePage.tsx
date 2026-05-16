@@ -26,7 +26,7 @@ export function AdminInfrastructurePage() {
         <div className="text-xs font-semibold text-foreground">JVM / host (snapshot)</div>
         <div className="mt-2 grid gap-1 sm:grid-cols-2">
           <div>uptime: {fmtInt(sys?.uptimeSeconds)}s</div>
-          <div>load: {String(sys?.osLoadAverage ?? "—")}</div>
+          <div>load: {String(sys?.osLoadAverage ?? "-")}</div>
           <div>heap used: {fmtInt(sys?.heapUsedBytes)} B</div>
           <div>heap max: {fmtInt(sys?.heapMaxBytes)} B</div>
         </div>

@@ -119,7 +119,7 @@ export function OrdersPage(props?: { embedded?: boolean }) {
 
       <div className="flex items-center justify-between text-xs text-neutral-500">
         <span>
-          Page {(q.data?.page ?? 0) + 1} / {Math.max(1, q.data?.totalPages ?? 1)} — {q.data?.totalElements ?? 0} orders
+          Page {(q.data?.page ?? 0) + 1} / {Math.max(1, q.data?.totalPages ?? 1)} - {q.data?.totalElements ?? 0} orders
         </span>
         <div className="flex gap-2">
           <button

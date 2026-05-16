@@ -120,7 +120,7 @@ export function ProfilePage() {
 
       <form onSubmit={onSubmit} className={cardClass}>
         {loading ? (
-          <div className={cn("text-sm", isLight ? "text-neutral-600" : "text-neutral-400")}>Loading profile…</div>
+          <div className={cn("text-sm", isLight ? "text-neutral-600" : "text-neutral-400")}>Loading profile...</div>
         ) : profileQuery.isError ? (
           <div className={cn("text-sm", isLight ? "text-red-700" : "text-red-300/90")}>
             {parseAxiosMessage(profileQuery.error)}
@@ -128,8 +128,8 @@ export function ProfilePage() {
         ) : (
           <div className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2">
-              <ReadonlyField label="Username" value={username ?? "—"} isLight={isLight} />
-              <ReadonlyField label="Email" value={email ?? "—"} isLight={isLight} />
+              <ReadonlyField label="Username" value={username ?? "-"} isLight={isLight} />
+              <ReadonlyField label="Email" value={email ?? "-"} isLight={isLight} />
               <Field
                 label="Display name"
                 value={form.displayName}
@@ -172,7 +172,7 @@ export function ProfilePage() {
               />
               <ReadonlyField
                 label="Verification status"
-                value={`Telegram: ${profileQuery.data?.telegramVerified ? "Verified" : "Pending"} · WhatsApp: ${profileQuery.data?.whatsAppVerified ? "Verified" : "Pending"}`}
+                value={`Telegram: ${profileQuery.data?.telegramVerified ? "Verified" : "Pending"}  ·  WhatsApp: ${profileQuery.data?.whatsAppVerified ? "Verified" : "Pending"}`}
                 isLight={isLight}
               />
             </div>
@@ -191,7 +191,7 @@ export function ProfilePage() {
                 )}
               >
                 <Save className="h-4 w-4" />
-                {saving ? "Saving…" : "Save changes"}
+                {saving ? "Saving..." : "Save changes"}
               </button>
             </div>
           </div>

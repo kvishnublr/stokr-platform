@@ -3,7 +3,7 @@ import { fetchStrategyLeaderboard } from "../api/research";
 import { parseAxiosMessage } from "../api/client";
 
 function fmt(v: string | number | undefined) {
-  if (v === undefined || v === null) return "—";
+  if (v === undefined || v === null) return "-";
   const n = typeof v === "number" ? v : Number(v);
   if (!Number.isFinite(n)) return String(v);
   return n.toFixed(4);
@@ -15,7 +15,7 @@ export function ResearchLeaderboardPage() {
     queryFn: () => fetchStrategyLeaderboard(),
   });
 
-  if (q.isLoading) return <div className="text-sm text-neutral-400">Loading leaderboard…</div>;
+  if (q.isLoading) return <div className="text-sm text-neutral-400">Loading leaderboard...</div>;
   if (q.isError) return <div className="text-sm text-red-400">{parseAxiosMessage(q.error)}</div>;
 
   const rows = q.data?.rows ?? [];
@@ -40,7 +40,7 @@ export function ResearchLeaderboardPage() {
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-neutral-500">
-                  No materialized backtest metrics yet — complete a replay first.
+                  No materialized backtest metrics yet - complete a replay first.
                 </td>
               </tr>
             ) : (

@@ -111,7 +111,7 @@ export function buildDependencyChain(s: OpsSnapshot | undefined): DependencyStep
           ? "DEGRADED"
           : "OK";
   const brokerDetail = !dbOk
-    ? "Cannot evaluate broker rows — database probe failed."
+    ? "Cannot evaluate broker rows - database probe failed."
     : life && !pathOk
       ? tapeReason || "Platform Zerodha tape is not operational (websocket, ticks, or subscriptions)."
       : !brokerLive
@@ -125,11 +125,11 @@ export function buildDependencyChain(s: OpsSnapshot | undefined): DependencyStep
   const ingestionState: ChainLinkState = !dbOk ? "UNAVAILABLE" : life && !pathOk ? "OFFLINE" : !brokerLive ? "OFFLINE" : stale ? "DEGRADED" : "OK";
   const ingestionDetail =
     life && !pathOk
-      ? "Live ingestion paused — platform market path offline."
+      ? "Live ingestion paused - platform market path offline."
       : !brokerLive
         ? "Live candles require an active market pipe (platform feed OAuth and/or CONNECTED trader broker_accounts)."
         : stale
-          ? `1m store lag ≈ ${fresh?.latest1mLagSeconds ?? mp?.latest1mLagSeconds ?? "—"}s`
+          ? `1m store lag ~ ${fresh?.latest1mLagSeconds ?? mp?.latest1mLagSeconds ?? "-"}s`
           : "Candle store advancing within tolerance.";
 
   const aggState = ingestionState === "OK" ? "OK" : ingestionState;
@@ -140,12 +140,12 @@ export function buildDependencyChain(s: OpsSnapshot | undefined): DependencyStep
     life && scanEngine === "PAUSED" ? "PAUSED" : !brokerLive ? "PAUSED" : running > 0 ? "OK" : "DEGRADED";
   const scanDetail =
     life && scanEngine === "PAUSED"
-      ? String(life.scannerPollSkipReason ?? "Scanner poll skipped — platform tape not operational.")
+      ? String(life.scannerPollSkipReason ?? "Scanner poll skipped - platform tape not operational.")
       : !brokerLive
         ? "Scanners cannot consume live ticks without broker connectivity."
         : running > 0
           ? `${running} RUNNING strategy instance(s).`
-          : "No RUNNING scanners — catalog idle or schedules outside market.";
+          : "No RUNNING scanners - catalog idle or schedules outside market.";
 
   const sigEngine = String(life?.signalGenerationState ?? "").toUpperCase();
   const sigState: ChainLinkState =
@@ -166,20 +166,20 @@ export function buildDependencyChain(s: OpsSnapshot | undefined): DependencyStep
     !redisOk || !dbOk
       ? "OMS plane needs Redis + PostgreSQL CONNECTED."
       : stuck > 0
-        ? `Stuck orders ≈ ${stuck}`
-        : `Reject rate ≈ ${rej.toFixed(2)}%`;
+        ? `Stuck orders ~ ${stuck}`
+        : `Reject rate ~ ${rej.toFixed(2)}%`;
 
   let replayState: ChainLinkState = jq > 80 ? "BACKFILLING" : "OK";
   if (life && String(life.replayCouplingState ?? "").toUpperCase() === "STALE") replayState = "DEGRADED";
   else if (!brokerLive && replayState === "OK") replayState = "DEGRADED";
   const replayDetail =
     jq > 80
-      ? `Replay backlog · queued ${jq} · running ${jr}`
+      ? `Replay backlog  ·  queued ${jq}  ·  running ${jr}`
       : life && String(life.replayCouplingState ?? "").toUpperCase() === "STALE"
-        ? String(life.replayCouplingDetail ?? "Live replay coupling stale — platform tape offline.")
+        ? String(life.replayCouplingDetail ?? "Live replay coupling stale - platform tape offline.")
         : !brokerLive
           ? "Replay can run historically; live freshness coupling is degraded without broker feed."
-          : `Replay queue idle · queued ${jq} · running ${jr}`;
+          : `Replay queue idle  ·  queued ${jq}  ·  running ${jr}`;
 
   return [
     { id: "brk", label: "Broker feed", state: brokerState, detail: brokerDetail },
@@ -203,7 +203,7 @@ export function computeSystemReadiness(s: OpsSnapshot | undefined): {
     return {
       level: "LIMITED",
       headline: "Operations snapshot loading",
-      subline: "Telemetry has not arrived yet — wait for the readiness strip to populate.",
+      subline: "Telemetry has not arrived yet - wait for the readiness strip to populate.",
       brokerConnected: false,
       killSwitch: false,
     };
@@ -261,7 +261,7 @@ export function computeSystemReadiness(s: OpsSnapshot | undefined): {
     return {
       level: "BACKFILLING",
       headline: "Replay infrastructure saturated",
-      subline: `Replay job queue is elevated (queued ${jq}). Live rails may still be up — prioritize worker capacity and failure triage.`,
+      subline: `Replay job queue is elevated (queued ${jq}). Live rails may still be up - prioritize worker capacity and failure triage.`,
       brokerConnected: true,
       killSwitch: kill,
     };
@@ -271,7 +271,7 @@ export function computeSystemReadiness(s: OpsSnapshot | undefined): {
     return {
       level: "LIMITED",
       headline: "Kill switch engaged",
-      subline: "Global halt is active. Broker feeds may still be connected — execution plane is blocked until operations disarms.",
+      subline: "Global halt is active. Broker feeds may still be connected - execution plane is blocked until operations disarms.",
       brokerConnected: true,
       killSwitch: true,
     };
@@ -300,7 +300,7 @@ export function computeSystemReadiness(s: OpsSnapshot | undefined): {
   return {
     level: "READY",
     headline: "Platform operationally ready",
-    subline: "Broker feed present, control DB reachable, freshness nominal — continue monitoring the readiness strip and incidents.",
+    subline: "Broker feed present, control DB reachable, freshness nominal - continue monitoring the readiness strip and incidents.",
     brokerConnected: true,
     killSwitch: false,
   };

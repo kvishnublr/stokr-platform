@@ -78,7 +78,7 @@ export function AdminStrategiesPage() {
                   <span className="font-semibold text-white">{s.displayName ?? s.code}</span>
                 </div>
                 <div className="mt-1 font-mono text-xs text-neutral-500">{s.code}</div>
-                <p className="mt-3 text-sm text-neutral-400">{s.description ?? "—"}</p>
+                <p className="mt-3 text-sm text-neutral-400">{s.description ?? "-"}</p>
               </div>
               <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] font-bold uppercase text-neutral-300">
                 {s.riskLevel}

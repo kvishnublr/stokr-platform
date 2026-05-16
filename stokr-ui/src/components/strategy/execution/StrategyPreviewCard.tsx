@@ -16,7 +16,7 @@ export function StrategyPreviewCard({ meta, className }: Props) {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const dd = meta.deploymentDefaults;
   const pm = meta.previewMetrics;
-  const universe = dd ? `${dd.symbol} · ${dd.timeframe}` : "—";
+  const universe = dd ? `${dd.symbol}  ·  ${dd.timeframe}` : "-";
   const typeLabel = meta.category?.replace(/_/g, " ") ?? "Strategy";
 
   const statCell = isLight
@@ -101,14 +101,14 @@ export function StrategyPreviewCard({ meta, className }: Props) {
 
       {pm ? (
         <p className="mt-2 text-[10px] leading-snug text-[#64748B]">
-          Figures summarize the published strategy dossier for orientation — not a forecast or offer of performance.
+          Figures summarize the published strategy dossier for orientation - not a forecast or offer of performance.
         </p>
       ) : null}
 
       <div className={cn("mt-4 flex flex-wrap items-center gap-2 text-xs", isLight ? "text-[#475569]" : "text-[#94A3B8]")}>
         {pm ? (
           <>
-            <span className={pill}>Risk · {pm.riskLevel}</span>
+            <span className={pill}>Risk  ·  {pm.riskLevel}</span>
             {pm.tradeFrequency ? <span className={pill}>{pm.tradeFrequency}</span> : null}
           </>
         ) : null}

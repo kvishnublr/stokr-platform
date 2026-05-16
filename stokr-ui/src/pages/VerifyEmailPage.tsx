@@ -70,13 +70,13 @@ export function VerifyEmailPage() {
         className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900/60 p-8 shadow-2xl backdrop-blur"
       >
         {status === "loading" ? (
-          <div className="text-center text-sm text-neutral-400">Verifying your email…</div>
+          <div className="text-center text-sm text-neutral-400">Verifying your email...</div>
         ) : null}
         {status === "ok" ? (
           <div className="text-center">
             <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500" />
             <h1 className="mt-4 text-lg font-semibold text-white">Email verified</h1>
-            <p className="mt-2 text-sm text-neutral-400">Redirecting to your workspace…</p>
+            <p className="mt-2 text-sm text-neutral-400">Redirecting to your workspace...</p>
           </div>
         ) : null}
         {status === "err" ? (

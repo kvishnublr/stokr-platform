@@ -34,7 +34,7 @@ export function TraderDashboard() {
   }
 
   if (!data) {
-    return <div className="flex h-full w-full items-center justify-center bg-gray-50 text-sm text-gray-600">Loading trader dashboard…</div>;
+    return <div className="flex h-full w-full items-center justify-center bg-gray-50 text-sm text-gray-600">Loading trader dashboard...</div>;
   }
 
   return (

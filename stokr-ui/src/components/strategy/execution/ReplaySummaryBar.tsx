@@ -31,7 +31,7 @@ export function ReplaySummaryBar({
   const cta =
     mode === "BACKTEST"
       ? pending
-        ? "Initializing replay…"
+        ? "Initializing replay..."
         : "Launch historical replay"
       : "Coming soon";
 
@@ -63,7 +63,7 @@ export function ReplaySummaryBar({
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wide text-[#64748B]">Estimates</p>
             <p className={cn("mt-0.5", isLight ? "text-[#64748B]" : "text-[#94A3B8]")}>
-              ~{estimatedTrades} trades · ~{estimatedSeconds}s
+              ~{estimatedTrades} trades  ·  ~{estimatedSeconds}s
             </p>
           </div>
         </div>

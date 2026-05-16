@@ -52,9 +52,9 @@ export function WorkspaceTopNav({
       const res = await api.get("/api/trader/terminal/market/watch");
       const rows = Array.isArray(res.data?.data) ? res.data.data : [];
       return rows.slice(0, 3).map((row: any) => ({
-        sym: String(row.symbol ?? "—"),
-        price: String(row.price ?? "—"),
-        chg: String(row.changePct ?? "—"),
+        sym: String(row.symbol ?? "-"),
+        price: String(row.price ?? "-"),
+        chg: String(row.changePct ?? "-"),
         up: Number(row.changePct ?? 0) >= 0,
       }));
     },
@@ -152,7 +152,7 @@ export function WorkspaceTopNav({
           />
           <input
             type="search"
-            placeholder="Search symbols, strategies, orders…"
+            placeholder="Search symbols, strategies, orders..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
@@ -172,7 +172,7 @@ export function WorkspaceTopNav({
               isLight ? "border-neutral-200 bg-neutral-50 text-neutral-500" : "border-neutral-700 bg-neutral-800/90 text-neutral-500",
             )}
           >
-            ⌘ K
+            âŒ˜ K
           </kbd>
         </div>
 

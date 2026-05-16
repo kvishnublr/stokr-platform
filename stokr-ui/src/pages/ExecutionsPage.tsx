@@ -51,7 +51,7 @@ export function ExecutionsPage(props?: { embedded?: boolean }) {
         header: "Latency ms",
         cell: ({ getValue }) => {
           const v = getValue() as number | null;
-          if (v == null) return "—";
+          if (v == null) return "-";
           const tone = v > 2500 ? "text-amber-600" : "text-emerald-600";
           return <span className={tone}>{v}</span>;
         },

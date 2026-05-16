@@ -14,7 +14,7 @@ export function DebugToolsPage() {
         <h1 className="text-2xl font-semibold tracking-tight text-white">Execution debugging</h1>
         <p className="mt-2 text-sm text-neutral-400">
           Quick links for correlation tracing (via <span className="font-mono">X-Correlation-Id</span>), journal APIs,
-          and platform observability. Use backtest run detail → journal timeline for replay chains.
+          and platform observability. Use backtest run detail â†’ journal timeline for replay chains.
         </p>
       </div>
       <ul className="space-y-2">
@@ -33,7 +33,7 @@ export function DebugToolsPage() {
         ))}
       </ul>
       <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 p-4 text-xs text-neutral-400">
-        Authenticated JSON APIs require a bearer token — open these from the same origin while logged in (Vite proxies{" "}
+        Authenticated JSON APIs require a bearer token - open these from the same origin while logged in (Vite proxies{" "}
         <span className="font-mono">/api</span>) or paste a token into Swagger Authorize.
       </div>
     </div>

@@ -13,7 +13,7 @@ export function ActivityTimeline({
 }) {
   const list = items.slice(0, maxVisible);
   if (list.length === 0) {
-    return <p className="text-xs text-neutral-600">Operational feed clears when you reconnect — standby for realtime.</p>;
+    return <p className="text-xs text-neutral-600">Operational feed clears when you reconnect - standby for realtime.</p>;
   }
   return (
     <div className={cn("relative space-y-0", className)}>

@@ -2,7 +2,7 @@ import { adminOpsMetricsStrip, buildAdminOpsPills } from "./adminOpsModel";
 import { badgeClassForStatus, type OpsSnapshot } from "./cockpit/opsTypes";
 
 /**
- * Persistent institutional ops header — all admin routes (below workspace topnav).
+ * Persistent institutional ops header - all admin routes (below workspace topnav).
  */
 export function AdminGlobalOpsHeader({
   snapshot,
@@ -29,8 +29,8 @@ export function AdminGlobalOpsHeader({
       <div className="flex flex-wrap items-end gap-2">
         <div className="mr-1 min-w-[8.5rem] pb-1 text-[10px] font-bold uppercase tracking-wide text-foreground">
           Readiness strip
-          {opsStreamLive ? <span className="ml-1 font-mono font-semibold text-emerald-600 dark:text-emerald-400">· SSE</span> : null}
-          {!opsStreamLive && isFetching ? <span className="ml-1 font-mono text-muted-foreground">· sync</span> : null}
+          {opsStreamLive ? <span className="ml-1 font-mono font-semibold text-emerald-600 dark:text-emerald-400"> ·  SSE</span> : null}
+          {!opsStreamLive && isFetching ? <span className="ml-1 font-mono text-muted-foreground"> ·  sync</span> : null}
         </div>
         {pills.map((p) => (
           <div
@@ -47,7 +47,7 @@ export function AdminGlobalOpsHeader({
         ))}
         <div className="ml-auto hidden pb-1 text-right font-mono text-[10px] text-muted-foreground min-[1100px]:block">
           <div className="font-bold uppercase tracking-wide text-foreground/80">Snapshot wall</div>
-          <div className="text-foreground">{at ? new Date(at).toLocaleString() : "—"}</div>
+          <div className="text-foreground">{at ? new Date(at).toLocaleString() : "-"}</div>
         </div>
       </div>
       <div className="mt-2 truncate border-t border-border pt-1.5 font-mono text-[10px] text-foreground" title={adminOpsMetricsStrip(snapshot)}>

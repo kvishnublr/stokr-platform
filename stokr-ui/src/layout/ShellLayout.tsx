@@ -102,8 +102,8 @@ export function ShellLayout() {
         api.get("/api/trader/broker/accounts"),
       ]);
 
-      let equityValue = "—";
-      let marginValue = "—";
+      let equityValue = "-";
+      let marginValue = "-";
       let brokerConnected = false;
 
       if (dashboardRes.status === "fulfilled") {
@@ -212,7 +212,7 @@ export function ShellLayout() {
       const res = await api.post<{ data?: { status?: string } }>("/api/auth/resend-verification");
       const status = res.data?.data?.status;
       if (status === "SENT") {
-        toast.success("Verification email sent — check your inbox.");
+        toast.success("Verification email sent - check your inbox.");
       } else if (status === "NOT_CONFIGURED") {
         toast.message("SMTP not configured. Use verification URL from logs.", { duration: 12_000 });
       } else if (status === "SEND_FAILED") {
@@ -239,7 +239,7 @@ export function ShellLayout() {
         } catch {
           /* ignore */
         }
-        toast.success("Email already verified — profile synced.");
+        toast.success("Email already verified - profile synced.");
       } else {
         toast.error(msg);
       }
@@ -290,7 +290,7 @@ export function ShellLayout() {
           const now = Date.now();
           if (status === "COMPLETED" || status === "CANCELLED") {
             toast.message("Backtest job", {
-              description: `${status}${Number.isFinite(pct) ? ` · ${pct}%` : ""}`,
+              description: `${status}${Number.isFinite(pct) ? `  ·  ${pct}%` : ""}`,
             });
             return;
           }
@@ -298,7 +298,7 @@ export function ShellLayout() {
           lastBacktestToastAt.current = now;
           const eta = parsed.etaSecondsRemaining;
           const etaTxt =
-            typeof eta === "number" && Number.isFinite(eta) ? ` · ~${Math.round(eta)}s remaining` : "";
+            typeof eta === "number" && Number.isFinite(eta) ? `  ·  ~${Math.round(eta)}s remaining` : "";
           toast.message("Backtest progress", {
             description: `${Number.isFinite(pct) ? `${pct}%` : "running"}${etaTxt}`,
           });
@@ -365,8 +365,8 @@ export function ShellLayout() {
           >
             {hasTraderAccess ? (
               <TraderAccountCard
-                equityDisplay={portfolioSnapshot.data?.equityValue ?? "—"}
-                marginDisplay={portfolioSnapshot.data?.marginValue ?? "—"}
+                equityDisplay={portfolioSnapshot.data?.equityValue ?? "-"}
+                marginDisplay={portfolioSnapshot.data?.marginValue ?? "-"}
                 brokerConnected={Boolean(portfolioSnapshot.data?.brokerConnected)}
               />
             ) : null}
@@ -390,7 +390,7 @@ export function ShellLayout() {
         >
           <span>
             <span className={cn("font-semibold", isLightUi ? "text-neutral-950" : "text-white")}>
-              Operational checklist ·{" "}
+              Operational checklist  · {" "}
             </span>
             Finish onboarding to unlock gated LIVE routing and broker ergonomics.
           </span>
@@ -434,7 +434,7 @@ export function ShellLayout() {
                 : "border-amber-500/45 text-amber-50 hover:bg-amber-500/10",
             )}
           >
-            {resendingVerify ? "Sending…" : "Resend email"}
+            {resendingVerify ? "Sending..." : "Resend email"}
           </button>
         </div>
       ) : null}

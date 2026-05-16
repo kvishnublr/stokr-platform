@@ -1,4 +1,4 @@
-﻿import { useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -28,7 +28,7 @@ import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
 import { asRecord, type OpsSnapshot } from "../components/admin/cockpit/opsTypes";
 
-/** Coarse status for admin cards â€” extends as more probes are added. */
+/** Coarse status for admin cards - extends as more probes are added. */
 function infraPlaneStatus(snapshot: OpsSnapshot | undefined): "online" | "offline" | "degraded" | "unknown" {
   if (!snapshot) return "unknown";
   const sys = asRecord(snapshot.system);
@@ -107,7 +107,7 @@ export function AdminOverviewPage() {
         : readiness.level === "LIMITED"
           ? "Limited readiness"
           : readiness.headline.length > 48
-            ? `${readiness.headline.slice(0, 45)}â€¦`
+            ? `${readiness.headline.slice(0, 45)}...`
             : readiness.headline;
   } else if (!showRiskConsole) {
     overviewChipLabel = "Staff console";
@@ -255,7 +255,7 @@ export function AdminOverviewPage() {
               panelVariant={panel}
               highlight={killOn}
               label="Kill switch"
-              value={health.isLoading ? "â€¦" : killOn ? "ARMED" : "CLEAR"}
+              value={health.isLoading ? "..." : killOn ? "ARMED" : "CLEAR"}
               trend={killOn ? "down" : "up"}
             />
           ) : (
@@ -271,7 +271,7 @@ export function AdminOverviewPage() {
             panelVariant={panel}
             label="Service vitality"
             trend="flat"
-            sublabel={`Uptime Â· ${uptimeSec != null ? `${uptimeSec}s` : health.isLoading ? "â€¦" : "â€”"}`}
+            sublabel={`Uptime  ·  ${uptimeSec != null ? `${uptimeSec}s` : health.isLoading ? "..." : "-"}`}
             value={
               <Cpu
                 className={cn("h-8 w-8", isLight ? "text-blue-600/90" : "text-blue-400/40")}
@@ -305,16 +305,16 @@ export function AdminOverviewPage() {
             }
             sublabel={
               operationsSnapshot.isLoading
-                ? "Loading snapshotâ€¦"
+                ? "Loading snapshot..."
                 : operationsSnapshot.isError
-                  ? "Snapshot failed â€” see banner"
+                  ? "Snapshot failed - see banner"
                   : [
-                      redisProbe?.status === "CONNECTED" ? `Redis ${redisProbe.pingMs ?? "â€”"}ms` : `Redis ${String(redisProbe?.status ?? "â€”")}`,
-                      dbProbe?.status === "CONNECTED" ? `DB ${dbProbe.pingMs ?? "â€”"}ms` : `DB ${String(dbProbe?.status ?? "â€”")}`,
+                      redisProbe?.status === "CONNECTED" ? `Redis ${redisProbe.pingMs ?? "-"}ms` : `Redis ${String(redisProbe?.status ?? "-")}`,
+                      dbProbe?.status === "CONNECTED" ? `DB ${dbProbe.pingMs ?? "-"}ms` : `DB ${String(dbProbe?.status ?? "-")}`,
                       operationsSnapshot.data?.marketInfra?.globalBrokerHalt === true ? "Broker halt flag" : null,
                     ]
                       .filter(Boolean)
-                      .join(" Â· ") || "Probes pending"
+                      .join("  ·  ") || "Probes pending"
             }
           />
 
@@ -423,7 +423,7 @@ export function AdminOverviewPage() {
                 <ZapOff className={cn("mt-1 h-5 w-5 shrink-0", isLight ? "text-rose-700" : "text-rose-200")} />
                 <div className={cn("text-sm leading-relaxed", isLight ? "text-rose-950/90" : "text-neutral-400")}>
                   <span className={cn("font-semibold", isLight ? "text-rose-950" : "text-white")}>
-                    Operational doctrine Â·{" "}
+                    Operational doctrine  · {" "}
                   </span>
                   LIVE routing guarded by onboarding, broker session, and admin approvals.
                 </div>
@@ -441,7 +441,7 @@ export function AdminOverviewPage() {
             >
               <div className={cn("text-sm leading-relaxed", isLight ? "text-blue-950/85" : "text-neutral-400")}>
                 <span className={cn("font-semibold", isLight ? "text-blue-950" : "text-white")}>
-                  Trader-safe admin view Â·{" "}
+                  Trader-safe admin view  · {" "}
                 </span>
                 Emergency controls are limited to operations accounts.
               </div>
@@ -473,9 +473,9 @@ export function AdminOverviewPage() {
             ) : (
               <p className={cn("mt-4 text-xs", isLight ? "text-neutral-600" : "text-neutral-600")}>
                 {health.isLoading
-                  ? "Loading queue metadataâ€¦"
+                  ? "Loading queue metadata..."
                   : health.isError
-                    ? "Health endpoint failed â€” use Retry above."
+                    ? "Health endpoint failed - use Retry above."
                     : "No queue map in response yet."}
               </p>
             )}
@@ -485,7 +485,7 @@ export function AdminOverviewPage() {
               Operations snapshot
             </div>
             <p className={cn("mt-1 text-xs", isLight ? "text-neutral-600" : "text-neutral-500")}>
-              Live aggregate from <code className="font-mono text-[10px]">GET /api/admin/operations/snapshot</code> â€” market
+              Live aggregate from <code className="font-mono text-[10px]">GET /api/admin/operations/snapshot</code> - market
               DB freshness, replay job counts, OMS rollups, Redis / DB / Rabbit probes.
             </p>
             {operationsSnapshot.data ? (
@@ -519,9 +519,9 @@ export function AdminOverviewPage() {
             ) : (
               <p className={cn("mt-4 text-xs", isLight ? "text-neutral-600" : "text-neutral-600")}>
                 {operationsSnapshot.isLoading
-                  ? "Loading operations snapshotâ€¦"
+                  ? "Loading operations snapshot..."
                   : operationsSnapshot.isError
-                    ? "Snapshot failed â€” use Retry above."
+                    ? "Snapshot failed - use Retry above."
                     : "No snapshot yet."}
               </p>
             )}

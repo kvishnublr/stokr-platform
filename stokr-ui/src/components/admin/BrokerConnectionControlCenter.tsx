@@ -69,7 +69,7 @@ export function BrokerConnectionControlCenter({
               Broker infrastructure
             </Link>
             . Vendor WS counters here remain{" "}
-            <span className="font-medium text-foreground">not instrumented in-process</span> — heartbeat uses{" "}
+            <span className="font-medium text-foreground">not instrumented in-process</span> - heartbeat uses{" "}
             <span className="font-mono">last_sync_at</span>.
           </p>
         </div>
@@ -97,7 +97,7 @@ export function BrokerConnectionControlCenter({
 
       {!marketLive ? (
         <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-foreground dark:border-amber-400/35 dark:bg-amber-500/15">
-          <span className="font-semibold">Market intelligence offline · </span>
+          <span className="font-semibold">Market intelligence offline  ·  </span>
           No CONNECTED broker sessions. Live ingestion, scanners, replay freshness coupling, and live-tape signals are unavailable
           until OAuth is healthy.
         </div>
@@ -110,8 +110,8 @@ export function BrokerConnectionControlCenter({
           const samples = (Array.isArray(v.sampleUserIds) ? v.sampleUserIds : []).map(String);
           const uid = userPick[vk] ?? samples[0] ?? "";
           const label = vendorDisplayName(vk);
-          const packets = v.feedLagInstrumented === false ? "—" : fmtInt(v.packetsPerSecondApprox);
-          const lag = v.feedLagInstrumented === false ? "—" : v.feedLagSeconds != null ? `${fmtInt(v.feedLagSeconds)}s` : "—";
+          const packets = v.feedLagInstrumented === false ? "-" : fmtInt(v.packetsPerSecondApprox);
+          const lag = v.feedLagInstrumented === false ? "-" : v.feedLagSeconds != null ? `${fmtInt(v.feedLagSeconds)}s` : "-";
 
           return (
             <div
@@ -133,17 +133,17 @@ export function BrokerConnectionControlCenter({
                 <div className="flex justify-between gap-2 text-muted-foreground">
                   <dt>Token expiry (nearest)</dt>
                   <dd className="truncate text-right text-foreground" title={String(v.tokenExpiryNearest ?? "")}>
-                    {v.tokenExpiryNearest != null ? String(v.tokenExpiryNearest).slice(0, 19) : "—"}
+                    {v.tokenExpiryNearest != null ? String(v.tokenExpiryNearest).slice(0, 19) : "-"}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2 text-muted-foreground">
                   <dt>Heartbeat age</dt>
-                  <dd className="text-foreground">{v.heartbeatAgeSeconds != null ? `${fmtInt(v.heartbeatAgeSeconds)}s` : "—"}</dd>
+                  <dd className="text-foreground">{v.heartbeatAgeSeconds != null ? `${fmtInt(v.heartbeatAgeSeconds)}s` : "-"}</dd>
                 </div>
                 <div className="flex justify-between gap-2 text-muted-foreground">
                   <dt>Reconnect count</dt>
                   <dd className="text-foreground">
-                    {v.reconnectCountInstrumented === true && v.reconnectCount != null ? fmtInt(v.reconnectCount) : "—"}
+                    {v.reconnectCountInstrumented === true && v.reconnectCount != null ? fmtInt(v.reconnectCount) : "-"}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2 text-muted-foreground">
@@ -167,7 +167,7 @@ export function BrokerConnectionControlCenter({
                 <div className="flex justify-between gap-2 text-muted-foreground">
                   <dt>Last sync (max)</dt>
                   <dd className="truncate text-right text-foreground" title={String(v.lastSyncAtMax ?? "")}>
-                    {v.lastSyncAtMax != null ? String(v.lastSyncAtMax).slice(0, 19) : "—"}
+                    {v.lastSyncAtMax != null ? String(v.lastSyncAtMax).slice(0, 19) : "-"}
                   </dd>
                 </div>
               </dl>

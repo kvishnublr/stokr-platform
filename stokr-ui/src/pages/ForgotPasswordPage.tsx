@@ -89,7 +89,7 @@ export function ForgotPasswordPage() {
                     loading && "opacity-60",
                   )}
                 >
-                  {loading ? "Sending…" : "Send reset link"}
+                  {loading ? "Sending..." : "Send reset link"}
                 </button>
 
                 <p className="text-center text-sm text-neutral-500">

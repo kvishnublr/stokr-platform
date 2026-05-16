@@ -123,7 +123,7 @@ export function SidebarSection({
 }: {
   title: string;
   children: ReactNode;
-  /** First group under brand — softer top spacing */
+  /** First group under brand - softer top spacing */
   first?: boolean;
 }) {
   const isLight = useUiThemeStore((s) => s.mode === "light");

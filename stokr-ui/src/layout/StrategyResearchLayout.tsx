@@ -13,7 +13,7 @@ export function StrategyResearchLayout() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-white">Strategy research</h1>
         <p className="mt-1 text-sm text-neutral-400">
-          Catalog performance aggregates from your materialized backtests — Sharpe, win rate, drawdowns by strategy key.
+          Catalog performance aggregates from your materialized backtests - Sharpe, win rate, drawdowns by strategy key.
         </p>
       </div>
 

@@ -6,7 +6,7 @@ export type ReplayValidationReport = {
   pnlMismatch: string;
   executionMismatch: number;
   replayHash: string;
-  /** Present on API ≥ fix; older servers omit these. */
+  /** Present on API â‰¥ fix; older servers omit these. */
   strategySignalCount?: number;
   executionEventCount?: number;
 };
@@ -110,7 +110,7 @@ export async function launchReplay(body: ExecutionRequest) {
   };
 }
 
-/** Async worker replay — avoids blocking the browser on long 1m candle walks (see POST /api/backtest/jobs). */
+/** Async worker replay - avoids blocking the browser on long 1m candle walks (see POST /api/backtest/jobs). */
 export async function enqueueReplayJob(body: ExecutionRequest): Promise<string> {
   const res = await api.post<ApiEnvelope<string>>("/api/backtest/jobs", body);
   const env = res.data;
@@ -173,7 +173,7 @@ export async function pollReplayJobUntilTerminal(
     }
     await sleep(intervalMs);
   }
-  throw new Error("Replay job timed out — try a shorter date range or check API logs.");
+  throw new Error("Replay job timed out - try a shorter date range or check API logs.");
 }
 
 export async function listRuns(page = 0, size = 20) {

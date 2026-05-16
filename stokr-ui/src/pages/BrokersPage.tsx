@@ -105,7 +105,7 @@ export function BrokersPage() {
       toast.success("Zerodha session linked");
       void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
     } else {
-      toast.error("Zerodha linking failed — try again");
+      toast.error("Zerodha linking failed - try again");
     }
 
     params.delete("zerodha");
@@ -177,7 +177,7 @@ export function BrokersPage() {
     onSuccess: (data: BrokerTestOrderDto) => {
       setLastTestOrder(data);
       void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
-      if (data.dryRun) toast.message("Dry run — no order sent");
+      if (data.dryRun) toast.message("Dry run - no order sent");
       else if (data.orderId) toast.success(`Order placed: ${data.orderId}`);
       else toast.error(data.message || "Order rejected");
     },
@@ -226,7 +226,7 @@ export function BrokersPage() {
           toast.success("Zerodha session linked");
           void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
         } else {
-          toast.error("Zerodha linking failed — try again");
+          toast.error("Zerodha linking failed - try again");
         }
       };
       window.addEventListener("message", onMessage);
@@ -325,7 +325,7 @@ export function BrokersPage() {
   const canUseSampleTrade = Boolean(st?.connected && st?.tokenValid && !sampleTradeDisabledReason);
   const marginHint =
     st?.marginSummary ??
-    (st?.connected ? "Run test connection to refresh funds snapshot." : "—");
+    (st?.connected ? "Run test connection to refresh funds snapshot." : "-");
   const requestedDepositAmount = searchParams.get("depositAmount");
 
   const cardShell = isLight
@@ -351,7 +351,7 @@ export function BrokersPage() {
             isLight ? "border-blue-200 bg-blue-50 text-blue-900" : "border-blue-500/35 bg-blue-500/10 text-blue-100",
           )}
         >
-          Deposit request: <span className="font-mono font-semibold">₹ {requestedDepositAmount}</span>. Complete funding in your broker account portal, then run{" "}
+          Deposit request: <span className="font-mono font-semibold">â‚¹ {requestedDepositAmount}</span>. Complete funding in your broker account portal, then run{" "}
           <span className="font-semibold">Test connection</span> to refresh margin snapshot.
         </div>
       ) : null}
@@ -425,7 +425,7 @@ export function BrokersPage() {
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
               {loading ? (
-                <span className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-500")}>Loading…</span>
+                <span className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-500")}>Loading...</span>
               ) : (
                 <div
                   className={cn(
@@ -474,7 +474,7 @@ export function BrokersPage() {
             <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-wide text-neutral-500">Account</div>
               <div className={cn("mt-0.5 truncate", isLight ? "text-neutral-900" : "text-neutral-200")}>
-                {st?.profileUserName ?? "—"}
+                {st?.profileUserName ?? "-"}
               </div>
               <div className="truncate text-neutral-500">{st?.profileEmail ?? ""}</div>
             </div>
@@ -486,7 +486,7 @@ export function BrokersPage() {
                   isLight ? "text-neutral-900" : "text-neutral-200",
                 )}
               >
-                {st?.accountId ?? "—"}
+                {st?.accountId ?? "-"}
               </div>
             </div>
             <div className="flex min-w-0 items-start gap-2 sm:col-span-2">
@@ -502,7 +502,7 @@ export function BrokersPage() {
               <div className="text-[10px] uppercase tracking-wide text-neutral-500">Last sync / token</div>
               <div className={cn("mt-0.5 flex flex-wrap items-baseline gap-x-1 break-words", isLight ? "text-neutral-800" : "text-neutral-200")}>
                 <span>{formatInstant(st?.lastSyncAt ?? null)}</span>
-                <span className="text-neutral-500">·</span>
+                <span className="text-neutral-500"> · </span>
                 <span
                   className={
                     st?.tokenValid
@@ -520,7 +520,7 @@ export function BrokersPage() {
                       ? "token invalid / expired"
                       : "no broker session linked"}
                 </span>
-                <span className="text-neutral-500">· health {st?.health ?? "—"}</span>
+                <span className="text-neutral-500"> ·  health {st?.health ?? "-"}</span>
               </div>
             </div>
           </div>
@@ -537,7 +537,7 @@ export function BrokersPage() {
                 onClick={() => void openZerodhaConnect()}
                 className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
               >
-                {connectingOAuth ? "Redirecting…" : st?.connected ? "Reconnect Zerodha" : "Connect Zerodha"}
+                {connectingOAuth ? "Redirecting..." : st?.connected ? "Reconnect Zerodha" : "Connect Zerodha"}
                 <ExternalLink className="h-4 w-4" />
               </button>
               <button
@@ -726,7 +726,7 @@ export function BrokersPage() {
                 />
               </label>
               <label className={cn("block text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>
-                Quantity (1–5)
+                Quantity (1â€“5)
                 <input
                   type="number"
                   min={1}
@@ -799,7 +799,7 @@ export function BrokersPage() {
                   <div>
                     <span className="text-neutral-500">Order id:</span>{" "}
                     <span className={cn("font-mono", isLight ? "text-neutral-900" : "text-neutral-200")}>
-                      {lastTestOrder.orderId || "—"}
+                      {lastTestOrder.orderId || "-"}
                     </span>
                   </div>
                   <div>
@@ -852,7 +852,7 @@ export function BrokersPage() {
 }
 
 function formatInstant(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Date(iso).toLocaleString();
   } catch {

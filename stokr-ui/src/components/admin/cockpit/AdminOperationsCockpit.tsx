@@ -29,7 +29,7 @@ export function AdminOperationsCockpit({
     <div className="space-y-2 text-[12px] leading-snug">
       {isFetching ? (
         <div className="text-[10px] font-mono text-muted-foreground" aria-live="polite">
-          Refreshing snapshot…
+          Refreshing snapshot...
         </div>
       ) : null}
 

@@ -30,7 +30,7 @@ export function ExecutionModeToggle({ value, onChange, disabled, className }: Pr
     >
       <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">Execution mode</p>
       <p className={cn("mt-1 text-sm", isLight ? "text-[#475569]" : "text-[#94A3B8]")}>
-        Same strategy behavior — data source changes with mode.
+        Same strategy behavior - data source changes with mode.
       </p>
       <div
         role="tablist"
@@ -50,7 +50,7 @@ export function ExecutionModeToggle({ value, onChange, disabled, className }: Pr
               role="tab"
               aria-selected={active}
               disabled={disabled || locked}
-              title={locked ? "Paper and live deployment ship in a later release — backtest replay is available now." : m.hint}
+              title={locked ? "Paper and live deployment ship in a later release - backtest replay is available now." : m.hint}
               whileTap={locked ? undefined : { scale: 0.98 }}
               onClick={() => {
                 if (!locked) onChange(m.id);

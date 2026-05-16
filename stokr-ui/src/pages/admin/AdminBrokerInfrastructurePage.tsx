@@ -19,7 +19,7 @@ function asRecord(v: unknown): Record<string, unknown> | undefined {
 }
 
 function fmt(v: unknown): string {
-  if (v == null) return "—";
+  if (v == null) return "-";
   if (typeof v === "boolean") return v ? "yes" : "no";
   return String(v);
 }
@@ -135,9 +135,9 @@ export function AdminBrokerInfrastructurePage() {
     <div className="space-y-4 text-foreground">
       <div className="rounded-xl border-2 border-border bg-card px-4 py-3">
         <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Plane</div>
-        <h1 className="mt-1 text-xl font-bold tracking-tight">Platform market feed · broker infrastructure</h1>
+        <h1 className="mt-1 text-xl font-bold tracking-tight">Platform market feed  ·  broker infrastructure</h1>
         <p className="mt-2 max-w-4xl text-sm leading-relaxed text-muted-foreground">
-          <span className="font-semibold text-foreground">PLATFORM FEED</span> — admin-owned OAuth rows in{" "}
+          <span className="font-semibold text-foreground">PLATFORM FEED</span> - admin-owned OAuth rows in{" "}
           <code className="font-mono text-foreground">platform_broker_feed_sessions</code> for centralized ingestion ownership. This is
           not <span className="font-semibold text-foreground">TRADER EXECUTION</span> (
           <Link to="/admin/users" className="font-medium text-primary underline-offset-2 hover:underline">

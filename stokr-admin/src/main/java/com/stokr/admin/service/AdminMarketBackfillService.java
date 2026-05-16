@@ -73,6 +73,8 @@ public class AdminMarketBackfillService {
 
     @Value("${stokr.market.backfill.zerodha.chunk-minutes:1000}")
     private int zerodhaChunkMinutes;
+    @Value("${stokr.market.backfill.preflight-sample-size:5}")
+    private int preflightSampleSize;
 
     @Value("${stokr.market.universe.cache-seconds:3600}")
     private long universeCacheSeconds;
@@ -97,6 +99,7 @@ public class AdminMarketBackfillService {
         if (symbols.isEmpty()) {
             throw new BadRequestException("No symbols resolved for backfill job");
         }
+        validateBrokerPreflight(req.brokerSource(), req.timeframe(), req.rangeStart(), req.rangeEnd(), symbols);
 
         MarketBackfillJob job = new MarketBackfillJob();
         job.setRequestedByUserId(adminUserId);
@@ -121,6 +124,27 @@ public class AdminMarketBackfillService {
 
         runJobAsync(job.getId());
         return job.getId();
+    }
+
+    private void validateBrokerPreflight(String brokerSource, String timeframe, Instant rangeStart, Instant rangeEnd, List<String> symbols) {
+        BrokerHistoricalDataAdapter adapter = historicalAdapterRegistry.require(brokerSource.trim().toUpperCase(Locale.ROOT));
+        Instant probeEnd = rangeStart.plus(Duration.ofMinutes(5));
+        if (!probeEnd.isBefore(rangeEnd)) {
+            probeEnd = rangeEnd;
+        }
+        int sample = Math.max(1, Math.min(preflightSampleSize, symbols.size()));
+        List<String> failed = new ArrayList<>();
+        for (int i = 0; i < sample; i++) {
+            String symbol = symbols.get(i);
+            HistoricalFetchResult probe = adapter.fetch(new HistoricalFetchRequest(symbol, timeframe, rangeStart, probeEnd));
+            if (!probe.success()) {
+                failed.add(symbol + ":" + probe.code());
+            }
+        }
+        if (!failed.isEmpty()) {
+            String head = failed.stream().limit(3).reduce((a, b) -> a + ", " + b).orElse("unknown");
+            throw new BadRequestException("Backfill preflight failed (" + failed.size() + "/" + sample + "): " + head);
+        }
     }
 
     @Async("taskExecutor")

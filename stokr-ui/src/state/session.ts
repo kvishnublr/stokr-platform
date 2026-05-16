@@ -46,7 +46,7 @@ type SessionState = {
   /** Traders: ROLE_TRADER (preferred) or legacy ROLE_USER; excludes admins-only tooling. */
   hasTraderAccess: () => boolean;
   /**
-   * Kill-switch / emergency ops console — platform staff only.
+   * Kill-switch / emergency ops console - platform staff only.
    * Traders never see this even if ROLE_ADMIN is mistakenly combined with ROLE_TRADER.
    */
   canAccessKillSwitchOperations: () => boolean;

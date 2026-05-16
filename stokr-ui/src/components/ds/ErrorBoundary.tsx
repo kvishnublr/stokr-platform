@@ -29,7 +29,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="mt-4 text-lg font-semibold text-white">Workstation degraded</div>
           <p className="mt-2 text-sm text-neutral-400">
             {this.state.message ??
-              "A client-side error occurred — refresh to reconnect data streams."}
+              "A client-side error occurred - refresh to reconnect data streams."}
           </p>
           <button
             type="button"

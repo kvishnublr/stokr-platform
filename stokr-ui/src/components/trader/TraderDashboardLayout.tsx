@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { cn } from "../../lib/utils";
 import { useUiThemeStore } from "../../state/uiTheme";
 
-/** Main + right rail only — workspace chrome lives in `ShellLayout` / `WorkspaceTopNav`. */
+/** Main + right rail only - workspace chrome lives in `ShellLayout` / `WorkspaceTopNav`. */
 export function TraderDashboardLayout({ main, rightRail }: { main: ReactNode; rightRail: ReactNode }) {
   const mainRef = useRef<HTMLElement | null>(null);
   const railRef = useRef<HTMLElement | null>(null);

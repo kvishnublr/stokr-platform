@@ -49,11 +49,11 @@ function incidentId(row: Record<string, unknown>): string {
 }
 
 function notWired(action: string) {
-  toast.message(`${action} — not exposed on admin HTTP API in this monolith build.`);
+  toast.message(`${action} - not exposed on admin HTTP API in this monolith build.`);
 }
 
 function queuePropsRow(props: Record<string, unknown> | undefined) {
-  if (!props) return "—";
+  if (!props) return "-";
   const depth = props.QUEUE_MESSAGE_COUNT ?? props.queue_message_count;
   const cons = props.CONSUMER_COUNT ?? props.consumer_count;
   const parts: string[] = [];
@@ -61,7 +61,7 @@ function queuePropsRow(props: Record<string, unknown> | undefined) {
   if (cons != null) parts.push(`consumers ${String(cons)}`);
   const st = props.status != null ? String(props.status) : "";
   if (st) parts.push(st);
-  return parts.length ? parts.join(" · ") : JSON.stringify(props).slice(0, 120);
+  return parts.length ? parts.join("  ·  ") : JSON.stringify(props).slice(0, 120);
 }
 
 function queueDepth(props: Record<string, unknown> | undefined): number {
@@ -102,7 +102,7 @@ export function BrokerInfrastructureGrid({ snapshot }: { snapshot: OpsSnapshot |
   return (
     <OpsPanel
       title="Broker infrastructure"
-      subtitle="Per-vendor OAuth session plane. Zerodha actions call admin orchestration APIs (user-scoped — pick trader UUID)."
+      subtitle="Per-vendor OAuth session plane. Zerodha actions call admin orchestration APIs (user-scoped - pick trader UUID)."
     >
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {vendorKeys.map((vk) => {
@@ -140,16 +140,16 @@ export function BrokerInfrastructureGrid({ snapshot }: { snapshot: OpsSnapshot |
                 <div className="flex justify-between gap-2">
                   <dt>Auth</dt>
                   <dd className="truncate text-foreground" title={String(v.authStatus ?? "")}>
-                    {String(v.authStatus ?? "—")}
+                    {String(v.authStatus ?? "-")}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt>Token expiry</dt>
-                  <dd className="truncate text-foreground">{v.tokenExpiryNearest != null ? String(v.tokenExpiryNearest).slice(0, 19) : "—"}</dd>
+                  <dd className="truncate text-foreground">{v.tokenExpiryNearest != null ? String(v.tokenExpiryNearest).slice(0, 19) : "-"}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt>Heartbeat age</dt>
-                  <dd className="text-foreground">{v.heartbeatAgeSeconds != null ? `${fmtInt(v.heartbeatAgeSeconds)}s` : "—"}</dd>
+                  <dd className="text-foreground">{v.heartbeatAgeSeconds != null ? `${fmtInt(v.heartbeatAgeSeconds)}s` : "-"}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt>Rows</dt>
@@ -221,8 +221,8 @@ export function MarketFreshnessPanel({ snapshot }: { snapshot: OpsSnapshot | und
     typeof ticks60 === "number" && Number.isFinite(ticks60)
       ? `${fmtInt(ticks60)} ticks / 60s (PLATFORM_ZERODHA_WS)`
       : pathOk
-        ? "0 ticks / 60s (PLATFORM_ZERODHA_WS) — feed quiet or symbols idle"
-        : "— (platform tape offline — no live tick plane)";
+        ? "0 ticks / 60s (PLATFORM_ZERODHA_WS) - feed quiet or symbols idle"
+        : "- (platform tape offline - no live tick plane)";
 
   return (
     <OpsPanel
@@ -234,12 +234,12 @@ export function MarketFreshnessPanel({ snapshot }: { snapshot: OpsSnapshot | und
           <div className="flex justify-between gap-2">
             <span>Freshness status</span>
             <span className={`rounded border px-1.5 py-0.5 text-[10px] ${badgeClassForStatus(String(m?.status === "OK" ? "CONNECTED" : m?.status ?? "UNKNOWN"))}`}>
-              {String(m?.status ?? "—")}
+              {String(m?.status ?? "-")}
             </span>
           </div>
           <div className="flex justify-between gap-2">
-            <span>1m lag (wall − max open)</span>
-            <span className="text-foreground">{m?.latest1mLagSeconds != null ? `${fmtNum(m.latest1mLagSeconds, 0)}s` : "—"}</span>
+            <span>1m lag (wall âˆ’ max open)</span>
+            <span className="text-foreground">{m?.latest1mLagSeconds != null ? `${fmtNum(m.latest1mLagSeconds, 0)}s` : "-"}</span>
           </div>
           <div className="flex justify-between gap-2">
             <span>1m candles / min (approx)</span>
@@ -258,13 +258,13 @@ export function MarketFreshnessPanel({ snapshot }: { snapshot: OpsSnapshot | und
           <div className="flex justify-between gap-2">
             <span>Latest 1m open (UTC)</span>
             <span className="truncate text-foreground" title={String(infra?.latestCandleOpenTime1m ?? "")}>
-              {infra?.latestCandleOpenTime1m != null ? String(infra.latestCandleOpenTime1m).slice(0, 19) : "—"}
+              {infra?.latestCandleOpenTime1m != null ? String(infra.latestCandleOpenTime1m).slice(0, 19) : "-"}
             </span>
           </div>
           <div className="flex justify-between gap-2">
             <span>Latest 5m open (UTC)</span>
             <span className="truncate text-foreground" title={String(infra?.latestCandleOpenTime5m ?? "")}>
-              {infra?.latestCandleOpenTime5m != null ? String(infra.latestCandleOpenTime5m).slice(0, 19) : "—"}
+              {infra?.latestCandleOpenTime5m != null ? String(infra.latestCandleOpenTime5m).slice(0, 19) : "-"}
             </span>
           </div>
         </div>
@@ -293,13 +293,13 @@ export function MarketFreshnessPanel({ snapshot }: { snapshot: OpsSnapshot | und
                     return (
                       <tr key={`${sym}-${i}`} className="border-b border-border/80">
                         <td className="px-2 py-1 text-foreground">{sym}</td>
-                        <td className="px-2 py-1 text-muted-foreground">{String(r.latestOpenTime ?? "—").slice(0, 19)}</td>
+                        <td className="px-2 py-1 text-muted-foreground">{String(r.latestOpenTime ?? "-").slice(0, 19)}</td>
                         <td className="px-2 py-1">
                           <div className="h-1.5 w-full overflow-hidden rounded bg-border">
                             <div
                               className="h-full bg-amber-500/80"
                               style={{ width: `${Math.min(100, 12 + i * 10)}%` }}
-                              title="ordinal heat — not tick-accurate"
+                              title="ordinal heat - not tick-accurate"
                             />
                           </div>
                         </td>
@@ -323,7 +323,7 @@ export function MarketIntelligenceGrid({ snapshot }: { snapshot: OpsSnapshot | u
   const brokerLive = hasActiveBrokerMarketFeed(snapshot);
   const root = asRecord(snapshot?.brokerSessions);
   const vendors = asRecord(root?.vendors) ?? {};
-  const freshness = String(mp?.freshnessStatus ?? "—");
+  const freshness = String(mp?.freshnessStatus ?? "-");
   const worst = worstSymbolsFromSnapshot(snapshot);
   const running = typeof scan?.runningStrategyInstances === "number" ? scan.runningStrategyInstances : Number(scan?.runningStrategyInstances ?? 0);
   const sig60 = typeof scan?.signalsEmittedLast60m === "number" ? scan.signalsEmittedLast60m : Number(scan?.signalsEmittedLast60m ?? 0);
@@ -337,7 +337,7 @@ export function MarketIntelligenceGrid({ snapshot }: { snapshot: OpsSnapshot | u
         <div className="mb-4 rounded-lg border-2 border-orange-500/50 bg-orange-500/10 px-3 py-3 text-sm text-foreground">
           <div className="font-bold uppercase tracking-wide text-orange-950 dark:text-orange-100">Ingestion unavailable</div>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            No CONNECTED broker sessions — live ticks, scanner freshness, and tape-grade signals cannot be asserted. Use the broker
+            No CONNECTED broker sessions - live ticks, scanner freshness, and tape-grade signals cannot be asserted. Use the broker
             control center to restore OAuth, then verify 1m lag and worst-symbol table below.
           </p>
         </div>
@@ -351,9 +351,9 @@ export function MarketIntelligenceGrid({ snapshot }: { snapshot: OpsSnapshot | u
           </div>
         </div>
         <div className="rounded-lg border border-border bg-card px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">1m lag (wall − store)</div>
+          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">1m lag (wall âˆ’ store)</div>
           <div className="mt-1 font-mono text-sm font-semibold text-foreground">
-            {mp?.latest1mLagSeconds != null ? `${fmtNum(mp.latest1mLagSeconds, 0)}s` : "—"}
+            {mp?.latest1mLagSeconds != null ? `${fmtNum(mp.latest1mLagSeconds, 0)}s` : "-"}
           </div>
         </div>
         <div className="rounded-lg border border-border bg-card px-3 py-2">
@@ -384,8 +384,8 @@ export function MarketIntelligenceGrid({ snapshot }: { snapshot: OpsSnapshot | u
             <tbody>
               {BROKER_CONTROL_CENTER_ORDER.map((vk) => {
                 const v = asRecord(vendors[vk]) ?? {};
-                const st = String(v.status ?? "—").toUpperCase();
-                const ws = String(v.websocketStatus ?? "UNKNOWN").toUpperCase() === "UNKNOWN" ? "NOT_INSTRUMENTED" : String(v.websocketStatus ?? "—");
+                const st = String(v.status ?? "-").toUpperCase();
+                const ws = String(v.websocketStatus ?? "UNKNOWN").toUpperCase() === "UNKNOWN" ? "NOT_INSTRUMENTED" : String(v.websocketStatus ?? "-");
                 return (
                   <tr key={vk} className="border-b border-border/80">
                     <td className="px-2 py-1.5 font-semibold text-foreground">{vendorDisplayName(vk)}</td>
@@ -393,8 +393,8 @@ export function MarketIntelligenceGrid({ snapshot }: { snapshot: OpsSnapshot | u
                       <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${badgeClassForStatus(st)}`}>{st}</span>
                     </td>
                     <td className="px-2 py-1.5 text-foreground">{ws}</td>
-                    <td className="px-2 py-1.5 text-muted-foreground">{v.tokenExpiryNearest != null ? String(v.tokenExpiryNearest).slice(0, 19) : "—"}</td>
-                    <td className="px-2 py-1.5 text-foreground">{v.heartbeatAgeSeconds != null ? `${fmtInt(v.heartbeatAgeSeconds)}s` : "—"}</td>
+                    <td className="px-2 py-1.5 text-muted-foreground">{v.tokenExpiryNearest != null ? String(v.tokenExpiryNearest).slice(0, 19) : "-"}</td>
+                    <td className="px-2 py-1.5 text-foreground">{v.heartbeatAgeSeconds != null ? `${fmtInt(v.heartbeatAgeSeconds)}s` : "-"}</td>
                     <td className="px-2 py-1.5 text-foreground">
                       {fmtInt(v.connectedRows)}/{fmtInt(v.accountRows)}
                     </td>
@@ -423,7 +423,7 @@ export function MarketIntelligenceGrid({ snapshot }: { snapshot: OpsSnapshot | u
                 {!brokerLive ? (
                   <tr>
                     <td colSpan={3} className="px-2 py-4 text-sm text-muted-foreground">
-                      No market telemetry — broker feed offline. Stale-symbol ranking requires live ingestion path.
+                      No market telemetry - broker feed offline. Stale-symbol ranking requires live ingestion path.
                     </td>
                   </tr>
                 ) : worst.length === 0 ? (
@@ -439,7 +439,7 @@ export function MarketIntelligenceGrid({ snapshot }: { snapshot: OpsSnapshot | u
                     return (
                       <tr key={`${sym}-${i}`} className="border-b border-border/80">
                         <td className="px-2 py-1 text-foreground">{sym}</td>
-                        <td className="px-2 py-1 text-muted-foreground">{String(r.latestOpenTime ?? "—").slice(0, 19)}</td>
+                        <td className="px-2 py-1 text-muted-foreground">{String(r.latestOpenTime ?? "-").slice(0, 19)}</td>
                         <td className="px-2 py-1 text-muted-foreground">#{i + 1}</td>
                       </tr>
                     );
@@ -465,7 +465,7 @@ export function MarketIntelligenceGrid({ snapshot }: { snapshot: OpsSnapshot | u
             <div className="flex justify-between gap-2">
               <dt>Scans / engine</dt>
               <dd className="text-foreground">
-                {brokerLive ? `${running} RUNNING · ${sig60} sig / 60m` : "PAUSED (no broker feed)"}
+                {brokerLive ? `${running} RUNNING  ·  ${sig60} sig / 60m` : "PAUSED (no broker feed)"}
               </dd>
             </div>
           </dl>
@@ -534,7 +534,7 @@ export function ExecutionTimelinePanel() {
         </label>
       </div>
       {!valid ? <p className="mt-2 text-[10px] text-muted-foreground">Enter a valid order id to load the trace.</p> : null}
-      {valid && q.isLoading ? <p className="mt-2 text-xs text-muted-foreground">Loading…</p> : null}
+      {valid && q.isLoading ? <p className="mt-2 text-xs text-muted-foreground">Loading...</p> : null}
       {valid && q.isError ? <p className="mt-2 text-xs text-red-600 dark:text-red-400">Could not load timeline.</p> : null}
       {valid && q.data ? (
         <div className="mt-2 max-h-56 overflow-auto rounded-lg border border-border">
@@ -562,7 +562,7 @@ export function ExecutionTimelinePanel() {
                   const pl = row.payload != null && typeof row.payload === "object" ? JSON.stringify(row.payload) : String(row.payload ?? "");
                   return (
                     <tr key={`${et}-${i}`} className="border-b border-border/80">
-                      <td className="px-2 py-1 text-muted-foreground">{typeof seq === "number" ? seq : "—"}</td>
+                      <td className="px-2 py-1 text-muted-foreground">{typeof seq === "number" ? seq : "-"}</td>
                       <td className="px-2 py-1 text-foreground">{et}</td>
                       <td className="px-2 py-1 text-muted-foreground">{at}</td>
                       <td className="max-w-[18rem] truncate px-2 py-1 text-muted-foreground" title={pl}>
@@ -585,7 +585,7 @@ export function StrategyScannerGrid({ snapshot }: { snapshot: OpsSnapshot | unde
   const rows = asArray(s?.strategyRows) ?? [];
 
   return (
-    <OpsPanel title="Strategy scanner grid" subtitle="Catalog × RUNNING instances × persisted signals / 60m (DB-bound).">
+    <OpsPanel title="Strategy scanner grid" subtitle="Catalog x RUNNING instances x persisted signals / 60m (DB-bound).">
       <dl className="mb-2 grid gap-1 font-mono text-[10px] text-muted-foreground sm:grid-cols-3 lg:grid-cols-6">
         <div className="flex justify-between gap-1 rounded border border-border bg-background/40 px-1.5 py-0.5">
           <dt>Eval (proc)</dt>
@@ -601,7 +601,7 @@ export function StrategyScannerGrid({ snapshot }: { snapshot: OpsSnapshot | unde
         </div>
         <div className="flex justify-between gap-1 rounded border border-border bg-background/40 px-1.5 py-0.5">
           <dt>Last scan ms</dt>
-          <dd className="text-foreground">{s?.lastScanDurationMs != null ? fmtNum(s.lastScanDurationMs, 1) : "—"}</dd>
+          <dd className="text-foreground">{s?.lastScanDurationMs != null ? fmtNum(s.lastScanDurationMs, 1) : "-"}</dd>
         </div>
       </dl>
       <div className="max-h-[320px] overflow-auto rounded-lg border border-border">
@@ -640,11 +640,11 @@ export function StrategyScannerGrid({ snapshot }: { snapshot: OpsSnapshot | unde
                     <td className="px-2 py-1 text-foreground">{fmtInt(running)}</td>
                     <td className="px-2 py-1 text-muted-foreground">{fmtInt(r.totalInstances)}</td>
                     <td className="px-2 py-1 text-foreground">{fmtInt(r.signalsLast60m)}</td>
-                    <td className="px-2 py-1 text-muted-foreground">{r.scanLatencyMsP50 != null ? fmtInt(r.scanLatencyMsP50) : "—"}</td>
-                    <td className="px-2 py-1 text-muted-foreground">{r.scanFailuresApprox != null ? fmtInt(r.scanFailuresApprox) : "—"}</td>
+                    <td className="px-2 py-1 text-muted-foreground">{r.scanLatencyMsP50 != null ? fmtInt(r.scanLatencyMsP50) : "-"}</td>
+                    <td className="px-2 py-1 text-muted-foreground">{r.scanFailuresApprox != null ? fmtInt(r.scanFailuresApprox) : "-"}</td>
                     <td className="px-2 py-1 text-muted-foreground">{halted}</td>
-                    <td className="px-2 py-1 text-muted-foreground">{r.rejectedSignalsApprox != null ? fmtInt(r.rejectedSignalsApprox) : "—"}</td>
-                    <td className="px-2 py-1 text-muted-foreground">{r.queueBacklogApprox != null ? fmtInt(r.queueBacklogApprox) : "—"}</td>
+                    <td className="px-2 py-1 text-muted-foreground">{r.rejectedSignalsApprox != null ? fmtInt(r.rejectedSignalsApprox) : "-"}</td>
+                    <td className="px-2 py-1 text-muted-foreground">{r.queueBacklogApprox != null ? fmtInt(r.queueBacklogApprox) : "-"}</td>
                   </tr>
                 );
               })
@@ -665,7 +665,7 @@ export function SignalRoutingMonitor({ snapshot }: { snapshot: OpsSnapshot | und
   return (
     <OpsPanel
       title="Signal routing monitor"
-      subtitle="Signal engine → OMS → execution (in-process counters + DB tails; restart clears process totals)."
+      subtitle="Signal engine â†’ OMS â†’ execution (in-process counters + DB tails; restart clears process totals)."
     >
       <div className="grid gap-2 font-mono text-[11px] text-muted-foreground sm:grid-cols-3 lg:grid-cols-4">
         <div className="rounded border border-border bg-background/50 px-2 py-1">
@@ -673,7 +673,7 @@ export function SignalRoutingMonitor({ snapshot }: { snapshot: OpsSnapshot | und
           <div className="text-foreground">{fmtInt(d?.signalsEmittedProcessTotal)}</div>
         </div>
         <div className="rounded border border-border bg-background/50 px-2 py-1">
-          <div>Routed → OMS intents</div>
+          <div>Routed â†’ OMS intents</div>
           <div className="text-foreground">{fmtInt(d?.signalsRoutedToOmsTotal)}</div>
         </div>
         <div className="rounded border border-border bg-background/50 px-2 py-1">
@@ -682,7 +682,7 @@ export function SignalRoutingMonitor({ snapshot }: { snapshot: OpsSnapshot | und
         </div>
         <div className="rounded border border-border bg-background/50 px-2 py-1">
           <div>Routing latency (sample avg)</div>
-          <div className="text-foreground">{d?.routingLatencyMsP50 != null ? `${fmtNum(d.routingLatencyMsP50, 1)} ms` : "—"}</div>
+          <div className="text-foreground">{d?.routingLatencyMsP50 != null ? `${fmtNum(d.routingLatencyMsP50, 1)} ms` : "-"}</div>
         </div>
         <div className="rounded border border-border bg-background/50 px-2 py-1">
           <div>Execution dispatch failures</div>
@@ -746,11 +746,11 @@ export function SignalRoutingMonitor({ snapshot }: { snapshot: OpsSnapshot | und
                   r.rejectedApprox === true ? "REJ" : null,
                 ]
                   .filter(Boolean)
-                  .join("·");
+                  .join(" · ");
                 return (
                   <tr key={uid} className="border-b border-border/80">
                     <td className="max-w-[7rem] truncate px-2 py-1 text-foreground" title={uid}>
-                      {uid.slice(0, 8)}…
+                      {uid.slice(0, 8)}...
                     </td>
                     <td className="px-2 py-1 text-foreground">{fmtInt(r.signalsPublished)}</td>
                     <td className="px-2 py-1 text-foreground">{fmtInt(r.omsIntents)}</td>
@@ -759,8 +759,8 @@ export function SignalRoutingMonitor({ snapshot }: { snapshot: OpsSnapshot | und
                     <td className="px-2 py-1 text-foreground">{fmtInt(r.riskRejects)}</td>
                     <td className="px-2 py-1 text-foreground">{fmtInt(r.executionFails)}</td>
                     <td className="px-2 py-1 text-muted-foreground">{fmtInt(r.idempotentHits)}</td>
-                    <td className="max-w-[6rem] truncate px-2 py-1 text-muted-foreground" title={flags || "—"}>
-                      {flags || "—"}
+                    <td className="max-w-[6rem] truncate px-2 py-1 text-muted-foreground" title={flags || "-"}>
+                      {flags || "-"}
                     </td>
                   </tr>
                 );
@@ -805,7 +805,7 @@ export function SignalDistributionPanel({ snapshot }: { snapshot: OpsSnapshot | 
           <dd className="text-foreground">{fmtInt(d?.rabbitDispatchesTotal)}</dd>
         </div>
         <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
-          <dt>Routed → OMS</dt>
+          <dt>Routed â†’ OMS</dt>
           <dd className="text-foreground">{fmtInt(d?.signalsRoutedToOmsTotal)}</dd>
         </div>
         <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
@@ -850,7 +850,7 @@ export function OMSLatencyMonitor({ snapshot }: { snapshot: OpsSnapshot | undefi
         </div>
         <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
           <dt>Ack latency avg</dt>
-          <dd className="text-foreground">{o?.executionAvgLatencyMs != null ? `${fmtNum(o.executionAvgLatencyMs, 0)} ms` : "—"}</dd>
+          <dd className="text-foreground">{o?.executionAvgLatencyMs != null ? `${fmtNum(o.executionAvgLatencyMs, 0)} ms` : "-"}</dd>
         </div>
         <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
           <dt>Failed + rejected (total)</dt>
@@ -925,7 +925,7 @@ export function ReplayOpsGrid({ snapshot }: { snapshot: OpsSnapshot | undefined 
         <div className="rounded border border-border bg-background/50 px-2 py-1">
           <div>Queued / running / failed</div>
           <div className="text-foreground">
-            {fmtInt(r?.jobsQueued)} · {fmtInt(r?.jobsRunning)} · {fmtInt(r?.jobsFailed)}
+            {fmtInt(r?.jobsQueued)}  ·  {fmtInt(r?.jobsRunning)}  ·  {fmtInt(r?.jobsFailed)}
           </div>
         </div>
         <div className="rounded border border-border bg-background/50 px-2 py-1">
@@ -964,10 +964,10 @@ export function ReplayOpsGrid({ snapshot }: { snapshot: OpsSnapshot | undefined 
                   <tr key={String(row.jobId ?? i)} className="border-b border-border/80">
                     <td className="px-2 py-1 text-foreground">{mapReplayStatus(st, diag)}</td>
                     <td className="max-w-[10rem] truncate px-2 py-1 text-muted-foreground" title={diag}>
-                      {diag || "—"}
+                      {diag || "-"}
                     </td>
                     <td className="px-2 py-1 text-muted-foreground">
-                      {fmtInt(row.progressPct)}% · bars {fmtInt(row.processedBars)}/{fmtInt(row.totalBars)}
+                      {fmtInt(row.progressPct)}%  ·  bars {fmtInt(row.processedBars)}/{fmtInt(row.totalBars)}
                     </td>
                     <td className="px-2 py-1 text-muted-foreground">{String(row.updatedAt ?? "").slice(0, 19)}</td>
                   </tr>
@@ -1011,7 +1011,7 @@ export function ReplayOpsGrid({ snapshot }: { snapshot: OpsSnapshot | undefined 
                       {fmtInt(row.candlesProcessed)}/{fmtInt(row.candlesExpected)}
                     </td>
                     <td className="px-2 py-1 text-muted-foreground">{fmtInt(row.signalsEmitted)}</td>
-                    <td className="px-2 py-1 text-muted-foreground">{row.durationMs != null ? `${fmtInt(row.durationMs)}ms` : "—"}</td>
+                    <td className="px-2 py-1 text-muted-foreground">{row.durationMs != null ? `${fmtInt(row.durationMs)}ms` : "-"}</td>
                   </tr>
                 );
               })}
@@ -1099,7 +1099,7 @@ export function IncidentFeed({ snapshot }: { snapshot: OpsSnapshot | undefined }
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-[10px] uppercase text-muted-foreground">{String(row.subsystem ?? "—")}</span>
+                      <span className="font-mono text-[10px] uppercase text-muted-foreground">{String(row.subsystem ?? "-")}</span>
                       <span className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-foreground">
                         {String(row.code ?? "")}
                       </span>
@@ -1149,7 +1149,7 @@ export function TraderExecutionHealthGrid({ snapshot }: { snapshot: OpsSnapshot 
   const rows = asArray(t?.traderRows) ?? [];
 
   return (
-    <OpsPanel title="Trader execution health" subtitle="Recent traders — broker_sessions + OMS activity (DB).">
+    <OpsPanel title="Trader execution health" subtitle="Recent traders - broker_sessions + OMS activity (DB).">
       <div className="max-h-[280px] overflow-auto rounded-lg border border-border">
         <table className="w-full border-collapse text-left font-mono text-[10px]">
           <thead className="sticky top-0 bg-card text-muted-foreground">
@@ -1181,7 +1181,7 @@ export function TraderExecutionHealthGrid({ snapshot }: { snapshot: OpsSnapshot 
                     <td className="px-2 py-1 text-foreground">{fmtInt(r.brokersConnected)}</td>
                     <td className="px-2 py-1 text-muted-foreground">{String(r.routingState ?? "")}</td>
                     <td className="px-2 py-1 text-muted-foreground">{String(r.marginState ?? "")}</td>
-                    <td className="px-2 py-1 text-muted-foreground">{String(r.lastOrderAt ?? "").slice(0, 19) || "—"}</td>
+                    <td className="px-2 py-1 text-muted-foreground">{String(r.lastOrderAt ?? "").slice(0, 19) || "-"}</td>
                     <td className="px-2 py-1 text-foreground">{fmtInt(r.omsFailures24h)}</td>
                   </tr>
                 );
@@ -1209,11 +1209,11 @@ export function LiveSignalFeed({ snapshot }: { snapshot: OpsSnapshot | undefined
           sigs.map((raw, i) => {
             const s = asRecord(raw) ?? {};
             const t = String(s.createdAt ?? "").slice(11, 19);
-            const strat = String(s.strategyName ?? "—");
-            const side = String(s.signalType ?? "—");
-            const sym = String(s.symbol ?? "—");
+            const strat = String(s.strategyName ?? "-");
+            const side = String(s.signalType ?? "-");
+            const sym = String(s.symbol ?? "-");
             const replay = Boolean(s.replay);
-            const routed = ws < 0 ? "NOT_INSTRUMENTED" : `≈${ws} terminals (WS)`;
+            const routed = ws < 0 ? "NOT_INSTRUMENTED" : `~${ws} terminals (WS)`;
             return (
               <li key={`${String(s.createdAt)}-${i}`} className="border-b border-border/60 pb-2">
                 <div className="text-muted-foreground">{t}</div>
@@ -1222,7 +1222,7 @@ export function LiveSignalFeed({ snapshot }: { snapshot: OpsSnapshot | undefined
                   <span className="text-amber-200/90">{side}</span> <span className="text-foreground">{sym}</span>
                 </div>
                 <div className="text-muted-foreground">
-                  routed → {routed} · {replay ? "REPLAY" : "LIVE/PAPER pipeline"}
+                  routed â†’ {routed}  ·  {replay ? "REPLAY" : "LIVE/PAPER pipeline"}
                 </div>
               </li>
             );
@@ -1240,10 +1240,10 @@ export function BackfillOperationsPanel({ snapshot }: { snapshot: OpsSnapshot | 
   const jr = typeof replay?.jobsRunning === "number" ? replay.jobsRunning : Number(replay?.jobsRunning ?? 0);
 
   return (
-    <OpsPanel title="Backfill control center" subtitle="Replay job queue from operations snapshot — historical job mutations are not on admin HTTP yet.">
+    <OpsPanel title="Backfill control center" subtitle="Replay job queue from operations snapshot - historical job mutations are not on admin HTTP yet.">
       {!brokerLive ? (
         <div className="mb-3 rounded-lg border border-orange-500/45 bg-orange-500/10 px-3 py-2 text-xs text-foreground">
-          <span className="font-semibold">Live coupling degraded · </span>
+          <span className="font-semibold">Live coupling degraded  ·  </span>
           Without CONNECTED broker sessions, gap repair against live tape and freshness baselines cannot be validated from this
           console.
         </div>
@@ -1318,11 +1318,11 @@ export function QueueDepthMonitor({ snapshot }: { snapshot: OpsSnapshot | undefi
               return (
                 <tr key={name} className="border-b border-border/80">
                   <td className="px-2 py-1 text-foreground">{name}</td>
-                  <td className="px-2 py-1 text-muted-foreground">{depth >= 0 ? fmtInt(depth) : "—"}</td>
+                  <td className="px-2 py-1 text-muted-foreground">{depth >= 0 ? fmtInt(depth) : "-"}</td>
                   <td className="max-w-[14rem] truncate px-2 py-1 text-muted-foreground" title={queuePropsRow(p)}>
                     {queuePropsRow(p)}
                   </td>
-                  <td className="px-2 py-1 text-muted-foreground">{depth > 2000 ? "SATURATED" : "—"}</td>
+                  <td className="px-2 py-1 text-muted-foreground">{depth > 2000 ? "SATURATED" : "-"}</td>
                 </tr>
               );
             })}
@@ -1340,7 +1340,7 @@ export function ProjectionHealthPanel({ snapshot }: { snapshot: OpsSnapshot | un
   return (
     <OpsPanel
       title="Read model health"
-      subtitle="Candle read path (marketdata_candles) — dedicated projection workers not split yet."
+      subtitle="Candle read path (marketdata_candles) - dedicated projection workers not split yet."
     >
       <dl className="space-y-2 font-mono text-[11px] text-muted-foreground">
         <div className="flex justify-between gap-2">
@@ -1349,7 +1349,7 @@ export function ProjectionHealthPanel({ snapshot }: { snapshot: OpsSnapshot | un
         </div>
         <div className="flex justify-between gap-2">
           <dt>Projection lag (1m)</dt>
-          <dd className="text-foreground">{m?.latest1mLagSeconds != null ? `${fmtNum(m.latest1mLagSeconds, 0)}s` : "—"}</dd>
+          <dd className="text-foreground">{m?.latest1mLagSeconds != null ? `${fmtNum(m.latest1mLagSeconds, 0)}s` : "-"}</dd>
         </div>
         <div className="flex justify-between gap-2">
           <dt>Rebuild status</dt>

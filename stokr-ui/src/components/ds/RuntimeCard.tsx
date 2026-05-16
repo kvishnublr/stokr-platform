@@ -31,7 +31,7 @@ export function RuntimeCard({
               label={mode?.toUpperCase() === "LIVE" ? "LIVE mode" : "Paper / SIM"}
             />
           </div>
-          <div className="font-mono text-[10px] text-neutral-600">Instance · {instanceIdShort}</div>
+          <div className="font-mono text-[10px] text-neutral-600">Instance  ·  {instanceIdShort}</div>
           <div className="text-xs text-neutral-500">State machine: {state}</div>
         </div>
       </div>

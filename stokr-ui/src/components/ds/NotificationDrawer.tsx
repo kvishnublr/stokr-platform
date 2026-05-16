@@ -51,7 +51,7 @@ export function NotificationDrawer({
                 <h2 id="notification-drawer-title" className="text-sm font-semibold text-white">
                   Alert center
                 </h2>
-                <p className="mt-1 text-[11px] text-neutral-500">WebSocket + execution feed · persists for session</p>
+                <p className="mt-1 text-[11px] text-neutral-500">WebSocket + execution feed  ·  persists for session</p>
               </div>
               <button
                 type="button"

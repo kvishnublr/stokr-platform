@@ -1,4 +1,4 @@
-﻿/** Shape of `GET /api/admin/operations/snapshot` â€” sections are intentionally loose (maps). */
+/** Shape of `GET /api/admin/operations/snapshot` - sections are intentionally loose (maps). */
 
 export type OpsSnapshot = {
   collectedAt: string;
@@ -31,13 +31,13 @@ export function asArray(v: unknown): unknown[] | undefined {
 export function fmtNum(v: unknown, digits = 2): string {
   if (typeof v === "number" && Number.isFinite(v)) return v.toFixed(digits);
   if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return Number(v).toFixed(digits);
-  return "â€”";
+  return "-";
 }
 
 export function fmtInt(v: unknown): string {
   if (typeof v === "number" && Number.isFinite(v)) return String(Math.round(v));
   if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return String(Math.round(Number(v)));
-  return "â€”";
+  return "-";
 }
 
 export function badgeClassForStatus(status: string): string {

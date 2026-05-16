@@ -92,7 +92,7 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
       return pollReplayJobUntilTerminal(jobId, { intervalMs: 2000, maxWaitMs: 3 * 60 * 60 * 1000 });
     },
     onMutate: () => {
-      toast.loading("Running replay (async)…", { id: "replay-job" });
+      toast.loading("Running replay (async)...", { id: "replay-job" });
     },
     onSuccess: (job) => {
       toast.dismiss("replay-job");
@@ -111,12 +111,12 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
       const bits: string[] = [];
       if (job.replayDiagnosis) bits.push(`Diagnosis: ${job.replayDiagnosis}`);
       if (job.replayCandlesExpected != null || job.replayCandlesProcessed != null) {
-        bits.push(`Bars ${job.replayCandlesProcessed ?? "—"}/${job.replayCandlesExpected ?? "—"}`);
+        bits.push(`Bars ${job.replayCandlesProcessed ?? "-"}/${job.replayCandlesExpected ?? "-"}`);
       }
       if (job.replaySignalsEmitted != null) bits.push(`Signals ${job.replaySignalsEmitted}`);
       if (job.replayExecutionEvents != null) bits.push(`Exec events ${job.replayExecutionEvents}`);
       if (job.replayDurationMs != null) bits.push(`${Math.round(job.replayDurationMs / 1000)}s`);
-      toast.success("Replay completed", { description: bits.length ? bits.join(" · ") : undefined });
+      toast.success("Replay completed", { description: bits.length ? bits.join("  ·  ") : undefined });
       navigate(`/backtests/${job.runId}`);
     },
     onError: (e) => {
@@ -202,7 +202,7 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
       return;
     }
     if (!Number.isFinite(capital) || capital < 1) {
-      toast.error("Capital must be at least ₹1.");
+      toast.error("Capital must be at least â‚¹1.");
       return;
     }
     const strategyParameters = buildStrategyParametersFromDefaults(meta);

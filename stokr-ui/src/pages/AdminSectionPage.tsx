@@ -45,7 +45,7 @@ export function AdminSectionPage({ section }: { section: AdminSectionKind }) {
     if (data != null && typeof data === "object") {
       return Object.entries(data as Record<string, unknown>).map(([key, value]) => ({
         key,
-        value: value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value),
+        value: value == null ? "-" : typeof value === "object" ? JSON.stringify(value) : String(value),
       }));
     }
     return [];
@@ -68,7 +68,7 @@ export function AdminSectionPage({ section }: { section: AdminSectionKind }) {
       ) : null}
 
       {query.isLoading ? (
-        <div className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">Loading…</div>
+        <div className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">Loading...</div>
       ) : null}
 
       {!query.isLoading && !query.isError && rows.length === 0 ? (

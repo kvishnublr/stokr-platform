@@ -50,7 +50,7 @@ import { TraderDashboard } from "./pages/trader/TraderDashboard";
 import { AdminOverviewPage } from "./pages/AdminOverviewPage";
 import { ProfilePage } from "./pages/ProfilePage";
 
-/** Heavy chart surface — defer initial JS until navigation. */
+/** Heavy chart surface - defer initial JS until navigation. */
 const BacktestReplayPage = lazy(async () => {
   const m = await import("./pages/BacktestReplayPage");
   return { default: m.BacktestReplayPage };

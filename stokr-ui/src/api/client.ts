@@ -25,7 +25,7 @@ function parseAxiosMessage(err: unknown): string {
         msg.includes("failed to fetch")
       ) {
         if (isLocalDev) {
-          return "Cannot reach the API. Start Spring Boot (stokr-bootstrap) on port 8080 so Vite can proxy /api from this dev server — or set STOKR_BACKEND_ORIGIN (or STOKR_API_PROXY_TARGET) when starting Vite if the API uses another URL.";
+          return "Cannot reach the API. Start Spring Boot (stokr-bootstrap) on port 8080 so Vite can proxy /api from this dev server - or set STOKR_BACKEND_ORIGIN (or STOKR_API_PROXY_TARGET) when starting Vite if the API uses another URL.";
         }
         return "Cannot reach the API. Check that the UI proxy/nginx routes /api to the backend and that the API process is running.";
       }
@@ -37,7 +37,7 @@ function parseAxiosMessage(err: unknown): string {
     const nested = d?.error?.detail ?? d?.error?.message;
     if (nested) return String(nested);
     if (d?.message) return String(d.message);
-    if (err.response?.status === 401) return "Session expired — please sign in again.";
+    if (err.response?.status === 401) return "Session expired - please sign in again.";
     const st = err.response?.status;
     if (st && st >= 500) {
       const isLocalDev =

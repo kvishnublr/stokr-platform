@@ -34,7 +34,7 @@ export function BacktestLauncherPage() {
           )}
         >
           Replay how this published strategy would have traded over your chosen window. Capital, range, and mode are yours
-          — symbol, timeframe, risk, and execution mechanics are defined by the strategy.
+          - symbol, timeframe, risk, and execution mechanics are defined by the strategy.
         </p>
         <div
           className={cn(

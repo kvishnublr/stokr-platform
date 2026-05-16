@@ -3,10 +3,10 @@ import type { AdminDashboardData } from "./types";
 
 const EMPTY_ADMIN_DASHBOARD: AdminDashboardData = {
   userMetrics: [
-    { label: "Total Users", value: "—", delta: "No data available", positive: false },
-    { label: "Active Sessions", value: "—", delta: "No data available", positive: false },
-    { label: "Total Transactions", value: "—", delta: "No data available", positive: false },
-    { label: "System Health", value: "—", delta: "No data available", positive: false },
+    { label: "Total Users", value: "-", delta: "No data available", positive: false },
+    { label: "Active Sessions", value: "-", delta: "No data available", positive: false },
+    { label: "Total Transactions", value: "-", delta: "No data available", positive: false },
+    { label: "System Health", value: "-", delta: "No data available", positive: false },
   ],
   runtimeMetrics: [],
   riskMetrics: [],
@@ -52,25 +52,25 @@ export async function fetchAdminDashboardData(): Promise<AdminDashboardData> {
       merged.userMetrics = [
         {
           label: "Total Users",
-          value: str(totalUsers, "—"),
+          value: str(totalUsers, "-"),
           delta: "From registered admin users",
           positive: totalUsers > 0,
         },
         {
           label: "Active Sessions",
-          value: str(activeSessions, "—"),
+          value: str(activeSessions, "-"),
           delta: "Enabled users in current page",
           positive: activeSessions > 0,
         },
         {
           label: "Total Transactions",
-          value: "—",
+          value: "-",
           delta: "Backed by OMS summary below",
           positive: false,
         },
         {
           label: "System Health",
-          value: str(linkedBrokers, "—"),
+          value: str(linkedBrokers, "-"),
           delta: "Users with linked brokers",
           positive: linkedBrokers > 0,
         },
@@ -87,7 +87,7 @@ export async function fetchAdminDashboardData(): Promise<AdminDashboardData> {
     merged.runtimeMetrics = [
       { label: "Kill Switch", value: String(Boolean(d.killSwitch) ? "ENABLED" : "DISABLED") },
       { label: "Live Trading Armed", value: String(Boolean(d.liveTradingArmed) ? "ARMED" : "DISARMED") },
-      { label: "Uptime (sec)", value: str(d.uptimeSeconds, "—") },
+      { label: "Uptime (sec)", value: str(d.uptimeSeconds, "-") },
     ];
   }
   if (ops.status === "fulfilled" && ops.value.data?.data) {
@@ -95,17 +95,17 @@ export async function fetchAdminDashboardData(): Promise<AdminDashboardData> {
     merged.riskMetrics = [
       {
         label: "Registered Users",
-        value: str(d.registeredUsers, "—"),
+        value: str(d.registeredUsers, "-"),
         level: "ok",
       },
       {
         label: "Running Strategies",
-        value: str(d.runningStrategies, "—"),
+        value: str(d.runningStrategies, "-"),
         level: Number(d.runningStrategies ?? 0) > 0 ? "warn" : "ok",
       },
       {
         label: "WS Users (approx)",
-        value: str(d.websocketUsersApprox, "—"),
+        value: str(d.websocketUsersApprox, "-"),
         level: "ok",
       },
     ];
@@ -113,7 +113,7 @@ export async function fetchAdminDashboardData(): Promise<AdminDashboardData> {
     if (queues != null) {
       merged.replayMetrics = Object.entries(queues).map(([queue, props]) => ({
         label: queue,
-        value: str(props?.QUEUE_MESSAGE_COUNT ?? props?.messageCount, "—"),
+        value: str(props?.QUEUE_MESSAGE_COUNT ?? props?.messageCount, "-"),
       }));
     }
   }
@@ -135,12 +135,12 @@ export async function fetchAdminDashboardData(): Promise<AdminDashboardData> {
     const d = oms.value.data.data as Record<string, unknown>;
     merged.omsStats = Object.entries(d).slice(0, 6).map(([label, value]) => ({
       label,
-      value: str(value, "—"),
+      value: str(value, "-"),
     }));
   }
   if (audit.status === "fulfilled" && Array.isArray(audit.value.data?.data)) {
     merged.auditActivity = audit.value.data.data.slice(0, 6).map((a: any) => ({
-      time: str(a.createdAt ?? a.time, "—"),
+      time: str(a.createdAt ?? a.time, "-"),
       action: str(a.action ?? a.resourceType, "Audit event"),
       actor: str(a.actorUserId ?? a.actor, "System"),
     }));

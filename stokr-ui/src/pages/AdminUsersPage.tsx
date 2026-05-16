@@ -186,7 +186,7 @@ export function AdminUsersPage() {
               />
               <input
                 className={cn("w-full rounded-lg border py-2 pl-9 pr-3 text-sm outline-none ring-0", inputCls)}
-                placeholder="Email, username, name…"
+                placeholder="Email, username, name..."
                 value={search}
                 onChange={(e) => {
                   setPage(0);
@@ -231,7 +231,7 @@ export function AdminUsersPage() {
               {q.isLoading ? (
                 <tr>
                   <td colSpan={6} className={cn("px-4 py-10 text-center text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>
-                    Loading users…
+                    Loading users...
                   </td>
                 </tr>
               ) : q.isError ? (
@@ -337,7 +337,7 @@ export function AdminUsersPage() {
 
       <div className={cn("flex flex-wrap items-center justify-between gap-3 text-sm", isLight ? "text-neutral-600" : "text-neutral-500")}>
         <span>
-          Page {page + 1} / {totalPages} · {data?.totalElements ?? 0} users
+          Page {page + 1} / {totalPages}  ·  {data?.totalElements ?? 0} users
         </span>
         <div className="flex gap-2">
           <button

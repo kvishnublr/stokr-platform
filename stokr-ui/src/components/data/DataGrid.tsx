@@ -71,7 +71,7 @@ export function DataGrid<T>({ columns, data, isLoading, emptyLabel, variant = "a
           {isLoading ? (
             <tr>
               <td colSpan={columns.length} className={cn("px-3 py-10 text-center", isLight ? "text-neutral-500" : "text-neutral-500")}>
-                Loading…
+                Loading...
               </td>
             </tr>
           ) : table.getRowModel().rows.length === 0 ? (

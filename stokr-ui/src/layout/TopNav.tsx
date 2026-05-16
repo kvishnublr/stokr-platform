@@ -27,7 +27,7 @@ export function TopNav({
           </span>
         </div>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-1 text-sm">
-          <span className="text-neutral-500">Signed in · </span>
+          <span className="text-neutral-500">Signed in  ·  </span>
           <span className="truncate font-semibold text-white">{displayName || username || displayNameFallback}</span>
         </motion.div>
       </div>

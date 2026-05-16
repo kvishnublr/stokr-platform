@@ -29,7 +29,7 @@ export function BacktestsLayout() {
           Backtests
         </h1>
         <p className={cn("mt-1 text-sm", isLight ? "text-[#475569]" : "text-[#94A3B8]")}>
-          Institutional-grade replay and run history. Launch uses the published strategy profile — not a parameter lab.
+          Institutional-grade replay and run history. Launch uses the published strategy profile - not a parameter lab.
         </p>
       </div>
 

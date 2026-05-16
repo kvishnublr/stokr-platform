@@ -42,15 +42,15 @@ type DashboardDto = {
 };
 
 const DUMMY_STRATEGIES = [
-  { name: "Trend Hunter Pro", mode: "LIVE" as const, pnl: "+₹ 42,180", pct: "+2.81%" },
-  { name: "Mean Reversion V2", mode: "PAPER" as const, pnl: "+₹ 8,420", pct: "+1.06%" },
-  { name: "ORB Session", mode: "LIVE" as const, pnl: "−₹ 2,110", pct: "−0.44%" },
+  { name: "Trend Hunter Pro", mode: "LIVE" as const, pnl: "+â‚¹ 42,180", pct: "+2.81%" },
+  { name: "Mean Reversion V2", mode: "PAPER" as const, pnl: "+â‚¹ 8,420", pct: "+1.06%" },
+  { name: "ORB Session", mode: "LIVE" as const, pnl: "âˆ’â‚¹ 2,110", pct: "âˆ’0.44%" },
 ];
 
 const DUMMY_POSITIONS = [
-  { sym: "RELIANCE", qty: "120", val: "₹ 1,71,240", chg: "+1.2%", up: true },
-  { sym: "INFY", qty: "90", val: "₹ 1,38,870", chg: "+0.4%", up: true },
-  { sym: "TCS", qty: "45", val: "₹ 1,84,500", chg: "−0.3%", up: false },
+  { sym: "RELIANCE", qty: "120", val: "â‚¹ 1,71,240", chg: "+1.2%", up: true },
+  { sym: "INFY", qty: "90", val: "â‚¹ 1,38,870", chg: "+0.4%", up: true },
+  { sym: "TCS", qty: "45", val: "â‚¹ 1,84,500", chg: "âˆ’0.3%", up: false },
 ];
 
 const DUMMY_ORDERS = [
@@ -60,9 +60,9 @@ const DUMMY_ORDERS = [
 ];
 
 const DUMMY_NEWS = [
-  { t: "09:41", msg: "High volatility in NIFTY options tape — desks trimming gamma." },
+  { t: "09:41", msg: "High volatility in NIFTY options tape - desks trimming gamma." },
   { t: "09:27", msg: "Banks lead breadth; PSU flows steady into midcaps." },
-  { t: "08:52", msg: "RBI watchlist · commentary expected on liquidity stance." },
+  { t: "08:52", msg: "RBI watchlist  ·  commentary expected on liquidity stance." },
 ];
 
 const SPARK = (seed: number) =>
@@ -176,10 +176,10 @@ export function DashboardPage() {
             )}
           >
             {salute}, {greetFirst}{" "}
-            <span aria-hidden>👋</span>
+            <span aria-hidden>ðŸ‘‹</span>
           </h1>
           <p className={cn("mt-2 max-w-xl text-[15px] leading-relaxed", isLight ? "text-neutral-600" : "text-neutral-400")}>
-            Here&apos;s your trading overview — tape, risk, and flow in one surface.
+            Here&apos;s your trading overview - tape, risk, and flow in one surface.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {[
@@ -259,7 +259,7 @@ export function DashboardPage() {
         <KpiTile
           panel={panel}
           label="Total P&L"
-          value={mtm != null && !Number.isNaN(mtm) ? formatInr(mtm) : "₹ 1,24,568"}
+          value={mtm != null && !Number.isNaN(mtm) ? formatInr(mtm) : "â‚¹ 1,24,568"}
           delta="+2.45%"
           up
           spark={<MiniSpark tone="green" />}
@@ -270,7 +270,7 @@ export function DashboardPage() {
         <KpiTile
           panel={panel}
           label="Unrealized P&L"
-          value={unreal != null && !Number.isNaN(unreal) ? formatInr(unreal) : "₹ 45,230"}
+          value={unreal != null && !Number.isNaN(unreal) ? formatInr(unreal) : "â‚¹ 45,230"}
           delta="+1.12%"
           up
           spark={<MiniSpark tone="green" />}
@@ -281,7 +281,7 @@ export function DashboardPage() {
         <KpiTile
           panel={panel}
           label="Realized P&L"
-          value={realized != null && !Number.isNaN(realized) ? formatInr(realized) : "₹ 79,338"}
+          value={realized != null && !Number.isNaN(realized) ? formatInr(realized) : "â‚¹ 79,338"}
           delta="+3.21%"
           up
           spark={<MiniSpark tone="blue" />}
@@ -295,7 +295,7 @@ export function DashboardPage() {
             Total capital / risk
           </div>
           <div className={cn("stokr-tabular mt-1 font-mono text-xl font-semibold tracking-tight", isLight ? "text-neutral-900" : "text-white")}>
-            ₹ 12,45,000
+            â‚¹ 12,45,000
           </div>
           <div className={cn("mt-1 text-[11px]", isLight ? "text-neutral-500" : "text-neutral-500")}>Used 62%</div>
           <div className={cn("mt-2 h-2 w-full overflow-hidden rounded-full", isLight ? "bg-neutral-100" : "bg-neutral-800")}>
@@ -341,13 +341,13 @@ export function DashboardPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <Globe className={cn("h-4 w-4", isLight ? "text-blue-600" : "text-blue-400")} />
                 <span className={cn("text-[14px] font-semibold", isLight ? "text-neutral-900" : "text-white")}>NIFTY 50</span>
-                <span className={cn("text-[13px]", isLight ? "text-neutral-400" : "text-neutral-500")}>· 5m</span>
+                <span className={cn("text-[13px]", isLight ? "text-neutral-400" : "text-neutral-500")}> ·  5m</span>
                 <span className={cn(
                   "rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
                   isLight ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
                 )}
                 >
-                  Live · demo
+                  Live  ·  demo
                 </span>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -555,7 +555,7 @@ export function DashboardPage() {
                   {[
                     ["NIFTY 50", "+0.42%"],
                     ["BANK NIFTY", "+0.18%"],
-                    ["SENSEX", "−0.09%"],
+                    ["SENSEX", "âˆ’0.09%"],
                   ].map(([n, pct]) => (
                     <div
                       key={n}
@@ -565,7 +565,7 @@ export function DashboardPage() {
                       )}
                     >
                       <span className="truncate">{n}</span>
-                      <span className={cn("font-mono shrink-0", pct.startsWith("−") ? "text-rose-500" : "text-emerald-600")}>
+                      <span className={cn("font-mono shrink-0", pct.startsWith("âˆ’") ? "text-rose-500" : "text-emerald-600")}>
                         {pct}
                       </span>
                     </div>
@@ -620,7 +620,7 @@ export function DashboardPage() {
                     )} aria-hidden />
                   </div>
                   <p className={cn("text-[13px] leading-relaxed", isLight ? "text-neutral-600" : "text-neutral-400")}>
-                    NIFTY showing strong momentum vs recent balance — breadth supportive. Fade mean-reversion fades until volatility
+                    NIFTY showing strong momentum vs recent balance - breadth supportive. Fade mean-reversion fades until volatility
                     compresses on 5m structure.
                   </p>
                   <button
@@ -649,14 +649,14 @@ export function DashboardPage() {
         <div className="flex items-center gap-2">
           <ShieldCheck className={cn("h-4 w-4 shrink-0", isLight ? "text-emerald-600" : "text-emerald-500/90")} />
           <span>
-            Ledger-backed totals when API is reachable — tiles mix live and demonstration data.&nbsp;
+            Ledger-backed totals when API is reachable - tiles mix live and demonstration data.&nbsp;
             <Link className="font-semibold text-blue-600 underline-offset-4 hover:underline dark:text-blue-400" to="/terminal">
               Open terminal
             </Link>
           </span>
         </div>
         <div className={cn("flex items-center gap-2 font-mono text-[10px]", isLight ? "text-neutral-400" : "text-neutral-600")}>
-          <Layers className="h-3.5 w-3.5" /> Portfolio snap {ov?.latestSnapshotAt ? new Date(ov.latestSnapshotAt).toLocaleTimeString() : "—"}
+          <Layers className="h-3.5 w-3.5" /> Portfolio snap {ov?.latestSnapshotAt ? new Date(ov.latestSnapshotAt).toLocaleTimeString() : "-"}
         </div>
       </div>
     </div>

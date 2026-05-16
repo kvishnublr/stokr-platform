@@ -13,7 +13,7 @@ export function BacktestHistoryPage() {
   });
 
   if (q.isLoading) {
-    return <div className={cn("text-sm", isLight ? "text-[#64748B]" : "text-neutral-400")}>Loading runs…</div>;
+    return <div className={cn("text-sm", isLight ? "text-[#64748B]" : "text-neutral-400")}>Loading runs...</div>;
   }
   if (q.isError) {
     return <div className="text-sm text-red-500">{parseAxiosMessage(q.error)}</div>;
@@ -58,7 +58,7 @@ export function BacktestHistoryPage() {
                   colSpan={6}
                   className={cn("px-4 py-8 text-center", isLight ? "text-[#64748B]" : "text-neutral-500")}
                 >
-                  No runs yet — launch a replay from the Launch tab.
+                  No runs yet - launch a replay from the Launch tab.
                 </td>
               </tr>
             ) : (
@@ -119,7 +119,7 @@ export function BacktestHistoryPage() {
                       isLight ? "text-[#64748B]" : "text-neutral-400",
                     )}
                   >
-                    {r.replayHashPreview ?? "—"}
+                    {r.replayHashPreview ?? "-"}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <Link

@@ -95,7 +95,7 @@ export function LoginPage() {
                   <input
                     className="w-full rounded-lg border border-neutral-200 bg-white py-2 pl-10 pr-3 text-sm text-neutral-900 outline-none ring-blue-500/30 focus:border-blue-500/60 focus:ring-2"
                     type="password"
-                    placeholder="••••••••••••"
+                    placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     autoComplete="current-password"
@@ -122,7 +122,7 @@ export function LoginPage() {
                   loading && "opacity-60",
                 )}
               >
-                {loading ? "Signing in…" : "Sign in"}
+                {loading ? "Signing in..." : "Sign in"}
                 {!loading ? <ArrowRight className="h-4 w-4" /> : null}
               </button>
 

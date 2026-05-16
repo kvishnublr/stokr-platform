@@ -15,7 +15,7 @@ function ClockTick({ className }: { className?: string }) {
   return (
     <span className={cn("font-mono text-[11px]", className)}>
       {now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}{" "}
-      · {now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+       ·  {now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
     </span>
   );
 }

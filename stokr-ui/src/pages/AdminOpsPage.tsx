@@ -39,7 +39,7 @@ export function AdminOpsPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Operations cockpit</h1>
         <p className="mt-1 text-xs text-muted-foreground">
-          Main control plane — global status strip is pinned above. SSE + snapshot share one cache (
+          Main control plane - global status strip is pinned above. SSE + snapshot share one cache (
           <span className="font-mono">admin-operations-snapshot/global</span>).
         </p>
       </div>
@@ -61,7 +61,7 @@ export function AdminOpsPage() {
         {readinessOpen ? (
           <div className="px-4 py-3">
             {readiness.isLoading ? (
-              <div className="text-sm text-muted-foreground">Loading readiness…</div>
+              <div className="text-sm text-muted-foreground">Loading readiness...</div>
             ) : readiness.isError ? (
               <div className="text-sm text-red-600 dark:text-red-400">Could not load readiness (admin only).</div>
             ) : (

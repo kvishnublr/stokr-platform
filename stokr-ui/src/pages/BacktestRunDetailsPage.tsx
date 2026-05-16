@@ -19,7 +19,7 @@ import { cn } from "../lib/utils";
 import { useUiThemeStore } from "../state/uiTheme";
 
 function fmtNum(v: string | number | undefined, digits = 4) {
-  if (v === undefined || v === null) return "—";
+  if (v === undefined || v === null) return "-";
   const n = typeof v === "number" ? v : Number(v);
   if (!Number.isFinite(n)) return String(v);
   return n.toFixed(digits);
@@ -135,7 +135,7 @@ export function BacktestRunDetailsPage() {
   }
 
   if (q.isLoading) {
-    return <div className={cn("text-sm", isLight ? "text-[#64748B]" : "text-neutral-400")}>Loading run…</div>;
+    return <div className={cn("text-sm", isLight ? "text-[#64748B]" : "text-neutral-400")}>Loading run...</div>;
   }
   if (q.isError || !q.data) {
     return <div className="text-sm text-red-500">{parseAxiosMessage(q.error)}</div>;
@@ -151,7 +151,7 @@ export function BacktestRunDetailsPage() {
 
   const rangeLabel =
     o.rangeStart && o.rangeEnd
-      ? `${new Date(o.rangeStart).toLocaleString()} → ${new Date(o.rangeEnd).toLocaleString()}`
+      ? `${new Date(o.rangeStart).toLocaleString()} â†’ ${new Date(o.rangeEnd).toLocaleString()}`
       : null;
   const hasCurvePoints = equityChart.length > 0;
   const noFills = (o.metrics?.totalTrades ?? 0) === 0;
@@ -178,7 +178,7 @@ export function BacktestRunDetailsPage() {
             to="/backtests/history"
             className={cn("text-xs", isLight ? "text-[#64748B] hover:text-[#0F172A]" : "text-neutral-500 hover:text-neutral-300")}
           >
-            ← History
+            â† History
           </Link>
           <h2 className={cn("mt-2 font-mono text-lg", isLight ? "text-[#0F172A]" : "text-white")}>{o.runId}</h2>
           <div className={cn("mt-1 flex flex-wrap gap-3 text-xs", isLight ? "text-[#64748B]" : "text-neutral-400")}>
@@ -231,7 +231,7 @@ export function BacktestRunDetailsPage() {
                   : "border-amber-700/80 bg-amber-950/40 text-amber-100 hover:bg-amber-950",
               )}
             >
-              {resume.isPending ? "Resuming…" : "Resume / restart replay"}
+              {resume.isPending ? "Resuming..." : "Resume / restart replay"}
             </button>
           ) : null}
         </div>
@@ -284,7 +284,7 @@ export function BacktestRunDetailsPage() {
               Strategy signals
             </div>
             <div className={cn("mt-1 text-sm tabular-nums", isLight ? "text-[#0F172A]" : "text-neutral-200")}>
-              {o.validation.strategySignalCount ?? "—"}
+              {o.validation.strategySignalCount ?? "-"}
             </div>
           </div>
           <div>
@@ -292,7 +292,7 @@ export function BacktestRunDetailsPage() {
               OMS executions
             </div>
             <div className={cn("mt-1 text-sm tabular-nums", isLight ? "text-[#0F172A]" : "text-neutral-200")}>
-              {o.validation.executionEventCount ?? "—"}
+              {o.validation.executionEventCount ?? "-"}
             </div>
           </div>
         </div>
@@ -306,7 +306,7 @@ export function BacktestRunDetailsPage() {
         <Metric label="Max DD" value={fmtNum(o.metrics.maxDrawdown)} isLight={isLight} />
         <Metric label="Expectancy" value={fmtNum(o.metrics.expectancy)} isLight={isLight} />
         <Metric label="Total PnL" value={fmtNum(o.metrics.totalPnl)} isLight={isLight} />
-        <Metric label="Avg hold (s)" value={String(o.metrics.avgHoldingTimeSeconds ?? "—")} isLight={isLight} />
+        <Metric label="Avg hold (s)" value={String(o.metrics.avgHoldingTimeSeconds ?? "-")} isLight={isLight} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -322,7 +322,7 @@ export function BacktestRunDetailsPage() {
                     : "border-neutral-700 bg-neutral-900/40 text-neutral-500",
                 )}
               >
-                No equity points — nothing to plot until at least one simulated trade PnL exists.
+                No equity points - nothing to plot until at least one simulated trade PnL exists.
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -405,7 +405,7 @@ export function BacktestRunDetailsPage() {
                     <td className={cn("py-2 pr-3", isLight ? "text-[#475569]" : "")}>{fmtNum(t.price, 4)}</td>
                     <td className={cn("py-2 pr-3", isLight ? "text-[#475569]" : "")}>{fmtNum(t.pnl, 4)}</td>
                     <td className={cn("py-2", isLight ? "text-[#64748B]" : "text-neutral-400")}>
-                      {t.closedAt ? new Date(t.closedAt).toLocaleString() : "—"}
+                      {t.closedAt ? new Date(t.closedAt).toLocaleString() : "-"}
                     </td>
                   </tr>
                 ))
