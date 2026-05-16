@@ -52,6 +52,15 @@ public class ZerodhaKiteApiClient {
         return readJson(body);
     }
 
+    public JsonNode getOrders(String apiKey, String accessToken) {
+        String body = http.get()
+                .uri(BASE + "/orders")
+                .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
+                .retrieve()
+                .body(String.class);
+        return readJson(body);
+    }
+
     /**
      * Full instrument dump for one exchange (CSV). Used to map instrument_token → tradingsymbol for platform WS ticks.
      */

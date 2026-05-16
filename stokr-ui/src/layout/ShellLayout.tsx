@@ -97,22 +97,34 @@ export function ShellLayout() {
   const portfolioSnapshot = useQuery({
     queryKey: ["sidebar-portfolio-snapshot"],
     queryFn: async () => {
-      const [dashboardRes, brokerRes] = await Promise.allSettled([
+      const [dashboardRes, brokerRes, brokerStatusRes] = await Promise.allSettled([
         api.get("/api/portfolio/dashboard?equityPoints=8"),
         api.get("/api/trader/broker/accounts"),
+        api.get("/api/trader/broker/status"),
       ]);
 
       let equityValue = "-";
       let marginValue = "-";
       let brokerConnected = false;
+      const toNumber = (v: unknown): number | null => {
+        if (typeof v === "number" && Number.isFinite(v)) return v;
+        if (typeof v === "string") {
+          const n = Number(v.replace(/[^0-9.-]/g, ""));
+          return Number.isFinite(n) ? n : null;
+        }
+        return null;
+      };
+      const toInr = (n: number) =>
+        new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
 
       if (dashboardRes.status === "fulfilled") {
         const overview = dashboardRes.value.data?.data?.overview as
           | { totalEquity?: number; netWorth?: number; accountValue?: number }
           | undefined;
         const rawEquity = overview?.totalEquity ?? overview?.netWorth ?? overview?.accountValue;
-        if (typeof rawEquity === "number") {
-          equityValue = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(rawEquity);
+        const n = toNumber(rawEquity);
+        if (n != null) {
+          equityValue = toInr(n);
         }
       }
 
@@ -120,12 +132,32 @@ export function ShellLayout() {
         const rows = brokerRes.value.data?.data;
         if (Array.isArray(rows) && rows.length > 0) {
           brokerConnected = true;
-          const first = rows[0] as { cashAvailable?: number; availableMargin?: number };
+          const first = rows[0] as { cashAvailable?: number | string; availableMargin?: number | string };
           const rawMargin = first.availableMargin ?? first.cashAvailable;
-          if (typeof rawMargin === "number") {
-            marginValue = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(rawMargin);
+          const n = toNumber(rawMargin);
+          if (n != null) {
+            marginValue = toInr(n);
           }
         }
+      }
+
+      if (marginValue === "-" && dashboardRes.status === "fulfilled") {
+        const overview = dashboardRes.value.data?.data?.overview as
+          | { availableMargin?: number | string; cashAvailable?: number | string }
+          | undefined;
+        const n = toNumber(overview?.availableMargin ?? overview?.cashAvailable);
+        if (n != null) marginValue = toInr(n);
+      }
+
+      if (marginValue === "-" && brokerStatusRes.status === "fulfilled") {
+        const statusData = brokerStatusRes.value?.data?.data as
+          | { marginSummary?: string; connected?: boolean }
+          | undefined;
+        if (statusData?.connected) brokerConnected = true;
+        const m = statusData?.marginSummary ?? "";
+        const match = /available\.cash=([0-9.,-]+)/i.exec(m);
+        const n = match ? toNumber(match[1]) : null;
+        if (n != null) marginValue = toInr(n);
       }
 
       return { equityValue, marginValue, brokerConnected };

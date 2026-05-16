@@ -14,7 +14,6 @@ import com.stokr.oms.dto.PortfolioOverviewDto;
 import com.stokr.oms.query.OmsReadParams;
 import com.stokr.oms.query.PipelineMode;
 import com.stokr.oms.repository.OmsExecutionRepository;
-import com.stokr.oms.domain.OrderState;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.oms.service.OmsQueryService;
@@ -35,10 +34,13 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -297,6 +299,7 @@ public class TraderTerminalViewService {
         );
         List<OmsOrderSummaryDto> orders = omsQueryService.pageOrders(userId, liveParams, PageRequest.of(0, 50)).getContent();
         List<OmsExecutionRowDto> execRows = omsQueryService.pageExecutions(userId, liveParams, PageRequest.of(0, 100)).getContent();
+        List<Map<String, Object>> unifiedOrders = buildUnifiedOrders(userId, orders);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("accountSummary", Map.of(
@@ -315,7 +318,7 @@ public class TraderTerminalViewService {
         ));
         out.put("openPositions", openPositions);
         out.put("closedPositions", closedPositions);
-        out.put("orders", orders);
+        out.put("orders", unifiedOrders);
         out.put("executions", execRows);
         out.put("strategyAllocations", strategyInstances.stream().map(si -> {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -340,6 +343,62 @@ public class TraderTerminalViewService {
         ));
         out.put("latestSignals", strategyFeed(userId));
         return out;
+    }
+
+    private List<Map<String, Object>> buildUnifiedOrders(UUID userId, List<OmsOrderSummaryDto> omsOrders) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        Set<String> existingOmsFingerprints = new HashSet<>();
+        for (OmsOrderSummaryDto row : omsOrders) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("createdAt", row.createdAt() != null ? row.createdAt().toString() : null);
+            m.put("symbol", row.symbol());
+            m.put("side", row.side());
+            m.put("state", row.state());
+            m.put("executionMode", row.executionMode());
+            m.put("strategyKey", row.strategyKey());
+            m.put("quantity", row.quantity());
+            m.put("rejectReason", row.rejectReason());
+            m.put("source", "OMS");
+            m.put("parityState", "SYNCED");
+            out.add(m);
+            existingOmsFingerprints.add(orderFingerprint(row.symbol(), row.side(), row.quantity() == null ? null : row.quantity().toPlainString()));
+        }
+
+        try {
+            List<ZerodhaBrokerOperationsService.BrokerOpenOrderDto> brokerOpen = zerodhaBrokerOperationsService.openOrders(userId);
+            for (ZerodhaBrokerOperationsService.BrokerOpenOrderDto b : brokerOpen) {
+                if (existingOmsFingerprints.contains(orderFingerprint(b.symbol(), b.side(), b.quantity() == null ? null : String.valueOf(b.quantity())))) {
+                    continue;
+                }
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("createdAt", b.orderTimestamp() != null ? b.orderTimestamp().toString() : null);
+                m.put("symbol", b.symbol());
+                m.put("side", b.side());
+                m.put("state", b.status());
+                m.put("executionMode", "LIVE");
+                m.put("strategyKey", b.variety() != null ? "BROKER_DIRECT_" + b.variety() : "BROKER_DIRECT");
+                m.put("quantity", b.quantity());
+                m.put("rejectReason", b.statusMessage());
+                m.put("source", "BROKER");
+                m.put("parityState", "PENDING_SYNC");
+                out.add(m);
+            }
+        } catch (Exception ignored) {
+            // keep OMS rows even if broker fetch is unavailable
+        }
+
+        out.sort(Comparator.comparing(
+                m -> Optional.ofNullable((String) m.get("createdAt")).orElse(""),
+                Comparator.reverseOrder()
+        ));
+        return out;
+    }
+
+    private static String orderFingerprint(String symbol, String side, String qty) {
+        return String.join("|",
+                symbol == null ? "" : symbol.trim().toUpperCase(),
+                side == null ? "" : side.trim().toUpperCase(),
+                qty == null ? "" : qty.trim());
     }
 
     private String latestSignalState(String symbol, UUID userId) {

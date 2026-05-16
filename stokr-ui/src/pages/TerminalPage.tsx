@@ -72,6 +72,14 @@ export function TerminalPage() {
   const [tab, setTab] = useState("open");
   const [controlResult, setControlResult] = useState<Record<string, unknown> | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
+  const [tradeSymbol, setTradeSymbol] = useState("INFY");
+  const [tradeQty, setTradeQty] = useState(1);
+  const [tradeSide, setTradeSide] = useState<"BUY" | "SELL">("BUY");
+  const [tradeVariety, setTradeVariety] = useState<"REGULAR" | "AMO">("REGULAR");
+  const [tradeExchange, setTradeExchange] = useState<"NSE" | "BSE">("NSE");
+  const [tradeProduct, setTradeProduct] = useState<"CNC" | "MIS">("CNC");
+  const [tradeResult, setTradeResult] = useState<Record<string, unknown> | null>(null);
+  const [tradeError, setTradeError] = useState<string | null>(null);
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["trader-workstation"],
@@ -110,6 +118,44 @@ export function TerminalPage() {
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : "Action failed";
       setControlError(msg);
+    },
+  });
+
+  const sampleTradeMutation = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        variety: tradeVariety,
+        exchange: tradeExchange,
+        tradingsymbol: tradeSymbol.trim().toUpperCase(),
+        side: tradeSide,
+        quantity: Math.max(1, Math.min(5, Math.floor(tradeQty))),
+        orderType: "MARKET",
+        product: tradeProduct,
+      };
+      const res = await api.post("/api/trader/broker/test-order", payload);
+      return { payload, response: res.data?.data as Record<string, unknown> };
+    },
+    onSuccess: (x) => {
+      setTradeError(null);
+      setTradeResult({
+        submitted: x.payload,
+        ...x.response,
+      });
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Sample trade failed";
+      setTradeError(msg);
+      setTradeResult({
+        submitted: {
+          variety: tradeVariety,
+          exchange: tradeExchange,
+          tradingsymbol: tradeSymbol.trim().toUpperCase(),
+          side: tradeSide,
+          quantity: Math.max(1, Math.min(5, Math.floor(tradeQty))),
+          orderType: "MARKET",
+          product: tradeProduct,
+        },
+      });
     },
   });
 
@@ -295,6 +341,103 @@ export function TerminalPage() {
                     <div className="text-neutral-500">{fmt(s.strategyName)} · {fmt(s.createdAt)}</div>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className={cn("rounded-xl border p-3", isLight ? "border-neutral-200" : "border-neutral-800")}>
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Sample Trade (Terminal)</div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <label className="col-span-1">
+                  Symbol
+                  <input
+                    value={tradeSymbol}
+                    onChange={(e) => setTradeSymbol(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                  />
+                </label>
+                <label className="col-span-1">
+                  Qty (1-5)
+                  <input
+                    type="number"
+                    min={1}
+                    max={5}
+                    step={1}
+                    value={tradeQty}
+                    onChange={(e) => setTradeQty(Number(e.target.value))}
+                    className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                  />
+                </label>
+                <label className="col-span-1">
+                  Variety
+                  <select
+                    value={tradeVariety}
+                    onChange={(e) => setTradeVariety(e.target.value as "REGULAR" | "AMO")}
+                    className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                  >
+                    <option value="REGULAR">REGULAR</option>
+                    <option value="AMO">AMO</option>
+                  </select>
+                </label>
+                <label className="col-span-1">
+                  Exchange
+                  <select
+                    value={tradeExchange}
+                    onChange={(e) => setTradeExchange(e.target.value as "NSE" | "BSE")}
+                    className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                  >
+                    <option value="NSE">NSE</option>
+                    <option value="BSE">BSE</option>
+                  </select>
+                </label>
+                <label className="col-span-1">
+                  Side
+                  <select
+                    value={tradeSide}
+                    onChange={(e) => setTradeSide(e.target.value as "BUY" | "SELL")}
+                    className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                  >
+                    <option value="BUY">BUY</option>
+                    <option value="SELL">SELL</option>
+                  </select>
+                </label>
+                <label className="col-span-1">
+                  Product
+                  <select
+                    value={tradeProduct}
+                    onChange={(e) => setTradeProduct(e.target.value as "CNC" | "MIS")}
+                    className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                  >
+                    <option value="CNC">CNC</option>
+                    <option value="MIS">MIS</option>
+                  </select>
+                </label>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => sampleTradeMutation.mutate()}
+                  disabled={sampleTradeMutation.isPending}
+                  className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 disabled:opacity-50 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-300"
+                >
+                  {sampleTradeMutation.isPending ? "Submitting..." : "Submit Sample Trade"}
+                </button>
+              </div>
+            </div>
+            <div className={cn("rounded-xl border p-3", isLight ? "border-neutral-200" : "border-neutral-800")}>
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Sample Trade Result</div>
+              {tradeError ? (
+                <div className="mt-2 rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+                  {tradeError}
+                </div>
+              ) : null}
+              <div className="mt-2 space-y-1 text-xs">
+                <div>Submitted variety: <span className="font-mono">{fmt((tradeResult?.submitted as Record<string, unknown> | undefined)?.variety)}</span></div>
+                <div>Symbol: <span className="font-mono">{fmt((tradeResult?.submitted as Record<string, unknown> | undefined)?.tradingsymbol)}</span></div>
+                <div>Status: <span className="font-mono">{fmt(tradeResult?.status)}</span></div>
+                <div>Order ID: <span className="font-mono">{fmt(tradeResult?.orderId)}</span></div>
+                <div>Message: <span className="font-mono">{fmt(tradeResult?.message)}</span></div>
+                <div>Raw status: <span className="font-mono">{fmt(tradeResult?.rawStatus)}</span></div>
               </div>
             </div>
           </div>

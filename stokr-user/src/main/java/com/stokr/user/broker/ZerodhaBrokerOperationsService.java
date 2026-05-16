@@ -18,6 +18,9 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -73,6 +76,23 @@ public class ZerodhaBrokerOperationsService {
     }
 
     public record BrokerTestOrderDto(boolean dryRun, String orderId, String status, String message, String rawStatus) {
+    }
+
+    public record BrokerOpenOrderDto(
+            String orderId,
+            String parentOrderId,
+            String exchange,
+            String symbol,
+            String side,
+            String product,
+            String variety,
+            String orderType,
+            Integer quantity,
+            Double price,
+            String status,
+            Instant orderTimestamp,
+            String statusMessage
+    ) {
     }
 
     /** Sidebar / shell: cash-like balance from last persisted margin snapshot (Kite equity.available.cash). */
@@ -144,6 +164,42 @@ public class ZerodhaBrokerOperationsService {
                 zerodhaBrokerProperties.isTestOrderDryRun(),
                 testTradeDisabledReason
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<BrokerOpenOrderDto> openOrders(UUID userId) {
+        Session s = requireSession(userId);
+        JsonNode payload = kiteApiClient.getOrders(s.apiKey(), s.accessToken());
+        if (!"success".equalsIgnoreCase(payload.path("status").asText(""))) {
+            return List.of();
+        }
+        JsonNode rows = payload.path("data");
+        if (!rows.isArray()) {
+            return List.of();
+        }
+        List<BrokerOpenOrderDto> out = new ArrayList<>();
+        for (JsonNode row : rows) {
+            String status = row.path("status").asText("");
+            if (isTerminalOrderStatus(status)) {
+                continue;
+            }
+            out.add(new BrokerOpenOrderDto(
+                    blankToNull(row.path("order_id").asText("")),
+                    blankToNull(row.path("parent_order_id").asText("")),
+                    blankToNull(row.path("exchange").asText("")),
+                    blankToNull(row.path("tradingsymbol").asText("")),
+                    blankToNull(row.path("transaction_type").asText("")),
+                    blankToNull(row.path("product").asText("")),
+                    blankToNull(row.path("variety").asText("")),
+                    blankToNull(row.path("order_type").asText("")),
+                    row.path("quantity").isNumber() ? row.path("quantity").asInt() : null,
+                    row.path("price").isNumber() ? row.path("price").asDouble() : null,
+                    status,
+                    parseKiteTimestamp(row.path("order_timestamp").asText("")),
+                    blankToNull(row.path("status_message").asText(""))
+            ));
+        }
+        return out;
     }
 
     @Transactional
@@ -427,5 +483,30 @@ public class ZerodhaBrokerOperationsService {
             return statusText;
         }
         return "HTTP " + ex.getStatusCode().value();
+    }
+
+    private static boolean isTerminalOrderStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return false;
+        }
+        String s = status.trim().toUpperCase();
+        return s.equals("COMPLETE")
+                || s.equals("CANCELLED")
+                || s.equals("REJECTED");
+    }
+
+    private static Instant parseKiteTimestamp(String ts) {
+        if (ts == null || ts.isBlank()) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(ts, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")).toInstant();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }
