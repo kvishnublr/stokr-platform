@@ -111,7 +111,7 @@ public class PlatformMarketFeedService {
                 throw new BadRequestException("Token encryption failed");
             }
             PlatformBrokerFeedSession s = sessionRepository
-                    .findByVendorCodeIgnoreCaseAndDeletedFalse("ZERODHA")
+                    .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc("ZERODHA")
                     .orElseGet(PlatformBrokerFeedSession::new);
             s.setVendorCode("ZERODHA");
             s.setConnectionState("CONNECTED");
@@ -189,7 +189,7 @@ public class PlatformMarketFeedService {
     @Transactional
     public Map<String, Object> disconnect(String vendor) {
         String v = normalizeVendor(vendor);
-        PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(v).orElse(null);
+        PlatformBrokerFeedSession s = sessionRepository.findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(v).orElse(null);
         if (s == null) {
             return Map.of("vendor", v, "disconnected", false, "detail", "no platform session row");
         }
@@ -207,7 +207,7 @@ public class PlatformMarketFeedService {
     public Map<String, Object> setIngestionPaused(String vendor, boolean paused) {
         String v = normalizeVendor(vendor);
         PlatformBrokerFeedSession s = sessionRepository
-                .findByVendorCodeIgnoreCaseAndDeletedFalse(v)
+                .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(v)
                 .orElseThrow(() -> new BadRequestException("No platform session for vendor"));
         s.setIngestionPaused(paused);
         sessionRepository.save(s);
@@ -226,7 +226,7 @@ public class PlatformMarketFeedService {
             throw new BadRequestException("Live refresh implemented for ZERODHA only in this build");
         }
         PlatformBrokerFeedSession s = sessionRepository
-                .findByVendorCodeIgnoreCaseAndDeletedFalse(v)
+                .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(v)
                 .orElseThrow(() -> new BadRequestException("No platform session for vendor"));
         if (s.getAccessTokenEnc() == null || s.getAccessTokenEnc().isBlank()) {
             throw new BadRequestException("No access token on platform session");
@@ -260,7 +260,7 @@ public class PlatformMarketFeedService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("vendorCode", vendor);
         m.put("role", "PLATFORM_MARKET_FEED");
-        Optional<PlatformBrokerFeedSession> opt = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor);
+        Optional<PlatformBrokerFeedSession> opt = sessionRepository.findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(vendor);
         if (opt.isEmpty()) {
             m.put("connectionState", "DISCONNECTED");
             m.put("websocketState", "CLOSED");

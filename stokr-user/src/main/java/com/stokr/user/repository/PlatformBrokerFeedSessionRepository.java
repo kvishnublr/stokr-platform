@@ -9,4 +9,6 @@ import java.util.UUID;
 public interface PlatformBrokerFeedSessionRepository extends JpaRepository<PlatformBrokerFeedSession, UUID> {
 
     Optional<PlatformBrokerFeedSession> findByVendorCodeIgnoreCaseAndDeletedFalse(String vendorCode);
+
+    Optional<PlatformBrokerFeedSession> findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(String vendorCode);
 }

@@ -26,9 +26,14 @@ import java.util.Map;
 public class TraderExecutionClientController {
 
     private final TraderTerminalViewService traderTerminalViewService;
+    private final TraderTerminalControlService traderTerminalControlService;
 
-    public TraderExecutionClientController(TraderTerminalViewService traderTerminalViewService) {
+    public TraderExecutionClientController(
+            TraderTerminalViewService traderTerminalViewService,
+            TraderTerminalControlService traderTerminalControlService
+    ) {
         this.traderTerminalViewService = traderTerminalViewService;
+        this.traderTerminalControlService = traderTerminalControlService;
     }
 
     @GetMapping("/terminal/market/watch")
@@ -82,5 +87,38 @@ public class TraderExecutionClientController {
     @Operation(summary = "Latest async replay job telemetry + diagnosis for this trader")
     public ApiResponse<Map<String, Object>> replaySummary(@AuthenticationPrincipal StokrUserDetails user) {
         return ApiResponse.ok(traderTerminalViewService.replaySummary(user.getId()), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/terminal/workstation")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Institutional trader workstation snapshot (positions, parity, risk, execution, signals)")
+    public ApiResponse<Map<String, Object>> terminalWorkstation(@AuthenticationPrincipal StokrUserDetails user) {
+        return ApiResponse.ok(traderTerminalViewService.terminalWorkstation(user.getId()), CorrelationIdHolder.get());
+    }
+
+    public record TraderTerminalActionRequest(String action, String confirmationToken) {
+    }
+
+    @GetMapping("/terminal/control/preview")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Preview impact of trader control action and mint short-lived confirmation token")
+    public ApiResponse<Map<String, Object>> terminalControlPreview(
+            @AuthenticationPrincipal StokrUserDetails user,
+            @RequestParam("action") String action
+    ) {
+        return ApiResponse.ok(traderTerminalControlService.preview(user.getId(), action), CorrelationIdHolder.get());
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping("/terminal/control/execute")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Execute trader control action with server-side confirmation token")
+    public ApiResponse<Map<String, Object>> terminalControlExecute(
+            @AuthenticationPrincipal StokrUserDetails user,
+            @org.springframework.web.bind.annotation.RequestBody TraderTerminalActionRequest body
+    ) {
+        return ApiResponse.ok(
+                traderTerminalControlService.execute(user.getId(), body.confirmationToken()),
+                CorrelationIdHolder.get()
+        );
     }
 }

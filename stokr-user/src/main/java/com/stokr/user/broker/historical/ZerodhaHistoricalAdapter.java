@@ -36,7 +36,9 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
     private final FieldCipher fieldCipher;
     private final ZerodhaKiteApiClient kiteApiClient;
     private final Map<String, InstrumentCacheRow> instrumentCacheByExchange = new ConcurrentHashMap<>();
+    private final Map<String, Instant> validatedTokenCache = new ConcurrentHashMap<>();
     private static final long INSTRUMENT_CACHE_TTL_SECONDS = 600L;
+    private static final long TOKEN_VALIDATION_CACHE_TTL_SECONDS = 60L;
 
     @Override
     public String brokerCode() {
@@ -62,7 +64,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
                 return HistoricalFetchResult.fail("BROKER_NOT_CONFIGURED", "Zerodha API key/secret missing");
             }
             PlatformBrokerFeedSession session = platformSessionRepository
-                    .findByVendorCodeIgnoreCaseAndDeletedFalse("ZERODHA")
+                    .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc("ZERODHA")
                     .orElse(null);
             if (session == null || session.getAccessTokenEnc() == null || session.getAccessTokenEnc().isBlank()) {
                 return HistoricalFetchResult.fail("NO_PLATFORM_SESSION", "Platform Zerodha session/access token missing");
@@ -70,6 +72,17 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
             String accessToken = fieldCipher.decrypt(session.getAccessTokenEnc());
             if (accessToken == null || accessToken.isBlank()) {
                 return HistoricalFetchResult.fail("TOKEN_DECRYPT_FAILED", "Could not decrypt platform access token");
+            }
+            String tokenKey = zerodhaBrokerProperties.getApiKey() + ":" + accessToken;
+            Instant validatedAt = validatedTokenCache.get(tokenKey);
+            if (validatedAt == null || Duration.between(validatedAt, Instant.now()).getSeconds() >= TOKEN_VALIDATION_CACHE_TTL_SECONDS) {
+                // Validate the exact platform OAuth context before expensive symbol/chunk flow.
+                JsonNode profile = kiteApiClient.getProfile(zerodhaBrokerProperties.getApiKey(), accessToken);
+                if (!"success".equalsIgnoreCase(profile.path("status").asText())) {
+                    String detail = safeText(profile.path("message").asText(null), "Profile validation failed");
+                    return HistoricalFetchResult.fail("TOKEN_INVALID", detail);
+                }
+                validatedTokenCache.put(tokenKey, Instant.now());
             }
 
             TokenResolution tokenResolution = resolveInstrumentToken(
@@ -153,6 +166,9 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         }
         if (status >= 500) {
             return HistoricalFetchResult.fail("BROKER_5XX", detail);
+        }
+        if (status >= 400) {
+            return HistoricalFetchResult.fail("BROKER_REQUEST_INVALID", detail);
         }
         return HistoricalFetchResult.fail("BROKER_FETCH_FAILED", detail);
     }

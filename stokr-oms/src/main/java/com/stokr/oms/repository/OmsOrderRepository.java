@@ -39,6 +39,8 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
 
     long countByUserIdAndDeletedFalseAndBacktestRunIdIsNullAndStateIn(UUID userId, Collection<OrderState> states);
 
+    List<OmsOrder> findAllByUserIdAndDeletedFalseAndStateIn(UUID userId, Collection<OrderState> states);
+
     @Query("""
             select count(o) from OmsOrder o
             where o.userId = :userId and o.deleted = false and o.backtestRunId is null
