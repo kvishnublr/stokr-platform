@@ -23,7 +23,7 @@ export function SignalsPage() {
   const q = useQuery({
     queryKey: ["trader-signals-feed"],
     queryFn: async () => {
-      const res = await api.get("/api/trader/strategy-feed");
+      const res = await api.get("/api/trader/strategy-feed?limit=500");
       return (Array.isArray(res.data?.data) ? res.data.data : []) as SignalRow[];
     },
     refetchInterval: 15_000,
@@ -70,4 +70,3 @@ export function SignalsPage() {
     </div>
   );
 }
-

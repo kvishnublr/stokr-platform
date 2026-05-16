@@ -99,13 +99,31 @@ public class ZerodhaBrokerOperationsService {
     public record BrokerAccountFundsDto(Double cashAvailable, Double availableMargin) {
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<BrokerAccountFundsDto> accountsFunds(UUID userId) {
         Optional<BrokerAccount> opt = brokerAccountRepository.findFirstByUserIdAndDeletedFalseOrderByUpdatedAtDesc(userId);
         if (opt.isEmpty()) {
             return List.of();
         }
-        Double cash = extractEquityAvailableCash(opt.get().getMarginSnapshotJson());
+        BrokerAccount account = opt.get();
+        Double cash = extractEquityAvailableCash(account.getMarginSnapshotJson());
+        if (cash == null) {
+            // Backfill missing snapshot from live broker when session exists, so sidebar margin is not blank.
+            try {
+                Session s = requireSession(userId);
+                JsonNode margins = kiteApiClient.getMargins(s.apiKey(), s.accessToken());
+                if ("success".equalsIgnoreCase(margins.path("status").asText())) {
+                    JsonNode data = margins.path("data");
+                    account.setMarginSnapshotJson(data.toString());
+                    account.setLastSyncAt(Instant.now());
+                    account.setHealthStatus("HEALTHY");
+                    brokerAccountRepository.save(account);
+                    cash = extractEquityAvailableCash(account.getMarginSnapshotJson());
+                }
+            } catch (Exception ex) {
+                log.debug("broker.accounts_funds.live_fetch_skipped userId={} reason={}", userId, ex.getClass().getSimpleName());
+            }
+        }
         if (cash == null) {
             return List.of();
         }

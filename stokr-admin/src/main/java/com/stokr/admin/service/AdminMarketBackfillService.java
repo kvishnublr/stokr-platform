@@ -190,13 +190,14 @@ public class AdminMarketBackfillService {
             jobSymbolRepository.save(row);
 
             HistoricalFetchResult fetch = fetchChunkedWithRetry(adapter, row.getSymbol(), sourceTf, job.getRangeStart(), job.getRangeEnd());
+            String authSource = fetch.authSource() == null || fetch.authSource().isBlank() ? "UNKNOWN" : fetch.authSource();
             if (!fetch.success() && fetch.candles().isEmpty()) {
                 failures++;
                 row.setStatus(MarketBackfillSymbolStatus.FAILED);
                 row.setFailureCount(row.getFailureCount() + 1);
-                row.setMessage(fetch.code() + ": " + fetch.detail());
+                row.setMessage(fetch.code() + ": " + fetch.detail() + " · auth " + authSource);
                 jobSymbolRepository.save(row);
-                saveFailure(jobId, row.getSymbol(), fetch.code(), fetch.detail(), isRetryableCode(fetch.code()));
+                saveFailure(jobId, row.getSymbol(), fetch.code(), fetch.detail() + " · auth " + authSource, isRetryableCode(fetch.code()));
                 updateProgress(jobId, processed, failures, totalCandles, totalGaps, latestCandle);
                 continue;
             }
@@ -219,8 +220,8 @@ public class AdminMarketBackfillService {
                 failures++;
                 row.setStatus(MarketBackfillSymbolStatus.FAILED);
                 row.setFailureCount(row.getFailureCount() + 1);
-                row.setMessage(fetch.code() + ": " + fetch.detail() + " (partial candles persisted)");
-                saveFailure(jobId, row.getSymbol(), fetch.code(), fetch.detail(), isRetryableCode(fetch.code()));
+                row.setMessage(fetch.code() + ": " + fetch.detail() + " (partial candles persisted) · auth " + authSource);
+                saveFailure(jobId, row.getSymbol(), fetch.code(), fetch.detail() + " · auth " + authSource, isRetryableCode(fetch.code()));
             } else if (!gaps.isEmpty()) {
                 row.setStatus(MarketBackfillSymbolStatus.GAP_DETECTED);
                 row.setGapCount(gaps.size());
@@ -242,7 +243,7 @@ public class AdminMarketBackfillService {
                 }
             } else {
                 row.setStatus(MarketBackfillSymbolStatus.FETCHED);
-                row.setMessage("Fetched");
+                row.setMessage("Fetched · auth " + authSource);
             }
             var coverage = marketDataCoverageService.validateAndUpsert(
                     row.getSymbol(),
@@ -443,6 +444,46 @@ public class AdminMarketBackfillService {
         out.put("freshnessAgeSeconds", a.freshnessAgeSeconds());
         out.put("coverageStart", a.coverageStart() != null ? a.coverageStart().toString() : null);
         out.put("coverageEnd", a.coverageEnd() != null ? a.coverageEnd().toString() : null);
+        return out;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> strategyReadinessAudit(Instant from, Instant to, String timeframe, String useCase) {
+        String tf = timeframe == null || timeframe.isBlank() ? "1m" : timeframe.trim();
+        String uc = useCase == null || useCase.isBlank() ? "REPLAY" : useCase.trim().toUpperCase(Locale.ROOT);
+        List<Map<String, Object>> out = new ArrayList<>();
+
+        strategyDefinitionRepository.findAllByDeletedFalseAndEnabledTrueAndVisibleToUsersTrue(org.springframework.data.domain.Pageable.ofSize(500))
+                .forEach(def -> {
+                    List<String> symbols = resolveStrategySymbols(def);
+                    List<Map<String, Object>> blockers = new ArrayList<>();
+                    int readyCount = 0;
+                    for (String symbol : symbols) {
+                        var a = marketDataCoverageService.assessReadiness(symbol, tf, from, to, uc, true);
+                        if (a.ready()) {
+                            readyCount++;
+                            continue;
+                        }
+                        blockers.add(Map.of(
+                                "symbol", symbol,
+                                "state", a.state(),
+                                "detail", a.detail()
+                        ));
+                    }
+
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("strategyKey", def.getStrategyKey());
+                    row.put("displayName", def.getDisplayName());
+                    row.put("timeframe", tf);
+                    row.put("useCase", uc);
+                    row.put("symbolsTotal", symbols.size());
+                    row.put("symbolsReady", readyCount);
+                    row.put("ready", blockers.isEmpty() && !symbols.isEmpty());
+                    row.put("status", blockers.isEmpty() && !symbols.isEmpty() ? "READY" : "BLOCKED");
+                    row.put("blockers", blockers);
+                    row.put("symbols", symbols);
+                    out.add(row);
+                });
         return out;
     }
 
@@ -720,6 +761,34 @@ public class AdminMarketBackfillService {
                     } catch (Exception ignored) {
                     }
                 });
+        if (out.isEmpty()) {
+            return List.of("NIFTY_FUT", "BANKNIFTY_FUT");
+        }
+        return out.stream().sorted().toList();
+    }
+
+    private List<String> resolveStrategySymbols(com.stokr.strategy.domain.StrategyDefinition def) {
+        Set<String> out = new HashSet<>();
+        String cfg = def.getConfigJson();
+        if (cfg != null && !cfg.isBlank()) {
+            try {
+                JsonNode root = objectMapper.readTree(cfg);
+                JsonNode symbols = root.path("symbols");
+                if (symbols.isArray()) {
+                    symbols.forEach(n -> {
+                        String s = n.asText("").trim();
+                        if (!s.isBlank()) {
+                            out.add(s.toUpperCase(Locale.ROOT));
+                        }
+                    });
+                }
+                String single = root.path("symbol").asText("").trim();
+                if (!single.isBlank()) {
+                    out.add(single.toUpperCase(Locale.ROOT));
+                }
+            } catch (Exception ignored) {
+            }
+        }
         if (out.isEmpty()) {
             return List.of("NIFTY_FUT", "BANKNIFTY_FUT");
         }

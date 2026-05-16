@@ -71,8 +71,11 @@ public class TraderExecutionClientController {
     @GetMapping("/strategy-feed")
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Recent strategy signals for this trader (signal-centric, not raw market)")
-    public ApiResponse<List<Map<String, Object>>> strategyFeed(@AuthenticationPrincipal StokrUserDetails user) {
-        return ApiResponse.ok(traderTerminalViewService.strategyFeed(user.getId()), CorrelationIdHolder.get());
+    public ApiResponse<List<Map<String, Object>>> strategyFeed(
+            @AuthenticationPrincipal StokrUserDetails user,
+            @RequestParam(value = "limit", defaultValue = "100") int limit
+    ) {
+        return ApiResponse.ok(traderTerminalViewService.strategyFeed(user.getId(), limit), CorrelationIdHolder.get());
     }
 
     @GetMapping("/execution-summary")

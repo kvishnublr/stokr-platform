@@ -135,7 +135,12 @@ public class TraderTerminalViewService {
     }
 
     public List<Map<String, Object>> strategyFeed(UUID userId) {
-        List<StrategySignalEntity> rows = strategySignalRepository.findRecentForTrader(userId, PageRequest.of(0, 30));
+        return strategyFeed(userId, 30);
+    }
+
+    public List<Map<String, Object>> strategyFeed(UUID userId, int limit) {
+        int cap = Math.max(1, Math.min(1000, limit));
+        List<StrategySignalEntity> rows = strategySignalRepository.findRecentForTrader(userId, PageRequest.of(0, cap));
         List<Map<String, Object>> out = new ArrayList<>();
         for (StrategySignalEntity s : rows) {
             Map<String, Object> m = new LinkedHashMap<>();

@@ -21,6 +21,11 @@ public interface BrokerAccountRepository extends JpaRepository<BrokerAccount, UU
 
     List<BrokerAccount> findAllByVendorCodeIgnoreCaseAndDeletedFalse(String vendorCode);
 
+    Optional<BrokerAccount> findFirstByVendorCodeIgnoreCaseAndDeletedFalseAndStatusIgnoreCaseAndAccessTokenEncIsNotNullOrderByUpdatedAtDesc(
+            String vendorCode,
+            String status
+    );
+
     @Query("select count(distinct b.userId) from BrokerAccount b where b.deleted = false and lower(b.status) = 'connected'")
     long countDistinctUserIdsWithConnectedBroker();
 }

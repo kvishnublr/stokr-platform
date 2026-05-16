@@ -80,6 +80,11 @@ export function TerminalPage() {
   const [tradeProduct, setTradeProduct] = useState<"CNC" | "MIS">("CNC");
   const [tradeResult, setTradeResult] = useState<Record<string, unknown> | null>(null);
   const [tradeError, setTradeError] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<{
+    action: string;
+    token: string;
+    impact: Record<string, unknown>;
+  } | null>(null);
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["trader-workstation"],
@@ -95,24 +100,35 @@ export function TerminalPage() {
       if (!preview?.supported) {
         throw new Error(String(preview?.reason ?? "Action not supported"));
       }
-      const impact = preview?.impact ?? {};
-      const ok = window.confirm(
-        `Confirm ${action}?\n` +
-        `Pending orders: ${impact.pendingOrderCount ?? 0}\n` +
-        `Running strategies: ${impact.runningStrategyCount ?? 0}\n` +
-        `Open positions: ${impact.openPositionCount ?? 0}`
-      );
-      if (!ok) {
-        return null;
-      }
-      const exec = (await api.post("/api/trader/terminal/control/execute", {
+      setConfirmState({
         action,
-        confirmationToken: preview.confirmationToken,
+        token: String(preview.confirmationToken ?? ""),
+        impact: (preview?.impact ?? {}) as Record<string, unknown>,
+      });
+      return null;
+    },
+    onSuccess: (res) => {
+      setControlResult(res ?? null);
+      qc.invalidateQueries({ queryKey: ["trader-workstation"] });
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Action failed";
+      setControlError(msg);
+    },
+  });
+
+  const executeConfirmedAction = useMutation({
+    mutationFn: async (payload: { action: string; token: string }) => {
+      const exec = (await api.post("/api/trader/terminal/control/execute", {
+        action: payload.action,
+        confirmationToken: payload.token,
       })).data?.data;
       return exec;
     },
     onSuccess: (res) => {
+      setControlError(null);
       setControlResult(res ?? null);
+      setConfirmState(null);
       qc.invalidateQueries({ queryKey: ["trader-workstation"] });
     },
     onError: (err: unknown) => {
@@ -443,6 +459,57 @@ export function TerminalPage() {
           </div>
         </WorkspaceTabPanel>
       </div>
+
+      {confirmState ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className={cn("w-full max-w-xl rounded-2xl border p-5 shadow-2xl", isLight ? "border-neutral-200 bg-white" : "border-neutral-800 bg-neutral-950")}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", isLight ? "text-neutral-500" : "text-neutral-400")}>Confirm Action</div>
+                <h3 className={cn("mt-1 text-xl font-semibold tracking-tight", isLight ? "text-neutral-900" : "text-white")}>
+                  {confirmState.action.replaceAll("_", " ")}
+                </h3>
+              </div>
+              <Chip value={confirmState.action.includes("KILL") ? "HIGH IMPACT" : "OPERATIONAL"} />
+            </div>
+
+            <div className={cn("mt-4 rounded-xl border p-3", isLight ? "border-neutral-200 bg-neutral-50" : "border-neutral-800 bg-neutral-900/80")}>
+              <div className="grid grid-cols-3 gap-3">
+                <Metric title="Pending Orders" value={fmt(confirmState.impact.pendingOrderCount)} />
+                <Metric title="Running Strategies" value={fmt(confirmState.impact.runningStrategyCount)} />
+                <Metric title="Open Positions" value={fmt(confirmState.impact.openPositionCount)} />
+              </div>
+            </div>
+
+            <p className={cn("mt-3 text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>
+              This action will apply immediately to the current execution workspace. Please confirm to proceed.
+            </p>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmState(null)}
+                className={cn("rounded-lg border px-3 py-2 text-xs font-semibold", isLight ? "border-neutral-300 text-neutral-700 hover:bg-neutral-100" : "border-neutral-700 text-neutral-200 hover:bg-neutral-800")}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeConfirmedAction.mutate({ action: confirmState.action, token: confirmState.token })}
+                disabled={executeConfirmedAction.isPending}
+                className={cn(
+                  "rounded-lg px-3 py-2 text-xs font-semibold text-white disabled:opacity-60",
+                  confirmState.action.includes("KILL")
+                    ? "bg-rose-600 hover:bg-rose-500"
+                    : "bg-blue-600 hover:bg-blue-500"
+                )}
+              >
+                {executeConfirmedAction.isPending ? "Executing..." : "Confirm & Execute"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

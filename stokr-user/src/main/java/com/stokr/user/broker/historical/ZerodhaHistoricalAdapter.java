@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.stokr.common.crypto.FieldCipher;
 import com.stokr.user.broker.ZerodhaKiteApiClient;
 import com.stokr.user.config.ZerodhaBrokerProperties;
+import com.stokr.user.domain.BrokerAccount;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
+import com.stokr.user.repository.BrokerAccountRepository;
 import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +35,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
 
     private final ZerodhaBrokerProperties zerodhaBrokerProperties;
     private final PlatformBrokerFeedSessionRepository platformSessionRepository;
+    private final BrokerAccountRepository brokerAccountRepository;
     private final FieldCipher fieldCipher;
     private final ZerodhaKiteApiClient kiteApiClient;
     private final Map<String, InstrumentCacheRow> instrumentCacheByExchange = new ConcurrentHashMap<>();
@@ -63,16 +66,12 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
             if (!zerodhaBrokerProperties.isConfigured()) {
                 return HistoricalFetchResult.fail("BROKER_NOT_CONFIGURED", "Zerodha API key/secret missing");
             }
-            PlatformBrokerFeedSession session = platformSessionRepository
-                    .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc("ZERODHA")
-                    .orElse(null);
-            if (session == null || session.getAccessTokenEnc() == null || session.getAccessTokenEnc().isBlank()) {
-                return HistoricalFetchResult.fail("NO_PLATFORM_SESSION", "Platform Zerodha session/access token missing");
+            AccessTokenResolution accessResolution = resolveAccessToken();
+            if (!accessResolution.ok()) {
+                return HistoricalFetchResult.failWithSource(accessResolution.code(), accessResolution.detail(), accessResolution.source());
             }
-            String accessToken = fieldCipher.decrypt(session.getAccessTokenEnc());
-            if (accessToken == null || accessToken.isBlank()) {
-                return HistoricalFetchResult.fail("TOKEN_DECRYPT_FAILED", "Could not decrypt platform access token");
-            }
+            String accessToken = accessResolution.accessToken();
+            String authSource = accessResolution.source();
             String tokenKey = zerodhaBrokerProperties.getApiKey() + ":" + accessToken;
             Instant validatedAt = validatedTokenCache.get(tokenKey);
             if (validatedAt == null || Duration.between(validatedAt, Instant.now()).getSeconds() >= TOKEN_VALIDATION_CACHE_TTL_SECONDS) {
@@ -80,7 +79,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
                 JsonNode profile = kiteApiClient.getProfile(zerodhaBrokerProperties.getApiKey(), accessToken);
                 if (!"success".equalsIgnoreCase(profile.path("status").asText())) {
                     String detail = safeText(profile.path("message").asText(null), "Profile validation failed");
-                    return HistoricalFetchResult.fail("TOKEN_INVALID", detail);
+                    return HistoricalFetchResult.failWithSource("TOKEN_INVALID", detail, authSource);
                 }
                 validatedTokenCache.put(tokenKey, Instant.now());
             }
@@ -91,11 +90,11 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
                     request.symbol()
             );
             if (tokenResolution.errorCode() != null) {
-                return HistoricalFetchResult.fail(tokenResolution.errorCode(), tokenResolution.errorDetail());
+                return HistoricalFetchResult.failWithSource(tokenResolution.errorCode(), tokenResolution.errorDetail(), authSource);
             }
             long instrumentToken = tokenResolution.instrumentToken();
             if (instrumentToken <= 0L) {
-                return HistoricalFetchResult.fail("SYMBOL_NOT_MAPPED", "Could not resolve instrument token for " + request.symbol());
+                return HistoricalFetchResult.failWithSource("SYMBOL_NOT_MAPPED", "Could not resolve instrument token for " + request.symbol(), authSource);
             }
 
             String interval = mapInterval(request.timeframe());
@@ -110,7 +109,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
             JsonNode arr = root.path("data").path("candles");
             if (!arr.isArray()) {
                 String detail = root.path("message").asText("Unexpected broker response shape");
-                return HistoricalFetchResult.fail("BROKER_RESPONSE_INVALID", detail);
+                return HistoricalFetchResult.failWithSource("BROKER_RESPONSE_INVALID", detail, authSource);
             }
 
             List<HistoricalCandlePoint> out = new ArrayList<>();
@@ -129,7 +128,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
                 BigDecimal volume = row.size() >= 6 ? bd(row.get(5)) : BigDecimal.ZERO;
                 out.add(new HistoricalCandlePoint(openTime, open, high, low, close, volume));
             }
-            return HistoricalFetchResult.ok(out);
+            return HistoricalFetchResult.okWithSource(out, authSource);
         } catch (RestClientResponseException ex) {
             return mapHttpFailure(request.symbol(), ex);
         } catch (ResourceAccessException ex) {
@@ -362,5 +361,45 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
     }
 
     private record InstrumentCacheRow(Map<String, Long> tokenBySymbol, Instant loadedAt) {
+    }
+
+    private AccessTokenResolution resolveAccessToken() {
+        PlatformBrokerFeedSession platform = platformSessionRepository
+                .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc("ZERODHA")
+                .orElse(null);
+        if (platform != null && platform.getAccessTokenEnc() != null && !platform.getAccessTokenEnc().isBlank()) {
+            String token = safeDecrypt(platform.getAccessTokenEnc());
+            if (token != null && !token.isBlank()) {
+                return new AccessTokenResolution(token, "PLATFORM_SESSION", true, null, null);
+            }
+        }
+        BrokerAccount trader = brokerAccountRepository
+                .findFirstByVendorCodeIgnoreCaseAndDeletedFalseAndStatusIgnoreCaseAndAccessTokenEncIsNotNullOrderByUpdatedAtDesc("ZERODHA", "CONNECTED")
+                .orElse(null);
+        if (trader != null && trader.getAccessTokenEnc() != null && !trader.getAccessTokenEnc().isBlank()) {
+            String token = safeDecrypt(trader.getAccessTokenEnc());
+            if (token != null && !token.isBlank()) {
+                log.warn("zerodha.historical.using_trader_token_fallback brokerUserId={}", trader.getBrokerUserId());
+                return new AccessTokenResolution(token, "TRADER_ACCOUNT_FALLBACK", true, null, null);
+            }
+        }
+        return new AccessTokenResolution(null, "NONE", false, "NO_PLATFORM_SESSION", "No usable Zerodha token (platform/trader)");
+    }
+
+    private String safeDecrypt(String enc) {
+        try {
+            return fieldCipher.decrypt(enc);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private record AccessTokenResolution(
+            String accessToken,
+            String source,
+            boolean ok,
+            String code,
+            String detail
+    ) {
     }
 }

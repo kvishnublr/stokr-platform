@@ -50,6 +50,16 @@ public class AdminMarketBackfillController {
         return ApiResponse.ok(backfillService.readinessAuthority(symbol, timeframe, from, to, useCase), CorrelationIdHolder.get());
     }
 
+    @GetMapping("/strategy-readiness-audit")
+    public ApiResponse<Object> strategyReadinessAudit(
+            @RequestParam("from") Instant from,
+            @RequestParam("to") Instant to,
+            @RequestParam(value = "timeframe", defaultValue = "1m") String timeframe,
+            @RequestParam(value = "useCase", defaultValue = "REPLAY") String useCase
+    ) {
+        return ApiResponse.ok(backfillService.strategyReadinessAudit(from, to, timeframe, useCase), CorrelationIdHolder.get());
+    }
+
     @PostMapping("/jobs")
     public ApiResponse<Map<String, Object>> create(
             @AuthenticationPrincipal StokrUserDetails user,

@@ -62,6 +62,19 @@ type JobDetail = {
   failures: JobFailureDetail[];
 };
 
+type StrategyAuditRow = {
+  strategyKey: string;
+  displayName: string | null;
+  timeframe: string;
+  useCase: string;
+  symbolsTotal: number;
+  symbolsReady: number;
+  ready: boolean;
+  status: string;
+  blockers: Array<{ symbol: string; state: string; detail: string }>;
+  symbols: string[];
+};
+
 type SymbolGroupPreview = {
   count: number;
   symbols: string[];
@@ -90,6 +103,12 @@ function coverageReason(c: CoverageRow): string {
   return "READY";
 }
 
+function extractAuthSource(message: string | null | undefined): string {
+  const m = String(message ?? "");
+  const match = /auth\s+([A-Z_]+)/i.exec(m);
+  return match?.[1]?.toUpperCase() ?? "UNKNOWN";
+}
+
 export function AdminBackfillPage() {
   const qc = useQueryClient();
   const [brokerSource, setBrokerSource] = useState("ZERODHA");
@@ -100,6 +119,8 @@ export function AdminBackfillPage() {
   const [customSymbols, setCustomSymbols] = useState("NIFTY_FUT,BANKNIFTY_FUT");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [failedOnly, setFailedOnly] = useState(false);
+  const [auditFrom, setAuditFrom] = useState("2026-01-01T09:15:00Z");
+  const [auditTo, setAuditTo] = useState("2026-01-05T15:30:00Z");
   const completedNotifiedRef = useRef<Set<string>>(new Set());
 
   const caps = useQuery({
@@ -186,6 +207,14 @@ export function AdminBackfillPage() {
     const root = (caps.data?.symbolGroupPreview ?? {}) as Record<string, SymbolGroupPreview>;
     return root[symbolGroup] ?? { count: 0, symbols: [] };
   }, [caps.data, symbolGroup]);
+
+  const strategyAudit = useQuery({
+    queryKey: ["admin-backfill-strategy-audit", auditFrom, auditTo, timeframe],
+    queryFn: async () =>
+      (await api.get(`/api/admin/market/backfill/strategy-readiness-audit?from=${encodeURIComponent(auditFrom)}&to=${encodeURIComponent(auditTo)}&timeframe=${encodeURIComponent(timeframe)}&useCase=REPLAY`)).data?.data as StrategyAuditRow[],
+    enabled: Boolean(auditFrom && auditTo),
+    refetchInterval: 30_000,
+  });
 
   const failureCodeSet = useMemo(() => {
     const set = new Set<string>();
@@ -421,6 +450,7 @@ export function AdminBackfillPage() {
                       <tr>
                         <th className="px-2 py-1">Symbol</th>
                         <th className="px-2 py-1">Status</th>
+                        <th className="px-2 py-1">Auth source</th>
                         <th className="px-2 py-1">Coverage</th>
                         <th className="px-2 py-1">Candles</th>
                         <th className="px-2 py-1">Failures</th>
@@ -435,6 +465,7 @@ export function AdminBackfillPage() {
                         <tr key={s.symbol} className="border-t border-border">
                           <td className="px-2 py-1 font-semibold">{s.symbol}</td>
                           <td className="px-2 py-1">{s.status}</td>
+                          <td className="px-2 py-1">{extractAuthSource(s.message)}</td>
                           <td className="px-2 py-1">{covBadge}</td>
                           <td className="px-2 py-1">{s.candlesFetched}</td>
                           <td className="px-2 py-1">{s.failureCount}</td>
@@ -457,6 +488,7 @@ export function AdminBackfillPage() {
                           <th className="px-2 py-1">Symbol</th>
                           <th className="px-2 py-1">Code</th>
                           <th className="px-2 py-1">Retryable</th>
+                          <th className="px-2 py-1">Auth source</th>
                           <th className="px-2 py-1">Latest retry</th>
                           <th className="px-2 py-1">Message</th>
                         </tr>
@@ -471,6 +503,7 @@ export function AdminBackfillPage() {
                               </span>
                             </td>
                             <td className="px-2 py-1">{f.retryable ? "Yes" : "No"}</td>
+                            <td className="px-2 py-1">{extractAuthSource(f.message)}</td>
                             <td className="px-2 py-1">{f.lastOccurredAt ? new Date(f.lastOccurredAt).toLocaleString() : "-"}</td>
                             <td className="px-2 py-1 text-muted-foreground">{f.message}</td>
                           </tr>
@@ -484,6 +517,46 @@ export function AdminBackfillPage() {
           ) : null}
         </div>
       ) : null}
+
+      <div className="rounded-xl border border-border bg-card p-3">
+        <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+          <div className="text-sm font-semibold">Strategy readiness audit (backtest)</div>
+          <div className="flex flex-wrap gap-2">
+            <input value={auditFrom} onChange={(e) => setAuditFrom(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-xs" />
+            <input value={auditTo} onChange={(e) => setAuditTo(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-xs" />
+          </div>
+        </div>
+        {strategyAudit.isLoading ? <div className="text-xs text-muted-foreground">Loading strategy audit...</div> : null}
+        {strategyAudit.data ? (
+          <div className="max-h-72 overflow-auto rounded border border-border">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/40 text-left">
+                <tr>
+                  <th className="px-2 py-1">Strategy</th>
+                  <th className="px-2 py-1">Status</th>
+                  <th className="px-2 py-1">Ready symbols</th>
+                  <th className="px-2 py-1">Blockers</th>
+                </tr>
+              </thead>
+              <tbody>
+                {strategyAudit.data.map((r) => (
+                  <tr key={r.strategyKey} className="border-t border-border align-top">
+                    <td className="px-2 py-1">
+                      <div className="font-semibold">{r.displayName ?? r.strategyKey}</div>
+                      <div className="text-[11px] text-muted-foreground">{r.strategyKey}</div>
+                    </td>
+                    <td className="px-2 py-1">{r.status}</td>
+                    <td className="px-2 py-1">{r.symbolsReady}/{r.symbolsTotal}</td>
+                    <td className="px-2 py-1 text-muted-foreground">
+                      {r.blockers.length === 0 ? "None" : r.blockers.slice(0, 4).map((b) => `${b.symbol}:${b.state}`).join(", ")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </div>
 
       <div className="rounded-xl border border-border bg-card p-3">
         <div className="mb-2 text-sm font-semibold">Coverage state</div>
