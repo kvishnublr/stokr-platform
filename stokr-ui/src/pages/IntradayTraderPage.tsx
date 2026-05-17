@@ -73,6 +73,15 @@ export function IntradayTraderPage() {
   });
   const actionsBusy = toggleSub.isPending || patchInstance.isPending || startInstance.isPending || pauseInstance.isPending;
 
+  function resolveBacktestStrategyKey(setupKey: string): string {
+    const setup = INTRADAY_SETUPS.find((s) => s.strategyKey === setupKey);
+    if (!setup) return setupKey;
+    const available = new Set((catalogQ.data ?? []).map((c) => c.code));
+    const candidates = setup.backtestStrategyKeys ?? [setup.strategyKey];
+    const matched = candidates.find((k) => available.has(k));
+    return matched ?? setup.strategyKey;
+  }
+
   async function ensureInstanceByStrategy(strategyKey: string): Promise<InstanceRow | null> {
     const catalog = catalogQ.data ?? [];
     const def = catalog.find((c) => c.code === strategyKey);
@@ -92,7 +101,8 @@ export function IntradayTraderPage() {
     if (actionsBusy) return;
     try {
       if (mode === "BACKTEST") {
-        navigate(`/backtests/launch?strategyKey=${encodeURIComponent(strategyKey)}`);
+        const backtestKey = resolveBacktestStrategyKey(strategyKey);
+        navigate(`/backtests/launch?strategyKey=${encodeURIComponent(backtestKey)}`);
         return;
       }
       const inst = await ensureInstanceByStrategy(strategyKey);

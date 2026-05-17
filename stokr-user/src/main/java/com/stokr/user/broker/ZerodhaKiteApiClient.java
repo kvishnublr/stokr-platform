@@ -99,7 +99,10 @@ public class ZerodhaKiteApiClient {
                 .queryParam("from", from)
                 .queryParam("to", to)
                 .queryParam("oi", "0")
-                .build(true)
+                // Values contain spaces ("yyyy-MM-dd HH:mm:ss"), so they must be URI-encoded here.
+                // build(true) assumes already-encoded input and leaks raw spaces, which breaks request parsing.
+                .build()
+                .encode(StandardCharsets.UTF_8)
                 .toUri();
         String body = http.get()
                 .uri(uri)
