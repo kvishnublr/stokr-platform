@@ -9,6 +9,21 @@ export const api = axios.create({
   baseURL: "/",
 });
 
+function mapBrokerUserMessage(raw: string): string | null {
+  const m = String(raw ?? "").toLowerCase();
+  if (!m) return null;
+  if (m.includes("the user is not enabled for the app")) {
+    return "This Zerodha account is not enabled for the connected Kite app. Please reconnect Zerodha and complete app authorization for this user.";
+  }
+  if (m.includes("tokenexception") || m.includes("incorrect `api_key` or `access_token`")) {
+    return "Zerodha session expired/invalid. Please reconnect Zerodha to re-authenticate.";
+  }
+  if (m.includes("invalid from date") || m.includes("invalid to date")) {
+    return "Invalid backfill date window for broker API. Use a weekday IST market session (09:15-15:30) and keep end time in the past.";
+  }
+  return null;
+}
+
 function parseAxiosMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
     if (!err.response) {
@@ -35,8 +50,21 @@ function parseAxiosMessage(err: unknown): string {
       error?: { message?: string; detail?: string; code?: string };
     } | undefined;
     const nested = d?.error?.detail ?? d?.error?.message;
-    if (nested) return String(nested);
-    if (d?.message) return String(d.message);
+    if (nested) {
+      const mapped = mapBrokerUserMessage(String(nested));
+      if (mapped) return mapped;
+      return String(nested);
+    }
+    if (d?.message) {
+      const mapped = mapBrokerUserMessage(String(d.message));
+      if (mapped) return mapped;
+      return String(d.message);
+    }
+    const rawBody = typeof err.response?.data === "string" ? err.response.data : "";
+    if (rawBody) {
+      const mapped = mapBrokerUserMessage(rawBody);
+      if (mapped) return mapped;
+    }
     if (err.response?.status === 401) return "Session expired - please sign in again.";
     const st = err.response?.status;
     if (st && st >= 500) {
