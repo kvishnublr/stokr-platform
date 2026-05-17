@@ -20,6 +20,7 @@ import com.stokr.marketdata.repository.MarketdataCandleRepository;
 import com.stokr.marketdata.service.CandleFinalizationService;
 import com.stokr.marketdata.service.MarketDataCoverageService;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
+import com.stokr.user.broker.PlatformMarketFeedService;
 import com.stokr.user.broker.historical.BrokerHistoricalAdapterRegistry;
 import com.stokr.user.broker.historical.BrokerHistoricalDataAdapter;
 import com.stokr.user.broker.historical.HistoricalCandlePoint;
@@ -73,6 +74,8 @@ public class AdminMarketBackfillService {
     private final BrokerHistoricalAdapterRegistry historicalAdapterRegistry;
     private final StrategyDefinitionRepository strategyDefinitionRepository;
     private final ObjectMapper objectMapper;
+    private final PlatformReadinessService platformReadinessService;
+    private final PlatformMarketFeedService platformMarketFeedService;
 
     private static final List<String> ALLOWED_TIMEFRAMES = List.of("1m", "5m", "15m", "1h", "1d");
     private static final int MAX_FETCH_RETRIES = 3;
@@ -132,8 +135,74 @@ public class AdminMarketBackfillService {
         return job.getId();
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> preflight(MarketBackfillCreateRequest req) {
+        validate(req);
+        List<String> symbols = resolveSymbols(req.symbolGroup(), req.customSymbols());
+        List<Map<String, String>> blockers = new ArrayList<>();
+        List<Map<String, String>> warnings = new ArrayList<>();
+
+        if (symbols.isEmpty()) {
+            blockers.add(block("NO_SYMBOLS_RESOLVED", "No symbols resolved for selected group.", "Select a valid group or provide CUSTOM symbols."));
+        }
+        if (!hasTradingSessionOverlap(req.rangeStart(), req.rangeEnd())) {
+            blockers.add(block("NO_TRADING_SESSION_IN_RANGE", "Selected range has no NSE trading session overlap.", "Use weekday IST window 09:15-15:30."));
+        }
+
+        String tf = req.timeframe() == null ? "1m" : req.timeframe().trim().toLowerCase(Locale.ROOT);
+        long days = Duration.between(req.rangeStart(), req.rangeEnd()).toDays();
+        if ("ZERODHA".equalsIgnoreCase(req.brokerSource()) && !"1d".equals(tf) && days > 60) {
+            blockers.add(block("LOOKBACK_EXCEEDED", "Zerodha intraday history supports limited lookback (about 60 days).", "Use recent range or import historical data."));
+        }
+
+        var readiness = platformReadinessService.snapshot();
+        if (readiness.blocking()) {
+            blockers.add(block("PIPELINE_BLOCKING", "Execution pipeline readiness is blocking.", "Check kill switch and execution pipeline in admin readiness."));
+        }
+        Map<String, Object> vendor = platformMarketFeedService.vendorSnapshot(req.brokerSource());
+        boolean operationalPath = Boolean.TRUE.equals(vendor.get("operationalLivePath"));
+        boolean tokenConfigured = Boolean.TRUE.equals(vendor.get("configured"));
+        if (!tokenConfigured) {
+            blockers.add(block("NO_PLATFORM_SESSION", "Broker platform session is not configured.", "Open Broker Infrastructure and reconnect OAuth."));
+        } else if (!operationalPath) {
+            warnings.add(block("PLATFORM_FEED_DEGRADED", String.valueOf(vendor.getOrDefault("operationalLivePathDetail", "Platform feed not fully operational.")),
+                    "Refresh token, ensure WS connected, subscriptions > 0, and ticks flowing."));
+        }
+
+        int sampleSize = Math.max(1, Math.min(preflightSampleSize, symbols.size()));
+        List<String> sampled = symbols.subList(0, sampleSize);
+        try {
+            validateBrokerPreflight(req.brokerSource(), req.timeframe(), req.rangeStart(), req.rangeEnd(), sampled);
+        } catch (Exception ex) {
+            blockers.add(block("BROKER_PREFLIGHT_FAILED", ex.getMessage(), "Fix broker/token/date-symbol issues and retry."));
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("verdict", blockers.isEmpty() ? "PASS" : "FAIL");
+        out.put("blockers", blockers);
+        out.put("warnings", warnings);
+        out.put("symbolCount", symbols.size());
+        out.put("sampledSymbols", sampled);
+        out.put("broker", req.brokerSource());
+        out.put("timeframe", req.timeframe());
+        out.put("rangeStart", req.rangeStart().toString());
+        out.put("rangeEnd", req.rangeEnd().toString());
+        return out;
+    }
+
+    private static Map<String, String> block(String code, String message, String action) {
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("code", code);
+        m.put("message", message);
+        m.put("action", action);
+        return m;
+    }
+
     private void validateBrokerPreflight(String brokerSource, String timeframe, Instant rangeStart, Instant rangeEnd, List<String> symbols) {
         BrokerHistoricalDataAdapter adapter = historicalAdapterRegistry.require(brokerSource.trim().toUpperCase(Locale.ROOT));
+            if (!hasTradingSessionOverlap(rangeStart, rangeEnd)) {
+            throw new BadRequestException("Backfill window has no NSE trading-session overlap (Mon-Fri, 09:15-15:30 IST).");
+        }
         Instant probeEnd = rangeStart.plus(Duration.ofMinutes(5));
         if (!probeEnd.isBefore(rangeEnd)) {
             probeEnd = rangeEnd;
@@ -143,13 +212,17 @@ public class AdminMarketBackfillService {
         for (int i = 0; i < sample; i++) {
             String symbol = symbols.get(i);
             HistoricalFetchResult probe = adapter.fetch(new HistoricalFetchRequest(symbol, timeframe, rangeStart, probeEnd));
-            if (!probe.success()) {
+            if (!probe.success() || probe.candles().isEmpty()) {
                 String detail = probe.detail() == null ? "" : probe.detail().replaceAll("\\s+", " ").trim();
+                if (probe.success() && probe.candles().isEmpty()) {
+                    detail = "No candles in probe window (likely non-trading window or symbol not available).";
+                }
                 if (detail.length() > 140) {
                     detail = detail.substring(0, 140) + "...";
                 }
                 String auth = probe.authSource() == null || probe.authSource().isBlank() ? "unknown-auth" : probe.authSource();
-                failed.add(symbol + ":" + probe.code() + " (" + auth + ") " + detail);
+                String code = probe.success() && probe.candles().isEmpty() ? "NO_CANDLES_IN_PROBE" : probe.code();
+                failed.add(symbol + ":" + code + " (" + auth + ") " + detail);
             }
         }
         if (!failed.isEmpty()) {
@@ -852,45 +925,49 @@ public class AdminMarketBackfillService {
         if (!"ZERODHA".equalsIgnoreCase(adapter.brokerCode())) {
             return fetchWithRetry(useAdapter, symbol, timeframe, rangeStart, rangeEnd);
         }
-        Instant cursor = rangeStart;
+        List<TimeWindow> windows = tradingWindows(rangeStart, rangeEnd);
+        if (windows.isEmpty()) {
+            return HistoricalFetchResult.fail("NO_TRADING_SESSION_IN_RANGE", "Selected range has no trading session overlap");
+        }
         List<HistoricalCandlePoint> merged = new ArrayList<>();
         boolean hadChunkIssues = false;
         String lastChunkIssue = null;
-        while (cursor.isBefore(rangeEnd)) {
-            Instant chunkEnd = cursor.plus(Duration.ofMinutes(Math.max(60, zerodhaChunkMinutes)));
-            if (chunkEnd.isAfter(rangeEnd)) {
-                chunkEnd = rangeEnd;
-            }
-            HistoricalFetchResult chunk = fetchWithRetry(useAdapter, symbol, timeframe, cursor, chunkEnd);
-            if (!chunk.success()) {
-                if (merged.isEmpty()) {
-                    return chunk;
+        for (TimeWindow w : windows) {
+            Instant cursor = w.start();
+            while (cursor.isBefore(w.end())) {
+                Instant chunkEnd = cursor.plus(Duration.ofMinutes(Math.max(60, zerodhaChunkMinutes)));
+                if (chunkEnd.isAfter(w.end())) {
+                    chunkEnd = w.end();
                 }
-                // Preserve already-fetched candles and continue with the next chunk boundary.
-                hadChunkIssues = true;
-                lastChunkIssue = chunk.code() + ":" + chunk.detail();
-                cursor = chunkEnd;
-                continue;
+                HistoricalFetchResult chunk = fetchWithRetry(useAdapter, symbol, timeframe, cursor, chunkEnd);
+                if (!chunk.success()) {
+                    if (merged.isEmpty()) {
+                        return chunk;
+                    }
+                    hadChunkIssues = true;
+                    lastChunkIssue = chunk.code() + ":" + chunk.detail();
+                    cursor = chunkEnd;
+                    continue;
+                }
+                if (chunk.candles().isEmpty()) {
+                    hadChunkIssues = true;
+                    lastChunkIssue = "EMPTY_CHUNK";
+                    cursor = chunkEnd;
+                    continue;
+                }
+                merged.addAll(chunk.candles());
+                Instant nextCursor = chunk.candles().get(chunk.candles().size() - 1).openTime().plusSeconds(60);
+                if (!nextCursor.isAfter(cursor)) {
+                    hadChunkIssues = true;
+                    lastChunkIssue = "NON_ADVANCING_CURSOR";
+                    cursor = chunkEnd;
+                    continue;
+                }
+                cursor = nextCursor;
             }
-            if (chunk.candles().isEmpty()) {
-                // Empty chunk can occur in non-trading intervals; move forward instead of failing symbol.
-                hadChunkIssues = true;
-                lastChunkIssue = "EMPTY_CHUNK";
-                cursor = chunkEnd;
-                continue;
-            }
-            merged.addAll(chunk.candles());
-            Instant nextCursor = chunk.candles().get(chunk.candles().size() - 1).openTime().plusSeconds(60);
-            if (!nextCursor.isAfter(cursor)) {
-                hadChunkIssues = true;
-                lastChunkIssue = "NON_ADVANCING_CURSOR";
-                cursor = chunkEnd;
-                continue;
-            }
-            cursor = nextCursor;
         }
         if (merged.isEmpty()) {
-            return HistoricalFetchResult.fail("NO_CANDLES_RETURNED", "No candles returned");
+            return HistoricalFetchResult.fail("NO_CANDLES_RETURNED", "No candles returned in trading sessions for selected range");
         }
         if (hadChunkIssues) {
             log.warn("market.backfill.partial {} {} {} candles={} lastIssue={}",
@@ -985,6 +1062,36 @@ public class AdminMarketBackfillService {
             default -> z.withSecond(0).withNano(0).toInstant();
         };
     }
-}
 
+    private boolean hasTradingSessionOverlap(Instant from, Instant to) {
+        return !tradingWindows(from, to).isEmpty();
+    }
+
+    private List<TimeWindow> tradingWindows(Instant from, Instant to) {
+        List<TimeWindow> out = new ArrayList<>();
+        if (from == null || to == null || !from.isBefore(to)) {
+            return out;
+        }
+        ZonedDateTime s = from.atZone(IST);
+        ZonedDateTime e = to.atZone(IST);
+        ZonedDateTime day = s.toLocalDate().atStartOfDay(IST);
+        ZonedDateTime endDay = e.toLocalDate().atStartOfDay(IST);
+        while (!day.isAfter(endDay)) {
+            DayOfWeek dow = day.getDayOfWeek();
+            if (dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY) {
+                Instant sessionStart = day.with(NSE_OPEN).toInstant();
+                Instant sessionEnd = day.with(NSE_CLOSE).toInstant();
+                Instant winStart = sessionStart.isAfter(from) ? sessionStart : from;
+                Instant winEnd = sessionEnd.isBefore(to) ? sessionEnd : to;
+                if (winStart.isBefore(winEnd)) {
+                    out.add(new TimeWindow(winStart, winEnd));
+                }
+            }
+            day = day.plusDays(1);
+        }
+        return out;
+    }
+
+    private record TimeWindow(Instant start, Instant end) {}
+}
 

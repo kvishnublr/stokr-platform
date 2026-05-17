@@ -8,8 +8,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.util.UriComponentsBuilder;
-
 import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -94,16 +92,15 @@ public class ZerodhaKiteApiClient {
         String itv = interval == null || interval.isBlank() ? "minute" : interval.trim().toLowerCase();
         String from = KITE_DT.format(fromInclusive.atZone(INDIA));
         String to = KITE_DT.format(toInclusive.atZone(INDIA));
-        URI uri = UriComponentsBuilder
-                .fromHttpUrl(BASE + "/instruments/historical/" + instrumentToken + "/" + itv)
-                .queryParam("from", from)
-                .queryParam("to", to)
-                .queryParam("oi", "0")
-                // Values contain spaces ("yyyy-MM-dd HH:mm:ss"), so they must be URI-encoded here.
-                // build(true) assumes already-encoded input and leaks raw spaces, which breaks request parsing.
-                .build()
-                .encode(StandardCharsets.UTF_8)
-                .toUri();
+        // Encode full query values explicitly (including colon) to avoid strict URI parser issues.
+        String encodedFrom = URLEncoder.encode(from, StandardCharsets.UTF_8);
+        String encodedTo = URLEncoder.encode(to, StandardCharsets.UTF_8);
+        URI uri = URI.create(
+                BASE + "/instruments/historical/" + instrumentToken + "/" + itv
+                        + "?from=" + encodedFrom
+                        + "&to=" + encodedTo
+                        + "&oi=0"
+        );
         String body = http.get()
                 .uri(uri)
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))

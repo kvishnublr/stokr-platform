@@ -176,18 +176,44 @@ function looksLikeZerodhaTokenAuthError(message: string): boolean {
   );
 }
 
+function looksLikeLookbackLimit(message: string): boolean {
+  const m = (message || "").toLowerCase();
+  return m.includes("lookback") || m.includes("exceeds zerodha historical lookback");
+}
+
+function toIstInputString(d: Date): string {
+  const istMs = d.getTime() + 5.5 * 60 * 60 * 1000;
+  const ist = new Date(istMs);
+  const yyyy = ist.getUTCFullYear();
+  const mm = String(ist.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(ist.getUTCDate()).padStart(2, "0");
+  const hh = String(ist.getUTCHours()).padStart(2, "0");
+  const mi = String(ist.getUTCMinutes()).padStart(2, "0");
+  const ss = String(ist.getUTCSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}+05:30`;
+}
+
+function defaultBackfillRange(): { start: string; end: string } {
+  const now = new Date();
+  const end = new Date(now);
+  end.setMinutes(0, 0, 0);
+  const start = new Date(end.getTime() - 2 * 24 * 60 * 60 * 1000);
+  return { start: toIstInputString(start), end: toIstInputString(end) };
+}
+
 export function AdminBackfillPage() {
   const qc = useQueryClient();
+  const defaultRange = useMemo(() => defaultBackfillRange(), []);
   const [brokerSource, setBrokerSource] = useState("ZERODHA");
   const [symbolGroup, setSymbolGroup] = useState("NIFTY_50");
   const [timeframe, setTimeframe] = useState("1m");
-  const [rangeStart, setRangeStart] = useState("2026-01-01T09:15:00+05:30");
-  const [rangeEnd, setRangeEnd] = useState("2026-01-05T15:30:00+05:30");
+  const [rangeStart, setRangeStart] = useState(defaultRange.start);
+  const [rangeEnd, setRangeEnd] = useState(defaultRange.end);
   const [customSymbols, setCustomSymbols] = useState("NIFTY_FUT,BANKNIFTY_FUT");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [failedOnly, setFailedOnly] = useState(false);
-  const [auditFrom, setAuditFrom] = useState("2026-01-01T09:15:00+05:30");
-  const [auditTo, setAuditTo] = useState("2026-01-05T15:30:00+05:30");
+  const [auditFrom, setAuditFrom] = useState(defaultRange.start);
+  const [auditTo, setAuditTo] = useState(defaultRange.end);
   const completedNotifiedRef = useRef<Set<string>>(new Set());
 
   async function reconnectZerodhaNow() {
@@ -242,14 +268,23 @@ export function AdminBackfillPage() {
       if (looksLikeMarketSessionMismatch(startIso, endIso)) {
         throw new Error("Date range appears outside NSE market session (09:15-15:30 IST). Please adjust.");
       }
-      return api.post("/api/admin/market/backfill/jobs", {
+      const payload = {
         brokerSource,
         symbolGroup,
         timeframe,
         rangeStart: startIso,
         rangeEnd: endIso,
         customSymbols: symbolGroup === "CUSTOM" ? parseCustomSymbols(customSymbols) : [],
-      });
+      };
+      const pre = await api.post("/api/admin/market/backfill/preflight", payload);
+      const preData = pre.data?.data as { verdict?: string; blockers?: Array<{ code?: string; message?: string; action?: string }> } | undefined;
+      if ((preData?.verdict ?? "FAIL").toUpperCase() !== "PASS") {
+        const top = (preData?.blockers ?? [])[0];
+        const msg = top ? `${top.code ?? "BLOCKED"}: ${top.message ?? "Backfill preflight blocked"}` : "Backfill preflight blocked";
+        const action = top?.action ? ` Next: ${top.action}` : "";
+        throw new Error(`${msg}${action}`);
+      }
+      return api.post("/api/admin/market/backfill/jobs", payload);
     },
     onSuccess: async () => {
       toast.success("Backfill job queued");
@@ -277,6 +312,12 @@ export function AdminBackfillPage() {
           },
           duration: 12000,
         });
+        return;
+      }
+      if (looksLikeLookbackLimit(msg)) {
+        toast.error(
+          "Zerodha intraday history is limited (typically 60 days for intraday intervals). Use a recent date range or import historical data."
+        );
         return;
       }
       toast.error(msg);

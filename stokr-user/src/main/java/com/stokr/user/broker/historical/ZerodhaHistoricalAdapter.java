@@ -66,6 +66,10 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
             if (!zerodhaBrokerProperties.isConfigured()) {
                 return HistoricalFetchResult.fail("BROKER_NOT_CONFIGURED", "Zerodha API key/secret missing");
             }
+            HistoricalFetchResult lookbackGate = validateLookbackWindow(request);
+            if (lookbackGate != null) {
+                return lookbackGate;
+            }
             AccessTokenResolution accessResolution = resolveAccessToken();
             if (!accessResolution.ok()) {
                 return HistoricalFetchResult.failWithSource(accessResolution.code(), accessResolution.detail(), accessResolution.source());
@@ -358,6 +362,24 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
     }
 
     private record TokenResolution(long instrumentToken, String errorCode, String errorDetail) {
+    }
+
+    private HistoricalFetchResult validateLookbackWindow(HistoricalFetchRequest request) {
+        String tf = request.timeframe() == null ? "1m" : request.timeframe().trim().toLowerCase(Locale.ROOT);
+        long maxDays = switch (tf) {
+            case "1d" -> 3650L;
+            case "1h", "15m", "5m", "1m" -> 60L;
+            default -> 60L;
+        };
+        Instant cutoff = Instant.now().minus(Duration.ofDays(maxDays));
+        if (request.rangeStart().isBefore(cutoff)) {
+            return HistoricalFetchResult.fail(
+                    "BROKER_REQUEST_INVALID",
+                    "Requested range exceeds Zerodha historical lookback for " + tf
+                            + " (max " + maxDays + " days). Choose a recent range or use import/bootstrap."
+            );
+        }
+        return null;
     }
 
     private record InstrumentCacheRow(Map<String, Long> tokenBySymbol, Instant loadedAt) {

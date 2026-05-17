@@ -39,6 +39,11 @@ public class AdminMarketBackfillController {
         return ApiResponse.ok(backfillService.capabilityMatrix().get("coverage"), CorrelationIdHolder.get());
     }
 
+    @PostMapping("/preflight")
+    public ApiResponse<Map<String, Object>> preflight(@Valid @RequestBody MarketBackfillCreateRequest body) {
+        return ApiResponse.ok(backfillService.preflight(body), CorrelationIdHolder.get());
+    }
+
     @GetMapping("/readiness")
     public ApiResponse<Map<String, Object>> readiness(
             @RequestParam("symbol") String symbol,
