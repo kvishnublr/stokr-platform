@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -56,6 +56,83 @@ type Workstation = {
   latestSignals: Array<Record<string, unknown>>;
 };
 
+type ReadinessIssue = {
+  severity: "CRITICAL" | "WARNING" | "INFO";
+  code: string;
+  title: string;
+  detail: string;
+  action: string | null;
+  strategyKey: string | null;
+};
+
+type StrategyReadinessMatrixRow = {
+  strategy: string;
+  strategyKey: string;
+  runtime: string;
+  feed: string;
+  broker: string;
+  subscription: string;
+  historical: string;
+  lastSignalTime: string | null;
+  status: "READY" | "DEGRADED" | "BLOCKED" | "RECOVERING";
+  historicalCoverage: {
+    symbol: string;
+    timeframe: string;
+    state: string;
+    detail: string;
+    coverageStart: string | null;
+    coverageEnd: string | null;
+    latestCandle: string | null;
+    freshnessAgeSeconds: number | null;
+  };
+};
+
+type IntradayReadiness = {
+  overallStatus: "READY" | "WARNING" | "BLOCKED";
+  lastValidatedAt: string;
+  feed: {
+    status: string;
+    severity: string;
+    connectionState: string;
+    websocketState: string;
+    tickLatencySeconds: number;
+    heartbeatAgeSeconds: number;
+    reconnectCount: number;
+    feedLagMs: number;
+    subscriptionCount: number;
+    lastTickAt: string | null;
+    lastHeartbeatAt: string | null;
+    detail: string;
+  };
+  broker: {
+    status: string;
+    tokenValid: boolean;
+    health: string;
+    lastSyncAt: string | null;
+    marginSummary: string | null;
+  };
+  runtime: {
+    totalStrategies: number;
+    runningStrategies: number;
+    staleStrategies: number;
+  };
+  session: {
+    sessionState: "PRE_MARKET" | "MARKET_OPEN" | "POST_MARKET" | "HOLIDAY" | "WEEKEND";
+    evaluatedAt: string;
+    detail: string;
+  };
+  strategies: StrategyReadinessMatrixRow[];
+  blockers: ReadinessIssue[];
+  warnings: ReadinessIssue[];
+  info: ReadinessIssue[];
+  severityCounters: Record<string, number>;
+  historicalCoverage: {
+    readyCount: number;
+    staleCount: number;
+    missingCount: number;
+  };
+};
+
 type StrategyState = "ACTIVE" | "WARMING" | "COOLING" | "BLOCKED";
 type HeatTier = "S" | "A" | "B" | "C" | "D";
 type Verdict = "STRONG" | "MODERATE" | "AVOID";
@@ -102,17 +179,6 @@ type OpportunityRow = {
   rationale: string;
 };
 
-type SetupValidationRow = {
-  setupTitle: string;
-  strategyKey: string;
-  catalogPresent: boolean;
-  instancePresent: boolean;
-  runtimeHealthy: boolean;
-  subscribed: boolean;
-  ready: boolean;
-  blocker: string | null;
-};
-
 const DOCK_TABS = [
   { id: "open", label: "Open Positions" },
   { id: "closed", label: "Closed Positions" },
@@ -122,6 +188,8 @@ const DOCK_TABS = [
   { id: "replay", label: "Replay" },
   { id: "risk", label: "Risk Events" },
 ] as const;
+
+const READINESS_ACTIONS = new Set(["RECONNECT_FEED", "RENEW_BROKER_SESSION", "RELOAD_INSTRUMENT_CACHE", "REFRESH_SUBSCRIPTIONS", "RESTART_RUNTIME"]);
 
 function num(v: unknown, fallback = 0): number {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -263,6 +331,8 @@ export function IntradayTraderPage() {
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<string | null>(null);
   const [dockTab, setDockTab] = useState<(typeof DOCK_TABS)[number]["id"]>("open");
   const [symbolQuery, setSymbolQuery] = useState("");
+  const [matrixSort, setMatrixSort] = useState<"strategy" | "status" | "lastSignalTime">("status");
+  const checklistInFlightRef = useRef(false);
 
   const catalogQ = useQuery({
     queryKey: ["strategy-catalog-intraday"],
@@ -294,6 +364,12 @@ export function IntradayTraderPage() {
     enabled: !!token,
     refetchInterval: 5_000,
   });
+  const readinessQ = useQuery({
+    queryKey: ["intraday-readiness-v2"],
+    queryFn: async () => (await api.get("/api/trader/intraday/readiness")).data?.data as IntradayReadiness,
+    enabled: !!token,
+    refetchInterval: 5_000,
+  });
 
   const toggleSub = useMutation({
     mutationFn: async (definitionId: string) => api.post(`/api/strategies/catalog/${definitionId}/subscription/toggle`),
@@ -312,51 +388,37 @@ export function IntradayTraderPage() {
     onError: (e) => toast.error(parseAxiosMessage(e)),
   });
   const actionsBusy = toggleSub.isPending || patchInstance.isPending || startInstance.isPending || pauseInstance.isPending;
+  const readinessAction = useMutation({
+    mutationFn: async (payload: { action: string; strategyKey?: string | null }) =>
+      (await api.post("/api/trader/intraday/readiness/actions", payload)).data?.data,
+    onSuccess: (data: { message?: string; payload?: { authorizeUrl?: string } }) => {
+      if (data?.message) toast.success(data.message);
+      const url = data?.payload?.authorizeUrl;
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      void readinessQ.refetch();
+      void runtimeQ.refetch();
+      void instancesQ.refetch();
+      void workstationQ.refetch();
+    },
+    onError: (e) => toast.error(parseAxiosMessage(e)),
+  });
 
   async function runPreMarketChecklist() {
+    if (checklistInFlightRef.current) return;
+    checklistInFlightRef.current = true;
     try {
-      const [catRes, instRes, rtRes, wsRes] = await Promise.all([
-        catalogQ.refetch(),
-        instancesQ.refetch(),
-        runtimeQ.refetch(),
-        workstationQ.refetch(),
-      ]);
-      const catalog = catRes.data ?? [];
-      const instances = instRes.data ?? [];
-      const runtime = rtRes.data ?? [];
-      const ws = wsRes.data;
-      const riskLocal = ws?.riskControls;
-      const feedLocal =
-        (riskLocal?.tokenValid && riskLocal?.brokerHealth?.toUpperCase?.().includes("HEALTHY")) ||
-        (riskLocal?.liveEligible && riskLocal?.brokerHealth?.toUpperCase?.().includes("CONNECTED"))
-          ? "LIVE"
-          : "STALE";
-      const catalogByCode = new Map(catalog.map((c) => [String(c.code).toUpperCase(), c] as const));
-      const runtimeByKey = new Map(runtime.map((r) => [String(r.strategyKey).toUpperCase(), r] as const));
-      const blockers: string[] = [];
-      for (const s of INTRADAY_SETUPS) {
-        const key = s.strategyKey.toUpperCase();
-        const cat = catalogByCode.get(key);
-        const inst = cat ? instances.find((i) => i.definitionId === cat.id) : null;
-        const met = runtimeByKey.get(key) ?? null;
-        const subscribed = Boolean(cat?.subscribed && cat?.subscriptionEnabled);
-        const runtimeHealthy = Boolean(
-          met && String(met.runtimeState ?? "").toUpperCase().includes("RUN") && !String(met.health ?? "").toUpperCase().includes("BAD"),
-        );
-        if (!cat) blockers.push(`${s.title}: Strategy missing in catalog`);
-        else if (!inst) blockers.push(`${s.title}: No active strategy instance`);
-        else if (!subscribed) blockers.push(`${s.title}: Subscription disabled`);
-        else if (!runtimeHealthy) blockers.push(`${s.title}: Runtime not healthy (${String(met?.runtimeState ?? "IDLE")}/${String(met?.health ?? "UNKNOWN")})`);
-      }
-      if (feedLocal !== "LIVE") blockers.unshift(`Feed health is ${feedLocal}`);
-      if (!riskLocal?.tokenValid || !riskLocal?.liveEligible) blockers.unshift("Broker token/live eligibility not ready");
-      if (blockers.length === 0) {
+      const rd = (await readinessQ.refetch()).data;
+      if (rd && (rd.severityCounters?.CRITICAL ?? 0) === 0) {
         toast.success("Pre-market checklist passed. All intraday setups are READY.");
       } else {
-        toast.error(`Pre-market checklist blocked (${blockers.length}). Review readiness panel for exact fixes.`);
+        const critical = rd?.severityCounters?.CRITICAL ?? 0;
+        const warn = rd?.severityCounters?.WARNING ?? 0;
+        toast.error(`Pre-market checklist blocked (${critical} critical, ${warn} warning). Review readiness matrix.`);
       }
     } catch (e) {
       toast.error(parseAxiosMessage(e));
+    } finally {
+      checklistInFlightRef.current = false;
     }
   }
 
@@ -628,53 +690,34 @@ export function IntradayTraderPage() {
     [risk?.parityState, risk?.tokenValid, risk?.liveEligible],
   );
 
-  const globalError = catalogQ.error ?? runtimeQ.error ?? instancesQ.error ?? signalsQ.error ?? workstationQ.error;
-  const setupValidation = useMemo<SetupValidationRow[]>(() => {
-    const catalog = catalogQ.data ?? [];
-    const instances = instancesQ.data ?? [];
-    const runtime = runtimeQ.data ?? [];
-    const catalogByCode = new Map(catalog.map((c) => [String(c.code).toUpperCase(), c] as const));
-    const runtimeByKey = new Map(runtime.map((r) => [String(r.strategyKey).toUpperCase(), r] as const));
-    return INTRADAY_SETUPS.map((s) => {
-      const key = s.strategyKey.toUpperCase();
-      const cat = catalogByCode.get(key) ?? null;
-      const inst = cat ? instances.find((i) => i.definitionId === cat.id) : null;
-      const met = runtimeByKey.get(key) ?? null;
-      const subscribed = Boolean(cat?.subscribed && cat?.subscriptionEnabled);
-      const runtimeHealthy = Boolean(
-        met && String(met.runtimeState ?? "").toUpperCase().includes("RUN") && !String(met.health ?? "").toUpperCase().includes("BAD"),
-      );
-      let blocker: string | null = null;
-      if (!cat) blocker = "Strategy missing in catalog";
-      else if (!inst) blocker = "No active strategy instance";
-      else if (!subscribed) blocker = "Subscription disabled";
-      else if (!runtimeHealthy) blocker = `Runtime not healthy (${String(met?.runtimeState ?? "IDLE")}/${String(met?.health ?? "UNKNOWN")})`;
-      return {
-        setupTitle: s.title,
-        strategyKey: s.strategyKey,
-        catalogPresent: Boolean(cat),
-        instancePresent: Boolean(inst),
-        runtimeHealthy,
-        subscribed,
-        ready: blocker == null,
-        blocker,
-      };
-    });
-  }, [catalogQ.data, instancesQ.data, runtimeQ.data]);
-
+  const globalError = catalogQ.error ?? runtimeQ.error ?? instancesQ.error ?? signalsQ.error ?? workstationQ.error ?? readinessQ.error;
   const goLiveSummary = useMemo(() => {
-    const blockers = setupValidation.filter((r) => !r.ready).map((r) => `${r.setupTitle}: ${r.blocker}`);
-    if (feedHealth !== "LIVE") blockers.unshift(`Feed health is ${feedHealth}`);
-    if (!risk?.tokenValid || !risk?.liveEligible) blockers.unshift("Broker token/live eligibility not ready");
-    return { ready: blockers.length === 0, blockers };
-  }, [setupValidation, feedHealth, risk?.tokenValid, risk?.liveEligible]);
+    const rd = readinessQ.data;
+    if (!rd) return { ready: false, blockers: ["Readiness snapshot not loaded"] };
+    const blockers = [
+      ...rd.blockers.map((b) => `${b.code}: ${b.title}`),
+      ...(rd.feed.severity === "WARNING" ? [`Feed warning: ${rd.feed.detail}`] : []),
+    ];
+    return { ready: rd.overallStatus === "READY", blockers };
+  }, [readinessQ.data]);
+
+  const sortedMatrixRows = useMemo(() => {
+    const rows = [...(readinessQ.data?.strategies ?? [])];
+    rows.sort((a, b) => {
+      if (matrixSort === "strategy") return a.strategy.localeCompare(b.strategy);
+      if (matrixSort === "lastSignalTime") return (Date.parse(b.lastSignalTime ?? "1970-01-01") - Date.parse(a.lastSignalTime ?? "1970-01-01"));
+      const rank = (s: string) => (s === "BLOCKED" ? 4 : s === "DEGRADED" ? 3 : s === "RECOVERING" ? 2 : 1);
+      return rank(b.status) - rank(a.status);
+    });
+    return rows;
+  }, [matrixSort, readinessQ.data?.strategies]);
 
   return (
     <div className={cn("space-y-4", isLight ? "text-neutral-900" : "text-white")}>
       <div className="sticky top-0 z-20 rounded-2xl border border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-9">
-          <HeaderMetric title="NIFTY" value={`${pulse.niftyDelta >= 0 ? "↑" : "↓"} ${pulse.niftyDelta.toFixed(2)}%`} hint={pulse.momentum > 60 ? "Strong trend" : "Balanced"} icon={<TrendingUp className="h-3.5 w-3.5" />} />
-          <HeaderMetric title="BANKNIFTY" value={`${pulse.bankDelta >= 0 ? "↑" : "↓"} ${pulse.bankDelta.toFixed(2)}%`} hint={pulse.bankDelta >= 0 ? "Relative strength" : "Weak recovery"} icon={<BarChart3 className="h-3.5 w-3.5" />} />
+          <HeaderMetric title="NIFTY" value={`${pulse.niftyDelta >= 0 ? "â†‘" : "â†“"} ${pulse.niftyDelta.toFixed(2)}%`} hint={pulse.momentum > 60 ? "Strong trend" : "Balanced"} icon={<TrendingUp className="h-3.5 w-3.5" />} />
+          <HeaderMetric title="BANKNIFTY" value={`${pulse.bankDelta >= 0 ? "â†‘" : "â†“"} ${pulse.bankDelta.toFixed(2)}%`} hint={pulse.bankDelta >= 0 ? "Relative strength" : "Weak recovery"} icon={<BarChart3 className="h-3.5 w-3.5" />} />
           <HeaderMetric title="VIX Proxy" value={pulse.vixProxy.toFixed(1)} hint={pulse.vixProxy > 28 ? "Expansion" : "Contained"} icon={<Activity className="h-3.5 w-3.5" />} />
           <HeaderMetric title="Regime" value={marketRegime} hint={selectedStrategy?.compatibility ?? "NEUTRAL"} icon={<Gauge className="h-3.5 w-3.5" />} />
           <HeaderMetric title="Feed Health" value={feedHealth} hint={feedHealth === "LIVE" ? "Realtime" : "Review data lag"} icon={<Radio className="h-3.5 w-3.5" />} />
@@ -696,8 +739,10 @@ export function IntradayTraderPage() {
       <div className="rounded-2xl border border-neutral-200 bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold">Tomorrow Signal Readiness</h2>
-            <p className="text-xs text-neutral-500">Live validation for all intraday setups before market open.</p>
+            <h2 className="text-sm font-semibold">Operational Readiness Command Center</h2>
+            <p className="text-xs text-neutral-500">
+              Session {readinessQ.data?.session?.sessionState ?? "UNKNOWN"} • Last check {sinceLabel(readinessQ.data?.lastValidatedAt)}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -707,40 +752,100 @@ export function IntradayTraderPage() {
             >
               Run Pre-Market Checklist
             </button>
-            <MiniChip value={goLiveSummary.ready ? "READY" : "BLOCKED"} />
+            <button
+              type="button"
+              disabled={readinessAction.isPending}
+              onClick={() => readinessAction.mutate({ action: "RESTART_RUNTIME" })}
+              className="rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Restart Runtime
+            </button>
+            <MiniChip value={readinessQ.data?.overallStatus ?? (goLiveSummary.ready ? "READY" : "BLOCKED")} />
           </div>
         </div>
-        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-          {setupValidation.map((r) => (
-            <div key={r.strategyKey} className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs font-semibold">{r.setupTitle}</div>
-                <MiniChip value={r.ready ? "READY" : "BLOCKED"} />
-              </div>
-              <div className="mt-1 font-mono text-[11px] text-neutral-500">{r.strategyKey}</div>
-              <div className="mt-1 text-[11px] text-neutral-600">
-                catalog {r.catalogPresent ? "yes" : "no"} • instance {r.instancePresent ? "yes" : "no"} • runtime {r.runtimeHealthy ? "ok" : "bad"}
-              </div>
-              {!r.ready ? <div className="mt-1 text-[11px] text-rose-700">{r.blocker}</div> : null}
-            </div>
-          ))}
-        </div>
-        {!goLiveSummary.ready ? (
-          <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-            <div className="font-semibold">Fix before market open:</div>
-            <ul className="mt-1 list-disc pl-4">
-              {goLiveSummary.blockers.map((b) => (
-                <li key={b}>{b}</li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <div className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-xs text-emerald-900">
-            All intraday setups are wired and runtime-ready. Signals appear when strategy conditions trigger.
-          </div>
-        )}
-      </div>
 
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-6">
+          <StatusTile label="Critical" value={String(readinessQ.data?.severityCounters?.CRITICAL ?? 0)} tone="bad" />
+          <StatusTile label="Warnings" value={String(readinessQ.data?.severityCounters?.WARNING ?? 0)} tone="warn" />
+          <StatusTile label="Info" value={String(readinessQ.data?.severityCounters?.INFO ?? 0)} tone="neutral" />
+          <StatusTile
+            label="Feed"
+            value={readinessQ.data?.feed?.status ?? feedHealth}
+            sub={`${readinessQ.data?.feed?.tickLatencySeconds ?? "-"}s tick`}
+            tone={readinessQ.data?.feed?.severity === "CRITICAL" ? "bad" : readinessQ.data?.feed?.severity === "WARNING" ? "warn" : "ok"}
+            pulse={readinessQ.data?.feed?.severity === "HEALTHY"}
+          />
+          <StatusTile label="Broker" value={readinessQ.data?.broker?.status ?? "UNKNOWN"} sub={readinessQ.data?.broker?.health ?? "-"} tone={readinessQ.data?.broker?.tokenValid ? "ok" : "bad"} />
+          <StatusTile
+            label="Runtime"
+            value={`${readinessQ.data?.runtime?.runningStrategies ?? 0}/${readinessQ.data?.runtime?.totalStrategies ?? 0}`}
+            sub={`${readinessQ.data?.runtime?.staleStrategies ?? 0} stale`}
+            tone={(readinessQ.data?.runtime?.runningStrategies ?? 0) > 0 ? "ok" : "bad"}
+          />
+        </div>
+
+        <div className="mt-3 overflow-hidden rounded-xl border border-neutral-200">
+          <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-2">
+            <div className="text-xs font-semibold">Strategy Readiness Matrix</div>
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => setMatrixSort("status")} className={cn("rounded px-2 py-1 text-[11px]", matrixSort === "status" ? "bg-white font-semibold" : "text-neutral-600")}>Status</button>
+              <button type="button" onClick={() => setMatrixSort("strategy")} className={cn("rounded px-2 py-1 text-[11px]", matrixSort === "strategy" ? "bg-white font-semibold" : "text-neutral-600")}>Strategy</button>
+              <button type="button" onClick={() => setMatrixSort("lastSignalTime")} className={cn("rounded px-2 py-1 text-[11px]", matrixSort === "lastSignalTime" ? "bg-white font-semibold" : "text-neutral-600")}>Last signal</button>
+            </div>
+          </div>
+          <div className="max-h-64 overflow-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="sticky top-0 z-10 bg-white text-neutral-500">
+                <tr>
+                  {["Strategy", "Runtime", "Feed", "Broker", "Sub", "Historical", "Last Signal", "Status"].map((h) => (
+                    <th key={h} className="px-3 py-2 uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedMatrixRows.map((r) => (
+                  <tr key={r.strategyKey} className={cn("border-t border-neutral-100", r.status === "BLOCKED" ? "bg-rose-50/40" : r.status === "DEGRADED" ? "bg-amber-50/40" : "")}>
+                    <td className="px-3 py-2 font-semibold">{r.strategy}</td>
+                    <td className="px-3 py-2"><MiniChip value={r.runtime} /></td>
+                    <td className="px-3 py-2"><MiniChip value={r.feed} /></td>
+                    <td className="px-3 py-2"><MiniChip value={r.broker} /></td>
+                    <td className="px-3 py-2"><MiniChip value={r.subscription} /></td>
+                    <td className="px-3 py-2"><MiniChip value={r.historical} /></td>
+                    <td className="px-3 py-2 font-mono text-[11px]">{sinceLabel(r.lastSignalTime)}</td>
+                    <td className="px-3 py-2"><MiniChip value={r.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {[...(readinessQ.data?.blockers ?? []), ...(readinessQ.data?.warnings ?? []), ...(readinessQ.data?.info ?? [])].slice(0, 8).map((issue) => {
+            const actionUpper = issue.action ? issue.action.toUpperCase() : "";
+            const actionEnabled = actionUpper.length > 0 && READINESS_ACTIONS.has(actionUpper);
+            return (
+            <div key={`${issue.code}-${issue.title}`} className={cn("rounded-lg border px-3 py-2 text-xs", issue.severity === "CRITICAL" ? "border-rose-300 bg-rose-50" : issue.severity === "WARNING" ? "border-amber-300 bg-amber-50" : "border-blue-200 bg-blue-50")}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold">{issue.code}</div>
+                <MiniChip value={issue.severity} />
+              </div>
+              <div className="mt-1 text-neutral-800">{issue.title}</div>
+              <div className="mt-1 text-neutral-600">{issue.detail}</div>
+              {actionEnabled ? (
+                <button
+                  type="button"
+                  disabled={readinessAction.isPending}
+                  onClick={() => readinessAction.mutate({ action: actionUpper, strategyKey: issue.strategyKey })}
+                  className="mt-2 rounded-md border border-neutral-300 bg-white px-2 py-1 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {actionUpper.replaceAll("_", " ")}
+                </button>
+              ) : null}
+            </div>
+          )})}
+        </div>
+      </div>
       {globalError ? (
         <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">{parseAxiosMessage(globalError)}</div>
       ) : null}
@@ -804,7 +909,7 @@ export function IntradayTraderPage() {
                 <div>
                   <h2 className="text-base font-semibold">Opportunity Engine</h2>
                   <p className="text-xs text-neutral-500">
-                    {selectedStrategy?.title ?? "Setup"} • suitability {selectedStrategy?.compatibility ?? "NEUTRAL"} • freshness {sinceLabel(selectedStrategy?.lastSignalAt)}
+                    {selectedStrategy?.title ?? "Setup"} â€¢ suitability {selectedStrategy?.compatibility ?? "NEUTRAL"} â€¢ freshness {sinceLabel(selectedStrategy?.lastSignalAt)}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -867,7 +972,7 @@ export function IntradayTraderPage() {
                 <MiniChip value={selectedOpportunity.verdict} />
               </div>
               <p className="mt-1 text-xs text-neutral-600">
-                {selectedOpportunity.symbol} • {selectedOpportunity.setupType} • {selectedOpportunity.direction}
+                {selectedOpportunity.symbol} â€¢ {selectedOpportunity.setupType} â€¢ {selectedOpportunity.direction}
               </p>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <Insight title="AI Explanation" body={`Probability ${selectedOpportunity.probability}% supported by ${selectedOpportunity.sector} strength, freshness ${Math.floor(selectedOpportunity.freshnessSec / 60)}m, and trend score ${Math.round(selectedOpportunity.trendStrength)}.`} />
@@ -908,7 +1013,7 @@ export function IntradayTraderPage() {
             <h3 className="text-sm font-semibold">Execution Intelligence</h3>
             <div className="mt-3 space-y-3">
               <IntelRow icon={<Gauge className="h-4 w-4 text-blue-600" />} title="Market Regime" value={marketRegime} hint={selectedStrategy?.compatibility ?? "NEUTRAL"} />
-              <IntelRow icon={<AlertTriangle className="h-4 w-4 text-amber-600" />} title="Risk Radar" value={`${riskUsedPct}%`} hint={`${open.length} open • ${orders.length} orders`} />
+              <IntelRow icon={<AlertTriangle className="h-4 w-4 text-amber-600" />} title="Risk Radar" value={`${riskUsedPct}%`} hint={`${open.length} open â€¢ ${orders.length} orders`} />
               <IntelRow icon={<Zap className="h-4 w-4 text-emerald-600" />} title="Execution Quality" value={avgLatencyMs ? `${avgLatencyMs} ms` : "-"} hint={risk?.brokerHealth ?? "unknown"} />
               <IntelRow icon={<Clock3 className="h-4 w-4 text-sky-600" />} title="Trade Timer" value={currentTradingWindow()} hint="Opening / Midday / Closing" />
             </div>
@@ -979,6 +1084,39 @@ function HeaderMetric({ title, value, hint, icon }: { title: string; value: stri
   );
 }
 
+function StatusTile({
+  label,
+  value,
+  sub,
+  tone,
+  pulse = false,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone: "ok" | "warn" | "bad" | "neutral";
+  pulse?: boolean;
+}) {
+  const toneStyles =
+    tone === "ok"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+      : tone === "warn"
+        ? "border-amber-200 bg-amber-50 text-amber-900"
+        : tone === "bad"
+          ? "border-rose-200 bg-rose-50 text-rose-900"
+          : "border-neutral-200 bg-neutral-50 text-neutral-800";
+  return (
+    <div className={cn("rounded-lg border px-3 py-2", toneStyles)}>
+      <div className="text-[10px] uppercase tracking-wide opacity-80">{label}</div>
+      <div className="mt-0.5 flex items-center gap-2">
+        <span className="text-sm font-semibold">{value}</span>
+        {pulse ? <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> : null}
+      </div>
+      {sub ? <div className="text-[11px] opacity-80">{sub}</div> : null}
+    </div>
+  );
+}
+
 function IntelRow({ icon, title, value, hint }: { icon: React.ReactNode; title: string; value: string; hint: string }) {
   return (
     <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2">
@@ -1002,3 +1140,4 @@ function Insight({ title, body }: { title: string; body: string }) {
     </div>
   );
 }
+

@@ -27,13 +27,16 @@ public class TraderExecutionClientController {
 
     private final TraderTerminalViewService traderTerminalViewService;
     private final TraderTerminalControlService traderTerminalControlService;
+    private final IntradayReadinessService intradayReadinessService;
 
     public TraderExecutionClientController(
             TraderTerminalViewService traderTerminalViewService,
-            TraderTerminalControlService traderTerminalControlService
+            TraderTerminalControlService traderTerminalControlService,
+            IntradayReadinessService intradayReadinessService
     ) {
         this.traderTerminalViewService = traderTerminalViewService;
         this.traderTerminalControlService = traderTerminalControlService;
+        this.intradayReadinessService = intradayReadinessService;
     }
 
     @GetMapping("/terminal/market/watch")
@@ -97,6 +100,28 @@ public class TraderExecutionClientController {
     @Operation(summary = "Institutional trader workstation snapshot (positions, parity, risk, execution, signals)")
     public ApiResponse<Map<String, Object>> terminalWorkstation(@AuthenticationPrincipal StokrUserDetails user) {
         return ApiResponse.ok(traderTerminalViewService.terminalWorkstation(user.getId()), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/intraday/readiness")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Aggregated intraday operational readiness (feed, broker, runtime, strategies, historical)")
+    public ApiResponse<IntradayReadinessService.IntradayReadinessResponse> intradayReadiness(
+            @AuthenticationPrincipal StokrUserDetails user
+    ) {
+        return ApiResponse.ok(intradayReadinessService.readiness(user.getId()), CorrelationIdHolder.get());
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping("/intraday/readiness/actions")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Run intraday readiness recovery action with cooldown and audit logging")
+    public ApiResponse<IntradayReadinessService.ReadinessActionResult> intradayReadinessAction(
+            @AuthenticationPrincipal StokrUserDetails user,
+            @org.springframework.web.bind.annotation.RequestBody IntradayReadinessService.IntradayReadinessActionRequest body
+    ) {
+        return ApiResponse.ok(
+                intradayReadinessService.runAction(user.getId(), body.action(), body.strategyKey()),
+                CorrelationIdHolder.get()
+        );
     }
 
     public record TraderTerminalActionRequest(String action, String confirmationToken) {
