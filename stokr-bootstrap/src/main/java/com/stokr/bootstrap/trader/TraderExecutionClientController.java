@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -148,5 +149,15 @@ public class TraderExecutionClientController {
                 traderTerminalControlService.execute(user.getId(), body.confirmationToken()),
                 CorrelationIdHolder.get()
         );
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping("/terminal/orders/{orderId}/cancel")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Cancel single OMS order from terminal orders grid")
+    public ApiResponse<Map<String, Object>> cancelTerminalOrder(
+            @AuthenticationPrincipal StokrUserDetails user,
+            @PathVariable("orderId") java.util.UUID orderId
+    ) {
+        return ApiResponse.ok(traderTerminalControlService.cancelOrder(user.getId(), orderId), CorrelationIdHolder.get());
     }
 }

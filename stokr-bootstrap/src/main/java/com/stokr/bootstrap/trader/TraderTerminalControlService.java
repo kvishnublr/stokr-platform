@@ -151,6 +151,32 @@ public class TraderTerminalControlService {
         return out;
     }
 
+    @Transactional
+    public Map<String, Object> cancelOrder(UUID userId, UUID orderId) {
+        OmsOrder order = omsOrderRepository.findById(orderId)
+                .filter(o -> !o.isDeleted())
+                .orElseThrow(() -> new BadRequestException("Order not found"));
+        if (!userId.equals(order.getUserId())) {
+            throw new BadRequestException("Order does not belong to user");
+        }
+        OrderState st = order.getState();
+        if (!(st == OrderState.ACCEPTED || st == OrderState.PARTIALLY_FILLED
+                || st == OrderState.RISK_CHECK || st == OrderState.PENDING_SUBMISSION || st == OrderState.SUBMITTED)) {
+            throw new BadRequestException("Order is not cancellable in state " + st);
+        }
+        if (st == OrderState.ACCEPTED || st == OrderState.PARTIALLY_FILLED) {
+            orderLifecycleService.transition(order.getId(), OrderState.CANCEL_REQUESTED, "Cancelled by operator from terminal");
+        } else {
+            orderLifecycleService.transition(order.getId(), OrderState.REJECTED, "Cancelled by operator from terminal");
+        }
+        return Map.of(
+                "ok", true,
+                "orderId", order.getId().toString(),
+                "previousState", st.name(),
+                "message", "Cancel requested"
+        );
+    }
+
     private int cancelPendingOrders(UUID userId, List<String> notes) {
         int changed = 0;
         List<OmsOrder> rows = omsOrderRepository.findAllByUserIdAndDeletedFalseAndStateIn(userId, CANCELLABLE);

@@ -55,4 +55,18 @@ public class TraderBrokerController {
             @RequestBody(required = false) BrokerTestOrderRequest body) {
         return ApiResponse.ok(zerodhaBrokerOperationsService.placeTestOrder(user.getId(), body), CorrelationIdHolder.get());
     }
+
+    public record BrokerCancelOrderRequest(String orderId, String variety) {
+    }
+
+    @PostMapping("/cancel-order")
+    public ApiResponse<ZerodhaBrokerOperationsService.BrokerCancelOrderDto> cancelOrder(
+            @AuthenticationPrincipal StokrUserDetails user,
+            @RequestBody BrokerCancelOrderRequest body
+    ) {
+        return ApiResponse.ok(
+                zerodhaBrokerOperationsService.cancelOpenOrder(user.getId(), body.orderId(), body.variety()),
+                CorrelationIdHolder.get()
+        );
+    }
 }

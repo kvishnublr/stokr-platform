@@ -175,6 +175,35 @@ export function TerminalPage() {
     },
   });
 
+  const cancelOrderMutation = useMutation({
+    mutationFn: async (payload: { source: string; orderId?: string | null; brokerOrderId?: string | null; variety?: string | null }) => {
+      if (payload.source === "OMS" && payload.orderId) {
+        return (await api.post(`/api/trader/terminal/orders/${encodeURIComponent(payload.orderId)}/cancel`)).data?.data;
+      }
+      if (payload.source === "BROKER" && payload.brokerOrderId) {
+        return (await api.post("/api/trader/broker/cancel-order", {
+          orderId: payload.brokerOrderId,
+          variety: payload.variety ?? "regular",
+        })).data?.data;
+      }
+      throw new Error("Order cannot be cancelled from this row.");
+    },
+    onSuccess: (res) => {
+      setControlError(null);
+      setControlResult({
+        action: "CANCEL_ORDER",
+        ok: true,
+        notes: [String(res?.message ?? "Cancel requested")],
+        executedAt: new Date().toISOString(),
+      });
+      qc.invalidateQueries({ queryKey: ["trader-workstation"] });
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Cancel failed";
+      setControlError(msg);
+    },
+  });
+
   const sum = q.data?.accountSummary;
   const open = q.data?.openPositions ?? [];
   const closed = q.data?.closedPositions ?? [];
@@ -326,7 +355,7 @@ export function TerminalPage() {
         </WorkspaceTabPanel>
 
         <WorkspaceTabPanel id="orders" active={tab}>
-          <Table rows={orders} cols={["createdAt", "symbol", "side", "state", "executionMode", "strategyKey", "quantity", "rejectReason"]} />
+          <OrdersTable rows={orders} onCancel={(r) => cancelOrderMutation.mutate(r)} cancelling={cancelOrderMutation.isPending} />
         </WorkspaceTabPanel>
 
         <WorkspaceTabPanel id="execs" active={tab}>
@@ -519,6 +548,72 @@ function Metric({ title, value }: { title: string; value: string }) {
     <div className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950/60">
       <div className="text-[11px] uppercase tracking-wide text-neutral-500">{title}</div>
       <div className="mt-1 font-mono text-base font-semibold text-neutral-900 dark:text-neutral-100">{value}</div>
+    </div>
+  );
+}
+
+function OrdersTable({
+  rows,
+  onCancel,
+  cancelling,
+}: {
+  rows: Array<Record<string, unknown>>;
+  onCancel: (payload: { source: string; orderId?: string | null; brokerOrderId?: string | null; variety?: string | null }) => void;
+  cancelling: boolean;
+}) {
+  const cancellable = (state: string) => {
+    const s = state.toUpperCase();
+    return s.includes("REQ_RECEIVED") || s.includes("OPEN") || s.includes("PENDING") || s.includes("SUBMITTED") || s.includes("ACCEPTED") || s.includes("PARTIAL");
+  };
+  return (
+    <div className="mt-4 overflow-x-auto">
+      <table className="w-full text-left text-xs">
+        <thead className="text-neutral-500">
+          <tr>
+            {["createdAt", "symbol", "side", "state", "executionMode", "strategyKey", "quantity", "rejectReason", "source", "action"].map((c) => (
+              <th key={c} className="pb-2 pr-3 uppercase tracking-wide">{c}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="text-neutral-700 dark:text-neutral-200">
+          {rows.map((r, i) => {
+            const state = fmt(r.state).toUpperCase();
+            const source = fmt(r.source).toUpperCase();
+            const canCancel = cancellable(state);
+            return (
+              <tr key={String(r.orderId ?? r.brokerOrderId ?? `${i}`)} className="border-t border-neutral-200/80 dark:border-neutral-800">
+                {["createdAt", "symbol", "side", "state", "executionMode", "strategyKey", "quantity", "rejectReason", "source"].map((c) => (
+                  <td key={c} className="py-2 pr-3 font-mono">
+                    {c.toLowerCase().includes("state") || c.toLowerCase().includes("mode") || c.toLowerCase().includes("status") ? (
+                      <Chip value={fmt(r[c]).toUpperCase()} />
+                    ) : (
+                      fmt(r[c])
+                    )}
+                  </td>
+                ))}
+                <td className="py-2 pr-3">
+                  <button
+                    type="button"
+                    disabled={!canCancel || cancelling}
+                    onClick={() =>
+                      onCancel({
+                        source,
+                        orderId: (r.orderId as string | null | undefined) ?? null,
+                        brokerOrderId: (r.brokerOrderId as string | null | undefined) ?? null,
+                        variety: (r.variety as string | null | undefined) ?? "regular",
+                      })
+                    }
+                    className="rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {rows.length === 0 ? <div className="py-6 text-center text-sm text-neutral-500">No records</div> : null}
     </div>
   );
 }

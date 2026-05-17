@@ -355,6 +355,7 @@ public class TraderTerminalViewService {
         Set<String> existingOmsFingerprints = new HashSet<>();
         for (OmsOrderSummaryDto row : omsOrders) {
             Map<String, Object> m = new LinkedHashMap<>();
+            m.put("orderId", row.id() != null ? row.id().toString() : null);
             m.put("createdAt", row.createdAt() != null ? row.createdAt().toString() : null);
             m.put("symbol", row.symbol());
             m.put("side", row.side());
@@ -364,6 +365,8 @@ public class TraderTerminalViewService {
             m.put("quantity", row.quantity());
             m.put("rejectReason", row.rejectReason());
             m.put("source", "OMS");
+            m.put("brokerOrderId", null);
+            m.put("variety", null);
             m.put("parityState", "SYNCED");
             out.add(m);
             existingOmsFingerprints.add(orderFingerprint(row.symbol(), row.side(), row.quantity() == null ? null : row.quantity().toPlainString()));
@@ -376,6 +379,7 @@ public class TraderTerminalViewService {
                     continue;
                 }
                 Map<String, Object> m = new LinkedHashMap<>();
+                m.put("orderId", null);
                 m.put("createdAt", b.orderTimestamp() != null ? b.orderTimestamp().toString() : null);
                 m.put("symbol", b.symbol());
                 m.put("side", b.side());
@@ -385,6 +389,8 @@ public class TraderTerminalViewService {
                 m.put("quantity", b.quantity());
                 m.put("rejectReason", b.statusMessage());
                 m.put("source", "BROKER");
+                m.put("brokerOrderId", b.orderId());
+                m.put("variety", b.variety());
                 m.put("parityState", "PENDING_SYNC");
                 out.add(m);
             }
