@@ -63,6 +63,7 @@ export function BrokersPage() {
   const [lastTestOrder, setLastTestOrder] = useState<BrokerTestOrderDto | null>(null);
   const [connectingOAuth, setConnectingOAuth] = useState(false);
   const oauthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const depositPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const oauthHandledRef = useRef(false);
   const oauthCleanupRef = useRef<(() => void) | null>(null);
   const oauthCloseGraceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -126,8 +127,36 @@ export function BrokersPage() {
         clearTimeout(oauthCloseGraceRef.current);
         oauthCloseGraceRef.current = null;
       }
+      if (depositPollRef.current) {
+        clearInterval(depositPollRef.current);
+        depositPollRef.current = null;
+      }
     };
   }, []);
+
+  function openDepositPortalAndRefresh() {
+    const popup = window.open(
+      "https://kite.zerodha.com/funds",
+      "stokr_deposit_funds",
+      "popup=yes,width=1100,height=780,scrollbars=yes,resizable=yes,status=no,toolbar=no,menubar=no,location=yes",
+    );
+    if (!popup) {
+      toast.error("Pop-up blocked. Allow pop-ups for this site, then try again.");
+      return;
+    }
+    toast.message("Deposit window opened. Complete funding, then close it to refresh margin.");
+    if (depositPollRef.current) clearInterval(depositPollRef.current);
+    depositPollRef.current = setInterval(() => {
+      if (!popup.closed) return;
+      if (depositPollRef.current) {
+        clearInterval(depositPollRef.current);
+        depositPollRef.current = null;
+      }
+      toast.success("Refreshing broker margin snapshot...");
+      void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
+      void statusQuery.refetch();
+    }, 700);
+  }
 
   async function requestTelegramLink() {
     try {
@@ -351,8 +380,24 @@ export function BrokersPage() {
             isLight ? "border-blue-200 bg-blue-50 text-blue-900" : "border-blue-500/35 bg-blue-500/10 text-blue-100",
           )}
         >
-          Deposit request: <span className="font-mono font-semibold">â‚¹ {requestedDepositAmount}</span>. Complete funding in your broker account portal, then run{" "}
-          <span className="font-semibold">Test connection</span> to refresh margin snapshot.
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              Deposit request: <span className="font-mono font-semibold">? {requestedDepositAmount}</span>. Complete funding in your broker account portal, then run{" "}
+              <span className="font-semibold">Test connection</span> to refresh margin snapshot.
+            </div>
+            <button
+              type="button"
+              onClick={openDepositPortalAndRefresh}
+              className={cn(
+                "rounded-lg border px-3 py-1.5 text-xs font-semibold",
+                isLight
+                  ? "border-blue-300 bg-white text-blue-900 hover:bg-blue-100"
+                  : "border-blue-300/40 bg-blue-950/30 text-blue-100 hover:bg-blue-900/30",
+              )}
+            >
+              Open deposit portal
+            </button>
+          </div>
         </div>
       ) : null}
 

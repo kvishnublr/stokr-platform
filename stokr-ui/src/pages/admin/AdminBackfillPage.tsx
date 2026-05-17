@@ -116,6 +116,48 @@ function parseCustomSymbols(input: string): string[] {
     .filter(Boolean);
 }
 
+function toIsoIfPossible(raw: string): string | null {
+  const d = new Date(raw);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.toISOString();
+}
+
+// If user types local IST clock-like value without timezone, convert as Asia/Kolkata wall-clock to UTC ISO.
+function normalizeBackfillInstant(raw: string): string | null {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return null;
+  if (/[zZ]|[+\-]\d{2}:\d{2}$/.test(trimmed)) {
+    return toIsoIfPossible(trimmed);
+  }
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+  if (!m) return toIsoIfPossible(trimmed);
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const hh = Number(m[4]);
+  const mm = Number(m[5]);
+  const ss = Number(m[6] ?? "0");
+  // IST -> UTC
+  const utcMs = Date.UTC(y, mo - 1, d, hh - 5, mm - 30, ss);
+  const out = new Date(utcMs);
+  return Number.isFinite(out.getTime()) ? out.toISOString() : null;
+}
+
+function looksLikeMarketSessionMismatch(startIso: string, endIso: string): boolean {
+  const s = new Date(startIso);
+  const e = new Date(endIso);
+  if (!Number.isFinite(s.getTime()) || !Number.isFinite(e.getTime())) return false;
+  // Rough IST conversion for guardrail.
+  const sIst = new Date(s.getTime() + 5.5 * 60 * 60 * 1000);
+  const eIst = new Date(e.getTime() + 5.5 * 60 * 60 * 1000);
+  const sm = sIst.getUTCHours() * 60 + sIst.getUTCMinutes();
+  const em = eIst.getUTCHours() * 60 + eIst.getUTCMinutes();
+  // NSE intraday session approx: 09:15 - 15:30
+  const open = 9 * 60 + 15;
+  const close = 15 * 60 + 30;
+  return sm < open || sm > close || em < open || em > close;
+}
+
 function looksLikeZerodhaTokenAuthError(message: string): boolean {
   const m = (message || "").toLowerCase();
   return (
@@ -134,13 +176,13 @@ export function AdminBackfillPage() {
   const [brokerSource, setBrokerSource] = useState("ZERODHA");
   const [symbolGroup, setSymbolGroup] = useState("NIFTY_50");
   const [timeframe, setTimeframe] = useState("1m");
-  const [rangeStart, setRangeStart] = useState("2026-01-01T09:15:00Z");
-  const [rangeEnd, setRangeEnd] = useState("2026-01-05T15:30:00Z");
+  const [rangeStart, setRangeStart] = useState("2026-01-01T09:15:00+05:30");
+  const [rangeEnd, setRangeEnd] = useState("2026-01-05T15:30:00+05:30");
   const [customSymbols, setCustomSymbols] = useState("NIFTY_FUT,BANKNIFTY_FUT");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [failedOnly, setFailedOnly] = useState(false);
-  const [auditFrom, setAuditFrom] = useState("2026-01-01T09:15:00Z");
-  const [auditTo, setAuditTo] = useState("2026-01-05T15:30:00Z");
+  const [auditFrom, setAuditFrom] = useState("2026-01-01T09:15:00+05:30");
+  const [auditTo, setAuditTo] = useState("2026-01-05T15:30:00+05:30");
   const completedNotifiedRef = useRef<Set<string>>(new Set());
 
   async function reconnectZerodhaNow() {
@@ -183,15 +225,27 @@ export function AdminBackfillPage() {
   });
 
   const createJob = useMutation({
-    mutationFn: async () =>
-      api.post("/api/admin/market/backfill/jobs", {
+    mutationFn: async () => {
+      const startIso = normalizeBackfillInstant(rangeStart);
+      const endIso = normalizeBackfillInstant(rangeEnd);
+      if (!startIso || !endIso) {
+        throw new Error("Invalid date/time. Use ISO format, e.g. 2026-01-05T09:15:00+05:30");
+      }
+      if (new Date(startIso).getTime() >= new Date(endIso).getTime()) {
+        throw new Error("rangeStart must be before rangeEnd.");
+      }
+      if (looksLikeMarketSessionMismatch(startIso, endIso)) {
+        throw new Error("Date range appears outside NSE market session (09:15-15:30 IST). Please adjust.");
+      }
+      return api.post("/api/admin/market/backfill/jobs", {
         brokerSource,
         symbolGroup,
         timeframe,
-        rangeStart,
-        rangeEnd,
+        rangeStart: startIso,
+        rangeEnd: endIso,
         customSymbols: symbolGroup === "CUSTOM" ? parseCustomSymbols(customSymbols) : [],
-      }),
+      });
+    },
     onSuccess: async () => {
       toast.success("Backfill job queued");
       await qc.invalidateQueries({ queryKey: ["admin-market-backfill-jobs"] });

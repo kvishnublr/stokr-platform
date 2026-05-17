@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { cn } from "../../lib/utils";
@@ -24,19 +26,58 @@ export function TraderAccountCard({
   equityDisplay,
   marginDisplay,
   brokerConnected = false,
+  onRefreshRequested,
 }: {
   equityDisplay: string;
   marginDisplay?: string;
   brokerConnected?: boolean;
+  onRefreshRequested?: () => void | Promise<void>;
 }) {
   const navigate = useNavigate();
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const margin = marginDisplay ?? "-";
   const [depositOpen, setDepositOpen] = useState(false);
   const [amount, setAmount] = useState("");
+  const depositPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const parsedAmount = useMemo(() => Number(amount), [amount]);
   const amountValid = Number.isFinite(parsedAmount) && parsedAmount > 0;
+
+  useEffect(() => {
+    return () => {
+      if (depositPollRef.current) {
+        clearInterval(depositPollRef.current);
+        depositPollRef.current = null;
+      }
+    };
+  }, []);
+
+  function openDepositPopup(depositAmount: string) {
+    const popup = window.open(
+      "https://kite.zerodha.com/funds",
+      "stokr_deposit_funds",
+      "popup=yes,width=1100,height=780,scrollbars=yes,resizable=yes,status=no,toolbar=no,menubar=no,location=yes",
+    );
+    if (!popup) {
+      toast.error("Popup blocked. Opening broker funds in current tab.");
+      navigate(`/brokers?depositAmount=${encodeURIComponent(depositAmount)}`);
+      return;
+    }
+    toast.message("Deposit window opened. Complete funding, then close it to refresh margin.");
+    if (depositPollRef.current) {
+      clearInterval(depositPollRef.current);
+    }
+    depositPollRef.current = setInterval(() => {
+      if (!popup.closed) return;
+      if (depositPollRef.current) {
+        clearInterval(depositPollRef.current);
+        depositPollRef.current = null;
+      }
+      toast.success("Refreshing margin snapshot...");
+      void onRefreshRequested?.();
+      navigate(`/brokers?depositAmount=${encodeURIComponent(depositAmount)}`);
+    }, 700);
+  }
 
   return (
     <div>
@@ -67,11 +108,21 @@ export function TraderAccountCard({
             </AreaChart>
           </ResponsiveContainer>
         </div>
-        <div className={cn("mt-3 flex justify-between gap-2 border-t pt-3 text-[11px]", isLight ? "border-neutral-200" : "border-white/[0.06]")}>
-          <span className={isLight ? "text-neutral-500" : "text-neutral-400"}>Available margin</span>
-          <span className={cn("font-mono font-semibold tracking-tight", isLight ? "text-neutral-800" : "text-neutral-200")}>
+        <div className={cn("mt-3 gap-2 border-t pt-3", isLight ? "border-neutral-200" : "border-white/[0.06]")}>
+          <div className={cn("text-[11px] uppercase tracking-wide", isLight ? "text-neutral-500" : "text-neutral-400")}>Available margin</div>
+          <motion.div
+            initial={{ opacity: 0.8, scale: 0.985 }}
+            animate={{ opacity: [0.9, 1, 0.9], scale: [0.995, 1.01, 0.995] }}
+            transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
+            className={cn(
+              "mt-1 inline-flex rounded-xl border px-2 py-1.5 font-mono text-[16px] font-bold leading-none tracking-tight",
+              isLight
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+            )}
+          >
             {margin}
-          </span>
+          </motion.div>
         </div>
         <button
           type="button"
@@ -130,9 +181,9 @@ export function TraderAccountCard({
                 type="button"
                 disabled={!amountValid}
                 onClick={() => {
-                  const q = encodeURIComponent(amount.trim());
+                  const q = amount.trim();
                   setDepositOpen(false);
-                  navigate(`/brokers?depositAmount=${q}`);
+                  openDepositPopup(q);
                 }}
                 className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >

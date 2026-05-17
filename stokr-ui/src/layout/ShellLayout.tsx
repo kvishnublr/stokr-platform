@@ -400,6 +400,9 @@ export function ShellLayout() {
                 equityDisplay={portfolioSnapshot.data?.equityValue ?? "-"}
                 marginDisplay={portfolioSnapshot.data?.marginValue ?? "-"}
                 brokerConnected={Boolean(portfolioSnapshot.data?.brokerConnected)}
+                onRefreshRequested={() => {
+                  void portfolioSnapshot.refetch();
+                }}
               />
             ) : null}
             <SidebarAppearanceRow />
