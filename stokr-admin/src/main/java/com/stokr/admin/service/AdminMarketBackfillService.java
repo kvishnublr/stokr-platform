@@ -138,7 +138,12 @@ public class AdminMarketBackfillService {
             String symbol = symbols.get(i);
             HistoricalFetchResult probe = adapter.fetch(new HistoricalFetchRequest(symbol, timeframe, rangeStart, probeEnd));
             if (!probe.success()) {
-                failed.add(symbol + ":" + probe.code());
+                String detail = probe.detail() == null ? "" : probe.detail().replaceAll("\\s+", " ").trim();
+                if (detail.length() > 140) {
+                    detail = detail.substring(0, 140) + "...";
+                }
+                String auth = probe.authSource() == null || probe.authSource().isBlank() ? "unknown-auth" : probe.authSource();
+                failed.add(symbol + ":" + probe.code() + " (" + auth + ") " + detail);
             }
         }
         if (!failed.isEmpty()) {

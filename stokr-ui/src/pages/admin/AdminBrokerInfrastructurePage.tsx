@@ -24,6 +24,32 @@ function fmt(v: unknown): string {
   return String(v);
 }
 
+function looksLikeZerodhaTokenAuthError(message: string): boolean {
+  const m = (message || "").toLowerCase();
+  return (
+    m.includes("tokenexception") ||
+    m.includes("incorrect `api_key`") ||
+    m.includes("incorrect api_key") ||
+    m.includes("access_token") ||
+    m.includes("token invalid") ||
+    m.includes("auth expired")
+  );
+}
+
+function showReconnectPrompt(onOk: () => void) {
+  toast.error("Zerodha session expired. Re-authenticate now?", {
+    action: {
+      label: "OK",
+      onClick: onOk,
+    },
+    cancel: {
+      label: "Cancel",
+      onClick: () => {},
+    },
+    duration: 12000,
+  });
+}
+
 const VENDOR_ORDER = ["ZERODHA", "UPSTOX", "ANGEL", "DHAN"] as const;
 
 function displayVendor(v: string): string {
@@ -65,7 +91,12 @@ export function AdminBrokerInfrastructurePage() {
       void qc.invalidateQueries({ queryKey: ADMIN_OPS_SNAPSHOT_KEY });
       void qc.invalidateQueries({ queryKey: ["admin-broker-infrastructure"] });
     } else if (pf === "error") {
-      toast.error(`Platform feed OAuth failed (${searchParams.get("reason") ?? "unknown"})`);
+      const reason = String(searchParams.get("reason") ?? "unknown");
+      if (looksLikeZerodhaTokenAuthError(reason)) {
+        showReconnectPrompt(() => connectZerodha.mutate());
+      } else {
+        toast.error(`Platform feed OAuth failed (${reason})`);
+      }
       const next = new URLSearchParams(searchParams);
       next.delete("platform_feed");
       next.delete("reason");
@@ -98,7 +129,14 @@ export function AdminBrokerInfrastructurePage() {
       toast.success("Kite profile refresh OK");
       void infra.refetch();
     },
-    onError: (e) => toast.error(parseAxiosMessage(e)),
+    onError: (e) => {
+      const msg = parseAxiosMessage(e);
+      if (looksLikeZerodhaTokenAuthError(msg)) {
+        showReconnectPrompt(() => connectZerodha.mutate());
+        return;
+      }
+      toast.error(msg);
+    },
   });
 
   const disconnect = useMutation({

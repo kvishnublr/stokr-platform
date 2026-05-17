@@ -116,6 +116,19 @@ function parseCustomSymbols(input: string): string[] {
     .filter(Boolean);
 }
 
+function looksLikeZerodhaTokenAuthError(message: string): boolean {
+  const m = (message || "").toLowerCase();
+  return (
+    m.includes("tokenexception") ||
+    m.includes("incorrect `api_key`") ||
+    m.includes("incorrect api_key") ||
+    m.includes("access_token") ||
+    m.includes("token invalid") ||
+    m.includes("auth expired") ||
+    m.includes("forbidden")
+  );
+}
+
 export function AdminBackfillPage() {
   const qc = useQueryClient();
   const [brokerSource, setBrokerSource] = useState("ZERODHA");
@@ -129,6 +142,20 @@ export function AdminBackfillPage() {
   const [auditFrom, setAuditFrom] = useState("2026-01-01T09:15:00Z");
   const [auditTo, setAuditTo] = useState("2026-01-05T15:30:00Z");
   const completedNotifiedRef = useRef<Set<string>>(new Set());
+
+  async function reconnectZerodhaNow() {
+    try {
+      const res = await api.post<{ data?: { authorizeUrl?: string } }>("/api/admin/broker-infrastructure/ZERODHA/connect");
+      const url = res.data?.data?.authorizeUrl;
+      if (url && typeof url === "string") {
+        window.location.href = url;
+        return;
+      }
+      toast.error("Could not start Zerodha OAuth. Open Broker Infrastructure and reconnect.");
+    } catch (e) {
+      toast.error(parseAxiosMessage(e));
+    }
+  }
 
   const caps = useQuery({
     queryKey: ["admin-market-backfill-caps"],
@@ -169,7 +196,26 @@ export function AdminBackfillPage() {
       toast.success("Backfill job queued");
       await qc.invalidateQueries({ queryKey: ["admin-market-backfill-jobs"] });
     },
-    onError: (e) => toast.error(parseAxiosMessage(e)),
+    onError: (e) => {
+      const msg = parseAxiosMessage(e);
+      if (looksLikeZerodhaTokenAuthError(msg)) {
+        toast.error("Broker token invalid/expired. Re-authenticate Zerodha now?", {
+          action: {
+            label: "OK",
+            onClick: () => {
+              void reconnectZerodhaNow();
+            },
+          },
+          cancel: {
+            label: "Cancel",
+            onClick: () => {},
+          },
+          duration: 12000,
+        });
+        return;
+      }
+      toast.error(msg);
+    },
   });
 
   const action = useMutation({
