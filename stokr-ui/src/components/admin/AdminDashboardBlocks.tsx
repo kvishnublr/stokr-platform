@@ -72,7 +72,7 @@ export function AdminTopbar({
 }) {
   return (
     <div className="flex items-center gap-5 border-b border-gray-200 bg-white px-6 py-3.5">
-        <button className="text-gray-600 hover:text-gray-900" onClick={() => toast.info("Sidebar collapse for admin dashboard is coming soon.")}>â˜°</button>
+        <button className="text-gray-600 hover:text-gray-900" onClick={() => toast.info("Sidebar collapse for admin dashboard is coming soon.")}>[Menu]</button>
       <div className="relative max-w-sm flex-1">
         <input
           type="text"
@@ -86,7 +86,7 @@ export function AdminTopbar({
           <button className="rounded border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50" onClick={onRefresh}>Refresh</button>
         <div className="relative">
           <span className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">3</span>
-            <button className="text-xl text-gray-600" onClick={() => toast.info("Opening alerts center...", { description: "Use Admin > Dashboard alerts panel for live incidents." })}>ðŸ””</button>
+            <button className="text-xl text-gray-600" onClick={() => toast.info("Opening alerts center...", { description: "Use Admin > Dashboard alerts panel for live incidents." })}>[Alert]</button>
         </div>
         <button className="rounded border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50" onClick={onLogout}>Sign out</button>
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-400 font-bold text-white">A</div>

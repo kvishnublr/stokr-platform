@@ -14,7 +14,7 @@ export function DebugToolsPage() {
         <h1 className="text-2xl font-semibold tracking-tight text-white">Execution debugging</h1>
         <p className="mt-2 text-sm text-neutral-400">
           Quick links for correlation tracing (via <span className="font-mono">X-Correlation-Id</span>), journal APIs,
-          and platform observability. Use backtest run detail â†’ journal timeline for replay chains.
+          and platform observability. Use backtest run detail to journal timeline for replay chains.
         </p>
       </div>
       <ul className="space-y-2">

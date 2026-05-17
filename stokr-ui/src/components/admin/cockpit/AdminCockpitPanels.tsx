@@ -238,7 +238,7 @@ export function MarketFreshnessPanel({ snapshot }: { snapshot: OpsSnapshot | und
             </span>
           </div>
           <div className="flex justify-between gap-2">
-            <span>1m lag (wall âˆ’ max open)</span>
+            <span>1m lag (wall - max open)</span>
             <span className="text-foreground">{m?.latest1mLagSeconds != null ? `${fmtNum(m.latest1mLagSeconds, 0)}s` : "-"}</span>
           </div>
           <div className="flex justify-between gap-2">
@@ -351,7 +351,7 @@ export function MarketIntelligenceGrid({ snapshot }: { snapshot: OpsSnapshot | u
           </div>
         </div>
         <div className="rounded-lg border border-border bg-card px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">1m lag (wall âˆ’ store)</div>
+          <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">1m lag (wall - store)</div>
           <div className="mt-1 font-mono text-sm font-semibold text-foreground">
             {mp?.latest1mLagSeconds != null ? `${fmtNum(mp.latest1mLagSeconds, 0)}s` : "-"}
           </div>
@@ -665,7 +665,7 @@ export function SignalRoutingMonitor({ snapshot }: { snapshot: OpsSnapshot | und
   return (
     <OpsPanel
       title="Signal routing monitor"
-      subtitle="Signal engine â†’ OMS â†’ execution (in-process counters + DB tails; restart clears process totals)."
+      subtitle="Signal engine -> OMS -> execution (in-process counters + DB tails; restart clears process totals)."
     >
       <div className="grid gap-2 font-mono text-[11px] text-muted-foreground sm:grid-cols-3 lg:grid-cols-4">
         <div className="rounded border border-border bg-background/50 px-2 py-1">
@@ -673,7 +673,7 @@ export function SignalRoutingMonitor({ snapshot }: { snapshot: OpsSnapshot | und
           <div className="text-foreground">{fmtInt(d?.signalsEmittedProcessTotal)}</div>
         </div>
         <div className="rounded border border-border bg-background/50 px-2 py-1">
-          <div>Routed â†’ OMS intents</div>
+          <div>Routed -&gt; OMS intents</div>
           <div className="text-foreground">{fmtInt(d?.signalsRoutedToOmsTotal)}</div>
         </div>
         <div className="rounded border border-border bg-background/50 px-2 py-1">
@@ -805,7 +805,7 @@ export function SignalDistributionPanel({ snapshot }: { snapshot: OpsSnapshot | 
           <dd className="text-foreground">{fmtInt(d?.rabbitDispatchesTotal)}</dd>
         </div>
         <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
-          <dt>Routed â†’ OMS</dt>
+          <dt>Routed -&gt; OMS</dt>
           <dd className="text-foreground">{fmtInt(d?.signalsRoutedToOmsTotal)}</dd>
         </div>
         <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
@@ -1222,7 +1222,7 @@ export function LiveSignalFeed({ snapshot }: { snapshot: OpsSnapshot | undefined
                   <span className="text-amber-200/90">{side}</span> <span className="text-foreground">{sym}</span>
                 </div>
                 <div className="text-muted-foreground">
-                  routed â†’ {routed}  ·  {replay ? "REPLAY" : "LIVE/PAPER pipeline"}
+                  routed -&gt; {routed}  -  {replay ? "REPLAY" : "LIVE/PAPER pipeline"}
                 </div>
               </li>
             );

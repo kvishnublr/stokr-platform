@@ -191,7 +191,7 @@ export function BacktestReplayPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <Link to={`/backtests/${runId}`} className="text-xs text-neutral-500 hover:text-neutral-300">
-            â† Run metrics
+            Back to Run metrics
           </Link>
           <h2 className="mt-2 text-xl font-semibold text-white">Replay visualization</h2>
           <p className="mt-1 font-mono text-xs text-neutral-400">

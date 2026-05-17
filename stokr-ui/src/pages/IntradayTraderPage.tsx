@@ -716,8 +716,8 @@ export function IntradayTraderPage() {
     <div className={cn("space-y-4", isLight ? "text-neutral-900" : "text-white")}>
       <div className="sticky top-0 z-20 rounded-2xl border border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-9">
-          <HeaderMetric title="NIFTY" value={`${pulse.niftyDelta >= 0 ? "â†‘" : "â†“"} ${pulse.niftyDelta.toFixed(2)}%`} hint={pulse.momentum > 60 ? "Strong trend" : "Balanced"} icon={<TrendingUp className="h-3.5 w-3.5" />} />
-          <HeaderMetric title="BANKNIFTY" value={`${pulse.bankDelta >= 0 ? "â†‘" : "â†“"} ${pulse.bankDelta.toFixed(2)}%`} hint={pulse.bankDelta >= 0 ? "Relative strength" : "Weak recovery"} icon={<BarChart3 className="h-3.5 w-3.5" />} />
+          <HeaderMetric title="NIFTY" value={`${pulse.niftyDelta >= 0 ? "UP" : "DOWN"} ${pulse.niftyDelta.toFixed(2)}%`} hint={pulse.momentum > 60 ? "Strong trend" : "Balanced"} icon={<TrendingUp className="h-3.5 w-3.5" />} />
+          <HeaderMetric title="BANKNIFTY" value={`${pulse.bankDelta >= 0 ? "UP" : "DOWN"} ${pulse.bankDelta.toFixed(2)}%`} hint={pulse.bankDelta >= 0 ? "Relative strength" : "Weak recovery"} icon={<BarChart3 className="h-3.5 w-3.5" />} />
           <HeaderMetric title="VIX Proxy" value={pulse.vixProxy.toFixed(1)} hint={pulse.vixProxy > 28 ? "Expansion" : "Contained"} icon={<Activity className="h-3.5 w-3.5" />} />
           <HeaderMetric title="Regime" value={marketRegime} hint={selectedStrategy?.compatibility ?? "NEUTRAL"} icon={<Gauge className="h-3.5 w-3.5" />} />
           <HeaderMetric title="Feed Health" value={feedHealth} hint={feedHealth === "LIVE" ? "Realtime" : "Review data lag"} icon={<Radio className="h-3.5 w-3.5" />} />
@@ -909,7 +909,7 @@ export function IntradayTraderPage() {
                 <div>
                   <h2 className="text-base font-semibold">Opportunity Engine</h2>
                   <p className="text-xs text-neutral-500">
-                    {selectedStrategy?.title ?? "Setup"} â€¢ suitability {selectedStrategy?.compatibility ?? "NEUTRAL"} â€¢ freshness {sinceLabel(selectedStrategy?.lastSignalAt)}
+                    {selectedStrategy?.title ?? "Setup"} - suitability {selectedStrategy?.compatibility ?? "NEUTRAL"} - freshness {sinceLabel(selectedStrategy?.lastSignalAt)}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -972,7 +972,7 @@ export function IntradayTraderPage() {
                 <MiniChip value={selectedOpportunity.verdict} />
               </div>
               <p className="mt-1 text-xs text-neutral-600">
-                {selectedOpportunity.symbol} â€¢ {selectedOpportunity.setupType} â€¢ {selectedOpportunity.direction}
+                {selectedOpportunity.symbol} - {selectedOpportunity.setupType} - {selectedOpportunity.direction}
               </p>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <Insight title="AI Explanation" body={`Probability ${selectedOpportunity.probability}% supported by ${selectedOpportunity.sector} strength, freshness ${Math.floor(selectedOpportunity.freshnessSec / 60)}m, and trend score ${Math.round(selectedOpportunity.trendStrength)}.`} />
@@ -1013,7 +1013,7 @@ export function IntradayTraderPage() {
             <h3 className="text-sm font-semibold">Execution Intelligence</h3>
             <div className="mt-3 space-y-3">
               <IntelRow icon={<Gauge className="h-4 w-4 text-blue-600" />} title="Market Regime" value={marketRegime} hint={selectedStrategy?.compatibility ?? "NEUTRAL"} />
-              <IntelRow icon={<AlertTriangle className="h-4 w-4 text-amber-600" />} title="Risk Radar" value={`${riskUsedPct}%`} hint={`${open.length} open â€¢ ${orders.length} orders`} />
+              <IntelRow icon={<AlertTriangle className="h-4 w-4 text-amber-600" />} title="Risk Radar" value={`${riskUsedPct}%`} hint={`${open.length} open - ${orders.length} orders`} />
               <IntelRow icon={<Zap className="h-4 w-4 text-emerald-600" />} title="Execution Quality" value={avgLatencyMs ? `${avgLatencyMs} ms` : "-"} hint={risk?.brokerHealth ?? "unknown"} />
               <IntelRow icon={<Clock3 className="h-4 w-4 text-sky-600" />} title="Trade Timer" value={currentTradingWindow()} hint="Opening / Midday / Closing" />
             </div>

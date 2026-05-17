@@ -172,7 +172,7 @@ export function WorkspaceTopNav({
               isLight ? "border-neutral-200 bg-neutral-50 text-neutral-500" : "border-neutral-700 bg-neutral-800/90 text-neutral-500",
             )}
           >
-            âŒ˜ K
+            Ctrl+K
           </kbd>
         </div>
 

@@ -98,7 +98,7 @@ export function ResetPasswordPage() {
                     <input
                       className="w-full rounded-lg border border-neutral-200 bg-white py-2 pl-10 pr-3 text-sm text-neutral-900 outline-none ring-blue-500/30 focus:border-blue-500/60 focus:ring-2"
                       type="password"
-                      placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                      placeholder="************"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       autoComplete="new-password"
@@ -114,7 +114,7 @@ export function ResetPasswordPage() {
                     <input
                       className="w-full rounded-lg border border-neutral-200 bg-white py-2 pl-10 pr-3 text-sm text-neutral-900 outline-none ring-blue-500/30 focus:border-blue-500/60 focus:ring-2"
                       type="password"
-                      placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                      placeholder="************"
                       value={confirm}
                       onChange={(e) => setConfirm(e.target.value)}
                       autoComplete="new-password"

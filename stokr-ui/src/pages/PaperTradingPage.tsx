@@ -56,7 +56,7 @@ export function PaperTradingPage() {
       <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
         For emergency controls (pause strategies, kill switch) use{" "}
         <a className="underline" href="/admin/ops">
-          Admin â†’ Operations
+          Admin to Operations
         </a>{" "}
         or runtime APIs.
       </div>

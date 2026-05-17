@@ -151,7 +151,7 @@ export function BacktestRunDetailsPage() {
 
   const rangeLabel =
     o.rangeStart && o.rangeEnd
-      ? `${new Date(o.rangeStart).toLocaleString()} â†’ ${new Date(o.rangeEnd).toLocaleString()}`
+      ? `${new Date(o.rangeStart).toLocaleString()} -> ${new Date(o.rangeEnd).toLocaleString()}`
       : null;
   const hasCurvePoints = equityChart.length > 0;
   const noFills = (o.metrics?.totalTrades ?? 0) === 0;
@@ -178,7 +178,7 @@ export function BacktestRunDetailsPage() {
             to="/backtests/history"
             className={cn("text-xs", isLight ? "text-[#64748B] hover:text-[#0F172A]" : "text-neutral-500 hover:text-neutral-300")}
           >
-            â† History
+            Back to History
           </Link>
           <h2 className={cn("mt-2 font-mono text-lg", isLight ? "text-[#0F172A]" : "text-white")}>{o.runId}</h2>
           <div className={cn("mt-1 flex flex-wrap gap-3 text-xs", isLight ? "text-[#64748B]" : "text-neutral-400")}>

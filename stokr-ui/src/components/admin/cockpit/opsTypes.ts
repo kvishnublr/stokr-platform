@@ -14,7 +14,7 @@ export type OpsSnapshot = {
   incidents?: Array<Record<string, unknown>>;
   marketPlane?: Record<string, unknown>;
   operationalHistory?: Record<string, unknown>;
-  /** Cascade: platform tape â†’ scanner â†’ signals â†’ OMS (backend-computed). */
+  /** Cascade: platform tape -> scanner -> signals -> OMS (backend-computed). */
   operationalLifecycle?: Record<string, unknown>;
   /** Admin-owned platform market feed (per vendor), from platform_broker_feed_sessions. */
   platformMarketFeed?: Record<string, unknown>;
@@ -62,4 +62,3 @@ export function badgeClassForStatus(status: string): string {
     return "border-dashed border-border bg-muted/40 text-foreground/80 dark:text-muted-foreground";
   return "border-border bg-card text-foreground";
 }
-

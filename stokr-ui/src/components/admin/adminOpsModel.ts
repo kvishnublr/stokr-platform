@@ -47,7 +47,7 @@ function rabbitAggregate(rabbit: Record<string, unknown> | undefined): { status:
     }
   }
   if (worst === "DOWN") return { status: "DISCONNECTED", hint: hints[0], maxDepth };
-  if (worst === "SATURATED") return { status: "SATURATED", hint: hints[0] ?? `depthâ‰¤${maxDepth}`, maxDepth };
+  if (worst === "SATURATED") return { status: "SATURATED", hint: hints[0] ?? `depth<=${maxDepth}`, maxDepth };
   if (worst === "DEGRADED") return { status: "DEGRADED", hint: hints[0], maxDepth };
   return { status: "CONNECTED", maxDepth };
 }

@@ -27,7 +27,7 @@ export function RegisterPage() {
     const e: Record<string, string> = {};
     if (email && !EMAIL_RE.test(email)) e.email = "Enter a valid email address.";
     if (username && !/^[a-zA-Z][a-zA-Z0-9_]{2,31}$/.test(username)) {
-      e.username = "3â€“32 characters; letters, digits, underscore; start with a letter.";
+      e.username = "3-32 characters; letters, digits, underscore; start with a letter.";
     }
     if (password && password.length < 12) e.password = "At least 12 characters.";
     if (confirm && confirm !== password) e.confirm = "Passwords must match.";

@@ -771,7 +771,7 @@ export function BrokersPage() {
                 />
               </label>
               <label className={cn("block text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>
-                Quantity (1â€“5)
+                Quantity (1-5)
                 <input
                   type="number"
                   min={1}

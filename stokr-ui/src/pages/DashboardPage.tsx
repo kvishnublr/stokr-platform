@@ -42,15 +42,15 @@ type DashboardDto = {
 };
 
 const DUMMY_STRATEGIES = [
-  { name: "Trend Hunter Pro", mode: "LIVE" as const, pnl: "+â‚¹ 42,180", pct: "+2.81%" },
-  { name: "Mean Reversion V2", mode: "PAPER" as const, pnl: "+â‚¹ 8,420", pct: "+1.06%" },
-  { name: "ORB Session", mode: "LIVE" as const, pnl: "âˆ’â‚¹ 2,110", pct: "âˆ’0.44%" },
+  { name: "Trend Hunter Pro", mode: "LIVE" as const, pnl: "+Rs 42,180", pct: "+2.81%" },
+  { name: "Mean Reversion V2", mode: "PAPER" as const, pnl: "+Rs 8,420", pct: "+1.06%" },
+  { name: "ORB Session", mode: "LIVE" as const, pnl: "-Rs 2,110", pct: "-0.44%" },
 ];
 
 const DUMMY_POSITIONS = [
-  { sym: "RELIANCE", qty: "120", val: "â‚¹ 1,71,240", chg: "+1.2%", up: true },
-  { sym: "INFY", qty: "90", val: "â‚¹ 1,38,870", chg: "+0.4%", up: true },
-  { sym: "TCS", qty: "45", val: "â‚¹ 1,84,500", chg: "âˆ’0.3%", up: false },
+  { sym: "RELIANCE", qty: "120", val: "Rs 1,71,240", chg: "+1.2%", up: true },
+  { sym: "INFY", qty: "90", val: "Rs 1,38,870", chg: "+0.4%", up: true },
+  { sym: "TCS", qty: "45", val: "Rs 1,84,500", chg: "-0.3%", up: false },
 ];
 
 const DUMMY_ORDERS = [
@@ -176,7 +176,7 @@ export function DashboardPage() {
             )}
           >
             {salute}, {greetFirst}{" "}
-            <span aria-hidden>ðŸ‘‹</span>
+            <span aria-hidden>[Hi]</span>
           </h1>
           <p className={cn("mt-2 max-w-xl text-[15px] leading-relaxed", isLight ? "text-neutral-600" : "text-neutral-400")}>
             Here&apos;s your trading overview - tape, risk, and flow in one surface.
@@ -259,7 +259,7 @@ export function DashboardPage() {
         <KpiTile
           panel={panel}
           label="Total P&L"
-          value={mtm != null && !Number.isNaN(mtm) ? formatInr(mtm) : "â‚¹ 1,24,568"}
+          value={mtm != null && !Number.isNaN(mtm) ? formatInr(mtm) : "Rs 1,24,568"}
           delta="+2.45%"
           up
           spark={<MiniSpark tone="green" />}
@@ -270,7 +270,7 @@ export function DashboardPage() {
         <KpiTile
           panel={panel}
           label="Unrealized P&L"
-          value={unreal != null && !Number.isNaN(unreal) ? formatInr(unreal) : "â‚¹ 45,230"}
+          value={unreal != null && !Number.isNaN(unreal) ? formatInr(unreal) : "Rs 45,230"}
           delta="+1.12%"
           up
           spark={<MiniSpark tone="green" />}
@@ -281,7 +281,7 @@ export function DashboardPage() {
         <KpiTile
           panel={panel}
           label="Realized P&L"
-          value={realized != null && !Number.isNaN(realized) ? formatInr(realized) : "â‚¹ 79,338"}
+          value={realized != null && !Number.isNaN(realized) ? formatInr(realized) : "Rs 79,338"}
           delta="+3.21%"
           up
           spark={<MiniSpark tone="blue" />}
@@ -295,7 +295,7 @@ export function DashboardPage() {
             Total capital / risk
           </div>
           <div className={cn("stokr-tabular mt-1 font-mono text-xl font-semibold tracking-tight", isLight ? "text-neutral-900" : "text-white")}>
-            â‚¹ 12,45,000
+            Rs 12,45,000
           </div>
           <div className={cn("mt-1 text-[11px]", isLight ? "text-neutral-500" : "text-neutral-500")}>Used 62%</div>
           <div className={cn("mt-2 h-2 w-full overflow-hidden rounded-full", isLight ? "bg-neutral-100" : "bg-neutral-800")}>
@@ -555,7 +555,7 @@ export function DashboardPage() {
                   {[
                     ["NIFTY 50", "+0.42%"],
                     ["BANK NIFTY", "+0.18%"],
-                    ["SENSEX", "âˆ’0.09%"],
+                    ["SENSEX", "-0.09%"],
                   ].map(([n, pct]) => (
                     <div
                       key={n}
@@ -565,7 +565,7 @@ export function DashboardPage() {
                       )}
                     >
                       <span className="truncate">{n}</span>
-                      <span className={cn("font-mono shrink-0", pct.startsWith("âˆ’") ? "text-rose-500" : "text-emerald-600")}>
+                      <span className={cn("font-mono shrink-0", pct.startsWith("-") ? "text-rose-500" : "text-emerald-600")}>
                         {pct}
                       </span>
                     </div>

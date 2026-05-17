@@ -306,7 +306,7 @@ function ChecklistTile({
           <p className="mt-2 text-xs leading-relaxed text-neutral-500">{desc}</p>
           {to && !done ? (
             <Link to={to} className="mt-3 inline-block text-[11px] font-bold uppercase tracking-widest text-blue-400">
-              Open lane â†’
+              Open lane to
             </Link>
           ) : null}
         </div>

@@ -6,7 +6,7 @@ export type ReplayValidationReport = {
   pnlMismatch: string;
   executionMismatch: number;
   replayHash: string;
-  /** Present on API â‰¥ fix; older servers omit these. */
+  /** Present on API >= fix; older servers omit these. */
   strategySignalCount?: number;
   executionEventCount?: number;
 };

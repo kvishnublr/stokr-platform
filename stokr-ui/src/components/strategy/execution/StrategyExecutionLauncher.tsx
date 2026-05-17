@@ -202,7 +202,7 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
       return;
     }
     if (!Number.isFinite(capital) || capital < 1) {
-      toast.error("Capital must be at least â‚¹1.");
+      toast.error("Capital must be at least Rs 1.");
       return;
     }
     const strategyParameters = buildStrategyParametersFromDefaults(meta);
