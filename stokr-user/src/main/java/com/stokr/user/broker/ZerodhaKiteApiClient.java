@@ -67,6 +67,17 @@ public class ZerodhaKiteApiClient {
         return readJson(body);
     }
 
+    public JsonNode cancelOrder(String apiKey, String accessToken, String variety, String orderId) {
+        String normalizedVariety = variety == null || variety.isBlank() ? "regular" : variety.trim().toLowerCase();
+        String oid = orderId == null ? "" : orderId.trim();
+        String body = http.delete()
+                .uri(BASE + "/orders/" + normalizedVariety + "/" + oid)
+                .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
+                .retrieve()
+                .body(String.class);
+        return readJson(body);
+    }
+
     /**
      * Full instrument dump for one exchange (CSV). Used to map instrument_token to tradingsymbol for platform WS ticks.
      */

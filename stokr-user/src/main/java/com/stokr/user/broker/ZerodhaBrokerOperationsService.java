@@ -95,6 +95,9 @@ public class ZerodhaBrokerOperationsService {
     ) {
     }
 
+    public record BrokerCancelOrderDto(boolean ok, String orderId, String status, String message) {
+    }
+
     /** Sidebar / shell: cash-like balance from last persisted margin snapshot (Kite equity.available.cash). */
     public record BrokerAccountFundsDto(Double cashAvailable, Double availableMargin) {
     }
@@ -222,6 +225,23 @@ public class ZerodhaBrokerOperationsService {
             ));
         }
         return out;
+    }
+
+    @Transactional
+    public BrokerCancelOrderDto cancelOpenOrder(UUID userId, String orderId, String variety) {
+        Session s = requireSession(userId);
+        String safeOrderId = orderId == null ? "" : orderId.trim();
+        if (safeOrderId.isBlank()) {
+            throw new BadRequestException("orderId is required");
+        }
+        String safeVariety = variety == null || variety.isBlank() ? "regular" : variety.trim().toLowerCase();
+        JsonNode payload = kiteApiClient.cancelOrder(s.apiKey(), s.accessToken(), safeVariety, safeOrderId);
+        String status = payload.path("status").asText("");
+        boolean ok = "success".equalsIgnoreCase(status);
+        String message = ok
+                ? "Cancelled"
+                : payload.path("message").asText("cancel failed");
+        return new BrokerCancelOrderDto(ok, safeOrderId, status, message);
     }
 
     @Transactional
