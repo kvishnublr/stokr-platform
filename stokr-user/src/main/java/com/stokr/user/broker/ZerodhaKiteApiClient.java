@@ -8,9 +8,11 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.net.URI;
+import java.net.URLEncoder;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -27,6 +29,7 @@ public class ZerodhaKiteApiClient {
 
     private static final String BASE = "https://api.kite.trade";
     private static final ZoneId INDIA = ZoneId.of("Asia/Kolkata");
+    // Kite historical endpoint expects date-time as YYYY-MM-DD HH:MM:SS in IST.
     private static final DateTimeFormatter KITE_DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final ObjectMapper objectMapper;
@@ -89,14 +92,17 @@ public class ZerodhaKiteApiClient {
             Instant toInclusive
     ) {
         String itv = interval == null || interval.isBlank() ? "minute" : interval.trim().toLowerCase();
-        String from = URLEncoder.encode(KITE_DT.format(fromInclusive.atZone(INDIA)), StandardCharsets.UTF_8);
-        String to = URLEncoder.encode(KITE_DT.format(toInclusive.atZone(INDIA)), StandardCharsets.UTF_8);
-        String url = BASE + "/instruments/historical/" + instrumentToken + "/" + itv
-                + "?from=" + from
-                + "&to=" + to
-                + "&oi=0";
+        String from = KITE_DT.format(fromInclusive.atZone(INDIA));
+        String to = KITE_DT.format(toInclusive.atZone(INDIA));
+        URI uri = UriComponentsBuilder
+                .fromHttpUrl(BASE + "/instruments/historical/" + instrumentToken + "/" + itv)
+                .queryParam("from", from)
+                .queryParam("to", to)
+                .queryParam("oi", "0")
+                .build(true)
+                .toUri();
         String body = http.get()
-                .uri(url)
+                .uri(uri)
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
                 .retrieve()
                 .body(String.class);

@@ -36,8 +36,11 @@ import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -56,6 +59,9 @@ import java.util.concurrent.ThreadLocalRandom;
 @RequiredArgsConstructor
 @Slf4j
 public class AdminMarketBackfillService {
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final LocalTime NSE_OPEN = LocalTime.of(9, 15);
+    private static final LocalTime NSE_CLOSE = LocalTime.of(15, 30);
 
     private final MarketBackfillJobRepository jobRepository;
     private final MarketBackfillJobSymbolRepository jobSymbolRepository;
@@ -520,6 +526,37 @@ public class AdminMarketBackfillService {
         }
         if (!req.rangeStart().isBefore(req.rangeEnd())) {
             throw new BadRequestException("rangeStart must be before rangeEnd");
+        }
+        Instant now = Instant.now();
+        if (!req.rangeEnd().isBefore(now)) {
+            throw new BadRequestException("rangeEnd must be in the past (use completed market candles only)");
+        }
+        long spanDays = Duration.between(req.rangeStart(), req.rangeEnd()).toDays();
+        if ("1m".equals(tf) && spanDays > 180) {
+            throw new BadRequestException("1m backfill window too large. Use at most 180 days per launch.");
+        }
+        if ("5m".equals(tf) && spanDays > 365) {
+            throw new BadRequestException("5m backfill window too large. Use at most 365 days per launch.");
+        }
+        if ("15m".equals(tf) && spanDays > 730) {
+            throw new BadRequestException("15m backfill window too large. Use at most 730 days per launch.");
+        }
+        if ("1h".equals(tf) && spanDays > 1460) {
+            throw new BadRequestException("1h backfill window too large. Use at most 1460 days per launch.");
+        }
+        validateTradingWindow(req.rangeStart(), "rangeStart");
+        validateTradingWindow(req.rangeEnd(), "rangeEnd");
+    }
+
+    private void validateTradingWindow(Instant instant, String field) {
+        ZonedDateTime ist = instant.atZone(IST);
+        DayOfWeek dow = ist.getDayOfWeek();
+        if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY) {
+            throw new BadRequestException(field + " must be a market weekday (Mon-Fri) in IST");
+        }
+        LocalTime t = ist.toLocalTime();
+        if (t.isBefore(NSE_OPEN) || t.isAfter(NSE_CLOSE)) {
+            throw new BadRequestException(field + " must be between 09:15 and 15:30 IST");
         }
     }
 

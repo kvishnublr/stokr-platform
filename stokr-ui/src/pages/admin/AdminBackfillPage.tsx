@@ -109,6 +109,11 @@ function extractAuthSource(message: string | null | undefined): string {
   return match?.[1]?.toUpperCase() ?? "UNKNOWN";
 }
 
+function looksLikeInvalidBrokerDate(message: string): boolean {
+  const m = String(message ?? "").toLowerCase();
+  return m.includes("invalid from date") || m.includes("invalid to date") || m.includes("inputexception");
+}
+
 function parseCustomSymbols(input: string): string[] {
   return input
     .split(/[\s,]+/)
@@ -252,6 +257,12 @@ export function AdminBackfillPage() {
     },
     onError: (e) => {
       const msg = parseAxiosMessage(e);
+      if (looksLikeInvalidBrokerDate(msg)) {
+        toast.error(
+          "Backfill date window is invalid for broker API. Use a weekday trading session in IST (09:15-15:30) and keep end time in the past.",
+        );
+        return;
+      }
       if (looksLikeZerodhaTokenAuthError(msg)) {
         toast.error("Broker token invalid/expired. Re-authenticate Zerodha now?", {
           action: {
