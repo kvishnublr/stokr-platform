@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.util.Map;
@@ -100,5 +101,15 @@ public class AdminMarketBackfillController {
     public ApiResponse<Map<String, Object>> repairGaps(@PathVariable("jobId") UUID jobId) {
         UUID id = backfillService.repairGaps(jobId);
         return ApiResponse.ok(Map.of("jobId", id.toString()), CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/import-csv")
+    public ApiResponse<Map<String, Object>> importCsv(
+            @AuthenticationPrincipal StokrUserDetails user,
+            @RequestParam(value = "symbol", required = false) String symbol,
+            @RequestParam(value = "timeframe", defaultValue = "1m") String timeframe,
+            @RequestParam("file") MultipartFile file
+    ) {
+        return ApiResponse.ok(backfillService.importCsv(user.getId(), symbol, timeframe, file), CorrelationIdHolder.get());
     }
 }

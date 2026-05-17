@@ -102,6 +102,17 @@ type OpportunityRow = {
   rationale: string;
 };
 
+type SetupValidationRow = {
+  setupTitle: string;
+  strategyKey: string;
+  catalogPresent: boolean;
+  instancePresent: boolean;
+  runtimeHealthy: boolean;
+  subscribed: boolean;
+  ready: boolean;
+  blocker: string | null;
+};
+
 const DOCK_TABS = [
   { id: "open", label: "Open Positions" },
   { id: "closed", label: "Closed Positions" },
@@ -302,6 +313,53 @@ export function IntradayTraderPage() {
   });
   const actionsBusy = toggleSub.isPending || patchInstance.isPending || startInstance.isPending || pauseInstance.isPending;
 
+  async function runPreMarketChecklist() {
+    try {
+      const [catRes, instRes, rtRes, wsRes] = await Promise.all([
+        catalogQ.refetch(),
+        instancesQ.refetch(),
+        runtimeQ.refetch(),
+        workstationQ.refetch(),
+      ]);
+      const catalog = catRes.data ?? [];
+      const instances = instRes.data ?? [];
+      const runtime = rtRes.data ?? [];
+      const ws = wsRes.data;
+      const riskLocal = ws?.riskControls;
+      const feedLocal =
+        (riskLocal?.tokenValid && riskLocal?.brokerHealth?.toUpperCase?.().includes("HEALTHY")) ||
+        (riskLocal?.liveEligible && riskLocal?.brokerHealth?.toUpperCase?.().includes("CONNECTED"))
+          ? "LIVE"
+          : "STALE";
+      const catalogByCode = new Map(catalog.map((c) => [String(c.code).toUpperCase(), c] as const));
+      const runtimeByKey = new Map(runtime.map((r) => [String(r.strategyKey).toUpperCase(), r] as const));
+      const blockers: string[] = [];
+      for (const s of INTRADAY_SETUPS) {
+        const key = s.strategyKey.toUpperCase();
+        const cat = catalogByCode.get(key);
+        const inst = cat ? instances.find((i) => i.definitionId === cat.id) : null;
+        const met = runtimeByKey.get(key) ?? null;
+        const subscribed = Boolean(cat?.subscribed && cat?.subscriptionEnabled);
+        const runtimeHealthy = Boolean(
+          met && String(met.runtimeState ?? "").toUpperCase().includes("RUN") && !String(met.health ?? "").toUpperCase().includes("BAD"),
+        );
+        if (!cat) blockers.push(`${s.title}: Strategy missing in catalog`);
+        else if (!inst) blockers.push(`${s.title}: No active strategy instance`);
+        else if (!subscribed) blockers.push(`${s.title}: Subscription disabled`);
+        else if (!runtimeHealthy) blockers.push(`${s.title}: Runtime not healthy (${String(met?.runtimeState ?? "IDLE")}/${String(met?.health ?? "UNKNOWN")})`);
+      }
+      if (feedLocal !== "LIVE") blockers.unshift(`Feed health is ${feedLocal}`);
+      if (!riskLocal?.tokenValid || !riskLocal?.liveEligible) blockers.unshift("Broker token/live eligibility not ready");
+      if (blockers.length === 0) {
+        toast.success("Pre-market checklist passed. All intraday setups are READY.");
+      } else {
+        toast.error(`Pre-market checklist blocked (${blockers.length}). Review readiness panel for exact fixes.`);
+      }
+    } catch (e) {
+      toast.error(parseAxiosMessage(e));
+    }
+  }
+
   function resolveBacktestStrategyKey(setupKey: string): { key: string; usedFallback: boolean } {
     const setup = INTRADAY_SETUPS.find((s) => s.strategyKey === setupKey);
     if (!setup) return { key: setupKey, usedFallback: false };
@@ -342,7 +400,10 @@ export function IntradayTraderPage() {
           );
           return;
         }
-        navigate(`/backtests/launch?strategyKey=${encodeURIComponent(resolved.key)}`);
+        const setupTitle = INTRADAY_SETUPS.find((s) => s.strategyKey === strategyKey)?.title ?? strategyKey;
+        navigate(
+          `/backtests/launch?strategyKey=${encodeURIComponent(resolved.key)}&intradaySetup=${encodeURIComponent(setupTitle)}`,
+        );
         return;
       }
       const inst = await ensureInstanceByStrategy(strategyKey);
@@ -568,6 +629,45 @@ export function IntradayTraderPage() {
   );
 
   const globalError = catalogQ.error ?? runtimeQ.error ?? instancesQ.error ?? signalsQ.error ?? workstationQ.error;
+  const setupValidation = useMemo<SetupValidationRow[]>(() => {
+    const catalog = catalogQ.data ?? [];
+    const instances = instancesQ.data ?? [];
+    const runtime = runtimeQ.data ?? [];
+    const catalogByCode = new Map(catalog.map((c) => [String(c.code).toUpperCase(), c] as const));
+    const runtimeByKey = new Map(runtime.map((r) => [String(r.strategyKey).toUpperCase(), r] as const));
+    return INTRADAY_SETUPS.map((s) => {
+      const key = s.strategyKey.toUpperCase();
+      const cat = catalogByCode.get(key) ?? null;
+      const inst = cat ? instances.find((i) => i.definitionId === cat.id) : null;
+      const met = runtimeByKey.get(key) ?? null;
+      const subscribed = Boolean(cat?.subscribed && cat?.subscriptionEnabled);
+      const runtimeHealthy = Boolean(
+        met && String(met.runtimeState ?? "").toUpperCase().includes("RUN") && !String(met.health ?? "").toUpperCase().includes("BAD"),
+      );
+      let blocker: string | null = null;
+      if (!cat) blocker = "Strategy missing in catalog";
+      else if (!inst) blocker = "No active strategy instance";
+      else if (!subscribed) blocker = "Subscription disabled";
+      else if (!runtimeHealthy) blocker = `Runtime not healthy (${String(met?.runtimeState ?? "IDLE")}/${String(met?.health ?? "UNKNOWN")})`;
+      return {
+        setupTitle: s.title,
+        strategyKey: s.strategyKey,
+        catalogPresent: Boolean(cat),
+        instancePresent: Boolean(inst),
+        runtimeHealthy,
+        subscribed,
+        ready: blocker == null,
+        blocker,
+      };
+    });
+  }, [catalogQ.data, instancesQ.data, runtimeQ.data]);
+
+  const goLiveSummary = useMemo(() => {
+    const blockers = setupValidation.filter((r) => !r.ready).map((r) => `${r.setupTitle}: ${r.blocker}`);
+    if (feedHealth !== "LIVE") blockers.unshift(`Feed health is ${feedHealth}`);
+    if (!risk?.tokenValid || !risk?.liveEligible) blockers.unshift("Broker token/live eligibility not ready");
+    return { ready: blockers.length === 0, blockers };
+  }, [setupValidation, feedHealth, risk?.tokenValid, risk?.liveEligible]);
 
   return (
     <div className={cn("space-y-4", isLight ? "text-neutral-900" : "text-white")}>
@@ -591,6 +691,54 @@ export function IntradayTraderPage() {
             />
           </div>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold">Tomorrow Signal Readiness</h2>
+            <p className="text-xs text-neutral-500">Live validation for all intraday setups before market open.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void runPreMarketChecklist()}
+              className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+            >
+              Run Pre-Market Checklist
+            </button>
+            <MiniChip value={goLiveSummary.ready ? "READY" : "BLOCKED"} />
+          </div>
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {setupValidation.map((r) => (
+            <div key={r.strategyKey} className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold">{r.setupTitle}</div>
+                <MiniChip value={r.ready ? "READY" : "BLOCKED"} />
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-neutral-500">{r.strategyKey}</div>
+              <div className="mt-1 text-[11px] text-neutral-600">
+                catalog {r.catalogPresent ? "yes" : "no"} • instance {r.instancePresent ? "yes" : "no"} • runtime {r.runtimeHealthy ? "ok" : "bad"}
+              </div>
+              {!r.ready ? <div className="mt-1 text-[11px] text-rose-700">{r.blocker}</div> : null}
+            </div>
+          ))}
+        </div>
+        {!goLiveSummary.ready ? (
+          <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+            <div className="font-semibold">Fix before market open:</div>
+            <ul className="mt-1 list-disc pl-4">
+              {goLiveSummary.blockers.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <div className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-xs text-emerald-900">
+            All intraday setups are wired and runtime-ready. Signals appear when strategy conditions trigger.
+          </div>
+        )}
       </div>
 
       {globalError ? (

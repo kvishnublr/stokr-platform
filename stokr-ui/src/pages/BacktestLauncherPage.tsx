@@ -9,6 +9,7 @@ export function BacktestLauncherPage() {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const [params] = useSearchParams();
   const strategyKey = (params.get("strategyKey") ?? DEFAULT_STRATEGY_KEY).trim() || DEFAULT_STRATEGY_KEY;
+  const intradaySetup = (params.get("intradaySetup") ?? "").trim();
 
   return (
     <div
@@ -36,6 +37,16 @@ export function BacktestLauncherPage() {
           Replay how this published strategy would have traded over your chosen window. Capital, range, and mode are yours
           - symbol, timeframe, risk, and execution mechanics are defined by the strategy.
         </p>
+        {intradaySetup ? (
+          <div
+            className={cn(
+              "mt-3 inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold",
+              isLight ? "border-blue-200 bg-blue-50 text-blue-700" : "border-blue-500/40 bg-blue-500/10 text-blue-200",
+            )}
+          >
+            Intraday setup: {intradaySetup}
+          </div>
+        ) : null}
         <div
           className={cn(
             "mt-8 rounded-[1.35rem] border p-4 sm:p-6",

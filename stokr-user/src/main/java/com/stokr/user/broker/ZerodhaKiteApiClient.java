@@ -8,6 +8,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
 import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -67,7 +68,7 @@ public class ZerodhaKiteApiClient {
     }
 
     /**
-     * Full instrument dump for one exchange (CSV). Used to map instrument_token → tradingsymbol for platform WS ticks.
+     * Full instrument dump for one exchange (CSV). Used to map instrument_token to tradingsymbol for platform WS ticks.
      */
     public String getInstrumentsCsv(String apiKey, String accessToken, String exchange) {
         String ex = exchange == null || exchange.isBlank() ? "NSE" : exchange.trim().toUpperCase();
@@ -92,15 +93,15 @@ public class ZerodhaKiteApiClient {
         String itv = interval == null || interval.isBlank() ? "minute" : interval.trim().toLowerCase();
         String from = KITE_DT.format(fromInclusive.atZone(INDIA));
         String to = KITE_DT.format(toInclusive.atZone(INDIA));
-        // Encode full query values explicitly (including colon) to avoid strict URI parser issues.
-        String encodedFrom = URLEncoder.encode(from, StandardCharsets.UTF_8);
-        String encodedTo = URLEncoder.encode(to, StandardCharsets.UTF_8);
-        URI uri = URI.create(
-                BASE + "/instruments/historical/" + instrumentToken + "/" + itv
-                        + "?from=" + encodedFrom
-                        + "&to=" + encodedTo
-                        + "&oi=0"
-        );
+        // Build URI with query encoding to avoid strict query parser failures.
+        URI uri = UriComponentsBuilder
+                .fromHttpUrl(BASE + "/instruments/historical/" + instrumentToken + "/" + itv)
+                .queryParam("from", from)
+                .queryParam("to", to)
+                .queryParam("oi", 0)
+                .build()
+                .encode(StandardCharsets.UTF_8)
+                .toUri();
         String body = http.get()
                 .uri(uri)
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
@@ -173,3 +174,4 @@ public class ZerodhaKiteApiClient {
         }
     }
 }
+

@@ -32,15 +32,22 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -150,8 +157,8 @@ public class AdminMarketBackfillService {
         }
 
         String tf = req.timeframe() == null ? "1m" : req.timeframe().trim().toLowerCase(Locale.ROOT);
-        long days = Duration.between(req.rangeStart(), req.rangeEnd()).toDays();
-        if ("ZERODHA".equalsIgnoreCase(req.brokerSource()) && !"1d".equals(tf) && days > 60) {
+        Instant lookbackCutoff = Instant.now().minus(Duration.ofDays(60));
+        if ("ZERODHA".equalsIgnoreCase(req.brokerSource()) && !"1d".equals(tf) && req.rangeStart().isBefore(lookbackCutoff)) {
             blockers.add(block("LOOKBACK_EXCEEDED", "Zerodha intraday history supports limited lookback (about 60 days).", "Use recent range or import historical data."));
         }
 
@@ -531,6 +538,136 @@ public class AdminMarketBackfillService {
         return out;
     }
 
+    @Transactional
+    public Map<String, Object> importCsv(UUID adminUserId, String symbol, String timeframe, MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException("CSV file is required");
+        }
+        String tf = timeframe == null || timeframe.isBlank() ? "1m" : timeframe.trim();
+        if (!ALLOWED_TIMEFRAMES.contains(tf)) {
+            throw new BadRequestException("Unsupported timeframe: " + tf);
+        }
+        String fallbackSymbol = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
+
+        Map<String, List<HistoricalCandlePoint>> bySymbol = new LinkedHashMap<>();
+        int rowsRead = 0;
+        int rowsAccepted = 0;
+        int rowsRejected = 0;
+        int parseErrors = 0;
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null || headerLine.isBlank()) {
+                throw new BadRequestException("CSV is empty");
+            }
+            String[] headers = splitCsvLine(headerLine);
+            Map<String, Integer> idx = headerIndex(headers);
+
+            Integer tsIdx = firstIndex(idx, "timestamp", "time", "open_time", "datetime", "date");
+            Integer openIdx = firstIndex(idx, "open", "o");
+            Integer highIdx = firstIndex(idx, "high", "h");
+            Integer lowIdx = firstIndex(idx, "low", "l");
+            Integer closeIdx = firstIndex(idx, "close", "c");
+            Integer volIdx = firstIndex(idx, "volume", "v", "vol");
+            Integer symIdx = firstIndex(idx, "symbol", "tradingsymbol", "ticker");
+
+            if (tsIdx == null || openIdx == null || highIdx == null || lowIdx == null || closeIdx == null) {
+                throw new BadRequestException("CSV must include: timestamp, open, high, low, close (volume optional; symbol optional if form symbol provided).");
+            }
+
+            String line;
+            while ((line = reader.readLine()) != null) {
+                rowsRead++;
+                if (line.isBlank()) {
+                    continue;
+                }
+                try {
+                    String[] cols = splitCsvLine(line);
+                    String sym = readCol(cols, symIdx);
+                    if (sym == null || sym.isBlank()) {
+                        sym = fallbackSymbol;
+                    }
+                    sym = sym == null ? "" : sym.trim().toUpperCase(Locale.ROOT);
+                    if (sym.isBlank()) {
+                        rowsRejected++;
+                        continue;
+                    }
+                    Instant ts = parseFlexibleInstant(readCol(cols, tsIdx));
+                    if (ts == null) {
+                        rowsRejected++;
+                        parseErrors++;
+                        continue;
+                    }
+                    BigDecimal open = parseDecimal(readCol(cols, openIdx));
+                    BigDecimal high = parseDecimal(readCol(cols, highIdx));
+                    BigDecimal low = parseDecimal(readCol(cols, lowIdx));
+                    BigDecimal close = parseDecimal(readCol(cols, closeIdx));
+                    BigDecimal volume = parseDecimal(readCol(cols, volIdx));
+                    if (open == null || high == null || low == null || close == null) {
+                        rowsRejected++;
+                        parseErrors++;
+                        continue;
+                    }
+                    HistoricalCandlePoint p = new HistoricalCandlePoint(ts, open, high, low, close, volume == null ? BigDecimal.ZERO : volume);
+                    bySymbol.computeIfAbsent(sym, k -> new ArrayList<>()).add(p);
+                    rowsAccepted++;
+                } catch (Exception ex) {
+                    rowsRejected++;
+                    parseErrors++;
+                }
+            }
+        } catch (BadRequestException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BadRequestException("Failed to read CSV: " + ex.getMessage());
+        }
+
+        if (bySymbol.isEmpty()) {
+            throw new BadRequestException("No valid candle rows found in CSV.");
+        }
+
+        long totalPersisted = 0L;
+        int symbolsUpdated = 0;
+        List<Map<String, Object>> symbolSummary = new ArrayList<>();
+
+        for (Map.Entry<String, List<HistoricalCandlePoint>> e : bySymbol.entrySet()) {
+            String sym = e.getKey();
+            List<HistoricalCandlePoint> points = e.getValue();
+            points.sort(java.util.Comparator.comparing(HistoricalCandlePoint::openTime));
+            long saved = persistCandles(sym, tf, points);
+            totalPersisted += saved;
+            symbolsUpdated++;
+
+            Instant from = points.get(0).openTime();
+            Instant to = points.get(points.size() - 1).openTime();
+            var coverage = marketDataCoverageService.validateAndUpsert(sym, tf, from, to);
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("symbol", sym);
+            row.put("timeframe", tf);
+            row.put("rows", points.size());
+            row.put("persisted", saved);
+            row.put("rangeStart", from.toString());
+            row.put("rangeEnd", to.toString());
+            row.put("replayReadiness", coverage.replayReadiness());
+            row.put("scannerReadiness", coverage.scannerReadiness());
+            symbolSummary.add(row);
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("importedBy", adminUserId != null ? adminUserId.toString() : null);
+        out.put("fileName", file.getOriginalFilename());
+        out.put("timeframe", tf);
+        out.put("rowsRead", rowsRead);
+        out.put("rowsAccepted", rowsAccepted);
+        out.put("rowsRejected", rowsRejected);
+        out.put("parseErrors", parseErrors);
+        out.put("symbolsUpdated", symbolsUpdated);
+        out.put("totalPersisted", totalPersisted);
+        out.put("symbols", symbolSummary);
+        return out;
+    }
+
     @Transactional(readOnly = true)
     public List<Map<String, Object>> strategyReadinessAudit(Instant from, Instant to, String timeframe, String useCase) {
         String tf = timeframe == null || timeframe.isBlank() ? "1m" : timeframe.trim();
@@ -616,6 +753,12 @@ public class AdminMarketBackfillService {
         }
         if ("1h".equals(tf) && spanDays > 1460) {
             throw new BadRequestException("1h backfill window too large. Use at most 1460 days per launch.");
+        }
+        if ("ZERODHA".equalsIgnoreCase(req.brokerSource()) && !"1d".equals(tf)) {
+            Instant lookbackCutoff = Instant.now().minus(Duration.ofDays(60));
+            if (req.rangeStart().isBefore(lookbackCutoff)) {
+                throw new BadRequestException("Zerodha intraday history supports only recent windows (about 60 days). Select a newer start date or use historical import.");
+            }
         }
         validateTradingWindow(req.rangeStart(), "rangeStart");
         validateTradingWindow(req.rangeEnd(), "rangeEnd");
@@ -1041,6 +1184,84 @@ public class AdminMarketBackfillService {
         return v.setScale(8, RoundingMode.HALF_UP);
     }
 
+    private static Map<String, Integer> headerIndex(String[] headers) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (int i = 0; i < headers.length; i++) {
+            out.put(headers[i].trim().toLowerCase(Locale.ROOT), i);
+        }
+        return out;
+    }
+
+    private static Integer firstIndex(Map<String, Integer> idx, String... names) {
+        for (String n : names) {
+            Integer i = idx.get(n.toLowerCase(Locale.ROOT));
+            if (i != null) {
+                return i;
+            }
+        }
+        return null;
+    }
+
+    private static String readCol(String[] cols, Integer idx) {
+        if (idx == null || idx < 0 || idx >= cols.length) {
+            return null;
+        }
+        return cols[idx] == null ? null : cols[idx].trim();
+    }
+
+    private static BigDecimal parseDecimal(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(raw.trim());
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private static Instant parseFlexibleInstant(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String v = raw.trim();
+        try {
+            return Instant.parse(v);
+        } catch (DateTimeParseException ignored) {
+        }
+        try {
+            return OffsetDateTime.parse(v).toInstant();
+        } catch (DateTimeParseException ignored) {
+        }
+        try {
+            // Accept local timestamp as IST wall clock.
+            return LocalDateTime.parse(v.replace(" ", "T")).atZone(IST).toInstant();
+        } catch (DateTimeParseException ignored) {
+        }
+        return null;
+    }
+
+    private static String[] splitCsvLine(String line) {
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+            if (ch == '"') {
+                inQuotes = !inQuotes;
+                continue;
+            }
+            if (ch == ',' && !inQuotes) {
+                out.add(cur.toString());
+                cur.setLength(0);
+                continue;
+            }
+            cur.append(ch);
+        }
+        out.add(cur.toString());
+        return out.toArray(new String[0]);
+    }
+
     private static long timeframeMillis(String timeframe) {
         return switch (timeframe) {
             case "1m" -> 60_000L;
@@ -1094,4 +1315,3 @@ public class AdminMarketBackfillService {
 
     private record TimeWindow(Instant start, Instant end) {}
 }
-

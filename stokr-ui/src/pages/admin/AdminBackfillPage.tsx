@@ -178,7 +178,7 @@ function looksLikeZerodhaTokenAuthError(message: string): boolean {
 
 function looksLikeLookbackLimit(message: string): boolean {
   const m = (message || "").toLowerCase();
-  return m.includes("lookback") || m.includes("exceeds zerodha historical lookback");
+  return m.includes("lookback") || m.includes("exceeds zerodha historical lookback") || m.includes("supports only recent windows");
 }
 
 function toIstInputString(d: Date): string {
@@ -214,6 +214,9 @@ export function AdminBackfillPage() {
   const [failedOnly, setFailedOnly] = useState(false);
   const [auditFrom, setAuditFrom] = useState(defaultRange.start);
   const [auditTo, setAuditTo] = useState(defaultRange.end);
+  const [importSymbol, setImportSymbol] = useState("SBIN");
+  const [importTimeframe, setImportTimeframe] = useState("1m");
+  const [importFile, setImportFile] = useState<File | null>(null);
   const completedNotifiedRef = useRef<Set<string>>(new Set());
 
   async function reconnectZerodhaNow() {
@@ -267,6 +270,12 @@ export function AdminBackfillPage() {
       }
       if (looksLikeMarketSessionMismatch(startIso, endIso)) {
         throw new Error("Date range appears outside NSE market session (09:15-15:30 IST). Please adjust.");
+      }
+      if (brokerSource.toUpperCase() === "ZERODHA" && timeframe !== "1d") {
+        const cutoffMs = Date.now() - 60 * 24 * 60 * 60 * 1000;
+        if (new Date(startIso).getTime() < cutoffMs) {
+          throw new Error("Zerodha intraday history supports only recent windows (about 60 days). Use a newer start date or import historical candles.");
+        }
       }
       const payload = {
         brokerSource,
@@ -330,6 +339,32 @@ export function AdminBackfillPage() {
     onSuccess: async () => {
       toast.success("Action submitted");
       await qc.invalidateQueries({ queryKey: ["admin-market-backfill-jobs"] });
+    },
+    onError: (e) => toast.error(parseAxiosMessage(e)),
+  });
+
+  const importCsv = useMutation({
+    mutationFn: async () => {
+      if (!importFile) {
+        throw new Error("Select a CSV file first.");
+      }
+      const form = new FormData();
+      form.append("file", importFile);
+      form.append("timeframe", importTimeframe);
+      const sym = importSymbol.trim().toUpperCase();
+      if (sym) {
+        form.append("symbol", sym);
+      }
+      return api.post("/api/admin/market/backfill/import-csv", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    },
+    onSuccess: async (res) => {
+      const d = res.data?.data as { totalPersisted?: number; symbolsUpdated?: number } | undefined;
+      toast.success(`Imported ${d?.totalPersisted ?? 0} candles across ${d?.symbolsUpdated ?? 0} symbol(s).`);
+      await qc.invalidateQueries({ queryKey: ["admin-market-backfill-coverage"] });
+      await qc.invalidateQueries({ queryKey: ["admin-backfill-strategy-audit"] });
+      setImportFile(null);
     },
     onError: (e) => toast.error(parseAxiosMessage(e)),
   });
@@ -527,6 +562,51 @@ export function AdminBackfillPage() {
           <div className="mt-1 text-xs text-muted-foreground">
             {groupPreview.symbols.length > 0 ? groupPreview.symbols.join(", ") : symbolGroup === "CUSTOM" ? "Will use custom CSV symbols." : "No preview available."}
           </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-3">
+        <div className="mb-2 text-sm font-semibold">Historical CSV import (fallback)</div>
+        <div className="mb-2 text-xs text-muted-foreground">
+          Use this when broker lookback is limited. CSV columns: <span className="font-mono">timestamp,open,high,low,close,volume</span> and optional <span className="font-mono">symbol</span>.
+        </div>
+        <div className="grid gap-2 md:grid-cols-3">
+          <input
+            value={importSymbol}
+            onChange={(e) => setImportSymbol(e.target.value.toUpperCase())}
+            placeholder="Default symbol (optional if CSV has symbol column)"
+            className="rounded border border-border bg-background px-2 py-1 text-sm"
+          />
+          <select
+            value={importTimeframe}
+            onChange={(e) => setImportTimeframe(e.target.value)}
+            className="rounded border border-border bg-background px-2 py-1 text-sm"
+          >
+            {["1m", "5m", "15m", "1h", "1d"].map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+            className="rounded border border-border bg-background px-2 py-1 text-sm"
+          />
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => importCsv.mutate()}
+            disabled={importCsv.isPending || !importFile}
+            className="rounded border border-border bg-background px-3 py-1 text-sm font-semibold disabled:opacity-50"
+          >
+            Import CSV
+          </button>
+          <span className="text-xs text-muted-foreground">
+            Import updates central candle store and coverage readiness for replay/backtest.
+          </span>
         </div>
       </div>
 

@@ -19,6 +19,8 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.TimeoutException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -42,6 +44,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
     private final Map<String, Instant> validatedTokenCache = new ConcurrentHashMap<>();
     private static final long INSTRUMENT_CACHE_TTL_SECONDS = 600L;
     private static final long TOKEN_VALIDATION_CACHE_TTL_SECONDS = 60L;
+    private static final Pattern JSON_MESSAGE_PATTERN = Pattern.compile("\"message\"\\s*:\\s*\"([^\"]+)\"");
 
     @Override
     public String brokerCode() {
@@ -159,8 +162,15 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         int status = ex.getStatusCode().value();
         String body = ex.getResponseBodyAsString();
         String detail = status + " " + safeText(body, ex.getMessage());
+        String brokerMsg = extractBrokerMessage(body).toUpperCase(Locale.ROOT);
         String upper = (detail == null ? "" : detail.toUpperCase(Locale.ROOT));
         log.warn("zerodha.historical.http_failed symbol={} status={} body={}", symbol, status, safeText(body, ex.getMessage()));
+        if (brokerMsg.contains("INVALID FROM DATE") || brokerMsg.contains("INVALID TO DATE")) {
+            return HistoricalFetchResult.fail(
+                    "LOOKBACK_EXCEEDED",
+                    "Requested range is outside Zerodha historical window for this timeframe. Use a recent range (<= 60 days) or import historical data."
+            );
+        }
         if (status == 401 || status == 403 || upper.contains("TOKEN") || upper.contains("AUTH")) {
             return HistoricalFetchResult.fail("TOKEN_INVALID", detail);
         }
@@ -174,6 +184,17 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
             return HistoricalFetchResult.fail("BROKER_REQUEST_INVALID", detail);
         }
         return HistoricalFetchResult.fail("BROKER_FETCH_FAILED", detail);
+    }
+
+    private static String extractBrokerMessage(String rawBody) {
+        if (rawBody == null || rawBody.isBlank()) {
+            return "";
+        }
+        Matcher m = JSON_MESSAGE_PATTERN.matcher(rawBody);
+        if (m.find()) {
+            return m.group(1);
+        }
+        return rawBody;
     }
 
     private static String safeText(String body, String fallback) {
@@ -374,7 +395,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         Instant cutoff = Instant.now().minus(Duration.ofDays(maxDays));
         if (request.rangeStart().isBefore(cutoff)) {
             return HistoricalFetchResult.fail(
-                    "BROKER_REQUEST_INVALID",
+                    "LOOKBACK_EXCEEDED",
                     "Requested range exceeds Zerodha historical lookback for " + tf
                             + " (max " + maxDays + " days). Choose a recent range or use import/bootstrap."
             );
