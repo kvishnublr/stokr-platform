@@ -56,6 +56,16 @@ const BacktestReplayPage = lazy(async () => {
   return { default: m.BacktestReplayPage };
 });
 
+const IntradayTraderPage = lazy(async () => {
+  const m = await import("./pages/IntradayTraderPage");
+  return { default: m.IntradayTraderPage };
+});
+
+const AdminIntradayOpsPage = lazy(async () => {
+  const m = await import("./pages/admin/AdminIntradayOpsPage");
+  return { default: m.AdminIntradayOpsPage };
+});
+
 function Protected({ children }: { children: ReactNode }) {
   const token = useSessionStore((s) => s.accessToken);
   if (!token) {
@@ -111,6 +121,19 @@ function TraderBrokerRoute() {
   return <BrokersPage />;
 }
 
+function TraderIntradayRoute() {
+  const hasTrader = useSessionStore((s) => s.hasTraderAccess());
+  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
+  if (!hasTrader) {
+    return <Navigate to={isAdmin ? "/admin" : "/dashboard"} replace />;
+  }
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <IntradayTraderPage />
+    </Suspense>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -141,6 +164,7 @@ export default function App() {
           <Route path="executions" element={<ExecutionsPage />} />
           <Route path="positions" element={<PositionsPage />} />
           <Route path="strategies" element={<StrategiesPage />} />
+          <Route path="intraday" element={<TraderIntradayRoute />} />
           <Route path="backtests" element={<BacktestsLayout />}>
             <Route index element={<Navigate to="launch" replace />} />
             <Route path="launch" element={<BacktestLauncherPage />} />
@@ -169,6 +193,14 @@ export default function App() {
               <Route path="broker-infrastructure" element={<AdminBrokerInfrastructurePage />} />
               <Route path="market-connectivity" element={<Navigate to="../broker-infrastructure" replace />} />
               <Route path="market" element={<AdminMarketIntelPage />} />
+              <Route
+                path="intraday"
+                element={
+                  <Suspense fallback={<PageSkeleton />}>
+                    <AdminIntradayOpsPage />
+                  </Suspense>
+                }
+              />
               <Route path="replay" element={<AdminReplayInfraPage />} />
               <Route path="signals" element={<AdminSignalsPage />} />
               <Route path="execution" element={<AdminExecutionPage />} />

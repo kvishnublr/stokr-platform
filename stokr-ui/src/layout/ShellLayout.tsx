@@ -29,6 +29,7 @@ import {
   UserRound,
   Users,
   Wallet,
+  Radar,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
@@ -170,6 +171,7 @@ export function ShellLayout() {
     () => [
       { to: "/dashboard", end: true, label: "Dashboard", icon: LayoutDashboard },
       { to: "/strategies", label: "Strategies", icon: Wallet },
+      { to: "/intraday", label: "Intraday", icon: Radar },
       { to: "/positions", label: "Positions", icon: Layers },
       { to: "/orders", label: "Orders", icon: TrendingUp },
       { to: "/executions", label: "Executions", icon: ActivitySquare },
@@ -194,6 +196,7 @@ export function ShellLayout() {
   const adminOpsCenterLinks: SidebarLink[] = useMemo(() => {
     const links: SidebarLink[] = [
       { to: "/admin", end: true, label: "Overview", icon: LayoutDashboard },
+      { to: "/admin/intraday", label: "Intraday", icon: Radar },
       { to: "/admin/market", label: "Market", icon: Radio },
       { to: "/admin/signals", label: "Signals", icon: Share2 },
       { to: "/admin/execution", label: "OMS", icon: Gauge },

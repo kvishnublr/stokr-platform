@@ -18,3 +18,9 @@ stokr-ui/dist/
 .claude/
 *.tsbuildinfo
 stokr-ui/tsconfig.tsbuildinfo
+
+**/node_modules/
+
+
+**/node_modules/
+
