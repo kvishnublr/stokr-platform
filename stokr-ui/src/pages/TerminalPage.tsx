@@ -80,6 +80,16 @@ export function TerminalPage() {
   const [tradeProduct, setTradeProduct] = useState<"CNC" | "MIS">("CNC");
   const [tradeResult, setTradeResult] = useState<Record<string, unknown> | null>(null);
   const [tradeError, setTradeError] = useState<string | null>(null);
+  const [pendingOrderCancel, setPendingOrderCancel] = useState<{
+    source: string;
+    orderId?: string | null;
+    brokerOrderId?: string | null;
+    variety?: string | null;
+    symbol?: string | null;
+    side?: string | null;
+    state?: string | null;
+    quantity?: string | null;
+  } | null>(null);
   const [confirmState, setConfirmState] = useState<{
     action: string;
     token: string;
@@ -355,7 +365,7 @@ export function TerminalPage() {
         </WorkspaceTabPanel>
 
         <WorkspaceTabPanel id="orders" active={tab}>
-          <OrdersTable rows={orders} onCancel={(r) => cancelOrderMutation.mutate(r)} cancelling={cancelOrderMutation.isPending} />
+          <OrdersTable rows={orders} onCancel={(r) => setPendingOrderCancel(r)} cancelling={cancelOrderMutation.isPending} />
         </WorkspaceTabPanel>
 
         <WorkspaceTabPanel id="execs" active={tab}>
@@ -539,6 +549,66 @@ export function TerminalPage() {
           </div>
         </div>
       ) : null}
+
+      {pendingOrderCancel ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className={cn("w-full max-w-lg rounded-2xl border p-5 shadow-2xl", isLight ? "border-neutral-200 bg-white" : "border-neutral-800 bg-neutral-950")}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", isLight ? "text-neutral-500" : "text-neutral-400")}>Cancel Order</div>
+                <h3 className={cn("mt-1 text-xl font-semibold tracking-tight", isLight ? "text-neutral-900" : "text-white")}>
+                  Confirm cancellation
+                </h3>
+              </div>
+              <Chip value={pendingOrderCancel.source === "BROKER" ? "BROKER" : "OMS"} />
+            </div>
+
+            <div className={cn("mt-4 rounded-xl border p-3", isLight ? "border-neutral-200 bg-neutral-50" : "border-neutral-800 bg-neutral-900/80")}>
+              <div className="grid grid-cols-2 gap-3">
+                <Metric title="Symbol" value={fmt(pendingOrderCancel.symbol)} />
+                <Metric title="Side" value={fmt(pendingOrderCancel.side)} />
+                <Metric title="State" value={fmt(pendingOrderCancel.state)} />
+                <Metric title="Qty" value={fmt(pendingOrderCancel.quantity)} />
+              </div>
+              <div className="mt-3 text-xs text-neutral-600 dark:text-neutral-300">
+                {pendingOrderCancel.source === "BROKER"
+                  ? `Broker order id: ${fmt(pendingOrderCancel.brokerOrderId)}`
+                  : `OMS order id: ${fmt(pendingOrderCancel.orderId)}`}
+              </div>
+            </div>
+
+            <p className={cn("mt-3 text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>
+              This will send a cancel request immediately. Continue?
+            </p>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingOrderCancel(null)}
+                className={cn("rounded-lg border px-3 py-2 text-xs font-semibold", isLight ? "border-neutral-300 text-neutral-700 hover:bg-neutral-100" : "border-neutral-700 text-neutral-200 hover:bg-neutral-800")}
+              >
+                Keep Order
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  cancelOrderMutation.mutate({
+                    source: pendingOrderCancel.source,
+                    orderId: pendingOrderCancel.orderId ?? null,
+                    brokerOrderId: pendingOrderCancel.brokerOrderId ?? null,
+                    variety: pendingOrderCancel.variety ?? null,
+                  });
+                  setPendingOrderCancel(null);
+                }}
+                disabled={cancelOrderMutation.isPending}
+                className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-60"
+              >
+                {cancelOrderMutation.isPending ? "Cancelling..." : "Confirm Cancel"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -558,7 +628,16 @@ function OrdersTable({
   cancelling,
 }: {
   rows: Array<Record<string, unknown>>;
-  onCancel: (payload: { source: string; orderId?: string | null; brokerOrderId?: string | null; variety?: string | null }) => void;
+  onCancel: (payload: {
+    source: string;
+    orderId?: string | null;
+    brokerOrderId?: string | null;
+    variety?: string | null;
+    symbol?: string | null;
+    side?: string | null;
+    state?: string | null;
+    quantity?: string | null;
+  }) => void;
   cancelling: boolean;
 }) {
   const cancellable = (state: string) => {
@@ -601,6 +680,10 @@ function OrdersTable({
                         orderId: (r.orderId as string | null | undefined) ?? null,
                         brokerOrderId: (r.brokerOrderId as string | null | undefined) ?? null,
                         variety: (r.variety as string | null | undefined) ?? "regular",
+                        symbol: fmt(r.symbol),
+                        side: fmt(r.side),
+                        state: fmt(r.state),
+                        quantity: fmt(r.quantity),
                       })
                     }
                     className="rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
