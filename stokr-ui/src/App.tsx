@@ -164,7 +164,7 @@ export default function App() {
           <Route path="executions" element={<ExecutionsPage />} />
           <Route path="positions" element={<PositionsPage />} />
           <Route path="strategies" element={<StrategiesPage />} />
-          <Route path="intraday" element={<TraderIntradayRoute />} />
+          <Route path="intraday/*" element={<TraderIntradayRoute />} />
           <Route path="backtests" element={<BacktestsLayout />}>
             <Route index element={<Navigate to="launch" replace />} />
             <Route path="launch" element={<BacktestLauncherPage />} />
@@ -194,7 +194,7 @@ export default function App() {
               <Route path="market-connectivity" element={<Navigate to="../broker-infrastructure" replace />} />
               <Route path="market" element={<AdminMarketIntelPage />} />
               <Route
-                path="intraday"
+                path="intraday/*"
                 element={
                   <Suspense fallback={<PageSkeleton />}>
                     <AdminIntradayOpsPage />

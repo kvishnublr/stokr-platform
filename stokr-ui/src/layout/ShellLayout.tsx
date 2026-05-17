@@ -171,13 +171,19 @@ export function ShellLayout() {
     () => [
       { to: "/dashboard", end: true, label: "Dashboard", icon: LayoutDashboard },
       { to: "/strategies", label: "Strategies", icon: Wallet },
-      { to: "/intraday", label: "Intraday", icon: Radar },
       { to: "/positions", label: "Positions", icon: Layers },
       { to: "/orders", label: "Orders", icon: TrendingUp },
       { to: "/executions", label: "Executions", icon: ActivitySquare },
       { to: "/watchlist", label: "Watchlist", icon: Star },
       { to: "/terminal", label: "Analytics", icon: BarChart3, matchPrefix: "/terminal" },
       { to: "/backtests/launch", label: "Backtests", icon: Settings2, matchPrefix: "/backtests" },
+    ],
+    [],
+  );
+
+  const intradayLinks: SidebarLink[] = useMemo(
+    () => [
+      { to: "/intraday", label: "Intraday Terminal", icon: Radar, matchPrefix: "/intraday" },
     ],
     [],
   );
@@ -372,6 +378,9 @@ export function ShellLayout() {
               <>
                 <SidebarSection title="MAIN" first>
                   <SidebarLinks links={mainLinks} />
+                </SidebarSection>
+                <SidebarSection title="INTRADAY">
+                  <SidebarLinks links={intradayLinks} />
                 </SidebarSection>
                 <SidebarSection title="INTEGRATIONS">
                   <SidebarLinks links={integrationLinks} />
