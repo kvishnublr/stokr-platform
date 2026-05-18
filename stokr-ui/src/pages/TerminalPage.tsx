@@ -103,6 +103,7 @@ export function TerminalPage() {
     state?: string | null;
     quantity?: string | null;
   } | null>(null);
+  const [orderScope, setOrderScope] = useState<"ALL" | "OPEN" | "EXECUTED" | "REJECTED">("ALL");
   const [confirmState, setConfirmState] = useState<{
     action: string;
     token: string;
@@ -280,6 +281,20 @@ export function TerminalPage() {
   const guardQuality = q.data?.executionQualityMetrics ?? [];
   const guardTimeline = q.data?.executionTimeline ?? [];
   const guardScore = q.data?.executionQualityScore ?? {};
+  const filteredOrders = useMemo(() => {
+    const classify = (stateRaw: unknown): "OPEN" | "EXECUTED" | "REJECTED" => {
+      const s = String(stateRaw ?? "").toUpperCase();
+      if (s.includes("REJECT") || s.includes("CANCEL") || s.includes("FAIL") || s.includes("ERROR")) {
+        return "REJECTED";
+      }
+      if (s.includes("COMPLETE") || s.includes("FILLED") || s.includes("EXECUTED") || s.includes("TRADED")) {
+        return "EXECUTED";
+      }
+      return "OPEN";
+    };
+    if (orderScope === "ALL") return orders;
+    return orders.filter((r) => classify(r.state) === orderScope);
+  }, [orders, orderScope]);
 
   const riskBlock = useMemo(() => {
     if (!risk) return false;
@@ -423,7 +438,25 @@ export function TerminalPage() {
         </WorkspaceTabPanel>
 
         <WorkspaceTabPanel id="orders" active={tab}>
-          <OrdersTable rows={orders} onCancel={(r) => setPendingOrderCancel(r)} cancelling={cancelOrderMutation.isPending} />
+          <div className="mt-2 mb-2 flex flex-wrap items-center gap-2">
+            {(["ALL", "OPEN", "EXECUTED", "REJECTED"] as const).map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                onClick={() => setOrderScope(scope)}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-[11px] font-semibold",
+                  orderScope === scope
+                    ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
+                    : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800",
+                )}
+              >
+                {scope}
+              </button>
+            ))}
+            <span className="text-[11px] text-neutral-500">Showing {filteredOrders.length} of {orders.length}</span>
+          </div>
+          <OrdersTable rows={filteredOrders} onCancel={(r) => setPendingOrderCancel(r)} cancelling={cancelOrderMutation.isPending} />
         </WorkspaceTabPanel>
 
         <WorkspaceTabPanel id="execs" active={tab}>
