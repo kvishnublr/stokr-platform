@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, Layers } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
 import { cn } from "../lib/utils";
@@ -45,6 +46,28 @@ export function AdminStrategiesPage() {
         <p className="mt-2 text-sm text-neutral-400">
           Control which definitions are globally enabled and visible to traders.
         </p>
+      </div>
+
+      {/* Quick nav to new catalog management pages */}
+      <div className="flex flex-wrap gap-2">
+        <Link
+          to="/admin/strategy-catalog"
+          className="rounded-lg border border-violet-700/40 bg-violet-900/20 px-3 py-1.5 text-xs font-semibold text-violet-300 hover:bg-violet-800/30"
+        >
+          + Create / manage strategies
+        </Link>
+        <Link
+          to="/admin/universe-groups"
+          className="rounded-lg border border-blue-700/40 bg-blue-900/20 px-3 py-1.5 text-xs font-semibold text-blue-300 hover:bg-blue-800/30"
+        >
+          Universe groups
+        </Link>
+        <Link
+          to="/admin/runtime-bindings"
+          className="rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-800/30"
+        >
+          Runtime bindings
+        </Link>
       </div>
 
       {q.isLoading ? (

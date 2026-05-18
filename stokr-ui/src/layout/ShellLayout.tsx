@@ -236,6 +236,9 @@ export function ShellLayout() {
     () => [
       { to: "/admin/users", label: "Traders", icon: Users },
       { to: "/admin/strategies", label: "Strategy catalog", icon: Settings2 },
+      { to: "/admin/strategy-catalog", label: "Manage strategies", icon: SlidersHorizontal },
+      { to: "/admin/universe-groups", label: "Universe groups", icon: Database },
+      { to: "/admin/runtime-bindings", label: "Runtime bindings", icon: Radar },
       { to: "/admin/oms", label: "OMS monitor", icon: TrendingUp },
     ],
     [],

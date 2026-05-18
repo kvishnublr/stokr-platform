@@ -20,6 +20,22 @@ public record AdminStrategyDto(
         BigDecimal winRate,
         BigDecimal avgMonthlyReturn,
         String announcementBanner,
+        // catalog fields (V31)
+        String strategyType,
+        String executionMode,
+        String assetClass,
+        String segment,
+        String defaultTimeframe,
+        String defaultExchange,
+        boolean supportsBacktest,
+        boolean supportsLive,
+        boolean supportsPaper,
+        boolean derivativeEnabled,
+        boolean futuresStrategyEnabled,
+        boolean optionStrategyEnabled,
+        String templateClassName,
+        String generatedClassPath,
+        boolean templateGenerated,
+        String catalogVersion,
         Instant createdAt
-) {
-}
+) {}

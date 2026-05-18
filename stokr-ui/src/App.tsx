@@ -37,6 +37,9 @@ import { AdminMarketIntelPage } from "./pages/admin/AdminMarketIntelPage";
 import { AdminReplayInfraPage } from "./pages/admin/AdminReplayInfraPage";
 import { AdminSignalsPage } from "./pages/admin/AdminSignalsPage";
 import { AdminTraderHealthPage } from "./pages/admin/AdminTraderHealthPage";
+import { AdminStrategyCatalogPage } from "./pages/admin/AdminStrategyCatalogPage";
+import { AdminUniverseGroupsPage } from "./pages/admin/AdminUniverseGroupsPage";
+import { AdminRuntimeBindingsPage } from "./pages/admin/AdminRuntimeBindingsPage";
 import { useSessionStore } from "./state/session";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { OnboardingWizardPage } from "./pages/OnboardingWizardPage";
@@ -212,6 +215,9 @@ export default function App() {
               <Route path="controls" element={<AdminControlsPage />} />
               <Route path="users" element={<AdminUsersPage />} />
               <Route path="strategies" element={<AdminStrategiesPage />} />
+              <Route path="strategy-catalog" element={<AdminStrategyCatalogPage />} />
+              <Route path="universe-groups" element={<AdminUniverseGroupsPage />} />
+              <Route path="runtime-bindings" element={<AdminRuntimeBindingsPage />} />
               <Route path="oms" element={<AdminOmsMonitorPage />} />
               <Route path="settings" element={<AdminSectionPage section="settings" />} />
               <Route path="security" element={<AdminSectionPage section="security" />} />

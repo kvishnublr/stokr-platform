@@ -367,18 +367,22 @@ export function AdminOverviewPage() {
               </div>
               <Workflow className={cn("h-10 w-10", isLight ? "text-blue-600/80" : "text-blue-900/70")} />
             </div>
-            <div className={`mt-5 grid gap-4 ${showRiskConsole ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
+            <div className={`mt-5 grid gap-4 ${showRiskConsole ? "md:grid-cols-6" : "md:grid-cols-5"}`}>
               {(
                 showRiskConsole
                   ? [
                       { label: "Users", to: "/admin/users" as const },
                       { label: "Strategies", to: "/admin/strategies" as const },
+                      { label: "Universes", to: "/admin/universe-groups" as const },
+                      { label: "Bindings", to: "/admin/runtime-bindings" as const },
                       { label: "OMS", to: "/admin/oms" as const },
                       { label: "Incidents", to: "/admin/ops" as const },
                     ]
                   : [
                       { label: "Users", to: "/admin/users" as const },
-                      { label: "Strategies", to: "/admin/strategies" as const },
+                      { label: "Strategies", to: "/admin/strategy-catalog" as const },
+                      { label: "Universes", to: "/admin/universe-groups" as const },
+                      { label: "Bindings", to: "/admin/runtime-bindings" as const },
                       { label: "OMS", to: "/admin/oms" as const },
                     ]
               ).map(({ label, to }) => (
