@@ -2,17 +2,19 @@ package com.stokr.strategy.runtime;
 
 import com.stokr.marketdata.service.MarketDataCoverageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
+import java.time.Duration;
 
 @Service
 @RequiredArgsConstructor
 public class SymbolReadinessService {
 
     private final MarketDataCoverageService marketDataCoverageService;
+    @Value("${stokr.strategy.scanner.readiness.lookback-minutes:180}")
+    private long scannerReadinessLookbackMinutes;
 
     /**
      * Validates 1m continuity/freshness for a symbol before scanner evaluation.
@@ -23,21 +25,18 @@ public class SymbolReadinessService {
         // We still block on hard states (NO_DATA/STALE/NOT_BACKFILLED/INCOMPLETE_RANGE).
         var authority = marketDataCoverageService.assessReadiness(symbol, "1m", from, now, "SCANNER", false);
         if (!authority.ready()) {
+            if ("INCOMPLETE_RANGE".equalsIgnoreCase(authority.state())) {
+                // For live scanner gating, incomplete full-session range should not block if recent candles are present.
+                return new Readiness(true, "READY_RECENT_WINDOW");
+            }
             return new Readiness(false, authority.state());
         }
         return new Readiness(true, "READY");
     }
 
     private Instant scannerWindowStart(Instant now) {
-        ZonedDateTime z = now.atZone(ZoneId.of("Asia/Kolkata"));
-        ZonedDateTime open = z.withHour(9).withMinute(15).withSecond(0).withNano(0);
-        if (z.isBefore(open)) {
-            open = open.minusDays(1);
-        }
-        while (open.getDayOfWeek().getValue() >= 6) {
-            open = open.minusDays(1);
-        }
-        return open.toInstant();
+        long mins = Math.max(30L, scannerReadinessLookbackMinutes);
+        return now.minus(Duration.ofMinutes(mins));
     }
 
     public record Readiness(boolean ready, String reason) {
