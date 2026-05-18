@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -34,7 +35,7 @@ public class StrategyTemplateGeneratorService {
      * Defaults to src/main/java relative to CWD — override in application.properties
      * with stokr.catalog.template-source-root for non-standard layouts.
      */
-    @Value("${stokr.catalog.template-source-root:stokr-strategy/src/main/java}")
+    @Value("${stokr.catalog.template-source-root:/tmp/stokr-templates}")
     private String templateSourceRoot;
 
     private static final String GENERATED_PACKAGE = "com.stokr.strategy.generated";
@@ -44,7 +45,7 @@ public class StrategyTemplateGeneratorService {
      * Generates a Java strategy template for the given strategy definition.
      * Updates template_class_name, generated_class_path, and template_generated on success.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public GenerationResult generate(UUID strategyDefinitionId) {
         StrategyDefinition def = definitionRepository.findByIdAndDeletedFalse(strategyDefinitionId)
                 .orElseThrow(() -> new IllegalArgumentException("Strategy definition not found: " + strategyDefinitionId));
