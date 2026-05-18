@@ -6,8 +6,10 @@ import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.ematrend.EmaTrendFollowingSignalGenerator;
 import com.stokr.strategy.meanreversion.MeanReversionSignalGenerator;
 import com.stokr.strategy.momentum.MomentumBreakoutSignalGenerator;
+import com.stokr.strategy.openingrange.OpeningRangeBreakoutSignalGenerator;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.telemetry.ScannerExecutionTelemetryService;
+import com.stokr.strategy.vwap.VwapMeanReversionSignalGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +29,8 @@ public class UnifiedStrategyRuntimeService {
     private final MeanReversionSignalGenerator meanReversionSignalGenerator;
     private final EmaTrendFollowingSignalGenerator emaTrendFollowingSignalGenerator;
     private final MomentumBreakoutSignalGenerator momentumBreakoutSignalGenerator;
+    private final OpeningRangeBreakoutSignalGenerator openingRangeBreakoutSignalGenerator;
+    private final VwapMeanReversionSignalGenerator vwapMeanReversionSignalGenerator;
     private final StrategySignalPipelineService pipelineService;
     private final ScannerExecutionTelemetryService scannerExecutionTelemetryService;
     private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
@@ -77,8 +81,10 @@ public class UnifiedStrategyRuntimeService {
 
     private List<StrategySignalEntity> evaluateCandidates(String symbol) {
         Instant now = Instant.now();
-        List<StrategySignalEntity> out = new ArrayList<>(3);
+        List<StrategySignalEntity> out = new ArrayList<>(5);
         out.add(meanReversionSignalGenerator.evaluatePersistable(symbol, null, null, "LIVE"));
+        out.add(vwapMeanReversionSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now, pollTimeframe));
+        out.add(openingRangeBreakoutSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now, pollTimeframe));
         out.add(emaTrendFollowingSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now, pollTimeframe));
         out.add(momentumBreakoutSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now, pollTimeframe));
         return out;
