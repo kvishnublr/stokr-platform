@@ -29,12 +29,15 @@ const STRATEGY_TYPES = ["INTRADAY", "SWING", "POSITIONAL", "SCALPING"];
 const TIMEFRAMES = ["1m", "3m", "5m", "10m", "15m", "30m", "1h", "1d"];
 
 const ASSET_COLORS: Record<string, string> = {
-  EQUITY: "bg-blue-900/40 text-blue-300",
-  COMMODITY: "bg-amber-900/40 text-amber-300",
-  FUTURES: "bg-purple-900/40 text-purple-300",
-  OPTIONS: "bg-pink-900/40 text-pink-300",
-  CURRENCY: "bg-teal-900/40 text-teal-300",
+  EQUITY: "bg-blue-500/15 text-blue-600 dark:text-blue-300",
+  COMMODITY: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
+  FUTURES: "bg-purple-500/15 text-purple-600 dark:text-purple-300",
+  OPTIONS: "bg-pink-500/15 text-pink-600 dark:text-pink-300",
+  CURRENCY: "bg-teal-500/15 text-teal-600 dark:text-teal-300",
 };
+
+const inputCls =
+  "rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500";
 
 export function AdminStrategyCatalogPage() {
   const qc = useQueryClient();
@@ -130,10 +133,10 @@ export function AdminStrategyCatalogPage() {
             type="button"
             onClick={() => setAssetFilter(ac)}
             className={cn(
-              "rounded-full px-3 py-0.5 text-[11px] font-semibold",
+              "rounded-full px-3 py-0.5 text-[11px] font-semibold transition-colors",
               assetFilter === ac
                 ? "bg-violet-600 text-white"
-                : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700",
+                : "bg-muted text-muted-foreground hover:bg-muted/70",
             )}
           >
             {ac || "All"}
@@ -143,59 +146,59 @@ export function AdminStrategyCatalogPage() {
 
       {/* Create form */}
       {showCreate && (
-        <div className="rounded-xl border border-violet-800/40 bg-violet-950/20 p-4 space-y-3">
-          <p className="text-sm font-semibold text-violet-300">New strategy</p>
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-sm">
+          <p className="text-sm font-semibold text-violet-500">New strategy</p>
           <div className="grid gap-2 sm:grid-cols-2">
             <input
-              className="col-span-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white placeholder:text-neutral-500"
+              className={cn(inputCls, "col-span-full")}
               placeholder="STRATEGY_KEY (UPPER_SNAKE_CASE)"
               value={form.strategyKey}
               onChange={(e) => setForm((f) => ({ ...f, strategyKey: e.target.value.toUpperCase() }))}
             />
             <input
-              className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white placeholder:text-neutral-500"
+              className={inputCls}
               placeholder="Display name"
               value={form.displayName}
               onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
             />
             <input
-              className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white placeholder:text-neutral-500"
+              className={inputCls}
               placeholder="Description (optional)"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             />
             <select
-              className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white"
+              className={inputCls}
               value={form.assetClass}
               onChange={(e) => setForm((f) => ({ ...f, assetClass: e.target.value }))}
             >
               {ASSET_CLASSES.map((a) => <option key={a}>{a}</option>)}
             </select>
             <select
-              className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white"
+              className={inputCls}
               value={form.segment}
               onChange={(e) => setForm((f) => ({ ...f, segment: e.target.value }))}
             >
               {SEGMENTS.map((s) => <option key={s}>{s}</option>)}
             </select>
             <select
-              className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white"
+              className={inputCls}
               value={form.strategyType}
               onChange={(e) => setForm((f) => ({ ...f, strategyType: e.target.value }))}
             >
               {STRATEGY_TYPES.map((t) => <option key={t}>{t}</option>)}
             </select>
             <select
-              className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white"
+              className={inputCls}
               value={form.defaultTimeframe}
               onChange={(e) => setForm((f) => ({ ...f, defaultTimeframe: e.target.value }))}
             >
               {TIMEFRAMES.map((t) => <option key={t}>{t}</option>)}
             </select>
           </div>
-          <div className="flex flex-wrap gap-3 text-xs text-neutral-300">
+          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
             {(["derivativeEnabled", "futuresStrategyEnabled", "optionStrategyEnabled"] as const).map((k) => (
-              <label key={k} className="flex items-center gap-1.5 cursor-pointer">
+              <label key={k} className="flex items-center gap-1.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={form[k]}
@@ -205,7 +208,7 @@ export function AdminStrategyCatalogPage() {
                 {k === "derivativeEnabled" ? "Derivative" : k === "futuresStrategyEnabled" ? "Futures" : "Options"}
               </label>
             ))}
-            <label className="flex items-center gap-1.5 cursor-pointer">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={form.generateTemplate}
@@ -227,7 +230,7 @@ export function AdminStrategyCatalogPage() {
             <button
               type="button"
               onClick={() => setShowCreate(false)}
-              className="rounded-lg bg-neutral-800 px-4 py-1.5 text-xs font-semibold text-neutral-300 hover:bg-neutral-700"
+              className="rounded-lg border border-border bg-muted px-4 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted/70"
             >
               Cancel
             </button>
@@ -239,15 +242,15 @@ export function AdminStrategyCatalogPage() {
       {q.isLoading ? (
         <div className="grid gap-3 lg:grid-cols-2">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-28 animate-pulse rounded-xl border border-neutral-800 bg-neutral-900/40" />
+            <div key={i} className="h-28 animate-pulse rounded-xl border border-border bg-muted" />
           ))}
         </div>
       ) : q.isError ? (
-        <div className="rounded-xl border border-red-900/40 bg-red-950/30 px-4 py-3 text-sm text-red-300">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
           Failed to load. {parseAxiosMessage(q.error)}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/20 px-4 py-8 text-center text-sm text-neutral-500">
+        <div className="rounded-xl border border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
           No strategies found. Create one above.
         </div>
       ) : (
@@ -286,45 +289,45 @@ function StrategyCard({
   onGenerateTemplate: () => void;
   onDelete: () => void;
 }) {
-  const assetColor = ASSET_COLORS[s.assetClass ?? "EQUITY"] ?? "bg-neutral-800 text-neutral-300";
+  const assetColor = ASSET_COLORS[s.assetClass ?? "EQUITY"] ?? "bg-muted text-muted-foreground";
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4 space-y-3">
+    <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <Layers className="h-4 w-4 shrink-0 text-violet-400" />
-            <span className="font-semibold text-white truncate">{s.displayName ?? s.code}</span>
+            <Layers className="h-4 w-4 shrink-0 text-violet-500" />
+            <span className="font-semibold text-foreground truncate">{s.displayName ?? s.code}</span>
             <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase", assetColor)}>
               {s.assetClass ?? "EQUITY"}
             </span>
             {s.segment && (
-              <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] font-bold text-neutral-400">
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
                 {s.segment}
               </span>
             )}
           </div>
-          <div className="mt-0.5 font-mono text-[11px] text-neutral-500">{s.code}</div>
+          <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">{s.code}</div>
         </div>
-        <button type="button" onClick={onToggleExpand} className="text-neutral-500 hover:text-neutral-300">
+        <button type="button" onClick={onToggleExpand} className="text-muted-foreground hover:text-foreground">
           {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
       </div>
 
-      {s.description && <p className="text-xs text-neutral-400">{s.description}</p>}
+      {s.description && <p className="text-xs text-muted-foreground">{s.description}</p>}
 
       {/* Badges row */}
       <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold">
         <Badge label={s.strategyType ?? "INTRADAY"} />
         <Badge label={s.defaultTimeframe ?? "1m"} />
-        {s.derivativeEnabled && <Badge label="DERIV" color="text-purple-300 bg-purple-900/30" />}
-        {s.futuresStrategyEnabled && <Badge label="FUT" color="text-amber-300 bg-amber-900/30" />}
-        {s.optionStrategyEnabled && <Badge label="OPT" color="text-pink-300 bg-pink-900/30" />}
-        {s.templateGenerated && <Badge label="TEMPLATE ✓" color="text-emerald-300 bg-emerald-900/30" />}
+        {s.derivativeEnabled && <Badge label="DERIV" color="text-purple-600 bg-purple-500/15 dark:text-purple-300" />}
+        {s.futuresStrategyEnabled && <Badge label="FUT" color="text-amber-600 bg-amber-500/15 dark:text-amber-300" />}
+        {s.optionStrategyEnabled && <Badge label="OPT" color="text-pink-600 bg-pink-500/15 dark:text-pink-300" />}
+        {s.templateGenerated && <Badge label="TEMPLATE ✓" color="text-emerald-600 bg-emerald-500/15 dark:text-emerald-300" />}
       </div>
 
       {/* Expanded detail */}
       {expanded && (
-        <div className="rounded-lg border border-neutral-700/50 bg-neutral-900/60 p-3 space-y-1 text-[11px] text-neutral-400">
+        <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-1 text-[11px] text-muted-foreground">
           <Row label="Class" value={s.templateClassName ?? "—"} mono />
           <Row label="Path" value={s.generatedClassPath ?? "—"} mono />
           <Row label="Version" value={s.catalogVersion ?? "1.0"} />
@@ -349,7 +352,9 @@ function StrategyCard({
           onClick={onToggleEnabled}
           className={cn(
             "flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold",
-            s.enabled ? "bg-emerald-700 text-white" : "bg-neutral-800 text-neutral-400",
+            s.enabled
+              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+              : "bg-muted text-muted-foreground",
           )}
         >
           {s.enabled ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
@@ -359,7 +364,7 @@ function StrategyCard({
           <button
             type="button"
             onClick={onGenerateTemplate}
-            className="flex items-center gap-1 rounded-lg bg-violet-800/40 px-2.5 py-1 text-[11px] font-semibold text-violet-300 hover:bg-violet-700/40"
+            className="flex items-center gap-1 rounded-lg bg-violet-500/15 px-2.5 py-1 text-[11px] font-semibold text-violet-600 hover:bg-violet-500/25 dark:text-violet-300"
           >
             <Code2 className="h-3 w-3" />
             Generate template
@@ -369,7 +374,7 @@ function StrategyCard({
           <button
             type="button"
             onClick={onGenerateTemplate}
-            className="flex items-center gap-1 rounded-lg bg-neutral-800 px-2.5 py-1 text-[11px] font-semibold text-neutral-400 hover:bg-neutral-700"
+            className="flex items-center gap-1 rounded-lg bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground hover:bg-muted/70"
             title="Re-generate template"
           >
             <RefreshCw className="h-3 w-3" />
@@ -379,7 +384,7 @@ function StrategyCard({
         <button
           type="button"
           onClick={onDelete}
-          className="ml-auto flex items-center gap-1 rounded-lg bg-red-950/30 px-2.5 py-1 text-[11px] font-semibold text-red-400 hover:bg-red-900/40"
+          className="ml-auto flex items-center gap-1 rounded-lg bg-red-500/10 px-2.5 py-1 text-[11px] font-semibold text-red-500 hover:bg-red-500/20"
         >
           <Trash2 className="h-3 w-3" />
           Delete
@@ -389,15 +394,15 @@ function StrategyCard({
   );
 }
 
-function Badge({ label, color = "bg-neutral-800 text-neutral-400" }: { label: string; color?: string }) {
+function Badge({ label, color = "bg-muted text-muted-foreground" }: { label: string; color?: string }) {
   return <span className={cn("rounded-full px-2 py-0.5 uppercase", color)}>{label}</span>;
 }
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex gap-2">
-      <span className="w-28 shrink-0 text-neutral-500">{label}</span>
-      <span className={cn("truncate text-neutral-300", mono && "font-mono text-[10px]")}>{value}</span>
+      <span className="w-28 shrink-0 text-muted-foreground">{label}</span>
+      <span className={cn("truncate text-foreground", mono && "font-mono text-[10px]")}>{value}</span>
     </div>
   );
 }

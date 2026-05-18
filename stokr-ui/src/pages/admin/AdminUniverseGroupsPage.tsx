@@ -21,12 +21,15 @@ const INSTRUMENT_TYPES = ["EQ", "FUT", "OPT", "COM", "CUR"];
 const UNIVERSE_TYPES = ["INDEX_CONSTITUENTS", "CUSTOM", "SECTOR", "FUTURES", "OPTIONS", "COMMODITY"];
 
 const ASSET_COLORS: Record<string, string> = {
-  EQUITY: "text-blue-300 bg-blue-900/30",
-  COMMODITY: "text-amber-300 bg-amber-900/30",
-  FUTURES: "text-purple-300 bg-purple-900/30",
-  OPTIONS: "text-pink-300 bg-pink-900/30",
-  CURRENCY: "text-teal-300 bg-teal-900/30",
+  EQUITY: "bg-blue-500/15 text-blue-600 dark:text-blue-300",
+  COMMODITY: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
+  FUTURES: "bg-purple-500/15 text-purple-600 dark:text-purple-300",
+  OPTIONS: "bg-pink-500/15 text-pink-600 dark:text-pink-300",
+  CURRENCY: "bg-teal-500/15 text-teal-600 dark:text-teal-300",
 };
+
+const inputCls =
+  "rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500";
 
 export function AdminUniverseGroupsPage() {
   const qc = useQueryClient();
@@ -136,10 +139,10 @@ export function AdminUniverseGroupsPage() {
             type="button"
             onClick={() => setAssetFilter(ac)}
             className={cn(
-              "rounded-full px-3 py-0.5 text-[11px] font-semibold",
+              "rounded-full px-3 py-0.5 text-[11px] font-semibold transition-colors",
               assetFilter === ac
                 ? "bg-violet-600 text-white"
-                : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700",
+                : "bg-muted text-muted-foreground hover:bg-muted/70",
             )}
           >
             {ac || "All"}
@@ -149,41 +152,41 @@ export function AdminUniverseGroupsPage() {
 
       {/* Create form */}
       {showCreate && (
-        <div className="rounded-xl border border-violet-800/40 bg-violet-950/20 p-4 space-y-3">
-          <p className="text-sm font-semibold text-violet-300">New universe group</p>
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-sm">
+          <p className="text-sm font-semibold text-violet-500">New universe group</p>
           <div className="grid gap-2 sm:grid-cols-2">
             <input
-              className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white placeholder:text-neutral-500"
+              className={inputCls}
               placeholder="GROUP_KEY (UPPER_SNAKE_CASE)"
               value={form.groupKey}
               onChange={(e) => setForm((f) => ({ ...f, groupKey: e.target.value.toUpperCase() }))}
             />
             <input
-              className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white placeholder:text-neutral-500"
+              className={inputCls}
               placeholder="Display name"
               value={form.displayName}
               onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
             />
             <input
-              className="col-span-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white placeholder:text-neutral-500"
+              className={cn(inputCls, "col-span-full")}
               placeholder="Description (optional)"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             />
-            <select className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white" value={form.assetClass} onChange={(e) => setForm((f) => ({ ...f, assetClass: e.target.value }))}>
+            <select className={inputCls} value={form.assetClass} onChange={(e) => setForm((f) => ({ ...f, assetClass: e.target.value }))}>
               {ASSET_CLASSES.map((a) => <option key={a}>{a}</option>)}
             </select>
-            <select className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white" value={form.segment} onChange={(e) => setForm((f) => ({ ...f, segment: e.target.value }))}>
+            <select className={inputCls} value={form.segment} onChange={(e) => setForm((f) => ({ ...f, segment: e.target.value }))}>
               {SEGMENTS.map((s) => <option key={s}>{s}</option>)}
             </select>
-            <select className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white" value={form.instrumentType} onChange={(e) => setForm((f) => ({ ...f, instrumentType: e.target.value }))}>
+            <select className={inputCls} value={form.instrumentType} onChange={(e) => setForm((f) => ({ ...f, instrumentType: e.target.value }))}>
               {INSTRUMENT_TYPES.map((t) => <option key={t}>{t}</option>)}
             </select>
-            <select className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white" value={form.universeType} onChange={(e) => setForm((f) => ({ ...f, universeType: e.target.value }))}>
+            <select className={inputCls} value={form.universeType} onChange={(e) => setForm((f) => ({ ...f, universeType: e.target.value }))}>
               {UNIVERSE_TYPES.map((t) => <option key={t}>{t}</option>)}
             </select>
           </div>
-          <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
             <input type="checkbox" checked={form.autoManaged} onChange={(e) => setForm((f) => ({ ...f, autoManaged: e.target.checked }))} className="accent-violet-500" />
             Auto-managed (eligible for symbol sync)
           </label>
@@ -196,7 +199,9 @@ export function AdminUniverseGroupsPage() {
             >
               {createMut.isPending ? "Creating…" : "Create group"}
             </button>
-            <button type="button" onClick={() => setShowCreate(false)} className="rounded-lg bg-neutral-800 px-4 py-1.5 text-xs font-semibold text-neutral-300">Cancel</button>
+            <button type="button" onClick={() => setShowCreate(false)} className="rounded-lg border border-border bg-muted px-4 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted/70">
+              Cancel
+            </button>
           </div>
         </div>
       )}
@@ -204,12 +209,16 @@ export function AdminUniverseGroupsPage() {
       {/* Group list */}
       {q.isLoading ? (
         <div className="grid gap-3 lg:grid-cols-2">
-          {[1, 2, 3].map((i) => <div key={i} className="h-24 animate-pulse rounded-xl border border-neutral-800 bg-neutral-900/40" />)}
+          {[1, 2, 3].map((i) => <div key={i} className="h-24 animate-pulse rounded-xl border border-border bg-muted" />)}
         </div>
       ) : q.isError ? (
-        <div className="rounded-xl border border-red-900/40 bg-red-950/30 px-4 py-3 text-sm text-red-300">Failed. {parseAxiosMessage(q.error)}</div>
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+          Failed. {parseAxiosMessage(q.error)}
+        </div>
       ) : (q.data?.content ?? []).length === 0 ? (
-        <div className="rounded-xl border border-neutral-800 px-4 py-8 text-center text-sm text-neutral-500">No universe groups. Create one above.</div>
+        <div className="rounded-xl border border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+          No universe groups. Create one above.
+        </div>
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
           {(q.data?.content ?? []).map((g) => (
@@ -256,54 +265,52 @@ function UniverseGroupCard({
   onImport: () => void;
   importing: boolean;
 }) {
-  const assetColor = ASSET_COLORS[g.assetClass] ?? "text-neutral-300 bg-neutral-800";
+  const assetColor = ASSET_COLORS[g.assetClass] ?? "bg-muted text-muted-foreground";
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4 space-y-3">
+    <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <Database className="h-4 w-4 shrink-0 text-violet-400" />
-            <span className="font-semibold text-white truncate">{g.displayName}</span>
+            <Database className="h-4 w-4 shrink-0 text-violet-500" />
+            <span className="font-semibold text-foreground truncate">{g.displayName}</span>
             <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase", assetColor)}>{g.assetClass}</span>
-            <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] font-bold text-neutral-400">{g.instrumentType}</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{g.instrumentType}</span>
           </div>
-          <div className="mt-0.5 font-mono text-[11px] text-neutral-500">{g.groupKey}</div>
+          <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">{g.groupKey}</div>
         </div>
-        <button type="button" onClick={onToggleExpand} className="text-neutral-500 hover:text-neutral-300">
+        <button type="button" onClick={onToggleExpand} className="text-muted-foreground hover:text-foreground">
           {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-400">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         <span>{g.symbolCount} symbols</span>
         <span>{g.segment}</span>
         <span>{g.universeType}</span>
-        {g.autoManaged && <span className="text-emerald-400">auto-managed</span>}
+        {g.autoManaged && <span className="font-semibold text-emerald-600 dark:text-emerald-400">auto-managed</span>}
       </div>
 
       {expanded && (
         <div className="space-y-3">
-          {/* Symbol list */}
           {symbols.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {symbols.slice(0, 60).map((s) => (
-                <span key={s.id} className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] text-neutral-300">
+                <span key={s.id} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">
                   {s.symbol}
                 </span>
               ))}
               {symbols.length > 60 && (
-                <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500">
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   +{symbols.length - 60} more
                 </span>
               )}
             </div>
           )}
-          {/* Import */}
           <div className="space-y-1.5">
-            <p className="text-[11px] text-neutral-500">Bulk import symbols (comma or newline separated):</p>
+            <p className="text-[11px] text-muted-foreground">Bulk import symbols (comma or newline separated):</p>
             <textarea
               rows={3}
-              className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 font-mono text-xs text-white placeholder:text-neutral-600"
+              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500"
               placeholder="RELIANCE, TCS, INFY..."
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
@@ -312,7 +319,7 @@ function UniverseGroupCard({
               type="button"
               disabled={importing || !importText.trim()}
               onClick={onImport}
-              className="rounded-lg bg-violet-700/40 px-3 py-1 text-[11px] font-semibold text-violet-300 disabled:opacity-50 hover:bg-violet-600/40"
+              className="rounded-lg bg-violet-500/15 px-3 py-1 text-[11px] font-semibold text-violet-600 disabled:opacity-50 hover:bg-violet-500/25 dark:text-violet-300"
             >
               {importing ? "Importing…" : "Import & replace"}
             </button>
@@ -326,7 +333,9 @@ function UniverseGroupCard({
           onClick={onToggleEnabled}
           className={cn(
             "rounded-lg px-2.5 py-1 text-[11px] font-semibold",
-            g.enabled ? "bg-emerald-700 text-white" : "bg-neutral-800 text-neutral-400",
+            g.enabled
+              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+              : "bg-muted text-muted-foreground",
           )}
         >
           {g.enabled ? "Enabled" : "Disabled"}
@@ -335,7 +344,7 @@ function UniverseGroupCard({
           <button
             type="button"
             onClick={onSync}
-            className="flex items-center gap-1 rounded-lg bg-neutral-800 px-2.5 py-1 text-[11px] font-semibold text-neutral-300 hover:bg-neutral-700"
+            className="flex items-center gap-1 rounded-lg bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground hover:bg-muted/70"
           >
             <RefreshCw className="h-3 w-3" />
             Sync symbols

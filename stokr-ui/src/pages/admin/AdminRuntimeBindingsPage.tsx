@@ -16,6 +16,9 @@ import { Activity, Link, Plus, Trash2, Zap } from "lucide-react";
 
 const RISK_PROFILES = ["LOW", "MEDIUM", "HIGH"];
 
+const inputCls =
+  "w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-500";
+
 export function AdminRuntimeBindingsPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
@@ -84,7 +87,7 @@ export function AdminRuntimeBindingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="rounded-full bg-emerald-900/40 px-3 py-0.5 text-xs font-semibold text-emerald-400">
+          <span className="rounded-full bg-emerald-500/15 px-3 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
             {activeCount} active
           </span>
           <button
@@ -100,13 +103,13 @@ export function AdminRuntimeBindingsPage() {
 
       {/* Create form */}
       {showCreate && (
-        <div className="rounded-xl border border-violet-800/40 bg-violet-950/20 p-4 space-y-3">
-          <p className="text-sm font-semibold text-violet-300">New runtime binding</p>
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-sm">
+          <p className="text-sm font-semibold text-violet-500">New runtime binding</p>
           <div className="grid gap-2 sm:grid-cols-2">
             <div className="space-y-1">
-              <label className="text-[11px] text-neutral-500">Strategy</label>
+              <label className="text-[11px] text-muted-foreground">Strategy</label>
               <select
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white"
+                className={inputCls}
                 value={form.strategyCatalogId}
                 onChange={(e) => setForm((f) => ({ ...f, strategyCatalogId: e.target.value }))}
               >
@@ -119,9 +122,9 @@ export function AdminRuntimeBindingsPage() {
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] text-neutral-500">Universe group</label>
+              <label className="text-[11px] text-muted-foreground">Universe group</label>
               <select
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white"
+                className={inputCls}
                 value={form.universeGroupId}
                 onChange={(e) => setForm((f) => ({ ...f, universeGroupId: e.target.value }))}
               >
@@ -134,29 +137,29 @@ export function AdminRuntimeBindingsPage() {
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] text-neutral-500">Max positions</label>
+              <label className="text-[11px] text-muted-foreground">Max positions</label>
               <input
                 type="number"
                 min={1}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white"
+                className={inputCls}
                 value={form.maxPositions}
                 onChange={(e) => setForm((f) => ({ ...f, maxPositions: Number(e.target.value) }))}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] text-neutral-500">Scan interval (seconds)</label>
+              <label className="text-[11px] text-muted-foreground">Scan interval (seconds)</label>
               <input
                 type="number"
                 min={10}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white"
+                className={inputCls}
                 value={form.scanIntervalSeconds}
                 onChange={(e) => setForm((f) => ({ ...f, scanIntervalSeconds: Number(e.target.value) }))}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] text-neutral-500">Risk profile</label>
+              <label className="text-[11px] text-muted-foreground">Risk profile</label>
               <select
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white"
+                className={inputCls}
                 value={form.riskProfile}
                 onChange={(e) => setForm((f) => ({ ...f, riskProfile: e.target.value }))}
               >
@@ -164,18 +167,18 @@ export function AdminRuntimeBindingsPage() {
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] text-neutral-500">Capital limit (optional)</label>
+              <label className="text-[11px] text-muted-foreground">Capital limit (optional)</label>
               <input
                 type="number"
                 min={0}
                 placeholder="e.g. 500000"
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-white placeholder:text-neutral-600"
+                className={inputCls}
                 value={form.capitalLimit}
                 onChange={(e) => setForm((f) => ({ ...f, capitalLimit: e.target.value }))}
               />
             </div>
           </div>
-          <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
             <input
               type="checkbox"
               checked={form.runtimeEnabled}
@@ -198,24 +201,24 @@ export function AdminRuntimeBindingsPage() {
             >
               {createMut.isPending ? "Creating…" : "Create binding"}
             </button>
-            <button type="button" onClick={() => setShowCreate(false)} className="rounded-lg bg-neutral-800 px-4 py-1.5 text-xs font-semibold text-neutral-300">
+            <button type="button" onClick={() => setShowCreate(false)} className="rounded-lg border border-border bg-muted px-4 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted/70">
               Cancel
             </button>
           </div>
         </div>
       )}
 
-      {/* Bindings table */}
+      {/* Bindings list */}
       {bindingsQ.isLoading ? (
         <div className="space-y-2">
-          {[1, 2, 3].map((i) => <div key={i} className="h-16 animate-pulse rounded-xl border border-neutral-800 bg-neutral-900/40" />)}
+          {[1, 2, 3].map((i) => <div key={i} className="h-16 animate-pulse rounded-xl border border-border bg-muted" />)}
         </div>
       ) : bindingsQ.isError ? (
-        <div className="rounded-xl border border-red-900/40 bg-red-950/30 px-4 py-3 text-sm text-red-300">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
           Failed. {parseAxiosMessage(bindingsQ.error)}
         </div>
       ) : bindings.length === 0 ? (
-        <div className="rounded-xl border border-neutral-800 px-4 py-8 text-center text-sm text-neutral-500">
+        <div className="rounded-xl border border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
           No runtime bindings. Create one above to start catalog-driven scanning.
         </div>
       ) : (
@@ -250,29 +253,27 @@ function BindingRow({
       className={cn(
         "flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3",
         b.runtimeEnabled
-          ? "border-emerald-800/40 bg-emerald-950/10"
-          : "border-neutral-800 bg-neutral-900/30",
+          ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800/40 dark:bg-emerald-950/10"
+          : "border-border bg-card",
       )}
     >
-      {/* Status indicator */}
-      <div className={cn("h-2 w-2 shrink-0 rounded-full", b.runtimeEnabled ? "bg-emerald-400" : "bg-neutral-600")} />
+      <div className={cn("h-2 w-2 shrink-0 rounded-full", b.runtimeEnabled ? "bg-emerald-500" : "bg-muted-foreground/30")} />
 
-      {/* Strategy info */}
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-white">
-          <Link className="h-3.5 w-3.5 shrink-0 text-violet-400" />
+        <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
+          <Link className="h-3.5 w-3.5 shrink-0 text-violet-500" />
           <span className="truncate">{b.strategyDisplayName ?? b.strategyKey}</span>
-          <span className="text-neutral-500">→</span>
-          <span className="text-violet-300 truncate">{b.groupDisplayName}</span>
+          <span className="text-muted-foreground">→</span>
+          <span className="text-violet-600 dark:text-violet-300 truncate">{b.groupDisplayName}</span>
         </div>
-        <div className="mt-0.5 flex flex-wrap gap-3 text-[11px] text-neutral-500">
+        <div className="mt-0.5 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
           <span>{b.assetClass ?? "EQ"} / {b.instrumentType}</span>
           <span>{b.symbolCount} symbols</span>
           <span>every {b.scanIntervalSeconds}s</span>
           <span>max {b.maxPositions} pos</span>
           <span className={cn(
             "font-semibold",
-            b.riskProfile === "HIGH" ? "text-red-400" : b.riskProfile === "LOW" ? "text-emerald-400" : "text-amber-400",
+            b.riskProfile === "HIGH" ? "text-red-500" : b.riskProfile === "LOW" ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400",
           )}>
             {b.riskProfile}
           </span>
@@ -280,7 +281,6 @@ function BindingRow({
         </div>
       </div>
 
-      {/* Actions */}
       <div className="flex shrink-0 items-center gap-2">
         <button
           type="button"
@@ -288,8 +288,8 @@ function BindingRow({
           className={cn(
             "flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold",
             b.runtimeEnabled
-              ? "bg-emerald-700 text-white hover:bg-emerald-600"
-              : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700",
+              ? "bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25 dark:text-emerald-400"
+              : "bg-muted text-muted-foreground hover:bg-muted/70",
           )}
         >
           {b.runtimeEnabled ? (
@@ -301,7 +301,7 @@ function BindingRow({
         <button
           type="button"
           onClick={onDelete}
-          className="rounded-lg bg-red-950/20 p-1.5 text-red-500 hover:bg-red-900/30"
+          className="rounded-lg bg-red-500/10 p-1.5 text-red-500 hover:bg-red-500/20"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
