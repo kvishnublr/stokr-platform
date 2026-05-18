@@ -29,7 +29,7 @@ public class MarketDataQueryService {
 
     @Transactional(readOnly = true)
     public List<MarketdataCandle> lastBarsAsc(String symbol, String timeframe, int maxBars) {
-        List<MarketdataCandle> asc = fetchAscWithFallback(symbol, timeframe, null, Math.max(500, maxBars * 6));
+        List<MarketdataCandle> asc = new ArrayList<>(fetchAscWithFallback(symbol, timeframe, null, Math.max(500, maxBars * 6)));
         asc.sort(Comparator.comparing(MarketdataCandle::getOpenTime));
         if (asc.size() <= maxBars) {
             return asc;
