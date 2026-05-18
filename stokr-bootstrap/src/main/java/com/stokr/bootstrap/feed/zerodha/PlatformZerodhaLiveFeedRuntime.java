@@ -199,41 +199,55 @@ public class PlatformZerodhaLiveFeedRuntime {
         for (int id : want) {
             map.put(id, "TOKEN_" + id);
         }
-        try {
-            String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "NSE");
-            BufferedReader br = new BufferedReader(new StringReader(csv));
-            String header = br.readLine();
-            if (header == null) {
-                return map;
+        List<String> configuredSymbols = feedProperties.parsedInstrumentSymbols();
+        for (int i = 0; i < Math.min(want.size(), configuredSymbols.size()); i++) {
+            String configured = configuredSymbols.get(i);
+            if (configured != null && !configured.isBlank()) {
+                map.put(want.get(i), configured.trim());
             }
-            String[] hc = header.split(",");
-            int it = -1;
-            int ts = -1;
-            for (int i = 0; i < hc.length; i++) {
-                String c = hc[i].trim();
-                if ("instrument_token".equalsIgnoreCase(c)) {
-                    it = i;
-                }
-                if ("tradingsymbol".equalsIgnoreCase(c)) {
-                    ts = i;
-                }
+        }
+        // Try NSE then NFO — futures tokens won't appear in the NSE list
+        for (String exchange : List.of("NSE", "NFO")) {
+            boolean anyUnresolved = map.values().stream().anyMatch(v -> v.startsWith("TOKEN_"));
+            if (!anyUnresolved) {
+                break;
             }
-            if (it < 0 || ts < 0) {
-                return map;
-            }
-            String line;
-            while ((line = br.readLine()) != null) {
-                String[] p = line.split(",");
-                if (p.length <= Math.max(it, ts)) {
+            try {
+                String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, exchange);
+                BufferedReader br = new BufferedReader(new StringReader(csv));
+                String header = br.readLine();
+                if (header == null) {
                     continue;
                 }
-                int tok = (int) Long.parseLong(p[it].trim());
-                if (map.containsKey(tok)) {
-                    map.put(tok, p[ts].trim());
+                String[] hc = header.split(",");
+                int it = -1;
+                int ts = -1;
+                for (int i = 0; i < hc.length; i++) {
+                    String c = hc[i].trim();
+                    if ("instrument_token".equalsIgnoreCase(c)) {
+                        it = i;
+                    }
+                    if ("tradingsymbol".equalsIgnoreCase(c)) {
+                        ts = i;
+                    }
                 }
+                if (it < 0 || ts < 0) {
+                    continue;
+                }
+                String line;
+                while ((line = br.readLine()) != null) {
+                    String[] p = line.split(",");
+                    if (p.length <= Math.max(it, ts)) {
+                        continue;
+                    }
+                    int tok = (int) Long.parseLong(p[it].trim());
+                    if (map.containsKey(tok)) {
+                        map.put(tok, p[ts].trim());
+                    }
+                }
+            } catch (Exception ex) {
+                log.debug("platform.ws.instruments_parse exchange={} {}", exchange, ex.toString());
             }
-        } catch (Exception ex) {
-            log.debug("platform.ws.instruments_parse {}", ex.toString());
         }
         return map;
     }

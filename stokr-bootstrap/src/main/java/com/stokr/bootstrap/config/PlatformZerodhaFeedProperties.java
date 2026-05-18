@@ -22,6 +22,14 @@ public class PlatformZerodhaFeedProperties {
      */
     private String instrumentTokens = "256265";
 
+    /**
+     * Optional comma-separated canonical symbols aligned with {@link #instrumentTokens} by index.
+     * Example:
+     * instrumentTokens=256265,260105
+     * instrumentSymbols=NIFTY 50,NIFTY BANK
+     */
+    private String instrumentSymbols = "";
+
     public boolean isLiveFeedEnabled() {
         return liveFeedEnabled;
     }
@@ -36,6 +44,14 @@ public class PlatformZerodhaFeedProperties {
 
     public void setInstrumentTokens(String instrumentTokens) {
         this.instrumentTokens = instrumentTokens;
+    }
+
+    public String getInstrumentSymbols() {
+        return instrumentSymbols;
+    }
+
+    public void setInstrumentSymbols(String instrumentSymbols) {
+        this.instrumentSymbols = instrumentSymbols;
     }
 
     public List<Integer> parsedInstrumentTokens() {
@@ -57,6 +73,20 @@ public class PlatformZerodhaFeedProperties {
         }
         if (out.isEmpty()) {
             out.add(256265);
+        }
+        return out;
+    }
+
+    public List<String> parsedInstrumentSymbols() {
+        List<String> out = new ArrayList<>();
+        if (instrumentSymbols == null || instrumentSymbols.isBlank()) {
+            return out;
+        }
+        for (String part : instrumentSymbols.split(",")) {
+            String s = part.trim();
+            if (!s.isEmpty()) {
+                out.add(s);
+            }
         }
         return out;
     }
