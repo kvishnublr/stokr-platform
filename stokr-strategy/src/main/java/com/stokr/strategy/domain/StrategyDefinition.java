@@ -117,4 +117,26 @@ public class StrategyDefinition extends BaseEntity {
     /** True once StrategyTemplateGeneratorService has written the .java file to disk */
     @Column(name = "template_generated", nullable = false)
     private boolean templateGenerated = false;
+
+    // ── Multi-asset fields (added V31) ────────────────────────────────────
+
+    /** EQUITY | COMMODITY | FUTURES | OPTIONS | CURRENCY */
+    @Column(name = "asset_class", length = 32)
+    private String assetClass = "EQUITY";
+
+    /** NSE | MCX | NFO | CDS */
+    @Column(name = "segment", length = 16)
+    private String segment = "NSE";
+
+    /** Whether this strategy supports derivative instruments (futures/options) */
+    @Column(name = "derivative_enabled", nullable = false)
+    private boolean derivativeEnabled = false;
+
+    /** Whether this strategy supports futures contracts */
+    @Column(name = "futures_strategy_enabled", nullable = false)
+    private boolean futuresStrategyEnabled = false;
+
+    /** Whether this strategy supports options contracts */
+    @Column(name = "option_strategy_enabled", nullable = false)
+    private boolean optionStrategyEnabled = false;
 }
