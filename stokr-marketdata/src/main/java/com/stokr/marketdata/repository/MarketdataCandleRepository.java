@@ -20,8 +20,17 @@ public interface MarketdataCandleRepository extends JpaRepository<MarketdataCand
 
     List<MarketdataCandle> findTop500BySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(String symbol, String tf);
 
+    List<MarketdataCandle> findTop500BySymbolInAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(List<String> symbols, String tf);
+
     List<MarketdataCandle> findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
             String symbol,
+            String timeframe,
+            Instant start,
+            Instant end
+    );
+
+    List<MarketdataCandle> findBySymbolInAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
+            List<String> symbols,
             String timeframe,
             Instant start,
             Instant end
@@ -42,11 +51,25 @@ public interface MarketdataCandleRepository extends JpaRepository<MarketdataCand
             Instant end
     );
 
+    long countBySymbolInAndTimeframeAndOpenTimeBetweenAndDeletedFalse(
+            List<String> symbols,
+            String timeframe,
+            Instant start,
+            Instant end
+    );
+
     /**
      * Newest candles first, {@code open_time <= endInclusive}, for replay lookbacks (not "global tail then filter").
      */
     Page<MarketdataCandle> findBySymbolAndTimeframeAndOpenTimeLessThanEqualAndDeletedFalse(
             String symbol,
+            String timeframe,
+            Instant endInclusive,
+            Pageable pageable
+    );
+
+    Page<MarketdataCandle> findBySymbolInAndTimeframeAndOpenTimeLessThanEqualAndDeletedFalse(
+            List<String> symbols,
             String timeframe,
             Instant endInclusive,
             Pageable pageable

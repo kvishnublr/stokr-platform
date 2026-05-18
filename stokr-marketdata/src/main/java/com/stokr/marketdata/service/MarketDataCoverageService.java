@@ -13,10 +13,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -34,7 +36,7 @@ public class MarketDataCoverageService {
     @Transactional
     public CoverageAssessment validateAndUpsert(String symbol, String timeframe, Instant from, Instant to) {
         List<MarketdataCandle> bars =
-                candleRepository.findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(symbol, timeframe, from, to);
+                candleRepository.findBySymbolInAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(symbolCandidates(symbol), timeframe, from, to);
         long expected = expectedBars(timeframe, from, to);
         long actual = bars.size();
         Instant latest = bars.isEmpty() ? null : bars.get(bars.size() - 1).getOpenTime();
@@ -132,10 +134,10 @@ public class MarketDataCoverageService {
     @Transactional
     public AuthorityAssessment assessReadiness(String symbol, String timeframe, Instant from, Instant to, String useCase, boolean autoRefresh) {
         String tf = timeframe == null || timeframe.isBlank() ? "1m" : timeframe.trim();
-        MarketDataCoverage row = coverageRepository.findBySymbolAndTimeframeAndDeletedFalse(symbol, tf).orElse(null);
+        MarketDataCoverage row = findCoverageRow(symbol, tf);
         if (autoRefresh && needsRevalidation(row, from, to)) {
             validateAndUpsert(symbol, tf, from, to);
-            row = coverageRepository.findBySymbolAndTimeframeAndDeletedFalse(symbol, tf).orElse(null);
+            row = findCoverageRow(symbol, tf);
         }
         if (row == null) {
             return new AuthorityAssessment(symbol, tf, useCase, false, "NO_DATA", "Coverage row missing", null, null, null, null);
@@ -190,6 +192,57 @@ public class MarketDataCoverageService {
             return "READY";
         }
         return v;
+    }
+
+    private MarketDataCoverage findCoverageRow(String symbol, String timeframe) {
+        for (String s : symbolCandidates(symbol)) {
+            MarketDataCoverage row = coverageRepository.findBySymbolAndTimeframeAndDeletedFalse(s, timeframe).orElse(null);
+            if (row != null) {
+                return row;
+            }
+        }
+        return null;
+    }
+
+    private List<String> symbolCandidates(String symbol) {
+        if (symbol == null) {
+            return List.of();
+        }
+        String raw = symbol.trim();
+        if (raw.isBlank()) {
+            return List.of();
+        }
+        String upper = raw.toUpperCase(Locale.ROOT);
+        Set<String> out = new LinkedHashSet<>();
+        out.add(raw);
+        out.add(upper);
+        switch (upper) {
+            case "NIFTY_FUT", "NIFTY" -> {
+                out.add("NIFTY 50");
+                out.add("NIFTY_50");
+            }
+            case "BANKNIFTY_FUT", "BANKNIFTY" -> {
+                out.add("NIFTY BANK");
+                out.add("NIFTY_BANK");
+                out.add("BANK NIFTY");
+            }
+            case "FINNIFTY_FUT", "FINNIFTY" -> {
+                out.add("NIFTY FIN SERVICE");
+                out.add("NIFTY_FIN_SERVICE");
+            }
+            default -> {
+                if (upper.endsWith("_FUT")) {
+                    out.add(upper.substring(0, upper.length() - 4));
+                }
+                if (upper.contains(" ")) {
+                    out.add(upper.replace(' ', '_'));
+                }
+                if (upper.contains("_")) {
+                    out.add(upper.replace('_', ' '));
+                }
+            }
+        }
+        return List.copyOf(out);
     }
 
     private long expectedBars(String timeframe, Instant from, Instant to) {
