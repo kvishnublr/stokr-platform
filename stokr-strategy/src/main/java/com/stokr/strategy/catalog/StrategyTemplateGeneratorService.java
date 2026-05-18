@@ -29,6 +29,7 @@ import java.util.UUID;
 public class StrategyTemplateGeneratorService {
 
     private final StrategyDefinitionRepository definitionRepository;
+    private final GitHubTemplateCommitService gitHubCommitService;
 
     /**
      * Base source root for the stokr-strategy module.
@@ -61,6 +62,7 @@ public class StrategyTemplateGeneratorService {
             def.setGeneratedClassPath(fqcn);
             def.setTemplateGenerated(true);
             definitionRepository.save(def);
+            gitHubCommitService.commitTemplate(className, buildTemplate(className, def), def.getStrategyKey());
             return new GenerationResult(className, fqcn, targetFile.toString(), false);
         }
 
@@ -75,6 +77,7 @@ public class StrategyTemplateGeneratorService {
             definitionRepository.save(def);
 
             log.info("template.generator.written class={} path={}", fqcn, targetFile);
+            gitHubCommitService.commitTemplate(className, source, def.getStrategyKey());
             return new GenerationResult(className, fqcn, targetFile.toString(), true);
         } catch (IOException ex) {
             throw new RuntimeException("Failed to write strategy template: " + targetFile, ex);
