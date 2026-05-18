@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
 
 public record CreateOrderRequest(
         @NotBlank String symbol,
@@ -16,6 +18,26 @@ public record CreateOrderRequest(
         ExecutionMode executionMode,
         String brokerVendor,
         String strategyKey,
-        String idempotencyKey
+        String idempotencyKey,
+        UUID signalId,
+        Instant signalGeneratedAt,
+        BigDecimal signalReferencePrice,
+        String timeframe,
+        Boolean exitOrder,
+        String guardMode
 ) {
+    public CreateOrderRequest(
+            String symbol,
+            String side,
+            String orderType,
+            BigDecimal quantity,
+            BigDecimal limitPrice,
+            ExecutionMode executionMode,
+            String brokerVendor,
+            String strategyKey,
+            String idempotencyKey
+    ) {
+        this(symbol, side, orderType, quantity, limitPrice, executionMode, brokerVendor, strategyKey, idempotencyKey,
+                null, null, null, null, null, null);
+    }
 }

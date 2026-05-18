@@ -220,6 +220,23 @@ function sinceLabel(ts: string | null | undefined): string {
   return `${h}h`;
 }
 
+function sanitizeDisplayText(raw: string): string {
+  return raw
+    .replaceAll("â†‘", "↑")
+    .replaceAll("â†“", "↓")
+    .replaceAll("â€™", "'")
+    .replaceAll("â€", "\"")
+    .replaceAll("Â", "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatSignedPct(v: number): string {
+  const n = Number.isFinite(v) ? v : 0;
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${n.toFixed(2)}%`;
+}
+
 function inferSector(symbol: string): string {
   const s = symbol.toUpperCase();
   if (s.includes("BANK") || s.includes("HDFC") || s.includes("ICICI") || s.includes("SBI")) return "BANKING";
@@ -716,8 +733,8 @@ export function IntradayTraderPage() {
     <div className={cn("space-y-4", isLight ? "text-neutral-900" : "text-white")}>
       <div className="sticky top-0 z-20 rounded-2xl border border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-9">
-          <HeaderMetric title="NIFTY" value={`${pulse.niftyDelta >= 0 ? "UP" : "DOWN"} ${pulse.niftyDelta.toFixed(2)}%`} hint={pulse.momentum > 60 ? "Strong trend" : "Balanced"} icon={<TrendingUp className="h-3.5 w-3.5" />} />
-          <HeaderMetric title="BANKNIFTY" value={`${pulse.bankDelta >= 0 ? "UP" : "DOWN"} ${pulse.bankDelta.toFixed(2)}%`} hint={pulse.bankDelta >= 0 ? "Relative strength" : "Weak recovery"} icon={<BarChart3 className="h-3.5 w-3.5" />} />
+          <HeaderMetric title="NIFTY" value={formatSignedPct(pulse.niftyDelta)} hint={pulse.momentum > 60 ? "Strong trend" : "Balanced"} icon={<TrendingUp className="h-3.5 w-3.5" />} />
+          <HeaderMetric title="BANKNIFTY" value={formatSignedPct(pulse.bankDelta)} hint={pulse.bankDelta >= 0 ? "Relative strength" : "Weak recovery"} icon={<BarChart3 className="h-3.5 w-3.5" />} />
           <HeaderMetric title="VIX Proxy" value={pulse.vixProxy.toFixed(1)} hint={pulse.vixProxy > 28 ? "Expansion" : "Contained"} icon={<Activity className="h-3.5 w-3.5" />} />
           <HeaderMetric title="Regime" value={marketRegime} hint={selectedStrategy?.compatibility ?? "NEUTRAL"} icon={<Gauge className="h-3.5 w-3.5" />} />
           <HeaderMetric title="Feed Health" value={feedHealth} hint={feedHealth === "LIVE" ? "Realtime" : "Review data lag"} icon={<Radio className="h-3.5 w-3.5" />} />
@@ -1078,8 +1095,8 @@ function HeaderMetric({ title, value, hint, icon }: { title: string; value: stri
         <span>{title}</span>
         {icon}
       </div>
-      <div className="mt-0.5 text-sm font-semibold">{value}</div>
-      <div className="truncate text-[10px] text-neutral-500">{hint}</div>
+      <div className="mt-0.5 text-sm font-semibold">{sanitizeDisplayText(value)}</div>
+      <div className="truncate text-[10px] text-neutral-500">{sanitizeDisplayText(hint)}</div>
     </div>
   );
 }

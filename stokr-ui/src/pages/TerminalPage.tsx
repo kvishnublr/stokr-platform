@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { WorkspaceTabPanel, WorkspaceTabs } from "../components/ds/WorkspaceTabs";
@@ -29,6 +29,10 @@ type Workstation = {
     liveEligible: boolean;
   };
   latestSignals: Array<Record<string, unknown>>;
+  executionGuardEvents?: Array<Record<string, unknown>>;
+  executionQualityMetrics?: Array<Record<string, unknown>>;
+  executionTimeline?: Array<Record<string, unknown>>;
+  executionQualityScore?: Record<string, unknown>;
 };
 
 const TABS = [
@@ -38,12 +42,20 @@ const TABS = [
   { id: "execs", label: "Executions" },
   { id: "alloc", label: "Strategy Allocations" },
   { id: "risk", label: "Risk Controls" },
+  { id: "guard", label: "Execution Guard" },
 ];
 
 function fmt(v: unknown) {
   if (v == null) return "-";
   if (typeof v === "number") return v.toFixed(2);
   return String(v);
+}
+
+function severityTone(v: string) {
+  const x = v.toUpperCase();
+  if (x.includes("CRITICAL") || x.includes("HARD_FAIL") || x.includes("REJECT")) return "bad";
+  if (x.includes("WARNING") || x.includes("SOFT_FAIL")) return "warn";
+  return "ok";
 }
 
 function badgeTone(v: string) {
@@ -78,6 +90,7 @@ export function TerminalPage() {
   const [tradeVariety, setTradeVariety] = useState<"REGULAR" | "AMO">("REGULAR");
   const [tradeExchange, setTradeExchange] = useState<"NSE" | "BSE">("NSE");
   const [tradeProduct, setTradeProduct] = useState<"CNC" | "MIS">("CNC");
+  const [guardStream, setGuardStream] = useState<Array<Record<string, unknown>>>([]);
   const [tradeResult, setTradeResult] = useState<Record<string, unknown> | null>(null);
   const [tradeError, setTradeError] = useState<string | null>(null);
   const [pendingOrderCancel, setPendingOrderCancel] = useState<{
@@ -102,6 +115,47 @@ export function TerminalPage() {
     staleTime: 2_000,
     refetchInterval: 5_000,
   });
+
+  useEffect(() => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) return;
+    const ctrl = new AbortController();
+    let cancelled = false;
+    const run = async () => {
+      const res = await fetch("/api/trader/terminal/execution-guard/stream", {
+        headers: { Authorization: `Bearer ${token}`, Accept: "text/event-stream" },
+        signal: ctrl.signal,
+      });
+      if (!res.ok || !res.body) return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (!cancelled) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        let idx;
+        while ((idx = buffer.indexOf("\n\n")) >= 0) {
+          const frame = buffer.slice(0, idx).trim();
+          buffer = buffer.slice(idx + 2);
+          if (!frame) continue;
+          const data = frame.split("\n").find((l) => l.startsWith("data:"));
+          if (!data) continue;
+          try {
+            const parsed = JSON.parse(data.slice(5).trim()) as Record<string, unknown>;
+            setGuardStream((prev) => [parsed, ...prev].slice(0, 100));
+          } catch {
+            // ignore malformed event frame
+          }
+        }
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+    };
+  }, []);
 
   const controlMutation = useMutation({
     mutationFn: async (action: string) => {
@@ -222,6 +276,10 @@ export function TerminalPage() {
   const alloc = q.data?.strategyAllocations ?? [];
   const risk = q.data?.riskControls;
   const signals = q.data?.latestSignals ?? [];
+  const guardEvents = q.data?.executionGuardEvents ?? [];
+  const guardQuality = q.data?.executionQualityMetrics ?? [];
+  const guardTimeline = q.data?.executionTimeline ?? [];
+  const guardScore = q.data?.executionQualityScore ?? {};
 
   const riskBlock = useMemo(() => {
     if (!risk) return false;
@@ -392,8 +450,8 @@ export function TerminalPage() {
               <div className="mt-2 max-h-56 overflow-auto space-y-2">
                 {signals.map((s) => (
                   <div key={String(s.id)} className={cn("rounded-lg border px-2 py-1 text-xs", isLight ? "border-neutral-200" : "border-neutral-800")}>
-                    <div className="font-medium">{fmt(s.symbol)} · {fmt(s.signalType)}</div>
-                    <div className="text-neutral-500">{fmt(s.strategyName)} · {fmt(s.createdAt)}</div>
+                    <div className="font-medium">{fmt(s.symbol)} - {fmt(s.signalType)}</div>
+                    <div className="text-neutral-500">{fmt(s.strategyName)} - {fmt(s.createdAt)}</div>
                   </div>
                 ))}
               </div>
@@ -495,6 +553,86 @@ export function TerminalPage() {
                 <div>Raw status: <span className="font-mono">{fmt(tradeResult?.rawStatus)}</span></div>
               </div>
             </div>
+          </div>
+        </WorkspaceTabPanel>
+
+        <WorkspaceTabPanel id="guard" active={tab}>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <Metric title="Guard Events" value={fmt(guardEvents.length)} />
+            <Metric title="Hard Fails" value={fmt(guardEvents.filter((x) => String(x.outcome ?? "").toUpperCase() === "HARD_FAIL").length)} />
+            <Metric title="Soft Fails" value={fmt(guardEvents.filter((x) => String(x.outcome ?? "").toUpperCase() === "SOFT_FAIL").length)} />
+            <Metric title="Quality Score" value={fmt(guardScore.score)} />
+          </div>
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Guard Rejections and Outcomes</div>
+              <Table
+                rows={guardEvents.map((x) => ({
+                  createdAt: x.createdAt,
+                  symbol: x.symbol,
+                  strategyKey: x.strategyKey,
+                  guardMode: x.guardMode,
+                  outcome: x.outcome,
+                  severity: x.severity,
+                  reason: x.reason,
+                }))}
+                cols={["createdAt", "symbol", "strategyKey", "guardMode", "outcome", "severity", "reason"]}
+              />
+            </div>
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Execution Quality</div>
+              <Table
+                rows={guardQuality.map((x) => ({
+                  createdAt: x.createdAt,
+                  symbol: x.symbol,
+                  executionMode: x.executionMode,
+                  expectedPrice: x.expectedPrice,
+                  actualFillPrice: x.actualFillPrice,
+                  realizedSlippagePct: x.realizedSlippagePct,
+                  fillLatencyMs: x.fillLatencyMs,
+                  spreadAtExecution: x.spreadAtExecution,
+                  volatilityAtExecution: x.volatilityAtExecution,
+                }))}
+                cols={["createdAt", "symbol", "executionMode", "expectedPrice", "actualFillPrice", "realizedSlippagePct", "fillLatencyMs", "spreadAtExecution", "volatilityAtExecution"]}
+              />
+            </div>
+          </div>
+          <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs dark:border-neutral-800 dark:bg-neutral-900/50">
+            <div className="mb-2 font-semibold uppercase tracking-wide text-neutral-500">Severity Legend</div>
+            <div className="flex flex-wrap gap-2">
+              <span className={cn("rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                severityTone("CRITICAL") === "bad"
+                  ? "border-rose-300/60 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300"
+                  : ""
+              )}>CRITICAL</span>
+              <span className={cn("rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                severityTone("WARNING") === "warn"
+                  ? "border-amber-300/60 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
+                  : ""
+              )}>WARNING</span>
+              <span className="rounded-md border border-emerald-300/60 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">INFO</span>
+            </div>
+          </div>
+          <div className="mt-4">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Realtime Guard Stream</div>
+            <Table
+              rows={guardStream.map((e) => ({
+                emittedAt: e.emittedAt,
+                severity: e.severity,
+                outcome: e.outcome,
+                symbol: e.symbol,
+                strategyKey: e.strategyKey,
+                reason: (e.payload as Record<string, unknown> | undefined)?.reason,
+              }))}
+              cols={["emittedAt", "severity", "outcome", "symbol", "strategyKey", "reason"]}
+            />
+          </div>
+          <div className="mt-4">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Execution Timeline</div>
+            <Table
+              rows={guardTimeline}
+              cols={["eventTime", "eventType", "symbol", "strategyKey", "guardOutcome", "severity", "latencyMs"]}
+            />
           </div>
         </WorkspaceTabPanel>
       </div>

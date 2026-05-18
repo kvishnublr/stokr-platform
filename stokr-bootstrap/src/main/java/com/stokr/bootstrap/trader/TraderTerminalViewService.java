@@ -5,6 +5,9 @@ import com.stokr.backtest.domain.BacktestJobStatus;
 import com.stokr.backtest.repository.BacktestJobRepository;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.execution.guard.ExecutionGuardTelemetryService;
+import com.stokr.execution.guard.ExecutionQualityScoringService;
+import com.stokr.execution.guard.ExecutionTimelineService;
 import com.stokr.oms.domain.OmsExecution;
 import com.stokr.oms.domain.OrderState;
 import com.stokr.oms.domain.PortfolioPosition;
@@ -65,6 +68,9 @@ public class TraderTerminalViewService {
     private final PortfolioPositionRepository portfolioPositionRepository;
     private final ZerodhaBrokerOperationsService zerodhaBrokerOperationsService;
     private final TraderExecutionModePreferenceService traderExecutionModePreferenceService;
+    private final ExecutionGuardTelemetryService executionGuardTelemetryService;
+    private final ExecutionTimelineService executionTimelineService;
+    private final ExecutionQualityScoringService executionQualityScoringService;
     @Value("${stokr.strategy.symbols:NIFTY_FUT,BANKNIFTY_FUT}")
     private String strategySymbolsCsv;
 
@@ -80,7 +86,10 @@ public class TraderTerminalViewService {
             OmsExecutionRepository omsExecutionRepository,
             PortfolioPositionRepository portfolioPositionRepository,
             ZerodhaBrokerOperationsService zerodhaBrokerOperationsService,
-            TraderExecutionModePreferenceService traderExecutionModePreferenceService
+            TraderExecutionModePreferenceService traderExecutionModePreferenceService,
+            ExecutionGuardTelemetryService executionGuardTelemetryService,
+            ExecutionTimelineService executionTimelineService,
+            ExecutionQualityScoringService executionQualityScoringService
     ) {
         this.marketDataQueryService = marketDataQueryService;
         this.strategySignalRepository = strategySignalRepository;
@@ -94,6 +103,9 @@ public class TraderTerminalViewService {
         this.portfolioPositionRepository = portfolioPositionRepository;
         this.zerodhaBrokerOperationsService = zerodhaBrokerOperationsService;
         this.traderExecutionModePreferenceService = traderExecutionModePreferenceService;
+        this.executionGuardTelemetryService = executionGuardTelemetryService;
+        this.executionTimelineService = executionTimelineService;
+        this.executionQualityScoringService = executionQualityScoringService;
     }
 
     public List<Map<String, Object>> marketWatchProjection() {
@@ -347,6 +359,10 @@ public class TraderTerminalViewService {
                 "liveEligible", broker.connected() && broker.tokenValid()
         ));
         out.put("latestSignals", strategyFeed(userId));
+        out.put("executionGuardEvents", executionGuardTelemetryService.recentGuardEvents(userId, 100));
+        out.put("executionQualityMetrics", executionGuardTelemetryService.recentQualityMetrics(userId, 100));
+        out.put("executionTimeline", executionTimelineService.recentForUser(userId, 200));
+        out.put("executionQualityScore", executionQualityScoringService.scoreForUser(userId));
         return out;
     }
 
@@ -373,8 +389,8 @@ public class TraderTerminalViewService {
         }
 
         try {
-            List<ZerodhaBrokerOperationsService.BrokerOpenOrderDto> brokerOpen = zerodhaBrokerOperationsService.openOrders(userId);
-            for (ZerodhaBrokerOperationsService.BrokerOpenOrderDto b : brokerOpen) {
+            List<ZerodhaBrokerOperationsService.BrokerOpenOrderDto> brokerRows = zerodhaBrokerOperationsService.recentOrders(userId, 200);
+            for (ZerodhaBrokerOperationsService.BrokerOpenOrderDto b : brokerRows) {
                 if (existingOmsFingerprints.contains(orderFingerprint(b.symbol(), b.side(), b.quantity() == null ? null : String.valueOf(b.quantity())))) {
                     continue;
                 }

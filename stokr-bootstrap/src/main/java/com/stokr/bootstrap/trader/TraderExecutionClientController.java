@@ -3,6 +3,8 @@ package com.stokr.bootstrap.trader;
 import com.stokr.auth.security.StokrUserDetails;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
+import com.stokr.execution.guard.ExecutionQualityScoringService;
+import com.stokr.execution.guard.ExecutionTimelineService;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
 import java.util.List;
@@ -29,15 +32,24 @@ public class TraderExecutionClientController {
     private final TraderTerminalViewService traderTerminalViewService;
     private final TraderTerminalControlService traderTerminalControlService;
     private final IntradayReadinessService intradayReadinessService;
+    private final ExecutionGuardStreamService executionGuardStreamService;
+    private final ExecutionTimelineService executionTimelineService;
+    private final ExecutionQualityScoringService executionQualityScoringService;
 
     public TraderExecutionClientController(
             TraderTerminalViewService traderTerminalViewService,
             TraderTerminalControlService traderTerminalControlService,
-            IntradayReadinessService intradayReadinessService
+            IntradayReadinessService intradayReadinessService,
+            ExecutionGuardStreamService executionGuardStreamService,
+            ExecutionTimelineService executionTimelineService,
+            ExecutionQualityScoringService executionQualityScoringService
     ) {
         this.traderTerminalViewService = traderTerminalViewService;
         this.traderTerminalControlService = traderTerminalControlService;
         this.intradayReadinessService = intradayReadinessService;
+        this.executionGuardStreamService = executionGuardStreamService;
+        this.executionTimelineService = executionTimelineService;
+        this.executionQualityScoringService = executionQualityScoringService;
     }
 
     @GetMapping("/terminal/market/watch")
@@ -101,6 +113,32 @@ public class TraderExecutionClientController {
     @Operation(summary = "Institutional trader workstation snapshot (positions, parity, risk, execution, signals)")
     public ApiResponse<Map<String, Object>> terminalWorkstation(@AuthenticationPrincipal StokrUserDetails user) {
         return ApiResponse.ok(traderTerminalViewService.terminalWorkstation(user.getId()), CorrelationIdHolder.get());
+    }
+
+    @GetMapping(value = "/terminal/execution-guard/stream", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Realtime execution guard event stream")
+    public SseEmitter executionGuardStream(@AuthenticationPrincipal StokrUserDetails user) {
+        return executionGuardStreamService.subscribe(user.getId());
+    }
+
+    @GetMapping("/terminal/execution-guard/timeline")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Recent execution timeline events")
+    public ApiResponse<List<Map<String, Object>>> executionGuardTimeline(
+            @AuthenticationPrincipal StokrUserDetails user,
+            @RequestParam(value = "limit", defaultValue = "200") int limit
+    ) {
+        return ApiResponse.ok(executionTimelineService.recentForUser(user.getId(), limit), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/terminal/execution-guard/quality-score")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Execution quality score for terminal")
+    public ApiResponse<Map<String, Object>> executionGuardQualityScore(
+            @AuthenticationPrincipal StokrUserDetails user
+    ) {
+        return ApiResponse.ok(executionQualityScoringService.scoreForUser(user.getId()), CorrelationIdHolder.get());
     }
 
     @GetMapping("/intraday/readiness")

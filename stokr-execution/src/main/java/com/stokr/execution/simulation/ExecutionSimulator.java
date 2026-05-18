@@ -23,6 +23,7 @@ import com.stokr.oms.service.ExecutionLedgerService;
 import com.stokr.oms.portfolio.PortfolioAccountingService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.execution.guard.ExecutionGuardTelemetryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -58,6 +59,7 @@ public class ExecutionSimulator {
     private final ObjectProvider<NotificationPublisher> notificationPublisher;
     private final ExecutionTraceService executionTraceService;
     private final StrategySignalRepository strategySignalRepository;
+    private final ExecutionGuardTelemetryService executionGuardTelemetryService;
 
     @Value("${stokr.simulation.candle-timeframe:1m}")
     private String candleTimeframe;
@@ -181,6 +183,7 @@ public class ExecutionSimulator {
                     replaySource,
                     order.getBacktestRunId()
             );
+            executionGuardTelemetryService.recordFillQuality(order, ex);
 
             OmsTrade tr = new OmsTrade();
             tr.setOrder(order);

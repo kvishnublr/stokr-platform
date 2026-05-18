@@ -193,6 +193,16 @@ public class ZerodhaBrokerOperationsService {
 
     @Transactional(readOnly = true)
     public List<BrokerOpenOrderDto> openOrders(UUID userId) {
+        return fetchOrders(userId, true, 500);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BrokerOpenOrderDto> recentOrders(UUID userId, int limit) {
+        int capped = Math.max(1, Math.min(500, limit));
+        return fetchOrders(userId, false, capped);
+    }
+
+    private List<BrokerOpenOrderDto> fetchOrders(UUID userId, boolean onlyOpen, int limit) {
         Session s = requireSession(userId);
         JsonNode payload = kiteApiClient.getOrders(s.apiKey(), s.accessToken());
         if (!"success".equalsIgnoreCase(payload.path("status").asText(""))) {
@@ -205,7 +215,7 @@ public class ZerodhaBrokerOperationsService {
         List<BrokerOpenOrderDto> out = new ArrayList<>();
         for (JsonNode row : rows) {
             String status = row.path("status").asText("");
-            if (isTerminalOrderStatus(status)) {
+            if (onlyOpen && isTerminalOrderStatus(status)) {
                 continue;
             }
             out.add(new BrokerOpenOrderDto(
@@ -223,6 +233,17 @@ public class ZerodhaBrokerOperationsService {
                     parseKiteTimestamp(row.path("order_timestamp").asText("")),
                     blankToNull(row.path("status_message").asText(""))
             ));
+        }
+        out.sort((a, b) -> {
+            Instant at = a.orderTimestamp();
+            Instant bt = b.orderTimestamp();
+            if (at == null && bt == null) return 0;
+            if (at == null) return 1;
+            if (bt == null) return -1;
+            return bt.compareTo(at);
+        });
+        if (out.size() > limit) {
+            return out.subList(0, limit);
         }
         return out;
     }
