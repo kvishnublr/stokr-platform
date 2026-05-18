@@ -19,7 +19,9 @@ public class SymbolReadinessService {
      */
     public Readiness assess(String symbol, Instant now) {
         Instant from = scannerWindowStart(now);
-        var authority = marketDataCoverageService.assessReadiness(symbol, "1m", from, now, "SCANNER", true);
+        // Scanner path is tolerant to minor continuity gaps to avoid hard deadlocks in live sessions.
+        // We still block on hard states (NO_DATA/STALE/NOT_BACKFILLED/INCOMPLETE_RANGE).
+        var authority = marketDataCoverageService.assessReadiness(symbol, "1m", from, now, "SCANNER", false);
         if (!authority.ready()) {
             return new Readiness(false, authority.state());
         }
