@@ -71,17 +71,29 @@ public class StrategyEvaluationScheduler {
             if (!readiness.ready()) {
                 scannerExecutionTelemetryService.recordPollSkipped(tick, readiness.reason() + " for " + symbol);
                 failures++;
+                log.info("strategy.poll.symbol_skipped symbol={} reason={}", symbol, readiness.reason());
                 continue;
             }
             try {
                 UnifiedStrategyRuntimeService.EvalStats stats = unifiedStrategyRuntimeService.evaluateSymbolAllStrategies(symbol);
                 signals += Math.max(0, stats.emitted());
                 failures += Math.max(0, stats.failed());
+                if (stats.emitted() == 0 && stats.failed() == 0) {
+                    log.info("strategy.poll.no_signal symbol={} note=all_generators_returned_null", symbol);
+                } else {
+                    log.info("strategy.poll.symbol_done symbol={} emitted={} failed={} errors={}",
+                            symbol, stats.emitted(), stats.failed(), stats.errors());
+                }
             } catch (Exception ex) {
                 failures++;
                 log.warn("strategy.poll.failed symbol={}", symbol, ex);
             }
         }
+        log.info("strategy.poll.cycle_done symbols={} emitted={} failures={} tookMs={}",
+                symbols.size(),
+                signals,
+                failures,
+                (System.nanoTime() - wallStart) / 1_000_000.0);
         scannerExecutionTelemetryService.recordPollCycleFinished(
                 Instant.now(),
                 symbols.size(),

@@ -101,7 +101,10 @@ public class IntradayReadinessService {
             StrategyRuntimeMetricsDto met = runtimeByKey.get(key);
 
             boolean subscriptionOk = cat != null && cat.subscribed() && cat.subscriptionEnabled();
-            boolean runtimeOk = met != null && upper(met.runtimeState()).contains("RUN");
+            String runtimeStateObserved = met != null && met.runtimeState() != null && !met.runtimeState().isBlank()
+                    ? met.runtimeState()
+                    : (inst != null && inst.getRuntimeState() != null ? inst.getRuntimeState() : "STOPPED");
+            boolean runtimeOk = upper(runtimeStateObserved).contains("RUN");
             boolean healthOk = met != null && !"BAD".equalsIgnoreCase(upper(met.health()));
             boolean brokerOk = broker.connected() && broker.tokenValid();
             boolean feedOk = "HEALTHY".equalsIgnoreCase(feed.severity());
@@ -159,7 +162,7 @@ public class IntradayReadinessService {
             strategies.add(new StrategyReadinessRow(
                     setup.title(),
                     setup.strategyKey(),
-                    upper(met != null ? met.runtimeState() : "STOPPED"),
+                    upper(runtimeStateObserved),
                     upper(feed.status()),
                     upper(broker.health()),
                     subscriptionOk ? "READY" : "BLOCKED",
