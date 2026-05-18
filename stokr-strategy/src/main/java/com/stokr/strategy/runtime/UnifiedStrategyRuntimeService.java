@@ -2,6 +2,7 @@ package com.stokr.strategy.runtime;
 
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.common.runtime.ExecutionPipelineRuntimeReadinessService;
+import com.stokr.strategy.cash.CashFifteenMinuteBreakoutSignalGenerator;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.ematrend.EmaTrendFollowingSignalGenerator;
 import com.stokr.strategy.meanreversion.MeanReversionSignalGenerator;
@@ -31,6 +32,7 @@ public class UnifiedStrategyRuntimeService {
     private final MomentumBreakoutSignalGenerator momentumBreakoutSignalGenerator;
     private final OpeningRangeBreakoutSignalGenerator openingRangeBreakoutSignalGenerator;
     private final VwapMeanReversionSignalGenerator vwapMeanReversionSignalGenerator;
+    private final CashFifteenMinuteBreakoutSignalGenerator cashFifteenMinuteBreakoutSignalGenerator;
     private final StrategySignalPipelineService pipelineService;
     private final ScannerExecutionTelemetryService scannerExecutionTelemetryService;
     private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
@@ -87,6 +89,7 @@ public class UnifiedStrategyRuntimeService {
         out.add(openingRangeBreakoutSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now, pollTimeframe));
         out.add(emaTrendFollowingSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now, pollTimeframe));
         out.add(momentumBreakoutSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now, pollTimeframe));
+        out.add(cashFifteenMinuteBreakoutSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now));
         return out;
     }
 

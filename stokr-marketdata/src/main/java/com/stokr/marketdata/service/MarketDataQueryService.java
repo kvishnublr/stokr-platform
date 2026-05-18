@@ -54,13 +54,15 @@ public class MarketDataQueryService {
     @Transactional(readOnly = true)
     public List<MarketdataCandle> rangeAsc(String symbol, String timeframe, Instant start, Instant end) {
         String tf = normalizeTf(timeframe);
-        if ("5m".equals(tf)) {
-            List<MarketdataCandle> raw5m = candleRepository.findBySymbolInAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(symbolCandidates(symbol), tf, start, end);
-            if (!raw5m.isEmpty()) {
-                return raw5m;
+        if ("5m".equals(tf) || "15m".equals(tf)) {
+            List<MarketdataCandle> raw = candleRepository.findBySymbolInAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(symbolCandidates(symbol), tf, start, end);
+            if (!raw.isEmpty()) {
+                return raw;
             }
-            List<MarketdataCandle> m1 = candleRepository.findBySymbolInAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(symbolCandidates(symbol), "1m", start.minusSeconds(5 * 60), end);
-            return aggregateTo5m(m1, symbol, start, end);
+            int intervalMinutes = "15m".equals(tf) ? 15 : 5;
+            List<MarketdataCandle> m1 = candleRepository.findBySymbolInAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
+                    symbolCandidates(symbol), "1m", start.minusSeconds(intervalMinutes * 60L), end);
+            return aggregateToInterval(m1, symbol, tf, intervalMinutes, start, end);
         }
         return candleRepository.findBySymbolInAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(symbolCandidates(symbol), tf, start, end);
     }
@@ -137,7 +139,7 @@ public class MarketDataQueryService {
     private List<MarketdataCandle> fetchAscWithFallback(String symbol, String timeframe, Instant endInclusive, int maxBars) {
         String tf = normalizeTf(timeframe);
         List<String> symbols = symbolCandidates(symbol);
-        if (!"5m".equals(tf)) {
+        if (!"5m".equals(tf) && !"15m".equals(tf)) {
             if (endInclusive == null) {
                 List<MarketdataCandle> desc = candleRepository.findTop500BySymbolInAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbols, tf);
                 ArrayList<MarketdataCandle> asc = new ArrayList<>(desc);
@@ -151,19 +153,20 @@ public class MarketDataQueryService {
             return asc;
         }
 
-        List<MarketdataCandle> raw5m;
+        int intervalMinutes = "15m".equals(tf) ? 15 : 5;
+        List<MarketdataCandle> rawTf;
         if (endInclusive == null) {
-            List<MarketdataCandle> desc = candleRepository.findTop500BySymbolInAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbols, "5m");
-            raw5m = new ArrayList<>(desc);
-            Collections.reverse(raw5m);
+            List<MarketdataCandle> desc = candleRepository.findTop500BySymbolInAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbols, tf);
+            rawTf = new ArrayList<>(desc);
+            Collections.reverse(rawTf);
         } else {
             Page<MarketdataCandle> p = candleRepository.findBySymbolInAndTimeframeAndOpenTimeLessThanEqualAndDeletedFalse(
-                    symbols, "5m", endInclusive, PageRequest.of(0, maxBars, Sort.by(Sort.Direction.DESC, "openTime")));
-            raw5m = new ArrayList<>(p.getContent());
-            Collections.reverse(raw5m);
+                    symbols, tf, endInclusive, PageRequest.of(0, maxBars, Sort.by(Sort.Direction.DESC, "openTime")));
+            rawTf = new ArrayList<>(p.getContent());
+            Collections.reverse(rawTf);
         }
-        if (!raw5m.isEmpty()) {
-            return raw5m;
+        if (!rawTf.isEmpty()) {
+            return rawTf;
         }
 
         List<MarketdataCandle> m1;
@@ -173,18 +176,26 @@ public class MarketDataQueryService {
             Collections.reverse(m1);
         } else {
             Page<MarketdataCandle> p = candleRepository.findBySymbolInAndTimeframeAndOpenTimeLessThanEqualAndDeletedFalse(
-                    symbols, "1m", endInclusive, PageRequest.of(0, maxBars * 6, Sort.by(Sort.Direction.DESC, "openTime")));
+                    symbols, "1m", endInclusive, PageRequest.of(0, maxBars * Math.max(6, intervalMinutes + 1), Sort.by(Sort.Direction.DESC, "openTime")));
             m1 = new ArrayList<>(p.getContent());
             Collections.reverse(m1);
         }
-        return aggregateTo5m(m1, symbol, null, endInclusive);
+        return aggregateToInterval(m1, symbol, tf, intervalMinutes, null, endInclusive);
     }
 
-    private List<MarketdataCandle> aggregateTo5m(List<MarketdataCandle> oneMinuteBars, String symbol, Instant startInclusive, Instant endInclusive) {
+    private List<MarketdataCandle> aggregateToInterval(
+            List<MarketdataCandle> oneMinuteBars,
+            String symbol,
+            String timeframe,
+            int intervalMinutes,
+            Instant startInclusive,
+            Instant endInclusive
+    ) {
         if (oneMinuteBars.isEmpty()) {
             return List.of();
         }
         Map<Long, Bucket> buckets = new HashMap<>();
+        long intervalSeconds = intervalMinutes * 60L;
         for (MarketdataCandle c : oneMinuteBars) {
             Instant t = c.getOpenTime();
             if (startInclusive != null && t.isBefore(startInclusive)) {
@@ -193,7 +204,7 @@ public class MarketDataQueryService {
             if (endInclusive != null && t.isAfter(endInclusive)) {
                 continue;
             }
-            long bucket = (t.getEpochSecond() / 300L) * 300L;
+            long bucket = (t.getEpochSecond() / intervalSeconds) * intervalSeconds;
             Bucket b = buckets.computeIfAbsent(bucket, ignored -> new Bucket());
             b.add(c);
         }
@@ -205,7 +216,7 @@ public class MarketDataQueryService {
             }
             MarketdataCandle c = new MarketdataCandle();
             c.setSymbol(symbol);
-            c.setTimeframe("5m");
+            c.setTimeframe(timeframe);
             c.setOpenTime(Instant.ofEpochSecond(e.getKey()));
             c.setOpenPrice(b.open);
             c.setHighPrice(b.high);

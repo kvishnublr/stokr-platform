@@ -12,6 +12,7 @@ public final class StrategyKeys {
     public static final String VWAP_MEAN_REVERSION = "VWAP_MEAN_REVERSION";
     public static final String MOMENTUM_BREAKOUT = "MOMENTUM_BREAKOUT";
     public static final String EMA_TREND_FOLLOW = "EMA_TREND_FOLLOW";
+    public static final String CASH_15M_BREAKOUT_TEST = "CASH_15M_BREAKOUT_TEST";
 
     private StrategyKeys() {
     }
