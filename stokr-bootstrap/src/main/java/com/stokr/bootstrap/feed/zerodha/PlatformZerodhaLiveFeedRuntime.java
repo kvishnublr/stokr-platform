@@ -28,6 +28,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +74,7 @@ public class PlatformZerodhaLiveFeedRuntime {
     private final ByteArrayOutputStream binaryAcc = new ByteArrayOutputStream();
     private final AtomicLong windowPackets = new AtomicLong();
     private final AtomicLong windowTicks = new AtomicLong();
+    private final AtomicLong windowUnresolvedTokens = new AtomicLong();
     private final AtomicLong windowStartNanos = new AtomicLong(System.nanoTime());
     private volatile Instant lastPacketAt;
     private volatile Instant lastTickAt;
@@ -206,7 +208,7 @@ public class PlatformZerodhaLiveFeedRuntime {
                 map.put(want.get(i), configured.trim());
             }
         }
-        // Try NSE then NFO — futures tokens won't appear in the NSE list
+        // Try NSE then NFO - futures tokens will not appear in the NSE list
         for (String exchange : List.of("NSE", "NFO")) {
             boolean anyUnresolved = map.values().stream().anyMatch(v -> v.startsWith("TOKEN_"));
             if (!anyUnresolved) {
@@ -219,7 +221,7 @@ public class PlatformZerodhaLiveFeedRuntime {
                 if (header == null) {
                     continue;
                 }
-                String[] hc = header.split(",");
+                String[] hc = parseCsvLine(header);
                 int it = -1;
                 int ts = -1;
                 for (int i = 0; i < hc.length; i++) {
@@ -236,20 +238,60 @@ public class PlatformZerodhaLiveFeedRuntime {
                 }
                 String line;
                 while ((line = br.readLine()) != null) {
-                    String[] p = line.split(",");
+                    String[] p = parseCsvLine(line);
                     if (p.length <= Math.max(it, ts)) {
                         continue;
                     }
                     int tok = (int) Long.parseLong(p[it].trim());
-                    if (map.containsKey(tok)) {
-                        map.put(tok, p[ts].trim());
+                    if (map.containsKey(tok) && map.get(tok).startsWith("TOKEN_")) {
+                        String symbol = p[ts].trim();
+                        if (!symbol.isBlank()) {
+                            map.put(tok, symbol);
+                        }
                     }
                 }
             } catch (Exception ex) {
                 log.debug("platform.ws.instruments_parse exchange={} {}", exchange, ex.toString());
             }
         }
+        long unresolved = map.values().stream().filter(v -> v.startsWith("TOKEN_")).count();
+        if (unresolved > 0) {
+            log.warn("platform.ws.symbol_map_unresolved count={} sample_tokens={}", unresolved, map.entrySet().stream()
+                    .filter(e -> e.getValue().startsWith("TOKEN_"))
+                    .map(Map.Entry::getKey)
+                    .limit(20)
+                    .toList());
+        } else {
+            log.info("platform.ws.symbol_map_resolved count={}", map.size());
+        }
         return map;
+    }
+
+    private String[] parseCsvLine(String line) {
+        if (line == null || line.isEmpty()) {
+            return new String[0];
+        }
+        List<String> out = new ArrayList<>();
+        StringBuilder cell = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+            if (ch == '"') {
+                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    cell.append('"');
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (ch == ',' && !inQuotes) {
+                out.add(cell.toString());
+                cell.setLength(0);
+            } else {
+                cell.append(ch);
+            }
+        }
+        out.add(cell.toString());
+        return out.toArray(new String[0]);
     }
 
     private void closeActive(String reason) {
@@ -272,6 +314,7 @@ public class PlatformZerodhaLiveFeedRuntime {
         long elapsed = Math.max(1L, (System.nanoTime() - windowStartNanos.get()) / 1_000_000_000L);
         long pk = windowPackets.getAndSet(0);
         long tk = windowTicks.getAndSet(0);
+        long unresolvedTokens = windowUnresolvedTokens.getAndSet(0);
         windowStartNanos.set(System.nanoTime());
         double pps = pk / (double) elapsed;
         double tps = tk / (double) elapsed;
@@ -296,6 +339,9 @@ public class PlatformZerodhaLiveFeedRuntime {
                         streamingSymbolsCsv
                 )
         );
+        if (unresolvedTokens > 0) {
+            log.warn("platform.ws.unresolved_tokens_window count={}", unresolvedTokens);
+        }
     }
 
     @PreDestroy
@@ -378,6 +424,9 @@ public class PlatformZerodhaLiveFeedRuntime {
                     windowTicks.incrementAndGet();
                     lastTickAt = packetArrival;
                     String sym = tokenSymbols.getOrDefault(t.instrumentToken(), "TOKEN_" + t.instrumentToken());
+                    if (sym.startsWith("TOKEN_")) {
+                        windowUnresolvedTokens.incrementAndGet();
+                    }
                     eventPublisher.publishEvent(new PlatformLiveTickEvent(sym, packetArrival, t.lastPricePaise(), t.instrumentToken()));
                 }
             }
