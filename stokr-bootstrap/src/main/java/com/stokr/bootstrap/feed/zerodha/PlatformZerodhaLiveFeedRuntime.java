@@ -63,6 +63,7 @@ public class PlatformZerodhaLiveFeedRuntime {
     private final PlatformMarketFeedService platformMarketFeedService;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformZerodhaFeedTelemetryService telemetryService;
+    private final InstrumentRegistryService instrumentRegistry;
     private final ObjectMapper objectMapper;
 
     private final AtomicReference<WebSocket> activeSocket = new AtomicReference<>();
@@ -160,6 +161,7 @@ public class PlatformZerodhaLiveFeedRuntime {
         List<Integer> tokens = new ArrayList<>(symbolMap.keySet());
         this.subscribedTokens = tokens;
         this.tokenSymbols = symbolMap;
+        instrumentRegistry.update(symbolMap);
 
         synchronized (ensureGate) {
             if (wsOpen.get() && activeSocket.get() != null) {

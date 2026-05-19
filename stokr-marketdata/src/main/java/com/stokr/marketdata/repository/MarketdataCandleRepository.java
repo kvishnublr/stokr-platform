@@ -12,6 +12,9 @@ import java.util.UUID;
 
 public interface MarketdataCandleRepository extends JpaRepository<MarketdataCandle, UUID> {
 
+    Optional<MarketdataCandle> findTopBySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(
+            String symbol, String timeframe);
+
     Optional<MarketdataCandle> findBySymbolAndTimeframeAndOpenTimeAndDeletedFalse(
             String symbol,
             String timeframe,
