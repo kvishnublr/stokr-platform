@@ -81,6 +81,9 @@ public class PlatformZerodhaLiveFeedRuntime {
     private volatile Instant lastHeartbeatAt;
     private volatile Map<Integer, String> tokenSymbols = Map.of();
     private volatile List<Integer> subscribedTokens = List.of();
+    /** Cached symbol map — fetched once per access token, not on every 3-second poll. */
+    private volatile Map<Integer, String> cachedSymbolMap = null;
+    private volatile String cachedForToken = null;
 
     private ScheduledExecutorService scheduler;
 
@@ -157,11 +160,15 @@ public class PlatformZerodhaLiveFeedRuntime {
             return;
         }
         String apiKey = zerodhaBrokerProperties.getApiKey();
-        Map<Integer, String> symbolMap = buildSymbolMap(apiKey, accessToken);
-        List<Integer> tokens = new ArrayList<>(symbolMap.keySet());
+        // Build symbol map once per access token — not on every 3-second poll
+        if (cachedSymbolMap == null || !accessToken.equals(cachedForToken)) {
+            cachedSymbolMap = buildSymbolMap(apiKey, accessToken);
+            cachedForToken = accessToken;
+            instrumentRegistry.update(cachedSymbolMap);
+        }
+        List<Integer> tokens = new ArrayList<>(cachedSymbolMap.keySet());
         this.subscribedTokens = tokens;
-        this.tokenSymbols = symbolMap;
-        instrumentRegistry.update(symbolMap);
+        this.tokenSymbols = cachedSymbolMap;
 
         synchronized (ensureGate) {
             if (wsOpen.get() && activeSocket.get() != null) {
@@ -210,7 +217,8 @@ public class PlatformZerodhaLiveFeedRuntime {
         if (feedProperties.isAutoSubscribeAllNse()) {
             try {
                 String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "NSE");
-                parseInstrumentsCsvInto(csv, "EQ", map);
+                // segment=NSE filters main-board equities only (excludes NSE_SME, ETFs, bonds)
+                parseInstrumentsCsvInto(csv, "EQ", "NSE", map);
                 log.info("platform.ws.auto_subscribe exchange=NSE eq_count={}", map.size());
             } catch (Exception ex) {
                 log.warn("platform.ws.auto_subscribe_failed exchange=NSE {}", ex.toString());
@@ -271,16 +279,21 @@ public class PlatformZerodhaLiveFeedRuntime {
     }
 
     private void parseInstrumentsCsvInto(String csv, String typeFilter, Map<Integer, String> out) throws Exception {
+        parseInstrumentsCsvInto(csv, typeFilter, null, out);
+    }
+
+    private void parseInstrumentsCsvInto(String csv, String typeFilter, String segmentFilter, Map<Integer, String> out) throws Exception {
         BufferedReader br = new BufferedReader(new StringReader(csv));
         String header = br.readLine();
         if (header == null) return;
         String[] hc = parseCsvLine(header);
-        int itCol = -1, tsCol = -1, typeCol = -1;
+        int itCol = -1, tsCol = -1, typeCol = -1, segCol = -1;
         for (int i = 0; i < hc.length; i++) {
             String c = hc[i].trim();
             if ("instrument_token".equalsIgnoreCase(c)) itCol = i;
             if ("tradingsymbol".equalsIgnoreCase(c)) tsCol = i;
             if ("instrument_type".equalsIgnoreCase(c)) typeCol = i;
+            if ("segment".equalsIgnoreCase(c)) segCol = i;
         }
         if (itCol < 0 || tsCol < 0) return;
         String line;
@@ -289,6 +302,8 @@ public class PlatformZerodhaLiveFeedRuntime {
             if (p.length <= Math.max(itCol, tsCol)) continue;
             if (typeFilter != null && typeCol >= 0
                     && !typeFilter.equalsIgnoreCase(p[typeCol].trim())) continue;
+            if (segmentFilter != null && segCol >= 0
+                    && !segmentFilter.equalsIgnoreCase(p[segCol].trim())) continue;
             try {
                 int tok = (int) Long.parseLong(p[itCol].trim());
                 String sym = p[tsCol].trim();
