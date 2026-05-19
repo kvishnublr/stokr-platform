@@ -70,14 +70,14 @@ public class UnifiedStrategyRuntimeService {
                 } catch (Exception ex) {
                     failed++;
                     errors.add(ex.getClass().getSimpleName());
-                    log.warn("strategy.runtime.dispatch_failed symbol={} strategy={}", symbol, sig.getStrategyName(), ex);
+                    log.error("strategy.runtime.dispatch_failed symbol={} strategy={}", symbol, sig.getStrategyName(), ex);
                 }
             }
             return new EvalStats(emitted, failed, errors);
         } catch (Exception ex) {
             failed++;
             errors.add(ex.getClass().getSimpleName());
-            log.warn("strategy.runtime.eval_failed symbol={}", symbol, ex);
+            log.error("strategy.runtime.eval_failed symbol={}", symbol, ex);
             return new EvalStats(emitted, failed, errors);
         } finally {
             scannerExecutionTelemetryService.recordEvaluationComplete(symbol, System.nanoTime() - t0, emitted > 0, null);
