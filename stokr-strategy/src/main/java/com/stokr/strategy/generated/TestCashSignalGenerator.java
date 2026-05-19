@@ -1,28 +1,30 @@
 package com.stokr.strategy.generated;
 
+import com.stokr.marketdata.domain.MarketdataCandle;
+import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
-import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.List;
+
 /**
- * Auto-generated strategy template for: TEST_CASH
- * Generated on: 2026-05-19
+ * First 15-minute candle breakout strategy for NSE equity.
  *
- * Asset class : EQUITY
- * Segment     : NSE
- * Exchange    : NSE
- * Timeframe   : 10m
- *
- * TODO: Implement your strategy logic in the evaluate() method.
- *       This class is compiled normally — no dynamic loading occurs.
- *       Once you implement the logic, rebuild the project.
- *
- * @see com.stokr.strategy.generated.BaseGeneratedStrategy for helper utilities.
+ * Logic:
+ *   - Load last 30 × 15m candles for the symbol.
+ *   - Identify the first 15m candle of today (NSE open = 9:15 IST).
+ *   - BUY  when live price breaks above the first candle's HIGH (with RSI < 75).
+ *   - SELL when live price breaks below the first candle's LOW  (with RSI > 25).
+ *   - HOLD while price stays inside the first-candle range.
  */
 @Component
 @RequiredArgsConstructor
@@ -32,9 +34,14 @@ import org.springframework.stereotype.Component;
     assetClass   = "EQUITY",
     segment      = "NSE",
     exchange     = "NSE",
-    timeframe    = "10m"
+    timeframe    = "15m"
 )
 public class TestCashSignalGenerator extends BaseGeneratedStrategy implements TradingStrategy {
+
+    private static final ZoneId IST            = ZoneId.of("Asia/Kolkata");
+    private static final int    CANDLES_TO_LOAD = 30;
+
+    private final MarketDataQueryService marketDataQueryService;
 
     @Override
     public String key() {
@@ -43,34 +50,58 @@ public class TestCashSignalGenerator extends BaseGeneratedStrategy implements Tr
 
     @Override
     public StrategySignal evaluate(StrategyContext context) {
-        String symbol = context.symbol();
-        log.debug("strategy.evaluate strategy=TEST_CASH symbol={}", symbol);
+        String     symbol    = context.symbol();
+        BigDecimal lastPrice = context.lastPrice();
 
-        // TODO: Step 1 — Load candle / OHLCV data
-        // Example: List<Candle> candles = loadCandles(context, "TEST_CASH", 20);
+        if (lastPrice == null || lastPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return hold(context);
+        }
 
-        // TODO: Step 2 — Compute indicators
-        // Example (equity breakout):
-        //   double high20 = highestHigh(candles, 20);
-        //   double rsi    = computeRsi(candles, 14);
+        List<MarketdataCandle> candles = marketDataQueryService.lastBarsAsc(symbol, "15m", CANDLES_TO_LOAD);
+        if (candles.size() < 2) {
+            log.debug("strategy=TEST_CASH symbol={} candles={} insufficient", symbol, candles.size());
+            return hold(context);
+        }
 
-        // TODO: Step 3 — Evaluate signal condition
-        //   if (currentPrice > high20 && rsi > 55) {
-        //       return bullishSignal(context, "Breakout confirmed", high20, rsi);
-        //   }
+        // First 15m candle of today starts at NSE open: 9:15 AM IST
+        Instant todayOpen = ZonedDateTime.now(IST)
+                .toLocalDate().atTime(9, 15).atZone(IST).toInstant();
 
-        // TODO (Commodity / Futures): Read lot_size from StrategyUniverseSymbol
-        //   For MCX Gold: lotSize = 1 (or 10 for GOLDM)
-        //   For BANKNIFTY futures: lotSize = 15
+        MarketdataCandle firstCandle = null;
+        for (MarketdataCandle c : candles) {
+            if (!c.getOpenTime().isBefore(todayOpen)) {
+                firstCandle = c;
+                break;
+            }
+        }
 
-        // TODO (Options): Resolve strike and expiry from universe group
-        //   Use tradingSymbol from strategy_universe_symbols, e.g. BANKNIFTY26MAYFUT
+        if (firstCandle == null) {
+            log.debug("strategy=TEST_CASH symbol={} no_opening_candle_today", symbol);
+            return hold(context);
+        }
 
-        return new StrategySignal(SignalType.HOLD, symbol, null, null);
+        double firstHigh = firstCandle.getHighPrice().doubleValue();
+        double firstLow  = firstCandle.getLowPrice().doubleValue();
+        double price     = lastPrice.doubleValue();
+
+        double[] closes = candles.stream()
+                .mapToDouble(c -> c.getClosePrice().doubleValue())
+                .toArray();
+        double rsiVal = closes.length > 14 ? rsi(closes, 14) : Double.NaN;
+
+        log.debug("strategy=TEST_CASH symbol={} price={} high={} low={} rsi={}",
+                symbol, price, firstHigh, firstLow, rsiVal);
+
+        if (price > firstHigh && (Double.isNaN(rsiVal) || rsiVal < 75)) {
+            return bullishSignal(context,
+                    String.format("15m breakout above %.2f (rsi=%.1f)", firstHigh, rsiVal));
+        }
+
+        if (price < firstLow && (Double.isNaN(rsiVal) || rsiVal > 25)) {
+            return bearishSignal(context,
+                    String.format("15m breakdown below %.2f (rsi=%.1f)", firstLow, rsiVal));
+        }
+
+        return hold(context);
     }
-
-    // ─────────────────────────────────────────────────────────────
-    // Add private helper methods below
-    // ─────────────────────────────────────────────────────────────
-
 }
