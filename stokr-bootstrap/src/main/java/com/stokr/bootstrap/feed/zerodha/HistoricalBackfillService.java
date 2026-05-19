@@ -152,18 +152,29 @@ public class HistoricalBackfillService {
     }
 
     private List<LocalDate> findMissingDays(String symbol, List<LocalDate> tradingDays) {
-        // Find the latest candle we already have
         Instant latestCandle = candleRepository
                 .findTopBySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbol, TIMEFRAME)
                 .map(MarketdataCandle::getOpenTime)
                 .orElse(null);
+        Instant oldestCandle = candleRepository
+                .findTopBySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeAsc(symbol, TIMEFRAME)
+                .map(MarketdataCandle::getOpenTime)
+                .orElse(null);
 
-        LocalDate latestDay = latestCandle == null ? null
-                : latestCandle.atZone(IST).toLocalDate();
+        // No data at all — fill everything
+        if (latestCandle == null) {
+            return new ArrayList<>(tradingDays);
+        }
 
+        LocalDate latestDay = latestCandle.atZone(IST).toLocalDate();
+        LocalDate oldestDay = oldestCandle.atZone(IST).toLocalDate();
+
+        // Fill days AFTER the latest candle (forward) AND days BEFORE the oldest candle (historical gap).
+        // This fixes the case where a stock received live ticks today but has no historical backfill:
+        // latestDay == today → no day.isAfter(today) → old logic skipped all 365 historical days.
         List<LocalDate> missing = new ArrayList<>();
         for (LocalDate day : tradingDays) {
-            if (latestDay == null || day.isAfter(latestDay)) {
+            if (day.isAfter(latestDay) || day.isBefore(oldestDay)) {
                 missing.add(day);
             }
         }

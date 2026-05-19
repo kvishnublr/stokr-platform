@@ -15,6 +15,9 @@ public interface MarketdataCandleRepository extends JpaRepository<MarketdataCand
     Optional<MarketdataCandle> findTopBySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(
             String symbol, String timeframe);
 
+    Optional<MarketdataCandle> findTopBySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeAsc(
+            String symbol, String timeframe);
+
     Optional<MarketdataCandle> findBySymbolAndTimeframeAndOpenTimeAndDeletedFalse(
             String symbol,
             String timeframe,
