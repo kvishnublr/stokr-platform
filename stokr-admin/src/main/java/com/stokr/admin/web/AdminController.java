@@ -9,7 +9,9 @@ import com.stokr.common.pipeline.PipelineQueues;
 import com.stokr.risk.service.KillSwitchService;
 import com.stokr.risk.service.LiveTradingArmingService;
 import com.stokr.risk.service.StrategyToggleService;
+import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.service.StrategyEmergencyStopService;
+import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.lang.management.ManagementFactory;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +38,8 @@ public class AdminController {
     private final StrategyEmergencyStopService strategyEmergencyStopService;
     private final AuditLogRepository auditLogRepository;
     private final AdminOperationalSnapshotService adminOperationalSnapshotService;
+    private final StrategyDefinitionRepository strategyDefinitionRepository;
+    private final PlatformBrokerFeedSessionRepository feedSessionRepository;
 
     @GetMapping("/health")
     @PreAuthorize("hasRole('ADMIN')")
@@ -99,5 +104,51 @@ public class AdminController {
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<List<Map<String, Object>>> alerts() {
         return ApiResponse.ok(adminOperationalSnapshotService.snapshot().incidents(), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/settings/summary")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<Map<String, Object>> settingsSummary() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        long uptimeSec = ManagementFactory.getRuntimeMXBean().getUptime() / 1000;
+        m.put("killSwitch", killSwitchService.isEnabled() ? "ENGAGED" : "OFF");
+        m.put("liveTradingArmed", liveTradingArmingService.isArmed() ? "ARMED" : "DISARMED");
+        m.put("uptimeSeconds", uptimeSec);
+        m.put("uptimeHuman", String.format("%dh %dm", uptimeSec / 3600, (uptimeSec % 3600) / 60));
+        long totalStrategies = strategyDefinitionRepository.countByDeletedFalse();
+        m.put("strategiesTotal", totalStrategies);
+        feedSessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse("ZERODHA").ifPresent(s -> {
+            m.put("marketFeedState", s.getWebsocketState() != null ? s.getWebsocketState() : "UNKNOWN");
+            m.put("marketFeedSubscriptions", s.getSubscriptionCount());
+            m.put("marketFeedTicksPerSec", s.getTicksPerSec() != null ? String.format("%.1f", s.getTicksPerSec()) : "-");
+            m.put("marketFeedLastPacket", s.getLastPacketAt() != null ? s.getLastPacketAt().toString() : "never");
+        });
+        m.put("queues", Map.of(
+                "strategySignal", PipelineQueues.STRATEGY_SIGNAL,
+                "omsOrder", PipelineQueues.OMS_ORDER,
+                "execution", PipelineQueues.EXECUTION
+        ));
+        return ApiResponse.ok(m, CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/security/summary")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<Map<String, Object>> securitySummary() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        long recentAudit = auditLogRepository.findAllByDeletedFalseOrderByCreatedAtDesc(PageRequest.of(0, 1)).getTotalElements();
+        m.put("auditLogEntries", recentAudit);
+        m.put("killSwitchActive", killSwitchService.isEnabled());
+        m.put("liveTradingArmed", liveTradingArmingService.isArmed());
+        m.put("asOf", Instant.now().toString());
+        return ApiResponse.ok(m, CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/reports/summary")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<Map<String, Object>> reportsSummary() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("note", "Detailed reports coming soon");
+        m.put("asOf", Instant.now().toString());
+        return ApiResponse.ok(m, CorrelationIdHolder.get());
     }
 }
