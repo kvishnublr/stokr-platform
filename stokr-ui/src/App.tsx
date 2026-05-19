@@ -40,6 +40,7 @@ import { AdminTraderHealthPage } from "./pages/admin/AdminTraderHealthPage";
 import { AdminStrategyCatalogPage } from "./pages/admin/AdminStrategyCatalogPage";
 import { AdminUniverseGroupsPage } from "./pages/admin/AdminUniverseGroupsPage";
 import { AdminRuntimeBindingsPage } from "./pages/admin/AdminRuntimeBindingsPage";
+import { AdminPipelineHealthPage } from "./pages/admin/AdminPipelineHealthPage";
 import { useSessionStore } from "./state/session";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { OnboardingWizardPage } from "./pages/OnboardingWizardPage";
@@ -224,6 +225,7 @@ export default function App() {
               <Route path="reports" element={<AdminSectionPage section="reports" />} />
               <Route path="alerts" element={<AdminSectionPage section="alerts" />} />
               <Route path="ops" element={<AdminOpsGate />} />
+              <Route path="pipeline-health" element={<AdminPipelineHealthPage />} />
             </Route>
           </Route>
         </Route>
