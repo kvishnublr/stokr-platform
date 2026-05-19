@@ -1,10 +1,11 @@
 package com.stokr.admin.web;
 
+import com.stokr.admin.signal.AdminOmsStatsDto;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.api.PageResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
-import com.stokr.oms.domain.OmsExecutionEvent;
 import com.stokr.oms.dto.ExecutionEventRowDto;
+import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.dto.OmsExecutionRowDto;
 import com.stokr.oms.dto.OmsOrderDetailDto;
 import com.stokr.oms.dto.OmsOrderSummaryDto;
@@ -27,6 +28,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -38,6 +42,28 @@ public class AdminOmsController {
 
     private final OmsQueryService omsQueryService;
     private final OmsExecutionEventRepository executionEventRepository;
+    private final OmsOrderRepository omsOrderRepository;
+
+    @GetMapping("/stats")
+    @Operation(summary = "Aggregate OMS stats for today or custom window")
+    public ApiResponse<AdminOmsStatsDto> omsStats(
+            @RequestParam(required = false) Instant since
+    ) {
+        Instant from = since != null ? since
+                : Instant.now().atZone(ZoneOffset.UTC).truncatedTo(ChronoUnit.DAYS).toInstant();
+        List<Object[]> rows = omsOrderRepository.computeStats(from);
+        AdminOmsStatsDto dto;
+        if (rows.isEmpty()) {
+            dto = new AdminOmsStatsDto(0, 0, 0, 0, 0, 0, 0);
+        } else {
+            Object[] r = rows.get(0);
+            dto = new AdminOmsStatsDto(
+                    toLong(r[0]), toLong(r[1]), toLong(r[2]),
+                    toLong(r[3]), toLong(r[4]), toLong(r[5]), toLong(r[6])
+            );
+        }
+        return ApiResponse.ok(dto, CorrelationIdHolder.get());
+    }
 
     @GetMapping("/orders")
     @Operation(summary = "Global order monitor (optional user filter)")
@@ -109,6 +135,10 @@ public class AdminOmsController {
                 e.getStreamSequence(), e.getCorrelationId(), e.getCreatedAt()
         )).toList();
         return ApiResponse.ok(dtos, CorrelationIdHolder.get());
+    }
+
+    private static long toLong(Object v) {
+        return v == null ? 0L : ((Number) v).longValue();
     }
 
     @GetMapping("/summary")

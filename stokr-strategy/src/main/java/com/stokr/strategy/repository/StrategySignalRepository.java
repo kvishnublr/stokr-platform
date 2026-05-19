@@ -53,4 +53,22 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
     long countByCreatedAtAfterAndDeletedFalseAndBacktestRunIdNotNull(@Param("since") Instant since);
 
     Optional<StrategySignalEntity> findFirstByDeletedFalseOrderByCreatedAtDesc();
+
+    @Query(value = """
+            SELECT
+                COUNT(*) FILTER (WHERE created_at >= :since)::bigint                                         AS total_today,
+                COUNT(*) FILTER (WHERE created_at >= :since AND signal_type = 'BUY')::bigint                 AS buy_today,
+                COUNT(*) FILTER (WHERE created_at >= :since AND signal_type = 'SELL')::bigint                AS sell_today,
+                COUNT(*) FILTER (WHERE created_at >= :since AND pipeline = 'LIVE')::bigint                   AS live_today,
+                COUNT(*) FILTER (WHERE created_at >= :since AND pipeline = 'PAPER')::bigint                  AS paper_today,
+                AVG(confidence_score) FILTER (WHERE created_at >= :since)                                     AS avg_confidence,
+                COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'TARGET_HIT')::bigint        AS target_hit,
+                COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'STOPLOSS_HIT')::bigint      AS sl_hit,
+                COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'RUNNING')::bigint           AS running_count,
+                COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'EXPIRED')::bigint           AS expired_count,
+                COUNT(*)::bigint                                                                               AS total_all_time
+            FROM strategy_signals
+            WHERE deleted = FALSE AND backtest_run_id IS NULL
+            """, nativeQuery = true)
+    List<Object[]> computeStats(@Param("since") Instant since);
 }

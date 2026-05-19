@@ -106,4 +106,53 @@ public class StrategySignalEntity extends BaseEntity {
 
     @Column(name = "indicator_snapshot_json", columnDefinition = "text")
     private String indicatorSnapshotJson;
+
+    // Outcome lifecycle tracking (populated by outcome-tracking service)
+    @Column(name = "outcome_status", length = 32)
+    private String outcomeStatus;
+
+    @Column(name = "outcome_time")
+    private Instant outcomeTime;
+
+    @Column(name = "entry_price", precision = 24, scale = 8)
+    private BigDecimal entryPrice;
+
+    @Column(name = "exit_price", precision = 24, scale = 8)
+    private BigDecimal exitPrice;
+
+    @Column(name = "realized_pnl", precision = 24, scale = 8)
+    private BigDecimal realizedPnl;
+
+    @Column(name = "unrealized_pnl", precision = 24, scale = 8)
+    private BigDecimal unrealizedPnl;
+
+    @Column(name = "max_favorable_excursion", precision = 24, scale = 8)
+    private BigDecimal maxFavorableExcursion;
+
+    @Column(name = "max_adverse_excursion", precision = 24, scale = 8)
+    private BigDecimal maxAdverseExcursion;
+
+    @Column(name = "hit_target")
+    private Boolean hitTarget;
+
+    @Column(name = "hit_stoploss")
+    private Boolean hitStoploss;
+
+    @Column(name = "risk_reward_achieved", precision = 10, scale = 4)
+    private BigDecimal riskRewardAchieved;
+
+    @Column(name = "execution_latency_ms")
+    private Long executionLatencyMs;
+
+    @Column(name = "broker_latency_ms")
+    private Long brokerLatencyMs;
+
+    @Column(name = "signal_validity_seconds")
+    private Integer signalValiditySeconds;
+
+    @Column(name = "expired")
+    private Boolean expired;
+
+    @Column(name = "expiry_reason", length = 128)
+    private String expiryReason;
 }

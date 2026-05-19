@@ -104,4 +104,18 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
     List<OmsOrder> findRecentByStateIn(@Param("states") Collection<OrderState> states, Pageable pageable);
 
     List<OmsOrder> findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(UUID signalId);
+
+    @Query(value = """
+            SELECT
+                COUNT(*) FILTER (WHERE created_at >= :since)::bigint                                                          AS total_today,
+                COUNT(*) FILTER (WHERE created_at >= :since AND state = 'FILLED')::bigint                                     AS filled_today,
+                COUNT(*) FILTER (WHERE created_at >= :since AND state = 'REJECTED')::bigint                                   AS rejected_today,
+                COUNT(*) FILTER (WHERE created_at >= :since AND state = 'PARTIALLY_FILLED')::bigint                           AS partial_today,
+                COUNT(*) FILTER (WHERE created_at >= :since AND state IN ('CANCELLED','EXPIRED'))::bigint                     AS cancelled_today,
+                COUNT(*) FILTER (WHERE created_at >= :since AND state IN ('CREATED','VALIDATED','SUBMITTED','ACCEPTED'))::bigint AS pending_today,
+                COUNT(*)::bigint                                                                                                AS total_all_time
+            FROM oms_orders
+            WHERE deleted = FALSE AND backtest_run_id IS NULL
+            """, nativeQuery = true)
+    List<Object[]> computeStats(@Param("since") Instant since);
 }

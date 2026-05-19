@@ -14,6 +14,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -58,6 +61,11 @@ public class AdminSignalQueryService {
             if (p.to() != null) {
                 predicates.add(cb.lessThan(root.get("createdAt"), p.to()));
             }
+            if (p.outcomeStatus() != null && !p.outcomeStatus().isBlank()
+                    && !"ALL".equalsIgnoreCase(p.outcomeStatus())) {
+                predicates.add(cb.equal(cb.upper(root.get("outcomeStatus")),
+                        p.outcomeStatus().trim().toUpperCase()));
+            }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         return signalRepo.findAll(spec, pageable).map(this::toDto);
@@ -78,6 +86,27 @@ public class AdminSignalQueryService {
         return new AdminSignalDetailDto(toDto(sig), orderDtos, timeline);
     }
 
+    public AdminSignalStatsDto stats(Instant since) {
+        List<Object[]> rows = signalRepo.computeStats(since);
+        if (rows.isEmpty()) {
+            return new AdminSignalStatsDto(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0);
+        }
+        Object[] r = rows.get(0);
+        return new AdminSignalStatsDto(
+                toLong(r[0]),  // totalToday
+                toLong(r[1]),  // buyToday
+                toLong(r[2]),  // sellToday
+                toLong(r[3]),  // liveToday
+                toLong(r[4]),  // paperToday
+                toDouble(r[5]), // avgConfidence
+                toLong(r[6]),  // targetHit
+                toLong(r[7]),  // slHit
+                toLong(r[8]),  // running
+                toLong(r[9]),  // expired
+                toLong(r[10]) // totalAllTime
+        );
+    }
+
     private AdminSignalDto toDto(StrategySignalEntity s) {
         return new AdminSignalDto(
                 s.getId(),
@@ -93,7 +122,18 @@ public class AdminSignalQueryService {
                 s.getReason(),
                 s.getMarketRegime(),
                 s.getUserId(),
-                s.getCreatedAt()
+                s.getCreatedAt(),
+                s.getOutcomeStatus(),
+                s.getRealizedPnl(),
+                s.getUnrealizedPnl(),
+                s.getMaxFavorableExcursion(),
+                s.getMaxAdverseExcursion(),
+                s.getHitTarget(),
+                s.getHitStoploss(),
+                s.getRiskRewardAchieved(),
+                s.getExecutionLatencyMs(),
+                s.getEntryPrice(),
+                s.getExitPrice()
         );
     }
 
@@ -105,5 +145,19 @@ public class AdminSignalQueryService {
                 o.getBacktestRunId(), o.getState() != null ? o.getState().name() : null,
                 o.getBrokerVendor(), o.getRejectReason(), o.getCreatedAt()
         );
+    }
+
+    private static long toLong(Object v) {
+        if (v == null) return 0L;
+        return ((Number) v).longValue();
+    }
+
+    private static Double toDouble(Object v) {
+        if (v == null) return null;
+        return ((Number) v).doubleValue();
+    }
+
+    private static Instant startOfToday() {
+        return Instant.now().atZone(ZoneOffset.UTC).truncatedTo(ChronoUnit.DAYS).toInstant();
     }
 }

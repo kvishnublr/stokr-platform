@@ -18,6 +18,17 @@ public record AdminSignalDto(
         String reason,
         String marketRegime,
         UUID userId,
-        Instant createdAt
-) {
-}
+        Instant createdAt,
+        // Outcome lifecycle
+        String outcomeStatus,
+        BigDecimal realizedPnl,
+        BigDecimal unrealizedPnl,
+        BigDecimal maxFavorableExcursion,
+        BigDecimal maxAdverseExcursion,
+        Boolean hitTarget,
+        Boolean hitStoploss,
+        BigDecimal riskRewardAchieved,
+        Long executionLatencyMs,
+        BigDecimal entryPrice,
+        BigDecimal exitPrice
+) {}

@@ -4,6 +4,7 @@ import com.stokr.admin.signal.AdminSignalDetailDto;
 import com.stokr.admin.signal.AdminSignalDto;
 import com.stokr.admin.signal.AdminSignalParams;
 import com.stokr.admin.signal.AdminSignalQueryService;
+import com.stokr.admin.signal.AdminSignalStatsDto;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.api.PageResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
@@ -21,6 +22,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 @RestController
@@ -32,6 +35,16 @@ public class AdminSignalController {
 
     private final AdminSignalQueryService queryService;
 
+    @GetMapping("/stats")
+    @Operation(summary = "Aggregate signal stats for today or custom window")
+    public ApiResponse<AdminSignalStatsDto> stats(
+            @RequestParam(required = false) Instant since
+    ) {
+        Instant from = since != null ? since
+                : Instant.now().atZone(ZoneOffset.UTC).truncatedTo(ChronoUnit.DAYS).toInstant();
+        return ApiResponse.ok(queryService.stats(from), CorrelationIdHolder.get());
+    }
+
     @GetMapping
     @Operation(summary = "Paginated signal list with optional filters")
     public ApiResponse<PageResponse<AdminSignalDto>> signals(
@@ -42,10 +55,11 @@ public class AdminSignalController {
             @RequestParam(required = false) String pipeline,
             @RequestParam(required = false) UUID userId,
             @RequestParam(required = false) Instant from,
-            @RequestParam(required = false) Instant to
+            @RequestParam(required = false) Instant to,
+            @RequestParam(required = false) String outcomeStatus
     ) {
         var page = queryService.pageSignals(
-                new AdminSignalParams(strategyName, symbol, signalType, pipeline, userId, from, to),
+                new AdminSignalParams(strategyName, symbol, signalType, pipeline, userId, from, to, outcomeStatus),
                 pageable);
         return ApiResponse.ok(PageResponse.of(page), CorrelationIdHolder.get());
     }

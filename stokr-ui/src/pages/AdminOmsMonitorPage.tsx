@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client";
-import { cn } from "../lib/utils";
 import {
-  X, ChevronRight, RefreshCw, AlertTriangle,
-  TrendingUp, TrendingDown, Minus,
+  TrendingUp, TrendingDown, Minus, RefreshCw, X,
+  ChevronRight, AlertTriangle, Zap, Activity,
+  CheckCircle2, XCircle, Clock, Timer, BarChart3,
+  ShieldAlert,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -28,75 +29,124 @@ type OrderRow = {
 };
 
 type ExecutionEvent = {
-  id: string;
-  eventType: string;
-  eventPayloadJson: string | null;
-  streamSequence: number | null;
-  correlationId: string | null;
-  createdAt: string;
+  id: string; eventType: string; eventPayloadJson: string | null;
+  streamSequence: number | null; correlationId: string | null; createdAt: string;
+};
+
+type TimelineEvent = {
+  eventType: string; streamSequence: number | null; createdAt: string;
+  payload: Record<string, unknown>;
 };
 
 type PageResp = { content: OrderRow[]; totalPages: number; totalElements: number; page: number };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+type OmsStatsResp = {
+  totalToday: number; filledToday: number; rejectedToday: number;
+  partialToday: number; cancelledToday: number; pendingToday: number; totalAllTime: number;
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const fmtTime = (iso: string | null) => {
   if (!iso) return "—";
   const d = new Date(iso);
   return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-    + " " + d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+    + "  " + d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 };
 
-const SideChip = ({ side }: { side: string | null }) => {
-  const s = (side ?? "").toUpperCase();
-  if (s === "BUY") return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-400">
-      <TrendingUp className="h-3 w-3" /> BUY
-    </span>
-  );
-  if (s === "SELL") return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/15 px-2 py-0.5 text-[11px] font-bold text-rose-400">
-      <TrendingDown className="h-3 w-3" /> SELL
-    </span>
-  );
-  return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-neutral-700/60 px-2 py-0.5 text-[11px] font-bold text-neutral-400">
-      <Minus className="h-3 w-3" /> {s || "—"}
-    </span>
-  );
-};
-
-const StateChip = ({ state }: { state: string | null }) => {
-  const s = (state ?? "").toUpperCase();
-  const cls =
-    s === "FILLED" || s === "EXIT_FILLED" ? "bg-emerald-500/15 text-emerald-400" :
-    s === "REJECTED" ? "bg-rose-500/15 text-rose-400" :
-    s === "PARTIALLY_FILLED" ? "bg-amber-500/15 text-amber-400" :
-    s === "CREATED" || s === "VALIDATED" || s === "SUBMITTED" || s === "ACCEPTED" ? "bg-sky-500/15 text-sky-400" :
-    s === "CANCELLED" || s === "EXPIRED" ? "bg-neutral-600/40 text-neutral-400" :
-    "bg-neutral-700/50 text-neutral-400";
-  return (
-    <span className={cn("rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", cls)}>
-      {s || "—"}
-    </span>
-  );
-};
-
-const ModeChip = ({ mode }: { mode: string | null }) => {
-  const v = (mode ?? "").toUpperCase();
-  const cls = v === "LIVE" ? "bg-rose-500/15 text-rose-400" :
-              v === "PAPER" ? "bg-amber-500/15 text-amber-400" :
-              "bg-neutral-700/50 text-neutral-400";
-  return <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-bold", cls)}>{v || "—"}</span>;
-};
-
-const eventColor = (type: string) => {
+const evDotCls = (type: string) => {
   if (type.includes("FILLED") || type.includes("FILL")) return "bg-emerald-500";
   if (type.includes("REJECT")) return "bg-rose-500";
   if (type.includes("RISK") || type.includes("PASS")) return "bg-sky-400";
   if (type.includes("DLQ") || type.includes("RETRY")) return "bg-amber-400";
-  return "bg-neutral-500";
+  return "bg-slate-400";
 };
+
+const evBadgeCls = (type: string) => {
+  if (type.includes("FILLED")) return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (type.includes("REJECT")) return "border-rose-200 bg-rose-50 text-rose-700";
+  if (type.includes("RISK") || type.includes("PASS")) return "border-sky-200 bg-sky-50 text-sky-700";
+  if (type.includes("DLQ") || type.includes("RETRY")) return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-slate-200 bg-slate-50 text-slate-500";
+};
+
+// ─── Chips ────────────────────────────────────────────────────────────────────
+
+function SideChip({ side }: { side: string | null }) {
+  const s = (side ?? "").toUpperCase();
+  if (s === "BUY") return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+      <TrendingUp className="h-3 w-3" /> BUY
+    </span>
+  );
+  if (s === "SELL") return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+      <TrendingDown className="h-3 w-3" /> SELL
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+      <Minus className="h-3 w-3" /> {s || "—"}
+    </span>
+  );
+}
+
+const STATE_CFG: Record<string, string> = {
+  FILLED:           "border-emerald-200 bg-emerald-50 text-emerald-700",
+  EXIT_FILLED:      "border-emerald-200 bg-emerald-50 text-emerald-700",
+  PARTIALLY_FILLED: "border-amber-200 bg-amber-50 text-amber-700",
+  REJECTED:         "border-rose-200 bg-rose-50 text-rose-700",
+  FAILED:           "border-red-200 bg-red-50 text-red-700",
+  CREATED:          "border-blue-200 bg-blue-50 text-blue-700",
+  VALIDATED:        "border-sky-200 bg-sky-50 text-sky-700",
+  SUBMITTED:        "border-sky-200 bg-sky-50 text-sky-700",
+  ACCEPTED:         "border-sky-200 bg-sky-50 text-sky-700",
+  CANCELLED:        "border-slate-200 bg-slate-100 text-slate-500",
+  EXPIRED:          "border-slate-200 bg-slate-100 text-slate-500",
+};
+
+function StateChip({ state }: { state: string | null }) {
+  const s = (state ?? "").toUpperCase();
+  const cls = STATE_CFG[s] ?? "border-slate-200 bg-slate-50 text-slate-400";
+  return (
+    <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cls}`}>
+      {s || "—"}
+    </span>
+  );
+}
+
+function ModeChip({ mode }: { mode: string | null }) {
+  const v = (mode ?? "").toUpperCase();
+  if (v === "LIVE") return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600">
+      <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />LIVE
+    </span>
+  );
+  if (v === "PAPER") return (
+    <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">PAPER</span>
+  );
+  return <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">{v || "—"}</span>;
+}
+
+// ─── Stat Card ────────────────────────────────────────────────────────────────
+
+function StatCard({ label, value, sub, accent, icon: Icon }: {
+  label: string; value: string | number; sub?: string;
+  accent: string; icon: React.ElementType;
+}) {
+  return (
+    <div className={`bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3 flex items-start gap-3 border-l-4 ${accent}`}>
+      <div className="mt-0.5 shrink-0">
+        <Icon className="h-4 w-4 text-slate-400" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 whitespace-nowrap">{label}</div>
+        <div className="mt-0.5 text-xl font-bold tabular-nums text-slate-900 leading-none">{value}</div>
+        {sub && <div className="mt-0.5 text-[11px] text-slate-500">{sub}</div>}
+      </div>
+    </div>
+  );
+}
 
 // ─── Order Detail Drawer ──────────────────────────────────────────────────────
 
@@ -106,102 +156,125 @@ function OrderDetailDrawer({ order, onClose }: { order: OrderRow; onClose: () =>
     queryFn: async () => (await api.get(`/api/admin/oms/orders/${order.id}/events`)).data?.data ?? [],
     staleTime: 30_000,
   });
-  const timelineQ = useQuery<Array<{ eventType: string; streamSequence: number | null; createdAt: string; payload: Record<string, unknown> }>>({
+  const timelineQ = useQuery<TimelineEvent[]>({
     queryKey: ["admin-order-timeline", order.id],
     queryFn: async () => (await api.get(`/api/admin/operations/orders/${order.id}/execution-timeline`)).data?.data ?? [],
     staleTime: 30_000,
   });
 
+  const label = "text-[10px] font-semibold uppercase tracking-widest text-slate-400";
+  const val = "mt-0.5 text-sm font-mono text-slate-900 break-all";
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 flex h-full w-full max-w-2xl flex-col bg-neutral-950 shadow-2xl ring-1 ring-white/10 overflow-hidden">
+      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative z-10 flex h-full w-full max-w-2xl flex-col bg-white shadow-2xl ring-1 ring-slate-200 overflow-hidden">
+
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/[0.07] bg-neutral-900/80 px-5 py-3.5">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-sm font-bold text-white">{order.symbol}</span>
+              <span className="font-mono text-base font-bold text-slate-900">{order.symbol}</span>
               <SideChip side={order.side} />
               <StateChip state={order.state} />
               <ModeChip mode={order.executionMode} />
             </div>
-            <div className="mt-0.5 font-mono text-xs text-neutral-500">{order.id.slice(0, 20)}…</div>
+            <div className="mt-1 font-mono text-[11px] text-slate-400">{order.id.slice(0, 24)}…</div>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-white/[0.07] hover:text-white">
+          <button type="button" onClick={onClose}
+            className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {/* Order Info */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "Strategy", value: order.strategyKey ?? "—" },
-              { label: "Order Type", value: order.orderType ?? "—" },
-              { label: "Quantity", value: String(order.quantity ?? "—") },
-              { label: "Limit Price", value: order.limitPrice != null ? String(order.limitPrice) : "—" },
-              { label: "Broker", value: order.brokerVendor ?? "—" },
-              { label: "Created", value: fmtTime(order.createdAt) },
-            ].map(({ label, value }) => (
-              <div key={label} className="rounded-xl bg-white/[0.04] px-3 py-2.5">
-                <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">{label}</div>
-                <div className="mt-1 font-mono text-xs text-white break-all">{value}</div>
-              </div>
-            ))}
-          </div>
+        <div className="flex-1 overflow-y-auto">
 
-          {/* Reject reason */}
+          {/* Reject reason banner */}
           {order.rejectReason && (
-            <div className="flex items-start gap-2 rounded-xl border border-rose-500/25 bg-rose-500/[0.08] px-4 py-3 text-xs text-rose-300">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{order.rejectReason}</span>
+            <div className="mx-5 mt-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+              <ShieldAlert className="mt-0.5 h-4 w-4 text-rose-500 shrink-0" />
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-rose-500 mb-0.5">Rejection Reason</div>
+                <span className="text-sm text-rose-700 font-medium">{order.rejectReason}</span>
+              </div>
             </div>
           )}
 
-          {/* IDs */}
-          <div className="space-y-1.5 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Reference IDs</div>
-            {[
-              { label: "Order ID", value: order.id },
-              { label: "Correlation", value: order.correlationId },
-              { label: "Signal ID", value: order.signalId },
-              { label: "User ID", value: order.userId },
-            ].filter(r => r.value).map(({ label, value }) => (
-              <div key={label} className="flex gap-2 text-xs">
-                <span className="w-24 shrink-0 text-neutral-500">{label}</span>
-                <span className="font-mono text-neutral-300 break-all">{value}</span>
-              </div>
-            ))}
+          {/* Order Parameters */}
+          <div className="border-b border-slate-100 px-5 py-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Activity className="h-3.5 w-3.5 text-slate-400" />
+              <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Order Parameters</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: "Strategy", value: order.strategyKey ?? "—" },
+                { label: "Order Type", value: order.orderType ?? "—" },
+                { label: "Quantity", value: String(order.quantity ?? "—") },
+                { label: "Limit Price", value: order.limitPrice != null ? String(order.limitPrice) : "—" },
+                { label: "Broker", value: order.brokerVendor ?? "—" },
+                { label: "Created", value: fmtTime(order.createdAt) },
+              ].map(({ label: lbl, value }) => (
+                <div key={lbl} className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2.5">
+                  <div className={label}>{lbl}</div>
+                  <div className={val}>{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Reference IDs */}
+          <div className="border-b border-slate-100 px-5 py-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Clock className="h-3.5 w-3.5 text-slate-400" />
+              <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Reference IDs</span>
+            </div>
+            <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              {[
+                { label: "Order ID", value: order.id },
+                { label: "Correlation", value: order.correlationId },
+                { label: "Signal ID", value: order.signalId },
+                { label: "User ID", value: order.userId },
+              ].filter(r => r.value).map(({ label: lbl, value }) => (
+                <div key={lbl} className="flex gap-3 text-xs">
+                  <span className="w-24 shrink-0 font-semibold text-slate-400">{lbl}</span>
+                  <span className="font-mono text-slate-700 break-all select-all">{value}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Execution Events */}
           {(eventsQ.data?.length ?? 0) > 0 && (
-            <div>
-              <div className="mb-2 text-[11px] font-bold uppercase tracking-widest text-neutral-400">
-                Execution Events ({eventsQ.data!.length})
+            <div className="border-b border-slate-100 px-5 py-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Zap className="h-3.5 w-3.5 text-slate-400" />
+                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                  Execution Events ({eventsQ.data!.length})
+                </span>
               </div>
-              <div className="rounded-xl border border-white/[0.07] overflow-hidden">
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-white/[0.06] bg-white/[0.03]">
-                      {["#", "Event", "Correlation", "Time"].map(h => (
-                        <th key={h} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-neutral-500">{h}</th>
+                    <tr className="border-b border-slate-200 bg-slate-50">
+                      {["Seq", "Event", "Correlation", "Time"].map(h => (
+                        <th key={h} className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">{h}</th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {eventsQ.data!.map((ev) => (
-                      <tr key={ev.id} className="border-b border-white/[0.04]">
-                        <td className="px-3 py-2 text-neutral-600">{ev.streamSequence ?? "—"}</td>
+                      <tr key={ev.id} className="hover:bg-slate-50">
+                        <td className="px-3 py-2 font-mono text-slate-400 text-[11px]">{ev.streamSequence ?? "—"}</td>
                         <td className="px-3 py-2">
-                          <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-bold text-black", eventColor(ev.eventType))}>
+                          <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${evBadgeCls(ev.eventType)}`}>
                             {ev.eventType}
                           </span>
                         </td>
-                        <td className="px-3 py-2 font-mono text-neutral-500 text-[11px]">
+                        <td className="px-3 py-2 font-mono text-slate-400 text-[11px]">
                           {ev.correlationId ? ev.correlationId.slice(0, 16) + "…" : "—"}
                         </td>
-                        <td className="px-3 py-2 text-neutral-500">{fmtTime(ev.createdAt)}</td>
+                        <td className="px-3 py-2 text-slate-500 text-[11px]">{fmtTime(ev.createdAt)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -212,19 +285,24 @@ function OrderDetailDrawer({ order, onClose }: { order: OrderRow; onClose: () =>
 
           {/* Execution Timeline */}
           {(timelineQ.data?.length ?? 0) > 0 && (
-            <div>
-              <div className="mb-2 text-[11px] font-bold uppercase tracking-widest text-neutral-400">Timeline</div>
-              <div className="space-y-1">
+            <div className="px-5 py-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Timer className="h-3.5 w-3.5 text-slate-400" />
+                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Execution Timeline</span>
+              </div>
+              <div>
                 {timelineQ.data!.map((ev, i) => (
-                  <div key={i} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <div className={cn("h-2 w-2 rounded-full mt-1 shrink-0", eventColor(ev.eventType))} />
-                      {i < timelineQ.data!.length - 1 && <div className="flex-1 w-px bg-white/[0.08] mt-1" />}
+                  <div key={i} className="flex gap-4">
+                    <div className="flex flex-col items-center pt-1 w-4 shrink-0">
+                      <div className={`h-2.5 w-2.5 rounded-full ring-2 ring-white ${evDotCls(ev.eventType)}`} />
+                      {i < timelineQ.data!.length - 1 && (
+                        <div className="flex-1 w-px bg-slate-200 mt-1" style={{ minHeight: 20 }} />
+                      )}
                     </div>
-                    <div className="pb-3 flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-neutral-200">{ev.eventType}</span>
-                        <span className="ml-auto text-[10px] text-neutral-500">{fmtTime(ev.createdAt)}</span>
+                    <div className="pb-4 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-slate-700">{ev.eventType}</span>
+                        <span className="text-[10px] text-slate-400">{fmtTime(ev.createdAt)}</span>
                       </div>
                     </div>
                   </div>
@@ -240,6 +318,8 @@ function OrderDetailDrawer({ order, onClose }: { order: OrderRow; onClose: () =>
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+const ORDER_STATES = ["CREATED","VALIDATED","SUBMITTED","ACCEPTED","PARTIALLY_FILLED","FILLED","REJECTED","CANCELLED","EXPIRED","FAILED"];
+
 export function AdminOmsMonitorPage() {
   const [page, setPage] = useState(0);
   const [symbol, setSymbol] = useState("");
@@ -248,8 +328,15 @@ export function AdminOmsMonitorPage() {
   const [mode, setMode] = useState("ALL");
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
 
+  const statsQ = useQuery<OmsStatsResp>({
+    queryKey: ["admin-oms-stats"],
+    queryFn: async () => (await api.get("/api/admin/oms/stats")).data?.data,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+
   const q = useQuery<PageResp>({
-    queryKey: ["admin-oms-orders-v2", page, symbol, strategy, state, mode],
+    queryKey: ["admin-oms-orders-v3", page, symbol, strategy, state, mode],
     queryFn: async () => {
       const p = new URLSearchParams();
       p.set("page", String(page));
@@ -265,116 +352,176 @@ export function AdminOmsMonitorPage() {
     refetchInterval: 15_000,
   });
 
+  const hasFilters = !!(symbol || strategy || state !== "ALL" || mode !== "ALL");
+  const clearFilters = () => { setSymbol(""); setStrategy(""); setState("ALL"); setMode("ALL"); setPage(0); };
+
   const rows = q.data?.content ?? [];
   const total = q.data?.totalElements ?? 0;
   const totalPages = q.data?.totalPages ?? 1;
+  const stats = statsQ.data;
 
-  const inputCls = "rounded-lg border border-white/[0.1] bg-white/[0.05] px-3 py-1.5 text-xs text-white placeholder-neutral-500 outline-none focus:border-sky-500/60";
-  const selectCls = "rounded-lg border border-white/[0.1] bg-neutral-900 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500/60";
+  const fillRate = stats?.totalToday ? Math.round((stats.filledToday / stats.totalToday) * 100) : 0;
+
+  const rowStateBg = (s: string | null) => {
+    const v = (s ?? "").toUpperCase();
+    if (v === "REJECTED" || v === "FAILED") return "bg-rose-50/40";
+    if (v === "FILLED" || v === "EXIT_FILLED") return "bg-emerald-50/30";
+    if (v === "PARTIALLY_FILLED") return "bg-amber-50/30";
+    return "";
+  };
+
+  const inputCls = "h-8 rounded-lg border border-slate-300 bg-white px-3 text-xs text-slate-900 placeholder-slate-400 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors";
+  const selectCls = "h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-800 outline-none focus:border-blue-400 transition-colors cursor-pointer";
 
   return (
-    <div className="flex h-full flex-col space-y-3 text-foreground">
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-white">OMS Monitor</h1>
-          <p className="mt-0.5 text-xs text-neutral-500">
-            All platform orders across users · {total.toLocaleString()} total · auto-refresh 15s
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void q.refetch()}
-          className="flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.05] px-3 py-1.5 text-xs font-semibold text-neutral-300 hover:bg-white/[0.09]"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", q.isFetching && "animate-spin")} /> Refresh
-        </button>
-      </div>
+    <div className="flex h-full flex-col bg-slate-50">
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-3">
-        <input className={inputCls} placeholder="Symbol…" value={symbol} onChange={e => { setSymbol(e.target.value); setPage(0); }} />
-        <input className={inputCls} placeholder="Strategy key…" value={strategy} onChange={e => { setStrategy(e.target.value); setPage(0); }} />
-        <select className={selectCls} value={state} onChange={e => { setState(e.target.value); setPage(0); }}>
-          <option value="ALL">All states</option>
-          {["CREATED","VALIDATED","SUBMITTED","ACCEPTED","PARTIALLY_FILLED","FILLED","REJECTED","CANCELLED","EXPIRED","FAILED"].map(s => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-        <select className={selectCls} value={mode} onChange={e => { setMode(e.target.value); setPage(0); }}>
-          <option value="ALL">All modes</option>
-          <option value="LIVE">LIVE</option>
-          <option value="PAPER">PAPER</option>
-          <option value="SIMULATED">SIMULATED</option>
-        </select>
-        {(symbol || strategy || state !== "ALL" || mode !== "ALL") && (
-          <button type="button" onClick={() => { setSymbol(""); setStrategy(""); setState("ALL"); setMode("ALL"); setPage(0); }}
-            className="flex items-center gap-1 text-xs text-neutral-500 hover:text-white">
-            <X className="h-3 w-3" /> Clear
+      {/* ── Page Header ─────────────────────────────────────────────────────── */}
+      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-lg font-bold tracking-tight text-slate-900">OMS Monitor</h1>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Platform-wide order surveillance · {total.toLocaleString()} results · live feed
+            </p>
+          </div>
+          <button type="button" onClick={() => void q.refetch()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm">
+            <RefreshCw className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} /> Refresh
           </button>
-        )}
+        </div>
       </div>
 
-      {/* Table */}
-      <div className="flex-1 overflow-auto rounded-xl border border-white/[0.07] bg-neutral-950">
-        <table className="w-full min-w-[900px] text-xs">
-          <thead className="sticky top-0 z-10 border-b border-white/[0.07] bg-neutral-900/95">
+      {/* ── KPI Stats Bar ────────────────────────────────────────────────────── */}
+      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+          <StatCard label="Orders Today" value={(stats?.totalToday ?? 0).toLocaleString()} sub={`${(stats?.totalAllTime ?? 0).toLocaleString()} all-time`} accent="border-l-blue-500" icon={Activity} />
+          <StatCard label="Filled" value={(stats?.filledToday ?? 0).toLocaleString()} sub={stats?.totalToday ? `${Math.round((stats.filledToday / stats.totalToday) * 100)}% fill rate` : "—"} accent="border-l-emerald-500" icon={CheckCircle2} />
+          <StatCard label="Rejected" value={(stats?.rejectedToday ?? 0).toLocaleString()} sub={stats?.totalToday ? `${Math.round((stats.rejectedToday / stats.totalToday) * 100)}% reject rate` : "—"} accent="border-l-rose-500" icon={XCircle} />
+          <StatCard label="Partial Fills" value={(stats?.partialToday ?? 0).toLocaleString()} sub="partially executed" accent="border-l-amber-500" icon={BarChart3} />
+          <StatCard label="Pending" value={(stats?.pendingToday ?? 0).toLocaleString()} sub="awaiting execution" accent="border-l-sky-500" icon={Clock} />
+          <StatCard label="Fill Rate" value={`${fillRate}%`} sub={`${stats?.cancelledToday ?? 0} cancelled today`} accent="border-l-teal-500" icon={Zap} />
+        </div>
+      </div>
+
+      {/* ── Filter Bar ───────────────────────────────────────────────────────── */}
+      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <input className={inputCls} placeholder="Symbol…" value={symbol}
+            onChange={e => { setSymbol(e.target.value); setPage(0); }} />
+          <input className={inputCls} placeholder="Strategy key…" value={strategy}
+            onChange={e => { setStrategy(e.target.value); setPage(0); }} />
+          <select className={selectCls} value={state} onChange={e => { setState(e.target.value); setPage(0); }}>
+            <option value="ALL">All states</option>
+            {ORDER_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select className={selectCls} value={mode} onChange={e => { setMode(e.target.value); setPage(0); }}>
+            <option value="ALL">All modes</option>
+            <option value="LIVE">LIVE</option>
+            <option value="PAPER">PAPER</option>
+            <option value="SIMULATED">SIMULATED</option>
+          </select>
+
+          {/* Quick state filters */}
+          <div className="flex items-center gap-1 ml-1 border-l border-slate-200 pl-3">
+            {[
+              { label: "Filled", s: "FILLED" },
+              { label: "Rejected", s: "REJECTED" },
+              { label: "Partial", s: "PARTIALLY_FILLED" },
+              { label: "Pending", s: "SUBMITTED" },
+            ].map(({ label, s: sv }) => (
+              <button key={sv} type="button"
+                onClick={() => { setState(sv); setPage(0); }}
+                className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold transition-colors whitespace-nowrap
+                  ${state === sv ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {hasFilters && (
+            <button type="button" onClick={clearFilters}
+              className="ml-auto flex items-center gap-1 text-xs text-slate-400 hover:text-rose-500 transition-colors">
+              <X className="h-3 w-3" /> Clear
+            </button>
+          )}
+          {!hasFilters && (
+            <span className="ml-auto text-[11px] text-slate-400">auto-refresh 15s</span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Data Grid ────────────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-auto">
+        <table className="w-full min-w-[1050px] text-xs border-collapse">
+          <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50">
             <tr>
               {["Time", "User", "Symbol", "Side", "Qty", "Price", "State", "Mode", "Strategy", "Broker", "Reject Reason"].map(h => (
-                <th key={h} className="whitespace-nowrap px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-neutral-500">{h}</th>
+                <th key={h} className="whitespace-nowrap px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400 border-r border-slate-100 last:border-r-0">
+                  {h}
+                </th>
               ))}
-              <th className="w-8" />
+              <th className="w-8 px-2" />
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {q.isLoading && (
-              <tr><td colSpan={12} className="px-4 py-12 text-center text-neutral-500">Loading orders…</td></tr>
-            )}
-            {!q.isLoading && rows.length === 0 && (
-              <tr><td colSpan={12} className="px-4 py-12 text-center text-neutral-600">
-                <AlertTriangle className="mx-auto mb-2 h-6 w-6" />No orders found
+              <tr><td colSpan={12} className="px-4 py-16 text-center text-slate-400">
+                <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin opacity-50" />Loading orders…
               </td></tr>
             )}
-            {rows.map((r, i) => (
-              <tr
-                key={r.id}
+            {!q.isLoading && rows.length === 0 && (
+              <tr><td colSpan={12} className="px-4 py-16 text-center">
+                <AlertTriangle className="mx-auto mb-2 h-6 w-6 text-amber-400" />
+                <div className="text-sm font-medium text-slate-600">No orders found</div>
+                <div className="text-xs text-slate-400 mt-1">Try adjusting the filters above</div>
+              </td></tr>
+            )}
+            {rows.map((r) => (
+              <tr key={r.id}
                 onClick={() => setSelectedOrder(r)}
-                className={cn(
-                  "cursor-pointer border-b border-white/[0.04] transition-colors",
-                  i % 2 === 0 ? "bg-white/[0.01]" : "",
-                  "hover:bg-white/[0.05]",
-                  selectedOrder?.id === r.id && "bg-sky-500/[0.07]"
-                )}
-              >
-                <td className="whitespace-nowrap px-3 py-2 font-mono text-neutral-400">{fmtTime(r.createdAt)}</td>
-                <td className="max-w-[90px] truncate px-3 py-2 font-mono text-neutral-400 text-[10px]" title={r.userId ?? ""}>
+                className={`group cursor-pointer transition-colors hover:bg-blue-50/60 ${rowStateBg(r.state)} ${selectedOrder?.id === r.id ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""}`}>
+                <td className="whitespace-nowrap px-4 py-2.5 font-mono text-slate-400 text-[11px]">{fmtTime(r.createdAt)}</td>
+                <td className="max-w-[80px] truncate px-4 py-2.5 font-mono text-slate-400 text-[11px]" title={r.userId ?? ""}>
                   {r.userId ? r.userId.slice(0, 8) + "…" : "—"}
                 </td>
-                <td className="px-3 py-2 font-mono font-bold text-white">{r.symbol ?? "—"}</td>
-                <td className="px-3 py-2"><SideChip side={r.side} /></td>
-                <td className="px-3 py-2 font-mono text-neutral-300">{r.quantity ?? "—"}</td>
-                <td className="px-3 py-2 font-mono text-neutral-300">{r.limitPrice ?? "—"}</td>
-                <td className="px-3 py-2"><StateChip state={r.state} /></td>
-                <td className="px-3 py-2"><ModeChip mode={r.executionMode} /></td>
-                <td className="max-w-[130px] truncate px-3 py-2 text-neutral-400" title={r.strategyKey ?? ""}>{r.strategyKey ?? "—"}</td>
-                <td className="px-3 py-2 text-neutral-500">{r.brokerVendor ?? "—"}</td>
-                <td className="max-w-[140px] truncate px-3 py-2 text-rose-400 text-[10px]" title={r.rejectReason ?? ""}>{r.rejectReason ?? "—"}</td>
-                <td className="px-3 py-2 text-neutral-600"><ChevronRight className="h-3.5 w-3.5" /></td>
+                <td className="px-4 py-2.5 font-mono font-bold text-slate-900">{r.symbol ?? "—"}</td>
+                <td className="px-4 py-2.5"><SideChip side={r.side} /></td>
+                <td className="px-4 py-2.5 font-mono text-slate-700">{r.quantity ?? "—"}</td>
+                <td className="px-4 py-2.5 font-mono text-slate-600">{r.limitPrice ?? "—"}</td>
+                <td className="px-4 py-2.5"><StateChip state={r.state} /></td>
+                <td className="px-4 py-2.5"><ModeChip mode={r.executionMode} /></td>
+                <td className="max-w-[140px] truncate px-4 py-2.5 text-slate-600 text-[11px]" title={r.strategyKey ?? ""}>
+                  {r.strategyKey ?? "—"}
+                </td>
+                <td className="px-4 py-2.5 text-slate-500 text-[11px]">{r.brokerVendor ?? "—"}</td>
+                <td className="max-w-[160px] truncate px-4 py-2.5 text-rose-600 text-[11px]" title={r.rejectReason ?? ""}>
+                  {r.rejectReason ?? "—"}
+                </td>
+                <td className="px-3 py-2.5 text-slate-300 group-hover:text-slate-500 transition-colors">
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between text-xs text-neutral-500">
-        <span>{total > 0 ? `${page * 50 + 1}–${Math.min((page + 1) * 50, total)} of ${total.toLocaleString()}` : "0 results"}</span>
+      {/* ── Pagination ───────────────────────────────────────────────────────── */}
+      <div className="shrink-0 border-t border-slate-200 bg-white px-6 py-3 flex items-center justify-between">
+        <span className="text-xs text-slate-500">
+          {total > 0 ? `${page * 50 + 1}–${Math.min((page + 1) * 50, total)} of ${total.toLocaleString()} orders` : "0 results"}
+        </span>
         <div className="flex items-center gap-2">
           <button type="button" disabled={page <= 0} onClick={() => setPage(p => Math.max(0, p - 1))}
-            className="rounded-md border border-white/[0.1] px-3 py-1 hover:bg-white/[0.06] disabled:opacity-30">Prev</button>
-          <span className="tabular-nums">Page {page + 1} / {totalPages}</span>
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
+            ← Prev
+          </button>
+          <span className="text-xs font-medium text-slate-500 tabular-nums px-2">Page {page + 1} / {totalPages}</span>
           <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}
-            className="rounded-md border border-white/[0.1] px-3 py-1 hover:bg-white/[0.06] disabled:opacity-30">Next</button>
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
+            Next →
+          </button>
         </div>
       </div>
 

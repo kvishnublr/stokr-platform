@@ -10,6 +10,11 @@ public record AdminSignalParams(
         String pipeline,
         UUID userId,
         Instant from,
-        Instant to
+        Instant to,
+        String outcomeStatus
 ) {
+    public AdminSignalParams(String strategyName, String symbol, String signalType,
+                             String pipeline, UUID userId, Instant from, Instant to) {
+        this(strategyName, symbol, signalType, pipeline, userId, from, to, null);
+    }
 }
