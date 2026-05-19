@@ -23,27 +23,9 @@
         </filter>
     </appender>
 
-    <!-- Loki (only when loki profile active) -->
-    <springProfile name="loki">
-        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
-            <http>
-                <url>${LOKI_URL:-http://loki:3100}/loki/api/v1/push</url>
-            </http>
-            <format>
-                <label>
-                    <pattern>app=stokr,host=${HOSTNAME:-local},level=%level</pattern>
-                </label>
-                <message class="com.github.loki4j.logback.JsonLayout"/>
-            </format>
-        </appender>
-    </springProfile>
-
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="SSE_LOG"/>
-        <springProfile name="loki">
-            <appender-ref ref="LOKI"/>
-        </springProfile>
     </root>
 
     <!-- Reduce noise from framework internals -->
