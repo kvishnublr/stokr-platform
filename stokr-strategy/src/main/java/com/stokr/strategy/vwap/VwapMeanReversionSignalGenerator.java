@@ -69,6 +69,9 @@ public class VwapMeanReversionSignalGenerator {
             if (c.getOpenTime().isAfter(barOpenTime)) {
                 break;
             }
+            if (c.getHighPrice() == null || c.getLowPrice() == null || c.getClosePrice() == null) {
+                continue;
+            }
             BigDecimal tp = c.getHighPrice().add(c.getLowPrice()).add(c.getClosePrice())
                     .divide(BigDecimal.valueOf(3), MC);
             BigDecimal v = c.getVolume() != null ? c.getVolume() : BigDecimal.ONE;

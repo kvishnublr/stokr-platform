@@ -136,6 +136,12 @@ public class MarketDataQueryService {
         return timeframe == null ? "1m" : timeframe.trim().toLowerCase(Locale.ROOT);
     }
 
+    private static boolean candleComplete(MarketdataCandle c) {
+        return c.getOpenPrice() != null && c.getHighPrice() != null
+                && c.getLowPrice() != null && c.getClosePrice() != null
+                && c.getClosePrice().signum() > 0;
+    }
+
     private List<MarketdataCandle> fetchAscWithFallback(String symbol, String timeframe, Instant endInclusive, int maxBars) {
         String tf = normalizeTf(timeframe);
         List<String> symbols = symbolCandidates(symbol);
@@ -143,12 +149,14 @@ public class MarketDataQueryService {
             if (endInclusive == null) {
                 List<MarketdataCandle> desc = candleRepository.findTop500BySymbolInAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbols, tf);
                 ArrayList<MarketdataCandle> asc = new ArrayList<>(desc);
+                asc.removeIf(c -> !candleComplete(c));
                 Collections.reverse(asc);
                 return asc;
             }
             Page<MarketdataCandle> page = candleRepository.findBySymbolInAndTimeframeAndOpenTimeLessThanEqualAndDeletedFalse(
                     symbols, tf, endInclusive, PageRequest.of(0, maxBars, Sort.by(Sort.Direction.DESC, "openTime")));
             ArrayList<MarketdataCandle> asc = new ArrayList<>(page.getContent());
+            asc.removeIf(c -> !candleComplete(c));
             Collections.reverse(asc);
             return asc;
         }
@@ -236,6 +244,9 @@ public class MarketDataQueryService {
         private java.math.BigDecimal volume = java.math.BigDecimal.ZERO;
 
         private void add(MarketdataCandle c) {
+            if (!candleComplete(c)) {
+                return;
+            }
             if (open == null) {
                 open = c.getOpenPrice();
             }
