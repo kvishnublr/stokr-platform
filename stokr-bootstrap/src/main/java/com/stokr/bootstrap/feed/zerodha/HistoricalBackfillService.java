@@ -43,10 +43,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public class HistoricalBackfillService {
 
-    private static final ZoneId IST        = ZoneId.of("Asia/Kolkata");
-    private static final String TIMEFRAME  = "1m";
-    private static final String VENDOR     = "ZERODHA";
-    private static final long   RATE_MS    = 350;
+    private static final ZoneId IST           = ZoneId.of("Asia/Kolkata");
+    private static final String TIMEFRAME    = "1m";
+    private static final String VENDOR       = "ZERODHA";
+    private static final long   RATE_MS      = 350;
+    /** Zerodha historical API max window for minute data is 60 days. Use 55 for safety. */
+    private static final int    CHUNK_DAYS   = 55;
 
     private final InstrumentRegistryService     instrumentRegistry;
     private final ZerodhaKiteApiClient          kiteApiClient;
@@ -55,7 +57,7 @@ public class HistoricalBackfillService {
     private final PlatformBrokerFeedSessionRepository sessionRepository;
     private final MarketdataCandleRepository    candleRepository;
 
-    @Value("${stokr.backfill.lookback-days:5}")
+    @Value("${stokr.backfill.lookback-days:365}")
     private int lookbackDays;
 
     @Value("${stokr.backfill.enabled:true}")
@@ -129,7 +131,7 @@ public class HistoricalBackfillService {
 
                 List<MarketdataCandle> candles = fetchCandles(apiKey, accessToken, symbol, token, from, to);
                 if (!candles.isEmpty()) {
-                    saveNewCandles(symbol, candles, tradingDays);
+                    saveNewCandles(symbol, candles, missingDays);
                     filled++;
                     log.debug("backfill.filled symbol={} candles={} days={}", symbol, candles.size(), missingDays.size());
                 }
@@ -142,7 +144,7 @@ public class HistoricalBackfillService {
             } catch (Exception ex) {
                 failed++;
                 log.warn("backfill.failed symbol={} {}", symbol, ex.getMessage());
-                try { Thread.sleep(RATE_MS); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                try { Thread.sleep(RATE_MS); } catch (InterruptedException ie2) { Thread.currentThread().interrupt(); break; }
             }
         }
 
@@ -168,24 +170,55 @@ public class HistoricalBackfillService {
         return missing;
     }
 
+    /**
+     * Fetches 1m candles from Zerodha in 55-day chunks.
+     * Zerodha's historical API enforces a 60-day max window for minute data —
+     * chunking is mandatory for any backfill longer than 2 months.
+     */
     private List<MarketdataCandle> fetchCandles(String apiKey, String accessToken,
                                                 String symbol, int token,
-                                                Instant from, Instant to) {
-        JsonNode response = kiteApiClient.getHistoricalCandles(apiKey, accessToken, token, "minute", from, to);
-        JsonNode candlesNode = response.path("data").path("candles");
+                                                Instant from, Instant to) throws InterruptedException {
         List<MarketdataCandle> result = new ArrayList<>();
-        if (!candlesNode.isArray()) return result;
+        LocalDate chunkStart = from.atZone(IST).toLocalDate();
+        LocalDate end        = to.atZone(IST).toLocalDate();
 
+        while (!chunkStart.isAfter(end)) {
+            LocalDate chunkEnd = chunkStart.plusDays(CHUNK_DAYS - 1);
+            if (chunkEnd.isAfter(end)) chunkEnd = end;
+
+            Instant chunkFrom = chunkStart.atTime(9, 0).atZone(IST).toInstant();
+            Instant chunkTo   = chunkEnd.atTime(15, 45).atZone(IST).toInstant();
+
+            try {
+                JsonNode response = kiteApiClient.getHistoricalCandles(
+                        apiKey, accessToken, token, "minute", chunkFrom, chunkTo);
+                JsonNode candlesNode = response.path("data").path("candles");
+                if (candlesNode.isArray()) {
+                    parseRows(candlesNode, symbol, result);
+                }
+            } catch (Exception ex) {
+                log.debug("backfill.chunk_failed symbol={} chunk={}/{} {}", symbol, chunkStart, chunkEnd, ex.getMessage());
+            }
+
+            chunkStart = chunkEnd.plusDays(1);
+            if (!chunkStart.isAfter(end)) {
+                Thread.sleep(RATE_MS); // rate-limit between chunks
+            }
+        }
+        return result;
+    }
+
+    private void parseRows(JsonNode candlesNode, String symbol, List<MarketdataCandle> out) {
         for (JsonNode row : candlesNode) {
             // Zerodha format: [datetime, open, high, low, close, volume, oi]
             if (!row.isArray() || row.size() < 6) continue;
             try {
-                Instant openTime = Instant.parse(normalizeKiteDateTime(row.get(0).asText()));
-                BigDecimal open   = new BigDecimal(row.get(1).asText());
-                BigDecimal high   = new BigDecimal(row.get(2).asText());
-                BigDecimal low    = new BigDecimal(row.get(3).asText());
-                BigDecimal close  = new BigDecimal(row.get(4).asText());
-                BigDecimal volume = new BigDecimal(row.get(5).asText());
+                Instant    openTime = Instant.parse(normalizeKiteDateTime(row.get(0).asText()));
+                BigDecimal open     = new BigDecimal(row.get(1).asText());
+                BigDecimal high     = new BigDecimal(row.get(2).asText());
+                BigDecimal low      = new BigDecimal(row.get(3).asText());
+                BigDecimal close    = new BigDecimal(row.get(4).asText());
+                BigDecimal volume   = new BigDecimal(row.get(5).asText());
 
                 MarketdataCandle c = new MarketdataCandle();
                 c.setSymbol(symbol);
@@ -196,12 +229,11 @@ public class HistoricalBackfillService {
                 c.setLowPrice(low);
                 c.setClosePrice(close);
                 c.setVolume(volume);
-                result.add(c);
+                out.add(c);
             } catch (Exception ex) {
-                log.debug("backfill.parse_row_failed symbol={} row={} {}", symbol, row, ex.getMessage());
+                log.debug("backfill.parse_row_failed symbol={} {}", symbol, ex.getMessage());
             }
         }
-        return result;
     }
 
     @Transactional
