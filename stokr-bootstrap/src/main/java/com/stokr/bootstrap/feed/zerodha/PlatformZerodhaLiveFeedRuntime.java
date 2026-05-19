@@ -29,10 +29,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executors;
@@ -157,9 +156,10 @@ public class PlatformZerodhaLiveFeedRuntime {
             return;
         }
         String apiKey = zerodhaBrokerProperties.getApiKey();
-        List<Integer> tokens = feedProperties.parsedInstrumentTokens();
+        Map<Integer, String> symbolMap = buildSymbolMap(apiKey, accessToken);
+        List<Integer> tokens = new ArrayList<>(symbolMap.keySet());
         this.subscribedTokens = tokens;
-        this.tokenSymbols = resolveSymbols(apiKey, accessToken, tokens);
+        this.tokenSymbols = symbolMap;
 
         synchronized (ensureGate) {
             if (wsOpen.get() && activeSocket.get() != null) {
@@ -196,75 +196,131 @@ public class PlatformZerodhaLiveFeedRuntime {
         }
     }
 
-    private Map<Integer, String> resolveSymbols(String apiKey, String accessToken, List<Integer> want) {
-        Map<Integer, String> map = new HashMap<>();
-        for (int id : want) {
-            map.put(id, "TOKEN_" + id);
-        }
-        List<String> configuredSymbols = feedProperties.parsedInstrumentSymbols();
-        for (int i = 0; i < Math.min(want.size(), configuredSymbols.size()); i++) {
-            String configured = configuredSymbols.get(i);
-            if (configured != null && !configured.isBlank()) {
-                map.put(want.get(i), configured.trim());
-            }
-        }
-        // Try NSE then NFO - futures tokens will not appear in the NSE list
-        for (String exchange : List.of("NSE", "NFO")) {
-            boolean anyUnresolved = map.values().stream().anyMatch(v -> v.startsWith("TOKEN_"));
-            if (!anyUnresolved) {
-                break;
-            }
+    /**
+     * Builds the full token→symbol map for subscription.
+     * When autoSubscribeAllNse=true (default), fetches every NSE EQ instrument from Zerodha's
+     * instruments dump — no need to configure token lists manually.
+     * Caps at 3000 tokens (Zerodha WebSocket hard limit per connection).
+     */
+    private Map<Integer, String> buildSymbolMap(String apiKey, String accessToken) {
+        Map<Integer, String> map = new LinkedHashMap<>();
+
+        if (feedProperties.isAutoSubscribeAllNse()) {
             try {
-                String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, exchange);
-                BufferedReader br = new BufferedReader(new StringReader(csv));
-                String header = br.readLine();
-                if (header == null) {
-                    continue;
-                }
-                String[] hc = parseCsvLine(header);
-                int it = -1;
-                int ts = -1;
-                for (int i = 0; i < hc.length; i++) {
-                    String c = hc[i].trim();
-                    if ("instrument_token".equalsIgnoreCase(c)) {
-                        it = i;
-                    }
-                    if ("tradingsymbol".equalsIgnoreCase(c)) {
-                        ts = i;
-                    }
-                }
-                if (it < 0 || ts < 0) {
-                    continue;
-                }
-                String line;
-                while ((line = br.readLine()) != null) {
-                    String[] p = parseCsvLine(line);
-                    if (p.length <= Math.max(it, ts)) {
-                        continue;
-                    }
-                    int tok = (int) Long.parseLong(p[it].trim());
-                    if (map.containsKey(tok) && map.get(tok).startsWith("TOKEN_")) {
-                        String symbol = p[ts].trim();
-                        if (!symbol.isBlank()) {
-                            map.put(tok, symbol);
-                        }
-                    }
-                }
+                String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "NSE");
+                parseInstrumentsCsvInto(csv, "EQ", map);
+                log.info("platform.ws.auto_subscribe exchange=NSE eq_count={}", map.size());
             } catch (Exception ex) {
-                log.debug("platform.ws.instruments_parse exchange={} {}", exchange, ex.toString());
+                log.warn("platform.ws.auto_subscribe_failed exchange=NSE {}", ex.toString());
             }
         }
+
+        if (feedProperties.isAutoSubscribeMcx()) {
+            try {
+                String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "MCX");
+                int before = map.size();
+                parseInstrumentsCsvInto(csv, null, map);
+                log.info("platform.ws.auto_subscribe exchange=MCX added={}", map.size() - before);
+            } catch (Exception ex) {
+                log.warn("platform.ws.auto_subscribe_failed exchange=MCX {}", ex.toString());
+            }
+        }
+
+        // Fallback: use static configured tokens when auto-subscribe is off
+        if (!feedProperties.isAutoSubscribeAllNse() && !feedProperties.isAutoSubscribeMcx()) {
+            List<Integer> configTokens = feedProperties.parsedInstrumentTokens();
+            List<String> configSymbols = feedProperties.parsedInstrumentSymbols();
+            for (int i = 0; i < configTokens.size(); i++) {
+                int tok = configTokens.get(i);
+                String sym = (i < configSymbols.size() && !configSymbols.get(i).isBlank())
+                        ? configSymbols.get(i).trim() : "TOKEN_" + tok;
+                map.put(tok, sym);
+            }
+            // Try to resolve any remaining TOKEN_xxx via NSE/NFO instrument dump
+            if (map.values().stream().anyMatch(v -> v.startsWith("TOKEN_"))) {
+                for (String exchange : List.of("NSE", "NFO")) {
+                    try {
+                        String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, exchange);
+                        resolveUnknownTokens(csv, map);
+                    } catch (Exception ex) {
+                        log.debug("platform.ws.fallback_resolve exchange={} {}", exchange, ex.toString());
+                    }
+                    if (map.values().stream().noneMatch(v -> v.startsWith("TOKEN_"))) break;
+                }
+            }
+            log.info("platform.ws.static_subscribe count={}", map.size());
+        }
+
+        // Hard cap — Zerodha WebSocket limit is 3000 tokens per connection
+        if (map.size() > 3000) {
+            Map<Integer, String> capped = new LinkedHashMap<>();
+            map.entrySet().stream().limit(3000).forEach(e -> capped.put(e.getKey(), e.getValue()));
+            log.warn("platform.ws.token_cap original={} capped=3000", map.size());
+            return capped;
+        }
+
         long unresolved = map.values().stream().filter(v -> v.startsWith("TOKEN_")).count();
         if (unresolved > 0) {
-            log.warn("platform.ws.symbol_map_unresolved count={} sample_tokens={}", unresolved, map.entrySet().stream()
-                    .filter(e -> e.getValue().startsWith("TOKEN_"))
-                    .map(Map.Entry::getKey)
-                    .limit(20)
-                    .toList());
+            log.warn("platform.ws.symbol_map_unresolved count={}", unresolved);
         } else {
-            log.info("platform.ws.symbol_map_resolved count={}", map.size());
+            log.info("platform.ws.symbol_map_ready total={}", map.size());
         }
         return map;
+    }
+
+    private void parseInstrumentsCsvInto(String csv, String typeFilter, Map<Integer, String> out) throws Exception {
+        BufferedReader br = new BufferedReader(new StringReader(csv));
+        String header = br.readLine();
+        if (header == null) return;
+        String[] hc = parseCsvLine(header);
+        int itCol = -1, tsCol = -1, typeCol = -1;
+        for (int i = 0; i < hc.length; i++) {
+            String c = hc[i].trim();
+            if ("instrument_token".equalsIgnoreCase(c)) itCol = i;
+            if ("tradingsymbol".equalsIgnoreCase(c)) tsCol = i;
+            if ("instrument_type".equalsIgnoreCase(c)) typeCol = i;
+        }
+        if (itCol < 0 || tsCol < 0) return;
+        String line;
+        while ((line = br.readLine()) != null) {
+            String[] p = parseCsvLine(line);
+            if (p.length <= Math.max(itCol, tsCol)) continue;
+            if (typeFilter != null && typeCol >= 0
+                    && !typeFilter.equalsIgnoreCase(p[typeCol].trim())) continue;
+            try {
+                int tok = (int) Long.parseLong(p[itCol].trim());
+                String sym = p[tsCol].trim();
+                if (!sym.isBlank()) out.put(tok, sym);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+    }
+
+    private void resolveUnknownTokens(String csv, Map<Integer, String> map) throws Exception {
+        BufferedReader br = new BufferedReader(new StringReader(csv));
+        String header = br.readLine();
+        if (header == null) return;
+        String[] hc = parseCsvLine(header);
+        int itCol = -1, tsCol = -1;
+        for (int i = 0; i < hc.length; i++) {
+            String c = hc[i].trim();
+            if ("instrument_token".equalsIgnoreCase(c)) itCol = i;
+            if ("tradingsymbol".equalsIgnoreCase(c)) tsCol = i;
+        }
+        if (itCol < 0 || tsCol < 0) return;
+        String line;
+        while ((line = br.readLine()) != null) {
+            String[] p = parseCsvLine(line);
+            if (p.length <= Math.max(itCol, tsCol)) continue;
+            try {
+                int tok = (int) Long.parseLong(p[itCol].trim());
+                if (map.containsKey(tok) && map.get(tok).startsWith("TOKEN_")) {
+                    String sym = p[tsCol].trim();
+                    if (!sym.isBlank()) map.put(tok, sym);
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
     }
 
     private String[] parseCsvLine(String line) {
@@ -320,9 +376,8 @@ public class PlatformZerodhaLiveFeedRuntime {
         double tps = tk / (double) elapsed;
         int subs = subscribedTokens.size();
         String wsState = wsOpen.get() ? "OPEN" : "CLOSED";
-        String streamingSymbolsCsv = subscribedTokens.stream()
-                .map(tok -> tokenSymbols.getOrDefault(tok, "TOKEN_" + tok))
-                .collect(Collectors.joining(","));
+        // Store a compact summary instead of a 2000-symbol CSV to keep the DB row small
+        String streamingSymbolsCsv = subs + " instruments subscribed";
         telemetryService.saveWindow(
                 VENDOR,
                 new PlatformZerodhaFeedTelemetryService.PlatformFeedWindowMetrics(
