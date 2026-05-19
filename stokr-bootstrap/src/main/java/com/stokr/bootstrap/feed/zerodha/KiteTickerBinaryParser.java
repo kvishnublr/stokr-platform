@@ -53,9 +53,11 @@ public final class KiteTickerBinaryParser {
         if (len < 8) {
             return null;
         }
-        ByteBuffer pkt = ByteBuffer.wrap(frame, start, len).order(ByteOrder.BIG_ENDIAN);
-        int token = pkt.getInt(0);
-        int ltpPaise = pkt.getInt(4);
+        // Use absolute offsets on the full frame — wrap(frame, start, len) sets position=start
+        // but getInt(n) is an absolute index, so we must add start explicitly.
+        ByteBuffer pkt = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
+        int token    = pkt.getInt(start);
+        int ltpPaise = pkt.getInt(start + 4);
         BigDecimal price = BigDecimal.valueOf(ltpPaise).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
         return new ParsedLtpTick(token, price);
     }
