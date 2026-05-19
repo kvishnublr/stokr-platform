@@ -4,6 +4,10 @@ server:
   # This is required for Zerodha OAuth to work behind HTTPS reverse proxy.
   forward-headers-strategy: framework
   tomcat:
+    # Tuned for t2/t3.micro. Raise threads.max to 100 on t3.medium+.
+    threads:
+      max: ${TOMCAT_MAX_THREADS:30}
+      min-spare: ${TOMCAT_MIN_THREADS:5}
     remoteip:
       remote-ip-header: X-Forwarded-For
       protocol-header: X-Forwarded-Proto
@@ -37,6 +41,15 @@ spring:
     # Defaults match .env.example. Docker Compose sets DB_USER/DB_PASSWORD for the api service.
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:root}
+    hikari:
+      # Tuned for t2/t3.micro (1 vCPU, 1GB RAM). Raise to 15 on t3.medium+.
+      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:5}
+      minimum-idle: ${HIKARI_MIN_IDLE:2}
+      # Kill connections held > 60s (runaway queries on slow hardware)
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 900000
+      keepalive-time: 60000
   jpa:
     hibernate:
       ddl-auto: validate
