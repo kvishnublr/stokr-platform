@@ -2,9 +2,13 @@ import { Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Activity,
   ActivitySquare,
+  AlertOctagon,
   BarChart3,
   Bell,
+  Building2,
+  ClipboardCheck,
   Database,
   FileBarChart,
   Gauge,
@@ -20,18 +24,18 @@ import {
   Server,
   Settings,
   Settings2,
-  Share2,
-  Shield,
+  ShieldCheck,
   SlidersHorizontal,
   Stethoscope,
   Star,
+  Terminal,
   TrendingUp,
   UserRound,
   Users,
   Wallet,
   Radar,
   GitBranch,
-  FileText,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
@@ -201,28 +205,39 @@ export function ShellLayout() {
     return links;
   }, [hasTraderAccess]);
 
-  const adminOpsCenterLinks: SidebarLink[] = useMemo(() => {
+  // ── Admin nav: 5 focused groups ──────────────────────────────────────────
+
+  const adminIntelligenceLinks: SidebarLink[] = useMemo(() => [
+    { to: "/admin",         end: true, label: "Overview",       icon: LayoutDashboard },
+    { to: "/admin/signals",           label: "Signal Monitor",  icon: Zap },
+    { to: "/admin/oms",               label: "OMS Monitor",     icon: BarChart3 },
+    { to: "/admin/traders-health",    label: "Trader Health",   icon: Stethoscope },
+  ], []);
+
+  const adminExecutionLinks: SidebarLink[] = useMemo(() => [
+    { to: "/admin/pipeline-health",   label: "Pipeline Health", icon: Activity },
+    { to: "/admin/execution",         label: "Execution Guard", icon: ShieldCheck },
+    { to: "/admin/intraday",          label: "Intraday",        icon: Radar },
+  ], []);
+
+  const adminMarketLinks: SidebarLink[] = useMemo(() => [
+    { to: "/admin/market",            label: "Market Feed",     icon: Radio },
+    { to: "/admin/backfill",          label: "Market Backfill", icon: Database },
+  ], []);
+
+  const adminSystemLinks: SidebarLink[] = useMemo(() => [
+    { to: "/admin/logs",              label: "Live Logs",       icon: Terminal },
+    { to: "/admin/infrastructure",    label: "Infrastructure",  icon: Server },
+    { to: "/admin/broker-infrastructure", label: "Broker Infra", icon: Building2 },
+    { to: "/admin/replay",            label: "Replay Infra",    icon: RotateCcw },
+  ], []);
+
+  const adminComplianceLinks: SidebarLink[] = useMemo(() => {
     const links: SidebarLink[] = [
-      { to: "/admin", end: true, label: "Overview", icon: LayoutDashboard },
-      { to: "/admin/pipeline-health", label: "Pipeline Health", icon: GitBranch },
-      { to: "/admin/logs", label: "Live Logs", icon: FileText },
-      { to: "/admin/signals", label: "Signal Monitor", icon: Share2 },
-      { to: "/admin/oms", label: "OMS Monitor", icon: TrendingUp },
-      { to: "/admin/execution", label: "Execution Guard", icon: Gauge },
-      { to: "/admin/intraday", label: "Intraday", icon: Radar },
-      { to: "/admin/market", label: "Market", icon: Radio },
-      { to: "/admin/replay", label: "Replay Infra", icon: RotateCcw },
-      { to: "/admin/infrastructure", label: "Infrastructure", icon: Server },
-      { to: "/admin/broker-infrastructure", label: "Broker", icon: RadioTower },
-      { to: "/admin/traders-health", label: "Trader health", icon: Stethoscope },
-      { to: "/admin/backfill", label: "Market Backfill", icon: Database },
-      { to: "/admin/history", label: "Incidents", icon: ActivitySquare },
-      { to: "/admin/audit", label: "Audit", icon: ScrollText },
-      { to: "/admin/controls", label: "Settings", icon: SlidersHorizontal },
+      { to: "/admin/history",         label: "Incidents",       icon: AlertOctagon },
+      { to: "/admin/audit",           label: "Audit Trail",     icon: ClipboardCheck },
+      { to: "/admin/controls",        label: "Controls",        icon: SlidersHorizontal },
     ];
-    if (canKillOpsConsole) {
-      // already listed as Incidents entry for compact operational IA
-    }
     return links;
   }, [canKillOpsConsole]);
 
@@ -395,13 +410,22 @@ export function ShellLayout() {
             ) : null}
             {isAdmin ? (
               <>
-                <SidebarSection title="Operations center" first={!hasTraderAccess}>
-                  <SidebarLinks links={adminOpsCenterLinks} />
+                <SidebarSection title="Intelligence" first={!hasTraderAccess}>
+                  <SidebarLinks links={adminIntelligenceLinks} />
                 </SidebarSection>
-                <SidebarSection title="Platform">
-                  <SidebarLinks links={adminPlatformLinks} />
+                <SidebarSection title="Execution">
+                  <SidebarLinks links={adminExecutionLinks} />
                 </SidebarSection>
-                <SidebarSection title="User management">
+                <SidebarSection title="Market Data">
+                  <SidebarLinks links={adminMarketLinks} />
+                </SidebarSection>
+                <SidebarSection title="System">
+                  <SidebarLinks links={adminSystemLinks} />
+                </SidebarSection>
+                <SidebarSection title="Compliance">
+                  <SidebarLinks links={adminComplianceLinks} />
+                </SidebarSection>
+                <SidebarSection title="User Management">
                   <SidebarLinks links={adminUserMgmtLinks} />
                 </SidebarSection>
               </>
