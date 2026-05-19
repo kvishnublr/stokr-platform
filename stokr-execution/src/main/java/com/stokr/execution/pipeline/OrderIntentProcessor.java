@@ -61,6 +61,9 @@ public class OrderIntentProcessor {
     @Value("${stokr.strategy.default-quantity:1}")
     private BigDecimal defaultQuantity;
 
+    @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
+    private UUID systemUserId;
+
     /**
      * Creates OMS order from persisted signal, runs risk, emits execution events, then routes to execution (sync or async).
      */
@@ -78,18 +81,20 @@ public class OrderIntentProcessor {
         ExecutionMode mode = parseMode(msg.executionMode());
         String strategyKey =
                 signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
+        UUID userId = resolveUserId(signal);
+
         if (mode == ExecutionMode.LIVE) {
             LiveTraderEligibilityResult gate =
-                    liveTradingTraderEligibilityService.evaluateForLiveOrder(signal.getUserId(), strategyKey, "ZERODHA");
+                    liveTradingTraderEligibilityService.evaluateForLiveOrder(userId, strategyKey, "ZERODHA");
             if (!gate.allowed()) {
                 log.warn(
                         "live.order.blocked.pre_signal signalId={} reason={}",
                         signal.getId(),
                         gate.reasonCode()
                 );
-                riskEventRecorder.record(signal.getUserId(), null, gate.reasonCode(), "REJECT", gate.message());
-                notifyEligibility(signal.getUserId(), gate);
-                signalDistributionTelemetryService.recordGateRejected(signal.getUserId(), signal.getId(), "LIVE_GATE");
+                riskEventRecorder.record(userId, null, gate.reasonCode(), "REJECT", gate.message());
+                notifyEligibility(userId, gate);
+                signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "LIVE_GATE");
                 return;
             }
         } else {
@@ -100,22 +105,22 @@ public class OrderIntentProcessor {
                         signal.getId(),
                         paper.reasonCode()
                 );
-                riskEventRecorder.record(signal.getUserId(), null, paper.reasonCode(), "REJECT", paper.message());
-                notifyEligibility(signal.getUserId(), paper);
-                signalDistributionTelemetryService.recordGateRejected(signal.getUserId(), signal.getId(), "PAPER_GATE");
+                riskEventRecorder.record(userId, null, paper.reasonCode(), "REJECT", paper.message());
+                notifyEligibility(userId, paper);
+                signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "PAPER_GATE");
                 return;
             }
         }
 
         OmsOrder draft = buildDraftFromSignal(signal, mode);
-        OmsOrder order = orderLifecycleService.createOrGetIdempotent(signal.getUserId(), idempotencyKey, draft);
+        OmsOrder order = orderLifecycleService.createOrGetIdempotent(userId, idempotencyKey, draft);
         if (order.getState() != OrderState.CREATED) {
             log.info("order.idempotent.hit orderId={} state={}", order.getId(), order.getState());
-            signalDistributionTelemetryService.recordIdempotentHit(signal.getUserId());
+            signalDistributionTelemetryService.recordIdempotentHit(userId);
             return;
         }
 
-        signalDistributionTelemetryService.recordOrderCreatedFromSignal(signal.getUserId(), order.getId(), signal.getId());
+        signalDistributionTelemetryService.recordOrderCreatedFromSignal(userId, order.getId(), signal.getId());
         executionTraceService.trace(order, ExecutionEventType.SIGNAL_GENERATED, Map.of(
                 "signalId", signal.getId().toString(),
                 "symbol", signal.getSymbol() != null ? signal.getSymbol() : ""
@@ -133,13 +138,13 @@ public class OrderIntentProcessor {
         ZoneId zone = ZoneId.of(riskZone);
         Instant evalInstant = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
         BigDecimal atrRatio = atrToCloseRatio(signal);
-        RiskContext ctx = riskContextFactory.build(signal.getUserId(), order, zone, evalInstant, atrRatio);
+        RiskContext ctx = riskContextFactory.build(userId, order, zone, evalInstant, atrRatio);
 
         RiskDecision decision = riskEngineService.evaluate(ctx);
         riskEvaluationTraceService.record(ctx, decision, order.getId());
         if (!decision.allowed()) {
             riskEventRecorder.record(
-                    signal.getUserId(),
+                    userId,
                     order.getId(),
                     decision.reasonCode() != null ? decision.reasonCode() : "RISK",
                     "REJECT",
@@ -150,7 +155,7 @@ public class OrderIntentProcessor {
                     "phase", "RISK",
                     "reason", decision.message() != null ? decision.message() : ""
             ));
-            signalDistributionTelemetryService.recordRiskRejected(signal.getUserId(), signal.getId());
+            signalDistributionTelemetryService.recordRiskRejected(userId, signal.getId());
             return;
         }
 
@@ -187,7 +192,9 @@ public class OrderIntentProcessor {
         long k = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp().toEpochMilli() : 0L;
         k ^= signal.getId().getMostSignificantBits();
         k ^= signal.getId().getLeastSignificantBits();
-        k ^= signal.getUserId().getMostSignificantBits();
+        if (signal.getUserId() != null) {
+            k ^= signal.getUserId().getMostSignificantBits();
+        }
         return k;
     }
 
@@ -240,6 +247,10 @@ public class OrderIntentProcessor {
             return ExecutionMode.PAPER;
         }
         return ExecutionMode.SIMULATED;
+    }
+
+    private UUID resolveUserId(StrategySignalEntity signal) {
+        return signal.getUserId() != null ? signal.getUserId() : systemUserId;
     }
 
     private void notifyEligibility(UUID userId, LiveTraderEligibilityResult gate) {
