@@ -31,13 +31,14 @@ WHERE NOT EXISTS (
 );
 
 -- 2. Runtime binding: MCX_BULLION (Gold, Silver)
+-- NOTE: strategy_runtime_bindings has no version/deleted columns (created in V31)
 INSERT INTO strategy_runtime_bindings (
-    id, created_at, updated_at, version, deleted,
+    id, created_at, updated_at,
     strategy_catalog_id, universe_group_id,
     runtime_enabled, max_positions, risk_profile, scan_interval_seconds
 )
 SELECT
-    gen_random_uuid(), NOW(), NOW(), 0, FALSE,
+    gen_random_uuid(), NOW(), NOW(),
     (SELECT id FROM strategy_definitions WHERE strategy_key = 'BREAKOUT_COMMODITIES'),
     'a0000001-0000-0000-0000-000000000011',
     TRUE, 3, 'HIGH', 600
@@ -50,12 +51,12 @@ WHERE NOT EXISTS (
 
 -- 3. Runtime binding: MCX_ENERGY (Crude Oil, Natural Gas)
 INSERT INTO strategy_runtime_bindings (
-    id, created_at, updated_at, version, deleted,
+    id, created_at, updated_at,
     strategy_catalog_id, universe_group_id,
     runtime_enabled, max_positions, risk_profile, scan_interval_seconds
 )
 SELECT
-    gen_random_uuid(), NOW(), NOW(), 0, FALSE,
+    gen_random_uuid(), NOW(), NOW(),
     (SELECT id FROM strategy_definitions WHERE strategy_key = 'BREAKOUT_COMMODITIES'),
     'a0000001-0000-0000-0000-000000000012',
     TRUE, 3, 'HIGH', 600
@@ -68,12 +69,12 @@ WHERE NOT EXISTS (
 
 -- 4. Runtime binding: MCX_METALS (Copper, Zinc, Aluminium, etc.)
 INSERT INTO strategy_runtime_bindings (
-    id, created_at, updated_at, version, deleted,
+    id, created_at, updated_at,
     strategy_catalog_id, universe_group_id,
     runtime_enabled, max_positions, risk_profile, scan_interval_seconds
 )
 SELECT
-    gen_random_uuid(), NOW(), NOW(), 0, FALSE,
+    gen_random_uuid(), NOW(), NOW(),
     (SELECT id FROM strategy_definitions WHERE strategy_key = 'BREAKOUT_COMMODITIES'),
     'a0000001-0000-0000-0000-000000000013',
     TRUE, 3, 'MEDIUM', 600
@@ -86,12 +87,12 @@ WHERE NOT EXISTS (
 
 -- 5. Runtime binding: MCX_AGRI (agricultural futures)
 INSERT INTO strategy_runtime_bindings (
-    id, created_at, updated_at, version, deleted,
+    id, created_at, updated_at,
     strategy_catalog_id, universe_group_id,
     runtime_enabled, max_positions, risk_profile, scan_interval_seconds
 )
 SELECT
-    gen_random_uuid(), NOW(), NOW(), 0, FALSE,
+    gen_random_uuid(), NOW(), NOW(),
     (SELECT id FROM strategy_definitions WHERE strategy_key = 'BREAKOUT_COMMODITIES'),
     'a0000001-0000-0000-0000-000000000014',
     TRUE, 2, 'MEDIUM', 600
