@@ -24,6 +24,7 @@ import {
   Server,
   Settings,
   Settings2,
+  Shield,
   ShieldCheck,
   SlidersHorizontal,
   Stethoscope,
