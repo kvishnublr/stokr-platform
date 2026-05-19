@@ -20,12 +20,18 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class UnifiedStrategyRuntimeService {
+
+    /** Suppress repeated identical errors per symbol for 5 minutes to avoid log storms. */
+    private static final long ERROR_LOG_COOLDOWN_MS = 5 * 60_000L;
+    private final Map<String, Long> errorLoggedAt = new ConcurrentHashMap<>();
 
     private final MeanReversionSignalGenerator meanReversionSignalGenerator;
     private final EmaTrendFollowingSignalGenerator emaTrendFollowingSignalGenerator;
@@ -70,14 +76,18 @@ public class UnifiedStrategyRuntimeService {
                 } catch (Exception ex) {
                     failed++;
                     errors.add(ex.getClass().getSimpleName());
-                    log.error("strategy.runtime.dispatch_failed symbol={} strategy={}", symbol, sig.getStrategyName(), ex);
+                    if (shouldLog(symbol + "|dispatch|" + ex.getClass().getSimpleName())) {
+                        log.error("strategy.runtime.dispatch_failed symbol={} strategy={} (suppressed for 5m after this)", symbol, sig.getStrategyName(), ex);
+                    }
                 }
             }
             return new EvalStats(emitted, failed, errors);
         } catch (Exception ex) {
             failed++;
             errors.add(ex.getClass().getSimpleName());
-            log.error("strategy.runtime.eval_failed symbol={}", symbol, ex);
+            if (shouldLog(symbol + "|eval|" + ex.getClass().getSimpleName())) {
+                log.error("strategy.runtime.eval_failed symbol={} (suppressed for 5m after this)", symbol, ex);
+            }
             return new EvalStats(emitted, failed, errors);
         } finally {
             scannerExecutionTelemetryService.recordEvaluationComplete(symbol, System.nanoTime() - t0, emitted > 0, null);
@@ -106,6 +116,16 @@ public class UnifiedStrategyRuntimeService {
             return u;
         }
         return "PAPER";
+    }
+
+    private boolean shouldLog(String key) {
+        long now = System.currentTimeMillis();
+        Long last = errorLoggedAt.get(key);
+        if (last != null && now - last < ERROR_LOG_COOLDOWN_MS) {
+            return false;
+        }
+        errorLoggedAt.put(key, now);
+        return true;
     }
 
     public record EvalStats(int emitted, int failed, List<String> errors) {
