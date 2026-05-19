@@ -6,6 +6,7 @@ import com.stokr.marketdata.domain.MarketdataTick;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
 import com.stokr.marketdata.repository.MarketdataTickRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,14 +22,23 @@ public class MarketDataService {
     private final CandleAggregator candleAggregator;
     private final LatestPriceCache latestPriceCache;
 
+    /**
+     * When false (default), raw ticks are NOT written to marketdata_ticks.
+     * The price cache and 1m candle are still updated — strategies use candles, not raw ticks.
+     * At 2000 symbols × 1 tick/sec this saves ~45M rows/day in DB writes.
+     */
+    @Value("${stokr.marketdata.persist-ticks:false}")
+    private boolean persistTicks;
+
     @Transactional
     public MarketdataTick ingestTick(MarketdataTick tick, ZoneId zone) {
-        MarketdataTick saved = tickRepository.save(tick);
-        latestPriceCache.setLastPrice(saved.getSymbol(), saved.getPrice());
-
-        MarketdataCandle partial = candleAggregator.applyTick(saved, zone);
+        if (persistTicks) {
+            tick = tickRepository.save(tick);
+        }
+        latestPriceCache.setLastPrice(tick.getSymbol(), tick.getPrice());
+        MarketdataCandle partial = candleAggregator.applyTick(tick, zone);
         upsertOneMinuteCandle(partial);
-        return saved;
+        return tick;
     }
 
     private void upsertOneMinuteCandle(MarketdataCandle candle) {
