@@ -10,6 +10,8 @@ services:
     profiles:
       - app
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
