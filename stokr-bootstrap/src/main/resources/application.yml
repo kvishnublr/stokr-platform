@@ -128,6 +128,9 @@ stokr:
     volatility-halt-atr-close-ratio: ${STOKR_RISK_VOLATILITY_HALT_ATR_CLOSE_RATIO:0}
     trading-window-start: ${STOKR_RISK_TRADING_WINDOW_START:09:25}
     trading-window-end: ${STOKR_RISK_TRADING_WINDOW_END:14:45}
+  catalog:
+    scan:
+      enabled: ${STOKR_CATALOG_SCAN_ENABLED:true}
   strategy:
     subscription-default-symbol: ${STOKR_STRATEGY_SUBSCRIPTION_SYMBOL:NIFTY_FUT}
     mean-reversion:
