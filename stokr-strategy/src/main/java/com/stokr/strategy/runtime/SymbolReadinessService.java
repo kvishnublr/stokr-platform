@@ -23,11 +23,15 @@ public class SymbolReadinessService {
         Instant from = scannerWindowStart(now);
         // Scanner path is tolerant to minor continuity gaps to avoid hard deadlocks in live sessions.
         // We still block on hard states (NO_DATA/STALE/NOT_BACKFILLED/INCOMPLETE_RANGE).
-        var authority = marketDataCoverageService.assessReadiness(symbol, "1m", from, now, "SCANNER", false);
+        // autoRefresh=true: auto-populates market_data_coverage row if missing or stale (revalidates every 3 min).
+        // Without this, symbols with no prior admin backfill always return NO_DATA and are permanently skipped.
+        var authority = marketDataCoverageService.assessReadiness(symbol, "1m", from, now, "SCANNER", true);
         if (!authority.ready()) {
-            if ("INCOMPLETE_RANGE".equalsIgnoreCase(authority.state())) {
-                // For live scanner gating, incomplete full-session range should not block if recent candles are present.
-                return new Readiness(true, "READY_RECENT_WINDOW");
+            if ("INCOMPLETE_RANGE".equalsIgnoreCase(authority.state())
+                    || "STALE".equalsIgnoreCase(authority.state())
+                    || "GAPS_PRESENT".equalsIgnoreCase(authority.state())) {
+                // Tolerate incomplete range, minor staleness, and gaps during live sessions.
+                return new Readiness(true, "READY_LIVE_TOLERANT");
             }
             return new Readiness(false, authority.state());
         }
