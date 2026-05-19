@@ -31,6 +31,7 @@ import {
   Wallet,
   Radar,
   GitBranch,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
@@ -204,6 +205,7 @@ export function ShellLayout() {
     const links: SidebarLink[] = [
       { to: "/admin", end: true, label: "Overview", icon: LayoutDashboard },
       { to: "/admin/pipeline-health", label: "Pipeline Health", icon: GitBranch },
+      { to: "/admin/logs", label: "Live Logs", icon: FileText },
       { to: "/admin/intraday", label: "Intraday", icon: Radar },
       { to: "/admin/market", label: "Market", icon: Radio },
       { to: "/admin/signals", label: "Signals", icon: Share2 },

@@ -51,6 +51,14 @@ public class OperationalSseService {
         return emitter;
     }
 
+    @Scheduled(fixedDelay = 20_000)
+    public void broadcastHeartbeat() {
+        if (emitters.isEmpty()) {
+            return;
+        }
+        broadcast("heartbeat", Map.of("ts", System.currentTimeMillis()));
+    }
+
     @Scheduled(fixedDelayString = "${stokr.admin.ops.sse-tick-ms:3000}")
     public void broadcastSnapshotTick() {
         if (emitters.isEmpty()) {

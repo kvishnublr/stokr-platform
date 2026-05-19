@@ -134,6 +134,43 @@ services:
       timeout: 5s
       retries: 10
 
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: stokr-loki
+    profiles:
+      - monitoring
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - stokr_loki_data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: stokr-grafana
+    profiles:
+      - monitoring
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3200}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - stokr_grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+
   mailpit:
     image: axllent/mailpit:latest
     container_name: stokr-mailpit
@@ -164,3 +201,5 @@ volumes:
   stokr_redis_data:
   stokr_rabbitmq_data:
   stokr_pgadmin_data:
+  stokr_loki_data:
+  stokr_grafana_data:

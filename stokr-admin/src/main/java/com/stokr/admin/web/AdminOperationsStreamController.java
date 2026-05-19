@@ -1,6 +1,7 @@
 package com.stokr.admin.web;
 
 import com.stokr.admin.stream.OperationalSseService;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -18,7 +19,8 @@ public class AdminOperationsStreamController {
 
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @PreAuthorize("hasRole('ADMIN')")
-    public SseEmitter operationsStream() {
+    public SseEmitter operationsStream(HttpServletResponse response) {
+        response.setHeader("X-Accel-Buffering", "no");
         return operationalSseService.subscribe();
     }
 }

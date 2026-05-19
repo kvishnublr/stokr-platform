@@ -36,6 +36,8 @@ public final class StrategyKeys {
     @Deprecated public static final String EMA_TREND_FOLLOW          = "EMA_TREND_FOLLOW";
     /** @deprecated resolved from DB catalog */
     @Deprecated public static final String CASH_15M_BREAKOUT_TEST    = "CASH_15M_BREAKOUT_TEST";
+    /** @deprecated resolved from DB catalog */
+    @Deprecated public static final String COMMODITIES_10M_BREAKOUT  = "COMMODITIES_10M_BREAKOUT";
 
     private StrategyKeys() {}
 }

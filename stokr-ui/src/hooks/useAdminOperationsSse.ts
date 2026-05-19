@@ -66,6 +66,10 @@ export async function subscribeAdminOperationsSse(
           carryForwardPlatformMarketFeed(payload as OpsSnapshot, prev as OpsSnapshot | undefined),
         );
       }
+      onOpsRealtime?.();
+    }
+    if (eventName === "heartbeat") {
+      onOpsRealtime?.();
     }
     if (eventName === "signal" || eventName === "execution_failure") {
       void queryClient.invalidateQueries({ queryKey: ADMIN_OPS_SNAPSHOT_KEY });
