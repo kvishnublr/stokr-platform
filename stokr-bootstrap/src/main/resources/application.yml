@@ -144,6 +144,10 @@ stokr:
   catalog:
     scan:
       enabled: ${STOKR_CATALOG_SCAN_ENABLED:true}
+      poll-ms: ${STOKR_CATALOG_SCAN_POLL_MS:60000}
+    # How long resolved bindings + universe symbols are cached in memory before re-fetching from DB.
+    # Default 5 min: a 60s scan cycle costs 0 DB queries for binding resolution.
+    universe-cache-seconds: ${STOKR_CATALOG_UNIVERSE_CACHE_SECONDS:300}
   backfill:
     # Disabled by default — backfill hammers DB with 1000s of queries across all symbols.
     # Enable explicitly on a healthy instance: STOKR_BACKFILL_ENABLED=true

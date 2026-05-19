@@ -6,15 +6,24 @@ import com.stokr.strategy.repository.StrategyRuntimeBindingRepository;
 import com.stokr.strategy.repository.StrategyUniverseSymbolRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Resolves the active symbol set for a strategy binding from the DB universe.
  * Used by CatalogDrivenScanScheduler — does NOT touch the existing scheduler.
+ *
+ * Both binding resolution and symbol set lookup are cached in-memory (default 5 min TTL)
+ * so the catalog scan scheduler does NOT hit the DB on every 60-second cycle.
+ * Call {@link #invalidateCache()} to force a refresh (e.g. after admin catalog updates).
  */
 @Service
 @RequiredArgsConstructor
@@ -24,46 +33,84 @@ public class StrategyUniverseResolverService {
     private final StrategyRuntimeBindingRepository bindingRepository;
     private final StrategyUniverseSymbolRepository symbolRepository;
 
+    @Value("${stokr.catalog.universe-cache-seconds:300}")
+    private int universeCacheSeconds;
+
+    // ── In-memory caches ──────────────────────────────────────────────────────
+
+    private volatile List<StrategyRuntimeBinding> bindingsCache = null;
+    private volatile Instant bindingsCachedAt = Instant.EPOCH;
+
+    private final Map<UUID, List<StrategyUniverseSymbol>> symbolsCache  = new ConcurrentHashMap<>();
+    private final Map<UUID, Instant>                      symbolsCachedAt = new ConcurrentHashMap<>();
+
+    // ── Public API ────────────────────────────────────────────────────────────
+
     /**
-     * Returns all active strategy-universe bindings that should be scanned.
-     * Only returns bindings where: runtimeEnabled=true AND strategy.enabled=true AND group.enabled=true.
+     * Returns all active bindings. Cached for {@code stokr.catalog.universe-cache-seconds} (default 5 min).
+     * During a 60s scan cycle this is called once and uses zero DB connections.
      */
     @Transactional(readOnly = true)
     public List<StrategyRuntimeBinding> resolveActiveBindings() {
-        return bindingRepository.findAllActiveBindings();
+        if (isFresh(bindingsCachedAt)) {
+            return bindingsCache;
+        }
+        List<StrategyRuntimeBinding> fresh = bindingRepository.findAllActiveBindings();
+        bindingsCache   = fresh;
+        bindingsCachedAt = Instant.now();
+        log.debug("catalog.resolver.bindings_refreshed count={}", fresh.size());
+        return fresh;
     }
 
     /**
-     * Resolves the enabled symbol list for a given universe group.
-     * For derivatives groups, returns broker-specific trading symbols.
-     */
-    @Transactional(readOnly = true)
-    public List<String> resolveSymbolsForGroup(UUID groupId) {
-        return symbolRepository.findEnabledTradingSymbolsByGroupId(groupId);
-    }
-
-    /**
-     * Resolves full symbol entities for a group — includes instrument metadata
-     * (lot_size, expiry, strike, option_type) for asset-aware execution.
+     * Resolves full symbol entities for a group — cached per groupId.
+     * During a single scan cycle, each group is fetched from DB at most once per TTL window.
      */
     @Transactional(readOnly = true)
     public List<StrategyUniverseSymbol> resolveSymbolEntitiesForGroup(UUID groupId) {
-        return symbolRepository.findAllByGroupIdAndEnabledTrue(groupId);
+        if (isFresh(symbolsCachedAt.getOrDefault(groupId, Instant.EPOCH))) {
+            return symbolsCache.getOrDefault(groupId, List.of());
+        }
+        List<StrategyUniverseSymbol> fresh = symbolRepository.findAllByGroupIdAndEnabledTrue(groupId);
+        symbolsCache.put(groupId, fresh);
+        symbolsCachedAt.put(groupId, Instant.now());
+        log.debug("catalog.resolver.symbols_refreshed groupId={} count={}", groupId, fresh.size());
+        return fresh;
     }
 
-    /**
-     * Counts how many symbols are active in the group — used by admin UI.
-     */
+    /** Resolves the enabled trading symbol strings for a group (light variant). */
+    @Transactional(readOnly = true)
+    public List<String> resolveSymbolsForGroup(UUID groupId) {
+        return resolveSymbolEntitiesForGroup(groupId).stream()
+                .map(s -> s.getTradingSymbol() != null ? s.getTradingSymbol() : s.getSymbol())
+                .toList();
+    }
+
+    /** Counts active symbols in a group — used by admin UI (not cached, low frequency). */
     @Transactional(readOnly = true)
     public long countSymbols(UUID groupId) {
         return symbolRepository.countByGroupIdAndEnabledTrue(groupId);
     }
 
-    /**
-     * Resolves active bindings specifically for one strategy key.
-     */
+    /** Returns active bindings for a single strategy key — not cached (low frequency admin path). */
     @Transactional(readOnly = true)
     public List<StrategyRuntimeBinding> resolveBindingsForStrategy(String strategyKey) {
         return bindingRepository.findActiveBindingsByStrategyKey(strategyKey);
+    }
+
+    /** Force-flush the binding and symbol caches (call after catalog admin changes). */
+    public void invalidateCache() {
+        bindingsCache    = null;
+        bindingsCachedAt = Instant.EPOCH;
+        symbolsCache.clear();
+        symbolsCachedAt.clear();
+        log.info("catalog.resolver.cache_invalidated");
+    }
+
+    // ── Internal ─────────────────────────────────────────────────────────────
+
+    private boolean isFresh(Instant cachedAt) {
+        return cachedAt != null
+                && Duration.between(cachedAt, Instant.now()).getSeconds() < universeCacheSeconds;
     }
 }

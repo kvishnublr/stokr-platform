@@ -5,14 +5,14 @@ import com.stokr.marketdata.service.MarketDataService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.ZoneId;
 
 /**
- * Persists platform websocket ticks into {@code marketdata_ticks} / 1m candles (same path as REST tick ingest).
+ * Receives platform websocket ticks and feeds them into the in-memory candle aggregator.
+ * DB writes are batched by MarketDataService#flushDirtyCandles every 500ms — no per-tick DB work here.
  */
 @Component
 @RequiredArgsConstructor
@@ -23,7 +23,6 @@ public class PlatformLiveTickIngestListener {
 
     private final MarketDataService marketDataService;
 
-    @Async
     @EventListener
     public void onTick(PlatformLiveTickEvent e) {
         try {

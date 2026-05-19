@@ -11,19 +11,41 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class CandleAggregator {
 
     private final ConcurrentHashMap<Key, PartialCandle> partial1m = new ConcurrentHashMap<>();
+    private final Set<Key> dirtyKeys = ConcurrentHashMap.newKeySet();
 
     public MarketdataCandle applyTick(MarketdataTick tick, ZoneId zone) {
         Instant minuteOpen = floorToMinute(tick.getTickTime(), zone);
         Key key = new Key(tick.getSymbol(), "1m", minuteOpen);
         PartialCandle pc = partial1m.computeIfAbsent(key, k -> new PartialCandle(minuteOpen));
         pc.onTrade(tick.getPrice(), tick.getQuantity());
+        dirtyKeys.add(key);
         return pc.toCandle(tick.getSymbol(), "1m");
+    }
+
+    /**
+     * Atomically snapshot all dirty candles and clear the dirty set.
+     * Called by the flush scheduler — returns the latest in-memory state for each
+     * symbol/minute bucket that received at least one tick since the last flush.
+     */
+    public List<MarketdataCandle> snapshotDirtyAndClear() {
+        Set<Key> snapshot = new HashSet<>(dirtyKeys);
+        dirtyKeys.removeAll(snapshot);
+        List<MarketdataCandle> result = new ArrayList<>(snapshot.size());
+        for (Key k : snapshot) {
+            PartialCandle pc = partial1m.get(k);
+            if (pc != null) result.add(pc.toCandle(k.symbol(), k.tf()));
+        }
+        return result;
     }
 
     public MarketdataCandle rollup(MarketdataCandle bar1m, String targetTf, ZoneId zone) {

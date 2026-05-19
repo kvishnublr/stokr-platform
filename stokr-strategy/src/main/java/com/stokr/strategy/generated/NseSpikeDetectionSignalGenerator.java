@@ -13,9 +13,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * NSE 1-minute spike detection strategy.
@@ -49,13 +52,20 @@ import java.util.List;
 )
 public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy implements TradingStrategy {
 
-    private static final String TIMEFRAME       = "1m";
-    private static final String NIFTY_SYMBOL    = "NIFTY_FUT";
-    private static final int    BARS_TO_FETCH   = 50;
-    private static final int    VOL_AVG_PERIOD  = 20;   // bars for rolling volume average
-    private static final int    NIFTY_BARS      = 7;    // NIFTY trend window
+    private static final String   TIMEFRAME      = "1m";
+    private static final String   NIFTY_SYMBOL   = "NIFTY_FUT";
+    private static final int      BARS_TO_FETCH  = 50;
+    private static final int      VOL_AVG_PERIOD = 20;
+    private static final int      NIFTY_BARS     = 7;
+    // NIFTY_FUT data is identical for every symbol in the same scan cycle.
+    // Cache it for 55s so 150 concurrent symbol evaluations share one DB fetch.
+    private static final Duration NIFTY_CACHE_TTL = Duration.ofSeconds(55);
 
     private final MarketDataQueryService marketDataQueryService;
+
+    // Shared across all evaluations — updated at most once per NIFTY_CACHE_TTL
+    private final AtomicReference<double[]> niftyCache   = new AtomicReference<>(null);
+    private volatile Instant                niftyCachedAt = Instant.EPOCH;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
@@ -272,20 +282,27 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
-     * Fetch NIFTY_FUT 1m closes (up to NIFTY_BARS bars) ending at the evaluation instant.
-     * Returns null if unavailable so callers fall back to neutral scores.
+     * NIFTY_FUT 1m closes — cached for NIFTY_CACHE_TTL (55s) across all symbol evaluations.
+     * With 150 symbols per scan cycle this replaces 150 identical DB fetches with one.
      */
     private double[] niftyCloses(StrategyContext context) {
+        Instant now = context.asOf() != null ? context.asOf() : Instant.now();
+        double[] cached = niftyCache.get();
+        if (cached != null && Duration.between(niftyCachedAt, now).abs().compareTo(NIFTY_CACHE_TTL) < 0) {
+            return cached;
+        }
         try {
             List<MarketdataCandle> nb = marketDataQueryService.lastBarsAscEndingAt(
                     NIFTY_SYMBOL, TIMEFRAME, NIFTY_BARS, context.asOf());
             if (nb.size() < 2) return null;
             double[] arr = new double[nb.size()];
             for (int i = 0; i < nb.size(); i++) arr[i] = toDouble(nb.get(i).getClosePrice());
+            niftyCache.set(arr);
+            niftyCachedAt = now;
             return arr;
         } catch (Exception ex) {
             log.debug("strategy.spike.nifty_fetch_failed {}", ex.getMessage());
-            return null;
+            return cached; // return stale data rather than null if available
         }
     }
 
