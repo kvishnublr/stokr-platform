@@ -102,4 +102,6 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             order by o.updatedAt desc
             """)
     List<OmsOrder> findRecentByStateIn(@Param("states") Collection<OrderState> states, Pageable pageable);
+
+    List<OmsOrder> findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(UUID signalId);
 }

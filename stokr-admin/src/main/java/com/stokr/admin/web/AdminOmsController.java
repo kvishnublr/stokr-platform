@@ -3,12 +3,15 @@ package com.stokr.admin.web;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.api.PageResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
+import com.stokr.oms.domain.OmsExecutionEvent;
+import com.stokr.oms.dto.ExecutionEventRowDto;
 import com.stokr.oms.dto.OmsExecutionRowDto;
 import com.stokr.oms.dto.OmsOrderDetailDto;
 import com.stokr.oms.dto.OmsOrderSummaryDto;
 import com.stokr.oms.dto.OmsSummaryMetricsDto;
 import com.stokr.oms.dto.OmsTradeRowDto;
 import com.stokr.oms.query.OmsReadParams;
+import com.stokr.oms.repository.OmsExecutionEventRepository;
 import com.stokr.oms.service.OmsQueryService;
 import com.stokr.oms.web.OmsHttpParams;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,6 +37,7 @@ import java.util.UUID;
 public class AdminOmsController {
 
     private final OmsQueryService omsQueryService;
+    private final OmsExecutionEventRepository executionEventRepository;
 
     @GetMapping("/orders")
     @Operation(summary = "Global order monitor (optional user filter)")
@@ -94,6 +98,17 @@ public class AdminOmsController {
         OmsReadParams p = OmsHttpParams.parse(symbol, strategyKey, brokerVendor, state, executionMode, from, to, pipelineMode);
         var page = omsQueryService.pageTrades(userId, p, pageable);
         return ApiResponse.ok(PageResponse.of(page), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/orders/{id}/events")
+    @Operation(summary = "Execution events for an order (admin)")
+    public ApiResponse<java.util.List<ExecutionEventRowDto>> orderEvents(@PathVariable("id") UUID id) {
+        var events = executionEventRepository.findByOrder_IdAndDeletedFalseOrderByStreamSequenceAsc(id);
+        var dtos = events.stream().map(e -> new ExecutionEventRowDto(
+                e.getId(), e.getEventType().name(), e.getEventPayloadJson(),
+                e.getStreamSequence(), e.getCorrelationId(), e.getCreatedAt()
+        )).toList();
+        return ApiResponse.ok(dtos, CorrelationIdHolder.get());
     }
 
     @GetMapping("/summary")

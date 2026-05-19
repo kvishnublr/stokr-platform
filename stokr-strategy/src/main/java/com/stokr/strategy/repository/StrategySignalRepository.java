@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface StrategySignalRepository extends JpaRepository<StrategySignalEntity, UUID> {
+public interface StrategySignalRepository extends JpaRepository<StrategySignalEntity, UUID>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<StrategySignalEntity> {
 
     long countByDeletedFalse();
 

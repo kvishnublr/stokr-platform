@@ -206,19 +206,19 @@ export function ShellLayout() {
       { to: "/admin", end: true, label: "Overview", icon: LayoutDashboard },
       { to: "/admin/pipeline-health", label: "Pipeline Health", icon: GitBranch },
       { to: "/admin/logs", label: "Live Logs", icon: FileText },
+      { to: "/admin/signals", label: "Signal Monitor", icon: Share2 },
+      { to: "/admin/oms", label: "OMS Monitor", icon: TrendingUp },
+      { to: "/admin/execution", label: "Execution Guard", icon: Gauge },
       { to: "/admin/intraday", label: "Intraday", icon: Radar },
       { to: "/admin/market", label: "Market", icon: Radio },
-      { to: "/admin/signals", label: "Signals", icon: Share2 },
-      { to: "/admin/execution", label: "OMS", icon: Gauge },
       { to: "/admin/replay", label: "Replay Infra", icon: RotateCcw },
       { to: "/admin/infrastructure", label: "Infrastructure", icon: Server },
-      { to: "/admin/history", label: "Incidents", icon: ActivitySquare },
-      { to: "/admin/controls", label: "Settings", icon: SlidersHorizontal },
       { to: "/admin/broker-infrastructure", label: "Broker", icon: RadioTower },
       { to: "/admin/traders-health", label: "Trader health", icon: Stethoscope },
       { to: "/admin/backfill", label: "Market Backfill", icon: Database },
-      { to: "/admin/history", label: "History", icon: History },
+      { to: "/admin/history", label: "Incidents", icon: ActivitySquare },
       { to: "/admin/audit", label: "Audit", icon: ScrollText },
+      { to: "/admin/controls", label: "Settings", icon: SlidersHorizontal },
     ];
     if (canKillOpsConsole) {
       // already listed as Incidents entry for compact operational IA
@@ -243,7 +243,6 @@ export function ShellLayout() {
       { to: "/admin/strategy-catalog", label: "Manage strategies", icon: SlidersHorizontal },
       { to: "/admin/universe-groups", label: "Universe groups", icon: Database },
       { to: "/admin/runtime-bindings", label: "Runtime bindings", icon: Radar },
-      { to: "/admin/oms", label: "OMS monitor", icon: TrendingUp },
     ],
     [],
   );
