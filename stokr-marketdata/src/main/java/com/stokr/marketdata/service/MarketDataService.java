@@ -7,6 +7,8 @@ import com.stokr.marketdata.repository.MarketdataCandleRepository;
 import com.stokr.marketdata.repository.MarketdataTickRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,18 +44,31 @@ public class MarketDataService {
     }
 
     private void upsertOneMinuteCandle(MarketdataCandle candle) {
-        candleRepository
-                .findBySymbolAndTimeframeAndOpenTimeAndDeletedFalse(candle.getSymbol(), candle.getTimeframe(), candle.getOpenTime())
-                .ifPresentOrElse(
-                        existing -> {
-                            existing.setHighPrice(existing.getHighPrice().max(candle.getHighPrice()));
-                            existing.setLowPrice(existing.getLowPrice().min(candle.getLowPrice()));
-                            existing.setClosePrice(candle.getClosePrice());
-                            existing.setVolume(safe(existing.getVolume()).add(safe(candle.getVolume())));
-                            candleRepository.save(existing);
-                        },
-                        () -> candleRepository.save(candle)
-                );
+        try {
+            candleRepository
+                    .findBySymbolAndTimeframeAndOpenTimeAndDeletedFalse(candle.getSymbol(), candle.getTimeframe(), candle.getOpenTime())
+                    .ifPresentOrElse(
+                            existing -> {
+                                existing.setHighPrice(existing.getHighPrice().max(candle.getHighPrice()));
+                                existing.setLowPrice(existing.getLowPrice().min(candle.getLowPrice()));
+                                existing.setClosePrice(candle.getClosePrice());
+                                existing.setVolume(safe(existing.getVolume()).add(safe(candle.getVolume())));
+                                candleRepository.save(existing);
+                            },
+                            () -> candleRepository.save(candle)
+                    );
+        } catch (DataIntegrityViolationException | ObjectOptimisticLockingFailureException ex) {
+            // Concurrent tick: another thread inserted/updated the same minute candle — retry as update.
+            candleRepository
+                    .findBySymbolAndTimeframeAndOpenTimeAndDeletedFalse(candle.getSymbol(), candle.getTimeframe(), candle.getOpenTime())
+                    .ifPresent(existing -> {
+                        existing.setHighPrice(existing.getHighPrice().max(candle.getHighPrice()));
+                        existing.setLowPrice(existing.getLowPrice().min(candle.getLowPrice()));
+                        existing.setClosePrice(candle.getClosePrice());
+                        existing.setVolume(safe(existing.getVolume()).add(safe(candle.getVolume())));
+                        candleRepository.save(existing);
+                    });
+        }
     }
 
     private static BigDecimal safe(BigDecimal v) {
