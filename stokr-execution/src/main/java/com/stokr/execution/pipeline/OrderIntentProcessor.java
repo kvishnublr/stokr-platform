@@ -82,7 +82,10 @@ public class OrderIntentProcessor {
         String strategyKey =
                 signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
         UUID userId = resolveUserId(signal);
+        boolean isSystemUser = systemUserId.equals(userId);
 
+        // System-generated signals bypass paper/SIM eligibility gate (no trader account needed).
+        // LIVE mode always requires the full gate regardless of origin.
         if (mode == ExecutionMode.LIVE) {
             LiveTraderEligibilityResult gate =
                     liveTradingTraderEligibilityService.evaluateForLiveOrder(userId, strategyKey, "ZERODHA");
@@ -93,11 +96,11 @@ public class OrderIntentProcessor {
                         gate.reasonCode()
                 );
                 riskEventRecorder.record(userId, null, gate.reasonCode(), "REJECT", gate.message());
-                notifyEligibility(userId, gate);
+                if (!isSystemUser) notifyEligibility(userId, gate);
                 signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "LIVE_GATE");
                 return;
             }
-        } else {
+        } else if (!isSystemUser) {
             LiveTraderEligibilityResult paper = liveTradingTraderEligibilityService.evaluateForPaperTrading(strategyKey);
             if (!paper.allowed()) {
                 log.warn(
