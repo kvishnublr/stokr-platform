@@ -376,9 +376,13 @@ public abstract class AbstractMeanReversionSignalGenerator {
                 return MarketRegime.BREAKOUT;
             }
             if (ema20 != null && atr.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal slope = ema20.subtract(Ema.at(m1.size() - 6 >= 0 ? closes(m1.subList(0, m1.size() - 5)) : closes(m1), 20, Math.min(5, m1.size() - 1)));
-                if (slope.abs().divide(last1.getClosePrice(), MC).compareTo(new BigDecimal("0.004")) > 0) {
-                    return MarketRegime.TRENDING;
+                List<BigDecimal> allCloses = closes(m1);
+                BigDecimal prevEma20 = Ema.at(allCloses, 20, m1.size() - 6);
+                if (prevEma20 != null) {
+                    BigDecimal slope = ema20.subtract(prevEma20);
+                    if (slope.abs().divide(last1.getClosePrice(), MC).compareTo(new BigDecimal("0.004")) > 0) {
+                        return MarketRegime.TRENDING;
+                    }
                 }
             }
             BigDecimal lastVwapDist = last1.getClosePrice().subtract(vwap).abs().divide(last1.getClosePrice(), MC);
