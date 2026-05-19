@@ -5,6 +5,7 @@ import com.stokr.admin.dto.UniverseGroupCreateRequest;
 import com.stokr.admin.dto.UniverseGroupDto;
 import com.stokr.admin.dto.UniverseSymbolDto;
 import com.stokr.admin.service.AdminUniverseGroupService;
+import com.stokr.strategy.repository.StrategyUniverseSymbolRepository;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.api.PageResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
@@ -30,6 +31,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.data.domain.PageRequest;
+
 @RestController
 @RequestMapping("/api/admin/universe-groups")
 @RequiredArgsConstructor
@@ -38,6 +41,7 @@ import java.util.UUID;
 public class AdminUniverseGroupController {
 
     private final AdminUniverseGroupService service;
+    private final StrategyUniverseSymbolRepository symbolRepository;
 
     @GetMapping
     @Operation(summary = "List all universe groups (paginated)")
@@ -95,5 +99,17 @@ public class AdminUniverseGroupController {
     public ApiResponse<Map<String, Integer>> sync(@PathVariable UUID id) {
         int synced = service.syncGroup(id);
         return ApiResponse.ok(Map.of("synced", synced), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/symbols/search")
+    @Operation(summary = "Search symbols across all universe groups (for strategy symbol picker)")
+    public ApiResponse<List<String>> searchSymbols(
+            @RequestParam(defaultValue = "") String q,
+            @RequestParam(defaultValue = "30") int limit
+    ) {
+        List<String> results = q.isBlank()
+                ? symbolRepository.searchSymbols("", PageRequest.of(0, limit))
+                : symbolRepository.searchSymbols(q.trim(), PageRequest.of(0, limit));
+        return ApiResponse.ok(results, CorrelationIdHolder.get());
     }
 }

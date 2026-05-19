@@ -16,6 +16,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -62,6 +65,10 @@ public class AdminStrategyCatalogService {
         d.setOptionStrategyEnabled(Boolean.TRUE.equals(req.optionStrategyEnabled()));
         if (req.templateClassName() != null && !req.templateClassName().isBlank()) {
             d.setTemplateClassName(req.templateClassName().trim());
+        }
+        if (req.symbols() != null && !req.symbols().isEmpty()) {
+            d.setDefaultSymbols(String.join(",", req.symbols().stream()
+                    .map(String::trim).map(String::toUpperCase).filter(s -> !s.isBlank()).toList()));
         }
         d.setEnabled(true);
         d.setVisibleToUsers(false);
@@ -166,8 +173,14 @@ public class AdminStrategyCatalogService {
                 d.getGeneratedClassPath(),
                 d.isTemplateGenerated(),
                 d.getCatalogVersion(),
-                d.getCreatedAt()
+                d.getCreatedAt(),
+                parseSymbols(d.getDefaultSymbols())
         );
+    }
+
+    private List<String> parseSymbols(String csv) {
+        if (csv == null || csv.isBlank()) return Collections.emptyList();
+        return Arrays.stream(csv.split(",")).map(String::trim).filter(s -> !s.isBlank()).toList();
     }
 
     private String nvl(String val, String fallback) {

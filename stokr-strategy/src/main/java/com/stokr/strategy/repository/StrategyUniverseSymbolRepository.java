@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import org.springframework.data.domain.Pageable;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -28,4 +30,8 @@ public interface StrategyUniverseSymbolRepository extends JpaRepository<Strategy
     @Modifying
     @Query("DELETE FROM StrategyUniverseSymbol s WHERE s.group.id = :groupId")
     void deleteAllByGroupId(@Param("groupId") UUID groupId);
+
+    /** Search enabled symbols across all groups by partial name match */
+    @Query("SELECT DISTINCT s.symbol FROM StrategyUniverseSymbol s WHERE s.enabled = true AND UPPER(s.symbol) LIKE UPPER(CONCAT('%', :q, '%')) ORDER BY s.symbol")
+    List<String> searchSymbols(@Param("q") String q, Pageable pageable);
 }

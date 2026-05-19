@@ -2,6 +2,7 @@ package com.stokr.admin.dto;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record AdminStrategyDto(
@@ -37,5 +38,6 @@ public record AdminStrategyDto(
         String generatedClassPath,
         boolean templateGenerated,
         String catalogVersion,
-        Instant createdAt
+        Instant createdAt,
+        List<String> symbols
 ) {}

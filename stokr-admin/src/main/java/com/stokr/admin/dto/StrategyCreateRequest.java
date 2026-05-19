@@ -51,5 +51,8 @@ public record StrategyCreateRequest(
         String templateClassName,
 
         /** Whether to immediately generate the Java strategy template file on creation */
-        Boolean generateTemplate
+        Boolean generateTemplate,
+
+        /** Specific symbols this strategy is scoped to, e.g. ["RELIANCE","TCS"]. Null = all symbols in bound universe. */
+        java.util.List<String> symbols
 ) {}

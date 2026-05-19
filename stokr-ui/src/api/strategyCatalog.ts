@@ -28,6 +28,7 @@ export type AdminStrategyDto = {
   templateGenerated: boolean;
   catalogVersion: string | null;
   createdAt: string;
+  symbols: string[];
 };
 
 export type UniverseGroupDto = {
@@ -120,6 +121,7 @@ export async function createStrategy(body: {
   optionStrategyEnabled?: boolean;
   templateClassName?: string;
   generateTemplate?: boolean;
+  symbols?: string[];
 }): Promise<AdminStrategyDto> {
   const res = await api.post("/api/admin/strategies", body);
   return res.data?.data as AdminStrategyDto;
@@ -133,6 +135,11 @@ export async function generateStrategyTemplate(id: string): Promise<AdminStrateg
 export async function patchStrategy(id: string, body: Record<string, unknown>): Promise<AdminStrategyDto> {
   const res = await api.patch(`/api/admin/strategies/${id}`, body);
   return res.data?.data as AdminStrategyDto;
+}
+
+export async function searchSymbols(q: string, limit = 30): Promise<string[]> {
+  const res = await api.get(`/api/admin/universe-groups/symbols/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+  return res.data?.data as string[];
 }
 
 export async function deleteStrategy(id: string): Promise<void> {

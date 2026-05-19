@@ -139,4 +139,8 @@ public class StrategyDefinition extends BaseEntity {
     /** Whether this strategy supports options contracts */
     @Column(name = "option_strategy_enabled", nullable = false)
     private boolean optionStrategyEnabled = false;
+
+    /** Comma-separated canonical symbols this strategy is scoped to, e.g. RELIANCE,TCS,INFY. Null = all symbols in bound universe. */
+    @Column(name = "default_symbols", columnDefinition = "text")
+    private String defaultSymbols;
 }

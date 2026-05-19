@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
+import { SymbolMultiSelect } from "../../components/ds/SymbolMultiSelect";
 
 const ASSET_CLASSES = ["EQUITY", "COMMODITY", "FUTURES", "OPTIONS", "CURRENCY"];
 const SEGMENTS = ["NSE", "NFO", "MCX", "CDS", "BSE"];
@@ -59,6 +60,7 @@ export function AdminStrategyCatalogPage() {
     derivativeEnabled: false,
     futuresStrategyEnabled: false,
     optionStrategyEnabled: false,
+    symbols: [] as string[],
   });
 
   const q = useQuery({
@@ -196,6 +198,15 @@ export function AdminStrategyCatalogPage() {
               {TIMEFRAMES.map((t) => <option key={t}>{t}</option>)}
             </select>
           </div>
+          <div className="space-y-1">
+            <p className="text-[11px] text-muted-foreground">Specific symbols <span className="text-muted-foreground/60">(optional — leave empty for universe-wide)</span></p>
+            <SymbolMultiSelect
+              value={form.symbols}
+              onChange={(v) => setForm((f) => ({ ...f, symbols: v }))}
+              placeholder="Search or type symbol (e.g. RELIANCE, TCS)…"
+            />
+          </div>
+
           <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
             {(["derivativeEnabled", "futuresStrategyEnabled", "optionStrategyEnabled"] as const).map((k) => (
               <label key={k} className="flex items-center gap-1.5 cursor-pointer select-none">
@@ -314,6 +325,20 @@ function StrategyCard({
       </div>
 
       {s.description && <p className="text-xs text-muted-foreground">{s.description}</p>}
+
+      {/* Symbol chips */}
+      {s.symbols && s.symbols.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {s.symbols.slice(0, 8).map((sym) => (
+            <span key={sym} className="rounded-md bg-violet-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-violet-600 dark:text-violet-300">
+              {sym}
+            </span>
+          ))}
+          {s.symbols.length > 8 && (
+            <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">+{s.symbols.length - 8}</span>
+          )}
+        </div>
+      )}
 
       {/* Badges row */}
       <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold">
