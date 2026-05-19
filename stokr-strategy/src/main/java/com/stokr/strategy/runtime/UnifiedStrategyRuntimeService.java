@@ -43,6 +43,9 @@ public class UnifiedStrategyRuntimeService {
     @Value("${stokr.strategy.poll-timeframe:1m}")
     private String pollTimeframe;
 
+    @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
+    private UUID systemUserId;
+
     public EvalStats evaluateSymbolAllStrategies(String symbol) {
         long t0 = System.nanoTime();
         int emitted = 0;
@@ -83,13 +86,14 @@ public class UnifiedStrategyRuntimeService {
 
     private List<StrategySignalEntity> evaluateCandidates(String symbol) {
         Instant now = Instant.now();
+        UUID uid = systemUserId;
         List<StrategySignalEntity> out = new ArrayList<>(5);
-        out.add(meanReversionSignalGenerator.evaluatePersistable(symbol, null, null, "LIVE"));
-        out.add(vwapMeanReversionSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now, pollTimeframe));
-        out.add(openingRangeBreakoutSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now, pollTimeframe));
-        out.add(emaTrendFollowingSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now, pollTimeframe));
-        out.add(momentumBreakoutSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now, pollTimeframe));
-        out.add(cashFifteenMinuteBreakoutSignalGenerator.evaluatePersistableAtOpen(symbol, null, null, "LIVE", now));
+        out.add(meanReversionSignalGenerator.evaluatePersistable(symbol, uid, null, "LIVE"));
+        out.add(vwapMeanReversionSignalGenerator.evaluatePersistableAtOpen(symbol, uid, null, "LIVE", now, pollTimeframe));
+        out.add(openingRangeBreakoutSignalGenerator.evaluatePersistableAtOpen(symbol, uid, null, "LIVE", now, pollTimeframe));
+        out.add(emaTrendFollowingSignalGenerator.evaluatePersistableAtOpen(symbol, uid, null, "LIVE", now, pollTimeframe));
+        out.add(momentumBreakoutSignalGenerator.evaluatePersistableAtOpen(symbol, uid, null, "LIVE", now, pollTimeframe));
+        out.add(cashFifteenMinuteBreakoutSignalGenerator.evaluatePersistableAtOpen(symbol, uid, null, "LIVE", now));
         return out;
     }
 

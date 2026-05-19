@@ -29,7 +29,7 @@ public class OmsOrderIntentListener {
         signalDistributionTelemetryService.recordOmsIntentReceived(message);
         eventPublisher.publishEvent(new OperationalRealtimeEvent("oms_intent", Map.of(
                 "signalId", message.signalId().toString(),
-                "userId", message.userId().toString()
+                "userId", message.userId() != null ? message.userId().toString() : ""
         )));
         log.info("oms.intent.received signalId={}", message.signalId());
         orderIntentProcessor.processSignalIntent(message, false);
