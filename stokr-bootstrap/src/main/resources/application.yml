@@ -144,6 +144,12 @@ stokr:
   catalog:
     scan:
       enabled: ${STOKR_CATALOG_SCAN_ENABLED:true}
+  backfill:
+    # Disabled by default — backfill hammers DB with 1000s of queries across all symbols.
+    # Enable explicitly on a healthy instance: STOKR_BACKFILL_ENABLED=true
+    enabled: ${STOKR_BACKFILL_ENABLED:false}
+    # Keep lookback short to avoid hours-long runs on t2/t3.micro
+    lookback-days: ${STOKR_BACKFILL_LOOKBACK_DAYS:30}
   strategy:
     subscription-default-symbol: ${STOKR_STRATEGY_SUBSCRIPTION_SYMBOL:NIFTY_FUT}
     mean-reversion:
