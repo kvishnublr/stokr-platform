@@ -201,7 +201,10 @@ public class SignalDistributionTelemetryService {
         return out;
     }
 
+    private static final UserAgg NO_OP_AGG = new UserAgg(null);
+
     private UserAgg agg(UUID userId) {
+        if (userId == null) return NO_OP_AGG;
         return byUser.computeIfAbsent(userId, UserAgg::new);
     }
 
