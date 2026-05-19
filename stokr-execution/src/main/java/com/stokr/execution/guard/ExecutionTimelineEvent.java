@@ -34,10 +34,12 @@ public class ExecutionTimelineEvent extends BaseEntity {
     private String eventType;
     @Column(name = "event_time", nullable = false)
     private Instant eventTime;
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "payload", columnDefinition = "jsonb")
     private String payload;
     @Column(name = "latency_ms")
     private Long latencyMs;
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "market_snapshot", columnDefinition = "jsonb")
     private String marketSnapshot;
     @Column(name = "guard_outcome", length = 32)
