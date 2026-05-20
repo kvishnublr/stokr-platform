@@ -7,6 +7,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -151,8 +152,21 @@ public class StrategySignalEntity extends BaseEntity {
     private Integer signalValiditySeconds;
 
     @Column(name = "expired")
-    private Boolean expired;
+    private Boolean expired = false;
 
     @Column(name = "expiry_reason", length = 128)
     private String expiryReason;
+
+    @PrePersist
+    void prePersistDefaults() {
+        if (expired == null) {
+            expired = false;
+        }
+        if (hitTarget == null) {
+            hitTarget = false;
+        }
+        if (hitStoploss == null) {
+            hitStoploss = false;
+        }
+    }
 }
