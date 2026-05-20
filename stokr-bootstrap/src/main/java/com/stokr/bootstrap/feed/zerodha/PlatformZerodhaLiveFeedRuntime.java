@@ -146,6 +146,13 @@ public class PlatformZerodhaLiveFeedRuntime {
             closeActive("no_access_token");
             return;
         }
+        // Auto-refresh platform token shortly before expiry to avoid daily manual admin auth.
+        boolean tokenUsable = platformMarketFeedService.ensureValidPlatformZerodhaToken(Duration.ofMinutes(30));
+        if (!tokenUsable) {
+            closeActive("token_expired_or_refresh_failed");
+            return;
+        }
+        session = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(VENDOR).orElse(session);
         if (session.getTokenExpiresAt() != null && session.getTokenExpiresAt().isBefore(Instant.now())) {
             closeActive("token_expired");
             return;

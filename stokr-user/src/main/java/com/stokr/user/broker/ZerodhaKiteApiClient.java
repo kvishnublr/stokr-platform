@@ -7,14 +7,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.net.URLEncoder;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -88,6 +92,24 @@ public class ZerodhaKiteApiClient {
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
                 .retrieve()
                 .body(String.class);
+    }
+
+    /**
+     * Renews access token using refresh token flow.
+     */
+    public JsonNode renewAccessToken(String apiKey, String apiSecret, String refreshToken) {
+        String checksum = sha256Hex(apiKey + refreshToken + apiSecret);
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("api_key", apiKey);
+        form.add("refresh_token", refreshToken);
+        form.add("checksum", checksum);
+        String body = http.post()
+                .uri(BASE + "/session/refresh_token")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(form)
+                .retrieve()
+                .body(String.class);
+        return readJson(body);
     }
 
     /**
@@ -182,6 +204,15 @@ public class ZerodhaKiteApiClient {
         } catch (Exception e) {
             log.warn("kite.json_parse {}", e.getClass().getSimpleName());
             return objectMapper.createObjectNode();
+        }
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(md.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception ex) {
+            throw new IllegalStateException("sha256 unavailable", ex);
         }
     }
 }

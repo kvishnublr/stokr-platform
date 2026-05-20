@@ -195,6 +195,7 @@ export function AdminBrokerInfrastructurePage() {
           const conn = String(row.connectionState ?? "DISCONNECTED").toUpperCase();
           const ws = String(row.websocketState ?? "CLOSED").toUpperCase();
           const configured = Boolean(row.configured);
+          const hasRefreshToken = Boolean(row.hasRefreshToken);
           const isFocus = key === focusVendor;
           return (
             <section
@@ -223,6 +224,12 @@ export function AdminBrokerInfrastructurePage() {
                 <div className="flex justify-between gap-2 sm:col-span-2">
                   <dt>Session configured</dt>
                   <dd className="text-foreground">{configured ? "yes" : "no"}</dd>
+                </div>
+                <div className="flex justify-between gap-2 sm:col-span-2">
+                  <dt>Refresh token armed</dt>
+                  <dd className={hasRefreshToken ? "text-emerald-500" : "text-amber-500"}>
+                    {hasRefreshToken ? "yes" : "no"}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt>Token expiry</dt>

@@ -105,6 +105,7 @@ public class PlatformMarketFeedService {
             }
             JsonNode data = root.path("data");
             String accessToken = data.path("access_token").asText(null);
+            String refreshToken = data.path("refresh_token").asText(null);
             String kiteUserId = data.path("user_id").asText(null);
             if (accessToken == null || accessToken.isBlank()) {
                 throw new BadRequestException("Missing access_token from Zerodha");
@@ -120,6 +121,9 @@ public class PlatformMarketFeedService {
             s.setConnectionState("CONNECTED");
             s.setWebsocketState("CLOSED");
             s.setAccessTokenEnc(encryptedToken);
+            if (refreshToken != null && !refreshToken.isBlank()) {
+                s.setRefreshTokenEnc(fieldCipher.encrypt(refreshToken));
+            }
             s.setTokenExpiresAt(Instant.now().plus(12, ChronoUnit.HOURS));
             s.setLastSyncAt(Instant.now());
             s.setInstrumentSyncState("UNKNOWN");
@@ -259,6 +263,79 @@ public class PlatformMarketFeedService {
         );
     }
 
+    /**
+     * Refreshes platform Zerodha access token when missing/near expiry using stored refresh token.
+     * Returns true when token is valid after this call.
+     */
+    @Transactional
+    public boolean ensureValidPlatformZerodhaToken(Duration refreshBefore) {
+        PlatformBrokerFeedSession s = sessionRepository
+                .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc("ZERODHA")
+                .orElse(null);
+        if (s == null) {
+            return false;
+        }
+        Instant now = Instant.now();
+        Instant expiresAt = s.getTokenExpiresAt();
+        boolean hasToken = s.getAccessTokenEnc() != null && !s.getAccessTokenEnc().isBlank();
+        boolean tokenStillValid = hasToken && expiresAt != null && expiresAt.isAfter(now.plus(refreshBefore));
+        if (tokenStillValid) {
+            return true;
+        }
+        if (s.getRefreshTokenEnc() == null || s.getRefreshTokenEnc().isBlank()) {
+            log.warn("platform.zerodha.token_refresh_skipped reason=no_refresh_token");
+            if (!hasToken || (expiresAt != null && !expiresAt.isAfter(now))) {
+                s.setConnectionState("AUTH_EXPIRED");
+                sessionRepository.save(s);
+            }
+            return false;
+        }
+        try {
+            String refreshToken = fieldCipher.decrypt(s.getRefreshTokenEnc());
+            if (refreshToken == null || refreshToken.isBlank()) {
+                s.setConnectionState("AUTH_EXPIRED");
+                sessionRepository.save(s);
+                return false;
+            }
+            JsonNode renewed = kiteApiClient.renewAccessToken(
+                    zerodhaBrokerProperties.getApiKey(),
+                    zerodhaBrokerProperties.getApiSecret(),
+                    refreshToken
+            );
+            if (!"success".equalsIgnoreCase(renewed.path("status").asText())) {
+                log.warn("platform.zerodha.token_refresh_failed msg={}", renewed.path("message").asText("unknown"));
+                s.setConnectionState("AUTH_EXPIRED");
+                sessionRepository.save(s);
+                return false;
+            }
+            JsonNode data = renewed.path("data");
+            String newAccessToken = data.path("access_token").asText(null);
+            String newRefreshToken = data.path("refresh_token").asText(null);
+            if (newAccessToken == null || newAccessToken.isBlank()) {
+                log.warn("platform.zerodha.token_refresh_failed msg=missing_access_token");
+                s.setConnectionState("AUTH_EXPIRED");
+                sessionRepository.save(s);
+                return false;
+            }
+            s.setAccessTokenEnc(fieldCipher.encrypt(newAccessToken));
+            if (newRefreshToken != null && !newRefreshToken.isBlank()) {
+                s.setRefreshTokenEnc(fieldCipher.encrypt(newRefreshToken));
+            }
+            // Zerodha access tokens are day-scoped; keep a safe rolling expiry window.
+            s.setTokenExpiresAt(now.plus(20, ChronoUnit.HOURS));
+            s.setConnectionState("CONNECTED");
+            s.setLastSyncAt(now);
+            sessionRepository.save(s);
+            log.info("platform.zerodha.token_refreshed expiresAt={}", s.getTokenExpiresAt());
+            return true;
+        } catch (Exception ex) {
+            log.warn("platform.zerodha.token_refresh_error {}", ex.toString());
+            s.setConnectionState("AUTH_EXPIRED");
+            sessionRepository.save(s);
+            return false;
+        }
+    }
+
     private Map<String, Object> vendorPayload(String vendor) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("vendorCode", vendor);
@@ -269,6 +346,7 @@ public class PlatformMarketFeedService {
             m.put("connectionState", "DISCONNECTED");
             m.put("websocketState", "CLOSED");
             m.put("configured", false);
+            m.put("hasRefreshToken", false);
             m.put("operationalLivePath", false);
             m.put("operationalLivePathDetail", "No platform session row — connect OAuth from admin broker infrastructure.");
             m.put("detail", "No platform session row — use Connect (Zerodha) from admin broker infrastructure.");
@@ -276,6 +354,7 @@ public class PlatformMarketFeedService {
         }
         PlatformBrokerFeedSession s = opt.get();
         m.put("configured", s.getAccessTokenEnc() != null && !s.getAccessTokenEnc().isBlank());
+        m.put("hasRefreshToken", s.getRefreshTokenEnc() != null && !s.getRefreshTokenEnc().isBlank());
         m.put("connectionState", s.getConnectionState());
         m.put("websocketState", s.getWebsocketState());
         m.put("tokenExpiresAt", s.getTokenExpiresAt() != null ? s.getTokenExpiresAt().toString() : null);
