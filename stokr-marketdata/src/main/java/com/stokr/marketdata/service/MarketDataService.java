@@ -10,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.ZoneId;
@@ -25,21 +25,15 @@ public class MarketDataService {
     private final MarketdataCandleRepository candleRepository;
     private final CandleAggregator candleAggregator;
     private final LatestPriceCache latestPriceCache;
+    private final TransactionTemplate txTemplate;
 
-    /**
-     * When false (default), raw ticks are NOT written to marketdata_ticks.
-     * The price cache and 1m candle are still updated — strategies use candles, not raw ticks.
-     * At 2000 symbols × 1 tick/sec this saves ~45M rows/day in DB writes.
-     */
     @Value("${stokr.marketdata.persist-ticks:false}")
     private boolean persistTicks;
 
     /**
-     * Ingest a single tick: update the price cache and aggregate into the in-memory 1m candle.
-     * DB write is intentionally deferred to {@link #flushDirtyCandles()} — called every 500ms.
-     * This avoids one DB transaction per tick, which exhausted the HikariCP pool under live load.
+     * Ingest a single tick: update Redis price cache and aggregate into the in-memory 1m candle.
+     * No DB connection acquired — persistTicks is false by default (tickRepository.save has its own tx).
      */
-    @Transactional
     public MarketdataTick ingestTick(MarketdataTick tick, ZoneId zone) {
         if (persistTicks) {
             tick = tickRepository.save(tick);
@@ -50,21 +44,23 @@ public class MarketDataService {
     }
 
     /**
-     * Flush all in-memory candle state to the DB using a single-statement native UPSERT per symbol/minute.
-     * Runs every 500ms (configurable). With 3000 live symbols this replaces ~15000 per-tick transactions
-     * with ~3000 UPSERT statements inside one transaction every 500ms — a ~7500x reduction in DB round-trips.
+     * Flush dirty candles to DB every 500ms.
+     * No DB connection is acquired when there are no dirty candles — the empty check runs before
+     * the transaction opens. Previously @Transactional on the whole method acquired a connection
+     * 2x/second even outside market hours, exhausting the pool.
      */
     @Scheduled(fixedDelayString = "${stokr.marketdata.candle-flush-ms:500}")
-    @Transactional
     public void flushDirtyCandles() {
         List<MarketdataCandle> dirty = candleAggregator.snapshotDirtyAndClear();
         if (dirty.isEmpty()) return;
-        for (MarketdataCandle c : dirty) {
-            candleRepository.upsertCandle(
-                    c.getSymbol(), c.getTimeframe(), c.getOpenTime(),
-                    c.getOpenPrice(), c.getHighPrice(), c.getLowPrice(),
-                    c.getClosePrice(), safe(c.getVolume()));
-        }
+        txTemplate.executeWithoutResult(status -> {
+            for (MarketdataCandle c : dirty) {
+                candleRepository.upsertCandle(
+                        c.getSymbol(), c.getTimeframe(), c.getOpenTime(),
+                        c.getOpenPrice(), c.getHighPrice(), c.getLowPrice(),
+                        c.getClosePrice(), safe(c.getVolume()));
+            }
+        });
         log.debug("marketdata.candle_flush count={}", dirty.size());
     }
 
