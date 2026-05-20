@@ -741,7 +741,7 @@ export function AdminBackfillPage() {
                             </td>
                             <td className="px-2 py-1">{f.retryable ? "Yes" : "No"}</td>
                             <td className="px-2 py-1">{extractAuthSource(f.message)}</td>
-                            <td className="px-2 py-1">{f.lastOccurredAt ? new Date(f.lastOccurredAt).toLocaleString() : "-"}</td>
+                            <td className="px-2 py-1">{f.lastOccurredAt ? new Date(f.lastOccurredAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "-"}</td>
                             <td className="px-2 py-1 text-muted-foreground">{f.message}</td>
                           </tr>
                         ))}

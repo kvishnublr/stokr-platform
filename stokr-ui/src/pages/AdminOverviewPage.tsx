@@ -340,7 +340,7 @@ export function AdminOverviewPage() {
                 </div>
                 <div className={cn("text-[11px] font-mono", isLight ? "text-neutral-500" : "text-neutral-500")}>
                   {operationsSnapshot.data.collectedAt
-                    ? `Last snapshot: ${new Date(operationsSnapshot.data.collectedAt).toLocaleString()}`
+                    ? `Last snapshot: ${new Date(operationsSnapshot.data.collectedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
                     : "Snapshot pending"}
                 </div>
               </Link>

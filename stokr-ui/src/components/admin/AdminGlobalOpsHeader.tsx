@@ -47,7 +47,7 @@ export function AdminGlobalOpsHeader({
         ))}
         <div className="ml-auto hidden pb-1 text-right font-mono text-[10px] text-muted-foreground min-[1100px]:block">
           <div className="font-bold uppercase tracking-wide text-foreground/80">Snapshot wall</div>
-          <div className="text-foreground">{at ? new Date(at).toLocaleString() : "-"}</div>
+          <div className="text-foreground">{at ? new Date(at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "-"}</div>
         </div>
       </div>
       <div className="mt-2 truncate border-t border-border pt-1.5 font-mono text-[10px] text-foreground" title={adminOpsMetricsStrip(snapshot)}>

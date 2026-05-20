@@ -144,14 +144,14 @@ export function BacktestRunDetailsPage() {
   const o = q.data.outcome;
   const equityChart =
     o.equityCurve?.map((p) => ({
-      t: new Date(p.pointTime).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit" }),
+      t: new Date(p.pointTime).toLocaleString("en-IN", { month: "short", day: "numeric", hour: "2-digit", timeZone: "Asia/Kolkata", hour12: false }),
       pnl: Number(p.cumulativePnl),
       dd: Number(p.drawdown),
     })) ?? [];
 
   const rangeLabel =
     o.rangeStart && o.rangeEnd
-      ? `${new Date(o.rangeStart).toLocaleString()} -> ${new Date(o.rangeEnd).toLocaleString()}`
+      ? `${new Date(o.rangeStart).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })} -> ${new Date(o.rangeEnd).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })}`
       : null;
   const hasCurvePoints = equityChart.length > 0;
   const noFills = (o.metrics?.totalTrades ?? 0) === 0;
@@ -405,7 +405,7 @@ export function BacktestRunDetailsPage() {
                     <td className={cn("py-2 pr-3", isLight ? "text-[#475569]" : "")}>{fmtNum(t.price, 4)}</td>
                     <td className={cn("py-2 pr-3", isLight ? "text-[#475569]" : "")}>{fmtNum(t.pnl, 4)}</td>
                     <td className={cn("py-2", isLight ? "text-[#64748B]" : "text-neutral-400")}>
-                      {t.closedAt ? new Date(t.closedAt).toLocaleString() : "-"}
+                      {t.closedAt ? new Date(t.closedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }) : "-"}
                     </td>
                   </tr>
                 ))

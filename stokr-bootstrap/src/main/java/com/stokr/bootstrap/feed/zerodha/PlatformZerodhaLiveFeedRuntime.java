@@ -30,6 +30,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -141,6 +142,15 @@ public class PlatformZerodhaLiveFeedRuntime {
         if (session == null || session.isIngestionPaused()) {
             closeActive(session == null ? "no_platform_session" : "ingestion_paused");
             return;
+        }
+        if ((session.getRefreshTokenEnc() == null || session.getRefreshTokenEnc().isBlank())
+                && session.getTokenExpiresAt() != null) {
+            long minsLeft = ChronoUnit.MINUTES.between(Instant.now(), session.getTokenExpiresAt());
+            if (minsLeft <= 30) {
+                log.warn("platform.ws.reauth_required_urgent minsLeft={} reason=no_refresh_token", minsLeft);
+            } else if (minsLeft <= 120) {
+                log.warn("platform.ws.reauth_required_soon minsLeft={} reason=no_refresh_token", minsLeft);
+            }
         }
         if (session.getAccessTokenEnc() == null || session.getAccessTokenEnc().isBlank()) {
             closeActive("no_access_token");

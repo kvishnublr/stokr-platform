@@ -677,7 +677,7 @@ export function IntradayTraderPage() {
   }, [feedHealth, riskUsedPct, selectedStrategy, selectedOpportunity]);
 
   const strategyLogs = useMemo(
-    () => strategyRail.slice(0, 10).map((s) => ({ id: s.strategyKey, ts: new Date().toLocaleTimeString(), strategy: s.strategyKey, state: s.state, score: s.score, note: s.tooltip[5] })),
+    () => strategyRail.slice(0, 10).map((s) => ({ id: s.strategyKey, ts: new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }), strategy: s.strategyKey, state: s.state, score: s.score, note: s.tooltip[5] })),
     [strategyRail],
   );
 

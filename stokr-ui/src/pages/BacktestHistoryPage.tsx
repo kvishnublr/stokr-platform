@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fmtDateTime } from "../lib/dateUtils";
 import { Link } from "react-router-dom";
 import { listRuns } from "../api/backtest";
 import { parseAxiosMessage } from "../api/client";
@@ -78,7 +79,7 @@ export function BacktestHistoryPage() {
                       isLight ? "text-[#475569]" : "text-neutral-300",
                     )}
                   >
-                    {new Date(r.createdAt).toLocaleString()}
+                    {fmtDateTime(r.createdAt)}
                   </td>
                   <td className={cn("px-4 py-3", isLight ? "text-[#0F172A]" : "text-neutral-200")}>{r.strategyKey}</td>
                   <td

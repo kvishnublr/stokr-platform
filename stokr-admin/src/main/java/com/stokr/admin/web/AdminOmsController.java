@@ -28,7 +28,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
@@ -50,7 +49,7 @@ public class AdminOmsController {
             @RequestParam(required = false) Instant since
     ) {
         Instant from = since != null ? since
-                : Instant.now().atZone(ZoneOffset.UTC).truncatedTo(ChronoUnit.DAYS).toInstant();
+                : Instant.now().atZone(java.time.ZoneId.of("Asia/Kolkata")).truncatedTo(ChronoUnit.DAYS).toInstant();
         List<Object[]> rows = omsOrderRepository.computeStats(from);
         AdminOmsStatsDto dto;
         if (rows.isEmpty()) {

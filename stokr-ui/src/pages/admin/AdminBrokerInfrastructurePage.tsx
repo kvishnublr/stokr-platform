@@ -24,6 +24,18 @@ function fmt(v: unknown): string {
   return String(v);
 }
 
+function parseIsoInstant(value: unknown): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const dt = new Date(value);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function minutesUntil(value: unknown): number | null {
+  const dt = parseIsoInstant(value);
+  if (!dt) return null;
+  return Math.round((dt.getTime() - Date.now()) / 60000);
+}
+
 function looksLikeZerodhaTokenAuthError(message: string): boolean {
   const m = (message || "").toLowerCase();
   return (
@@ -196,6 +208,9 @@ export function AdminBrokerInfrastructurePage() {
           const ws = String(row.websocketState ?? "CLOSED").toUpperCase();
           const configured = Boolean(row.configured);
           const hasRefreshToken = Boolean(row.hasRefreshToken);
+          const expiryMins = minutesUntil(row.tokenExpiresAt);
+          const warnReconnectSoon = configured && !hasRefreshToken && expiryMins != null && expiryMins <= 120;
+          const warnReconnectNow = configured && !hasRefreshToken && expiryMins != null && expiryMins <= 30;
           const isFocus = key === focusVendor;
           return (
             <section
@@ -278,6 +293,20 @@ export function AdminBrokerInfrastructurePage() {
               </dl>
 
               {row.detail ? <p className="mt-2 text-xs text-muted-foreground">{String(row.detail)}</p> : null}
+              {warnReconnectSoon ? (
+                <div
+                  className={cn(
+                    "mt-2 rounded-md border px-2 py-1 text-xs font-medium",
+                    warnReconnectNow
+                      ? "border-destructive/50 bg-destructive/10 text-destructive"
+                      : "border-amber-500/40 bg-amber-500/10 text-amber-500",
+                  )}
+                >
+                  {warnReconnectNow
+                    ? `Platform feed token expires in ${expiryMins} min and refresh token is missing. Reconnect now to avoid feed drop.`
+                    : `Platform feed token expires in ${expiryMins} min and refresh token is missing. Reconnect soon.`}
+                </div>
+              ) : null}
 
               <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-3">
                 {key === "ZERODHA" ? (
