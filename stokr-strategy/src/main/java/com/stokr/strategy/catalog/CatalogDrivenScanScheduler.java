@@ -2,8 +2,10 @@ package com.stokr.strategy.catalog;
 
 import com.stokr.common.market.LiveMarketPathOperationalGate;
 import com.stokr.strategy.domain.StrategyRuntimeBinding;
+import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.domain.StrategyUniverseSymbol;
 import com.stokr.strategy.engine.TradingStrategy;
+import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.runtime.StrategyRegistry;
 import com.stokr.strategy.signals.StrategySignal;
 import com.stokr.strategy.signals.SignalType;
@@ -19,18 +21,16 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Catalog-driven scan scheduler.
  *
  * Reads all active strategy-universe bindings from the DB, resolves the symbol set
  * for each binding's universe group, then evaluates the bound strategy against every symbol.
+ * Non-HOLD signals are persisted and dispatched via StrategySignalPipelineService.
  *
- * This scheduler is ADDITIVE — it does not replace or touch {@link com.stokr.strategy.runtime.StrategyEvaluationScheduler}.
- * Enable it via: {@code stokr.catalog.scan.enabled=true} (default false until admin creates bindings).
- *
- * Asset-aware: resolves exchange, instrument type, lot size, and expiry from
- * {@code strategy_universe_symbols} so commodity/futures strategies get correct metadata.
+ * Enable via: {@code stokr.catalog.scan.enabled=true} (default true in application.yml).
  */
 @Component
 @RequiredArgsConstructor
@@ -40,10 +40,17 @@ public class CatalogDrivenScanScheduler {
 
     private final StrategyUniverseResolverService resolverService;
     private final StrategyRegistry strategyRegistry;
+    private final StrategySignalPipelineService signalPipelineService;
     private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
 
     @Value("${stokr.strategy.require-operational-live-path:true}")
     private boolean requireOperationalLivePath;
+
+    @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
+    private UUID systemUserId;
+
+    @Value("${stokr.strategy.poll-execution-mode:PAPER}")
+    private String executionMode;
 
     @Scheduled(fixedDelayString = "${stokr.catalog.scan.poll-ms:60000}")
     public void scan() {
@@ -97,10 +104,9 @@ public class CatalogDrivenScanScheduler {
 
                     if (signal != null && signal.type() != SignalType.HOLD) {
                         bindingSignals++;
+                        persistSignal(signal, strategyKey, symbol);
                         log.info("catalog.scan.signal strategyKey={} symbol={} type={} reason={}",
                                 strategyKey, symbol, signal.type(), signal.reason());
-                        // Signal is emitted — downstream pipeline picks it up via StrategySignalPipelineService
-                        // if the strategy bean calls it internally (as all existing generators do).
                     }
                     totalSymbols++;
                 } catch (Exception ex) {
@@ -115,6 +121,27 @@ public class CatalogDrivenScanScheduler {
 
         log.info("catalog.scan.cycle_done bindings={} symbols={} signals={} skipped={}",
                 activeBindings.size(), totalSymbols, totalSignals, totalSkipped);
+    }
+
+    private void persistSignal(StrategySignal signal, String strategyKey, String symbol) {
+        try {
+            StrategySignalEntity entity = new StrategySignalEntity();
+            entity.setSignalType(signal.type());
+            entity.setSymbol(symbol);
+            entity.setStrategyName(strategyKey);
+            entity.setStrategyVersion("1.0.0");
+            entity.setReasonText(signal.reason());
+            entity.setReason(signal.reason());
+            entity.setSuggestedQty(signal.suggestedQty() != null ? signal.suggestedQty() : BigDecimal.ONE);
+            entity.setCandleTimestamp(Instant.now());
+            entity.setUserId(systemUserId);
+            entity.setPipeline(executionMode);
+            entity.setHitTarget(false);
+            entity.setHitStoploss(false);
+            signalPipelineService.persistAndDispatch(entity, UUID.randomUUID().toString(), executionMode);
+        } catch (Exception ex) {
+            log.warn("catalog.scan.persist_failed strategyKey={} symbol={} {}", strategyKey, symbol, ex.toString());
+        }
     }
 
     private StrategyContext buildContext(StrategyUniverseSymbol sym, String symbol) {
