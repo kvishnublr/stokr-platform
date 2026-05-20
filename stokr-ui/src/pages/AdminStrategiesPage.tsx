@@ -2,7 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, Layers } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { api, parseAxiosMessage } from "../api/client";
+import { parseAxiosMessage } from "../api/client";
+import {
+  createRuntimeBinding,
+  deleteRuntimeBinding,
+  fetchRuntimeBindings,
+  fetchUniverseGroups,
+} from "../api/strategyCatalog";
+import { api } from "../api/client";
 import { cn } from "../lib/utils";
 
 type StrategyRow = {
@@ -41,6 +48,42 @@ export function AdminStrategiesPage() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin-strategies"] });
       void qc.invalidateQueries({ queryKey: ["strategy-catalog"] });
+    },
+    onError: (e) => toast.error(parseAxiosMessage(e)),
+  });
+
+  const bindingsQ = useQuery({
+    queryKey: ["admin-runtime-bindings"],
+    queryFn: async () => fetchRuntimeBindings(0, 300),
+  });
+
+  const groupsQ = useQuery({
+    queryKey: ["admin-universe-groups", ""],
+    queryFn: async () => fetchUniverseGroups(undefined, 0, 300),
+  });
+
+  const addBinding = useMutation({
+    mutationFn: async (payload: { strategyCatalogId: string; universeGroupId: string }) =>
+      createRuntimeBinding({
+        strategyCatalogId: payload.strategyCatalogId,
+        universeGroupId: payload.universeGroupId,
+        runtimeEnabled: true,
+        maxPositions: 5,
+        scanIntervalSeconds: 60,
+        riskProfile: "MEDIUM",
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin-runtime-bindings"] });
+      toast.success("Group assigned");
+    },
+    onError: (e) => toast.error(parseAxiosMessage(e)),
+  });
+
+  const removeBinding = useMutation({
+    mutationFn: async (bindingId: string) => deleteRuntimeBinding(bindingId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin-runtime-bindings"] });
+      toast.success("Group removed");
     },
     onError: (e) => toast.error(parseAxiosMessage(e)),
   });
@@ -92,7 +135,14 @@ export function AdminStrategiesPage() {
         </div>
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
-          {(q.data?.content ?? []).map((s) => (
+          {(q.data?.content ?? []).map((s) => {
+            const allBindings = bindingsQ.data?.content ?? [];
+            const bound = allBindings.filter((b) => b.strategyCatalogId === s.id);
+            const usedGroupIds = new Set(bound.map((b) => b.universeGroupId));
+            const availableGroups = (groupsQ.data?.content ?? []).filter((g) => !usedGroupIds.has(g.id) && g.enabled);
+            const selectedGroupId = availableGroups[0]?.id ?? "";
+
+            return (
             <div
               key={s.id}
               className={cn(
@@ -146,8 +196,62 @@ export function AdminStrategiesPage() {
                   {s.visibleToUsers ? "Visible" : "Hidden"}
                 </button>
               </div>
+
+              <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Assigned Groups ({bound.length})
+                </div>
+                {bound.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">No groups assigned yet.</div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {bound.map((b) => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => removeBinding.mutate(b.id)}
+                        className="rounded-full border border-violet-300 bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-500/20 dark:border-violet-700 dark:text-violet-300"
+                        title="Remove group"
+                      >
+                        {b.groupDisplayName} ✕
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <select
+                    defaultValue={selectedGroupId}
+                    className="min-w-56 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                    id={`group-select-${s.id}`}
+                  >
+                    {availableGroups.length === 0 ? (
+                      <option value="">No more groups available</option>
+                    ) : (
+                      availableGroups.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.displayName} [{g.assetClass}/{g.instrumentType}]
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={availableGroups.length === 0}
+                    onClick={() => {
+                      const el = document.getElementById(`group-select-${s.id}`) as HTMLSelectElement | null;
+                      const groupId = el?.value;
+                      if (!groupId) return;
+                      addBinding.mutate({ strategyCatalogId: s.id, universeGroupId: groupId });
+                    }}
+                    className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+                  >
+                    Add group
+                  </button>
+                </div>
+              </div>
             </div>
-          ))}
+          )})}
         </div>
       )}
     </div>
