@@ -64,6 +64,7 @@ public class PlatformZerodhaLiveFeedRuntime {
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformZerodhaFeedTelemetryService telemetryService;
     private final InstrumentRegistryService instrumentRegistry;
+    private final UniverseInstrumentEnrichmentService universeInstrumentEnrichmentService;
     private final ObjectMapper objectMapper;
 
     private final AtomicReference<WebSocket> activeSocket = new AtomicReference<>();
@@ -165,6 +166,7 @@ public class PlatformZerodhaLiveFeedRuntime {
             cachedSymbolMap = buildSymbolMap(apiKey, accessToken);
             cachedForToken = accessToken;
             instrumentRegistry.update(cachedSymbolMap);
+            universeInstrumentEnrichmentService.enrichMbxUniverseSymbols(instrumentRegistry.getSymbolToToken());
         }
         List<Integer> tokens = new ArrayList<>(cachedSymbolMap.keySet());
         this.subscribedTokens = tokens;

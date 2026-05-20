@@ -17,6 +17,8 @@ public interface StrategyUniverseSymbolRepository extends JpaRepository<Strategy
 
     List<StrategyUniverseSymbol> findAllByGroupId(UUID groupId);
 
+    List<StrategyUniverseSymbol> findAllByEnabledTrueAndExchangeIgnoreCase(String exchange);
+
     /** Returns distinct enabled symbols for a group — used by universe resolver */
     @Query("SELECT s.symbol FROM StrategyUniverseSymbol s WHERE s.group.id = :groupId AND s.enabled = true")
     List<String> findEnabledSymbolsByGroupId(@Param("groupId") UUID groupId);
