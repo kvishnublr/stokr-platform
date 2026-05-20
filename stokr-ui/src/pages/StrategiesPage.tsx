@@ -127,7 +127,7 @@ export function StrategiesPage() {
       sigByStrategy.set(k, prev);
     }
 
-    const activePipeline = readinessQuery.data?.executionPipelineActive === true;
+    const activePipeline = readinessQuery.data?.operationalLifecycle?.executionPipelineActive === true;
     const selectedMode = modeQuery.data === "LIVE" ? "LIVE" : "PAPER";
 
     return (catalogQuery.data?.content ?? []).map((c) => {
