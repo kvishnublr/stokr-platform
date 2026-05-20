@@ -1,5 +1,6 @@
 package com.stokr.strategy.catalog;
 
+import com.stokr.common.market.LiveMarketPathOperationalGate;
 import com.stokr.strategy.domain.StrategyRuntimeBinding;
 import com.stokr.strategy.domain.StrategyUniverseSymbol;
 import com.stokr.strategy.engine.TradingStrategy;
@@ -9,6 +10,8 @@ import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.context.StrategyContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -37,9 +40,23 @@ public class CatalogDrivenScanScheduler {
 
     private final StrategyUniverseResolverService resolverService;
     private final StrategyRegistry strategyRegistry;
+    private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
+
+    @Value("${stokr.strategy.require-operational-live-path:true}")
+    private boolean requireOperationalLivePath;
 
     @Scheduled(fixedDelayString = "${stokr.catalog.scan.poll-ms:60000}")
     public void scan() {
+        Instant tick = Instant.now();
+        LiveMarketPathOperationalGate gate = liveMarketPathOperationalGate.getIfAvailable();
+        if (requireOperationalLivePath && gate != null) {
+            var assessment = gate.assess(tick);
+            if (!assessment.operational()) {
+                log.debug("catalog.scan.skipped_live_path_not_operational reason={}", assessment.reason());
+                return;
+            }
+        }
+
         List<StrategyRuntimeBinding> activeBindings = resolverService.resolveActiveBindings();
         if (activeBindings.isEmpty()) {
             log.debug("catalog.scan.no_active_bindings");
