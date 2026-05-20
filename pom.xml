@@ -25,7 +25,6 @@
         <module>stokr-websocket</module>
         <module>stokr-admin</module>
         <module>stokr-bootstrap</module>
-        <module>stokr-ui</module>
     </modules>
 
     <properties>
