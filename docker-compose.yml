@@ -89,8 +89,8 @@ services:
     container_name: stokr-postgres
     environment:
       POSTGRES_DB: ${DB_NAME:-stokr_platform}
-      POSTGRES_USER: ${DB_USER:-stokr}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-stokr}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
