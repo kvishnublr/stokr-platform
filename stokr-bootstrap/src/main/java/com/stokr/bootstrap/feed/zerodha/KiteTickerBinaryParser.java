@@ -58,7 +58,7 @@ public final class KiteTickerBinaryParser {
         ByteBuffer pkt = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
         int token    = pkt.getInt(start);
         int ltpPaise = pkt.getInt(start + 4);
-        BigDecimal price = BigDecimal.valueOf(ltpPaise).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+        BigDecimal price = BigDecimal.valueOf(ltpPaise).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
         return new ParsedLtpTick(token, price);
     }
 }

@@ -15,6 +15,8 @@ server:
 spring:
   application:
     name: stokr-platform
+  jackson:
+    time-zone: Asia/Kolkata
   mail:
     # spring.mail.host is intentionally omitted here so an unset host does not create a broken JavaMailSender.
     # Use SPRING_MAIL_HOST / SPRING_MAIL_USERNAME / SPRING_MAIL_PASSWORD in repo-root .env (see .env.example),
@@ -57,7 +59,7 @@ spring:
     properties:
       hibernate:
         jdbc:
-          time_zone: UTC
+          time_zone: Asia/Kolkata
   flyway:
     enabled: true
   data:

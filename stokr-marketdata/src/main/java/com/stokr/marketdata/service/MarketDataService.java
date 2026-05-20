@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.ZoneId;
 import java.util.List;
 
@@ -35,6 +36,9 @@ public class MarketDataService {
      * No DB connection acquired — persistTicks is false by default (tickRepository.save has its own tx).
      */
     public MarketdataTick ingestTick(MarketdataTick tick, ZoneId zone) {
+        if (tick.getPrice() != null) {
+            tick.setPrice(tick.getPrice().setScale(2, RoundingMode.HALF_UP));
+        }
         if (persistTicks) {
             tick = tickRepository.save(tick);
         }

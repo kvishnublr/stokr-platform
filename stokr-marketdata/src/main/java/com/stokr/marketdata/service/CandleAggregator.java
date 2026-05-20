@@ -91,13 +91,17 @@ public class CandleAggregator {
         }
 
         void onTrade(BigDecimal price, BigDecimal qty) {
+            BigDecimal px = price == null ? null : price.setScale(2, RoundingMode.HALF_UP);
+            if (px == null) {
+                return;
+            }
             if (!initialized) {
-                open = high = low = close = price;
+                open = high = low = close = px;
                 initialized = true;
             } else {
-                high = high.max(price);
-                low = low.min(price);
-                close = price;
+                high = high.max(px);
+                low = low.min(px);
+                close = px;
             }
             if (qty != null) {
                 volume = volume.add(qty);
