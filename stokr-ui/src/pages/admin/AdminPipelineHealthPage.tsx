@@ -521,7 +521,7 @@ export function AdminPipelineHealthPage() {
           { label: "WS State",      value: wsState },
           { label: "Subscriptions", value: String(s?.marketFeedSubscriptions ?? 0) },
           { label: "Ticks / sec",   value: s?.marketFeedTicksPerSec ?? "-" },
-          { label: "Last packet",   value: s?.marketFeedLastPacket ? new Date(s.marketFeedLastPacket).toLocaleTimeString() : "—" },
+          { label: "Last packet",   value: s?.marketFeedLastPacket ? new Date(s.marketFeedLastPacket).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }) : "—" },
           { label: "Mode",          value: s?.liveTradingArmed ?? "—" },
           { label: "Kill switch",   value: s?.killSwitch ?? "—" },
         ]}

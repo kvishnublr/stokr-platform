@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fmtTime as fmtIst, fmtDateLong, IST_LOCALE, IST_ZONE } from "../../lib/dateUtils";
 import { Navigate, Link } from "react-router-dom";
 import { useSessionStore } from "../../state/session";
 import { useUiThemeStore } from "../../state/uiTheme";
@@ -61,10 +62,7 @@ const fmtCurrency = (v: unknown) => {
   }).format(n);
 };
 
-const fmtTime = (iso?: string) => {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-};
+const fmtTime = fmtIst;
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -245,7 +243,7 @@ export function TraderDashboard() {
             Welcome back, {greetName}
           </h1>
           <p className={cn("mt-1 text-sm", subCls)}>
-            {selectedMode === "LIVE" ? "🔴 Live trading" : "📄 Paper mode"} · {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+            {selectedMode === "LIVE" ? "🔴 Live trading" : "📄 Paper mode"} · {fmtDateLong(new Date())}
           </p>
         </div>
         <div className="flex items-center gap-2">

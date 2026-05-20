@@ -170,7 +170,7 @@ export function buildAdminOpsPills(
         ? `SSE live  ·  trader WS~${wsUsers}`
         : "SSE live  ·  trader WS not instrumented";
     if (stream.lastOpsPushAt) {
-      streamHint += `  ·  last push ${new Date(stream.lastOpsPushAt).toLocaleTimeString()}`;
+      streamHint += `  ·  last push ${new Date(stream.lastOpsPushAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })}`;
     }
   }
 

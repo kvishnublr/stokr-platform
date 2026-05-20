@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fmtDateTime } from "../lib/dateUtils";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
@@ -22,12 +23,7 @@ type SignalRow = {
   marketRegime?: string | null;
 };
 
-const fmtTime = (iso: string | null) => {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-    + "  " + d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-};
+const fmtTime = fmtDateTime;
 
 const fmt = (v: string | number | null | undefined, dec = 2) =>
   v == null || v === "" ? "—" : Number(v).toFixed(dec);

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { IST_LOCALE, IST_ZONE } from "../../lib/dateUtils";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronRight,
   Info, Search, XCircle, Wifi, WifiOff, Trash2,
@@ -71,11 +72,11 @@ const LEVEL_CFG: Record<string, {
 function formatTs(iso: string, full = false): string {
   try {
     const d = new Date(iso);
-    if (full) return d.toLocaleString("en-IN", {
+    if (full) return d.toLocaleString(IST_LOCALE, {
       day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: IST_ZONE,
     });
-    return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+    return d.toLocaleTimeString(IST_LOCALE, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: IST_ZONE });
   } catch { return iso; }
 }
 

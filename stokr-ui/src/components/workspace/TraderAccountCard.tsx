@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { cn } from "../../lib/utils";
+import { IST_LOCALE, IST_ZONE } from "../../lib/dateUtils";
 import { useUiThemeStore } from "../../state/uiTheme";
 
 const SPARK = Array.from({ length: 14 }, (_, i) => ({ x: i, y: 40 + Math.sin(i * 0.6) * 12 + i * 1.5 }));
@@ -16,8 +17,8 @@ function ClockTick({ className }: { className?: string }) {
   }, []);
   return (
     <span className={cn("font-mono text-[11px]", className)}>
-      {now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}{" "}
-       ·  {now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+      {now.toLocaleTimeString(IST_LOCALE, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: IST_ZONE })}{" "}
+       ·  {now.toLocaleDateString(IST_LOCALE, { weekday: "short", month: "short", day: "numeric", timeZone: IST_ZONE })}
     </span>
   );
 }

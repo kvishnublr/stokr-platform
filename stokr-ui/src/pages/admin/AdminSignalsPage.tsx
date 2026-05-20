@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fmtDateTime } from "../../lib/dateUtils";
 import { useState, useCallback } from "react";
 import { api } from "../../api/client";
 import {
@@ -73,12 +74,7 @@ const fmtPnl = (v: number | null | undefined) => {
   return n >= 0 ? `+${s}` : `-${s}`;
 };
 
-const fmtTime = (iso: string | null) => {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-    + "  " + d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-};
+const fmtTime = fmtDateTime;
 
 const pnlClass = (v: number | null | undefined) =>
   v == null ? "text-slate-400" : Number(v) >= 0 ? "text-emerald-600 font-semibold" : "text-rose-600 font-semibold";

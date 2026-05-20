@@ -88,8 +88,8 @@ export function DateRangeChips({
   const endRef = useRef<HTMLInputElement>(null);
 
   const rangeLabel = useMemo(() => {
-    const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" };
-    return `${from.toLocaleDateString(undefined, opts)} → ${to.toLocaleDateString(undefined, opts)}`;
+    const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Kolkata" };
+    return `${from.toLocaleDateString("en-IN", opts)} → ${to.toLocaleDateString("en-IN", opts)}`;
   }, [from, to]);
 
   const chipIdle = isLight

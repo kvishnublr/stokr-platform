@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fmtDateTime } from "../lib/dateUtils";
 import { useState } from "react";
 import { api } from "../api/client";
 import {
@@ -47,12 +48,7 @@ type OmsStatsResp = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const fmtTime = (iso: string | null) => {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-    + "  " + d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-};
+const fmtTime = fmtDateTime;
 
 const evDotCls = (type: string) => {
   if (type.includes("FILLED") || type.includes("FILL")) return "bg-emerald-500";

@@ -22,9 +22,9 @@ import { StrategyPreviewCard } from "./StrategyPreviewCard";
 
 function browserTimeZone(): string {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    return "Asia/Kolkata";
   } catch {
-    return "UTC";
+    return "Asia/Kolkata";
   }
 }
 

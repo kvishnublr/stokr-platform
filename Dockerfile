@@ -32,4 +32,4 @@ COPY --from=build /workspace/stokr-bootstrap/target/stokr-bootstrap-*.jar /app/s
 USER stokr
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "/app/stokr-bootstrap.jar"]
+ENTRYPOINT ["java", "-Duser.timezone=Asia/Kolkata", "-jar", "/app/stokr-bootstrap.jar"]

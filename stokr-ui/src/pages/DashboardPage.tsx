@@ -656,7 +656,7 @@ export function DashboardPage() {
           </span>
         </div>
         <div className={cn("flex items-center gap-2 font-mono text-[10px]", isLight ? "text-neutral-400" : "text-neutral-600")}>
-          <Layers className="h-3.5 w-3.5" /> Portfolio snap {ov?.latestSnapshotAt ? new Date(ov.latestSnapshotAt).toLocaleTimeString() : "-"}
+          <Layers className="h-3.5 w-3.5" /> Portfolio snap {ov?.latestSnapshotAt ? new Date(ov.latestSnapshotAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }) : "-"}
         </div>
       </div>
     </div>
