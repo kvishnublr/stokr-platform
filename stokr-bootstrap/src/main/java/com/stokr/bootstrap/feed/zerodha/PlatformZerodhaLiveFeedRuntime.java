@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.bootstrap.config.PlatformZerodhaFeedProperties;
 import com.stokr.common.crypto.FieldCipher;
+import com.stokr.strategy.domain.StrategyUniverseSymbol;
+import com.stokr.strategy.repository.StrategyUniverseSymbolRepository;
 import com.stokr.user.broker.PlatformMarketFeedService;
 import com.stokr.user.broker.ZerodhaKiteApiClient;
 import com.stokr.user.config.ZerodhaBrokerProperties;
@@ -31,6 +33,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -65,6 +68,7 @@ public class PlatformZerodhaLiveFeedRuntime {
     private final PlatformZerodhaFeedTelemetryService telemetryService;
     private final InstrumentRegistryService instrumentRegistry;
     private final UniverseInstrumentEnrichmentService universeInstrumentEnrichmentService;
+    private final StrategyUniverseSymbolRepository strategyUniverseSymbolRepository;
     private final ObjectMapper objectMapper;
 
     private final AtomicReference<WebSocket> activeSocket = new AtomicReference<>();
@@ -216,6 +220,20 @@ public class PlatformZerodhaLiveFeedRuntime {
     private Map<Integer, String> buildSymbolMap(String apiKey, String accessToken) {
         Map<Integer, String> map = new LinkedHashMap<>();
 
+        if (feedProperties.isAutoSubscribeUniverseGroups()) {
+            try {
+                Map<Integer, String> targeted = buildUniverseDrivenMap(apiKey, accessToken);
+                map.putAll(targeted);
+                if (!map.isEmpty()) {
+                    log.info("platform.ws.universe_subscribe groups={} tokens={}",
+                            feedProperties.parsedSubscriptionUniverseGroupKeys(), map.size());
+                    return map;
+                }
+            } catch (Exception ex) {
+                log.warn("platform.ws.universe_subscribe_failed {}", ex.toString());
+            }
+        }
+
         if (feedProperties.isAutoSubscribeAllNse()) {
             try {
                 String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "NSE");
@@ -278,6 +296,87 @@ public class PlatformZerodhaLiveFeedRuntime {
             log.info("platform.ws.symbol_map_ready total={}", map.size());
         }
         return map;
+    }
+
+    private Map<Integer, String> buildUniverseDrivenMap(String apiKey, String accessToken) throws Exception {
+        List<String> groupKeys = feedProperties.parsedSubscriptionUniverseGroupKeys();
+        if (groupKeys.isEmpty()) {
+            return Map.of();
+        }
+
+        List<StrategyUniverseSymbol> universeRows =
+                strategyUniverseSymbolRepository.findAllEnabledByGroupKeys(groupKeys);
+        if (universeRows.isEmpty()) {
+            log.warn("platform.ws.universe_subscribe_no_rows groups={}", groupKeys);
+            return Map.of();
+        }
+
+        Map<Integer, String> nseTokenToSymbol = new LinkedHashMap<>();
+        Map<Integer, String> mcxTokenToSymbol = new LinkedHashMap<>();
+        String nseCsv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "NSE");
+        parseInstrumentsCsvInto(nseCsv, "EQ", "NSE", nseTokenToSymbol);
+
+        String mcxCsv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "MCX");
+        parseInstrumentsCsvInto(mcxCsv, null, mcxTokenToSymbol);
+
+        Map<String, Integer> nseSymbolToToken = reverseMap(nseTokenToSymbol);
+        Map<String, Integer> mcxSymbolToToken = reverseMap(mcxTokenToSymbol);
+        universeInstrumentEnrichmentService.enrichMbxUniverseSymbols(mcxSymbolToToken);
+
+        Map<Integer, String> out = new LinkedHashMap<>();
+        int unresolved = 0;
+        for (StrategyUniverseSymbol row : universeRows) {
+            String exchange = normalize(row.getExchange());
+            Map<String, Integer> source = "MCX".equals(exchange) ? mcxSymbolToToken : nseSymbolToToken;
+            String preferredTrading = normalize(row.getTradingSymbol());
+            String canonical = normalize(row.getSymbol());
+
+            Integer token = null;
+            String resolvedSymbol = null;
+            if (!preferredTrading.isBlank()) {
+                token = source.get(preferredTrading);
+                resolvedSymbol = preferredTrading;
+            }
+            if (token == null && !canonical.isBlank()) {
+                resolvedSymbol = chooseBestTradingSymbol(canonical, source);
+                if (resolvedSymbol != null) {
+                    token = source.get(resolvedSymbol);
+                }
+            }
+
+            if (token == null || token <= 0) {
+                unresolved++;
+                continue;
+            }
+            out.put(token, resolvedSymbol != null ? resolvedSymbol : canonical);
+        }
+
+        if (unresolved > 0) {
+            log.warn("platform.ws.universe_subscribe_unresolved rows={} unresolved={}", universeRows.size(), unresolved);
+        }
+        return out;
+    }
+
+    private static Map<String, Integer> reverseMap(Map<Integer, String> tokenMap) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        tokenMap.forEach((token, symbol) -> out.put(normalize(symbol), token));
+        return out;
+    }
+
+    private static String chooseBestTradingSymbol(String canonical, Map<String, Integer> symbolToToken) {
+        String exact = symbolToToken.keySet().stream()
+                .filter(k -> normalize(k).equals(canonical))
+                .findFirst()
+                .orElse(null);
+        if (exact != null) return exact;
+        return symbolToToken.keySet().stream()
+                .filter(k -> normalize(k).startsWith(canonical))
+                .min(java.util.Comparator.comparingInt(String::length))
+                .orElse(null);
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 
     private void parseInstrumentsCsvInto(String csv, String typeFilter, Map<Integer, String> out) throws Exception {

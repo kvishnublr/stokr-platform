@@ -19,6 +19,17 @@ public interface StrategyUniverseSymbolRepository extends JpaRepository<Strategy
 
     List<StrategyUniverseSymbol> findAllByEnabledTrueAndExchangeIgnoreCase(String exchange);
 
+    @Query("""
+           SELECT s
+           FROM StrategyUniverseSymbol s
+           JOIN FETCH s.group g
+           WHERE s.enabled = true
+             AND g.enabled = true
+             AND UPPER(g.groupKey) IN :groupKeys
+           ORDER BY g.groupKey, s.symbol
+           """)
+    List<StrategyUniverseSymbol> findAllEnabledByGroupKeys(@Param("groupKeys") List<String> groupKeys);
+
     /** Returns distinct enabled symbols for a group — used by universe resolver */
     @Query("SELECT s.symbol FROM StrategyUniverseSymbol s WHERE s.group.id = :groupId AND s.enabled = true")
     List<String> findEnabledSymbolsByGroupId(@Param("groupId") UUID groupId);

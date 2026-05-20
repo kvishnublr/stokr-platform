@@ -39,6 +39,18 @@ public class PlatformZerodhaFeedProperties {
      */
     private String instrumentSymbols = "";
 
+    /**
+     * Preferred mode: subscribe only instruments that belong to enabled universe groups.
+     * Keeps token count bounded and aligned with strategy runtime bindings.
+     */
+    private boolean autoSubscribeUniverseGroups = true;
+
+    /**
+     * Universe group keys used for universe-driven subscription.
+     * Defaults to NIFTY 500 + core MCX groups.
+     */
+    private String subscriptionUniverseGroupKeys = "NIFTY_500,MCX_BULLION,MCX_ENERGY,MCX_METALS,MCX_AGRI";
+
     public boolean isLiveFeedEnabled() { return liveFeedEnabled; }
     public void setLiveFeedEnabled(boolean liveFeedEnabled) { this.liveFeedEnabled = liveFeedEnabled; }
 
@@ -53,6 +65,12 @@ public class PlatformZerodhaFeedProperties {
 
     public String getInstrumentSymbols() { return instrumentSymbols; }
     public void setInstrumentSymbols(String instrumentSymbols) { this.instrumentSymbols = instrumentSymbols; }
+
+    public boolean isAutoSubscribeUniverseGroups() { return autoSubscribeUniverseGroups; }
+    public void setAutoSubscribeUniverseGroups(boolean autoSubscribeUniverseGroups) { this.autoSubscribeUniverseGroups = autoSubscribeUniverseGroups; }
+
+    public String getSubscriptionUniverseGroupKeys() { return subscriptionUniverseGroupKeys; }
+    public void setSubscriptionUniverseGroupKeys(String subscriptionUniverseGroupKeys) { this.subscriptionUniverseGroupKeys = subscriptionUniverseGroupKeys; }
 
     public List<Integer> parsedInstrumentTokens() {
         List<Integer> out = new ArrayList<>();
@@ -78,6 +96,18 @@ public class PlatformZerodhaFeedProperties {
         for (String part : instrumentSymbols.split(",")) {
             String s = part.trim();
             if (!s.isEmpty()) out.add(s);
+        }
+        return out;
+    }
+
+    public List<String> parsedSubscriptionUniverseGroupKeys() {
+        List<String> out = new ArrayList<>();
+        if (subscriptionUniverseGroupKeys == null || subscriptionUniverseGroupKeys.isBlank()) {
+            return out;
+        }
+        for (String part : subscriptionUniverseGroupKeys.split(",")) {
+            String s = part.trim();
+            if (!s.isEmpty()) out.add(s.toUpperCase());
         }
         return out;
     }
