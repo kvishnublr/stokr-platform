@@ -46,6 +46,10 @@ type OmsStatsResp = {
   partialToday: number; cancelledToday: number; pendingToday: number; totalAllTime: number;
 };
 
+type StrategyCatalogRow = {
+  strategyKey: string;
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const fmtTime = fmtDateTime;
@@ -331,6 +335,16 @@ export function AdminOmsMonitorPage() {
     staleTime: 15_000,
   });
 
+  const strategiesQ = useQuery<StrategyCatalogRow[]>({
+    queryKey: ["admin-oms-strategy-options"],
+    queryFn: async () => {
+      const res = await api.get("/api/admin/strategies?page=0&size=500&sort=strategyKey");
+      const content = res.data?.data?.content;
+      return Array.isArray(content) ? (content as StrategyCatalogRow[]) : [];
+    },
+    staleTime: 60_000,
+  });
+
   const q = useQuery<PageResp>({
     queryKey: ["admin-oms-orders-v3", page, symbol, strategy, state, mode],
     queryFn: async () => {
@@ -355,6 +369,12 @@ export function AdminOmsMonitorPage() {
   const total = q.data?.totalElements ?? 0;
   const totalPages = q.data?.totalPages ?? 1;
   const stats = statsQ.data;
+  const strategyOptions = Array.from(
+    new Set([
+      ...(strategiesQ.data ?? []).map((s) => String(s.strategyKey ?? "").trim()).filter(Boolean),
+      ...rows.map((r) => String(r.strategyKey ?? "").trim()).filter(Boolean),
+    ]),
+  ).sort((a, b) => a.localeCompare(b));
 
   const fillRate = stats?.totalToday ? Math.round((stats.filledToday / stats.totalToday) * 100) : 0;
 
@@ -366,8 +386,8 @@ export function AdminOmsMonitorPage() {
     return "";
   };
 
-  const inputCls = "h-8 rounded-lg border border-slate-300 bg-white px-3 text-xs text-slate-900 placeholder-slate-400 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors";
-  const selectCls = "h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-800 outline-none focus:border-blue-400 transition-colors cursor-pointer";
+  const inputCls = "h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors";
+  const selectCls = "h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400 transition-colors cursor-pointer";
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -405,8 +425,10 @@ export function AdminOmsMonitorPage() {
         <div className="flex flex-wrap items-center gap-2">
           <input className={inputCls} placeholder="Symbol…" value={symbol}
             onChange={e => { setSymbol(e.target.value); setPage(0); }} />
-          <input className={inputCls} placeholder="Strategy key…" value={strategy}
-            onChange={e => { setStrategy(e.target.value); setPage(0); }} />
+          <select className={selectCls} value={strategy} onChange={e => { setStrategy(e.target.value); setPage(0); }}>
+            <option value="">All strategies</option>
+            {strategyOptions.map((key) => <option key={key} value={key}>{key}</option>)}
+          </select>
           <select className={selectCls} value={state} onChange={e => { setState(e.target.value); setPage(0); }}>
             <option value="ALL">All states</option>
             {ORDER_STATES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -449,11 +471,11 @@ export function AdminOmsMonitorPage() {
 
       {/* ── Data Grid ────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full min-w-[1050px] text-xs border-collapse">
+        <table className="w-full min-w-[1220px] text-sm border-collapse">
           <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50">
             <tr>
               {["Time", "User", "Symbol", "Side", "Qty", "Price", "State", "Mode", "Strategy", "Broker", "Reject Reason"].map(h => (
-                <th key={h} className="whitespace-nowrap px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400 border-r border-slate-100 last:border-r-0">
+                <th key={h} className="whitespace-nowrap px-4 py-3.5 text-left text-[11px] font-bold uppercase tracking-widest text-slate-500 border-r border-slate-100 last:border-r-0">
                   {h}
                 </th>
               ))}
@@ -477,24 +499,24 @@ export function AdminOmsMonitorPage() {
               <tr key={r.id}
                 onClick={() => setSelectedOrder(r)}
                 className={`group cursor-pointer transition-colors hover:bg-blue-50/60 ${rowStateBg(r.state)} ${selectedOrder?.id === r.id ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""}`}>
-                <td className="whitespace-nowrap px-4 py-2.5 font-mono text-slate-400 text-[11px]">{fmtTime(r.createdAt)}</td>
-                <td className="max-w-[80px] truncate px-4 py-2.5 font-mono text-slate-400 text-[11px]" title={r.userId ?? ""}>
+                <td className="whitespace-nowrap px-4 py-3 font-mono text-slate-500 text-xs">{fmtTime(r.createdAt)}</td>
+                <td className="max-w-[90px] truncate px-4 py-3 font-mono text-slate-500 text-xs" title={r.userId ?? ""}>
                   {r.userId ? r.userId.slice(0, 8) + "…" : "—"}
                 </td>
-                <td className="px-4 py-2.5 font-mono font-bold text-slate-900">{r.symbol ?? "—"}</td>
-                <td className="px-4 py-2.5"><SideChip side={r.side} /></td>
-                <td className="px-4 py-2.5 font-mono text-slate-700">{r.quantity ?? "—"}</td>
-                <td className="px-4 py-2.5 font-mono text-slate-600">{r.limitPrice ?? "—"}</td>
-                <td className="px-4 py-2.5"><StateChip state={r.state} /></td>
-                <td className="px-4 py-2.5"><ModeChip mode={r.executionMode} /></td>
-                <td className="max-w-[140px] truncate px-4 py-2.5 text-slate-600 text-[11px]" title={r.strategyKey ?? ""}>
+                <td className="px-4 py-3 font-mono font-bold text-slate-900">{r.symbol ?? "—"}</td>
+                <td className="px-4 py-3"><SideChip side={r.side} /></td>
+                <td className="px-4 py-3 font-mono text-slate-700">{r.quantity ?? "—"}</td>
+                <td className="px-4 py-3 font-mono text-slate-700">{r.limitPrice ?? "—"}</td>
+                <td className="px-4 py-3"><StateChip state={r.state} /></td>
+                <td className="px-4 py-3"><ModeChip mode={r.executionMode} /></td>
+                <td className="max-w-[170px] truncate px-4 py-3 text-slate-700 text-xs" title={r.strategyKey ?? ""}>
                   {r.strategyKey ?? "—"}
                 </td>
-                <td className="px-4 py-2.5 text-slate-500 text-[11px]">{r.brokerVendor ?? "—"}</td>
-                <td className="max-w-[160px] truncate px-4 py-2.5 text-rose-600 text-[11px]" title={r.rejectReason ?? ""}>
+                <td className="px-4 py-3 text-slate-600 text-xs">{r.brokerVendor ?? "—"}</td>
+                <td className="max-w-[220px] truncate px-4 py-3 text-rose-600 text-xs" title={r.rejectReason ?? ""}>
                   {r.rejectReason ?? "—"}
                 </td>
-                <td className="px-3 py-2.5 text-slate-300 group-hover:text-slate-500 transition-colors">
+                <td className="px-3 py-3 text-slate-300 group-hover:text-slate-500 transition-colors">
                   <ChevronRight className="h-3.5 w-3.5" />
                 </td>
               </tr>

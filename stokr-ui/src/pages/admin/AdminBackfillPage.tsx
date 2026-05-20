@@ -121,48 +121,6 @@ function parseCustomSymbols(input: string): string[] {
     .filter(Boolean);
 }
 
-function toIsoIfPossible(raw: string): string | null {
-  const d = new Date(raw);
-  if (!Number.isFinite(d.getTime())) return null;
-  return d.toISOString();
-}
-
-// If user types local IST clock-like value without timezone, convert as Asia/Kolkata wall-clock to UTC ISO.
-function normalizeBackfillInstant(raw: string): string | null {
-  const trimmed = String(raw ?? "").trim();
-  if (!trimmed) return null;
-  if (/[zZ]|[+\-]\d{2}:\d{2}$/.test(trimmed)) {
-    return toIsoIfPossible(trimmed);
-  }
-  const m = /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
-  if (!m) return toIsoIfPossible(trimmed);
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  const hh = Number(m[4]);
-  const mm = Number(m[5]);
-  const ss = Number(m[6] ?? "0");
-  // IST -> UTC
-  const utcMs = Date.UTC(y, mo - 1, d, hh - 5, mm - 30, ss);
-  const out = new Date(utcMs);
-  return Number.isFinite(out.getTime()) ? out.toISOString() : null;
-}
-
-function looksLikeMarketSessionMismatch(startIso: string, endIso: string): boolean {
-  const s = new Date(startIso);
-  const e = new Date(endIso);
-  if (!Number.isFinite(s.getTime()) || !Number.isFinite(e.getTime())) return false;
-  // Rough IST conversion for guardrail.
-  const sIst = new Date(s.getTime() + 5.5 * 60 * 60 * 1000);
-  const eIst = new Date(e.getTime() + 5.5 * 60 * 60 * 1000);
-  const sm = sIst.getUTCHours() * 60 + sIst.getUTCMinutes();
-  const em = eIst.getUTCHours() * 60 + eIst.getUTCMinutes();
-  // NSE intraday session approx: 09:15 - 15:30
-  const open = 9 * 60 + 15;
-  const close = 15 * 60 + 30;
-  return sm < open || sm > close || em < open || em > close;
-}
-
 function looksLikeZerodhaTokenAuthError(message: string): boolean {
   const m = (message || "").toLowerCase();
   return (
@@ -181,16 +139,25 @@ function looksLikeLookbackLimit(message: string): boolean {
   return m.includes("lookback") || m.includes("exceeds zerodha historical lookback") || m.includes("supports only recent windows");
 }
 
-function toIstInputString(d: Date): string {
+function toDateInputString(d: Date): string {
   const istMs = d.getTime() + 5.5 * 60 * 60 * 1000;
   const ist = new Date(istMs);
   const yyyy = ist.getUTCFullYear();
   const mm = String(ist.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(ist.getUTCDate()).padStart(2, "0");
-  const hh = String(ist.getUTCHours()).padStart(2, "0");
-  const mi = String(ist.getUTCMinutes()).padStart(2, "0");
-  const ss = String(ist.getUTCSeconds()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}+05:30`;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function toNseSessionStartIso(dateYmd: string): string | null {
+  const d = String(dateYmd ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  return `${d}T09:15:00+05:30`;
+}
+
+function toNseSessionEndIso(dateYmd: string): string | null {
+  const d = String(dateYmd ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  return `${d}T15:30:00+05:30`;
 }
 
 function defaultBackfillRange(): { start: string; end: string } {
@@ -198,7 +165,7 @@ function defaultBackfillRange(): { start: string; end: string } {
   const end = new Date(now);
   end.setMinutes(0, 0, 0);
   const start = new Date(end.getTime() - 2 * 24 * 60 * 60 * 1000);
-  return { start: toIstInputString(start), end: toIstInputString(end) };
+  return { start: toDateInputString(start), end: toDateInputString(end) };
 }
 
 export function AdminBackfillPage() {
@@ -260,16 +227,13 @@ export function AdminBackfillPage() {
 
   const createJob = useMutation({
     mutationFn: async () => {
-      const startIso = normalizeBackfillInstant(rangeStart);
-      const endIso = normalizeBackfillInstant(rangeEnd);
+      const startIso = toNseSessionStartIso(rangeStart);
+      const endIso = toNseSessionEndIso(rangeEnd);
       if (!startIso || !endIso) {
-        throw new Error("Invalid date/time. Use ISO format, e.g. 2026-01-05T09:15:00+05:30");
+        throw new Error("Invalid date. Use YYYY-MM-DD.");
       }
       if (new Date(startIso).getTime() >= new Date(endIso).getTime()) {
-        throw new Error("rangeStart must be before rangeEnd.");
-      }
-      if (looksLikeMarketSessionMismatch(startIso, endIso)) {
-        throw new Error("Date range appears outside NSE market session (09:15-15:30 IST). Please adjust.");
+        throw new Error("Start date must be before end date.");
       }
       if (brokerSource.toUpperCase() === "ZERODHA" && timeframe !== "1d") {
         const cutoffMs = Date.now() - 60 * 24 * 60 * 60 * 1000;
@@ -402,9 +366,13 @@ export function AdminBackfillPage() {
 
   const strategyAudit = useQuery({
     queryKey: ["admin-backfill-strategy-audit", auditFrom, auditTo, timeframe],
-    queryFn: async () =>
-      (await api.get(`/api/admin/market/backfill/strategy-readiness-audit?from=${encodeURIComponent(auditFrom)}&to=${encodeURIComponent(auditTo)}&timeframe=${encodeURIComponent(timeframe)}&useCase=REPLAY`)).data?.data as StrategyAuditRow[],
-    enabled: Boolean(auditFrom && auditTo),
+    queryFn: async () => {
+      const from = toNseSessionStartIso(auditFrom);
+      const to = toNseSessionEndIso(auditTo);
+      if (!from || !to) return [];
+      return (await api.get(`/api/admin/market/backfill/strategy-readiness-audit?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&timeframe=${encodeURIComponent(timeframe)}&useCase=REPLAY`)).data?.data as StrategyAuditRow[];
+    },
+    enabled: Boolean(toNseSessionStartIso(auditFrom) && toNseSessionEndIso(auditTo)),
     refetchInterval: 30_000,
   });
 
@@ -541,8 +509,8 @@ export function AdminBackfillPage() {
               </option>
             ))}
           </select>
-          <input value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-sm" placeholder="rangeStart ISO" />
-          <input value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-sm" placeholder="rangeEnd ISO" />
+          <input type="date" value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-sm" />
+          <input type="date" value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-sm" />
           {symbolGroup === "CUSTOM" ? (
             <input value={customSymbols} onChange={(e) => setCustomSymbols(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-sm" placeholder="CSV symbols for CUSTOM" />
           ) : (
@@ -555,7 +523,7 @@ export function AdminBackfillPage() {
           <button type="button" onClick={() => createJob.mutate()} disabled={createJob.isPending} className="rounded border border-border bg-background px-3 py-1 text-sm font-semibold disabled:opacity-50">
             Start
           </button>
-          <span className="text-xs text-muted-foreground">Source of truth: 1m candles. Higher TF derived from 1m.</span>
+          <span className="text-xs text-muted-foreground">Date-only input. Launch window uses NSE session hours (09:15-15:30 IST).</span>
         </div>
         <div className="mt-2 rounded border border-border bg-muted/20 p-2">
           <div className="text-xs font-semibold">Symbols in this launch ({groupPreview.count})</div>
@@ -759,8 +727,8 @@ export function AdminBackfillPage() {
         <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
           <div className="text-sm font-semibold">Strategy readiness audit (backtest)</div>
           <div className="flex flex-wrap gap-2">
-            <input value={auditFrom} onChange={(e) => setAuditFrom(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-xs" />
-            <input value={auditTo} onChange={(e) => setAuditTo(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-xs" />
+            <input type="date" value={auditFrom} onChange={(e) => setAuditFrom(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-xs" />
+            <input type="date" value={auditTo} onChange={(e) => setAuditTo(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-xs" />
           </div>
         </div>
         {strategyAudit.isLoading ? <div className="text-xs text-muted-foreground">Loading strategy audit...</div> : null}
