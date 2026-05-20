@@ -9,6 +9,7 @@ public class TelegramBotProperties {
     private String botUsername = "";
     private String webhookSecret = "";
     private boolean dryRun = true;
+    private String operatorChatId = "";
 
     public String getBotToken() {
         return botToken;
@@ -40,5 +41,13 @@ public class TelegramBotProperties {
 
     public void setDryRun(boolean dryRun) {
         this.dryRun = dryRun;
+    }
+
+    public String getOperatorChatId() {
+        return operatorChatId;
+    }
+
+    public void setOperatorChatId(String operatorChatId) {
+        this.operatorChatId = operatorChatId;
     }
 }

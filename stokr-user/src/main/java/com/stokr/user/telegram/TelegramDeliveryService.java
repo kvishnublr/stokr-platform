@@ -4,11 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.auth.domain.AuthUser;
 import com.stokr.auth.repository.AuthUserRepository;
 import com.stokr.common.correlation.CorrelationIdHolder;
+import com.stokr.common.events.ExecutionAlertEvent;
 import com.stokr.common.notification.NotificationEvent;
+import com.stokr.user.config.TelegramBotProperties;
 import com.stokr.user.domain.NotificationDeliveryRecord;
 import com.stokr.user.repository.NotificationDeliveryRecordRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +26,7 @@ public class TelegramDeliveryService {
 
     private final AuthUserRepository authUserRepository;
     private final TelegramBotClient telegramBotClient;
+    private final TelegramBotProperties telegramBotProperties;
     private final NotificationDeliveryRecordRepository deliveryRecordRepository;
     private final ObjectMapper objectMapper;
 
@@ -78,5 +82,25 @@ public class TelegramDeliveryService {
         }
         String v = payload.get(key);
         return v != null ? v : def;
+    }
+
+    @EventListener
+    public void onExecutionAlert(ExecutionAlertEvent event) {
+        sendToOperator(event.alertType(), event.text());
+    }
+
+    public boolean sendToOperator(String alertType, String text) {
+        String chatId = telegramBotProperties.getOperatorChatId();
+        if (chatId == null || chatId.isBlank()) {
+            log.debug("operator_chat_id not configured — skipping alert type={}", alertType);
+            return false;
+        }
+        boolean sent = telegramBotClient.sendMessage(chatId, text);
+        if (sent) {
+            log.info("telegram.operator_alert.sent type={}", alertType);
+        } else {
+            log.warn("telegram.operator_alert.failed type={}", alertType);
+        }
+        return sent;
     }
 }

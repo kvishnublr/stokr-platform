@@ -9,6 +9,7 @@ import com.stokr.oms.repository.PortfolioDailySummaryRepository;
 import com.stokr.oms.repository.PortfolioPnlSnapshotRepository;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.common.events.realtime.RealtimeBridgeEvents;
+import com.stokr.common.events.StrategyPnlUpdateEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -39,12 +40,34 @@ public class PortfolioAccountingService {
      */
     @Transactional
     public void applyFill(UUID userId, String symbol) {
-        rebuildSymbol(userId, symbol);
+        applyFill(userId, symbol, null);
+    }
+
+    @Transactional
+    public void applyFill(UUID userId, String symbol, String strategyKey) {
+        BigDecimal prevRealized = positionRepository.findByUserIdAndSymbolAndDeletedFalse(userId, symbol)
+                .map(p -> nullSafe(p.getRealizedPnl()))
+                .orElse(BigDecimal.ZERO);
+        rebuildSymbol(userId, symbol, strategyKey);
+        BigDecimal newRealized = positionRepository.findByUserIdAndSymbolAndDeletedFalse(userId, symbol)
+                .map(p -> nullSafe(p.getRealizedPnl()))
+                .orElse(BigDecimal.ZERO);
         recordSnapshot(userId, ZoneId.of("Asia/Kolkata"));
+        if (strategyKey != null) {
+            BigDecimal delta = newRealized.subtract(prevRealized);
+            if (delta.compareTo(BigDecimal.ZERO) != 0) {
+                eventPublisher.publishEvent(new StrategyPnlUpdateEvent(strategyKey, delta));
+            }
+        }
     }
 
     @Transactional
     public void rebuildSymbol(UUID userId, String symbol) {
+        rebuildSymbol(userId, symbol, null);
+    }
+
+    @Transactional
+    public void rebuildSymbol(UUID userId, String symbol, String strategyKey) {
         List<OmsExecution> executions = executionRepository.findAllForUserAndSymbolOrdered(userId, symbol);
         Ledger ledger = new Ledger();
         for (OmsExecution e : executions) {
@@ -66,6 +89,9 @@ public class PortfolioAccountingService {
         pos.setRealizedPnl(ledger.realized());
         pos.setUnrealizedPnl(BigDecimal.ZERO);
         pos.setMtmPrice(null);
+        if (strategyKey != null) {
+            pos.setStrategyKey(strategyKey);
+        }
         positionRepository.save(pos);
     }
 

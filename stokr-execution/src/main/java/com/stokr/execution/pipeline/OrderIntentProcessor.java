@@ -3,7 +3,9 @@ package com.stokr.execution.pipeline;
 import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
 import com.stokr.common.telemetry.SignalDistributionTelemetryService;
+import com.stokr.execution.comparison.ExecutionComparisonService;
 import com.stokr.execution.risk.RiskContextFactory;
+import com.stokr.execution.sizing.PositionSizingService;
 import com.stokr.execution.service.ExecutionService;
 import com.stokr.oms.domain.ExecutionEventType;
 import com.stokr.oms.domain.ExecutionMode;
@@ -54,6 +56,8 @@ public class OrderIntentProcessor {
     private final ExecutionTraceService executionTraceService;
     private final RiskContextFactory riskContextFactory;
     private final SignalDistributionTelemetryService signalDistributionTelemetryService;
+    private final PositionSizingService positionSizingService;
+    private final ExecutionComparisonService executionComparisonService;
 
     @Value("${stokr.risk.zone:Asia/Kolkata}")
     private String riskZone;
@@ -113,6 +117,11 @@ public class OrderIntentProcessor {
                 signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "PAPER_GATE");
                 return;
             }
+        }
+
+        if (mode == ExecutionMode.BOTH) {
+            dispatchBothMode(signal, userId, idempotencyKey, strategyKey, synchronousExecution);
+            return;
         }
 
         OmsOrder draft = buildDraftFromSignal(signal, mode);
@@ -209,7 +218,10 @@ public class OrderIntentProcessor {
         o.setSymbol(signal.getSymbol());
         o.setSide(mapSide(signal));
         o.setOrderType("MARKET");
-        o.setQuantity(signal.getSuggestedQty() != null ? signal.getSuggestedQty() : defaultQuantity);
+        o.setQuantity(positionSizingService.resolveQuantity(
+                signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY,
+                signal.getSuggestedQty(),
+                signal.getEntryReferencePrice()));
         o.setLimitPrice(null);
         o.setStopPrice(signal.getStopPrice());
         o.setTargetPrice(signal.getTargetPrice());
@@ -249,6 +261,9 @@ public class OrderIntentProcessor {
         if ("PAPER".equals(m)) {
             return ExecutionMode.PAPER;
         }
+        if ("BOTH".equals(m)) {
+            return ExecutionMode.BOTH;
+        }
         return ExecutionMode.SIMULATED;
     }
 
@@ -266,5 +281,58 @@ public class OrderIntentProcessor {
                         "message", gate.message() != null ? gate.message() : ""
                 ))
         )));
+    }
+
+    private void dispatchBothMode(StrategySignalEntity signal, UUID userId, String baseIdempotencyKey,
+                                   String strategyKey, boolean synchronousExecution) {
+        // PAPER leg — no live gate needed
+        OmsOrder paperDraft = buildDraftFromSignal(signal, ExecutionMode.PAPER);
+        OmsOrder paperOrder = orderLifecycleService.createOrGetIdempotent(
+                userId, baseIdempotencyKey + ":PAPER", paperDraft);
+
+        // LIVE leg — run through live gate
+        LiveTraderEligibilityResult gate = liveTradingTraderEligibilityService
+                .evaluateForLiveOrder(userId, strategyKey, "ZERODHA");
+        OmsOrder liveOrder = null;
+        if (gate.allowed()) {
+            OmsOrder liveDraft = buildDraftFromSignal(signal, ExecutionMode.LIVE);
+            liveOrder = orderLifecycleService.createOrGetIdempotent(
+                    userId, baseIdempotencyKey + ":LIVE", liveDraft);
+        } else {
+            log.warn("both_mode.live_leg.blocked signalId={} reason={}", signal.getId(), gate.reasonCode());
+            riskEventRecorder.record(userId, null, gate.reasonCode(), "REJECT", gate.message());
+        }
+
+        // Link pairs and record comparison stub
+        if (liveOrder != null) {
+            paperOrder.setPairedOrderId(liveOrder.getId());
+            liveOrder.setPairedOrderId(paperOrder.getId());
+            executionComparisonService.recordPairDispatched(
+                    signal.getId(), liveOrder.getId(), paperOrder.getId(), strategyKey, signal.getSymbol());
+        }
+
+        long fillKey = fillDeterminismKey(signal);
+        Instant anchor = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
+
+        // Transition and dispatch PAPER
+        if (paperOrder.getState() == OrderState.CREATED) {
+            paperOrder = orderLifecycleService.transition(paperOrder.getId(), OrderState.VALIDATED, null);
+            paperOrder = orderLifecycleService.transition(paperOrder.getId(), OrderState.PENDING_SUBMISSION, null);
+            executionService.dispatch(new ExecutionDispatchMessage(
+                    paperOrder.getId(), userId, signal.getId(), "SIM", 0,
+                    signal.getBacktestRunId(), "PAPER", fillKey, anchor), synchronousExecution);
+        }
+
+        // Transition and dispatch LIVE
+        if (liveOrder != null && liveOrder.getState() == OrderState.CREATED) {
+            liveOrder = orderLifecycleService.transition(liveOrder.getId(), OrderState.VALIDATED, null);
+            liveOrder = orderLifecycleService.transition(liveOrder.getId(), OrderState.PENDING_SUBMISSION, null);
+            executionService.dispatch(new ExecutionDispatchMessage(
+                    liveOrder.getId(), userId, signal.getId(), "ZERODHA", 0,
+                    signal.getBacktestRunId(), "LIVE", fillKey, anchor), synchronousExecution);
+        }
+
+        log.info("both_mode.dispatched signalId={} paper={} live={}",
+                signal.getId(), paperOrder.getId(), liveOrder != null ? liveOrder.getId() : "BLOCKED");
     }
 }

@@ -31,6 +31,9 @@ import { AdminAuditPage } from "./pages/admin/AdminAuditPage";
 import { AdminBackfillPage } from "./pages/admin/AdminBackfillPage";
 import { AdminControlsPage } from "./pages/admin/AdminControlsPage";
 import { AdminExecutionPage } from "./pages/admin/AdminExecutionPage";
+import { AdminExecutionConfigPage } from "./pages/admin/AdminExecutionConfigPage";
+import { AdminRiskDashboardPage } from "./pages/admin/AdminRiskDashboardPage";
+import { AdminCapitalPage } from "./pages/admin/AdminCapitalPage";
 import { AdminHistoryPage } from "./pages/admin/AdminHistoryPage";
 import { AdminInfrastructurePage } from "./pages/admin/AdminInfrastructurePage";
 import { AdminMarketIntelPage } from "./pages/admin/AdminMarketIntelPage";
@@ -220,6 +223,9 @@ export default function App() {
               <Route path="strategy-catalog" element={<AdminStrategyCatalogPage />} />
               <Route path="universe-groups" element={<AdminUniverseGroupsPage />} />
               <Route path="runtime-bindings" element={<AdminRuntimeBindingsPage />} />
+              <Route path="execution-config" element={<AdminExecutionConfigPage />} />
+              <Route path="risk-dashboard" element={<AdminRiskDashboardPage />} />
+              <Route path="capital" element={<AdminCapitalPage />} />
               <Route path="oms" element={<AdminOmsMonitorPage />} />
               <Route path="settings" element={<AdminSectionPage section="settings" />} />
               <Route path="security" element={<AdminSectionPage section="security" />} />

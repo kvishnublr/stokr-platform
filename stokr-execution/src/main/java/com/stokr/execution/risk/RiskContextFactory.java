@@ -5,6 +5,9 @@ import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.service.PortfolioQueryService;
 import com.stokr.risk.model.RiskContext;
 import com.stokr.risk.service.BrokerOperationalCircuitService;
+import com.stokr.strategy.domain.StrategyExecutionConfig;
+import com.stokr.strategy.service.StrategyDailyLossTrackerService;
+import com.stokr.strategy.service.StrategyExecutionConfigService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +27,8 @@ public class RiskContextFactory {
     private final PortfolioQueryService portfolioQueryService;
     private final OmsOrderRepository omsOrderRepository;
     private final BrokerOperationalCircuitService brokerOperationalCircuitService;
+    private final StrategyExecutionConfigService strategyExecutionConfigService;
+    private final StrategyDailyLossTrackerService strategyDailyLossTrackerService;
 
     public RiskContext build(UUID userId, OmsOrder order, ZoneId zone, Instant evalInstant, BigDecimal signalAtrToCloseRatio) {
         if (order.getBacktestRunId() != null) {
@@ -33,6 +38,13 @@ public class RiskContextFactory {
         var dashboard = portfolioQueryService.dashboard(userId, 80);
         Instant since60 = evalInstant.minusSeconds(60);
         int burst = (int) omsOrderRepository.countNonBacktestOrdersSinceExcluding(userId, since60, order.getId());
+        String strategyKey = order.getStrategyKey();
+        StrategyExecutionConfig stratCfg = strategyKey != null
+                ? strategyExecutionConfigService.getByStrategyKey(strategyKey).orElse(null)
+                : null;
+        BigDecimal stratDailyPnl = strategyKey != null
+                ? strategyDailyLossTrackerService.getTodayPnl(strategyKey)
+                : null;
         return new RiskContext(
                 userId,
                 order,
@@ -44,7 +56,9 @@ public class RiskContextFactory {
                 burst,
                 signalAtrToCloseRatio,
                 brokerOperationalCircuitService.isGlobalBrokerHalt(),
-                dashboard.maxDrawdownPct()
+                dashboard.maxDrawdownPct(),
+                stratCfg,
+                stratDailyPnl
         );
     }
 
@@ -60,7 +74,9 @@ public class RiskContextFactory {
                 0,
                 null,
                 false,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                null,
+                null
         );
     }
 }

@@ -213,7 +213,7 @@ public class ExecutionSimulator {
         ));
 
         if (order.getBacktestRunId() == null) {
-            portfolioAccountingService.applyFill(order.getUserId(), order.getSymbol());
+            portfolioAccountingService.applyFill(order.getUserId(), order.getSymbol(), order.getStrategyKey());
         }
         Instant bridgeTs = anchor.plusMillis(latencyMs * fillLots.size());
         eventPublisher.publishEvent(new RealtimeBridgeEvents.OrderUpdate(

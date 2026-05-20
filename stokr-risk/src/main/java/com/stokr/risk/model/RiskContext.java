@@ -1,6 +1,7 @@
 package com.stokr.risk.model;
 
 import com.stokr.oms.domain.OmsOrder;
+import com.stokr.strategy.domain.StrategyExecutionConfig;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
@@ -26,7 +27,11 @@ public record RiskContext(
         /** Global broker operational halt (Redis-backed). */
         boolean brokerCircuitHalt,
         /** Portfolio equity drawdown % from recent snapshots (0–100 scale). */
-        BigDecimal portfolioDrawdownPct
+        BigDecimal portfolioDrawdownPct,
+        /** Per-strategy execution config; null for backtests or when no config exists. */
+        StrategyExecutionConfig strategyExecutionConfig,
+        /** Today's realized PnL for this strategy (IST business date); null for backtests. */
+        BigDecimal strategyDailyPnl
 ) {
     public static RiskContext forTests(UUID userId, OmsOrder order, BigDecimal dayPnl, int openCount, LocalTime lt, ZoneId z, long epochMs) {
         return new RiskContext(
@@ -40,7 +45,9 @@ public record RiskContext(
                 0,
                 null,
                 false,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                null,
+                null
         );
     }
 }

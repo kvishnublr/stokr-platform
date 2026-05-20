@@ -12,4 +12,6 @@ public interface PortfolioPositionRepository extends JpaRepository<PortfolioPosi
     List<PortfolioPosition> findByUserIdAndDeletedFalse(UUID userId);
 
     Optional<PortfolioPosition> findByUserIdAndSymbolAndDeletedFalse(UUID userId, String symbol);
+
+    List<PortfolioPosition> findByStrategyKeyAndDeletedFalse(String strategyKey);
 }

@@ -36,4 +36,7 @@ public class PortfolioPosition extends BaseEntity {
 
     @Column(name = "mtm_price", precision = 24, scale = 8)
     private BigDecimal mtmPrice;
+
+    @Column(name = "strategy_key", length = 128)
+    private String strategyKey;
 }

@@ -105,6 +105,35 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
 
     List<OmsOrder> findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(UUID signalId);
 
+    @Query("""
+            select o from OmsOrder o
+            where o.deleted = false and o.backtestRunId is null
+            and o.executionMode = com.stokr.oms.domain.ExecutionMode.LIVE
+            and o.state in :states
+            """)
+    List<OmsOrder> findAllLiveActiveOrders(@Param("states") Collection<OrderState> states);
+
+    @Query("""
+            select count(o) from OmsOrder o
+            where o.userId = :userId and o.strategyKey = :strategyKey and o.deleted = false
+            and o.backtestRunId is null and o.id <> :excludeId and o.state in :states
+            """)
+    long countOpenOrdersByStrategyKey(
+            @Param("userId") UUID userId,
+            @Param("strategyKey") String strategyKey,
+            @Param("excludeId") UUID excludeId,
+            @Param("states") Collection<OrderState> states);
+
+    @Query("""
+            select max(o.createdAt) from OmsOrder o
+            where o.userId = :userId and o.strategyKey = :strategyKey and o.deleted = false
+            and o.backtestRunId is null and o.id <> :excludeId
+            """)
+    java.util.Optional<java.time.Instant> findLatestCreatedAtForStrategyExcluding(
+            @Param("userId") UUID userId,
+            @Param("strategyKey") String strategyKey,
+            @Param("excludeId") UUID excludeId);
+
     @Query(value = """
             SELECT
                 COUNT(*) FILTER (WHERE created_at >= :since)::bigint                                                          AS total_today,

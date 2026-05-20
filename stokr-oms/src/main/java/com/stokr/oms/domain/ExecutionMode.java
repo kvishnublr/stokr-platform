@@ -7,5 +7,7 @@ package com.stokr.oms.domain;
 public enum ExecutionMode {
     SIMULATED,
     PAPER,
-    LIVE
+    LIVE,
+    /** Simultaneously executes both a PAPER and a LIVE leg for divergence tracking. */
+    BOTH
 }

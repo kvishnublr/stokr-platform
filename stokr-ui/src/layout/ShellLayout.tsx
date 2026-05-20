@@ -259,6 +259,9 @@ export function ShellLayout() {
       { to: "/admin/strategies", label: "Manage strategies", icon: SlidersHorizontal },
       { to: "/admin/universe-groups", label: "Universe groups", icon: Database },
       { to: "/admin/runtime-bindings", label: "Runtime bindings", icon: Radar },
+      { to: "/admin/execution-config", label: "Execution config", icon: SlidersHorizontal },
+      { to: "/admin/risk-dashboard", label: "Risk dashboard", icon: ShieldCheck },
+      { to: "/admin/capital", label: "Capital", icon: TrendingUp },
     ],
     [],
   );

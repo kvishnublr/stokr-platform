@@ -81,4 +81,8 @@ public class OmsOrder extends BaseEntity {
 
     @Column(name = "reject_reason", length = 500)
     private String rejectReason;
+
+    @JdbcTypeCode(SqlTypes.UUID)
+    @Column(name = "paired_order_id")
+    private UUID pairedOrderId;
 }
