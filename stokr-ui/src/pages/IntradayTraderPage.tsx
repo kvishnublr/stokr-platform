@@ -1,8 +1,11 @@
-﻿import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Activity, AlertTriangle, BarChart3, Clock3, Gauge, Radio, ShieldAlert, TrendingUp, Zap } from "lucide-react";
+import {
+  Activity, AlertTriangle, BarChart3, ChevronDown, ChevronUp,
+  Clock3, Gauge, Radio, ShieldAlert, TrendingUp, Zap
+} from "lucide-react";
 import { api, parseAxiosMessage } from "../api/client";
 import { INTRADAY_SETUPS } from "../lib/intradaySetups";
 import { cn } from "../lib/utils";
@@ -222,10 +225,10 @@ function sinceLabel(ts: string | null | undefined): string {
 
 function sanitizeDisplayText(raw: string): string {
   return raw
-    .replaceAll("â†‘", "↑")
-    .replaceAll("â†“", "↓")
-    .replaceAll("â€™", "'")
-    .replaceAll("â€", "\"")
+    .replaceAll("â†’", "↑")
+    .replaceAll("â†”", "↓")
+    .replaceAll("â€™", "’")
+    .replaceAll("â€", '"')
     .replaceAll("Â", "")
     .replace(/\s+/g, " ")
     .trim();
@@ -282,62 +285,96 @@ function verdict(probability: number, rr: number, freshnessSec: number): Verdict
   return "AVOID";
 }
 
-function badgeTone(v: string) {
-  const x = v.toUpperCase();
-  if (x.includes("READY") || x.includes("SYNCED") || x.includes("CONNECTED") || x === "LIVE" || x === "STRONG") return "ok";
-  if (x.includes("PENDING") || x.includes("PARTIAL") || x.includes("PAUSED") || x === "PAPER" || x === "MODERATE") return "warn";
-  if (x.includes("MISMATCH") || x.includes("BLOCKED") || x.includes("DISCONNECTED") || x === "AVOID") return "bad";
-  return "neutral";
+// ── Style helpers ─────────────────────────────────────────────────────────────
+
+function stateStyle(state: StrategyState): string {
+  if (state === "ACTIVE") return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  if (state === "WARMING") return "bg-amber-100 text-amber-800 border-amber-200";
+  if (state === "COOLING") return "bg-sky-100 text-sky-800 border-sky-200";
+  return "bg-rose-100 text-rose-800 border-rose-200";
 }
 
-function toneClass(v: string) {
-  const tone = badgeTone(v);
-  if (tone === "ok") return "border-emerald-300/60 bg-emerald-50 text-emerald-800";
-  if (tone === "warn") return "border-amber-300/60 bg-amber-50 text-amber-800";
-  if (tone === "bad") return "border-rose-300/60 bg-rose-50 text-rose-800";
-  return "border-neutral-300/60 bg-white text-neutral-700";
+function heatStyle(heat: HeatTier): { border: string; bg: string; badge: string } {
+  if (heat === "S") return { border: "border-l-amber-400", bg: "from-amber-50/60", badge: "bg-amber-100 text-amber-900 border-amber-300" };
+  if (heat === "A") return { border: "border-l-emerald-400", bg: "from-emerald-50/60", badge: "bg-emerald-100 text-emerald-900 border-emerald-300" };
+  if (heat === "B") return { border: "border-l-blue-400", bg: "from-blue-50/40", badge: "bg-blue-100 text-blue-900 border-blue-300" };
+  if (heat === "C") return { border: "border-l-neutral-400", bg: "from-neutral-50", badge: "bg-neutral-100 text-neutral-700 border-neutral-300" };
+  return { border: "border-l-rose-300", bg: "from-rose-50/30", badge: "bg-rose-100 text-rose-800 border-rose-300" };
 }
 
-function MiniChip({ value }: { value: string }) {
-  return <span className={cn("rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", toneClass(value))}>{value}</span>;
+function verdictStyle(v: Verdict): string {
+  if (v === "STRONG") return "bg-emerald-500 text-white";
+  if (v === "MODERATE") return "bg-amber-500 text-white";
+  return "bg-neutral-300 text-neutral-700";
 }
 
-function ProgressBar({ pct, color = "bg-blue-500" }: { pct: number; color?: string }) {
+function statusToneClass(tone: "ok" | "warn" | "bad" | "neutral"): string {
+  if (tone === "ok") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (tone === "warn") return "border-amber-200 bg-amber-50 text-amber-900";
+  if (tone === "bad") return "border-rose-200 bg-rose-50 text-rose-900";
+  return "border-neutral-200 bg-neutral-50 text-neutral-700";
+}
+
+function chipClass(value: string): string {
+  const x = value.toUpperCase();
+  if (x.includes("READY") || x.includes("SYNCED") || x.includes("CONNECTED") || x === "LIVE" || x === "STRONG" || x === "VALID" || x === "ELIGIBLE") {
+    return "bg-emerald-50 text-emerald-800 border-emerald-200";
+  }
+  if (x.includes("PENDING") || x.includes("PARTIAL") || x.includes("PAUSED") || x === "PAPER" || x === "MODERATE" || x === "WARNING" || x === "DEGRADED") {
+    return "bg-amber-50 text-amber-800 border-amber-200";
+  }
+  if (x.includes("MISMATCH") || x.includes("BLOCKED") || x.includes("DISCONNECTED") || x === "AVOID" || x === "CRITICAL" || x === "INVALID") {
+    return "bg-rose-50 text-rose-800 border-rose-200";
+  }
+  return "bg-neutral-50 text-neutral-600 border-neutral-200";
+}
+
+function MiniChip({ value, className }: { value: string; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide", chipClass(value), className)}>
+      {value}
+    </span>
+  );
+}
+
+function ProgressBar({ pct, color = "bg-blue-500", thin = false }: { pct: number; color?: string; thin?: boolean }) {
   const v = clamp(Math.round(pct), 0, 100);
   return (
-    <div className="h-2 rounded-full bg-neutral-200">
-      <div className={cn("h-2 rounded-full transition-all duration-300", color)} style={{ width: `${v}%` }} />
+    <div className={cn("rounded-full bg-neutral-100", thin ? "h-1" : "h-1.5")}>
+      <div className={cn("rounded-full transition-all duration-500", color, thin ? "h-1" : "h-1.5")} style={{ width: `${v}%` }} />
     </div>
   );
 }
 
-function Table({ rows, cols }: { rows: Array<Record<string, unknown>>; cols: string[] }) {
+function DataTable({ rows, cols }: { rows: Array<Record<string, unknown>>; cols: string[] }) {
   return (
-    <div className="max-h-72 overflow-auto rounded-xl border border-neutral-200">
+    <div className="max-h-64 overflow-auto rounded-xl border border-neutral-200">
       <table className="w-full text-left text-xs">
-        <thead className="sticky top-0 z-10 bg-white text-neutral-500">
+        <thead className="sticky top-0 z-10 border-b border-neutral-200 bg-slate-50 text-neutral-500">
           <tr>
             {cols.map((c) => (
-              <th key={c} className="px-3 py-2 uppercase tracking-wide">{c}</th>
+              <th key={c} className="px-3 py-2 font-semibold uppercase tracking-wider">{c}</th>
             ))}
           </tr>
         </thead>
-        <tbody className="text-neutral-700">
+        <tbody className="divide-y divide-neutral-100 text-neutral-700">
           {rows.map((r, i) => (
-            <tr key={String(r.id ?? `${i}`)} className="border-t border-neutral-100">
+            <tr key={String(r.id ?? `${i}`)} className="hover:bg-slate-50/80">
               {cols.map((c) => (
-                <td key={c} className="px-3 py-2 font-mono">
-                  {String(r[c] ?? "-")}
-                </td>
+                <td key={c} className="px-3 py-2 font-mono">{String(r[c] ?? "—")}</td>
               ))}
             </tr>
           ))}
         </tbody>
       </table>
-      {rows.length === 0 ? <div className="py-6 text-center text-sm text-neutral-500">No records</div> : null}
+      {rows.length === 0 ? (
+        <div className="py-8 text-center text-sm text-neutral-400">No records</div>
+      ) : null}
     </div>
   );
 }
+
+// ── Main component ─────────────────────────────────────────────────────────────
 
 export function IntradayTraderPage() {
   const isLight = useUiThemeStore((s) => s.mode === "light");
@@ -349,6 +386,7 @@ export function IntradayTraderPage() {
   const [dockTab, setDockTab] = useState<(typeof DOCK_TABS)[number]["id"]>("open");
   const [symbolQuery, setSymbolQuery] = useState("");
   const [matrixSort, setMatrixSort] = useState<"strategy" | "status" | "lastSignalTime">("status");
+  const [readinessExpanded, setReadinessExpanded] = useState(false);
   const checklistInFlightRef = useRef(false);
 
   const catalogQ = useQuery({
@@ -393,7 +431,8 @@ export function IntradayTraderPage() {
     onError: (e) => toast.error(parseAxiosMessage(e)),
   });
   const patchInstance = useMutation({
-    mutationFn: async (payload: { id: string; body: Record<string, unknown> }) => api.patch(`/api/strategies/instances/${payload.id}`, payload.body),
+    mutationFn: async (payload: { id: string; body: Record<string, unknown> }) =>
+      api.patch(`/api/strategies/instances/${payload.id}`, payload.body),
     onError: (e) => toast.error(parseAxiosMessage(e)),
   });
   const startInstance = useMutation({
@@ -445,9 +484,7 @@ export function IntradayTraderPage() {
     const available = new Set((catalogQ.data ?? []).map((c) => c.code));
     const candidates = setup.backtestStrategyKeys ?? [setup.strategyKey];
     const matched = candidates.find((k) => available.has(k));
-    if (!matched) {
-      return { key: setup.strategyKey, usedFallback: true };
-    }
+    if (!matched) return { key: setup.strategyKey, usedFallback: true };
     const genericFallback = candidates[candidates.length - 1];
     const usedFallback = candidates.length > 1 && matched === genericFallback && genericFallback !== candidates[0];
     return { key: matched, usedFallback };
@@ -474,22 +511,15 @@ export function IntradayTraderPage() {
       if (mode === "BACKTEST") {
         const resolved = resolveBacktestStrategyKey(strategyKey);
         if (resolved.usedFallback) {
-          toast.error(
-            "Dedicated intraday backtest profile is not configured for this setup yet. Add the setup strategy key in catalog to avoid fallback confusion."
-          );
+          toast.error("Dedicated intraday backtest profile is not configured for this setup yet.");
           return;
         }
         const setupTitle = INTRADAY_SETUPS.find((s) => s.strategyKey === strategyKey)?.title ?? strategyKey;
-        navigate(
-          `/backtests/launch?strategyKey=${encodeURIComponent(resolved.key)}&intradaySetup=${encodeURIComponent(setupTitle)}`,
-        );
+        navigate(`/backtests/launch?strategyKey=${encodeURIComponent(resolved.key)}&intradaySetup=${encodeURIComponent(setupTitle)}`);
         return;
       }
       const inst = await ensureInstanceByStrategy(strategyKey);
-      if (!inst) {
-        toast.error(`Could not resolve instance for ${strategyKey}`);
-        return;
-      }
+      if (!inst) { toast.error(`Could not resolve instance for ${strategyKey}`); return; }
       if (mode === "PAUSE") {
         await pauseInstance.mutateAsync(inst.id);
         await qc.invalidateQueries({ queryKey: ["strategy-runtime-intraday"] });
@@ -535,25 +565,10 @@ export function IntradayTraderPage() {
       const state = determineState(probability, riskScore, runtimeState, health);
       const heat = heatTier(score);
       return {
-        key: s.key,
-        title: s.title,
-        strategyKey: s.strategyKey,
-        state,
-        heat,
-        probability,
-        historicalWinRate,
-        liveWinRate,
-        expectedRr,
-        riskScore,
-        signalCountToday,
-        capitalEfficiency,
-        avgHoldMin,
-        compatibility,
-        score,
-        bestWindow: s.bestWindow,
-        lastSignalAt,
-        runtimeState,
-        health,
+        key: s.key, title: s.title, strategyKey: s.strategyKey, state, heat, probability,
+        historicalWinRate, liveWinRate, expectedRr, riskScore, signalCountToday,
+        capitalEfficiency, avgHoldMin, compatibility, score, bestWindow: s.bestWindow,
+        lastSignalAt, runtimeState, health,
         tooltip: [
           `Last 10 signals sampled: ${Math.min(10, related.length)}`,
           `Today accuracy proxy: ${liveWinRate}%`,
@@ -575,44 +590,32 @@ export function IntradayTraderPage() {
     const sig = signalsQ.data ?? [];
     const selected = selectedStrategy?.strategyKey;
     const filtered = selected ? sig.filter((s) => s.strategyName === selected) : sig;
-    const rows = filtered
-      .slice(0, 120)
-      .map((s, idx) => {
-        const symbol = String(s.symbol ?? "UNKNOWN");
-        const p = clamp(num(s.confidenceScore, 60), 20, 95);
-        const freshSec = sinceSec(s.createdAt);
-        const rr = Number((1 + p / 60).toFixed(2));
-        const trendStrength = clamp(40 + (String(s.signalType ?? "").toUpperCase().includes("BUY") ? 20 : 14) + (p - 50) / 2, 20, 98);
-        const volumeQuality = clamp(45 + p / 2 - freshSec / 600, 15, 96);
-        const executionQuality = clamp(70 - freshSec / 300 + p / 5, 10, 98);
-        const v = verdict(p, rr, freshSec);
-        return {
-          id: `${s.id ?? idx}`,
-          symbol,
-          sector: inferSector(symbol),
-          setupType: selectedStrategy?.title ?? "Setup",
-          direction: String(s.signalType ?? "").toUpperCase().includes("SELL") ? "SHORT" : "LONG",
-          entryZone: `${(p * 1.03).toFixed(1)} - ${(p * 1.05).toFixed(1)}`,
-          slZone: `${(p * 0.99).toFixed(1)}`,
-          targetZone: `${(p * 1.09).toFixed(1)}`,
-          rrRatio: rr,
-          probability: p,
-          volumeQuality,
-          trendStrength,
-          freshnessSec: freshSec,
-          executionQuality,
-          verdict: v,
-          rationale: s.reason ?? "Pattern-quality confirmation in progress",
-        } as OpportunityRow;
-      })
-      .sort((a, b) => {
-        const sa = a.probability * 0.45 + a.rrRatio * 20 + a.volumeQuality * 0.2 + a.executionQuality * 0.15 + a.trendStrength * 0.2;
-        const sb = b.probability * 0.45 + b.rrRatio * 20 + b.volumeQuality * 0.2 + b.executionQuality * 0.15 + b.trendStrength * 0.2;
-        return sb - sa;
-      });
-    return rows
-      .filter((r) => (symbolQuery.trim() ? r.symbol.toUpperCase().includes(symbolQuery.trim().toUpperCase()) : true))
-      .slice(0, 40);
+    const rows = filtered.slice(0, 120).map((s, idx) => {
+      const symbol = String(s.symbol ?? "UNKNOWN");
+      const p = clamp(num(s.confidenceScore, 60), 20, 95);
+      const freshSec = sinceSec(s.createdAt);
+      const rr = Number((1 + p / 60).toFixed(2));
+      const trendStrength = clamp(40 + (String(s.signalType ?? "").toUpperCase().includes("BUY") ? 20 : 14) + (p - 50) / 2, 20, 98);
+      const volumeQuality = clamp(45 + p / 2 - freshSec / 600, 15, 96);
+      const executionQuality = clamp(70 - freshSec / 300 + p / 5, 10, 98);
+      const v = verdict(p, rr, freshSec);
+      return {
+        id: `${s.id ?? idx}`, symbol, sector: inferSector(symbol),
+        setupType: selectedStrategy?.title ?? "Setup",
+        direction: String(s.signalType ?? "").toUpperCase().includes("SELL") ? "SHORT" : "LONG",
+        entryZone: `${(p * 1.03).toFixed(1)} - ${(p * 1.05).toFixed(1)}`,
+        slZone: `${(p * 0.99).toFixed(1)}`,
+        targetZone: `${(p * 1.09).toFixed(1)}`,
+        rrRatio: rr, probability: p, volumeQuality, trendStrength,
+        freshnessSec: freshSec, executionQuality, verdict: v,
+        rationale: s.reason ?? "Pattern-quality confirmation in progress",
+      } as OpportunityRow;
+    }).sort((a, b) => {
+      const sa = a.probability * 0.45 + a.rrRatio * 20 + a.volumeQuality * 0.2 + a.executionQuality * 0.15 + a.trendStrength * 0.2;
+      const sb = b.probability * 0.45 + b.rrRatio * 20 + b.volumeQuality * 0.2 + b.executionQuality * 0.15 + b.trendStrength * 0.2;
+      return sb - sa;
+    });
+    return rows.filter((r) => (symbolQuery.trim() ? r.symbol.toUpperCase().includes(symbolQuery.trim().toUpperCase()) : true)).slice(0, 40);
   }, [signalsQ.data, selectedStrategy, symbolQuery]);
 
   const selectedOpportunity = useMemo(
@@ -674,27 +677,12 @@ export function IntradayTraderPage() {
   }, [feedHealth, riskUsedPct, selectedStrategy, selectedOpportunity]);
 
   const strategyLogs = useMemo(
-    () =>
-      strategyRail.slice(0, 10).map((s) => ({
-        id: s.strategyKey,
-        ts: new Date().toLocaleTimeString(),
-        strategy: s.strategyKey,
-        state: s.state,
-        score: s.score,
-        note: s.tooltip[5],
-      })),
+    () => strategyRail.slice(0, 10).map((s) => ({ id: s.strategyKey, ts: new Date().toLocaleTimeString(), strategy: s.strategyKey, state: s.state, score: s.score, note: s.tooltip[5] })),
     [strategyRail],
   );
 
   const replayRows = useMemo(
-    () =>
-      closed.slice(0, 20).map((r, i) => ({
-        id: String(r.id ?? i),
-        symbol: String(r.symbol ?? "-"),
-        strategy: String(r.strategyKey ?? r.strategyName ?? "-"),
-        pnl: String(r.realizedPnl ?? r.mtmPnl ?? "-"),
-        replay: "Open Replay",
-      })),
+    () => closed.slice(0, 20).map((r, i) => ({ id: String(r.id ?? i), symbol: String(r.symbol ?? "-"), strategy: String(r.strategyKey ?? r.strategyName ?? "-"), pnl: String(r.realizedPnl ?? r.mtmPnl ?? "-"), replay: "Open Replay" })),
     [closed],
   );
 
@@ -711,10 +699,7 @@ export function IntradayTraderPage() {
   const goLiveSummary = useMemo(() => {
     const rd = readinessQ.data;
     if (!rd) return { ready: false, blockers: ["Readiness snapshot not loaded"] };
-    const blockers = [
-      ...rd.blockers.map((b) => `${b.code}: ${b.title}`),
-      ...(rd.feed.severity === "WARNING" ? [`Feed warning: ${rd.feed.detail}`] : []),
-    ];
+    const blockers = [...rd.blockers.map((b) => `${b.code}: ${b.title}`), ...(rd.feed.severity === "WARNING" ? [`Feed warning: ${rd.feed.detail}`] : [])];
     return { ready: rd.overallStatus === "READY", blockers };
   }, [readinessQ.data]);
 
@@ -722,285 +707,457 @@ export function IntradayTraderPage() {
     const rows = [...(readinessQ.data?.strategies ?? [])];
     rows.sort((a, b) => {
       if (matrixSort === "strategy") return a.strategy.localeCompare(b.strategy);
-      if (matrixSort === "lastSignalTime") return (Date.parse(b.lastSignalTime ?? "1970-01-01") - Date.parse(a.lastSignalTime ?? "1970-01-01"));
+      if (matrixSort === "lastSignalTime") return Date.parse(b.lastSignalTime ?? "1970-01-01") - Date.parse(a.lastSignalTime ?? "1970-01-01");
       const rank = (s: string) => (s === "BLOCKED" ? 4 : s === "DEGRADED" ? 3 : s === "RECOVERING" ? 2 : 1);
       return rank(b.status) - rank(a.status);
     });
     return rows;
   }, [matrixSort, readinessQ.data?.strategies]);
 
+  const rd = readinessQ.data;
+  const criticalCount = rd?.severityCounters?.CRITICAL ?? 0;
+  const warningCount = rd?.severityCounters?.WARNING ?? 0;
+  const overallOk = (rd?.overallStatus ?? "BLOCKED") === "READY";
+
+  // ── RENDER ─────────────────────────────────────────────────────────────────
+
   return (
-    <div className={cn("space-y-4", isLight ? "text-neutral-900" : "text-white")}>
-      <div className="sticky top-0 z-20 rounded-2xl border border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
-        <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-9">
-          <HeaderMetric title="NIFTY" value={formatSignedPct(pulse.niftyDelta)} hint={pulse.momentum > 60 ? "Strong trend" : "Balanced"} icon={<TrendingUp className="h-3.5 w-3.5" />} />
-          <HeaderMetric title="BANKNIFTY" value={formatSignedPct(pulse.bankDelta)} hint={pulse.bankDelta >= 0 ? "Relative strength" : "Weak recovery"} icon={<BarChart3 className="h-3.5 w-3.5" />} />
-          <HeaderMetric title="VIX Proxy" value={pulse.vixProxy.toFixed(1)} hint={pulse.vixProxy > 28 ? "Expansion" : "Contained"} icon={<Activity className="h-3.5 w-3.5" />} />
-          <HeaderMetric title="Regime" value={marketRegime} hint={selectedStrategy?.compatibility ?? "NEUTRAL"} icon={<Gauge className="h-3.5 w-3.5" />} />
-          <HeaderMetric title="Feed Health" value={feedHealth} hint={feedHealth === "LIVE" ? "Realtime" : "Review data lag"} icon={<Radio className="h-3.5 w-3.5" />} />
-          <HeaderMetric title="Window" value={currentTradingWindow()} hint="IST session phase" icon={<Clock3 className="h-3.5 w-3.5" />} />
-          <HeaderMetric title="Day PnL" value={String(workstation?.accountSummary?.totalPnl ?? "-")} hint={String(workstation?.accountSummary?.executionMode ?? "-")} icon={<TrendingUp className="h-3.5 w-3.5" />} />
-          <HeaderMetric title="Risk Used" value={`${riskUsedPct}%`} hint={String(workstation?.accountSummary?.brokerConnectionState ?? "UNKNOWN")} icon={<ShieldAlert className="h-3.5 w-3.5" />} />
-          <div className="rounded-lg border border-neutral-200 bg-white px-2 py-2">
-            <div className="text-[10px] uppercase tracking-wide text-neutral-500">Search</div>
+    <div className={cn("space-y-3 pb-6", isLight ? "text-neutral-900" : "text-white")}>
+
+      {/* ── Metric Strip ─────────────────────────────────────────────────────── */}
+      <div className="sticky top-0 z-20 rounded-2xl border border-neutral-200 bg-white/97 px-3 py-2.5 shadow-sm backdrop-blur">
+        <div className="grid grid-cols-4 gap-2 xl:grid-cols-9">
+          <MetricCard
+            label="NIFTY"
+            value={formatSignedPct(pulse.niftyDelta)}
+            sub={pulse.momentum > 60 ? "Strong trend" : "Balanced"}
+            icon={<TrendingUp className="h-3 w-3" />}
+            positive={pulse.niftyDelta >= 0}
+          />
+          <MetricCard
+            label="BANKNIFTY"
+            value={formatSignedPct(pulse.bankDelta)}
+            sub={pulse.bankDelta >= 0 ? "Relative strength" : "Weak recovery"}
+            icon={<BarChart3 className="h-3 w-3" />}
+            positive={pulse.bankDelta >= 0}
+          />
+          <MetricCard
+            label="VIX"
+            value={pulse.vixProxy.toFixed(1)}
+            sub={pulse.vixProxy > 28 ? "Expansion" : "Contained"}
+            icon={<Activity className="h-3 w-3" />}
+          />
+          <MetricCard
+            label="Regime"
+            value={marketRegime}
+            sub={selectedStrategy?.compatibility ?? "NEUTRAL"}
+            icon={<Gauge className="h-3 w-3" />}
+          />
+          <MetricCard
+            label="Feed"
+            value={feedHealth}
+            sub={feedHealth === "LIVE" ? "Realtime" : "Check data lag"}
+            icon={<Radio className="h-3 w-3" />}
+            positive={feedHealth === "LIVE"}
+            negative={feedHealth === "STALE"}
+          />
+          <MetricCard
+            label="Window"
+            value={currentTradingWindow()}
+            sub="IST session phase"
+            icon={<Clock3 className="h-3 w-3" />}
+          />
+          <MetricCard
+            label="Day PnL"
+            value={sanitizeDisplayText(String(workstation?.accountSummary?.totalPnl ?? "—"))}
+            sub={sanitizeDisplayText(String(workstation?.accountSummary?.executionMode ?? "—"))}
+            icon={<TrendingUp className="h-3 w-3" />}
+          />
+          <MetricCard
+            label="Risk Used"
+            value={`${riskUsedPct}%`}
+            sub={sanitizeDisplayText(String(workstation?.accountSummary?.brokerConnectionState ?? "UNKNOWN"))}
+            icon={<ShieldAlert className="h-3 w-3" />}
+            negative={riskUsedPct >= 80}
+          />
+          {/* Symbol search */}
+          <div className="flex flex-col justify-center rounded-xl border border-neutral-200 bg-slate-50 px-2.5 py-1.5">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-neutral-400">Symbol</span>
             <input
               value={symbolQuery}
               onChange={(e) => setSymbolQuery(e.target.value)}
-              placeholder="Filter symbol"
-              className="mt-1 w-full rounded-md border border-neutral-200 px-2 py-1 text-xs outline-none ring-0 placeholder:text-neutral-400 focus:border-blue-300"
+              placeholder="Filter…"
+              className="mt-0.5 w-full bg-transparent text-xs font-medium text-neutral-800 outline-none placeholder:text-neutral-300"
             />
           </div>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-semibold">Operational Readiness Command Center</h2>
-            <p className="text-xs text-neutral-500">
-              Session {readinessQ.data?.session?.sessionState ?? "UNKNOWN"} • Last check {sinceLabel(readinessQ.data?.lastValidatedAt)}
-            </p>
-          </div>
+      {/* ── Readiness Banner ─────────────────────────────────────────────────── */}
+      <div className={cn("rounded-2xl border shadow-sm", overallOk ? "border-emerald-200 bg-emerald-50/60" : criticalCount > 0 ? "border-rose-200 bg-rose-50/60" : "border-amber-200 bg-amber-50/60")}>
+        {/* compact summary row */}
+        <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
           <div className="flex items-center gap-2">
+            <span className={cn("h-2 w-2 rounded-full", overallOk ? "animate-pulse bg-emerald-500" : criticalCount > 0 ? "bg-rose-500" : "bg-amber-500")} />
+            <span className="text-xs font-semibold uppercase tracking-wide">
+              {rd?.overallStatus ?? (goLiveSummary.ready ? "READY" : "BLOCKED")}
+            </span>
+            <span className="text-[11px] text-neutral-500">
+              Session: {rd?.session?.sessionState ?? "—"} · checked {sinceLabel(rd?.lastValidatedAt)} ago
+            </span>
+          </div>
+
+          {/* counters */}
+          <div className="flex items-center gap-2">
+            <ReadinessPill count={criticalCount} label="Critical" tone="bad" />
+            <ReadinessPill count={warningCount} label="Warn" tone="warn" />
+            <ReadinessPill count={rd?.severityCounters?.INFO ?? 0} label="Info" tone="neutral" />
+          </div>
+
+          {/* status chips */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <StatusChip
+              label="Feed"
+              value={rd?.feed?.status ?? feedHealth}
+              sub={`${rd?.feed?.tickLatencySeconds ?? "—"}s lag`}
+              tone={rd?.feed?.severity === "CRITICAL" ? "bad" : rd?.feed?.severity === "WARNING" ? "warn" : "ok"}
+            />
+            <StatusChip
+              label="Broker"
+              value={rd?.broker?.status ?? "UNKNOWN"}
+              tone={rd?.broker?.tokenValid ? "ok" : "bad"}
+            />
+            <StatusChip
+              label="Runtime"
+              value={`${rd?.runtime?.runningStrategies ?? 0}/${rd?.runtime?.totalStrategies ?? 0}`}
+              sub={`${rd?.runtime?.staleStrategies ?? 0} stale`}
+              tone={(rd?.runtime?.runningStrategies ?? 0) > 0 ? "ok" : "bad"}
+            />
+          </div>
+
+          {/* actions */}
+          <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
               onClick={() => void runPreMarketChecklist()}
-              className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+              className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
             >
-              Run Pre-Market Checklist
+              Run Checklist
             </button>
             <button
               type="button"
               disabled={readinessAction.isPending}
               onClick={() => readinessAction.mutate({ action: "RESTART_RUNTIME" })}
-              className="rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
             >
               Restart Runtime
             </button>
-            <MiniChip value={readinessQ.data?.overallStatus ?? (goLiveSummary.ready ? "READY" : "BLOCKED")} />
+            <button
+              type="button"
+              onClick={() => setReadinessExpanded((v) => !v)}
+              className="flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-2 py-1 text-[11px] text-neutral-600 hover:bg-neutral-100"
+            >
+              {readinessExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              Details
+            </button>
           </div>
         </div>
 
-        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-6">
-          <StatusTile label="Critical" value={String(readinessQ.data?.severityCounters?.CRITICAL ?? 0)} tone="bad" />
-          <StatusTile label="Warnings" value={String(readinessQ.data?.severityCounters?.WARNING ?? 0)} tone="warn" />
-          <StatusTile label="Info" value={String(readinessQ.data?.severityCounters?.INFO ?? 0)} tone="neutral" />
-          <StatusTile
-            label="Feed"
-            value={readinessQ.data?.feed?.status ?? feedHealth}
-            sub={`${readinessQ.data?.feed?.tickLatencySeconds ?? "-"}s tick`}
-            tone={readinessQ.data?.feed?.severity === "CRITICAL" ? "bad" : readinessQ.data?.feed?.severity === "WARNING" ? "warn" : "ok"}
-            pulse={readinessQ.data?.feed?.severity === "HEALTHY"}
-          />
-          <StatusTile label="Broker" value={readinessQ.data?.broker?.status ?? "UNKNOWN"} sub={readinessQ.data?.broker?.health ?? "-"} tone={readinessQ.data?.broker?.tokenValid ? "ok" : "bad"} />
-          <StatusTile
-            label="Runtime"
-            value={`${readinessQ.data?.runtime?.runningStrategies ?? 0}/${readinessQ.data?.runtime?.totalStrategies ?? 0}`}
-            sub={`${readinessQ.data?.runtime?.staleStrategies ?? 0} stale`}
-            tone={(readinessQ.data?.runtime?.runningStrategies ?? 0) > 0 ? "ok" : "bad"}
-          />
-        </div>
-
-        <div className="mt-3 overflow-hidden rounded-xl border border-neutral-200">
-          <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-2">
-            <div className="text-xs font-semibold">Strategy Readiness Matrix</div>
-            <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setMatrixSort("status")} className={cn("rounded px-2 py-1 text-[11px]", matrixSort === "status" ? "bg-white font-semibold" : "text-neutral-600")}>Status</button>
-              <button type="button" onClick={() => setMatrixSort("strategy")} className={cn("rounded px-2 py-1 text-[11px]", matrixSort === "strategy" ? "bg-white font-semibold" : "text-neutral-600")}>Strategy</button>
-              <button type="button" onClick={() => setMatrixSort("lastSignalTime")} className={cn("rounded px-2 py-1 text-[11px]", matrixSort === "lastSignalTime" ? "bg-white font-semibold" : "text-neutral-600")}>Last signal</button>
-            </div>
-          </div>
-          <div className="max-h-64 overflow-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="sticky top-0 z-10 bg-white text-neutral-500">
-                <tr>
-                  {["Strategy", "Runtime", "Feed", "Broker", "Sub", "Historical", "Last Signal", "Status"].map((h) => (
-                    <th key={h} className="px-3 py-2 uppercase tracking-wide">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedMatrixRows.map((r) => (
-                  <tr key={r.strategyKey} className={cn("border-t border-neutral-100", r.status === "BLOCKED" ? "bg-rose-50/40" : r.status === "DEGRADED" ? "bg-amber-50/40" : "")}>
-                    <td className="px-3 py-2 font-semibold">{r.strategy}</td>
-                    <td className="px-3 py-2"><MiniChip value={r.runtime} /></td>
-                    <td className="px-3 py-2"><MiniChip value={r.feed} /></td>
-                    <td className="px-3 py-2"><MiniChip value={r.broker} /></td>
-                    <td className="px-3 py-2"><MiniChip value={r.subscription} /></td>
-                    <td className="px-3 py-2"><MiniChip value={r.historical} /></td>
-                    <td className="px-3 py-2 font-mono text-[11px]">{sinceLabel(r.lastSignalTime)}</td>
-                    <td className="px-3 py-2"><MiniChip value={r.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="mt-3 grid gap-2 md:grid-cols-2">
-          {[...(readinessQ.data?.blockers ?? []), ...(readinessQ.data?.warnings ?? []), ...(readinessQ.data?.info ?? [])].slice(0, 8).map((issue) => {
-            const actionUpper = issue.action ? issue.action.toUpperCase() : "";
-            const actionEnabled = actionUpper.length > 0 && READINESS_ACTIONS.has(actionUpper);
-            return (
-            <div key={`${issue.code}-${issue.title}`} className={cn("rounded-lg border px-3 py-2 text-xs", issue.severity === "CRITICAL" ? "border-rose-300 bg-rose-50" : issue.severity === "WARNING" ? "border-amber-300 bg-amber-50" : "border-blue-200 bg-blue-50")}>
-              <div className="flex items-center justify-between gap-2">
-                <div className="font-semibold">{issue.code}</div>
-                <MiniChip value={issue.severity} />
+        {/* expanded details */}
+        {readinessExpanded && (
+          <div className="border-t border-neutral-200 px-4 pb-4 pt-3">
+            {/* issue cards */}
+            {[...(rd?.blockers ?? []), ...(rd?.warnings ?? []), ...(rd?.info ?? [])].slice(0, 8).length > 0 && (
+              <div className="mb-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {[...(rd?.blockers ?? []), ...(rd?.warnings ?? []), ...(rd?.info ?? [])].slice(0, 6).map((issue) => {
+                  const actionUpper = issue.action ? issue.action.toUpperCase() : "";
+                  const actionEnabled = actionUpper.length > 0 && READINESS_ACTIONS.has(actionUpper);
+                  return (
+                    <div
+                      key={`${issue.code}-${issue.title}`}
+                      className={cn("rounded-xl border p-3 text-xs",
+                        issue.severity === "CRITICAL" ? "border-rose-200 bg-rose-50" :
+                        issue.severity === "WARNING" ? "border-amber-200 bg-amber-50" :
+                        "border-blue-200 bg-blue-50"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-neutral-800">{issue.code}</span>
+                        <MiniChip value={issue.severity} />
+                      </div>
+                      <div className="mt-1 font-medium text-neutral-800">{issue.title}</div>
+                      <div className="mt-0.5 text-neutral-600">{issue.detail}</div>
+                      {actionEnabled && (
+                        <button
+                          type="button"
+                          disabled={readinessAction.isPending}
+                          onClick={() => readinessAction.mutate({ action: actionUpper, strategyKey: issue.strategyKey })}
+                          className="mt-2 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+                        >
+                          {actionUpper.replaceAll("_", " ")}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-              <div className="mt-1 text-neutral-800">{issue.title}</div>
-              <div className="mt-1 text-neutral-600">{issue.detail}</div>
-              {actionEnabled ? (
-                <button
-                  type="button"
-                  disabled={readinessAction.isPending}
-                  onClick={() => readinessAction.mutate({ action: actionUpper, strategyKey: issue.strategyKey })}
-                  className="mt-2 rounded-md border border-neutral-300 bg-white px-2 py-1 text-[11px] font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {actionUpper.replaceAll("_", " ")}
-                </button>
-              ) : null}
-            </div>
-          )})}
-        </div>
-      </div>
-      {globalError ? (
-        <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">{parseAxiosMessage(globalError)}</div>
-      ) : null}
+            )}
 
-      <div className="grid gap-4 xl:grid-cols-[24%_46%_30%]">
-        <section className="space-y-3">
-          <div className="rounded-2xl border border-neutral-200 bg-white p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Strategy Rail</h2>
-              <span className="text-[10px] uppercase tracking-wide text-neutral-500">auto-prioritized</span>
-            </div>
-            <div className="space-y-2">
-              {strategyRail.map((s) => (
-                <button
-                  key={s.strategyKey}
-                  type="button"
-                  onClick={() => setSelectedStrategyKey(s.strategyKey)}
-                  onDoubleClick={() => void routeSetup(s.strategyKey, "PAPER")}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    void routeSetup(s.strategyKey, "PAUSE");
-                  }}
-                  title={s.tooltip.join(" | ")}
-                  className={cn(
-                    "w-full rounded-xl border p-3 text-left transition",
-                    selectedStrategy?.strategyKey === s.strategyKey ? "border-blue-300 bg-blue-50" : "border-neutral-200 bg-white hover:border-blue-200 hover:bg-blue-50/40",
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-semibold">{s.title}</div>
-                      <div className="mt-0.5 text-[11px] text-neutral-500">{s.bestWindow}</div>
-                    </div>
-                    <MiniChip value={s.state} />
-                  </div>
-                  <div className="mt-2">
-                    <div className="mb-1 flex items-center justify-between text-[11px] text-neutral-600">
-                      <span>Live Probability</span>
-                      <span>{s.probability}%</span>
-                    </div>
-                    <ProgressBar pct={s.probability} />
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-neutral-600">
-                    <span>Hist WR {s.historicalWinRate}%</span>
-                    <span>Live WR {s.liveWinRate}%</span>
-                    <span>RR {s.expectedRr}</span>
-                    <span>Risk {s.riskScore}</span>
-                    <span>Signals {s.signalCountToday}</span>
-                    <span>Heat {s.heat}</span>
-                  </div>
-                </button>
-              ))}
+            {/* strategy matrix */}
+            <div className="overflow-hidden rounded-xl border border-neutral-200">
+              <div className="flex items-center justify-between border-b border-neutral-200 bg-slate-50 px-3 py-2">
+                <span className="text-xs font-semibold text-neutral-700">Strategy Readiness Matrix</span>
+                <div className="flex gap-1">
+                  {(["status", "strategy", "lastSignalTime"] as const).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setMatrixSort(k)}
+                      className={cn("rounded-md px-2 py-0.5 text-[11px] capitalize", matrixSort === k ? "bg-white font-semibold shadow-sm" : "text-neutral-500 hover:text-neutral-700")}
+                    >
+                      {k === "lastSignalTime" ? "Last Signal" : k}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="max-h-52 overflow-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-white text-neutral-500">
+                    <tr>
+                      {["Strategy", "Runtime", "Feed", "Broker", "Sub", "Historical", "Last Signal", "Status"].map((h) => (
+                        <th key={h} className="px-3 py-1.5 font-medium uppercase tracking-wide">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {sortedMatrixRows.map((r) => (
+                      <tr
+                        key={r.strategyKey}
+                        className={cn(r.status === "BLOCKED" ? "bg-rose-50/60" : r.status === "DEGRADED" ? "bg-amber-50/40" : "hover:bg-slate-50/60")}
+                      >
+                        <td className="px-3 py-1.5 font-semibold text-neutral-800">{r.strategy}</td>
+                        <td className="px-3 py-1.5"><MiniChip value={r.runtime} /></td>
+                        <td className="px-3 py-1.5"><MiniChip value={r.feed} /></td>
+                        <td className="px-3 py-1.5"><MiniChip value={r.broker} /></td>
+                        <td className="px-3 py-1.5"><MiniChip value={r.subscription} /></td>
+                        <td className="px-3 py-1.5"><MiniChip value={r.historical} /></td>
+                        <td className="px-3 py-1.5 font-mono text-[11px] text-neutral-500">{sinceLabel(r.lastSignalTime)}</td>
+                        <td className="px-3 py-1.5"><MiniChip value={r.status} /></td>
+                      </tr>
+                    ))}
+                    {sortedMatrixRows.length === 0 && (
+                      <tr><td colSpan={8} className="py-6 text-center text-neutral-400">No strategies found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-        </section>
+        )}
+      </div>
 
-        <section className="space-y-3">
-          <div className="rounded-2xl border border-neutral-200 bg-white">
-            <div className="border-b border-neutral-200 px-4 py-3">
+      {globalError && (
+        <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {parseAxiosMessage(globalError)}
+        </div>
+      )}
+
+      {/* ── Main 3-pane grid ─────────────────────────────────────────────────── */}
+      <div className="grid gap-3 xl:grid-cols-[22%_52%_26%]">
+
+        {/* ── LEFT: Strategy Rail ────────────────────────────────────────────── */}
+        <aside className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-neutral-500">Strategy Rail</h2>
+            <span className="text-[10px] text-neutral-400">auto-ranked</span>
+          </div>
+
+          {strategyRail.map((s) => {
+            const hs = heatStyle(s.heat);
+            const isSelected = selectedStrategy?.strategyKey === s.strategyKey;
+            return (
+              <button
+                key={s.strategyKey}
+                type="button"
+                onClick={() => setSelectedStrategyKey(s.strategyKey)}
+                onDoubleClick={() => void routeSetup(s.strategyKey, "PAPER")}
+                onContextMenu={(e) => { e.preventDefault(); void routeSetup(s.strategyKey, "PAUSE"); }}
+                title={s.tooltip.join(" | ")}
+                className={cn(
+                  "w-full rounded-xl border-l-4 border-r border-t border-b bg-gradient-to-r to-white p-3 text-left shadow-sm transition-all hover:shadow-md",
+                  hs.border, hs.bg,
+                  isSelected ? "ring-2 ring-blue-400/60 ring-offset-1" : "border-r-neutral-200 border-t-neutral-200 border-b-neutral-200",
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold text-neutral-800">{s.title}</div>
+                    <div className="text-[11px] text-neutral-400">{s.bestWindow}</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <span className={cn("rounded border px-1.5 py-0.5 text-[11px] font-bold", hs.badge)}>
+                      {s.heat}
+                    </span>
+                    <span className={cn("rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase", stateStyle(s.state))}>
+                      {s.state}
+                    </span>
+                  </div>
+                </div>
+
+                {/* probability bar */}
+                <div className="mt-2.5">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-[11px] text-neutral-500">Live prob</span>
+                    <span className="text-[11px] font-bold text-neutral-800">{s.probability}%</span>
+                  </div>
+                  <ProgressBar
+                    pct={s.probability}
+                    color={s.probability >= 74 ? "bg-emerald-500" : s.probability >= 62 ? "bg-amber-400" : "bg-neutral-300"}
+                  />
+                </div>
+
+                {/* key stats row */}
+                <div className="mt-2 grid grid-cols-3 gap-x-2 text-[10px]">
+                  <Stat label="H-WR" value={`${s.historicalWinRate}%`} />
+                  <Stat label="L-WR" value={`${s.liveWinRate}%`} />
+                  <Stat label="RR" value={`${s.expectedRr}x`} />
+                  <Stat label="Risk" value={`${s.riskScore}`} />
+                  <Stat label="Sigs" value={`${s.signalCountToday}`} />
+                  <Stat label="Last" value={sinceLabel(s.lastSignalAt)} />
+                </div>
+              </button>
+            );
+          })}
+        </aside>
+
+        {/* ── CENTER: Opportunity Engine ─────────────────────────────────────── */}
+        <div className="space-y-3">
+          {/* header row */}
+          <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm">
+            <div className="border-b border-neutral-100 px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-base font-semibold">Opportunity Engine</h2>
-                  <p className="text-xs text-neutral-500">
-                    {selectedStrategy?.title ?? "Setup"} - suitability {selectedStrategy?.compatibility ?? "NEUTRAL"} - freshness {sinceLabel(selectedStrategy?.lastSignalAt)}
+                  <h2 className="text-sm font-semibold text-neutral-800">
+                    Opportunity Engine
+                    {selectedStrategy && (
+                      <span className="ml-2 text-xs font-normal text-neutral-400">· {selectedStrategy.title}</span>
+                    )}
+                  </h2>
+                  <p className="mt-0.5 text-[11px] text-neutral-400">
+                    {opportunities.length} ranked · freshness {sinceLabel(selectedStrategy?.lastSignalAt)} · {selectedStrategy?.compatibility ?? "NEUTRAL"}
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  <MiniChip value={selectedStrategy?.runtimeState ?? "IDLE"} />
-                  <MiniChip value={selectedStrategy?.health ?? "UNKNOWN"} />
+                <div className="flex items-center gap-2">
+                  {selectedStrategy && (
+                    <>
+                      <MiniChip value={selectedStrategy.runtimeState} />
+                      <MiniChip value={selectedStrategy.health} />
+                    </>
+                  )}
                 </div>
               </div>
             </div>
-            <div className="max-h-[440px] overflow-auto">
+
+            {/* opportunity table */}
+            <div className="max-h-[400px] overflow-auto">
               <table className="w-full text-left text-xs">
-                <thead className="sticky top-0 z-10 bg-white text-neutral-500">
+                <thead className="sticky top-0 z-10 border-b border-neutral-100 bg-slate-50 text-neutral-500">
                   <tr>
-                    {["Symbol", "Sector", "Setup", "Dir", "Entry", "SL", "Target", "RR", "Prob", "VolQ", "Trend", "Fresh", "ExecQ", "AI"].map((h) => (
-                      <th key={h} className="px-3 py-2 uppercase tracking-wide">{h}</th>
+                    {["Symbol", "Dir", "Sector", "Entry", "SL", "Target", "RR", "Prob %", "AI"].map((h) => (
+                      <th key={h} className="px-3 py-2 font-semibold uppercase tracking-wider">{h}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-neutral-100">
                   {opportunities.map((o) => (
                     <tr
                       key={o.id}
                       onClick={() => setSelectedOpportunityId(o.id)}
                       className={cn(
-                        "cursor-pointer border-t",
+                        "cursor-pointer transition-colors",
                         selectedOpportunity?.id === o.id
-                          ? "border-blue-200 bg-blue-50/70"
+                          ? "bg-blue-50/80"
                           : o.verdict === "STRONG"
-                            ? "border-neutral-100 hover:bg-blue-50/40"
+                            ? "bg-emerald-50/40 hover:bg-emerald-50/70"
                             : o.verdict === "AVOID"
-                              ? "border-neutral-100 bg-amber-50/30 hover:bg-amber-50/50"
-                              : "border-neutral-100 hover:bg-neutral-50",
+                              ? "bg-amber-50/30 hover:bg-amber-50/60"
+                              : "hover:bg-slate-50",
                       )}
                     >
-                      <td className="px-3 py-2 font-semibold">{o.symbol}</td>
-                      <td className="px-3 py-2">{o.sector}</td>
-                      <td className="px-3 py-2">{o.setupType}</td>
-                      <td className="px-3 py-2">{o.direction}</td>
-                      <td className="px-3 py-2">{o.entryZone}</td>
-                      <td className="px-3 py-2">{o.slZone}</td>
-                      <td className="px-3 py-2">{o.targetZone}</td>
-                      <td className="px-3 py-2">{o.rrRatio}</td>
-                      <td className="px-3 py-2">{o.probability}%</td>
-                      <td className="px-3 py-2">{Math.round(o.volumeQuality)}</td>
-                      <td className="px-3 py-2">{Math.round(o.trendStrength)}</td>
-                      <td className="px-3 py-2">{sinceLabel(new Date(Date.now() - o.freshnessSec * 1000).toISOString())}</td>
-                      <td className="px-3 py-2">{Math.round(o.executionQuality)}</td>
-                      <td className="px-3 py-2"><MiniChip value={o.verdict} /></td>
+                      <td className="px-3 py-2 font-bold text-neutral-900">{o.symbol}</td>
+                      <td className="px-3 py-2">
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold",
+                          o.direction === "LONG" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                        )}>
+                          {o.direction}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-neutral-500">{o.sector}</td>
+                      <td className="px-3 py-2 font-mono text-neutral-700">{o.entryZone}</td>
+                      <td className="px-3 py-2 font-mono text-rose-600">{o.slZone}</td>
+                      <td className="px-3 py-2 font-mono text-emerald-700">{o.targetZone}</td>
+                      <td className="px-3 py-2 font-semibold text-neutral-800">{o.rrRatio}x</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1.5">
+                          <ProgressBar pct={o.probability} color="bg-blue-400" thin />
+                          <span className="w-8 text-right font-semibold text-neutral-800">{o.probability}%</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", verdictStyle(o.verdict))}>
+                          {o.verdict}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {opportunities.length === 0 ? <div className="py-10 text-center text-sm text-neutral-500">No ranked opportunities yet</div> : null}
+              {opportunities.length === 0 && (
+                <div className="py-12 text-center text-sm text-neutral-400">No ranked opportunities yet</div>
+              )}
             </div>
           </div>
 
-          {selectedOpportunity ? (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+          {/* selected opportunity detail */}
+          {selectedOpportunity && (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Opportunity Detail</h3>
-                <MiniChip value={selectedOpportunity.verdict} />
+                <div>
+                  <h3 className="text-sm font-semibold text-neutral-800">
+                    {selectedOpportunity.symbol}
+                    <span className={cn("ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold",
+                      selectedOpportunity.direction === "LONG" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                    )}>
+                      {selectedOpportunity.direction}
+                    </span>
+                  </h3>
+                  <p className="mt-0.5 text-[11px] text-neutral-500">
+                    {selectedOpportunity.setupType} · {selectedOpportunity.sector} · fresh {sinceLabel(new Date(Date.now() - selectedOpportunity.freshnessSec * 1000).toISOString())}
+                  </p>
+                </div>
+                <span className={cn("rounded-full px-3 py-1 text-xs font-bold", verdictStyle(selectedOpportunity.verdict))}>
+                  {selectedOpportunity.verdict}
+                </span>
               </div>
-              <p className="mt-1 text-xs text-neutral-600">
-                {selectedOpportunity.symbol} - {selectedOpportunity.setupType} - {selectedOpportunity.direction}
-              </p>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <Insight title="AI Explanation" body={`Probability ${selectedOpportunity.probability}% supported by ${selectedOpportunity.sector} strength, freshness ${Math.floor(selectedOpportunity.freshnessSec / 60)}m, and trend score ${Math.round(selectedOpportunity.trendStrength)}.`} />
-                <Insight title="Risk Context" body={`RR ${selectedOpportunity.rrRatio} with execution quality ${Math.round(selectedOpportunity.executionQuality)}. ${selectedOpportunity.verdict === "AVOID" ? "Avoid fresh entry until signal improves." : "Risk is tradable under current regime."}`} />
+
+              <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+                <PriceBox label="Entry" value={selectedOpportunity.entryZone} color="text-blue-700" />
+                <PriceBox label="Stop Loss" value={selectedOpportunity.slZone} color="text-rose-600" />
+                <PriceBox label="Target" value={selectedOpportunity.targetZone} color="text-emerald-700" />
+                <PriceBox label="R:R" value={`${selectedOpportunity.rrRatio}x`} color="text-neutral-900" />
               </div>
+
+              <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-neutral-600">
+                <span className="font-semibold text-neutral-700">Rationale: </span>
+                {selectedOpportunity.rationale}
+              </div>
+
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
                   disabled={actionsBusy || !selectedStrategy}
                   onClick={() => selectedStrategy && void routeSetup(selectedStrategy.strategyKey, "PAPER")}
-                  className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-50"
+                  className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
                 >
                   Activate Paper
                 </button>
@@ -1008,7 +1165,7 @@ export function IntradayTraderPage() {
                   type="button"
                   disabled={actionsBusy || !selectedStrategy}
                   onClick={() => selectedStrategy && void routeSetup(selectedStrategy.strategyKey, "LIVE")}
-                  className="rounded-lg border border-emerald-500 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                  className="rounded-lg border border-emerald-400 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
                 >
                   Activate Live
                 </button>
@@ -1016,145 +1173,254 @@ export function IntradayTraderPage() {
                   type="button"
                   disabled={!selectedStrategy}
                   onClick={() => selectedStrategy && void routeSetup(selectedStrategy.strategyKey, "BACKTEST")}
-                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
                 >
                   Replay / Backtest
                 </button>
               </div>
             </div>
-          ) : null}
-        </section>
-
-        <section className="space-y-3">
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <h3 className="text-sm font-semibold">Execution Intelligence</h3>
-            <div className="mt-3 space-y-3">
-              <IntelRow icon={<Gauge className="h-4 w-4 text-blue-600" />} title="Market Regime" value={marketRegime} hint={selectedStrategy?.compatibility ?? "NEUTRAL"} />
-              <IntelRow icon={<AlertTriangle className="h-4 w-4 text-amber-600" />} title="Risk Radar" value={`${riskUsedPct}%`} hint={`${open.length} open - ${orders.length} orders`} />
-              <IntelRow icon={<Zap className="h-4 w-4 text-emerald-600" />} title="Execution Quality" value={avgLatencyMs ? `${avgLatencyMs} ms` : "-"} hint={risk?.brokerHealth ?? "unknown"} />
-              <IntelRow icon={<Clock3 className="h-4 w-4 text-sky-600" />} title="Trade Timer" value={currentTradingWindow()} hint="Opening / Midday / Closing" />
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <h3 className="text-sm font-semibold">Smart Alerts</h3>
-            <div className="mt-2 space-y-2">
-              {alerts.map((a) => (
-                <div key={String(a.id)} className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs">
-                  <div className="font-semibold">{String(a.level)}</div>
-                  <div className="text-neutral-600">{String(a.text)}</div>
-                </div>
-              ))}
-              {alerts.length === 0 ? <div className="text-xs text-neutral-500">No critical alerts</div> : null}
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div className="rounded-2xl border border-neutral-200 bg-white p-3">
-        <div className="flex flex-wrap gap-2 border-b border-neutral-200 pb-2">
-          {DOCK_TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setDockTab(t.id)}
-              className={cn(
-                "rounded-full px-3 py-1 text-xs font-semibold transition",
-                dockTab === t.id ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200",
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
+          )}
         </div>
 
-        <div className="mt-3">
-          {dockTab === "open" ? (
-            <Table rows={open} cols={["symbol", "side", "qty", "avgPrice", "ltp", "mtmPnl", "realizedPnl", "unrealizedPnl", "strategyKey", "executionMode", "brokerStatus"]} />
-          ) : null}
-          {dockTab === "closed" ? (
-            <Table rows={closed} cols={["symbol", "side", "qty", "avgPrice", "realizedPnl", "exitReason", "executionMode", "strategyKey"]} />
-          ) : null}
-          {dockTab === "orders" ? (
-            <Table rows={orders} cols={["createdAt", "symbol", "side", "state", "executionMode", "strategyKey", "quantity", "rejectReason"]} />
-          ) : null}
-          {dockTab === "alerts" ? <Table rows={alerts} cols={["level", "text"]} /> : null}
-          {dockTab === "logs" ? <Table rows={strategyLogs} cols={["ts", "strategy", "state", "score", "note"]} /> : null}
-          {dockTab === "replay" ? <Table rows={replayRows} cols={["symbol", "strategy", "pnl", "replay"]} /> : null}
-          {dockTab === "risk" ? <Table rows={riskEvents} cols={["event", "state", "detail"]} /> : null}
+        {/* ── RIGHT: Intel + Alerts ──────────────────────────────────────────── */}
+        <aside className="space-y-3">
+          {/* execution intel */}
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-neutral-500">Execution Intel</h3>
+            <div className="space-y-2">
+              <IntelCard
+                icon={<Gauge className="h-4 w-4 text-blue-600" />}
+                title="Market Regime"
+                value={marketRegime}
+                sub={selectedStrategy?.compatibility ?? "NEUTRAL"}
+                valueTone={marketRegime === "TRENDING" ? "text-emerald-700" : marketRegime === "REVERSION" ? "text-blue-700" : "text-neutral-700"}
+              />
+              <IntelCard
+                icon={<ShieldAlert className="h-4 w-4 text-amber-500" />}
+                title="Risk Radar"
+                value={`${riskUsedPct}%`}
+                sub={`${open.length} open · ${orders.length} orders`}
+                valueTone={riskUsedPct >= 80 ? "text-rose-700" : riskUsedPct >= 60 ? "text-amber-700" : "text-emerald-700"}
+                extra={<ProgressBar pct={riskUsedPct} color={riskUsedPct >= 80 ? "bg-rose-500" : riskUsedPct >= 60 ? "bg-amber-400" : "bg-emerald-500"} />}
+              />
+              <IntelCard
+                icon={<Zap className="h-4 w-4 text-emerald-600" />}
+                title="Exec Quality"
+                value={avgLatencyMs ? `${avgLatencyMs} ms` : "—"}
+                sub={risk?.brokerHealth ?? "unknown"}
+                valueTone="text-neutral-800"
+              />
+              <IntelCard
+                icon={<Clock3 className="h-4 w-4 text-sky-600" />}
+                title="Trade Window"
+                value={currentTradingWindow()}
+                sub="Opening / Midday / Closing"
+                valueTone="text-neutral-800"
+              />
+            </div>
+          </div>
+
+          {/* account summary */}
+          {workstation?.accountSummary && (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-neutral-500">Account</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <AccountStat label="Total P&L" value={String(workstation.accountSummary.totalPnl)} />
+                <AccountStat label="Realized" value={String(workstation.accountSummary.realizedPnl)} />
+                <AccountStat label="Unrealized" value={String(workstation.accountSummary.unrealizedPnl)} />
+                <AccountStat label="Open Pos." value={String(workstation.accountSummary.openPositions)} />
+              </div>
+            </div>
+          )}
+
+          {/* smart alerts */}
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-neutral-500">Smart Alerts</h3>
+            {alerts.length > 0 ? (
+              <div className="space-y-2">
+                {alerts.map((a) => {
+                  const lvl = String(a.level);
+                  return (
+                    <div
+                      key={String(a.id)}
+                      className={cn("flex items-start gap-2 rounded-xl border p-2.5 text-xs",
+                        lvl === "RISK" ? "border-rose-200 bg-rose-50" :
+                        lvl === "WARN" ? "border-amber-200 bg-amber-50" :
+                        lvl === "EDGE" ? "border-emerald-200 bg-emerald-50" :
+                        "border-blue-200 bg-blue-50"
+                      )}
+                    >
+                      <AlertTriangle className={cn("mt-0.5 h-3.5 w-3.5 shrink-0",
+                        lvl === "RISK" ? "text-rose-500" : lvl === "WARN" ? "text-amber-500" : lvl === "EDGE" ? "text-emerald-600" : "text-blue-500"
+                      )} />
+                      <div>
+                        <span className="font-semibold">{lvl}</span>
+                        <span className="ml-1 text-neutral-600">{String(a.text)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-3 text-center text-xs text-emerald-700">
+                All clear · no active alerts
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      {/* ── Bottom Dock ──────────────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-100 px-4 py-2.5">
+          {DOCK_TABS.map((t) => {
+            const count =
+              t.id === "open" ? open.length :
+              t.id === "closed" ? closed.length :
+              t.id === "orders" ? orders.length :
+              t.id === "alerts" ? alerts.length :
+              0;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setDockTab(t.id)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                  dockTab === t.id
+                    ? "bg-neutral-900 text-white"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200",
+                )}
+              >
+                {t.label}
+                {count > 0 && (
+                  <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+                    dockTab === t.id ? "bg-white/20 text-white" : "bg-neutral-300 text-neutral-700"
+                  )}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="p-3">
+          {dockTab === "open" && <DataTable rows={open} cols={["symbol", "side", "qty", "avgPrice", "ltp", "mtmPnl", "realizedPnl", "strategyKey", "executionMode", "brokerStatus"]} />}
+          {dockTab === "closed" && <DataTable rows={closed} cols={["symbol", "side", "qty", "avgPrice", "realizedPnl", "exitReason", "executionMode", "strategyKey"]} />}
+          {dockTab === "orders" && <DataTable rows={orders} cols={["createdAt", "symbol", "side", "state", "executionMode", "strategyKey", "quantity", "rejectReason"]} />}
+          {dockTab === "alerts" && <DataTable rows={alerts} cols={["level", "text"]} />}
+          {dockTab === "logs" && <DataTable rows={strategyLogs} cols={["ts", "strategy", "state", "score", "note"]} />}
+          {dockTab === "replay" && <DataTable rows={replayRows} cols={["symbol", "strategy", "pnl", "replay"]} />}
+          {dockTab === "risk" && <DataTable rows={riskEvents} cols={["event", "state", "detail"]} />}
         </div>
       </div>
     </div>
   );
 }
 
-function HeaderMetric({ title, value, hint, icon }: { title: string; value: string; hint: string; icon: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-neutral-200 bg-white px-2 py-2">
-      <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-neutral-500">
-        <span>{title}</span>
-        {icon}
-      </div>
-      <div className="mt-0.5 text-sm font-semibold">{sanitizeDisplayText(value)}</div>
-      <div className="truncate text-[10px] text-neutral-500">{sanitizeDisplayText(hint)}</div>
-    </div>
-  );
-}
+// ── Sub-components ────────────────────────────────────────────────────────────
 
-function StatusTile({
-  label,
-  value,
-  sub,
-  tone,
-  pulse = false,
+function MetricCard({
+  label, value, sub, icon, positive, negative,
 }: {
-  label: string;
-  value: string;
-  sub?: string;
-  tone: "ok" | "warn" | "bad" | "neutral";
-  pulse?: boolean;
+  label: string; value: string; sub: string; icon: React.ReactNode; positive?: boolean; negative?: boolean;
 }) {
-  const toneStyles =
-    tone === "ok"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-      : tone === "warn"
-        ? "border-amber-200 bg-amber-50 text-amber-900"
-        : tone === "bad"
-          ? "border-rose-200 bg-rose-50 text-rose-900"
-          : "border-neutral-200 bg-neutral-50 text-neutral-800";
   return (
-    <div className={cn("rounded-lg border px-3 py-2", toneStyles)}>
-      <div className="text-[10px] uppercase tracking-wide opacity-80">{label}</div>
-      <div className="mt-0.5 flex items-center gap-2">
-        <span className="text-sm font-semibold">{value}</span>
-        {pulse ? <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> : null}
+    <div className={cn(
+      "rounded-xl border px-2.5 py-2",
+      positive ? "border-emerald-200 bg-emerald-50/60" :
+      negative ? "border-rose-200 bg-rose-50/60" :
+      "border-neutral-200 bg-slate-50"
+    )}>
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-neutral-400">{label}</span>
+        <span className={cn("opacity-60", positive ? "text-emerald-600" : negative ? "text-rose-500" : "text-neutral-400")}>{icon}</span>
       </div>
-      {sub ? <div className="text-[11px] opacity-80">{sub}</div> : null}
+      <div className={cn("mt-0.5 truncate text-sm font-bold",
+        positive ? "text-emerald-700" : negative ? "text-rose-700" : "text-neutral-800"
+      )}>
+        {sanitizeDisplayText(value)}
+      </div>
+      <div className="truncate text-[10px] text-neutral-400">{sanitizeDisplayText(sub)}</div>
     </div>
   );
 }
 
-function IntelRow({ icon, title, value, hint }: { icon: React.ReactNode; title: string; value: string; hint: string }) {
+function ReadinessPill({ count, label, tone }: { count: number; label: string; tone: "bad" | "warn" | "neutral" }) {
+  if (count === 0 && tone !== "neutral") return null;
   return (
-    <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2">
+    <span className={cn(
+      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+      tone === "bad" ? "border-rose-200 bg-rose-100 text-rose-800" :
+      tone === "warn" ? "border-amber-200 bg-amber-100 text-amber-800" :
+      "border-neutral-200 bg-neutral-100 text-neutral-600"
+    )}>
+      <span className={cn("h-1.5 w-1.5 rounded-full",
+        tone === "bad" ? "bg-rose-500" : tone === "warn" ? "bg-amber-500" : "bg-neutral-400"
+      )} />
+      {count} {label}
+    </span>
+  );
+}
+
+function StatusChip({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone: "ok" | "warn" | "bad" }) {
+  return (
+    <div className={cn("rounded-lg border px-2.5 py-1 text-xs", statusToneClass(tone))}>
+      <span className="mr-1 font-medium opacity-70">{label}:</span>
+      <span className="font-bold">{value}</span>
+      {sub && <span className="ml-1 opacity-60">({sub})</span>}
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-neutral-400">{label}</div>
+      <div className="font-semibold text-neutral-700">{value}</div>
+    </div>
+  );
+}
+
+function IntelCard({
+  icon, title, value, sub, valueTone, extra,
+}: {
+  icon: React.ReactNode; title: string; value: string; sub: string; valueTone: string; extra?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-neutral-100 bg-slate-50 px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {icon}
-          <span className="text-xs font-semibold">{title}</span>
+          <span className="text-xs font-semibold text-neutral-700">{title}</span>
         </div>
-        <span className="text-xs font-semibold text-neutral-900">{value}</span>
+        <span className={cn("text-xs font-bold", valueTone)}>{value}</span>
       </div>
-      <div className="mt-1 text-[11px] text-neutral-500">{hint}</div>
+      {sub && <div className="mt-0.5 text-[11px] text-neutral-400">{sub}</div>}
+      {extra && <div className="mt-1.5">{extra}</div>}
     </div>
   );
 }
 
-function Insight({ title, body }: { title: string; body: string }) {
+function PriceBox({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-neutral-600">{title}</div>
-      <div className="mt-1 text-xs text-neutral-700">{body}</div>
+    <div className="rounded-xl border border-neutral-100 bg-slate-50 p-2 text-center">
+      <div className="text-[10px] font-medium uppercase tracking-wide text-neutral-400">{label}</div>
+      <div className={cn("mt-0.5 font-bold", color)}>{value}</div>
     </div>
   );
 }
 
+function AccountStat({ label, value }: { label: string; value: string }) {
+  const n = parseFloat(value.replace(/[^0-9.-]/g, ""));
+  const positive = Number.isFinite(n) && n > 0;
+  const negative = Number.isFinite(n) && n < 0;
+  return (
+    <div className="rounded-xl border border-neutral-100 bg-slate-50 px-2.5 py-2">
+      <div className="text-[10px] text-neutral-400">{label}</div>
+      <div className={cn("mt-0.5 text-sm font-bold", positive ? "text-emerald-700" : negative ? "text-rose-700" : "text-neutral-800")}>
+        {value || "—"}
+      </div>
+    </div>
+  );
+}
