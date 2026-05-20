@@ -75,8 +75,8 @@ export function StrategiesPage() {
     enabled: !!token,
   });
   const readinessQuery = useQuery({
-    queryKey: ["admin-ops-snapshot-lite"],
-    queryFn: async () => (await api.get("/api/admin/operations/snapshot")).data?.data as Record<string, any>,
+    queryKey: ["strategy-pipeline-status"],
+    queryFn: async () => (await api.get("/api/strategies/runtime-metrics/pipeline-status")).data?.data as Record<string, any>,
     refetchInterval: 15_000,
     enabled: !!token,
   });
@@ -127,7 +127,7 @@ export function StrategiesPage() {
       sigByStrategy.set(k, prev);
     }
 
-    const activePipeline = readinessQuery.data?.operationalLifecycle?.executionPipelineActive === true;
+    const activePipeline = readinessQuery.data?.executionPipelineActive !== false;
     const selectedMode = modeQuery.data === "LIVE" ? "LIVE" : "PAPER";
 
     return (catalogQuery.data?.content ?? []).map((c) => {
