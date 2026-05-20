@@ -133,10 +133,10 @@ public class StrategySignalEntity extends BaseEntity {
     private BigDecimal maxAdverseExcursion;
 
     @Column(name = "hit_target")
-    private Boolean hitTarget;
+    private Boolean hitTarget = false;
 
     @Column(name = "hit_stoploss")
-    private Boolean hitStoploss;
+    private Boolean hitStoploss = false;
 
     @Column(name = "risk_reward_achieved", precision = 10, scale = 4)
     private BigDecimal riskRewardAchieved;

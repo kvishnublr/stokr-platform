@@ -2,78 +2,79 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronRight,
   Info, Search, XCircle, Wifi, WifiOff, Trash2,
-  Bug, Activity, Clock, Filter, X,
+  Bug, Activity, Clock, Filter, X, Terminal, Zap,
 } from "lucide-react";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 type LogLevel = "ALL" | "ERROR" | "WARN" | "INFO" | "DEBUG";
-
-type LogEntry = {
-  ts: string;
-  level: string;
-  logger: string;
-  msg: string;
-  ex?: string;
-};
-
-// ─── Constants ────────────────────────────────────────────────────────────────
+type LogEntry = { ts: string; level: string; logger: string; msg: string; ex?: string };
 
 const LEVEL_ORDER: Record<string, number> = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3, TRACE: 4 };
 const MAX_DISPLAYED = 1000;
 const LEVELS: LogLevel[] = ["ALL", "ERROR", "WARN", "INFO", "DEBUG"];
 
-const LEVEL_STYLE: Record<string, {
-  badge: string; row: string; text: string; activeBtnCls: string; icon: React.ElementType;
+const LEVEL_CFG: Record<string, {
+  dot: string; text: string; badge: string; rowBg: string; border: string;
+  btn: string; btnActive: string; icon: React.ElementType;
 }> = {
   ERROR: {
-    badge:        "bg-red-100 text-red-700 border border-red-200",
-    row:          "bg-red-50/70 border-l-2 border-l-red-400",
-    text:         "text-red-700",
-    activeBtnCls: "bg-red-600 text-white shadow ring-1 ring-red-400",
-    icon:         XCircle,
+    dot:       "bg-red-500",
+    text:      "text-red-400",
+    badge:     "bg-red-500/15 text-red-400 ring-1 ring-red-500/30",
+    rowBg:     "bg-red-950/30",
+    border:    "border-l-red-500",
+    btn:       "text-red-400 hover:bg-red-500/10 border-red-500/20",
+    btnActive: "bg-red-500/20 text-red-300 border-red-500/40",
+    icon:      XCircle,
   },
   WARN: {
-    badge:        "bg-amber-100 text-amber-700 border border-amber-200",
-    row:          "bg-amber-50/60 border-l-2 border-l-amber-400",
-    text:         "text-amber-700",
-    activeBtnCls: "bg-amber-500 text-white shadow ring-1 ring-amber-300",
-    icon:         AlertTriangle,
+    dot:       "bg-amber-400",
+    text:      "text-amber-400",
+    badge:     "bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30",
+    rowBg:     "bg-amber-950/20",
+    border:    "border-l-amber-400",
+    btn:       "text-amber-400 hover:bg-amber-500/10 border-amber-500/20",
+    btnActive: "bg-amber-500/20 text-amber-300 border-amber-500/40",
+    icon:      AlertTriangle,
   },
   INFO: {
-    badge:        "bg-sky-100 text-sky-700 border border-sky-200",
-    row:          "",
-    text:         "text-sky-700",
-    activeBtnCls: "bg-sky-600 text-white shadow ring-1 ring-sky-400",
-    icon:         CheckCircle2,
+    dot:       "bg-sky-400",
+    text:      "text-sky-300",
+    badge:     "bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30",
+    rowBg:     "",
+    border:    "border-l-sky-500",
+    btn:       "text-sky-400 hover:bg-sky-500/10 border-sky-500/20",
+    btnActive: "bg-sky-500/20 text-sky-300 border-sky-500/40",
+    icon:      Info,
   },
   DEBUG: {
-    badge:        "bg-slate-100 text-slate-500 border border-slate-200",
-    row:          "",
-    text:         "text-slate-500",
-    activeBtnCls: "bg-slate-600 text-white shadow ring-1 ring-slate-400",
-    icon:         Bug,
+    dot:       "bg-slate-500",
+    text:      "text-slate-500",
+    badge:     "bg-slate-500/15 text-slate-400 ring-1 ring-slate-500/30",
+    rowBg:     "",
+    border:    "border-l-slate-600",
+    btn:       "text-slate-400 hover:bg-slate-500/10 border-slate-500/20",
+    btnActive: "bg-slate-500/20 text-slate-300 border-slate-500/40",
+    icon:      Bug,
   },
   ALL: {
-    badge:        "bg-blue-100 text-blue-700 border border-blue-200",
-    row:          "",
-    text:         "text-blue-700",
-    activeBtnCls: "bg-blue-600 text-white shadow ring-1 ring-blue-400",
-    icon:         Activity,
+    dot:       "bg-violet-400",
+    text:      "text-violet-300",
+    badge:     "bg-violet-500/15 text-violet-400 ring-1 ring-violet-500/30",
+    rowBg:     "",
+    border:    "border-l-violet-500",
+    btn:       "text-violet-400 hover:bg-violet-500/10 border-violet-500/20",
+    btnActive: "bg-violet-500/20 text-violet-300 border-violet-500/40",
+    icon:      Activity,
   },
 };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTs(iso: string, full = false): string {
   try {
     const d = new Date(iso);
-    if (full) {
-      return d.toLocaleString("en-IN", {
-        day: "2-digit", month: "short", year: "numeric",
-        hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-      });
-    }
+    if (full) return d.toLocaleString("en-IN", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+    });
     return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   } catch { return iso; }
 }
@@ -81,136 +82,131 @@ function formatTs(iso: string, full = false): string {
 function shortLogger(logger: string): string {
   const parts = logger.split(".");
   if (parts.length <= 2) return logger;
-  return "…." + parts.slice(-2).join(".");
+  return parts.slice(-2).join(".");
 }
 
-function highlight(text: string, q: string): React.ReactNode {
+function highlightMsg(text: string, search: string): React.ReactNode {
+  // Split into key=value tokens for syntax highlighting
+  const tokens: React.ReactNode[] = [];
+  const kvRe = /(\w[\w.]*)(=)([^\s,]+)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let idx = 0;
+  while ((m = kvRe.exec(text)) !== null) {
+    const before = text.slice(last, m.index);
+    if (before) tokens.push(<span key={idx++}>{applySearch(before, search)}</span>);
+    tokens.push(
+      <span key={idx++}>
+        <span className="text-slate-400">{m[1]}</span>
+        <span className="text-slate-600">=</span>
+        <span className="text-emerald-400 font-medium">{applySearch(m[3], search)}</span>
+      </span>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) tokens.push(<span key={idx++}>{applySearch(text.slice(last), search)}</span>);
+  return <>{tokens}</>;
+}
+
+function applySearch(text: string, q: string): React.ReactNode {
   if (!q) return text;
   const idx = text.toLowerCase().indexOf(q.toLowerCase());
   if (idx < 0) return text;
   return (
     <>
       {text.slice(0, idx)}
-      <mark className="bg-yellow-200 text-yellow-900 rounded px-0.5">{text.slice(idx, idx + q.length)}</mark>
+      <mark className="rounded bg-yellow-400/30 text-yellow-200 px-0.5">{text.slice(idx, idx + q.length)}</mark>
       {text.slice(idx + q.length)}
     </>
   );
 }
 
-function passesFilter(
-  entry: LogEntry, level: LogLevel, search: string,
-  fromTs: string, toTs: string,
-): boolean {
+function passesFilter(entry: LogEntry, level: LogLevel, search: string, fromTs: string, toTs: string): boolean {
   if (level !== "ALL") {
-    const entryOrd  = LEVEL_ORDER[entry.level] ?? 99;
-    const filterOrd = LEVEL_ORDER[level] ?? 99;
-    if (entryOrd > filterOrd) return false;
+    if ((LEVEL_ORDER[entry.level] ?? 99) > (LEVEL_ORDER[level] ?? 99)) return false;
   }
-  if (fromTs) {
-    try { if (new Date(entry.ts) < new Date(fromTs)) return false; } catch { /**/ }
-  }
-  if (toTs) {
-    try { if (new Date(entry.ts) > new Date(toTs)) return false; } catch { /**/ }
-  }
+  if (fromTs) { try { if (new Date(entry.ts) < new Date(fromTs)) return false; } catch { /**/ } }
+  if (toTs)   { try { if (new Date(entry.ts) > new Date(toTs))   return false; } catch { /**/ } }
   if (search) {
     const q = search.toLowerCase();
-    return (
-      entry.msg.toLowerCase().includes(q) ||
-      entry.logger.toLowerCase().includes(q) ||
-      (entry.ex?.toLowerCase().includes(q) ?? false)
-    );
+    return entry.msg.toLowerCase().includes(q) || entry.logger.toLowerCase().includes(q) || (entry.ex?.toLowerCase().includes(q) ?? false);
   }
   return true;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ── Stat pill ─────────────────────────────────────────────────────────────────
 
-function LevelBadge({ level }: { level: string }) {
-  const cfg = LEVEL_STYLE[level] ?? LEVEL_STYLE.INFO;
-  const Icon = cfg.icon;
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${cfg.badge}`}>
-      <Icon className="h-2.5 w-2.5" />
-      {level}
-    </span>
-  );
-}
-
-function StatPill({ level, count, active, onClick }: {
-  level: LogLevel; count: number; active: boolean; onClick: () => void;
-}) {
-  const cfg = LEVEL_STYLE[level];
+function StatPill({ level, count, active, onClick }: { level: LogLevel; count: number; active: boolean; onClick: () => void }) {
+  const cfg = LEVEL_CFG[level];
   const Icon = cfg.icon;
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all select-none ${
-        active
-          ? cfg.activeBtnCls + " border-transparent"
-          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300"
-      }`}
+      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all select-none ${active ? cfg.btnActive : cfg.btn + " border-transparent"}`}
     >
+      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
       <Icon className="h-3 w-3" />
       {level === "ALL" ? "All" : level}
-      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-mono tabular-nums ${
-        active ? "bg-white/20 text-inherit" : "bg-slate-100 text-slate-500"
-      }`}>{count}</span>
+      <span className={`rounded px-1.5 py-0.5 text-[10px] font-mono tabular-nums ${active ? "bg-white/10" : "bg-white/5 text-slate-500"}`}>
+        {count}
+      </span>
     </button>
   );
 }
 
+// ── Log row ───────────────────────────────────────────────────────────────────
+
 function LogRow({ entry, idx, search }: { entry: LogEntry; idx: number; search: string }) {
   const [open, setOpen] = useState(false);
-  const cfg = LEVEL_STYLE[entry.level] ?? LEVEL_STYLE.INFO;
+  const cfg = LEVEL_CFG[entry.level] ?? LEVEL_CFG.INFO;
 
   return (
     <>
       <tr
-        className={`group font-mono text-[11.5px] leading-5 transition-colors hover:bg-slate-50 cursor-default ${cfg.row}`}
+        className={`group border-l-2 ${cfg.border} ${cfg.rowBg} hover:bg-white/5 transition-colors cursor-default`}
         onClick={() => entry.ex && setOpen(o => !o)}
       >
         {/* Line # */}
-        <td className="select-none pl-3 pr-2 py-1.5 text-right text-[10px] tabular-nums text-slate-300 w-10">
+        <td className="select-none pl-3 pr-2 py-1 text-right text-[10px] tabular-nums text-slate-700 w-10 font-mono">
           {idx + 1}
         </td>
 
         {/* Timestamp */}
-        <td className="pr-3 py-1.5 whitespace-nowrap tabular-nums text-slate-400 text-[11px] w-24"
-          title={formatTs(entry.ts, true)}>
+        <td className="pr-4 py-1 whitespace-nowrap tabular-nums text-slate-500 text-[11px] w-24 font-mono" title={formatTs(entry.ts, true)}>
           {formatTs(entry.ts)}
         </td>
 
-        {/* Level badge */}
-        <td className="pr-3 py-1.5 w-20">
-          <LevelBadge level={entry.level} />
+        {/* Level */}
+        <td className="pr-3 py-1 w-16">
+          <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider font-mono ${cfg.badge}`}>
+            {entry.level}
+          </span>
         </td>
 
         {/* Logger */}
-        <td className="pr-3 py-1.5 max-w-[180px] truncate text-violet-600/80 text-[10.5px]"
-          title={entry.logger}>
+        <td className="pr-4 py-1 w-48 font-mono text-[10.5px] text-violet-400/70 truncate max-w-[12rem]" title={entry.logger}>
           {shortLogger(entry.logger)}
         </td>
 
         {/* Message */}
-        <td className="pr-4 py-1.5 text-slate-700">
-          <span className={cfg.text + " font-medium"}>
-            {highlight(entry.msg, search)}
+        <td className="pr-4 py-1 font-mono text-[11.5px]">
+          <span className={`${cfg.text}`}>
+            {highlightMsg(entry.msg, search)}
           </span>
           {entry.ex && (
-            <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] text-rose-500 opacity-70">
+            <span className="ml-3 inline-flex items-center gap-0.5 text-[10px] text-rose-500/70 hover:text-rose-400 transition-colors">
               {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              exception
+              stack trace
             </span>
           )}
         </td>
       </tr>
 
-      {/* Exception expansion */}
       {open && entry.ex && (
-        <tr className="bg-rose-50/60">
-          <td colSpan={5} className="px-4 pb-2 pt-0">
-            <pre className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10.5px] text-rose-700 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed font-mono">
+        <tr className={cfg.rowBg}>
+          <td colSpan={5} className="px-4 pb-3 pt-1">
+            <pre className="rounded-lg border border-red-900/40 bg-red-950/40 px-4 py-3 text-[10.5px] text-red-300/90 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed font-mono">
               {entry.ex}
             </pre>
           </td>
@@ -220,31 +216,29 @@ function LogRow({ entry, idx, search }: { entry: LogEntry; idx: number; search: 
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 export function AdminLogsPage() {
-  const [entries,    setEntries]    = useState<LogEntry[]>([]);
-  const [level,      setLevel]      = useState<LogLevel>("ALL");
-  const [search,     setSearch]     = useState("");
-  const [fromTs,     setFromTs]     = useState("");
-  const [toTs,       setToTs]       = useState("");
-  const [autoScroll, setAutoScroll] = useState(true);
-  const [connected,  setConnected]  = useState(false);
+  const [entries,      setEntries]      = useState<LogEntry[]>([]);
+  const [level,        setLevel]        = useState<LogLevel>("ALL");
+  const [search,       setSearch]       = useState("");
+  const [fromTs,       setFromTs]       = useState("");
+  const [toTs,         setToTs]         = useState("");
+  const [autoScroll,   setAutoScroll]   = useState(true);
+  const [connected,    setConnected]    = useState(false);
   const [showDtFilter, setShowDtFilter] = useState(false);
-  const bottomRef   = useRef<HTMLDivElement>(null);
+  const bottomRef    = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load recent logs on mount
   useEffect(() => {
     const token = localStorage.getItem("accessToken");
     if (!token) return;
     fetch("/api/admin/logs/recent?n=200", { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
-      .then(body => { setEntries((body?.data ?? []) as LogEntry[]); })
+      .then(body => setEntries((body?.data ?? []) as LogEntry[]))
       .catch(() => {});
   }, []);
 
-  // SSE live stream
   useEffect(() => {
     const token = localStorage.getItem("accessToken");
     if (!token) return;
@@ -289,7 +283,6 @@ export function AdminLogsPage() {
     return () => { active = false; abort.abort(); };
   }, []);
 
-  // Auto-scroll
   useEffect(() => {
     if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [entries, autoScroll]);
@@ -302,7 +295,6 @@ export function AdminLogsPage() {
   }, []);
 
   const filtered = entries.filter(e => passesFilter(e, level, search, fromTs, toTs));
-
   const counts = {
     ALL:   entries.length,
     ERROR: entries.filter(e => e.level === "ERROR").length,
@@ -310,167 +302,153 @@ export function AdminLogsPage() {
     INFO:  entries.filter(e => e.level === "INFO").length,
     DEBUG: entries.filter(e => e.level === "DEBUG").length,
   };
-
   const hasDateFilter = !!(fromTs || toTs);
   const hasAnyFilter  = !!(search || hasDateFilter || level !== "ALL");
 
   return (
-    <div className="flex h-full flex-col bg-slate-50 overflow-hidden">
+    <div className="flex h-full flex-col bg-zinc-950 overflow-hidden">
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
+      {/* ── Header ── */}
+      <div className="shrink-0 border-b border-white/5 bg-zinc-900/80 backdrop-blur px-6 py-3">
         <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-bold tracking-tight text-slate-900">Live Logs</h1>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Real-time application log stream · last {MAX_DISPLAYED} entries retained
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/20 ring-1 ring-violet-500/30">
+              <Terminal className="h-4 w-4 text-violet-400" />
+            </div>
+            <div>
+              <h1 className="text-sm font-bold tracking-tight text-white">Live Logs</h1>
+              <p className="text-[10px] text-slate-500 font-mono">
+                real-time stream · {MAX_DISPLAYED} entry buffer
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Entry count */}
-            <span className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono font-semibold text-slate-500 tabular-nums">
-              {filtered.length} / {entries.length} lines
+            <span className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-mono text-slate-400 tabular-nums">
+              {filtered.length}<span className="text-slate-600"> / </span>{entries.length}
             </span>
 
-            {/* Connection badge */}
-            <div className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
+            <div className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
               connected
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-slate-200 bg-slate-100 text-slate-400"
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                : "border-white/10 bg-white/5 text-slate-500"
             }`}>
-              {connected
-                ? <><Wifi className="h-3 w-3" /><span className="animate-pulse">LIVE</span></>
-                : <><WifiOff className="h-3 w-3" />OFFLINE</>}
+              {connected ? (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                  </span>
+                  LIVE
+                </>
+              ) : (
+                <><WifiOff className="h-3 w-3" /> OFFLINE</>
+              )}
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* ── Stats / Level filter pills ──────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {LEVELS.map(l => (
-            <StatPill key={l} level={l} count={counts[l]} active={level === l}
-              onClick={() => { setLevel(l); }} />
-          ))}
-
-          <div className="ml-auto flex items-center gap-2">
-            {hasAnyFilter && (
-              <button type="button"
-                onClick={() => { setSearch(""); setFromTs(""); setToTs(""); setLevel("ALL"); }}
-                className="flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 transition-colors">
-                <X className="h-3 w-3" /> Clear filters
-              </button>
-            )}
             <button type="button" onClick={() => setEntries([])}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors">
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-semibold text-slate-400 hover:bg-white/10 hover:text-slate-300 transition-colors">
               <Trash2 className="h-3 w-3" /> Clear
             </button>
           </div>
         </div>
       </div>
 
-      {/* ── Search + datetime filter bar ────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-2.5">
-        <div className="flex items-center gap-2">
+      {/* ── Level filter bar ── */}
+      <div className="shrink-0 border-b border-white/5 bg-zinc-900/60 px-6 py-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          {LEVELS.map(l => (
+            <StatPill key={l} level={l} count={counts[l]} active={level === l} onClick={() => setLevel(l)} />
+          ))}
+          <div className="ml-auto flex items-center gap-2">
+            {hasAnyFilter && (
+              <button type="button"
+                onClick={() => { setSearch(""); setFromTs(""); setToTs(""); setLevel("ALL"); }}
+                className="flex items-center gap-1 rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors">
+                <X className="h-3 w-3" /> Clear filters
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
 
-          {/* Search input */}
-          <div className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-blue-400 focus-within:bg-white focus-within:ring-1 focus-within:ring-blue-100 transition-all">
-            <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+      {/* ── Search + datetime ── */}
+      <div className="shrink-0 border-b border-white/5 bg-zinc-900/40 px-6 py-2.5">
+        <div className="flex items-center gap-2">
+          <div className="flex flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 focus-within:border-violet-500/50 focus-within:bg-violet-500/5 transition-all">
+            <Search className="h-3.5 w-3.5 shrink-0 text-slate-500" />
             <input
               type="text"
               placeholder="Search message, logger, exception…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full bg-transparent text-xs text-slate-800 outline-none placeholder:text-slate-400 font-mono"
+              className="w-full bg-transparent text-xs text-slate-300 outline-none placeholder:text-slate-600 font-mono"
             />
             {search && (
-              <button type="button" onClick={() => setSearch("")}
-                className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors">
+              <button type="button" onClick={() => setSearch("")} className="shrink-0 text-slate-500 hover:text-slate-300 transition-colors">
                 <XCircle className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
 
-          {/* DateTime filter toggle */}
           <button type="button"
             onClick={() => setShowDtFilter(v => !v)}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-semibold transition-colors ${
               showDtFilter || hasDateFilter
-                ? "border-blue-300 bg-blue-50 text-blue-700"
-                : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
+                : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"
             }`}>
-            <Filter className="h-3.5 w-3.5" />
-            {hasDateFilter ? "Date filter active" : "Date / Time"}
-            {hasDateFilter && (
-              <span className="ml-0.5 h-2 w-2 rounded-full bg-blue-500" />
-            )}
+            <Clock className="h-3.5 w-3.5" />
+            {hasDateFilter ? "Date active" : "Date / Time"}
+            {hasDateFilter && <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />}
           </button>
         </div>
 
-        {/* Datetime range row (collapsible) */}
         {showDtFilter && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <span className="text-xs font-semibold text-slate-500">From</span>
-            <input
-              type="datetime-local"
-              value={fromTs}
-              onChange={e => setFromTs(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors"
-            />
-            <span className="text-xs font-semibold text-slate-500">To</span>
-            <input
-              type="datetime-local"
-              value={toTs}
-              onChange={e => setToTs(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors"
-            />
+          <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-white/8 bg-white/3 px-4 py-2.5">
+            <Filter className="h-3.5 w-3.5 text-slate-500" />
+            <span className="text-[11px] font-semibold text-slate-500 font-mono">FROM</span>
+            <input type="datetime-local" value={fromTs} onChange={e => setFromTs(e.target.value)}
+              className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] text-slate-300 font-mono outline-none focus:border-violet-500/50 transition-colors" />
+            <span className="text-[11px] font-semibold text-slate-500 font-mono">TO</span>
+            <input type="datetime-local" value={toTs} onChange={e => setToTs(e.target.value)}
+              className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] text-slate-300 font-mono outline-none focus:border-violet-500/50 transition-colors" />
             {hasDateFilter && (
               <button type="button" onClick={() => { setFromTs(""); setToTs(""); }}
-                className="text-xs text-rose-500 hover:text-rose-700 font-medium transition-colors">
+                className="text-[11px] text-rose-400 hover:text-rose-300 font-medium transition-colors">
                 Clear dates
               </button>
             )}
-            <span className="ml-auto text-[11px] text-slate-400 tabular-nums font-mono">
-              {filtered.length} match
-            </span>
+            <span className="ml-auto text-[10px] text-slate-600 tabular-nums font-mono">{filtered.length} match</span>
           </div>
         )}
       </div>
 
-      {/* ── Log table ────────────────────────────────────────────────────────── */}
-      <div className="relative flex-1 min-h-0 bg-white">
-        <div
-          ref={containerRef}
-          onScroll={handleScroll}
-          className="h-full overflow-y-auto"
-        >
+      {/* ── Log stream ── */}
+      <div className="relative flex-1 min-h-0">
+        <div ref={containerRef} onScroll={handleScroll} className="h-full overflow-y-auto">
           {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 gap-2 text-slate-400">
-              <Activity className="h-8 w-8 opacity-30" />
-              <span className="text-sm font-medium">
-                {entries.length === 0 ? "Waiting for log entries…" : "No entries match current filter"}
+            <div className="flex flex-col items-center justify-center h-52 gap-3 text-slate-600">
+              <Zap className="h-10 w-10 opacity-20" />
+              <span className="text-sm font-mono font-medium">
+                {entries.length === 0 ? "$ waiting for log stream..." : "no entries match filter"}
               </span>
               {entries.length > 0 && (
-                <span className="text-xs">
-                  {entries.length} entries buffered · adjust filters above
-                </span>
+                <span className="text-xs font-mono text-slate-700">{entries.length} entries buffered · adjust filters above</span>
               )}
             </div>
           ) : (
             <table className="w-full border-collapse">
-              <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
+              <thead className="sticky top-0 z-10 bg-zinc-900/95 backdrop-blur border-b border-white/5">
                 <tr>
-                  <th className="py-2 pl-3 pr-2 text-right text-[10px] font-semibold uppercase tracking-widest text-slate-300 w-10">#</th>
-                  <th className="py-2 pr-3 text-left text-[10px] font-semibold uppercase tracking-widest text-slate-400 w-24">Time</th>
-                  <th className="py-2 pr-3 text-left text-[10px] font-semibold uppercase tracking-widest text-slate-400 w-20">Level</th>
-                  <th className="py-2 pr-3 text-left text-[10px] font-semibold uppercase tracking-widest text-slate-400 w-44">Logger</th>
-                  <th className="py-2 pr-4 text-left text-[10px] font-semibold uppercase tracking-widest text-slate-400">Message</th>
+                  <th className="py-2 pl-3 pr-2 text-right text-[9px] font-semibold uppercase tracking-widest text-slate-700 w-10 font-mono">#</th>
+                  <th className="py-2 pr-4 text-left text-[9px] font-semibold uppercase tracking-widest text-slate-600 w-24 font-mono">Time</th>
+                  <th className="py-2 pr-3 text-left text-[9px] font-semibold uppercase tracking-widest text-slate-600 w-16 font-mono">Level</th>
+                  <th className="py-2 pr-4 text-left text-[9px] font-semibold uppercase tracking-widest text-slate-600 w-48 font-mono">Logger</th>
+                  <th className="py-2 pr-4 text-left text-[9px] font-semibold uppercase tracking-widest text-slate-600 font-mono">Message</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-white/3">
                 {filtered.map((entry, i) => (
                   <LogRow key={i} entry={entry} idx={i} search={search} />
                 ))}
@@ -480,11 +458,10 @@ export function AdminLogsPage() {
           <div ref={bottomRef} />
         </div>
 
-        {/* Scroll-to-bottom FAB */}
         {!autoScroll && (
           <button type="button"
             onClick={() => { setAutoScroll(true); bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }}
-            className="absolute bottom-5 right-5 flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors">
+            className="absolute bottom-5 right-5 flex items-center gap-1.5 rounded-full border border-violet-500/30 bg-violet-600/90 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-violet-900/50 hover:bg-violet-500 transition-colors backdrop-blur">
             <ChevronDown className="h-3.5 w-3.5" />
             Jump to latest
           </button>
