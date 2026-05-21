@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -19,10 +20,13 @@ public class PositionSizingService {
 
     /**
      * Resolves order quantity for a strategy signal.
+     * Uses trader's personal config if it exists, falls back to global admin config.
      * Priority: forceFixedQty → capital-based sizing → suggestedQty fallback → 1
      */
-    public BigDecimal resolveQuantity(String strategyKey, BigDecimal suggestedQty, BigDecimal marketPrice) {
-        Optional<StrategyExecutionConfig> opt = strategyExecutionConfigService.getByStrategyKey(strategyKey);
+    public BigDecimal resolveQuantity(String strategyKey, UUID userId, BigDecimal suggestedQty, BigDecimal marketPrice) {
+        Optional<StrategyExecutionConfig> opt = userId != null
+                ? strategyExecutionConfigService.getByStrategyKeyForUser(userId, strategyKey)
+                : strategyExecutionConfigService.getByStrategyKey(strategyKey);
         if (opt.isEmpty()) {
             log.debug("sizing.no_config strategyKey={} fallback=suggested", strategyKey);
             return suggestedQty != null ? suggestedQty : BigDecimal.ONE;

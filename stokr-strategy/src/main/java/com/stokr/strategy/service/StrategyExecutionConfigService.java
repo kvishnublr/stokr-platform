@@ -5,6 +5,8 @@ import com.stokr.strategy.domain.StrategyDefinition;
 import com.stokr.strategy.domain.StrategyExecutionConfig;
 import com.stokr.strategy.dto.StrategyExecutionConfigDto;
 import com.stokr.strategy.dto.StrategyExecutionConfigRequest;
+import com.stokr.strategy.dto.TraderExecutionConfigDto;
+import com.stokr.strategy.dto.TraderExecutionConfigPatchRequest;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.repository.StrategyExecutionConfigRepository;
 import lombok.RequiredArgsConstructor;
@@ -24,17 +26,26 @@ public class StrategyExecutionConfigService {
     private final StrategyExecutionConfigRepository configRepository;
     private final StrategyDefinitionRepository strategyDefinitionRepository;
 
+    /** Global admin config only (user_id IS NULL). Used by admin operations and alert service. */
     public Optional<StrategyExecutionConfig> getByStrategyKey(String strategyKey) {
-        return configRepository.findByStrategyKeyAndDeletedFalse(strategyKey);
+        return configRepository.findByUserIdIsNullAndStrategyKeyAndDeletedFalse(strategyKey);
     }
 
     /**
-     * Returns existing config for the strategy key, or builds one with production-safe defaults
-     * (force_fixed_qty=true, fixed_qty=1, live_enabled=false, execution_mode=PAPER).
+     * Effective config for a trader: user-specific override first, falls back to global admin config.
+     * Used by risk engine and position sizing so trader settings take precedence.
+     */
+    public Optional<StrategyExecutionConfig> getByStrategyKeyForUser(UUID userId, String strategyKey) {
+        return configRepository.findByUserIdAndStrategyKeyAndDeletedFalse(userId, strategyKey)
+                .or(() -> configRepository.findByUserIdIsNullAndStrategyKeyAndDeletedFalse(strategyKey));
+    }
+
+    /**
+     * Returns existing global config for the strategy key, or builds one with production-safe defaults.
      * Does NOT persist — caller decides whether to save.
      */
     public StrategyExecutionConfig getOrCreateDefault(String strategyKey) {
-        return configRepository.findByStrategyKeyAndDeletedFalse(strategyKey)
+        return configRepository.findByUserIdIsNullAndStrategyKeyAndDeletedFalse(strategyKey)
                 .orElseGet(() -> {
                     StrategyExecutionConfig cfg = new StrategyExecutionConfig();
                     cfg.setStrategyKey(strategyKey);
@@ -43,10 +54,108 @@ public class StrategyExecutionConfigService {
     }
 
     public List<StrategyExecutionConfigDto> listAll() {
-        return configRepository.findAllByDeletedFalseOrderByStrategyKeyAsc()
+        return configRepository.findAllByUserIdIsNullAndDeletedFalseOrderByStrategyKeyAsc()
                 .stream()
                 .map(this::toDto)
                 .toList();
+    }
+
+    // ── Trader self-service ───────────────────────────────────────────────────
+
+    /** All trader-specific overrides for a given user. */
+    public List<TraderExecutionConfigDto> listForUser(UUID userId) {
+        return configRepository.findByUserIdAndDeletedFalseOrderByStrategyKeyAsc(userId)
+                .stream()
+                .map(c -> toTraderDto(c, false))
+                .toList();
+    }
+
+    /**
+     * Returns effective config for a strategy from a trader's perspective.
+     * If trader has a personal override, returns it (isGlobalFallback=false).
+     * Otherwise returns global admin config with isGlobalFallback=true.
+     * If neither exists, returns safe defaults with isGlobalFallback=true.
+     */
+    public TraderExecutionConfigDto getOrCreateForUserDto(UUID userId, String strategyKey) {
+        Optional<StrategyExecutionConfig> userCfg =
+                configRepository.findByUserIdAndStrategyKeyAndDeletedFalse(userId, strategyKey);
+        if (userCfg.isPresent()) {
+            return toTraderDto(userCfg.get(), false);
+        }
+        Optional<StrategyExecutionConfig> globalCfg =
+                configRepository.findByUserIdIsNullAndStrategyKeyAndDeletedFalse(strategyKey);
+        if (globalCfg.isPresent()) {
+            return toTraderDto(globalCfg.get(), true);
+        }
+        // Return safe defaults — no DB row yet
+        StrategyExecutionConfig defaults = new StrategyExecutionConfig();
+        defaults.setStrategyKey(strategyKey);
+        defaults.setUserId(userId);
+        return toTraderDto(defaults, true);
+    }
+
+    /**
+     * Applies trader-editable fields only. Admin-controlled fields (liveEnabled, executionMode,
+     * allocatedCapital, etc.) are never touched by this method.
+     * Creates a user-specific row on first call; copies admin baseline for read-only fields.
+     */
+    @Transactional
+    public TraderExecutionConfigDto patchForUser(UUID userId, String strategyKey,
+                                                 TraderExecutionConfigPatchRequest req) {
+        StrategyExecutionConfig cfg = configRepository
+                .findByUserIdAndStrategyKeyAndDeletedFalse(userId, strategyKey)
+                .orElseGet(() -> {
+                    StrategyExecutionConfig newCfg = new StrategyExecutionConfig();
+                    newCfg.setUserId(userId);
+                    newCfg.setStrategyKey(strategyKey);
+                    // Copy admin-controlled read-only fields from global baseline
+                    configRepository.findByUserIdIsNullAndStrategyKeyAndDeletedFalse(strategyKey)
+                            .ifPresent(global -> {
+                                newCfg.setExecutionMode(global.getExecutionMode());
+                                newCfg.setLiveEnabled(global.isLiveEnabled());
+                                newCfg.setPaperEnabled(global.isPaperEnabled());
+                                newCfg.setAllocatedCapital(global.getAllocatedCapital());
+                                newCfg.setMaxTradeQuantity(global.getMaxTradeQuantity());
+                                newCfg.setAutoDisableOnLoss(global.isAutoDisableOnLoss());
+                                newCfg.setLiveConfirmationRequired(global.isLiveConfirmationRequired());
+                            });
+                    return newCfg;
+                });
+
+        // Apply only trader-editable fields
+        cfg.setEnabled(req.enabled());
+        cfg.setTelegramEnabled(req.telegramEnabled());
+        cfg.setForceFixedQty(req.forceFixedQty());
+        cfg.setFixedQty(req.fixedQty());
+        cfg.setMaxPositions(req.maxPositions());
+        cfg.setDailyLossLimit(req.dailyLossLimit());
+        cfg.setCooldownMinutes(req.cooldownMinutes());
+        cfg.setAllowPyramiding(req.allowPyramiding());
+        cfg.setEmergencyStopEnabled(req.emergencyStopEnabled());
+
+        cfg = configRepository.save(cfg);
+        log.info("trader_config.patched userId={} strategyKey={}", userId, strategyKey);
+        return toTraderDto(cfg, false);
+    }
+
+    public TraderExecutionConfigDto toTraderDto(StrategyExecutionConfig cfg, boolean isGlobalFallback) {
+        return new TraderExecutionConfigDto(
+                cfg.getId(),
+                cfg.getStrategyKey(),
+                isGlobalFallback,
+                cfg.getExecutionMode(),
+                cfg.isLiveEnabled(),
+                cfg.isPaperEnabled(),
+                cfg.isEnabled(),
+                cfg.isTelegramEnabled(),
+                cfg.isForceFixedQty(),
+                cfg.getFixedQty(),
+                cfg.getMaxPositions(),
+                cfg.getDailyLossLimit(),
+                cfg.getCooldownMinutes(),
+                cfg.isAllowPyramiding(),
+                cfg.isEmergencyStopEnabled()
+        );
     }
 
     public StrategyExecutionConfigDto getById(UUID id) {
@@ -55,7 +164,7 @@ public class StrategyExecutionConfigService {
 
     @Transactional
     public StrategyExecutionConfigDto create(StrategyExecutionConfigRequest req) {
-        configRepository.findByStrategyKeyAndDeletedFalse(req.strategyKey()).ifPresent(existing -> {
+        configRepository.findByUserIdIsNullAndStrategyKeyAndDeletedFalse(req.strategyKey()).ifPresent(existing -> {
             throw new IllegalArgumentException("Config already exists for strategy key: " + req.strategyKey());
         });
 

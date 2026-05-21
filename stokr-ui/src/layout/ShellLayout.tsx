@@ -199,6 +199,7 @@ export function ShellLayout() {
     const links: SidebarLink[] = [];
     if (hasTraderAccess) {
       links.push({ to: "/brokers", label: "Broker Connect", icon: Shield });
+      links.push({ to: "/strategy-settings", label: "Strategy Settings", icon: SlidersHorizontal });
       links.push({ to: "/profile", label: "Profile", icon: UserRound });
       links.push({ to: "/signals", label: "Signals", icon: MessageSquare });
     }

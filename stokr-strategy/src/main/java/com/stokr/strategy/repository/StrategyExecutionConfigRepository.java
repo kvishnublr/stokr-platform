@@ -11,9 +11,17 @@ import java.util.UUID;
 @Repository
 public interface StrategyExecutionConfigRepository extends JpaRepository<StrategyExecutionConfig, UUID> {
 
-    Optional<StrategyExecutionConfig> findByStrategyKeyAndDeletedFalse(String strategyKey);
+    /** Global admin config (user_id IS NULL). */
+    Optional<StrategyExecutionConfig> findByUserIdIsNullAndStrategyKeyAndDeletedFalse(String strategyKey);
+
+    /** Trader-specific override (user_id NOT NULL). */
+    Optional<StrategyExecutionConfig> findByUserIdAndStrategyKeyAndDeletedFalse(UUID userId, String strategyKey);
 
     Optional<StrategyExecutionConfig> findByStrategyIdAndDeletedFalse(UUID strategyId);
 
-    List<StrategyExecutionConfig> findAllByDeletedFalseOrderByStrategyKeyAsc();
+    /** All global (admin) configs ordered by key. */
+    List<StrategyExecutionConfig> findAllByUserIdIsNullAndDeletedFalseOrderByStrategyKeyAsc();
+
+    /** All trader-specific overrides for a given user. */
+    List<StrategyExecutionConfig> findByUserIdAndDeletedFalseOrderByStrategyKeyAsc(UUID userId);
 }

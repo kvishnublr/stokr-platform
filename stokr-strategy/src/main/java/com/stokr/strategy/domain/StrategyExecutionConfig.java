@@ -58,6 +58,9 @@ public class StrategyExecutionConfig {
     @JoinColumn(name = "strategy_id")
     private StrategyDefinition strategy;
 
+    @Column(name = "user_id")
+    private UUID userId;
+
     @Column(name = "strategy_key", nullable = false, length = 128)
     private String strategyKey;
 

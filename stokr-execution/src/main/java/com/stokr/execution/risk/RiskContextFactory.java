@@ -40,7 +40,7 @@ public class RiskContextFactory {
         int burst = (int) omsOrderRepository.countNonBacktestOrdersSinceExcluding(userId, since60, order.getId());
         String strategyKey = order.getStrategyKey();
         StrategyExecutionConfig stratCfg = strategyKey != null
-                ? strategyExecutionConfigService.getByStrategyKey(strategyKey).orElse(null)
+                ? strategyExecutionConfigService.getByStrategyKeyForUser(userId, strategyKey).orElse(null)
                 : null;
         BigDecimal stratDailyPnl = strategyKey != null
                 ? strategyDailyLossTrackerService.getTodayPnl(strategyKey)

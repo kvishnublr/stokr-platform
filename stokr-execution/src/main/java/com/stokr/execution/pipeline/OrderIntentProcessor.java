@@ -124,7 +124,7 @@ public class OrderIntentProcessor {
             return;
         }
 
-        OmsOrder draft = buildDraftFromSignal(signal, mode);
+        OmsOrder draft = buildDraftFromSignal(signal, mode, userId);
         OmsOrder order = orderLifecycleService.createOrGetIdempotent(userId, idempotencyKey, draft);
         if (order.getState() != OrderState.CREATED) {
             log.info("order.idempotent.hit orderId={} state={}", order.getId(), order.getState());
@@ -210,7 +210,7 @@ public class OrderIntentProcessor {
         return k;
     }
 
-    private OmsOrder buildDraftFromSignal(StrategySignalEntity signal, ExecutionMode mode) {
+    private OmsOrder buildDraftFromSignal(StrategySignalEntity signal, ExecutionMode mode, UUID userId) {
         OmsOrder o = new OmsOrder();
         o.setSignalId(signal.getId());
         o.setStrategyKey(signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY);
@@ -220,6 +220,7 @@ public class OrderIntentProcessor {
         o.setOrderType("MARKET");
         o.setQuantity(positionSizingService.resolveQuantity(
                 signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY,
+                userId,
                 signal.getSuggestedQty(),
                 signal.getEntryReferencePrice()));
         o.setLimitPrice(null);
@@ -286,7 +287,7 @@ public class OrderIntentProcessor {
     private void dispatchBothMode(StrategySignalEntity signal, UUID userId, String baseIdempotencyKey,
                                    String strategyKey, boolean synchronousExecution) {
         // PAPER leg — no live gate needed
-        OmsOrder paperDraft = buildDraftFromSignal(signal, ExecutionMode.PAPER);
+        OmsOrder paperDraft = buildDraftFromSignal(signal, ExecutionMode.PAPER, userId);
         OmsOrder paperOrder = orderLifecycleService.createOrGetIdempotent(
                 userId, baseIdempotencyKey + ":PAPER", paperDraft);
 
@@ -295,7 +296,7 @@ public class OrderIntentProcessor {
                 .evaluateForLiveOrder(userId, strategyKey, "ZERODHA");
         OmsOrder liveOrder = null;
         if (gate.allowed()) {
-            OmsOrder liveDraft = buildDraftFromSignal(signal, ExecutionMode.LIVE);
+            OmsOrder liveDraft = buildDraftFromSignal(signal, ExecutionMode.LIVE, userId);
             liveOrder = orderLifecycleService.createOrGetIdempotent(
                     userId, baseIdempotencyKey + ":LIVE", liveDraft);
         } else {

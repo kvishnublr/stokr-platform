@@ -57,6 +57,7 @@ import { SyncedToaster } from "./components/theme/SyncedToaster";
 import { TraderDashboard } from "./pages/trader/TraderDashboard";
 import { AdminOverviewPage } from "./pages/AdminOverviewPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { TraderExecutionConfigPage } from "./pages/TraderExecutionConfigPage";
 
 /** Heavy chart surface - defer initial JS until navigation. */
 const BacktestReplayPage = lazy(async () => {
@@ -195,6 +196,7 @@ export default function App() {
           <Route path="debug" element={<DebugToolsPage />} />
           <Route path="brokers" element={<TraderBrokerRoute />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="strategy-settings" element={<TraderExecutionConfigPage />} />
           <Route path="admin" element={<AdminGate />}>
             <Route element={<AdminConsoleLayout />}>
               <Route index element={<AdminOverviewPage />} />
