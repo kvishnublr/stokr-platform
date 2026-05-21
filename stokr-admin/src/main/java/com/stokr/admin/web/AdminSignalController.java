@@ -8,6 +8,7 @@ import com.stokr.admin.signal.AdminSignalStatsDto;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.api.PageResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
+import com.stokr.strategy.service.SignalOutcomeTrackerService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -17,12 +18,14 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -33,6 +36,7 @@ import java.util.UUID;
 public class AdminSignalController {
 
     private final AdminSignalQueryService queryService;
+    private final SignalOutcomeTrackerService outcomeTrackerService;
 
     @GetMapping("/stats")
     @Operation(summary = "Aggregate signal stats for today or custom window")
@@ -67,5 +71,12 @@ public class AdminSignalController {
     @Operation(summary = "Signal detail with linked orders and execution timeline")
     public ApiResponse<AdminSignalDetailDto> detail(@PathVariable UUID id) {
         return ApiResponse.ok(queryService.detail(id), CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/track-outcomes")
+    @Operation(summary = "Immediately run outcome tracking for all pending signals (admin trigger)")
+    public ApiResponse<Map<String, String>> trackOutcomes() {
+        outcomeTrackerService.trackOutcomes();
+        return ApiResponse.ok(Map.of("status", "outcome tracking completed"), CorrelationIdHolder.get());
     }
 }
