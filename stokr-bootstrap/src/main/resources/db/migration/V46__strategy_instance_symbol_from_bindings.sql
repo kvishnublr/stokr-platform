@@ -17,7 +17,6 @@ WITH ranked_binding_symbols AS (
     WHERE rb.runtime_enabled = TRUE
       AND ug.enabled = TRUE
       AND us.enabled = TRUE
-      AND us.deleted = FALSE
 ), chosen_symbol_per_strategy AS (
     SELECT strategy_catalog_id, resolved_symbol
     FROM ranked_binding_symbols
