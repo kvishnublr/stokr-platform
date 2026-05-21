@@ -95,7 +95,7 @@ public class ExecutionAlertService {
                     order != null ? order.getUserId() : null,
                     text));
         }
-        this.log.info("alert.published type={} strategy={} symbol={}", alertType, strategyKey, symbol);
+        log.info("alert.published type={} strategy={} symbol={}", alertType, strategyKey, symbol);
     }
 
     private boolean isTelegramEnabled(String strategyKey) {
