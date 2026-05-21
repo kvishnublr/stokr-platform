@@ -37,4 +37,23 @@ public interface StrategyRuntimeBindingRepository extends JpaRepository<Strategy
            "JOIN FETCH b.universeGroup ug " +
            "WHERE sc.strategyKey = :strategyKey AND b.runtimeEnabled = true AND sc.deleted = false AND ug.enabled = true")
     List<StrategyRuntimeBinding> findActiveBindingsByStrategyKey(@Param("strategyKey") String strategyKey);
+
+    /**
+     * Returns all allowed trading symbols (broker-key) for a strategy key, resolved via
+     * its active runtime bindings and universe group membership.
+     * Empty result means no binding exists — caller should treat as "allow all" (legacy).
+     */
+    @Query("""
+           SELECT DISTINCT COALESCE(s.tradingSymbol, s.symbol)
+           FROM StrategyRuntimeBinding b
+           JOIN b.strategyCatalog sc
+           JOIN b.universeGroup ug
+           JOIN com.stokr.strategy.domain.StrategyUniverseSymbol s ON s.group.id = ug.id
+           WHERE sc.strategyKey = :strategyKey
+             AND b.runtimeEnabled = true
+             AND sc.deleted = false
+             AND ug.enabled = true
+             AND s.enabled = true
+           """)
+    List<String> findAllowedSymbolsForStrategyKey(@Param("strategyKey") String strategyKey);
 }

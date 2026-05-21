@@ -33,7 +33,7 @@ public class StrategyCapitalManager {
     private final StrategyDailyLossTrackerService dailyLossTrackerService;
 
     public GlobalCapitalSummary globalSummary() {
-        List<StrategyExecutionConfig> configs = configRepository.findAllByDeletedFalseOrderByStrategyKeyAsc();
+        List<StrategyExecutionConfig> configs = configRepository.findAllByUserIdIsNullAndDeletedFalseOrderByStrategyKeyAsc();
         List<StrategyCapitalSummary> strategies = configs.stream()
                 .map(this::toStrategyCapitalSummary)
                 .toList();
@@ -57,7 +57,7 @@ public class StrategyCapitalManager {
     }
 
     public StrategyCapitalSummary summarizeStrategy(String strategyKey) {
-        return configRepository.findByStrategyKeyAndDeletedFalse(strategyKey)
+        return configRepository.findByUserIdIsNullAndStrategyKeyAndDeletedFalse(strategyKey)
                 .map(this::toStrategyCapitalSummary)
                 .orElseThrow(() -> new com.stokr.common.exception.NotFoundException(
                         "StrategyExecutionConfig not found: " + strategyKey));
