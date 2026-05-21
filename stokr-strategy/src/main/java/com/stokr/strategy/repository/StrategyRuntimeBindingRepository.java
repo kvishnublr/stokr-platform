@@ -31,6 +31,13 @@ public interface StrategyRuntimeBindingRepository extends JpaRepository<Strategy
 
     boolean existsByStrategyCatalogIdAndUniverseGroupId(UUID strategyId, UUID groupId);
 
+    /** Finds active bindings for multiple strategy keys in one query (for catalog page) */
+    @Query("SELECT b FROM StrategyRuntimeBinding b " +
+           "JOIN FETCH b.strategyCatalog sc " +
+           "JOIN FETCH b.universeGroup ug " +
+           "WHERE sc.strategyKey IN :keys AND b.runtimeEnabled = true AND sc.deleted = false AND ug.enabled = true")
+    List<StrategyRuntimeBinding> findAllActiveBindingsByStrategyKeys(@Param("keys") List<String> keys);
+
     /** Finds active bindings for a specific strategy key */
     @Query("SELECT b FROM StrategyRuntimeBinding b " +
            "JOIN FETCH b.strategyCatalog sc " +

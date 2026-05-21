@@ -1,6 +1,7 @@
 package com.stokr.strategy.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 public record StrategyCatalogItemDto(
@@ -22,6 +23,7 @@ public record StrategyCatalogItemDto(
         String executionMode,
         String runtimeState,
         BigDecimal allocationAmount,
-        BigDecimal riskMultiplier
+        BigDecimal riskMultiplier,
+        List<String> universeGroups
 ) {
 }
