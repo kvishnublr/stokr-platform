@@ -115,9 +115,16 @@ public class ZerodhaConnectionService {
                     .retrieve()
                     .body(String.class);
         } catch (Exception e) {
-            // Do not log response bodies or tokens; message only for ops triage.
-            log.warn("zerodha.session.exchange_failed: {}", e.getClass().getSimpleName());
-            throw new BadRequestException("Could not complete Zerodha login — try again.");
+            String zerodhaMsg = null;
+            if (e instanceof org.springframework.web.client.RestClientResponseException rce) {
+                try {
+                    JsonNode errBody = objectMapper.readTree(rce.getResponseBodyAsString());
+                    zerodhaMsg = errBody.path("message").asText(null);
+                } catch (Exception ignored) {}
+            }
+            log.warn("zerodha.session.exchange_failed: {} zerodhaMsg={}", e.getClass().getSimpleName(), zerodhaMsg);
+            throw new BadRequestException(
+                    zerodhaMsg != null && !zerodhaMsg.isBlank() ? zerodhaMsg : "Could not complete Zerodha login — try again.");
         }
 
         try {
