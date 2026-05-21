@@ -17,8 +17,16 @@ jobs:
         with:
           filters: |
             api:
-              - 'stokr-*/src/**'
-              - '!stokr-ui/src/**'
+              - 'stokr-auth/**'
+              - 'stokr-strategy/**'
+              - 'stokr-execution/**'
+              - 'stokr-risk/**'
+              - 'stokr-oms/**'
+              - 'stokr-broker/**'
+              - 'stokr-user/**'
+              - 'stokr-admin/**'
+              - 'stokr-common/**'
+              - 'stokr-bootstrap/**'
               - 'pom.xml'
               - 'Dockerfile'
             ui:
