@@ -47,6 +47,9 @@ public interface StrategyInstanceRepository extends JpaRepository<StrategyInstan
     @Query("select si from StrategyInstance si where si.id = :id and si.deleted = false")
     Optional<StrategyInstance> lockById(@Param("id") UUID id);
 
+    @Query("select si from StrategyInstance si join fetch si.definition where si.enabled = true and si.deleted = false and si.runtimeState != 'RUNNING'")
+    List<StrategyInstance> findAllEnabledNonRunning();
+
     @Query("""
             select case when count(si) > 0 then true else false end from StrategyInstance si
             join si.definition d
