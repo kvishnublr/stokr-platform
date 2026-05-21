@@ -12,7 +12,7 @@ import {
   Zap,
   ShieldOff,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
@@ -25,7 +25,6 @@ import { GlassPanel } from "../components/ds/GlassPanel";
 import { MetricCard } from "../components/ds/MetricCard";
 import { StatusChip } from "../components/ds/StatusChip";
 import { WorkspaceTabs, WorkspaceTabPanel } from "../components/ds/WorkspaceTabs";
-import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSessionStore } from "../state/session";
 import { useUiThemeStore } from "../state/uiTheme";
