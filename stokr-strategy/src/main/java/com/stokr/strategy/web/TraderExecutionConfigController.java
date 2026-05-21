@@ -2,7 +2,7 @@ package com.stokr.strategy.web;
 
 import com.stokr.auth.security.StokrUserDetails;
 import com.stokr.common.api.ApiResponse;
-import com.stokr.common.telemetry.CorrelationIdHolder;
+import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.strategy.dto.TraderExecutionConfigDto;
 import com.stokr.strategy.dto.TraderExecutionConfigPatchRequest;
 import com.stokr.strategy.service.StrategyExecutionConfigService;
