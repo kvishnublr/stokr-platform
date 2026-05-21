@@ -105,10 +105,23 @@ function TraderDashboardRoute() {
 function RootEntryRedirect() {
   const isTrader = useSessionStore((s) => s.hasTraderAccess());
   const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
-  if (isTrader) {
-    return <Navigate to="/dashboard" replace />;
-  }
-  return <Navigate to={isAdmin ? "/admin" : "/login"} replace />;
+  const roles = useSessionStore((s) => s.roles);
+  if (isTrader) return <Navigate to="/dashboard" replace />;
+  if (isAdmin) return <Navigate to="/admin" replace />;
+  // Token exists but no recognised role — show diagnostic instead of looping back to /login
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+      <div className="text-center space-y-3">
+        <p className="text-sm font-semibold">Session active but no role assigned.</p>
+        <p className="text-xs text-muted-foreground">Roles received: {roles.length ? roles.join(", ") : "(none)"}</p>
+        <p className="text-xs text-muted-foreground">Contact your admin to assign ROLE_ADMIN or ROLE_TRADER.</p>
+        <button
+          onClick={() => { localStorage.clear(); window.location.href = "/login"; }}
+          className="mt-2 rounded px-3 py-1.5 text-xs bg-primary text-primary-foreground hover:opacity-90"
+        >Sign out and retry</button>
+      </div>
+    </div>
+  );
 }
 
 /** Kill-switch / emergency ops UI is not exposed to ROLE_TRADER. */
