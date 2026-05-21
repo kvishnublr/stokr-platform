@@ -159,7 +159,7 @@ public class VwapMeanReversionSignalGenerator {
         // Store indicators
         sig.setRsiValue(BigDecimal.valueOf(rsi).setScale(2, RoundingMode.HALF_UP));
         sig.setAtrValue(atrBd);
-        sig.setVwapValue(vwap.setScale(4, RoundingMode.HALF_UP));
+        sig.setVwapDistance(dist.setScale(6, RoundingMode.HALF_UP));
         return sig;
     }
 
