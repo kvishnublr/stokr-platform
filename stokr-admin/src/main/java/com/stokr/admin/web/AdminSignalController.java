@@ -74,9 +74,9 @@ public class AdminSignalController {
     }
 
     @PostMapping("/track-outcomes")
-    @Operation(summary = "Immediately run outcome tracking for all pending signals (admin trigger)")
-    public ApiResponse<Map<String, String>> trackOutcomes() {
-        outcomeTrackerService.trackOutcomes();
-        return ApiResponse.ok(Map.of("status", "outcome tracking completed"), CorrelationIdHolder.get());
+    @Operation(summary = "Immediately backfill outcomes for ALL pending signals (admin trigger)")
+    public ApiResponse<Map<String, Object>> trackOutcomes() {
+        int updated = outcomeTrackerService.trackAllPending();
+        return ApiResponse.ok(Map.of("status", "completed", "processed", updated), CorrelationIdHolder.get());
     }
 }

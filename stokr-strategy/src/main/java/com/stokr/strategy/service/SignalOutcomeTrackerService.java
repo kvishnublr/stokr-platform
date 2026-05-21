@@ -42,14 +42,30 @@ public class SignalOutcomeTrackerService {
     @Scheduled(fixedDelayString = "${stokr.signal.outcome-track-ms:300000}")
     @Transactional
     public void trackOutcomes() {
+        trackOutcomes(BATCH_SIZE);
+    }
+
+    @Transactional
+    public int trackAllPending() {
+        int total = 0;
+        int batch;
+        do {
+            batch = trackOutcomes(2000);
+            total += batch;
+        } while (batch == 2000);
+        log.info("signal.outcome.backfill_done total={}", total);
+        return total;
+    }
+
+    private int trackOutcomes(int batchSize) {
         Instant now    = Instant.now();
         Instant since  = now.minus(EXPIRY_HOURS, ChronoUnit.HOURS);
-        Instant before = now.minus(2, ChronoUnit.MINUTES); // skip last 2min (signal still open)
+        Instant before = now.minus(2, ChronoUnit.MINUTES);
 
         List<StrategySignalEntity> pending = signalRepository.findPendingOutcomeTracking(
-                since, before, PageRequest.of(0, BATCH_SIZE));
+                since, before, PageRequest.of(0, batchSize));
 
-        if (pending.isEmpty()) return;
+        if (pending.isEmpty()) return 0;
 
         int updated = 0;
         for (StrategySignalEntity sig : pending) {
@@ -62,6 +78,7 @@ public class SignalOutcomeTrackerService {
         if (updated > 0) {
             log.info("signal.outcome.tracked updated={} batch={}", updated, pending.size());
         }
+        return pending.size();
     }
 
     private boolean evaluate(StrategySignalEntity sig, Instant now) {
