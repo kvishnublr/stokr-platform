@@ -72,21 +72,21 @@ public class ExecutionAlertService {
 
     private void publish(String alertType, String strategyKey, String symbol, OmsOrder order, String text) {
         boolean telegramEnabled = isTelegramEnabled(strategyKey);
-        ExecutionAlertLog log = new ExecutionAlertLog();
-        log.setAlertType(alertType);
-        log.setStrategyKey(strategyKey);
-        log.setSymbol(symbol);
+        ExecutionAlertLog entry = new ExecutionAlertLog();
+        entry.setAlertType(alertType);
+        entry.setStrategyKey(strategyKey);
+        entry.setSymbol(symbol);
         if (order != null) {
-            log.setOrderId(order.getId());
-            log.setUserId(order.getUserId());
+            entry.setOrderId(order.getId());
+            entry.setUserId(order.getUserId());
         }
         try {
-            log.setPayloadJson(objectMapper.writeValueAsString(
+            entry.setPayloadJson(objectMapper.writeValueAsString(
                     Map.of("text", text, "telegramEnabled", telegramEnabled)));
         } catch (Exception ignored) {
-            log.setPayloadJson("{\"text\":\"" + text + "\"}");
+            entry.setPayloadJson("{\"text\":\"" + text + "\"}");
         }
-        alertLogRepository.save(log);
+        alertLogRepository.save(entry);
 
         if (telegramEnabled) {
             eventPublisher.publishEvent(new ExecutionAlertEvent(
