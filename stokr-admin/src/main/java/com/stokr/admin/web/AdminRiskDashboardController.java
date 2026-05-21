@@ -65,7 +65,7 @@ public class AdminRiskDashboardController {
                 .size();
 
         List<StrategyExecutionConfig> configs = strategyExecutionConfigRepository
-                .findAllByDeletedFalseOrderByStrategyKeyAsc();
+                .findAllByUserIdIsNullAndDeletedFalseOrderByStrategyKeyAsc();
 
         List<StrategyCapitalSummary> capitalSummaries = strategyCapitalManager.globalSummary().strategies();
 
