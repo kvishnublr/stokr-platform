@@ -8,6 +8,7 @@ import com.stokr.admin.signal.AdminSignalStatsDto;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.api.PageResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
+import com.stokr.strategy.service.SignalHistoricalReplayService;
 import com.stokr.strategy.service.SignalOutcomeTrackerService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,6 +25,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.UUID;
@@ -37,6 +40,7 @@ public class AdminSignalController {
 
     private final AdminSignalQueryService queryService;
     private final SignalOutcomeTrackerService outcomeTrackerService;
+    private final SignalHistoricalReplayService historicalReplayService;
 
     @GetMapping("/stats")
     @Operation(summary = "Aggregate signal stats for today or custom window")
@@ -78,5 +82,17 @@ public class AdminSignalController {
     public ApiResponse<Map<String, Object>> trackOutcomes() {
         int updated = outcomeTrackerService.trackAllPending();
         return ApiResponse.ok(Map.of("status", "completed", "processed", updated), CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/replay-today")
+    @Operation(summary = "Replay today's session through VWAP strategy and generate live signals")
+    public ApiResponse<Map<String, Object>> replayToday(
+            @RequestParam(required = false) String date
+    ) {
+        LocalDate replayDate = date != null
+                ? LocalDate.parse(date)
+                : LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        int signals = historicalReplayService.replayVwapForDate(replayDate);
+        return ApiResponse.ok(Map.of("status", "completed", "signals", signals, "date", replayDate.toString()), CorrelationIdHolder.get());
     }
 }
