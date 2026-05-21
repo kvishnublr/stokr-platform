@@ -17,6 +17,7 @@ type UserRow = {
   lastLoginAt: string | null;
   activeStrategies: number;
   brokerLinked: boolean;
+  liveTradingApproved: boolean;
 };
 
 type PageWrap = {
@@ -46,6 +47,7 @@ function normalizeUserRow(raw: Record<string, unknown>): UserRow | null {
     lastLoginAt: typeof raw.lastLoginAt === "string" ? raw.lastLoginAt : null,
     activeStrategies: typeof raw.activeStrategies === "number" ? raw.activeStrategies : Number(raw.activeStrategies) || 0,
     brokerLinked: Boolean(raw.brokerLinked),
+    liveTradingApproved: Boolean(raw.liveTradingApproved),
   };
 }
 
@@ -115,6 +117,16 @@ export function AdminUsersPage() {
       const res = await api.patch(`/api/admin/users/${u.id}/reset-password`);
       const temp = res.data?.data?.temporaryPassword as string | undefined;
       toast.success(temp ? `Temporary password: ${temp}` : "Password reset issued");
+    } catch (e) {
+      toast.error(parseAxiosMessage(e));
+    }
+  }
+
+  async function toggleLiveApproval(u: UserRow, approve: boolean) {
+    try {
+      await api.patch(`/api/admin/users/${u.id}`, { liveTradingApproved: approve });
+      toast.success(approve ? `Live trading approved for ${u.username}` : `Live trading revoked for ${u.username}`);
+      void q.refetch();
     } catch (e) {
       toast.error(parseAxiosMessage(e));
     }
@@ -224,25 +236,26 @@ export function AdminUsersPage() {
                 <th className={cn("px-4 py-3 font-semibold", thCls)}>Strategies</th>
                 <th className={cn("px-4 py-3 font-semibold", thCls)}>Broker</th>
                 <th className={cn("px-4 py-3 font-semibold", thCls)}>Status</th>
+                <th className={cn("px-4 py-3 font-semibold", thCls)}>Live Trading</th>
                 <th className={cn("px-4 py-3 text-right font-semibold", thCls)}>Actions</th>
               </tr>
             </thead>
             <tbody className={cn("divide-y", divideCls)}>
               {q.isLoading ? (
                 <tr>
-                  <td colSpan={6} className={cn("px-4 py-10 text-center text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>
+                  <td colSpan={7} className={cn("px-4 py-10 text-center text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>
                     Loading users...
                   </td>
                 </tr>
               ) : q.isError ? (
                 <tr>
-                  <td colSpan={6} className={cn("px-4 py-10 text-center text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>
+                  <td colSpan={7} className={cn("px-4 py-10 text-center text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>
                     Fix the error above, then use Retry or refresh the page.
                   </td>
                 </tr>
               ) : (data?.content ?? []).length === 0 ? (
                 <tr>
-                  <td colSpan={6} className={cn("px-4 py-10 text-center text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>
+                  <td colSpan={7} className={cn("px-4 py-10 text-center text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>
                     No users match the current filters. Try clearing search or set status to &quot;Any&quot;.
                   </td>
                 </tr>
@@ -301,8 +314,30 @@ export function AdminUsersPage() {
                         {u.enabled ? "Active" : "Disabled"}
                       </span>
                     </td>
+                    <td className="px-4 py-3">
+                      <span className={cn(
+                        "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                        u.liveTradingApproved
+                          ? isLight ? "bg-emerald-100 text-emerald-800" : "bg-emerald-950 text-emerald-300"
+                          : isLight ? "bg-amber-100 text-amber-800" : "bg-amber-950 text-amber-400",
+                      )}>
+                        {u.liveTradingApproved ? "Approved" : "Pending"}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-md border px-2 py-1 text-xs font-semibold transition",
+                            u.liveTradingApproved
+                              ? isLight ? "border-amber-300 text-amber-800 hover:bg-amber-50" : "border-amber-700/60 text-amber-300 hover:bg-amber-950/40"
+                              : isLight ? "border-emerald-300 text-emerald-800 hover:bg-emerald-50" : "border-emerald-700/60 text-emerald-300 hover:bg-emerald-950/40",
+                          )}
+                          onClick={() => void toggleLiveApproval(u, !u.liveTradingApproved)}
+                        >
+                          {u.liveTradingApproved ? "Revoke Live" : "Approve Live"}
+                        </button>
                         <button
                           type="button"
                           className={cn(

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -9,7 +9,11 @@ import {
   Users,
   Workflow,
   ZapOff,
+  Zap,
+  ShieldOff,
 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
 import { fetchAdminOpsSnapshotMerged } from "../lib/fetchAdminOpsSnapshotMerged";
@@ -42,6 +46,79 @@ function infraPlaneStatus(snapshot: OpsSnapshot | undefined): "online" | "offlin
   if (!rOk || !dOk) return "offline";
   if (halt || marketStale) return "degraded";
   return "online";
+}
+
+function LiveArmCard({ isLight, panelVariant }: { isLight: boolean; panelVariant: "light" | "dark" }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+
+  const healthQ = useQuery({
+    queryKey: ["admin-health"],
+    queryFn: async () => (await api.get("/api/admin/health")).data?.data as Record<string, unknown>,
+    refetchInterval: 8000,
+    retry: 2,
+  });
+
+  const armed = Boolean(healthQ.data?.liveTradingArmed);
+
+  async function toggle() {
+    setBusy(true);
+    try {
+      await api.post(`/api/admin/live-trading/arm?armed=${!armed}`);
+      toast.success(!armed ? "Live trading ARMED — orders will execute" : "Live trading DISARMED — paper mode only");
+      void qc.invalidateQueries({ queryKey: ["admin-health"] });
+    } catch (e) {
+      toast.error(parseAxiosMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <GlassPanel
+      variant={panelVariant}
+      className={cn(
+        "border p-5",
+        armed
+          ? isLight ? "border-emerald-200 bg-emerald-50/60" : "border-emerald-500/25 bg-emerald-950/30"
+          : isLight ? "border-amber-200 bg-amber-50/60" : "border-amber-500/25 bg-amber-950/20",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className={cn("text-[11px] font-bold uppercase tracking-widest", isLight ? "text-neutral-500" : "text-neutral-400")}>
+            Live execution
+          </div>
+          <div className={cn("mt-1 text-lg font-bold", armed
+            ? isLight ? "text-emerald-800" : "text-emerald-300"
+            : isLight ? "text-amber-800" : "text-amber-300",
+          )}>
+            {healthQ.isLoading ? "…" : armed ? "ARMED" : "DISARMED"}
+          </div>
+          <div className={cn("mt-0.5 text-xs", isLight ? "text-neutral-500" : "text-neutral-500")}>
+            {armed ? "Live orders will execute" : "Paper/simulation mode only"}
+          </div>
+        </div>
+        {armed
+          ? <Zap className={cn("h-6 w-6 shrink-0 mt-0.5", isLight ? "text-emerald-600" : "text-emerald-400")} />
+          : <ShieldOff className={cn("h-6 w-6 shrink-0 mt-0.5", isLight ? "text-amber-600" : "text-amber-400")} />
+        }
+      </div>
+      <button
+        type="button"
+        disabled={busy || healthQ.isLoading}
+        onClick={() => void toggle()}
+        className={cn(
+          "mt-4 w-full rounded-lg border px-3 py-1.5 text-xs font-bold uppercase tracking-wide transition disabled:opacity-50",
+          armed
+            ? isLight ? "border-amber-300 bg-white text-amber-800 hover:bg-amber-50" : "border-amber-700/60 text-amber-200 hover:bg-amber-950/40"
+            : isLight ? "border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-50" : "border-emerald-700/60 text-emerald-200 hover:bg-emerald-950/40",
+        )}
+      >
+        {busy ? "…" : armed ? "Disarm live trading" : "Arm live trading"}
+      </button>
+    </GlassPanel>
+  );
 }
 
 export function AdminOverviewPage() {
@@ -250,6 +327,7 @@ export function AdminOverviewPage() {
 
       <WorkspaceTabPanel id="overview" active={tab}>
         <div className="grid gap-4 md:grid-cols-3">
+          <LiveArmCard isLight={isLight} panelVariant={panel} />
           {showRiskConsole ? (
             <MetricCard
               panelVariant={panel}
