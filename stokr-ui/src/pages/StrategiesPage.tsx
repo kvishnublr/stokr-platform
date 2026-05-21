@@ -138,7 +138,8 @@ export function StrategiesPage() {
       let runtimeTag: StrategyCatalogCard["runtimeTag"] = "NO_DATA";
       if (!activePipeline) runtimeTag = "BLOCKED";
       else if (inst?.runtimeState?.toUpperCase() === "RUNNING") runtimeTag = "RUNNING";
-      else if (inst?.runtimeState?.toUpperCase() === "PAUSED" || c.subscriptionEnabled === false) runtimeTag = "PAUSED";
+      else if (["PAUSED", "STOPPED"].includes(inst?.runtimeState?.toUpperCase() ?? "") || c.subscriptionEnabled === false) runtimeTag = "PAUSED";
+      else if (inst) runtimeTag = "PAUSED";
       else if (met?.health === "STALE") runtimeTag = "DEGRADED";
 
       return {
@@ -148,9 +149,13 @@ export function StrategiesPage() {
         runtimeNote: !activePipeline
           ? "Execution pipeline inactive"
           : c.subscribed
-            ? c.subscriptionEnabled
-              ? "Subscribed and eligible"
-              : "Subscription paused"
+            ? inst?.runtimeState?.toUpperCase() === "RUNNING"
+              ? "Running"
+              : inst?.runtimeState?.toUpperCase() === "PAUSED"
+                ? "Paused"
+                : c.subscriptionEnabled
+                  ? "Subscribed — click Paper or Live to start"
+                  : "Subscription paused"
             : "Not subscribed",
         signalsToday: sig?.count ?? 0,
         lastSignalAt: toSinceLabel(sig?.last ?? met?.lastSignalAt),
