@@ -1,0 +1,58 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [Release_v1]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect changed services
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            api:
+              - 'stokr-**/**'
+              - 'pom.xml'
+              - 'Dockerfile'
+            ui:
+              - 'stokr-ui/**'
+
+      - name: Deploy API (jar hot-swap)
+        if: steps.changes.outputs.api == 'true' && steps.changes.outputs.ui == 'false'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            git pull origin Release_v1
+            ./deploy.sh jar
+
+      - name: Deploy UI only
+        if: steps.changes.outputs.ui == 'true' && steps.changes.outputs.api == 'false'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            git pull origin Release_v1
+            ./deploy.sh ui
+
+      - name: Deploy API + UI
+        if: steps.changes.outputs.api == 'true' && steps.changes.outputs.ui == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            git pull origin Release_v1
+            ./deploy.sh jar
+            ./deploy.sh ui
