@@ -43,6 +43,8 @@ export function StrategiesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const token = useSessionStore((s) => s.accessToken);
+  const hasRole = useSessionStore((s) => s.hasRole);
+  const isAdmin = hasRole("ROLE_ADMIN");
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const [qText, setQText] = useState("");
 
@@ -68,6 +70,19 @@ export function StrategiesPage() {
     queryFn: async () => (await api.get("/api/trader/strategy-feed")).data?.data as SignalRow[],
     refetchInterval: 15_000,
     enabled: !!token,
+  });
+  const adminSignalsQuery = useQuery({
+    queryKey: ["admin-signals-for-strategy-cards"],
+    queryFn: async () => {
+      const p = new URLSearchParams();
+      p.set("page", "0");
+      p.set("size", "500");
+      p.set("sort", "createdAt,desc");
+      const res = await api.get(`/api/admin/signals?${p.toString()}`);
+      return (res.data?.data?.content ?? []) as Array<{ strategyName?: string | null; createdAt?: string | null }>;
+    },
+    refetchInterval: 15_000,
+    enabled: !!token && isAdmin,
   });
   const modeQuery = useQuery({
     queryKey: ["trader-execution-mode-pref"],
@@ -115,8 +130,11 @@ export function StrategiesPage() {
     const runtime = runtimeQuery.data ?? [];
     const instances = instancesQuery.data ?? [];
     const sigs = signalsQuery.data ?? [];
+    const sourceSignals = isAdmin
+      ? (adminSignalsQuery.data ?? []).map((x) => ({ strategyName: x.strategyName ?? null, createdAt: x.createdAt ?? null }))
+      : sigs;
     const sigByStrategy = new Map<string, { count: number; last: string | null }>();
-    for (const s of sigs) {
+    for (const s of sourceSignals) {
       const k = String(s.strategyName ?? "").trim();
       if (!k) continue;
       const prev = sigByStrategy.get(k) ?? { count: 0, last: null };
@@ -165,7 +183,7 @@ export function StrategiesPage() {
         omsState: activePipeline ? "READY" : "BLOCKED",
       } as StrategyCatalogCard;
     });
-  }, [catalogQuery.data, runtimeQuery.data, instancesQuery.data, signalsQuery.data, readinessQuery.data, modeQuery.data]);
+  }, [catalogQuery.data, runtimeQuery.data, instancesQuery.data, signalsQuery.data, adminSignalsQuery.data, isAdmin, readinessQuery.data, modeQuery.data]);
 
   const filtered = rows.filter((s) => {
     const t = qText.trim().toLowerCase();
