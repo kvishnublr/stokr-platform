@@ -49,7 +49,7 @@ public class StrategyCatalogQueryService {
         Map<String, List<String>> result = new HashMap<>();
         for (StrategyRuntimeBinding b : runtimeBindingRepository.findAllActiveBindingsByStrategyKeys(strategyKeys)) {
             String key = b.getStrategyCatalog().getStrategyKey();
-            String groupName = b.getUniverseGroup().getName();
+            String groupName = b.getUniverseGroup().getDisplayName();
             result.computeIfAbsent(key, k -> new ArrayList<>()).add(groupName);
         }
         return result;
