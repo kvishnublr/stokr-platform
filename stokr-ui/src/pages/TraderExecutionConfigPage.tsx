@@ -16,10 +16,10 @@ import { toast } from "sonner";
 function ModeBadge({ mode }: { mode: string }) {
   const color =
     mode === "LIVE"
-      ? "bg-red-500/20 text-red-400 border-red-500/30"
+      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
       : mode === "BOTH"
-        ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
-        : "bg-blue-500/20 text-blue-400 border-blue-500/30";
+        ? "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
+        : "bg-neutral-500/15 text-neutral-600 dark:text-neutral-400 border-neutral-500/30";
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${color}`}>
       {mode}
@@ -30,7 +30,7 @@ function ModeBadge({ mode }: { mode: string }) {
 function Dot({ on }: { on: boolean }) {
   return (
     <span
-      className={`inline-block h-2 w-2 rounded-full ${on ? "bg-green-400" : "bg-zinc-600"}`}
+      className={`inline-block h-2 w-2 rounded-full ${on ? "bg-green-500" : "bg-muted-foreground/30"}`}
     />
   );
 }
@@ -40,7 +40,7 @@ function Toggle({ value, onChange, destructive }: { value: boolean; onChange: ()
     <button
       onClick={onChange}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-        value ? (destructive ? "bg-red-500" : "bg-primary") : "bg-zinc-600"
+        value ? (destructive ? "bg-red-500" : "bg-primary") : "bg-border"
       }`}
     >
       <span
@@ -82,35 +82,35 @@ function EditModal({ cfg, onClose }: { cfg: TraderExecutionConfigDto; onClose: (
     setForm((f) => ({ ...f, [key]: !f[key] }));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-md p-6 space-y-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-card border border-border rounded-xl w-full max-w-md p-6 space-y-5 shadow-xl">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white font-mono">{cfg.strategyKey}</h2>
-          <button onClick={onClose} className="text-zinc-400 hover:text-white text-sm">✕</button>
+          <h2 className="text-base font-semibold text-foreground font-mono">{cfg.strategyKey}</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-sm">✕</button>
         </div>
 
         {cfg.isGlobalFallback && (
-          <p className="text-xs text-amber-400 border border-amber-500/30 bg-amber-500/10 rounded p-2">
+          <p className="text-xs text-amber-600 dark:text-amber-400 border border-amber-500/30 bg-amber-500/10 rounded p-2">
             Showing global defaults. Saving will create your personal override.
           </p>
         )}
 
         {/* Admin read-only */}
-        <div className="rounded-lg bg-zinc-800/60 border border-zinc-700 p-3 space-y-2 text-sm">
-          <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Admin-controlled (read only)</p>
+        <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-2 text-sm">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Admin-controlled (read only)</p>
           <div className="flex justify-between items-center">
-            <span className="text-zinc-400">Execution mode</span>
+            <span className="text-muted-foreground text-xs">Execution mode</span>
             <ModeBadge mode={cfg.executionMode} />
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-zinc-400">Live enabled</span>
-            <span className={cfg.liveEnabled ? "text-green-400 text-xs" : "text-zinc-500 text-xs"}>
+            <span className="text-muted-foreground text-xs">Live enabled</span>
+            <span className={`text-xs font-medium ${cfg.liveEnabled ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>
               {cfg.liveEnabled ? "Yes" : "No"}
             </span>
           </div>
         </div>
 
-        {/* Trader-editable */}
+        {/* Trader-editable toggles */}
         <div className="space-y-3">
           {(
             [
@@ -122,7 +122,7 @@ function EditModal({ cfg, onClose }: { cfg: TraderExecutionConfigDto; onClose: (
             ] as [string, keyof TraderExecutionConfigPatchRequest, boolean][]
           ).map(([label, key, dest]) => (
             <div key={key} className="flex items-center justify-between">
-              <span className={`text-sm ${dest && form[key] ? "text-red-400" : "text-zinc-200"}`}>{label}</span>
+              <span className={`text-sm ${dest && form[key] ? "text-red-500 dark:text-red-400" : "text-foreground"}`}>{label}</span>
               <Toggle value={form[key] as boolean} onChange={() => toggle(key)} destructive={dest} />
             </div>
           ))}
@@ -135,20 +135,20 @@ function EditModal({ cfg, onClose }: { cfg: TraderExecutionConfigDto; onClose: (
             ] as [string, keyof TraderExecutionConfigPatchRequest, number, number][]
           ).map(([label, key, min, step]) => (
             <div key={key} className="flex items-center justify-between gap-4">
-              <span className="text-sm text-zinc-200">{label}</span>
+              <span className="text-sm text-foreground">{label}</span>
               <input
                 type="number"
                 value={form[key] as number}
                 min={min}
                 step={step}
                 onChange={(e) => setForm((f) => ({ ...f, [key]: parseFloat(e.target.value) || 0 }))}
-                className="w-28 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-white text-right"
+                className="w-28 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground text-right focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           ))}
 
           <div className="flex items-center justify-between gap-4">
-            <span className="text-sm text-zinc-200">Daily loss limit</span>
+            <span className="text-sm text-foreground">Daily loss limit</span>
             <input
               type="number"
               value={form.dailyLossLimit ?? 0}
@@ -158,15 +158,15 @@ function EditModal({ cfg, onClose }: { cfg: TraderExecutionConfigDto; onClose: (
                 const v = parseFloat(e.target.value);
                 setForm((f) => ({ ...f, dailyLossLimit: v > 0 ? v : null }));
               }}
-              className="w-28 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-white text-right"
+              className="w-28 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground text-right focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex justify-end gap-2 pt-2 border-t border-border">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg border border-zinc-700 text-zinc-400 hover:text-white"
+            className="px-4 py-2 text-sm rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40"
           >
             Cancel
           </button>
@@ -208,9 +208,9 @@ export function TraderExecutionConfigPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-5 border-b border-zinc-800">
-        <h1 className="text-xl font-semibold text-white">Strategy Settings</h1>
-        <p className="text-sm text-zinc-400 mt-0.5">
+      <div className="px-6 py-5 border-b border-border">
+        <h1 className="text-xl font-semibold text-foreground">Strategy Settings</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
           Manage your personal execution preferences per strategy
         </p>
       </div>
@@ -222,30 +222,30 @@ export function TraderExecutionConfigPage() {
             placeholder="Search strategy…"
             value={searchKey}
             onChange={(e) => setSearchKey(e.target.value)}
-            className="w-64 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-white placeholder:text-zinc-500"
+            className="w-64 rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           />
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-muted-foreground">
             {rows.length} strateg{rows.length !== 1 ? "ies" : "y"}
             {configs.data && rows.length < configs.data.length ? ` (filtered from ${configs.data.length})` : ""}
           </span>
         </div>
 
         {configs.isLoading && (
-          <p className="text-sm text-zinc-400">Loading…</p>
+          <p className="text-sm text-muted-foreground">Loading…</p>
         )}
 
         {!configs.isLoading && rows.length === 0 && (
-          <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-10 text-center space-y-2">
-            <p className="text-sm text-zinc-400">
+          <div className="rounded-xl border border-border bg-muted/20 p-10 text-center">
+            <p className="text-sm text-muted-foreground">
               {searchKey ? `No strategies matching "${searchKey}".` : "No strategies configured yet. Ask your admin to add strategy configs."}
             </p>
           </div>
         )}
 
         {rows.length > 0 && (
-          <div className="rounded-xl border border-zinc-700 overflow-hidden">
+          <div className="rounded-xl border border-border overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-zinc-800/80 text-zinc-400 text-xs uppercase tracking-wider">
+              <thead className="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3">Strategy</th>
                   <th className="text-center px-3 py-3">Mode</th>
@@ -258,14 +258,14 @@ export function TraderExecutionConfigPage() {
                   <th className="text-right px-4 py-3"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800">
+              <tbody className="divide-y divide-border">
                 {rows.map((c) => (
-                  <tr key={c.strategyKey} className="hover:bg-zinc-800/40">
-                    <td className="px-4 py-3 font-mono text-xs text-white">
+                  <tr key={c.strategyKey} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3 font-mono text-xs text-foreground">
                       <div className="flex items-center gap-2">
-                        {c.strategyKey}
+                        <span className="font-semibold">{c.strategyKey}</span>
                         {c.isGlobalFallback && (
-                          <span className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1">default</span>
+                          <span className="text-[10px] text-muted-foreground border border-border rounded px-1 py-0.5">default</span>
                         )}
                       </div>
                     </td>
@@ -274,24 +274,24 @@ export function TraderExecutionConfigPage() {
                     </td>
                     <td className="px-3 py-3 text-center"><Dot on={c.enabled} /></td>
                     <td className="px-3 py-3 text-center"><Dot on={c.liveEnabled} /></td>
-                    <td className="px-3 py-3 text-center text-zinc-300 text-xs">
+                    <td className="px-3 py-3 text-center text-foreground text-xs font-mono">
                       {c.forceFixedQty ? c.fixedQty : "capital"}
                     </td>
-                    <td className="px-3 py-3 text-center text-zinc-300 text-xs">{c.maxPositions}</td>
-                    <td className="px-3 py-3 text-center text-zinc-300 text-xs">
+                    <td className="px-3 py-3 text-center text-foreground text-xs font-mono">{c.maxPositions}</td>
+                    <td className="px-3 py-3 text-center text-foreground text-xs font-mono">
                       {c.dailyLossLimit ? `₹${c.dailyLossLimit}` : "—"}
                     </td>
                     <td className="px-3 py-3 text-center">
                       {c.emergencyStopEnabled ? (
-                        <span className="text-red-400 font-medium text-xs">ON</span>
+                        <span className="text-red-600 dark:text-red-400 font-semibold text-xs">ON</span>
                       ) : (
-                        <span className="text-zinc-600 text-xs">off</span>
+                        <span className="text-muted-foreground text-xs">off</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => setEditing(c.strategyKey)}
-                        className="text-xs text-primary hover:underline"
+                        className="text-xs text-primary hover:underline font-medium"
                       >
                         Edit
                       </button>
