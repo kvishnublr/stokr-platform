@@ -76,7 +76,9 @@ class MaxDailyLossRuleTest {
                 0,
                 null,
                 false,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                null,
+                null
         );
     }
 }

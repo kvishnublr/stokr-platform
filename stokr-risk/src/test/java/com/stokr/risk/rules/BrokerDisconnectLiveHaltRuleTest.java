@@ -60,7 +60,9 @@ class BrokerDisconnectLiveHaltRuleTest {
                 0,
                 null,
                 brokerHalt,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                null,
+                null
         );
     }
 }
