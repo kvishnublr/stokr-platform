@@ -6,6 +6,11 @@ import com.stokr.strategy.catalog.StrategyUniverseResolverService;
 import com.stokr.strategy.domain.StrategyRuntimeBinding;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.domain.StrategyUniverseSymbol;
+import com.stokr.strategy.ematrend.EmaTrendFollowingSignalGenerator;
+import com.stokr.strategy.meanreversion.MeanReversionSignalGenerator;
+import com.stokr.strategy.meanreversion.MeanReversionV2SignalGenerator;
+import com.stokr.strategy.momentum.MomentumBreakoutSignalGenerator;
+import com.stokr.strategy.openingrange.OpeningRangeBreakoutSignalGenerator;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.vwap.VwapMeanReversionSignalGenerator;
 import lombok.RequiredArgsConstructor;
@@ -18,13 +23,14 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * Replays a historical trading session through live-signal generators and persists
- * the results as real signals (no backtestRunId). Used to backfill today's signals
- * when the scanner ran on old code or was restarted after market hours.
+ * results as real signals (no backtestRunId). Supports any strategy key and date range.
  */
 @Service
 @RequiredArgsConstructor
@@ -32,6 +38,11 @@ import java.util.UUID;
 public class SignalHistoricalReplayService {
 
     private final VwapMeanReversionSignalGenerator vwapGenerator;
+    private final MeanReversionSignalGenerator meanReversionGenerator;
+    private final MeanReversionV2SignalGenerator meanReversionV2Generator;
+    private final MomentumBreakoutSignalGenerator momentumGenerator;
+    private final OpeningRangeBreakoutSignalGenerator orbGenerator;
+    private final EmaTrendFollowingSignalGenerator emaTrendGenerator;
     private final StrategyUniverseResolverService resolverService;
     private final MarketDataQueryService marketDataQueryService;
     private final StrategySignalPipelineService pipelineService;
@@ -51,69 +62,81 @@ public class SignalHistoricalReplayService {
     @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
     private UUID systemUserId;
 
+    public record ReplayResult(String strategyKey, LocalDate from, LocalDate to,
+                               int symbolsScanned, int barsProcessed, int signalsGenerated) {}
+
     /**
-     * Replays the given date's full session through the VWAP strategy for all bound universe symbols.
-     * Saves qualifying signals as live signals (backtestRunId = null).
-     *
-     * @param date date to replay (defaults to today if null)
-     * @return number of signals generated
+     * Replays all bound symbols for a strategy across a date range.
+     * Signals are saved as live signals (backtestRunId = null).
      */
-    public int replayVwapForDate(LocalDate date) {
-        if (date == null) date = LocalDate.now(zone);
+    public ReplayResult replay(String strategyKey, LocalDate from, LocalDate to) {
+        if (from == null) from = LocalDate.now(zone);
+        if (to == null) to = from;
+        if (to.isBefore(from)) to = from;
 
-        Instant sessionOpen  = date.atTime(sessionStart).atZone(zone).toInstant();
-        Instant sessionClose = date.atTime(sessionEnd).atZone(zone).toInstant();
-
-        List<StrategyRuntimeBinding> bindings = resolverService.resolveBindingsForStrategy("VWAP_MEAN_REVERSION");
+        List<StrategyRuntimeBinding> bindings = resolverService.resolveBindingsForStrategy(strategyKey);
         if (bindings.isEmpty()) {
-            log.warn("replay.vwap.no_bindings date={}", date);
-            return 0;
+            log.warn("replay.no_bindings strategyKey={} from={} to={}", strategyKey, from, to);
+            return new ReplayResult(strategyKey, from, to, 0, 0, 0);
         }
 
-        List<String> symbols = new ArrayList<>();
+        Set<String> symbolSet = new LinkedHashSet<>();
         for (StrategyRuntimeBinding b : bindings) {
             for (StrategyUniverseSymbol sym : resolverService.resolveSymbolEntitiesForGroup(b.getUniverseGroup().getId())) {
-                String s = sym.getTradingSymbol() != null ? sym.getTradingSymbol() : sym.getSymbol();
-                if (!symbols.contains(s)) symbols.add(s);
+                symbolSet.add(sym.getTradingSymbol() != null ? sym.getTradingSymbol() : sym.getSymbol());
             }
         }
+        List<String> symbols = new ArrayList<>(symbolSet);
 
-        log.info("replay.vwap.start date={} symbols={}", date, symbols.size());
+        log.info("replay.start strategyKey={} from={} to={} symbols={}", strategyKey, from, to, symbols.size());
 
-        int signalCount = 0;
-        int barCount    = 0;
+        int totalBars = 0, totalSignals = 0;
 
-        for (String symbol : symbols) {
-            try {
-                // Fetch all 5m bars for this symbol on the given date
-                List<MarketdataCandle> bars = marketDataQueryService.rangeAsc(symbol, "5m", sessionOpen, sessionClose);
-                if (bars.isEmpty()) {
-                    // fallback to 1m
-                    bars = marketDataQueryService.rangeAsc(symbol, "1m", sessionOpen, sessionClose);
-                }
-                if (bars.isEmpty()) continue;
+        for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
+            Instant sessionOpen  = date.atTime(sessionStart).atZone(zone).toInstant();
+            Instant sessionClose = date.atTime(sessionEnd).atZone(zone).toInstant();
 
-                barCount += bars.size();
+            for (String symbol : symbols) {
+                try {
+                    List<MarketdataCandle> bars = marketDataQueryService.rangeAsc(symbol, "5m", sessionOpen, sessionClose);
+                    if (bars.isEmpty()) bars = marketDataQueryService.rangeAsc(symbol, "1m", sessionOpen, sessionClose);
+                    if (bars.isEmpty()) continue;
 
-                for (MarketdataCandle bar : bars) {
-                    try {
-                        StrategySignalEntity sig = vwapGenerator.evaluatePersistableAtOpen(
-                                symbol, systemUserId, null, executionMode,
-                                bar.getOpenTime(), "5m");
-                        if (sig != null) {
-                            pipelineService.persistAndDispatch(sig, UUID.randomUUID().toString(), executionMode);
-                            signalCount++;
+                    totalBars += bars.size();
+                    for (MarketdataCandle bar : bars) {
+                        try {
+                            StrategySignalEntity sig = evaluate(strategyKey, symbol, bar.getOpenTime());
+                            if (sig != null) {
+                                pipelineService.persistAndDispatch(sig, UUID.randomUUID().toString(), executionMode);
+                                totalSignals++;
+                            }
+                        } catch (Exception ex) {
+                            log.debug("replay.bar_error symbol={} bar={} {}", symbol, bar.getOpenTime(), ex.getMessage());
                         }
-                    } catch (Exception ex) {
-                        log.debug("replay.vwap.bar_error symbol={} bar={} {}", symbol, bar.getOpenTime(), ex.getMessage());
                     }
+                } catch (Exception ex) {
+                    log.warn("replay.symbol_error strategyKey={} symbol={} {}", strategyKey, symbol, ex.getMessage());
                 }
-            } catch (Exception ex) {
-                log.warn("replay.vwap.symbol_error symbol={} {}", symbol, ex.getMessage());
             }
         }
 
-        log.info("replay.vwap.done date={} symbols={} bars={} signals={}", date, symbols.size(), barCount, signalCount);
-        return signalCount;
+        log.info("replay.done strategyKey={} from={} to={} symbols={} bars={} signals={}",
+                strategyKey, from, to, symbols.size(), totalBars, totalSignals);
+        return new ReplayResult(strategyKey, from, to, symbols.size(), totalBars, totalSignals);
+    }
+
+    private StrategySignalEntity evaluate(String strategyKey, String symbol, Instant barTime) {
+        return switch (strategyKey) {
+            case "VWAP_MEAN_REVERSION"     -> vwapGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
+            case "MEAN_REVERSION"          -> meanReversionGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
+            case "MEAN_REVERSION_V2"       -> meanReversionV2Generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
+            case "MOMENTUM_BREAKOUT"       -> momentumGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
+            case "OPENING_RANGE_BREAKOUT"  -> orbGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
+            case "EMA_TREND_FOLLOWING"     -> emaTrendGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
+            default -> {
+                log.warn("replay.unknown_strategy key={}", strategyKey);
+                yield null;
+            }
+        };
     }
 }

@@ -212,6 +212,7 @@ export function ShellLayout() {
   const adminIntelligenceLinks: SidebarLink[] = useMemo(() => [
     { to: "/admin",         end: true, label: "Overview",       icon: LayoutDashboard },
     { to: "/admin/signals",           label: "Signal Monitor",  icon: Zap },
+    { to: "/admin/signal-replay",     label: "Signal Replay",   icon: Zap },
     { to: "/admin/oms",               label: "OMS Monitor",     icon: BarChart3 },
     { to: "/admin/traders-health",    label: "Trader Health",   icon: Stethoscope },
   ], []);

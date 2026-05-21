@@ -84,15 +84,23 @@ public class AdminSignalController {
         return ApiResponse.ok(Map.of("status", "completed", "processed", updated), CorrelationIdHolder.get());
     }
 
-    @PostMapping("/replay-today")
-    @Operation(summary = "Replay today's session through VWAP strategy and generate live signals")
-    public ApiResponse<Map<String, Object>> replayToday(
-            @RequestParam(required = false) String date
+    @PostMapping("/replay")
+    @Operation(summary = "Replay a strategy over a date range and generate live signals")
+    public ApiResponse<Map<String, Object>> replay(
+            @RequestParam String strategyKey,
+            @RequestParam String from,
+            @RequestParam String to
     ) {
-        LocalDate replayDate = date != null
-                ? LocalDate.parse(date)
-                : LocalDate.now(ZoneId.of("Asia/Kolkata"));
-        int signals = historicalReplayService.replayVwapForDate(replayDate);
-        return ApiResponse.ok(Map.of("status", "completed", "signals", signals, "date", replayDate.toString()), CorrelationIdHolder.get());
+        LocalDate fromDate = LocalDate.parse(from);
+        LocalDate toDate   = LocalDate.parse(to);
+        var result = historicalReplayService.replay(strategyKey, fromDate, toDate);
+        return ApiResponse.ok(Map.of(
+                "strategyKey",      result.strategyKey(),
+                "from",             result.from().toString(),
+                "to",               result.to().toString(),
+                "symbolsScanned",   result.symbolsScanned(),
+                "barsProcessed",    result.barsProcessed(),
+                "signalsGenerated", result.signalsGenerated()
+        ), CorrelationIdHolder.get());
     }
 }
