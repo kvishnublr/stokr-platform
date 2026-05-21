@@ -43,7 +43,8 @@ public class CatalogDrivenScanScheduler {
     private final StrategySignalPipelineService signalPipelineService;
     private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
 
-    @Value("${stokr.strategy.require-operational-live-path:true}")
+    // Separate from the main scanner gate — catalog strategies (e.g. MCX) manage their own session hours
+    @Value("${stokr.catalog.scan.require-operational-path:false}")
     private boolean requireOperationalLivePath;
 
     @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
