@@ -32,11 +32,11 @@ public class TraderExecutionConfigController {
 
     private final StrategyExecutionConfigService configService;
 
-    /** Returns all trader-specific config overrides for the authenticated user. */
+    /** Returns all globally-configured strategies with effective values for the authenticated user. */
     @GetMapping
     public ApiResponse<List<TraderExecutionConfigDto>> list(
             @AuthenticationPrincipal StokrUserDetails user) {
-        return ApiResponse.ok(configService.listForUser(user.getId()), CorrelationIdHolder.get());
+        return ApiResponse.ok(configService.listAllEffectiveForUser(user.getId()), CorrelationIdHolder.get());
     }
 
     /**

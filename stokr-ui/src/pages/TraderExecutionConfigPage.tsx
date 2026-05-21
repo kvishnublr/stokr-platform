@@ -219,21 +219,14 @@ export function TraderExecutionConfigPage() {
         <div className="flex items-center gap-3">
           <input
             type="text"
-            placeholder="Search strategy key…"
+            placeholder="Search strategy…"
             value={searchKey}
             onChange={(e) => setSearchKey(e.target.value)}
             className="w-64 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-white placeholder:text-zinc-500"
           />
-          {searchKey && !rows.length && (
-            <button
-              onClick={() => setEditing(searchKey)}
-              className="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-foreground hover:opacity-90"
-            >
-              Configure "{searchKey}"
-            </button>
-          )}
           <span className="text-xs text-zinc-500">
-            {rows.length} override{rows.length !== 1 ? "s" : ""}
+            {rows.length} strateg{rows.length !== 1 ? "ies" : "y"}
+            {configs.data && rows.length < configs.data.length ? ` (filtered from ${configs.data.length})` : ""}
           </span>
         </div>
 
@@ -241,11 +234,10 @@ export function TraderExecutionConfigPage() {
           <p className="text-sm text-zinc-400">Loading…</p>
         )}
 
-        {!configs.isLoading && rows.length === 0 && !searchKey && (
+        {!configs.isLoading && rows.length === 0 && (
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-10 text-center space-y-2">
-            <p className="text-sm text-zinc-400">No personal overrides yet.</p>
-            <p className="text-xs text-zinc-500">
-              Search for a strategy key above to configure it.
+            <p className="text-sm text-zinc-400">
+              {searchKey ? `No strategies matching "${searchKey}".` : "No strategies configured yet. Ask your admin to add strategy configs."}
             </p>
           </div>
         )}
@@ -269,7 +261,14 @@ export function TraderExecutionConfigPage() {
               <tbody className="divide-y divide-zinc-800">
                 {rows.map((c) => (
                   <tr key={c.strategyKey} className="hover:bg-zinc-800/40">
-                    <td className="px-4 py-3 font-mono text-xs text-white">{c.strategyKey}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-white">
+                      <div className="flex items-center gap-2">
+                        {c.strategyKey}
+                        {c.isGlobalFallback && (
+                          <span className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1">default</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-3 text-center">
                       <ModeBadge mode={c.executionMode} />
                     </td>

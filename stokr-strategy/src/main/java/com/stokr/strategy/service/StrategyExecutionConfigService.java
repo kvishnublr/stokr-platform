@@ -62,11 +62,36 @@ public class StrategyExecutionConfigService {
 
     // ── Trader self-service ───────────────────────────────────────────────────
 
-    /** All trader-specific overrides for a given user. */
+    /** All trader-specific overrides for a given user (personal rows only). */
     public List<TraderExecutionConfigDto> listForUser(UUID userId) {
         return configRepository.findByUserIdAndDeletedFalseOrderByStrategyKeyAsc(userId)
                 .stream()
                 .map(c -> toTraderDto(c, false))
+                .toList();
+    }
+
+    /**
+     * Returns all globally-configured strategies with effective values for the user.
+     * Personal overrides take precedence; global admin config is the fallback (isGlobalFallback=true).
+     * This is what the trader settings page should use — shows all strategies, not just overrides.
+     */
+    public List<TraderExecutionConfigDto> listAllEffectiveForUser(UUID userId) {
+        List<StrategyExecutionConfig> globals =
+                configRepository.findAllByUserIdIsNullAndDeletedFalseOrderByStrategyKeyAsc();
+        // Index user overrides by strategyKey for O(1) lookup
+        java.util.Map<String, StrategyExecutionConfig> userOverrides =
+                configRepository.findByUserIdAndDeletedFalseOrderByStrategyKeyAsc(userId)
+                        .stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                StrategyExecutionConfig::getStrategyKey,
+                                c -> c));
+        return globals.stream()
+                .map(global -> {
+                    StrategyExecutionConfig override = userOverrides.get(global.getStrategyKey());
+                    return override != null
+                            ? toTraderDto(override, false)
+                            : toTraderDto(global, true);
+                })
                 .toList();
     }
 
