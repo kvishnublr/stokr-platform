@@ -54,12 +54,12 @@ public class MarketDataQueryService {
     @Transactional(readOnly = true)
     public List<MarketdataCandle> rangeAsc(String symbol, String timeframe, Instant start, Instant end) {
         String tf = normalizeTf(timeframe);
-        if ("5m".equals(tf) || "15m".equals(tf)) {
+        if ("5m".equals(tf) || "10m".equals(tf) || "15m".equals(tf)) {
             List<MarketdataCandle> raw = candleRepository.findBySymbolInAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(symbolCandidates(symbol), tf, start, end);
             if (!raw.isEmpty()) {
                 return raw;
             }
-            int intervalMinutes = "15m".equals(tf) ? 15 : 5;
+            int intervalMinutes = "15m".equals(tf) ? 15 : "10m".equals(tf) ? 10 : 5;
             List<MarketdataCandle> m1 = candleRepository.findBySymbolInAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
                     symbolCandidates(symbol), "1m", start.minusSeconds(intervalMinutes * 60L), end);
             return aggregateToInterval(m1, symbol, tf, intervalMinutes, start, end);
@@ -145,7 +145,7 @@ public class MarketDataQueryService {
     private List<MarketdataCandle> fetchAscWithFallback(String symbol, String timeframe, Instant endInclusive, int maxBars) {
         String tf = normalizeTf(timeframe);
         List<String> symbols = symbolCandidates(symbol);
-        if (!"5m".equals(tf) && !"15m".equals(tf)) {
+        if (!"5m".equals(tf) && !"10m".equals(tf) && !"15m".equals(tf)) {
             if (endInclusive == null) {
                 List<MarketdataCandle> desc = candleRepository.findTop500BySymbolInAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbols, tf);
                 ArrayList<MarketdataCandle> asc = new ArrayList<>(desc);
@@ -161,7 +161,7 @@ public class MarketDataQueryService {
             return asc;
         }
 
-        int intervalMinutes = "15m".equals(tf) ? 15 : 5;
+        int intervalMinutes = "15m".equals(tf) ? 15 : "10m".equals(tf) ? 10 : 5;
         List<MarketdataCandle> rawTf;
         if (endInclusive == null) {
             List<MarketdataCandle> desc = candleRepository.findTop500BySymbolInAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbols, tf);
