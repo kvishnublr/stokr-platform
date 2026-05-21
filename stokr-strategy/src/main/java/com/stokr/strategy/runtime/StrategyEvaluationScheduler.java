@@ -3,6 +3,8 @@ package com.stokr.strategy.runtime;
 import com.stokr.common.market.LiveMarketPathAssessment;
 import com.stokr.common.market.LiveMarketPathOperationalGate;
 import com.stokr.common.runtime.ExecutionPipelineRuntimeReadinessService;
+import com.stokr.strategy.catalog.StrategyUniverseResolverService;
+import com.stokr.strategy.domain.StrategyRuntimeBinding;
 import com.stokr.strategy.telemetry.ScannerExecutionTelemetryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,7 +15,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
@@ -25,6 +29,7 @@ public class StrategyEvaluationScheduler {
     private final ScannerExecutionTelemetryService scannerExecutionTelemetryService;
     private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
     private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
+    private final StrategyUniverseResolverService universeResolverService;
 
     /**
      * When true (default), mean-reversion poll skips if {@link LiveMarketPathOperationalGate} reports non-operational
@@ -63,7 +68,7 @@ public class StrategyEvaluationScheduler {
             }
         }
         long wallStart = System.nanoTime();
-        List<String> symbols = Arrays.stream(symbolsCsv.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        List<String> symbols = resolveSymbolsToScan();
         int signals = 0;
         int failures = 0;
         for (String symbol : symbols) {
@@ -101,5 +106,34 @@ public class StrategyEvaluationScheduler {
                 failures,
                 System.nanoTime() - wallStart
         );
+    }
+
+    /**
+     * Collects symbols to scan from active runtime bindings (universe-aware).
+     * Falls back to the static {@code stokr.strategy.symbols} config only if no bindings exist.
+     */
+    private List<String> resolveSymbolsToScan() {
+        try {
+            List<StrategyRuntimeBinding> bindings = universeResolverService.resolveActiveBindings();
+            if (!bindings.isEmpty()) {
+                Set<String> fromBindings = new LinkedHashSet<>();
+                for (StrategyRuntimeBinding b : bindings) {
+                    List<String> groupSymbols = universeResolverService.resolveSymbolsForGroup(
+                            b.getUniverseGroup().getId());
+                    fromBindings.addAll(groupSymbols);
+                }
+                if (!fromBindings.isEmpty()) {
+                    log.debug("strategy.poll.symbols_from_bindings count={}", fromBindings.size());
+                    return List.copyOf(fromBindings);
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("strategy.poll.binding_symbol_resolve_failed — falling back to config symbols", ex);
+        }
+        // Fallback: static config
+        List<String> fallback = Arrays.stream(symbolsCsv.split(","))
+                .map(String::trim).filter(s -> !s.isEmpty()).toList();
+        log.debug("strategy.poll.symbols_from_config count={}", fallback.size());
+        return fallback;
     }
 }
