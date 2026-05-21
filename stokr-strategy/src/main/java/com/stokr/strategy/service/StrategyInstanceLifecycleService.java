@@ -5,6 +5,7 @@ import com.stokr.common.exception.BadRequestException;
 import com.stokr.common.exception.ForbiddenException;
 import com.stokr.common.exception.NotFoundException;
 import com.stokr.common.trading.LiveStrategyGate;
+import com.stokr.strategy.catalog.StrategyUniverseResolverService;
 import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.dto.UpdateStrategyInstanceRequest;
 import com.stokr.strategy.dto.UserStrategyInstanceDto;
@@ -34,6 +35,7 @@ public class StrategyInstanceLifecycleService {
     private final ApplicationEventPublisher eventPublisher;
     private final StrategyHeartbeatService heartbeatService;
     private final ObjectProvider<LiveStrategyGate> liveStrategyGate;
+    private final StrategyUniverseResolverService universeResolverService;
 
     @Transactional(readOnly = true)
     public Page<UserStrategyInstanceDto> pageForUser(UUID userId, Pageable pageable) {
@@ -46,6 +48,7 @@ public class StrategyInstanceLifecycleService {
         if (!si.isEnabled()) {
             throw new BadRequestException("Enable subscription before starting this strategy");
         }
+        refreshSymbolFromBinding(si);
         if (si.getExecutionMode() != null && "LIVE".equalsIgnoreCase(si.getExecutionMode())) {
             liveStrategyGate.ifAvailable(g -> g.assertLiveRuntimeAllowed(userId, si.getDefinition().getStrategyKey()));
         }
@@ -114,6 +117,20 @@ public class StrategyInstanceLifecycleService {
             throw new BadRequestException("executionMode must be SIMULATED, LIVE, or PAPER");
         }
         return u;
+    }
+
+    private void refreshSymbolFromBinding(StrategyInstance si) {
+        String strategyKey = si.getDefinition().getStrategyKey();
+        String bound = universeResolverService.resolveBindingsForStrategy(strategyKey).stream()
+                .findFirst()
+                .map(b -> universeResolverService.resolveSymbolsForGroup(b.getUniverseGroup().getId()))
+                .filter(list -> list != null && !list.isEmpty())
+                .map(list -> list.getFirst())
+                .orElseThrow(() -> new ForbiddenException(
+                        "No active runtime binding/symbols configured for strategy: " + strategyKey));
+        if (!bound.equalsIgnoreCase(si.getSymbol())) {
+            si.setSymbol(bound);
+        }
     }
 
     private UserStrategyInstanceDto toDto(StrategyInstance si) {

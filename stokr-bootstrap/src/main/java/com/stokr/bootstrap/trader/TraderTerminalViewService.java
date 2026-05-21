@@ -23,6 +23,7 @@ import com.stokr.oms.service.OmsQueryService;
 import com.stokr.oms.service.OmsReconciliationService;
 import com.stokr.oms.service.PortfolioQueryService;
 import com.stokr.strategy.domain.StrategyInstance;
+import com.stokr.strategy.catalog.StrategyUniverseResolverService;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
@@ -30,13 +31,11 @@ import com.stokr.user.broker.ZerodhaBrokerOperationsService;
 import com.stokr.user.dto.TraderExecutionModePreferenceDto;
 import com.stokr.user.service.TraderExecutionModePreferenceService;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -71,8 +70,7 @@ public class TraderTerminalViewService {
     private final ExecutionGuardTelemetryService executionGuardTelemetryService;
     private final ExecutionTimelineService executionTimelineService;
     private final ExecutionQualityScoringService executionQualityScoringService;
-    @Value("${stokr.strategy.symbols:NIFTY_FUT,BANKNIFTY_FUT}")
-    private String strategySymbolsCsv;
+    private final StrategyUniverseResolverService strategyUniverseResolverService;
 
     public TraderTerminalViewService(
             MarketDataQueryService marketDataQueryService,
@@ -89,7 +87,8 @@ public class TraderTerminalViewService {
             TraderExecutionModePreferenceService traderExecutionModePreferenceService,
             ExecutionGuardTelemetryService executionGuardTelemetryService,
             ExecutionTimelineService executionTimelineService,
-            ExecutionQualityScoringService executionQualityScoringService
+            ExecutionQualityScoringService executionQualityScoringService,
+            StrategyUniverseResolverService strategyUniverseResolverService
     ) {
         this.marketDataQueryService = marketDataQueryService;
         this.strategySignalRepository = strategySignalRepository;
@@ -106,12 +105,15 @@ public class TraderTerminalViewService {
         this.executionGuardTelemetryService = executionGuardTelemetryService;
         this.executionTimelineService = executionTimelineService;
         this.executionQualityScoringService = executionQualityScoringService;
+        this.strategyUniverseResolverService = strategyUniverseResolverService;
     }
 
     public List<Map<String, Object>> marketWatchProjection() {
-        List<String> symbols = Arrays.stream(strategySymbolsCsv.split(","))
+        List<String> symbols = strategyUniverseResolverService.resolveActiveBindings().stream()
+                .flatMap(b -> strategyUniverseResolverService.resolveSymbolsForGroup(b.getUniverseGroup().getId()).stream())
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
+                .distinct()
                 .toList();
         List<Map<String, Object>> out = new ArrayList<>();
         for (String symbol : symbols) {

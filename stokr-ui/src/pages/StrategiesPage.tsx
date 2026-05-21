@@ -160,7 +160,7 @@ export function StrategiesPage() {
         signalsToday: sig?.count ?? 0,
         lastSignalAt: toSinceLabel(sig?.last ?? met?.lastSignalAt),
         lastEvaluationAt: toSinceLabel(met?.lastSignalAt),
-        assignedSymbols: [inst?.symbol ?? met?.symbol ?? "NIFTY_FUT"],
+        assignedSymbols: [inst?.symbol ?? met?.symbol ?? "—"],
         candleReadiness: met?.health ?? "NO_DATA",
         omsState: activePipeline ? "READY" : "BLOCKED",
       } as StrategyCatalogCard;

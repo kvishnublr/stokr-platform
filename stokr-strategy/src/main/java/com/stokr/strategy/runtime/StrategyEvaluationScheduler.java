@@ -14,7 +14,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -33,18 +32,10 @@ public class StrategyEvaluationScheduler {
 
     /**
      * When true (default), mean-reversion poll skips if {@link LiveMarketPathOperationalGate} reports non-operational
-     * platform tape — avoids silent evaluation on stale rails.
+     * platform tape - avoids silent evaluation on stale rails.
      */
     @Value("${stokr.strategy.require-operational-live-path:true}")
     private boolean requireOperationalLivePath;
-
-    /**
-     * Comma-separated symbols for the mean-reversion poll loop. Must match tradingsymbol keys stored in
-     * {@code marketdata_candles} (e.g. index NIFTY 50 vs futures NIFTY_FUT). Platform Zerodha LTP tokens are separate
-     * ({@code stokr.platform.zerodha.instrument-tokens}); align feed instruments with these symbols if you need tape parity.
-     */
-    @Value("${stokr.strategy.symbols:NIFTY_FUT,BANKNIFTY_FUT}")
-    private String symbolsCsv;
 
     @Scheduled(fixedDelayString = "${stokr.strategy.poll-ms:60000}")
     public void poll() {
@@ -110,7 +101,7 @@ public class StrategyEvaluationScheduler {
 
     /**
      * Collects symbols to scan from active runtime bindings (universe-aware).
-     * Falls back to the static {@code stokr.strategy.symbols} config only if no bindings exist.
+     * No static symbol-config fallback is allowed.
      */
     private List<String> resolveSymbolsToScan() {
         try {
@@ -127,13 +118,11 @@ public class StrategyEvaluationScheduler {
                     return List.copyOf(fromBindings);
                 }
             }
+            log.warn("strategy.poll.no_binding_symbols bindings={} - skipping cycle", bindings.size());
+            return List.of();
         } catch (Exception ex) {
-            log.warn("strategy.poll.binding_symbol_resolve_failed — falling back to config symbols", ex);
+            log.warn("strategy.poll.binding_symbol_resolve_failed - skipping cycle (no fallback)", ex);
+            return List.of();
         }
-        // Fallback: static config
-        List<String> fallback = Arrays.stream(symbolsCsv.split(","))
-                .map(String::trim).filter(s -> !s.isEmpty()).toList();
-        log.debug("strategy.poll.symbols_from_config count={}", fallback.size());
-        return fallback;
     }
 }
