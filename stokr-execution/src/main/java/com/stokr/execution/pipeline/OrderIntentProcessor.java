@@ -84,11 +84,13 @@ public class OrderIntentProcessor {
             return;
         }
 
-        String idempotencyKey = "signal:" + signal.getId();
+        // Use trader userId from message (fan-out path), fall back to signal entity userId
+        UUID userId = resolveUserId(msg, signal);
+        boolean isSystemUser = systemUserId.equals(userId);
+        // Include userId in idempotency key so each trader gets their own order per signal
+        String idempotencyKey = "signal:" + signal.getId() + ":" + userId;
         String strategyKey =
                 signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
-        UUID userId = resolveUserId(signal);
-        boolean isSystemUser = systemUserId.equals(userId);
 
         // Resolve effective execution mode: strategy config takes precedence over the poll/message mode.
         ExecutionMode mode = resolveEffectiveMode(msg.executionMode(), strategyKey, userId);
@@ -304,7 +306,11 @@ public class OrderIntentProcessor {
         return ExecutionMode.SIMULATED;
     }
 
-    private UUID resolveUserId(StrategySignalEntity signal) {
+    private UUID resolveUserId(SignalPersistedMessage msg, StrategySignalEntity signal) {
+        // Prefer the trader userId sent by the fan-out, fall back to signal entity userId
+        if (msg.userId() != null && !systemUserId.equals(msg.userId())) {
+            return msg.userId();
+        }
         return signal.getUserId() != null ? signal.getUserId() : systemUserId;
     }
 
