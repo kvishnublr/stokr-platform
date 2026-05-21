@@ -128,8 +128,8 @@ public class SignalHistoricalReplayService {
     private StrategySignalEntity evaluate(String strategyKey, String symbol, Instant barTime) {
         return switch (strategyKey) {
             case "VWAP_MEAN_REVERSION"     -> vwapGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
-            case "MEAN_REVERSION"          -> meanReversionGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
-            case "MEAN_REVERSION_V2"       -> meanReversionV2Generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
+            case "MEAN_REVERSION"          -> meanReversionGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime);
+            case "MEAN_REVERSION_V2"       -> meanReversionV2Generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime);
             case "MOMENTUM_BREAKOUT"       -> momentumGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
             case "OPENING_RANGE_BREAKOUT"  -> orbGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
             case "EMA_TREND_FOLLOWING"     -> emaTrendGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
