@@ -33,7 +33,8 @@ public class StrategyStaleDetectionScheduler {
             si.setOrchestrationState("ERROR");
             si.setRuntimeState("STOPPED");
             instanceRepository.save(si);
-            log.warn("strategy.stale instanceId={} userId={}", si.getId(), si.getUserId());
+            log.warn("strategy.stale.stopped instanceId={} userId={} lastHeartbeat={}",
+                    si.getId(), si.getUserId(), si.getHeartbeatAt());
         }
     }
 }

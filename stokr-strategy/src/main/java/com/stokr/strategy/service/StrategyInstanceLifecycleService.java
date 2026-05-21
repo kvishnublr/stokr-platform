@@ -94,6 +94,7 @@ public class StrategyInstanceLifecycleService {
         if (si == null) return;
         try { refreshSymbolFromBinding(si); } catch (Exception ignored) {}
         si.setRuntimeState(STATE_RUNNING);
+        si.setOrchestrationState("MANAGED");
         si.setStartedAt(Instant.now());
         si.setStoppedAt(null);
         StrategyInstance saved = instanceRepository.save(si);
