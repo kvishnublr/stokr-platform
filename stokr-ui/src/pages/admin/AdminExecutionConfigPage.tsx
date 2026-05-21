@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, ShieldCheck, ShieldOff, Zap, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Trash2, RefreshCw } from "lucide-react";
 import {
   createExecutionConfig,
   deleteExecutionConfig,
@@ -11,6 +11,7 @@ import {
   type StrategyExecutionConfigDto,
   type StrategyExecutionConfigRequest,
 } from "../../api/executionConfig";
+import { fetchStrategyCatalog, type AdminStrategyDto } from "../../api/strategyCatalog";
 import { parseAxiosMessage } from "../../api/client";
 import { fmtDateTime } from "../../lib/dateUtils";
 
@@ -67,6 +68,12 @@ export function AdminExecutionConfigPage() {
   const [form, setForm] = useState<StrategyExecutionConfigRequest>(EMPTY_FORM);
 
   const configs = useQuery({ queryKey: QK, queryFn: fetchExecutionConfigs, staleTime: 15_000, refetchInterval: 30_000 });
+  const catalog = useQuery({
+    queryKey: ["admin-strategy-catalog-all"],
+    queryFn: () => fetchStrategyCatalog(0, 200),
+    staleTime: 60_000,
+  });
+  const catalogStrategies: AdminStrategyDto[] = catalog.data?.content ?? [];
 
   const save = useMutation({
     mutationFn: (f: StrategyExecutionConfigRequest) =>
@@ -282,13 +289,30 @@ export function AdminExecutionConfigPage() {
             </h2>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Strategy key *</label>
-                <input
-                  value={form.strategyKey}
-                  onChange={(e) => setField("strategyKey", e.target.value)}
-                  placeholder="e.g. STOKR_BREAKOUT_COMMODITIES_RSI"
-                  className="mt-1 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
+                <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Strategy *</label>
+                {editTarget ? (
+                  <div className="mt-1 w-full rounded-md border border-border bg-background/50 px-2.5 py-1.5 text-xs font-mono text-muted-foreground">
+                    {form.strategyKey}
+                  </div>
+                ) : (
+                  <select
+                    value={form.strategyKey}
+                    onChange={(e) => {
+                      const key = e.target.value;
+                      const def = catalogStrategies.find((s) => s.code === key);
+                      setField("strategyKey", key);
+                      if (def?.id) setField("strategyId", def.id);
+                    }}
+                    className="mt-1 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">— Select strategy —</option>
+                    {catalogStrategies.map((s) => (
+                      <option key={s.id} value={s.code}>
+                        {s.code}{s.displayName ? ` — ${s.displayName}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -415,7 +439,7 @@ export function AdminExecutionConfigPage() {
               </button>
               <button
                 type="button"
-                disabled={save.isPending || !form.strategyKey.trim()}
+                disabled={save.isPending || !form.strategyKey.trim() || (!editTarget && !form.strategyKey)}
                 onClick={() => save.mutate(form)}
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
