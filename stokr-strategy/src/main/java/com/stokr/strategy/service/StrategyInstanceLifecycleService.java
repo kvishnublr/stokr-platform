@@ -82,6 +82,26 @@ public class StrategyInstanceLifecycleService {
         return toDto(saved);
     }
 
+    /**
+     * Internal start used by the auto-heal scheduler — bypasses trader eligibility gate.
+     * Safe because the platform ARM state is the operator-level approval.
+     */
+    @Transactional
+    public void startInternal(UUID instanceId) {
+        StrategyInstance si = instanceRepository.findById(instanceId)
+                .filter(i -> i.isEnabled() && !i.isDeleted())
+                .orElse(null);
+        if (si == null) return;
+        try { refreshSymbolFromBinding(si); } catch (Exception ignored) {}
+        si.setRuntimeState(STATE_RUNNING);
+        si.setStartedAt(Instant.now());
+        si.setStoppedAt(null);
+        StrategyInstance saved = instanceRepository.save(si);
+        heartbeatService.touch(saved.getId());
+        eventPublisher.publishEvent(new RealtimeBridgeEvents.StrategyRuntime(
+                si.getUserId(), saved.getId(), saved.getRuntimeState(), Instant.now()));
+    }
+
     @Transactional
     public UserStrategyInstanceDto patch(UUID userId, UUID instanceId, UpdateStrategyInstanceRequest req) {
         StrategyInstance si = loadOwned(userId, instanceId);
