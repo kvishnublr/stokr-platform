@@ -54,6 +54,21 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
 
     Optional<StrategySignalEntity> findFirstByDeletedFalseOrderByCreatedAtDesc();
 
+    @Query("""
+            select s from StrategySignalEntity s
+            where s.deleted = false
+              and s.backtestRunId is null
+              and s.outcomeStatus is null
+              and s.entryReferencePrice is not null
+              and s.createdAt >= :since
+              and s.createdAt <= :before
+            order by s.createdAt asc
+            """)
+    List<StrategySignalEntity> findPendingOutcomeTracking(
+            @Param("since") Instant since,
+            @Param("before") Instant before,
+            Pageable pageable);
+
     @Query(value = """
             SELECT
                 COUNT(*) FILTER (WHERE created_at >= :since)::bigint                                         AS total_today,
