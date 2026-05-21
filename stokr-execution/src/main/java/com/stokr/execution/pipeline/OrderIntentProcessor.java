@@ -24,7 +24,9 @@ import com.stokr.risk.service.RiskEvaluationTraceService;
 import com.stokr.risk.service.RiskEventRecorder;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.domain.StrategyExecutionConfig;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.strategy.service.StrategyExecutionConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -58,6 +60,7 @@ public class OrderIntentProcessor {
     private final SignalDistributionTelemetryService signalDistributionTelemetryService;
     private final PositionSizingService positionSizingService;
     private final ExecutionComparisonService executionComparisonService;
+    private final StrategyExecutionConfigService strategyExecutionConfigService;
 
     @Value("${stokr.risk.zone:Asia/Kolkata}")
     private String riskZone;
@@ -82,36 +85,42 @@ public class OrderIntentProcessor {
         }
 
         String idempotencyKey = "signal:" + signal.getId();
-        ExecutionMode mode = parseMode(msg.executionMode());
         String strategyKey =
                 signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
         UUID userId = resolveUserId(signal);
         boolean isSystemUser = systemUserId.equals(userId);
 
-        // System-generated signals bypass paper/SIM eligibility gate (no trader account needed).
-        // LIVE mode always requires the full gate regardless of origin.
+        // Resolve effective execution mode: strategy config takes precedence over the poll/message mode.
+        ExecutionMode mode = resolveEffectiveMode(msg.executionMode(), strategyKey, userId);
+
+        // System-generated signals bypass paper/SIM user-level gate (no trader account needed).
+        // For LIVE mode: system signals only check platform gates (kill switch, live armed).
+        // Real trader signals run the full user eligibility gate (broker, onboarding, etc).
         if (mode == ExecutionMode.LIVE) {
-            LiveTraderEligibilityResult gate =
-                    liveTradingTraderEligibilityService.evaluateForLiveOrder(userId, strategyKey, "ZERODHA");
-            if (!gate.allowed()) {
-                log.warn(
-                        "live.order.blocked.pre_signal signalId={} reason={}",
-                        signal.getId(),
-                        gate.reasonCode()
-                );
-                riskEventRecorder.record(userId, null, gate.reasonCode(), "REJECT", gate.message());
-                if (!isSystemUser) notifyEligibility(userId, gate);
-                signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "LIVE_GATE");
-                return;
+            if (isSystemUser) {
+                LiveTraderEligibilityResult platformGate =
+                        liveTradingTraderEligibilityService.evaluateForLiveStrategyActivation(userId, strategyKey, "ZERODHA");
+                if (!platformGate.allowed()) {
+                    log.warn("live.order.blocked.platform signalId={} reason={}", signal.getId(), platformGate.reasonCode());
+                    riskEventRecorder.record(userId, null, platformGate.reasonCode(), "REJECT", platformGate.message());
+                    signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "LIVE_PLATFORM_GATE");
+                    return;
+                }
+            } else {
+                LiveTraderEligibilityResult gate =
+                        liveTradingTraderEligibilityService.evaluateForLiveOrder(userId, strategyKey, "ZERODHA");
+                if (!gate.allowed()) {
+                    log.warn("live.order.blocked.pre_signal signalId={} reason={}", signal.getId(), gate.reasonCode());
+                    riskEventRecorder.record(userId, null, gate.reasonCode(), "REJECT", gate.message());
+                    notifyEligibility(userId, gate);
+                    signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "LIVE_GATE");
+                    return;
+                }
             }
         } else if (!isSystemUser) {
             LiveTraderEligibilityResult paper = liveTradingTraderEligibilityService.evaluateForPaperTrading(strategyKey);
             if (!paper.allowed()) {
-                log.warn(
-                        "paper.order.blocked.pre_signal signalId={} reason={}",
-                        signal.getId(),
-                        paper.reasonCode()
-                );
+                log.warn("paper.order.blocked.pre_signal signalId={} reason={}", signal.getId(), paper.reasonCode());
                 riskEventRecorder.record(userId, null, paper.reasonCode(), "REJECT", paper.message());
                 notifyEligibility(userId, paper);
                 signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "PAPER_GATE");
@@ -249,6 +258,33 @@ public class OrderIntentProcessor {
             case EXIT -> "SELL";
             case HOLD -> "HOLD";
         };
+    }
+
+    /**
+     * Resolves the effective execution mode for this signal.
+     * Strategy execution config takes precedence over the message/poll mode.
+     * Falls back to message mode if no config or config has no explicit mode.
+     */
+    private ExecutionMode resolveEffectiveMode(String msgMode, String strategyKey, UUID userId) {
+        try {
+            java.util.Optional<StrategyExecutionConfig> cfgOpt =
+                    strategyExecutionConfigService.getByStrategyKeyForUser(userId, strategyKey);
+            if (cfgOpt.isPresent()) {
+                StrategyExecutionConfig cfg = cfgOpt.get();
+                if (!cfg.isEnabled()) {
+                    log.debug("signal.strategy_disabled strategyKey={}", strategyKey);
+                    return ExecutionMode.SIMULATED; // will be a no-op effectively — risk will reject
+                }
+                ExecutionMode cfgMode = parseMode(cfg.getExecutionMode());
+                if (cfgMode != ExecutionMode.SIMULATED) {
+                    log.debug("signal.mode_from_config strategyKey={} mode={}", strategyKey, cfgMode);
+                    return cfgMode;
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("signal.mode_resolve_failed strategyKey={} — falling back to msg mode", strategyKey, ex);
+        }
+        return parseMode(msgMode);
     }
 
     private static ExecutionMode parseMode(String executionMode) {
