@@ -4,8 +4,8 @@ import { useState, useCallback } from "react";
 import { api } from "../../api/client";
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, Download, X,
-  ChevronRight, AlertTriangle, Clock, User, Target, Shield,
-  Activity, BarChart3, Zap, CheckCircle2, XCircle, Timer,
+  ChevronRight, AlertTriangle, Target,
+  Activity, BarChart3, Zap, Timer,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -150,25 +150,6 @@ function ConfidenceBar({ score }: { score: number | null }) {
   );
 }
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, sub, accent, icon: Icon }: {
-  label: string; value: string | number; sub?: string;
-  accent: string; icon: React.ElementType;
-}) {
-  return (
-    <div className={`bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3 flex items-start gap-3 border-l-4 ${accent}`}>
-      <div className="mt-0.5 shrink-0">
-        <Icon className="h-4 w-4 text-slate-400" />
-      </div>
-      <div className="min-w-0">
-        <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 whitespace-nowrap">{label}</div>
-        <div className="mt-0.5 text-xl font-bold tabular-nums text-slate-900 leading-none">{value}</div>
-        {sub && <div className="mt-0.5 text-[11px] text-slate-500">{sub}</div>}
-      </div>
-    </div>
-  );
-}
 
 // ─── Timeline event dot color ─────────────────────────────────────────────────
 
@@ -400,7 +381,7 @@ export function AdminSignalsPage() {
     queryFn: async () => {
       const p = new URLSearchParams();
       p.set("page", String(page));
-      p.set("size", "50");
+      p.set("size", "100");
       p.set("sort", "createdAt,desc");
       if (symbol.trim()) p.set("symbol", symbol.trim());
       if (strategyName.trim()) p.set("strategyName", strategyName.trim());
@@ -462,14 +443,32 @@ export function AdminSignalsPage() {
   return (
     <div className="flex h-full flex-col bg-slate-50">
 
-      {/* ── Page Header ─────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-bold tracking-tight text-slate-900">Signal Intelligence</h1>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Strategy-generated signals · {total.toLocaleString()} results · live feed
-            </p>
+      {/* ── Page Header + KPI strip ─────────────────────────────────────────── */}
+      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-2.5">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4 flex-wrap">
+            <h1 className="text-base font-bold tracking-tight text-slate-900">Signal Intelligence</h1>
+            {/* Inline KPI pills */}
+            <div className="flex items-center gap-2 flex-wrap text-[11px]">
+              {[
+                { label: "Today", value: stats?.totalToday ?? 0, cls: "text-blue-700 bg-blue-50 border-blue-200" },
+                { label: "BUY", value: stats?.buyToday ?? 0, cls: "text-emerald-700 bg-emerald-50 border-emerald-200" },
+                { label: "SELL", value: stats?.sellToday ?? 0, cls: "text-rose-700 bg-rose-50 border-rose-200" },
+                { label: "LIVE", value: stats?.liveToday ?? 0, cls: "text-orange-700 bg-orange-50 border-orange-200" },
+                { label: "PAPER", value: stats?.paperToday ?? 0, cls: "text-slate-600 bg-slate-50 border-slate-200" },
+                { label: "Conf", value: stats?.avgConfidence != null ? `${(stats.avgConfidence * 100).toFixed(0)}%` : "—", cls: "text-violet-700 bg-violet-50 border-violet-200" },
+                { label: "Win%",
+                  value: stats && (stats.targetHit + stats.slHit) > 0
+                    ? `${Math.round(stats.targetHit / (stats.targetHit + stats.slHit) * 100)}%` : "—",
+                  cls: "text-teal-700 bg-teal-50 border-teal-200" },
+                { label: "All-time", value: (stats?.totalAllTime ?? 0).toLocaleString(), cls: "text-slate-500 bg-white border-slate-200" },
+              ].map(({ label, value, cls }) => (
+                <span key={label} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${cls}`}>
+                  <span className="text-slate-400 font-normal">{label}</span>
+                  <span className="tabular-nums">{value}</span>
+                </span>
+              ))}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => void q.refetch()}
@@ -484,27 +483,8 @@ export function AdminSignalsPage() {
         </div>
       </div>
 
-      {/* ── KPI Stats Bar ────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
-        <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-          <StatCard label="Signals Today" value={(stats?.totalToday ?? 0).toLocaleString()} sub={`${(stats?.totalAllTime ?? 0).toLocaleString()} all-time`} accent="border-l-blue-500" icon={Activity} />
-          <StatCard label="Buy Signals" value={(stats?.buyToday ?? 0).toLocaleString()} sub={stats?.totalToday ? `${Math.round((stats.buyToday / stats.totalToday) * 100)}% of today` : "—"} accent="border-l-emerald-500" icon={TrendingUp} />
-          <StatCard label="Sell Signals" value={(stats?.sellToday ?? 0).toLocaleString()} sub={stats?.totalToday ? `${Math.round((stats.sellToday / stats.totalToday) * 100)}% of today` : "—"} accent="border-l-rose-500" icon={TrendingDown} />
-          <StatCard label="Live Mode" value={(stats?.liveToday ?? 0).toLocaleString()} sub={`${stats?.paperToday ?? 0} paper today`} accent="border-l-orange-500" icon={Zap} />
-          <StatCard label="Avg Confidence" value={stats?.avgConfidence != null ? `${(stats.avgConfidence * 100).toFixed(1)}%` : "—"} sub="today's signals" accent="border-l-violet-500" icon={BarChart3} />
-          <StatCard
-            label="Win Rate"
-            value={stats && (stats.targetHit + stats.slHit) > 0
-              ? `${Math.round(stats.targetHit / (stats.targetHit + stats.slHit) * 100)}%` : "—"}
-            sub={stats ? `${stats.targetHit} wins / ${stats.slHit} losses` : "no outcome data yet"}
-            accent="border-l-teal-500"
-            icon={CheckCircle2}
-          />
-        </div>
-      </div>
-
       {/* ── Filter Bar ───────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-3">
+      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-2">
         <div className="flex flex-wrap items-center gap-2">
           <input className={inputCls} placeholder="Symbol…" value={symbol}
             onChange={e => { setSymbol(e.target.value); setPage(0); }} />
@@ -565,7 +545,7 @@ export function AdminSignalsPage() {
           <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50">
             <tr>
               {["Time", "Strategy", "Symbol", "Side", "Confidence", "Entry", "SL", "Target", "Qty", "Outcome", "PnL", "Mode"].map(h => (
-                <th key={h} className="whitespace-nowrap px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400 border-r border-slate-100 last:border-r-0">
+                <th key={h} className="whitespace-nowrap px-4 py-2 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400 border-r border-slate-100 last:border-r-0">
                   {h}
                 </th>
               ))}
@@ -590,21 +570,21 @@ export function AdminSignalsPage() {
               <tr key={r.id}
                 onClick={() => setSelectedId(r.id)}
                 className={`group cursor-pointer transition-colors hover:bg-blue-50/60 ${rowOutcomeBg(r.outcomeStatus)} ${selectedId === r.id ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""}`}>
-                <td className="whitespace-nowrap px-4 py-2.5 font-mono text-slate-400 text-[11px]">{fmtTime(r.createdAt)}</td>
-                <td className="max-w-[150px] px-4 py-2.5 font-medium text-slate-700 truncate" title={r.strategyName ?? ""}>{r.strategyName ?? "—"}</td>
-                <td className="px-4 py-2.5 font-mono font-bold text-slate-900">{r.symbol ?? "—"}</td>
-                <td className="px-4 py-2.5"><SideChip type={r.signalType} /></td>
-                <td className="px-4 py-2.5"><ConfidenceBar score={r.confidenceScore} /></td>
-                <td className="px-4 py-2.5 font-mono text-slate-700">{fmt(r.entryReferencePrice)}</td>
-                <td className="px-4 py-2.5 font-mono text-rose-600">{fmt(r.stopPrice)}</td>
-                <td className="px-4 py-2.5 font-mono text-emerald-600">{fmt(r.targetPrice)}</td>
-                <td className="px-4 py-2.5 font-mono text-slate-600">{fmt(r.suggestedQty, 0)}</td>
-                <td className="px-4 py-2.5"><OutcomeChip status={r.outcomeStatus} /></td>
-                <td className={`px-4 py-2.5 font-mono text-xs ${pnlClass(r.realizedPnl ?? r.unrealizedPnl)}`}>
+                <td className="whitespace-nowrap px-3 py-1.5 font-mono text-slate-400 text-[11px]">{fmtTime(r.createdAt)}</td>
+                <td className="max-w-[150px] px-3 py-1.5 font-medium text-slate-700 truncate" title={r.strategyName ?? ""}>{r.strategyName ?? "—"}</td>
+                <td className="px-3 py-1.5 font-mono font-bold text-slate-900">{r.symbol ?? "—"}</td>
+                <td className="px-3 py-1.5"><SideChip type={r.signalType} /></td>
+                <td className="px-3 py-1.5"><ConfidenceBar score={r.confidenceScore} /></td>
+                <td className="px-3 py-1.5 font-mono text-slate-700">{fmt(r.entryReferencePrice)}</td>
+                <td className="px-3 py-1.5 font-mono text-rose-600">{fmt(r.stopPrice)}</td>
+                <td className="px-3 py-1.5 font-mono text-emerald-600">{fmt(r.targetPrice)}</td>
+                <td className="px-3 py-1.5 font-mono text-slate-600">{fmt(r.suggestedQty, 0)}</td>
+                <td className="px-3 py-1.5"><OutcomeChip status={r.outcomeStatus} /></td>
+                <td className={`px-3 py-1.5 font-mono text-xs ${pnlClass(r.realizedPnl ?? r.unrealizedPnl)}`}>
                   {fmtPnl(r.realizedPnl ?? r.unrealizedPnl)}
                 </td>
-                <td className="px-4 py-2.5"><ModeChip mode={r.pipeline} /></td>
-                <td className="px-3 py-2.5 text-slate-300 group-hover:text-slate-500 transition-colors">
+                <td className="px-3 py-1.5"><ModeChip mode={r.pipeline} /></td>
+                <td className="px-2 py-1.5 text-slate-300 group-hover:text-slate-500 transition-colors">
                   <ChevronRight className="h-3.5 w-3.5" />
                 </td>
               </tr>
@@ -616,7 +596,7 @@ export function AdminSignalsPage() {
       {/* ── Pagination ───────────────────────────────────────────────────────── */}
       <div className="shrink-0 border-t border-slate-200 bg-white px-6 py-3 flex items-center justify-between">
         <span className="text-xs text-slate-500">
-          {total > 0 ? `${page * 50 + 1}–${Math.min((page + 1) * 50, total)} of ${total.toLocaleString()} signals` : "0 results"}
+          {total > 0 ? `${page * 100 + 1}–${Math.min((page + 1) * 100, total)} of ${total.toLocaleString()} signals` : "0 results"}
         </span>
         <div className="flex items-center gap-2">
           <button type="button" disabled={page <= 0} onClick={() => setPage(p => Math.max(0, p - 1))}
