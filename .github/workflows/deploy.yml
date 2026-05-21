@@ -17,7 +17,8 @@ jobs:
         with:
           filters: |
             api:
-              - 'stokr-**/**'
+              - 'stokr-*/src/**'
+              - '!stokr-ui/src/**'
               - 'pom.xml'
               - 'Dockerfile'
             ui:
