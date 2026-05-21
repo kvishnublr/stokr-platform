@@ -84,8 +84,10 @@ public class UnifiedStrategyRuntimeService {
                     if (cid == null || cid.isBlank()) {
                         cid = UUID.randomUUID().toString();
                     }
-                    pipelineService.persistAndDispatch(sig, cid, mode);
-                    emitted++;
+                    StrategySignalEntity persisted = pipelineService.persistAndDispatch(sig, cid, mode);
+                    if (persisted != null) {
+                        emitted++;
+                    }
                 } catch (Exception ex) {
                     failed++;
                     errors.add(ex.getClass().getSimpleName());

@@ -50,8 +50,8 @@ public class MeanReversionEvaluationService {
                 if (cid == null || cid.isBlank()) {
                     cid = UUID.randomUUID().toString();
                 }
-                pipelineService.persistAndDispatch(entity, cid, executionMode);
-                emitted = true;
+                StrategySignalEntity persisted = pipelineService.persistAndDispatch(entity, cid, executionMode);
+                emitted = persisted != null;
             }
         } catch (Exception ex) {
             err = ex;
