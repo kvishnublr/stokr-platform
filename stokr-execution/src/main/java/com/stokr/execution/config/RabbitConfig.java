@@ -32,7 +32,11 @@ public class RabbitConfig {
 
     @Bean
     public Queue omsOrderQueue() {
-        return QueueBuilder.durable(PipelineQueues.OMS_ORDER).build();
+        // Dead-letter to OMS_ORDER_DLQ so failed/rejected messages never requeue and block the main queue.
+        return QueueBuilder.durable(PipelineQueues.OMS_ORDER)
+                .withArgument("x-dead-letter-exchange", "")
+                .withArgument("x-dead-letter-routing-key", PipelineQueues.OMS_ORDER_DLQ)
+                .build();
     }
 
     @Bean
