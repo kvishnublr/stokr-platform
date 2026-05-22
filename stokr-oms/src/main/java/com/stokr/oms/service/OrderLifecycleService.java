@@ -84,8 +84,9 @@ public class OrderLifecycleService {
         if (stuck.isEmpty()) return 0;
         for (OmsOrder o : stuck) {
             try {
+                String stuckStateName = o.getState().name();
                 o.setState(OrderState.FAILED);
-                o.setRejectReason("admin_force_expired: stuck in " + o.getState().name() + " for >" + stuckMinutes + "m");
+                o.setRejectReason("admin_force_expired: stuck in " + stuckStateName + " for >" + stuckMinutes + "m");
                 orderRepository.save(o);
                 log.warn("oms.force_expire orderId={} symbol={} state={}", o.getId(), o.getSymbol(), o.getState());
             } catch (Exception ex) {

@@ -579,7 +579,13 @@ public class AdminTestSignalLabService {
         }
 
         boolean brokerAccepted = order.map(o -> "ACCEPTED".equals(o.getState().name()) || "FILLED".equals(o.getState().name()) || "PARTIALLY_FILLED".equals(o.getState().name())).orElse(false);
-        checks.add(check("broker_accepted", "Broker Accepted", !expectsOrder || brokerAccepted, "Broker accepted execution", "Broker did not accept", "Review broker auth/session in Broker Infra", "RECONNECT_BROKER"));
+        String brokerFailMsg = "Broker did not accept";
+        if (order.isPresent() && order.get().getRejectReason() != null && !order.get().getRejectReason().isBlank()) {
+            brokerFailMsg = order.get().getRejectReason();
+        } else if (order.isPresent() && "FAILED".equals(order.get().getState().name())) {
+            brokerFailMsg = "Broker rejected order (no reason recorded)";
+        }
+        checks.add(check("broker_accepted", "Broker Accepted", !expectsOrder || brokerAccepted, "Broker accepted execution", brokerFailMsg, "Review broker auth/session in Broker Infra", "RECONNECT_BROKER"));
 
         boolean filled = order.map(o -> "FILLED".equals(o.getState().name()) || "PARTIALLY_FILLED".equals(o.getState().name())).orElse(false);
         checks.add(check("order_filled", "Order Filled", !expectsOrder || filled, "Order filled", "Order not filled yet", "Inspect execution timeline for pending state", "OPEN_EXECUTION_TIMELINE"));

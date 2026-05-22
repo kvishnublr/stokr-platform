@@ -123,22 +123,39 @@ public class ExecutionSimulator {
             }
             String effectiveVendor = vendor != null ? vendor : "ZERODHA";
             String[] creds = resolveBrokerCredentials(liveUserId, effectiveVendor);
-            orderLifecycleService.submitToBroker(order, effectiveVendor, creds[0], creds[1]);
-            executionTraceService.trace(order, ExecutionEventType.BROKER_SUBMITTED, Map.of(
+            OmsOrder liveOrder = orderLifecycleService.submitToBroker(order, effectiveVendor, creds[0], creds[1]);
+            executionTraceService.trace(liveOrder, ExecutionEventType.BROKER_SUBMITTED, Map.of(
                     "brokerVendor", effectiveVendor
             ));
-            executionTraceService.trace(order, ExecutionEventType.ORDER_ACCEPTED, Map.of(
-                    "brokerVendor", effectiveVendor,
-                    "channel", "LIVE"
-            ));
             Instant ts = msg.deterministicAnchor() != null ? msg.deterministicAnchor() : order.getCreatedAt();
-            eventPublisher.publishEvent(new RealtimeBridgeEvents.OrderUpdate(
-                    liveUserId,
-                    order.getId(),
-                    order.getSymbol(),
-                    OrderState.SUBMITTED.name(),
-                    ts
-            ));
+            if (liveOrder.getState() == OrderState.SUBMITTED) {
+                // Kite accepted — move to ACCEPTED so downstream checks and UI reflect broker acceptance
+                liveOrder = orderLifecycleService.transition(liveOrder.getId(), OrderState.ACCEPTED, null);
+                executionTraceService.trace(liveOrder, ExecutionEventType.ORDER_ACCEPTED, Map.of(
+                        "brokerVendor", effectiveVendor,
+                        "channel", "LIVE"
+                ));
+                eventPublisher.publishEvent(new RealtimeBridgeEvents.OrderUpdate(
+                        liveUserId,
+                        liveOrder.getId(),
+                        liveOrder.getSymbol(),
+                        OrderState.ACCEPTED.name(),
+                        ts
+                ));
+            } else {
+                // Kite rejected — submitToBroker already set state=FAILED with rejectReason
+                executionTraceService.trace(liveOrder, ExecutionEventType.EXECUTION_REJECTED, Map.of(
+                        "phase", "BROKER",
+                        "reason", liveOrder.getRejectReason() != null ? liveOrder.getRejectReason() : "BROKER_FAILED"
+                ));
+                eventPublisher.publishEvent(new RealtimeBridgeEvents.OrderUpdate(
+                        liveUserId,
+                        liveOrder.getId(),
+                        liveOrder.getSymbol(),
+                        OrderState.FAILED.name(),
+                        ts
+                ));
+            }
             log.info("execution.live.submitted orderId={}", order.getId());
             eventPublisher.publishEvent(new OperationalRealtimeEvent("broker_submit", Map.of(
                     "orderId", order.getId().toString(),
