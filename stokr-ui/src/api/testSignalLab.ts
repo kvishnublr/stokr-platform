@@ -25,6 +25,20 @@ export type TestSignalLabRequest = {
   autoSquareOffMinutes?: number;
 };
 
+export type TestSignalPreflightReport = {
+  canSubmit: boolean;
+  effectiveExecutionMode: string;
+  blockers: string[];
+  checks: Array<{
+    key: string;
+    label: string;
+    status: string;
+    message: string;
+    suggestedAction?: string | null;
+    actionCode?: string | null;
+  }>;
+};
+
 export async function fetchTestSignalLabOptions() {
   const res = await api.get("/api/admin/test-signal-lab/options");
   return res.data?.data as {
@@ -39,6 +53,11 @@ export async function fetchTestSignalLabOptions() {
 export async function runTestSignalLab(request: TestSignalLabRequest) {
   const res = await api.post("/api/admin/test-signal-lab/run", request);
   return res.data?.data as any;
+}
+
+export async function runTestSignalPreflight(request: TestSignalLabRequest) {
+  const res = await api.post("/api/admin/test-signal-lab/preflight", request);
+  return res.data?.data as TestSignalPreflightReport;
 }
 
 export async function fetchTestSignalRuns(page = 0, size = 30) {

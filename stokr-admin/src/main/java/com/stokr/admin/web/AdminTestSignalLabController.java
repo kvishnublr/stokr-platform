@@ -54,7 +54,7 @@ public class AdminTestSignalLabController {
     @PostMapping("/preflight")
     @Operation(summary = "Run preflight checks and return submit eligibility for test execution")
     public ApiResponse<TestSignalPreflightReport> preflight(
-            @Valid @RequestBody TestSignalLabRequest request
+            @RequestBody TestSignalLabRequest request
     ) {
         return ApiResponse.ok(testSignalLabService.preflight(request), CorrelationIdHolder.get());
     }

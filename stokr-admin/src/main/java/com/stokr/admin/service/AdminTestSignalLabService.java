@@ -179,6 +179,130 @@ public class AdminTestSignalLabService {
     }
 
     @Transactional(readOnly = true)
+    public TestSignalPreflightReport preflight(TestSignalLabRequest request) {
+        List<TestSignalCheckResult> checks = new ArrayList<>();
+        List<String> blockers = new ArrayList<>();
+        String effectiveMode = resolveDispatchMode(request.executionMode(), request.dryRunOnly(), request.skipActualBrokerExecution());
+        boolean livePath = "LIVE".equalsIgnoreCase(effectiveMode) || "BOTH".equalsIgnoreCase(effectiveMode);
+
+        List<String> missing = new ArrayList<>();
+        if (request.traderUserId() == null) missing.add("Trader");
+        if (request.strategyKey() == null || request.strategyKey().isBlank()) missing.add("Strategy");
+        if (request.symbol() == null || request.symbol().isBlank()) missing.add("Symbol");
+        boolean hasRequired = missing.isEmpty();
+        checks.add(new TestSignalCheckResult(
+                "required_fields",
+                "Required Fields",
+                hasRequired ? "SUCCESS" : "FAILED",
+                hasRequired ? "Required fields present" : "Missing: " + String.join(", ", missing),
+                hasRequired ? null : "Provide all mandatory fields before running the test",
+                hasRequired ? null : "OPEN_FORM_REQUIRED_FIELDS"
+        ));
+        if (!hasRequired) {
+            blockers.add("Missing required fields: " + String.join(", ", missing));
+        }
+
+        AuthUser trader = null;
+        if (request.traderUserId() != null) {
+            trader = authUserRepository.findById(request.traderUserId()).filter(u -> !u.isDeleted()).orElse(null);
+        }
+        boolean traderReady = trader != null;
+        checks.add(new TestSignalCheckResult(
+                "trader_exists",
+                "Trader Account",
+                traderReady ? "SUCCESS" : "FAILED",
+                traderReady ? "Trader found: " + (trader.getDisplayName() == null ? trader.getUsername() : trader.getDisplayName()) : "Trader account not found",
+                traderReady ? null : "Select a valid active trader account",
+                traderReady ? null : "OPEN_TRADER_HEALTH"
+        ));
+        if (!traderReady) {
+            blockers.add("Trader account is missing or invalid");
+        }
+
+        String strategyKey = request.strategyKey() == null ? "" : request.strategyKey().trim();
+        boolean strategyReady = !strategyKey.isBlank() && strategyDefinitionRepository.findByStrategyKeyAndDeletedFalse(strategyKey)
+                .map(s -> s.isEnabled())
+                .orElse(false);
+        checks.add(new TestSignalCheckResult(
+                "strategy_enabled",
+                "Strategy Catalog",
+                strategyReady ? "SUCCESS" : "FAILED",
+                strategyReady ? "Strategy is enabled in catalog" : "Strategy missing or disabled in catalog",
+                strategyReady ? null : "Enable strategy in admin strategy catalog",
+                strategyReady ? null : "OPEN_STRATEGY_CATALOG"
+        ));
+        if (!strategyReady) {
+            blockers.add("Strategy is not enabled in catalog");
+        }
+
+        BrokerAccount broker = resolveBrokerOptional(request, request.traderUserId());
+        boolean brokerRequired = livePath;
+        boolean brokerReady = !brokerRequired || broker != null;
+        checks.add(new TestSignalCheckResult(
+                "broker_resolved",
+                "Broker Account",
+                brokerReady ? "SUCCESS" : "FAILED",
+                brokerReady
+                        ? (broker == null ? "Broker not required for this execution mode" : "Broker resolved: " + broker.getVendorCode() + " (" + broker.getStatus() + ")")
+                        : "No broker account resolved for LIVE/BOTH mode",
+                brokerReady ? null : "Connect trader broker account and ensure it is active",
+                brokerReady ? null : "RECONNECT_BROKER"
+        ));
+        if (!brokerReady) {
+            blockers.add("No connected broker account for LIVE/BOTH execution");
+        }
+
+        if (livePath && trader != null && !strategyKey.isBlank()) {
+            String vendor = broker != null && broker.getVendorCode() != null && !broker.getVendorCode().isBlank()
+                    ? broker.getVendorCode()
+                    : "ZERODHA";
+            LiveTraderEligibilityResult eligibility =
+                    liveTradingTraderEligibilityService.evaluateForLiveStrategyActivation(trader.getId(), strategyKey, vendor);
+            boolean eligible = eligibility != null && eligibility.allowed();
+            String message = eligible
+                    ? "LIVE execution eligibility passed"
+                    : (eligibility == null ? "Eligibility service returned no result" : eligibility.reasonCode() + " - " + eligibility.message());
+            checks.add(new TestSignalCheckResult(
+                    "live_eligibility",
+                    "Live Execution Gate",
+                    eligible ? "SUCCESS" : "FAILED",
+                    message,
+                    eligible ? null : "Resolve live-trading gate failure before running LIVE test",
+                    eligible ? null : "OPEN_BROKER_INFRA"
+            ));
+            if (!eligible) {
+                blockers.add("LIVE gate failed: " + message);
+            }
+        } else {
+            checks.add(new TestSignalCheckResult(
+                    "live_eligibility",
+                    "Live Execution Gate",
+                    "SUCCESS",
+                    livePath ? "Live eligibility deferred until trader/strategy selection is complete" : "Not required for simulated/paper execution",
+                    null,
+                    null
+            ));
+        }
+
+        if (broker != null && broker.getVendorCode() != null && !broker.getVendorCode().isBlank()) {
+            Optional<PlatformBrokerFeedSession> session = platformBrokerFeedSessionRepository
+                    .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(broker.getVendorCode());
+            boolean wsOpen = session.map(s -> "OPEN".equalsIgnoreCase(s.getWebsocketState())).orElse(false);
+            checks.add(new TestSignalCheckResult(
+                    "broker_websocket",
+                    "Broker Websocket",
+                    wsOpen ? "SUCCESS" : "WARNING",
+                    wsOpen ? "Broker websocket is OPEN" : "Broker websocket is not OPEN",
+                    wsOpen ? null : "Reconnect broker websocket to validate terminal visibility in real-time",
+                    wsOpen ? null : "RECONNECT_BROKER"
+            ));
+        }
+
+        boolean canSubmit = blockers.isEmpty();
+        return new TestSignalPreflightReport(canSubmit, effectiveMode, blockers, checks);
+    }
+
+    @Transactional(readOnly = true)
     public TestSignalExecutionReport report(UUID id) {
         AdminTestSignalRun run = runRepository.findById(id)
                 .filter(r -> !r.isDeleted())
@@ -273,6 +397,17 @@ public class AdminTestSignalLabService {
                     .orElseThrow(() -> new IllegalArgumentException("Broker account not found: " + request.brokerAccountId()));
         }
         return brokerAccountRepository.findFirstByUserIdAndDeletedFalseOrderByUpdatedAtDesc(traderUserId).orElse(null);
+    }
+
+    private BrokerAccount resolveBrokerOptional(TestSignalLabRequest request, UUID traderUserId) {
+        try {
+            if (traderUserId == null) {
+                return null;
+            }
+            return resolveBroker(request, traderUserId);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static BigDecimal resolveQuantity(BigDecimal requested, boolean forceOne) {
