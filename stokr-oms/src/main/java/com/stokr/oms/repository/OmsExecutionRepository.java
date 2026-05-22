@@ -80,4 +80,31 @@ public interface OmsExecutionRepository extends JpaRepository<OmsExecution, UUID
             @Param("from") Instant from,
             @Param("to") Instant to
     );
+
+    @Query(value = """
+            SELECT
+                o.symbol AS symbol,
+                COALESCE(SUM(
+                    CASE
+                        WHEN UPPER(o.side) = 'BUY' THEN e.filled_qty
+                        ELSE -e.filled_qty
+                    END
+                ), 0) AS net_qty
+            FROM oms_executions e
+            JOIN oms_orders o ON o.id = e.order_id
+            WHERE o.deleted = FALSE
+              AND e.deleted = FALSE
+              AND o.user_id = :userId
+              AND o.execution_mode = 'LIVE'
+              AND COALESCE(o.is_test_trade, FALSE) = FALSE
+              AND o.backtest_run_id IS NULL
+            GROUP BY o.symbol
+            HAVING COALESCE(SUM(
+                    CASE
+                        WHEN UPPER(o.side) = 'BUY' THEN e.filled_qty
+                        ELSE -e.filled_qty
+                    END
+                ), 0) <> 0
+            """, nativeQuery = true)
+    List<Object[]> computeLiveNetQtyBySymbol(@Param("userId") UUID userId);
 }

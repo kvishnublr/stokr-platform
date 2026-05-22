@@ -6,9 +6,8 @@ import com.stokr.broker.registry.BrokerAdapterRegistry;
 import com.stokr.common.events.ExecutionAlertEvent;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
-import com.stokr.oms.domain.PortfolioPosition;
+import com.stokr.oms.repository.OmsExecutionRepository;
 import com.stokr.oms.repository.OmsOrderRepository;
-import com.stokr.oms.repository.PortfolioPositionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -35,7 +34,7 @@ public class BrokerReconciliationService {
     );
 
     private final OmsOrderRepository omsOrderRepository;
-    private final PortfolioPositionRepository positionRepository;
+    private final OmsExecutionRepository omsExecutionRepository;
     private final ReconciliationEventRepository reconciliationEventRepository;
     private final BrokerAdapterRegistry brokerAdapterRegistry;
     private final ApplicationEventPublisher eventPublisher;
@@ -78,12 +77,13 @@ public class BrokerReconciliationService {
             return;
         }
 
-        List<PortfolioPosition> internalPositions = positionRepository.findByUserIdAndDeletedFalse(userId);
         Map<String, BigDecimal> brokerBySymbol = brokerPositions.stream()
                 .collect(Collectors.toMap(BrokerPosition::symbol, BrokerPosition::quantity));
-        Map<String, BigDecimal> internalBySymbol = internalPositions.stream()
-                .filter(p -> p.getQuantity() != null && p.getQuantity().compareTo(BigDecimal.ZERO) != 0)
-                .collect(Collectors.toMap(PortfolioPosition::getSymbol, PortfolioPosition::getQuantity));
+        Map<String, BigDecimal> internalBySymbol = omsExecutionRepository.computeLiveNetQtyBySymbol(userId).stream()
+                .collect(Collectors.toMap(
+                        row -> String.valueOf(row[0]),
+                        row -> (BigDecimal) row[1]
+                ));
 
         for (Map.Entry<String, BigDecimal> brokerEntry : brokerBySymbol.entrySet()) {
             String symbol = brokerEntry.getKey();
