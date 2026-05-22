@@ -335,6 +335,13 @@ export function AdminOmsMonitorPage() {
     staleTime: 15_000,
   });
 
+  const rejectReasonsQ = useQuery<{ reason: string; count: number }[]>({
+    queryKey: ["admin-oms-reject-reasons"],
+    queryFn: async () => (await api.get("/api/admin/oms/reject-reasons")).data?.data ?? [],
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+
   const strategiesQ = useQuery<StrategyCatalogRow[]>({
     queryKey: ["admin-oms-strategy-options"],
     queryFn: async () => {
@@ -440,6 +447,22 @@ export function AdminOmsMonitorPage() {
           <StatCard label="Fill Rate" value={`${fillRate}%`} sub={`${stats?.cancelledToday ?? 0} cancelled today`} accent="border-l-teal-500" icon={Zap} />
         </div>
       </div>
+
+      {/* ── Reject Breakdown ────────────────────────────────────────────────── */}
+      {(rejectReasonsQ.data ?? []).length > 0 && (
+        <div className="shrink-0 border-b border-slate-200 bg-rose-50/40 px-6 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-rose-700 mr-1">Rejection causes:</span>
+            {(rejectReasonsQ.data ?? []).map(({ reason, count }) => (
+              <span key={reason}
+                className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-rose-700">
+                {reason}
+                <span className="ml-1 rounded-full bg-rose-100 px-1.5 py-px text-[10px] font-bold text-rose-800">{count.toLocaleString()}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Filter Bar ───────────────────────────────────────────────────────── */}
       <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-3">

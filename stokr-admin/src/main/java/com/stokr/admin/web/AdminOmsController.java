@@ -140,6 +140,16 @@ public class AdminOmsController {
         return ApiResponse.ok(dtos, CorrelationIdHolder.get());
     }
 
+    @GetMapping("/reject-reasons")
+    @Operation(summary = "Top reject reasons by count across all orders")
+    public ApiResponse<List<Map<String, Object>>> rejectReasons() {
+        List<Object[]> rows = omsOrderRepository.countRejectionsByReason();
+        List<Map<String, Object>> result = rows.stream()
+                .map(r -> Map.<String, Object>of("reason", r[0], "count", ((Number) r[1]).longValue()))
+                .toList();
+        return ApiResponse.ok(result, CorrelationIdHolder.get());
+    }
+
     @PostMapping("/stuck-orders/expire")
     @Operation(summary = "Force-expire all orders stuck in pre-terminal states for >N minutes (default 5)")
     public ApiResponse<Map<String, Object>> expireStuckOrders(

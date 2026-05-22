@@ -146,6 +146,17 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             @Param("excludeId") UUID excludeId);
 
     @Query(value = """
+            SELECT reject_reason, COUNT(*)::bigint AS cnt
+            FROM oms_orders
+            WHERE deleted = FALSE AND backtest_run_id IS NULL
+              AND state = 'REJECTED' AND reject_reason IS NOT NULL
+            GROUP BY reject_reason
+            ORDER BY cnt DESC
+            LIMIT 20
+            """, nativeQuery = true)
+    List<Object[]> countRejectionsByReason();
+
+    @Query(value = """
             SELECT
                 COUNT(*) FILTER (WHERE created_at >= :since)::bigint                                                          AS total_today,
                 COUNT(*) FILTER (WHERE created_at >= :since AND state = 'FILLED')::bigint                                     AS filled_today,
