@@ -136,7 +136,7 @@ public class AdminTestSignalLabService {
             run.setSignalId(savedSignal.getId());
         }
 
-        Optional<OmsOrder> order = waitForOrder(run.getSignalId(), run.getTraderUserId(), run.isDryRunOnly() ? Duration.ofSeconds(2) : Duration.ofSeconds(15));
+        Optional<OmsOrder> order = waitForOrder(run.getSignalId(), run.getTraderUserId(), resolveOrderWaitTimeout(run));
         if (order.isPresent()) {
             run.setOrderId(order.get().getId());
         }
@@ -459,6 +459,19 @@ public class AdminTestSignalLabService {
             }
         } while (Instant.now().isBefore(until));
         return Optional.empty();
+    }
+
+    private static Duration resolveOrderWaitTimeout(AdminTestSignalRun run) {
+        if (run == null) {
+            return Duration.ofSeconds(15);
+        }
+        if (run.isDryRunOnly() || "SIMULATED".equalsIgnoreCase(run.getExecutionMode())) {
+            return Duration.ofSeconds(2);
+        }
+        if ("LIVE".equalsIgnoreCase(run.getExecutionMode()) || "BOTH".equalsIgnoreCase(run.getExecutionMode())) {
+            return Duration.ofSeconds(45);
+        }
+        return Duration.ofSeconds(20);
     }
 
     private Map<String, Object> buildHealthSnapshot() {

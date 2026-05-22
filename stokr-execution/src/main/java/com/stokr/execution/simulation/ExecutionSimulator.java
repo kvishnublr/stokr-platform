@@ -3,8 +3,12 @@ package com.stokr.execution.simulation;
 import com.stokr.common.events.realtime.RealtimeBridgeEvents;
 import com.stokr.common.execution.DeterministicExecutionRng;
 import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
+import com.stokr.common.crypto.FieldCipher;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
+import com.stokr.user.config.ZerodhaBrokerProperties;
+import com.stokr.user.domain.BrokerAccount;
+import com.stokr.user.repository.BrokerAccountRepository;
 import com.stokr.oms.domain.ExecutionEventType;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
@@ -60,6 +64,9 @@ public class ExecutionSimulator {
     private final ExecutionTraceService executionTraceService;
     private final StrategySignalRepository strategySignalRepository;
     private final ExecutionGuardTelemetryService executionGuardTelemetryService;
+    private final BrokerAccountRepository brokerAccountRepository;
+    private final FieldCipher fieldCipher;
+    private final ZerodhaBrokerProperties zerodhaBrokerProperties;
 
     @Value("${stokr.simulation.candle-timeframe:1m}")
     private String candleTimeframe;
@@ -114,12 +121,14 @@ public class ExecutionSimulator {
                 ));
                 return;
             }
-            orderLifecycleService.submitToBroker(order, vendor != null ? vendor : "ZERODHA");
+            String effectiveVendor = vendor != null ? vendor : "ZERODHA";
+            String[] creds = resolveBrokerCredentials(liveUserId, effectiveVendor);
+            orderLifecycleService.submitToBroker(order, effectiveVendor, creds[0], creds[1]);
             executionTraceService.trace(order, ExecutionEventType.BROKER_SUBMITTED, Map.of(
-                    "brokerVendor", vendor != null ? vendor : "ZERODHA"
+                    "brokerVendor", effectiveVendor
             ));
             executionTraceService.trace(order, ExecutionEventType.ORDER_ACCEPTED, Map.of(
-                    "brokerVendor", vendor != null ? vendor : "ZERODHA",
+                    "brokerVendor", effectiveVendor,
                     "channel", "LIVE"
             ));
             Instant ts = msg.deterministicAnchor() != null ? msg.deterministicAnchor() : order.getCreatedAt();
@@ -230,6 +239,36 @@ public class ExecutionSimulator {
                 "fills", fillLots.size()
         )));
         log.info("execution.simulated orderId={} lastFillPrice={} fills={}", order.getId(), lastFillPrice, fillLots.size());
+    }
+
+    /**
+     * Resolves decrypted apiKey + accessToken for the trader's broker account.
+     * Returns [null, null] if credentials cannot be resolved — the adapter will then
+     * throw an error and the order will transition to FAILED via the caller's exception handler.
+     */
+    private String[] resolveBrokerCredentials(UUID userId, String vendor) {
+        if (!"ZERODHA".equalsIgnoreCase(vendor)) {
+            return new String[]{null, null};
+        }
+        try {
+            java.util.Optional<BrokerAccount> accountOpt = brokerAccountRepository
+                    .findFirstByUserIdAndVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(userId, "ZERODHA");
+            if (accountOpt.isEmpty()) {
+                log.warn("execution.live.no_broker_account userId={}", userId);
+                return new String[]{null, null};
+            }
+            BrokerAccount account = accountOpt.get();
+            if (account.getAccessTokenEnc() == null || account.getAccessTokenEnc().isBlank()) {
+                log.warn("execution.live.no_access_token userId={}", userId);
+                return new String[]{null, null};
+            }
+            String accessToken = fieldCipher.decrypt(account.getAccessTokenEnc());
+            String apiKey = zerodhaBrokerProperties.getApiKey();
+            return new String[]{apiKey, accessToken};
+        } catch (Exception ex) {
+            log.error("execution.live.cred_resolve_failed userId={} {}", userId, ex.getMessage(), ex);
+            return new String[]{null, null};
+        }
     }
 
     private MarketdataCandle selectFillCandle(String symbol, Instant anchor) {

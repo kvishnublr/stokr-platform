@@ -98,9 +98,10 @@ public class OrderLifecycleService {
 
     /**
      * LIVE routing only: {@link OrderState#PENDING_SUBMISSION} → {@link OrderState#SUBMITTED} via broker adapter.
+     * Pass apiKey + accessToken to route the order through the real broker session.
      */
     @Transactional
-    public OmsOrder submitToBroker(OmsOrder order, String brokerVendor) {
+    public OmsOrder submitToBroker(OmsOrder order, String brokerVendor, String apiKey, String accessToken) {
         if (order.getExecutionMode() != ExecutionMode.LIVE) {
             throw new ConflictException("Broker routing only supported for LIVE execution mode");
         }
@@ -115,11 +116,21 @@ public class OrderLifecycleService {
                 submitted.getOrderType(),
                 submitted.getQuantity(),
                 submitted.getLimitPrice(),
-                submitted.getId() != null ? submitted.getId().toString() : null
+                submitted.getId() != null ? submitted.getId().toString() : null,
+                apiKey,
+                accessToken,
+                null,   // exchange — ZerodhaAdapter parses from symbol
+                "MIS"   // product — default to intraday for live orders
         );
         BrokerOrderResponse res = adapter.placeOrder(req);
         submitted.setBrokerVendor(brokerVendor);
         submitted.setBrokerOrderId(res.brokerOrderId());
         return orderRepository.save(submitted);
+    }
+
+    /** Backward-compatible overload for non-live paths that don't carry broker credentials. */
+    @Transactional
+    public OmsOrder submitToBroker(OmsOrder order, String brokerVendor) {
+        return submitToBroker(order, brokerVendor, null, null);
     }
 }
