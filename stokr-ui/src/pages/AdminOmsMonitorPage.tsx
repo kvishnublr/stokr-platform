@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { fmtDateTime } from "../lib/dateUtils";
 import { useState } from "react";
 import { api } from "../api/client";
@@ -6,7 +6,7 @@ import {
   TrendingUp, TrendingDown, Minus, RefreshCw, X,
   ChevronRight, AlertTriangle, Zap, Activity,
   CheckCircle2, XCircle, Clock, Timer, BarChart3,
-  ShieldAlert,
+  ShieldAlert, Trash2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -365,6 +365,14 @@ export function AdminOmsMonitorPage() {
   const hasFilters = !!(symbol || strategy || state !== "ALL" || mode !== "ALL");
   const clearFilters = () => { setSymbol(""); setStrategy(""); setState("ALL"); setMode("ALL"); setPage(0); };
 
+  const expireMut = useMutation({
+    mutationFn: async () => {
+      const r = await api.post("/api/admin/oms/stuck-orders/expire?stuckMinutes=5");
+      return r.data?.data as { expired: number };
+    },
+    onSuccess: () => { void q.refetch(); void statsQ.refetch(); },
+  });
+
   const rows = q.data?.content ?? [];
   const total = q.data?.totalElements ?? 0;
   const totalPages = q.data?.totalPages ?? 1;
@@ -401,10 +409,23 @@ export function AdminOmsMonitorPage() {
               Platform-wide order surveillance · {total.toLocaleString()} results · live feed
             </p>
           </div>
-          <button type="button" onClick={() => void q.refetch()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm">
-            <RefreshCw className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => expireMut.mutate()} disabled={expireMut.isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50 transition-colors shadow-sm">
+              {expireMut.isPending
+                ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Expiring…</>
+                : <><Trash2 className="h-3.5 w-3.5" /> Expire Stuck Orders</>}
+            </button>
+            {expireMut.isSuccess && (
+              <span className="text-xs text-rose-600 font-medium">
+                ✓ {(expireMut.data as any)?.expired ?? 0} expired
+              </span>
+            )}
+            <button type="button" onClick={() => void q.refetch()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm">
+              <RefreshCw className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} /> Refresh
+            </button>
+          </div>
         </div>
       </div>
 

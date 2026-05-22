@@ -31,6 +31,15 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             """)
     long countStuckOrders(@Param("states") Collection<OrderState> states, @Param("before") Instant before);
 
+    @Query("""
+            select o from OmsOrder o
+            where o.deleted = false
+            and o.state in :states
+            and o.updatedAt < :before
+            order by o.updatedAt asc
+            """)
+    List<OmsOrder> findStuckOrders(@Param("states") Collection<OrderState> states, @Param("before") Instant before);
+
     Optional<OmsOrder> findByUserIdAndIdempotencyKeyAndDeletedFalse(UUID userId, String idempotencyKey);
 
     long countByUserIdAndDeletedFalse(UUID userId);
@@ -105,6 +114,8 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
 
     List<OmsOrder> findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(UUID signalId);
 
+    Optional<OmsOrder> findFirstBySignalIdAndUserIdAndDeletedFalseOrderByCreatedAtDesc(UUID signalId, UUID userId);
+
     @Query("""
             select o from OmsOrder o
             where o.deleted = false and o.backtestRunId is null
@@ -144,7 +155,7 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
                 COUNT(*) FILTER (WHERE created_at >= :since AND state IN ('CREATED','VALIDATED','SUBMITTED','ACCEPTED'))::bigint AS pending_today,
                 COUNT(*)::bigint                                                                                                AS total_all_time
             FROM oms_orders
-            WHERE deleted = FALSE AND backtest_run_id IS NULL
+            WHERE deleted = FALSE AND backtest_run_id IS NULL AND is_test_trade = FALSE
             """, nativeQuery = true)
     List<Object[]> computeStats(@Param("since") Instant since);
 }

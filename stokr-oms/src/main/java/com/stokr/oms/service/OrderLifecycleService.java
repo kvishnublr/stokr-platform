@@ -13,15 +13,26 @@ import com.stokr.oms.domain.OrderState;
 import com.stokr.oms.execution.OrderStateMachine;
 import com.stokr.oms.repository.OmsOrderRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderLifecycleService {
+
+    private static final Set<OrderState> STUCK_STATES = Set.of(
+            OrderState.RISK_CHECK, OrderState.PENDING_SUBMISSION,
+            OrderState.SUBMITTED, OrderState.VALIDATED
+    );
 
     private final OmsOrderRepository orderRepository;
     private final BrokerAdapterRegistry brokerAdapterRegistry;
@@ -60,6 +71,29 @@ public class OrderLifecycleService {
         order.setState(newState);
         order.setRejectReason(rejectReason);
         return orderRepository.save(order);
+    }
+
+    /**
+     * Admin operation: force-transitions all orders stuck in pre-terminal states for longer than
+     * {@code stuckMinutes} into FAILED state. Safe to call at any time.
+     */
+    @Transactional
+    public int forceExpireStuckOrders(int stuckMinutes) {
+        Instant before = Instant.now().minus(stuckMinutes, ChronoUnit.MINUTES);
+        List<OmsOrder> stuck = orderRepository.findStuckOrders(STUCK_STATES, before);
+        if (stuck.isEmpty()) return 0;
+        for (OmsOrder o : stuck) {
+            try {
+                o.setState(OrderState.FAILED);
+                o.setRejectReason("admin_force_expired: stuck in " + o.getState().name() + " for >" + stuckMinutes + "m");
+                orderRepository.save(o);
+                log.warn("oms.force_expire orderId={} symbol={} state={}", o.getId(), o.getSymbol(), o.getState());
+            } catch (Exception ex) {
+                log.error("oms.force_expire_error orderId={} {}", o.getId(), ex.getMessage());
+            }
+        }
+        log.info("oms.force_expire_done count={}", stuck.size());
+        return stuck.size();
     }
 
     /**

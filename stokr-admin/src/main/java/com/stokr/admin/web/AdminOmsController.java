@@ -14,6 +14,7 @@ import com.stokr.oms.dto.OmsTradeRowDto;
 import com.stokr.oms.query.OmsReadParams;
 import com.stokr.oms.repository.OmsExecutionEventRepository;
 import com.stokr.oms.service.OmsQueryService;
+import com.stokr.oms.service.OrderLifecycleService;
 import com.stokr.oms.web.OmsHttpParams;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -23,6 +24,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -42,6 +45,7 @@ public class AdminOmsController {
     private final OmsQueryService omsQueryService;
     private final OmsExecutionEventRepository executionEventRepository;
     private final OmsOrderRepository omsOrderRepository;
+    private final OrderLifecycleService orderLifecycleService;
 
     @GetMapping("/stats")
     @Operation(summary = "Aggregate OMS stats for today or custom window")
@@ -134,6 +138,15 @@ public class AdminOmsController {
                 e.getStreamSequence(), e.getCorrelationId(), e.getCreatedAt()
         )).toList();
         return ApiResponse.ok(dtos, CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/stuck-orders/expire")
+    @Operation(summary = "Force-expire all orders stuck in pre-terminal states for >N minutes (default 5)")
+    public ApiResponse<Map<String, Object>> expireStuckOrders(
+            @RequestParam(defaultValue = "5") int stuckMinutes
+    ) {
+        int expired = orderLifecycleService.forceExpireStuckOrders(stuckMinutes);
+        return ApiResponse.ok(Map.of("expired", expired, "stuckMinutes", stuckMinutes), CorrelationIdHolder.get());
     }
 
     private static long toLong(Object v) {
