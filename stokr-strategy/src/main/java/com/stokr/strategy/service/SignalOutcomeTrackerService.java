@@ -50,11 +50,32 @@ public class SignalOutcomeTrackerService {
         int total = 0;
         int batch;
         do {
-            batch = trackOutcomes(2000);
+            batch = trackAllPendingBatch(2000);
             total += batch;
         } while (batch == 2000);
         log.info("signal.outcome.backfill_done total={}", total);
         return total;
+    }
+
+    private int trackAllPendingBatch(int batchSize) {
+        Instant now = Instant.now();
+        List<StrategySignalEntity> pending = signalRepository.findAllPendingOutcomeTracking(
+                PageRequest.of(0, batchSize));
+
+        if (pending.isEmpty()) return 0;
+
+        int updated = 0;
+        for (StrategySignalEntity sig : pending) {
+            try {
+                if (evaluateHistorical(sig, now)) updated++;
+            } catch (Exception ex) {
+                log.debug("signal.outcome.eval_error signalId={} {}", sig.getId(), ex.getMessage());
+            }
+        }
+        if (updated > 0) {
+            log.info("signal.outcome.tracked updated={} batch={}", updated, pending.size());
+        }
+        return pending.size();
     }
 
     private int trackOutcomes(int batchSize) {
@@ -79,6 +100,84 @@ public class SignalOutcomeTrackerService {
             log.info("signal.outcome.tracked updated={} batch={}", updated, pending.size());
         }
         return pending.size();
+    }
+
+    private boolean evaluateHistorical(StrategySignalEntity sig, Instant now) {
+        BigDecimal entry  = sig.getEntryReferencePrice();
+        BigDecimal target = sig.getTargetPrice();
+        BigDecimal sl     = sig.getStopPrice();
+        SignalType type   = sig.getSignalType();
+
+        if (entry == null || entry.signum() <= 0) {
+            expire(sig, now);
+            return true;
+        }
+
+        if (target == null || sl == null) {
+            sig.setOutcomeStatus(STATUS_RUNNING);
+            sig.setOutcomeTime(now);
+            return true;
+        }
+
+        // For historical/replayed signals, use candleTimestamp as the signal time
+        Instant signalTime = sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt();
+        // Fetch 1m candles in the 8-hour window after the signal candle
+        Instant scanEnd = signalTime.plus(EXPIRY_HOURS, ChronoUnit.HOURS);
+        if (scanEnd.isAfter(now)) scanEnd = now;
+
+        List<MarketdataCandle> bars = marketDataQueryService.rangeAsc(
+                sig.getSymbol(), "1m", signalTime, scanEnd);
+
+        List<MarketdataCandle> postSignal = bars.stream()
+                .filter(c -> c.getOpenTime().isAfter(signalTime))
+                .toList();
+
+        if (postSignal.isEmpty()) {
+            sig.setOutcomeStatus(STATUS_RUNNING);
+            sig.setOutcomeTime(now);
+            return true;
+        }
+
+        boolean isBuy  = type == SignalType.BUY;
+        boolean hitTgt = false;
+        boolean hitSl  = false;
+
+        for (MarketdataCandle c : postSignal) {
+            if (c.getHighPrice() == null || c.getLowPrice() == null) continue;
+            if (isBuy) {
+                if (c.getHighPrice().compareTo(target) >= 0) { hitTgt = true; break; }
+                if (c.getLowPrice().compareTo(sl) <= 0)      { hitSl  = true; break; }
+            } else {
+                if (c.getLowPrice().compareTo(target) <= 0)  { hitTgt = true; break; }
+                if (c.getHighPrice().compareTo(sl) >= 0)     { hitSl  = true; break; }
+            }
+        }
+
+        BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
+
+        if (hitTgt) {
+            sig.setOutcomeStatus(STATUS_TARGET_HIT);
+            sig.setHitTarget(true);
+            sig.setOutcomeTime(now);
+            BigDecimal pnl = isBuy
+                    ? target.subtract(entry).multiply(qty)
+                    : entry.subtract(target).multiply(qty);
+            sig.setRealizedPnl(pnl.setScale(2, RoundingMode.HALF_UP));
+        } else if (hitSl) {
+            sig.setOutcomeStatus(STATUS_SL_HIT);
+            sig.setHitStoploss(true);
+            sig.setOutcomeTime(now);
+            BigDecimal pnl = isBuy
+                    ? sl.subtract(entry).multiply(qty)
+                    : entry.subtract(sl).multiply(qty);
+            sig.setRealizedPnl(pnl.setScale(2, RoundingMode.HALF_UP));
+        } else {
+            // All bars scanned with no hit — mark EXPIRED for historical signals
+            sig.setOutcomeStatus(STATUS_EXPIRED);
+            sig.setOutcomeTime(now);
+        }
+
+        return true;
     }
 
     private boolean evaluate(StrategySignalEntity sig, Instant now) {
