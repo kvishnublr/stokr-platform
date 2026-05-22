@@ -71,10 +71,13 @@ public class EmaTrendFollowingSignalGenerator {
         if (emaFast == null || emaSlow == null || prevFast == null || prevSlow == null) {
             return null;
         }
-        boolean bull = emaFast.compareTo(emaSlow) > 0 && prevFast.compareTo(prevSlow) <= 0;
-        if (!bull) {
+        boolean goldenCross = emaFast.compareTo(emaSlow) > 0 && prevFast.compareTo(prevSlow) <= 0;
+        boolean deathCross  = emaFast.compareTo(emaSlow) < 0 && prevFast.compareTo(prevSlow) >= 0;
+
+        if (!goldenCross && !deathCross) {
             return null;
         }
+
         MarketdataCandle last = bars.getLast();
         StrategySignalEntity sig = new StrategySignalEntity();
         sig.setStrategyName(StrategyKeys.EMA_TREND_FOLLOW);
@@ -84,13 +87,23 @@ public class EmaTrendFollowingSignalGenerator {
         sig.setBacktestRunId(backtestRunId);
         sig.setPipeline(pipeline);
         sig.setCandleTimestamp(last.getOpenTime());
-        sig.setSignalType(SignalType.BUY);
-        sig.setConfidenceScore(new BigDecimal("0.61"));
-        sig.setReasonText("EMA bullish cross / alignment");
-        sig.setEntryReferencePrice(last.getClosePrice());
         sig.setSuggestedQty(BigDecimal.ONE);
-        sig.setStopPrice(emaSlow);
-        sig.setTargetPrice(last.getClosePrice().add(last.getClosePrice().subtract(emaSlow).multiply(new BigDecimal("1.5"), MC)));
+        sig.setEntryReferencePrice(last.getClosePrice());
+        sig.setConfidenceScore(new BigDecimal("0.61"));
+
+        if (goldenCross) {
+            sig.setSignalType(SignalType.BUY);
+            sig.setReasonText("EMA golden cross: EMA" + fast + " crossed above EMA" + slow);
+            sig.setStopPrice(emaSlow);
+            sig.setTargetPrice(last.getClosePrice().add(
+                    last.getClosePrice().subtract(emaSlow).multiply(new BigDecimal("1.5"), MC)));
+        } else {
+            sig.setSignalType(SignalType.SELL);
+            sig.setReasonText("EMA death cross: EMA" + fast + " crossed below EMA" + slow);
+            sig.setStopPrice(emaSlow);
+            sig.setTargetPrice(last.getClosePrice().subtract(
+                    emaSlow.subtract(last.getClosePrice()).multiply(new BigDecimal("1.5"), MC)));
+        }
         return sig;
     }
 

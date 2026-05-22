@@ -66,10 +66,21 @@ public class MomentumBreakoutSignalGenerator {
         if (priorHigh == null) {
             return null;
         }
-        boolean breakout = last.getClosePrice().compareTo(priorHigh) > 0 && prev.getClosePrice().compareTo(priorHigh) <= 0;
-        if (!breakout) {
+        BigDecimal priorLow = bars.subList(from, bars.size() - 1).stream()
+                .map(MarketdataCandle::getLowPrice)
+                .min(BigDecimal::compareTo)
+                .orElse(null);
+
+        boolean bullBreakout = last.getClosePrice().compareTo(priorHigh) > 0
+                && prev.getClosePrice().compareTo(priorHigh) <= 0;
+        boolean bearBreakout = priorLow != null
+                && last.getClosePrice().compareTo(priorLow) < 0
+                && prev.getClosePrice().compareTo(priorLow) >= 0;
+
+        if (!bullBreakout && !bearBreakout) {
             return null;
         }
+
         StrategySignalEntity sig = new StrategySignalEntity();
         sig.setStrategyName(StrategyKeys.MOMENTUM_BREAKOUT);
         sig.setStrategyVersion(StrategySignalEntity.VERSION);
@@ -78,14 +89,24 @@ public class MomentumBreakoutSignalGenerator {
         sig.setBacktestRunId(backtestRunId);
         sig.setPipeline(pipeline);
         sig.setCandleTimestamp(last.getOpenTime());
-        sig.setSignalType(SignalType.BUY);
-        sig.setConfidenceScore(new BigDecimal("0.64"));
-        sig.setReasonText("Momentum breakout prior range high");
-        sig.setEntryReferencePrice(last.getClosePrice());
         sig.setSuggestedQty(BigDecimal.ONE);
-        BigDecimal risk = last.getClosePrice().subtract(last.getLowPrice()).abs().max(new BigDecimal("0.5"));
-        sig.setStopPrice(last.getLowPrice());
-        sig.setTargetPrice(last.getClosePrice().add(risk.multiply(new BigDecimal("2"), MC)));
+        sig.setEntryReferencePrice(last.getClosePrice());
+
+        if (bullBreakout) {
+            BigDecimal risk = last.getClosePrice().subtract(last.getLowPrice()).abs().max(new BigDecimal("0.5"));
+            sig.setSignalType(SignalType.BUY);
+            sig.setConfidenceScore(new BigDecimal("0.64"));
+            sig.setReasonText("Momentum bullish breakout above prior range high");
+            sig.setStopPrice(last.getLowPrice());
+            sig.setTargetPrice(last.getClosePrice().add(risk.multiply(new BigDecimal("2"), MC)));
+        } else {
+            BigDecimal risk = last.getHighPrice().subtract(last.getClosePrice()).abs().max(new BigDecimal("0.5"));
+            sig.setSignalType(SignalType.SELL);
+            sig.setConfidenceScore(new BigDecimal("0.64"));
+            sig.setReasonText("Momentum bearish breakdown below prior range low");
+            sig.setStopPrice(last.getHighPrice());
+            sig.setTargetPrice(last.getClosePrice().subtract(risk.multiply(new BigDecimal("2"), MC)));
+        }
         return sig;
     }
 }
