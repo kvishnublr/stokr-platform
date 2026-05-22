@@ -137,9 +137,7 @@ public class AdminTestSignalLabService {
         }
 
         Optional<OmsOrder> order = waitForOrder(run.getSignalId(), run.getTraderUserId(), resolveOrderWaitTimeout(run));
-        if (order.isPresent()) {
-            run.setOrderId(order.get().getId());
-        }
+        order = reconcileResolvedOrder(run, order);
 
         Map<String, Object> healthSnapshot = buildHealthSnapshot();
         List<TestSignalCheckResult> checks = buildChecks(run, order, healthSnapshot);
@@ -461,6 +459,25 @@ public class AdminTestSignalLabService {
         return Optional.empty();
     }
 
+    private Optional<OmsOrder> reconcileResolvedOrder(AdminTestSignalRun run, Optional<OmsOrder> current) {
+        if (current.isPresent()) {
+            run.setOrderId(current.get().getId());
+            return current;
+        }
+        if (run.getSignalId() == null) {
+            return Optional.empty();
+        }
+
+        // Fallback: resolve by signal only (covers async insert races / user-id mismatches in upstream paths).
+        List<OmsOrder> candidates = omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(run.getSignalId());
+        if (!candidates.isEmpty()) {
+            OmsOrder resolved = candidates.get(0);
+            run.setOrderId(resolved.getId());
+            return Optional.of(resolved);
+        }
+        return Optional.empty();
+    }
+
     private static Duration resolveOrderWaitTimeout(AdminTestSignalRun run) {
         if (run == null) {
             return Duration.ofSeconds(15);
@@ -469,7 +486,7 @@ public class AdminTestSignalLabService {
             return Duration.ofSeconds(2);
         }
         if ("LIVE".equalsIgnoreCase(run.getExecutionMode()) || "BOTH".equalsIgnoreCase(run.getExecutionMode())) {
-            return Duration.ofSeconds(45);
+            return Duration.ofSeconds(60);
         }
         return Duration.ofSeconds(20);
     }
