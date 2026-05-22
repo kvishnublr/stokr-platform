@@ -1,13 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import { Play, RefreshCw, CheckCircle, AlertTriangle } from "lucide-react";
+import { Play, RefreshCw, CheckCircle, AlertTriangle, Clock } from "lucide-react";
 
 type StrategyCatalogItem = { strategyKey: string; displayName: string };
-type ReplayResult = {
-  strategyKey: string; from: string; to: string;
-  symbolsScanned: number; barsProcessed: number; signalsGenerated: number;
-};
+type AsyncResponse = { strategyKey: string; from: string; to: string; status: string; message: string };
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -15,8 +12,8 @@ export function AdminSignalReplayPage() {
   const [strategyKey, setStrategyKey] = useState("VWAP_MEAN_REVERSION");
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
-  const [result, setResult] = useState<ReplayResult | null>(null);
-  const [trackResult, setTrackResult] = useState<{ processed: number } | null>(null);
+  const [replayStarted, setReplayStarted] = useState<AsyncResponse | null>(null);
+  const [trackStarted, setTrackStarted] = useState(false);
 
   const catalogQ = useQuery<StrategyCatalogItem[]>({
     queryKey: ["strategy-catalog-keys"],
@@ -35,20 +32,20 @@ export function AdminSignalReplayPage() {
       const r = await api.post(
         `/api/admin/signals/replay?strategyKey=${encodeURIComponent(strategyKey)}&from=${from}&to=${to}`
       );
-      return r.data?.data as ReplayResult;
+      return r.data?.data as AsyncResponse;
     },
     onSuccess: (data) => {
-      setResult(data);
-      setTrackResult(null);
+      setReplayStarted(data);
+      setTrackStarted(false);
     },
   });
 
   const trackMut = useMutation({
     mutationFn: async () => {
-      const r = await api.post("/api/admin/signals/track-outcomes");
-      return r.data?.data as { processed: number };
+      const r = await api.post("/api/admin/signals/track-outcomes-async");
+      return r.data?.data;
     },
-    onSuccess: (data) => setTrackResult(data),
+    onSuccess: () => setTrackStarted(true),
   });
 
   const strategies: StrategyCatalogItem[] = catalogQ.data ?? [
@@ -119,7 +116,7 @@ export function AdminSignalReplayPage() {
         </div>
 
         <div className="text-xs text-slate-400">
-          Session: 09:25–14:45 IST · Generates live signals (not backtest) · Existing signals for same bars will be deduplicated
+          Session: 09:25–14:45 IST · Generates live signals (not backtest) · Runs in background — check Signal Monitor after ~60s
         </div>
 
         <button
@@ -128,12 +125,12 @@ export function AdminSignalReplayPage() {
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
         >
           {replayMut.isPending
-            ? <><RefreshCw className="h-4 w-4 animate-spin" /> Running Replay…</>
+            ? <><RefreshCw className="h-4 w-4 animate-spin" /> Starting Replay…</>
             : <><Play className="h-4 w-4" /> Run Replay</>}
         </button>
       </div>
 
-      {/* Replay result */}
+      {/* Replay error */}
       {replayMut.isError && (
         <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
           <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -141,43 +138,34 @@ export function AdminSignalReplayPage() {
         </div>
       )}
 
-      {result && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 space-y-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
-            <CheckCircle className="h-4 w-4" /> Replay Complete
+      {/* Replay started card */}
+      {replayStarted && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
+            <Clock className="h-4 w-4" /> Replay Running in Background
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "Signals Generated", value: result.signalsGenerated, highlight: true },
-              { label: "Symbols Scanned",   value: result.symbolsScanned },
-              { label: "Bars Processed",    value: result.barsProcessed },
-            ].map(({ label, value, highlight }) => (
-              <div key={label} className="rounded-lg bg-white border border-emerald-100 p-3 text-center">
-                <div className={`text-2xl font-bold ${highlight ? "text-emerald-600" : "text-slate-800"}`}>
-                  {value.toLocaleString()}
-                </div>
-                <div className="text-[11px] text-slate-500 mt-0.5">{label}</div>
-              </div>
-            ))}
+          <div className="text-sm text-blue-600">
+            {replayStarted.strategyKey} · {replayStarted.from} → {replayStarted.to}
           </div>
-          <div className="text-xs text-emerald-600">
-            {result.strategyKey} · {result.from} → {result.to}
+          <div className="text-xs text-blue-500">
+            Signals are being generated. Check Signal Monitor in ~60 seconds.
           </div>
 
           {/* Track outcomes */}
           <button
             onClick={() => trackMut.mutate()}
             disabled={trackMut.isPending}
-            className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-2 rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50 transition-colors"
           >
             {trackMut.isPending
-              ? <><RefreshCw className="h-4 w-4 animate-spin" /> Computing Outcomes…</>
+              ? <><RefreshCw className="h-4 w-4 animate-spin" /> Starting Outcome Tracker…</>
               : <><RefreshCw className="h-4 w-4" /> Compute Outcomes & PNL</>}
           </button>
 
-          {trackResult && (
-            <div className="text-xs text-emerald-700 font-medium">
-              ✓ Outcomes computed for {trackResult.processed.toLocaleString()} signals
+          {trackStarted && (
+            <div className="flex items-center gap-2 text-xs text-blue-700 font-medium">
+              <CheckCircle className="h-3.5 w-3.5" />
+              Outcome tracker started — refresh Signal Monitor in ~30s to see TARGET_HIT / SL_HIT results
             </div>
           )}
         </div>
@@ -187,9 +175,9 @@ export function AdminSignalReplayPage() {
       <div className="rounded-lg border border-slate-100 bg-slate-50 p-4 text-xs text-slate-500 space-y-1">
         <div className="font-semibold text-slate-600 mb-2">How it works</div>
         <div>1. Fetches all universe symbols bound to the selected strategy</div>
-        <div>2. Replays each 5m bar from 09:25–14:45 through the live strategy logic</div>
-        <div>3. Qualifying signals are saved as live signals (visible in Signal Intelligence)</div>
-        <div>4. Click "Compute Outcomes &amp; PNL" to evaluate TARGET_HIT / SL_HIT / RUNNING</div>
+        <div>2. Replays each 5m bar from 09:25–14:45 through the live strategy logic (background)</div>
+        <div>3. Qualifying signals are saved as live signals (visible in Signal Monitor)</div>
+        <div>4. Click "Compute Outcomes &amp; PNL" to evaluate TARGET_HIT / SL_HIT / EXPIRED</div>
       </div>
     </div>
   );

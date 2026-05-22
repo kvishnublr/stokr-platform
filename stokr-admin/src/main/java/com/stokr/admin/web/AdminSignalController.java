@@ -13,6 +13,7 @@ import com.stokr.strategy.service.SignalOutcomeTrackerService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -30,12 +31,14 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/admin/signals")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
 @Tag(name = "Admin Signal monitor")
+@Slf4j
 public class AdminSignalController {
 
     private final AdminSignalQueryService queryService;
@@ -85,7 +88,7 @@ public class AdminSignalController {
     }
 
     @PostMapping("/replay")
-    @Operation(summary = "Replay a strategy over a date range and generate live signals")
+    @Operation(summary = "Replay a strategy over a date range and generate live signals (async)")
     public ApiResponse<Map<String, Object>> replay(
             @RequestParam String strategyKey,
             @RequestParam String from,
@@ -93,14 +96,40 @@ public class AdminSignalController {
     ) {
         LocalDate fromDate = LocalDate.parse(from);
         LocalDate toDate   = LocalDate.parse(to);
-        var result = historicalReplayService.replay(strategyKey, fromDate, toDate);
+        String correlationId = CorrelationIdHolder.get();
+        CompletableFuture.runAsync(() -> {
+            try {
+                var result = historicalReplayService.replay(strategyKey, fromDate, toDate);
+                log.info("replay.async_done strategyKey={} from={} to={} signals={}",
+                        result.strategyKey(), result.from(), result.to(), result.signalsGenerated());
+            } catch (Exception ex) {
+                log.error("replay.async_error strategyKey={} {}", strategyKey, ex.getMessage(), ex);
+            }
+        });
         return ApiResponse.ok(Map.of(
-                "strategyKey",      result.strategyKey(),
-                "from",             result.from().toString(),
-                "to",               result.to().toString(),
-                "symbolsScanned",   result.symbolsScanned(),
-                "barsProcessed",    result.barsProcessed(),
-                "signalsGenerated", result.signalsGenerated()
-        ), CorrelationIdHolder.get());
+                "strategyKey", strategyKey,
+                "from",        from,
+                "to",          to,
+                "status",      "STARTED",
+                "message",     "Replay running in background. Check Signal Monitor in ~60s."
+        ), correlationId);
+    }
+
+    @PostMapping("/track-outcomes-async")
+    @Operation(summary = "Async backfill outcomes for all pending signals")
+    public ApiResponse<Map<String, Object>> trackOutcomesAsync() {
+        String correlationId = CorrelationIdHolder.get();
+        CompletableFuture.runAsync(() -> {
+            try {
+                int processed = outcomeTrackerService.trackAllPending();
+                log.info("track-outcomes.async_done processed={}", processed);
+            } catch (Exception ex) {
+                log.error("track-outcomes.async_error {}", ex.getMessage(), ex);
+            }
+        });
+        return ApiResponse.ok(Map.of(
+                "status",  "STARTED",
+                "message", "Outcome tracking running in background. Refresh Signal Monitor in ~30s."
+        ), correlationId);
     }
 }
