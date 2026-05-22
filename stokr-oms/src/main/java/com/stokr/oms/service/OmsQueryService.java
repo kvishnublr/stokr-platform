@@ -90,6 +90,7 @@ public class OmsQueryService {
 
     private Specification<OmsOrder> orderSpec(UUID restrictUserId, OmsReadParams p) {
         return Specification.where(OmsOrderSpecifications.notDeleted())
+                .and(OmsOrderSpecifications.notTestTrade())
                 .and(OmsOrderSpecifications.userId(restrictUserId))
                 .and(OmsOrderSpecifications.symbolEquals(p.symbol()))
                 .and(OmsOrderSpecifications.strategyKeyEquals(p.strategyKey()))
@@ -106,6 +107,7 @@ public class OmsQueryService {
             List<Predicate> preds = new ArrayList<>();
             preds.add(cb.isFalse(root.get("deleted")));
             preds.add(cb.isFalse(ord.get("deleted")));
+            preds.add(cb.isFalse(ord.get("testTrade")));
             if (restrictUserId != null) {
                 preds.add(cb.equal(ord.get("userId"), restrictUserId));
             }
@@ -153,6 +155,7 @@ public class OmsQueryService {
             List<Predicate> preds = new ArrayList<>();
             preds.add(cb.isFalse(root.get("deleted")));
             preds.add(cb.isFalse(ord.get("deleted")));
+            preds.add(cb.isFalse(ord.get("testTrade")));
             if (restrictUserId != null) {
                 preds.add(cb.equal(ord.get("userId"), restrictUserId));
             }

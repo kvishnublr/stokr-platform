@@ -157,6 +157,16 @@ public class StrategySignalEntity extends BaseEntity {
     @Column(name = "expiry_reason", length = 128)
     private String expiryReason;
 
+    @Column(name = "is_test_trade", nullable = false)
+    private Boolean testTrade = false;
+
+    @JdbcTypeCode(SqlTypes.UUID)
+    @Column(name = "test_run_id")
+    private UUID testRunId;
+
+    @Column(name = "test_scenario", length = 64)
+    private String testScenario;
+
     @PrePersist
     void prePersistDefaults() {
         if (expired == null) {
@@ -167,6 +177,9 @@ public class StrategySignalEntity extends BaseEntity {
         }
         if (hitStoploss == null) {
             hitStoploss = false;
+        }
+        if (testTrade == null) {
+            testTrade = false;
         }
     }
 }

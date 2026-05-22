@@ -143,6 +143,21 @@ public class OrderIntentProcessor {
             return;
         }
 
+        String testScenario = normalizeTestScenario(signal);
+        if ("SIMULATE_MARGIN_FAILURE".equals(testScenario)) {
+            orderLifecycleService.transition(order.getId(), OrderState.REJECTED, "Test scenario: insufficient margin");
+            signalDistributionTelemetryService.recordRiskRejected(userId, signal.getId());
+            return;
+        }
+        if ("SIMULATE_REJECTION".equals(testScenario)) {
+            orderLifecycleService.transition(order.getId(), OrderState.REJECTED, "Test scenario: broker rejection");
+            return;
+        }
+        if ("SIMULATE_BROKER_DISCONNECT".equals(testScenario)) {
+            orderLifecycleService.transition(order.getId(), OrderState.REJECTED, "Test scenario: broker disconnected");
+            return;
+        }
+
         signalDistributionTelemetryService.recordOrderCreatedFromSignal(userId, order.getId(), signal.getId());
         executionTraceService.trace(order, ExecutionEventType.SIGNAL_GENERATED, Map.of(
                 "signalId", signal.getId().toString(),
@@ -187,6 +202,11 @@ public class OrderIntentProcessor {
         ));
 
         order = orderLifecycleService.transition(order.getId(), OrderState.PENDING_SUBMISSION, null);
+
+        if ("SIMULATE_TIMEOUT".equals(testScenario)) {
+            log.info("test.signal.timeout_simulated signalId={} orderId={}", signal.getId(), order.getId());
+            return;
+        }
 
         long fillKey = fillDeterminismKey(signal);
         Instant anchor = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : order.getCreatedAt();
@@ -240,6 +260,8 @@ public class OrderIntentProcessor {
         o.setEntryReferencePrice(signal.getEntryReferencePrice());
         o.setBacktestRunId(signal.getBacktestRunId());
         o.setBrokerVendor(mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM");
+        o.setTestTrade(Boolean.TRUE.equals(signal.getTestTrade()));
+        o.setTestRunId(signal.getTestRunId());
         return o;
     }
 
@@ -260,6 +282,13 @@ public class OrderIntentProcessor {
             case EXIT -> "SELL";
             case HOLD -> "HOLD";
         };
+    }
+
+    private static String normalizeTestScenario(StrategySignalEntity signal) {
+        if (!Boolean.TRUE.equals(signal.getTestTrade()) || signal.getTestScenario() == null) {
+            return "";
+        }
+        return signal.getTestScenario().trim().toUpperCase();
     }
 
     /**

@@ -24,7 +24,9 @@ public record CreateOrderRequest(
         BigDecimal signalReferencePrice,
         String timeframe,
         Boolean exitOrder,
-        String guardMode
+        String guardMode,
+        Boolean testTrade,
+        UUID testRunId
 ) {
     public CreateOrderRequest(
             String symbol,
@@ -38,6 +40,6 @@ public record CreateOrderRequest(
             String idempotencyKey
     ) {
         this(symbol, side, orderType, quantity, limitPrice, executionMode, brokerVendor, strategyKey, idempotencyKey,
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, false, null);
     }
 }

@@ -85,4 +85,11 @@ public class OmsOrder extends BaseEntity {
     @JdbcTypeCode(SqlTypes.UUID)
     @Column(name = "paired_order_id")
     private UUID pairedOrderId;
+
+    @Column(name = "is_test_trade", nullable = false)
+    private boolean testTrade = false;
+
+    @JdbcTypeCode(SqlTypes.UUID)
+    @Column(name = "test_run_id")
+    private UUID testRunId;
 }

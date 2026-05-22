@@ -18,6 +18,10 @@ public final class OmsOrderSpecifications {
         return (root, q, cb) -> cb.isFalse(root.get("deleted"));
     }
 
+    public static Specification<OmsOrder> notTestTrade() {
+        return (root, q, cb) -> cb.isFalse(root.get("testTrade"));
+    }
+
     public static Specification<OmsOrder> userId(UUID userId) {
         if (userId == null) {
             return (r, q, cb) -> cb.conjunction();

@@ -30,6 +30,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             select s from StrategySignalEntity s
             left join s.instance i
             where s.deleted = false
+              and s.testTrade = false
               and (
                     (i is not null and i.deleted = false and i.userId = :userId)
                     or s.userId = :userId
@@ -38,7 +39,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             """)
     List<StrategySignalEntity> findRecentForTrader(@Param("userId") UUID userId, Pageable pageable);
 
-    List<StrategySignalEntity> findTop30ByDeletedFalseOrderByCreatedAtDesc(Pageable pageable);
+    List<StrategySignalEntity> findTop30ByDeletedFalseAndTestTradeFalseOrderByCreatedAtDesc(Pageable pageable);
 
     @Query("""
             select count(s) from StrategySignalEntity s
@@ -58,6 +59,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             select s from StrategySignalEntity s
             where s.deleted = false
               and s.backtestRunId is null
+              and s.testTrade = false
               and s.outcomeStatus is null
               and s.entryReferencePrice is not null
               and s.createdAt >= :since
@@ -73,6 +75,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             select s from StrategySignalEntity s
             where s.deleted = false
               and s.backtestRunId is null
+              and s.testTrade = false
               and s.outcomeStatus is null
               and s.entryReferencePrice is not null
             order by s.createdAt asc
@@ -93,7 +96,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
                 COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'EXPIRED')::bigint           AS expired_count,
                 COUNT(*)::bigint                                                                               AS total_all_time
             FROM strategy_signals
-            WHERE deleted = FALSE AND backtest_run_id IS NULL
+            WHERE deleted = FALSE AND backtest_run_id IS NULL AND is_test_trade = FALSE
             """, nativeQuery = true)
     List<Object[]> computeStats(@Param("since") Instant since);
 }

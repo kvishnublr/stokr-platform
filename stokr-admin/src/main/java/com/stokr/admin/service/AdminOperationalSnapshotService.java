@@ -711,7 +711,7 @@ public class AdminOperationalSnapshotService {
     }
 
     private List<Map<String, Object>> recentSignalsForAdmin() {
-        List<StrategySignalEntity> list = strategySignalRepository.findTop30ByDeletedFalseOrderByCreatedAtDesc(
+        List<StrategySignalEntity> list = strategySignalRepository.findTop30ByDeletedFalseAndTestTradeFalseOrderByCreatedAtDesc(
                 PageRequest.of(0, 30));
         List<Map<String, Object>> out = new ArrayList<>();
         for (StrategySignalEntity s : list) {

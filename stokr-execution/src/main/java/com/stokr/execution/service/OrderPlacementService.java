@@ -65,6 +65,8 @@ public class OrderPlacementService {
             broker = mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM";
         }
         draft.setBrokerVendor(broker);
+        draft.setTestTrade(Boolean.TRUE.equals(req.testTrade()));
+        draft.setTestRunId(req.testRunId());
 
         OmsOrder order = orderLifecycleService.createOrGetIdempotent(userId, req.idempotencyKey(), draft);
         executionTimelineService.append(

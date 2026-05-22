@@ -33,6 +33,9 @@ public class AdminSignalQueryService {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get("deleted")));
             predicates.add(cb.isNull(root.get("backtestRunId")));
+            if (!Boolean.TRUE.equals(p.includeTestTrades())) {
+                predicates.add(cb.isFalse(root.get("testTrade")));
+            }
             if (p.strategyName() != null && !p.strategyName().isBlank()) {
                 predicates.add(cb.like(cb.lower(root.get("strategyName")),
                         "%" + p.strategyName().trim().toLowerCase() + "%"));

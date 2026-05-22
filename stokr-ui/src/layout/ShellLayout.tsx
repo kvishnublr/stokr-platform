@@ -221,6 +221,9 @@ export function ShellLayout() {
     { to: "/admin/pipeline-health",   label: "Pipeline Health", icon: Activity },
     { to: "/admin/execution",         label: "Execution Guard", icon: ShieldCheck },
     { to: "/admin/intraday",          label: "Intraday",        icon: Radar },
+    { to: "/admin/test-signal-lab",   label: "Test Signal Lab", icon: Zap },
+    { to: "/admin/test-execution-monitor", label: "Test Monitor", icon: ActivitySquare },
+    { to: "/admin/failure-analysis",  label: "Failure Analysis", icon: AlertOctagon },
   ], []);
 
   const adminMarketLinks: SidebarLink[] = useMemo(() => [
@@ -231,6 +234,7 @@ export function ShellLayout() {
   const adminSystemLinks: SidebarLink[] = useMemo(() => [
     { to: "/admin/logs",              label: "Live Logs",       icon: Terminal },
     { to: "/admin/infrastructure",    label: "Infrastructure",  icon: Server },
+    { to: "/admin/infra-health-center", label: "Infra Health",  icon: Gauge },
     { to: "/admin/broker-infrastructure", label: "Broker Infra", icon: Building2 },
     { to: "/admin/replay",            label: "Replay Infra",    icon: RotateCcw },
   ], []);

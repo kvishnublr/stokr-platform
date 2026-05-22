@@ -71,7 +71,7 @@ public class StrategySignalPipelineService {
                     "Execution pipeline disabled: Rabbit listeners are OFF. Signal routing and OMS execution are inactive."
             );
         }
-        if (signalSessionGuardEnabled && shouldDropOutsideSession(signal, Instant.now())) {
+        if (signalSessionGuardEnabled && !Boolean.TRUE.equals(signal.getTestTrade()) && shouldDropOutsideSession(signal, Instant.now())) {
             log.info("signal.dropped_outside_session strategy={} symbol={} mode={}",
                     signal.getStrategyName(), signal.getSymbol(), executionMode);
             return null;
@@ -141,14 +141,21 @@ public class StrategySignalPipelineService {
             return true;
         }
         String symbol = signal.getSymbol() == null ? "" : signal.getSymbol().trim().toUpperCase();
-        boolean mcx = isMcxSymbol(symbol);
+        String strategy = signal.getStrategyName() == null ? "" : signal.getStrategyName().trim().toUpperCase();
+        boolean mcx = isMcxSignal(strategy, symbol);
         LocalTime t = zdt.toLocalTime();
         LocalTime start = mcx ? mcxStart : nseStart;
         LocalTime end = mcx ? mcxEnd : nseEnd;
         return t.isBefore(start) || t.isAfter(end);
     }
 
-    private boolean isMcxSymbol(String symbol) {
+    private boolean isMcxSignal(String strategyName, String symbol) {
+        if (strategyName.contains("MCX") || strategyName.contains("COMMODITIES")) {
+            return true;
+        }
+        if (symbol.startsWith("MCX")) {
+            return true;
+        }
         for (String p : MCX_PREFIXES) {
             if (symbol.startsWith(p)) {
                 return true;

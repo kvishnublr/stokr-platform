@@ -46,6 +46,10 @@ import { AdminUniverseGroupsPage } from "./pages/admin/AdminUniverseGroupsPage";
 import { AdminRuntimeBindingsPage } from "./pages/admin/AdminRuntimeBindingsPage";
 import { AdminPipelineHealthPage } from "./pages/admin/AdminPipelineHealthPage";
 import { AdminLogsPage } from "./pages/admin/AdminLogsPage";
+import { AdminTestSignalLabPage } from "./pages/admin/AdminTestSignalLabPage";
+import { AdminTestExecutionMonitorPage } from "./pages/admin/AdminTestExecutionMonitorPage";
+import { AdminInfrastructureHealthCenterPage } from "./pages/admin/AdminInfrastructureHealthCenterPage";
+import { AdminFailureAnalysisConsolePage } from "./pages/admin/AdminFailureAnalysisConsolePage";
 import { useSessionStore } from "./state/session";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { OnboardingWizardPage } from "./pages/OnboardingWizardPage";
@@ -250,6 +254,10 @@ export default function App() {
               <Route path="alerts" element={<AdminSectionPage section="alerts" />} />
               <Route path="ops" element={<AdminOpsGate />} />
               <Route path="pipeline-health" element={<AdminPipelineHealthPage />} />
+              <Route path="test-signal-lab" element={<AdminTestSignalLabPage />} />
+              <Route path="test-execution-monitor" element={<AdminTestExecutionMonitorPage />} />
+              <Route path="infra-health-center" element={<AdminInfrastructureHealthCenterPage />} />
+              <Route path="failure-analysis" element={<AdminFailureAnalysisConsolePage />} />
               <Route path="logs" element={<AdminLogsPage />} />
             </Route>
           </Route>
