@@ -98,7 +98,8 @@ public class OrderLifecycleService {
 
     /**
      * LIVE routing only: {@link OrderState#PENDING_SUBMISSION} → {@link OrderState#SUBMITTED} via broker adapter.
-     * Pass apiKey + accessToken to route the order through the real broker session.
+     * Broker rejections are caught and recorded as {@link OrderState#FAILED} — callers never see an exception,
+     * so the enclosing transaction always commits and the failure reason is persisted on the order.
      */
     @Transactional
     public OmsOrder submitToBroker(OmsOrder order, String brokerVendor, String apiKey, String accessToken) {
@@ -122,10 +123,21 @@ public class OrderLifecycleService {
                 null,   // exchange — ZerodhaAdapter parses from symbol
                 "MIS"   // product — default to intraday for live orders
         );
-        BrokerOrderResponse res = adapter.placeOrder(req);
-        submitted.setBrokerVendor(brokerVendor);
-        submitted.setBrokerOrderId(res.brokerOrderId());
-        return orderRepository.save(submitted);
+        try {
+            BrokerOrderResponse res = adapter.placeOrder(req);
+            submitted.setBrokerVendor(brokerVendor);
+            submitted.setBrokerOrderId(res.brokerOrderId());
+            return orderRepository.save(submitted);
+        } catch (Exception ex) {
+            // Catch all broker failures — persist as FAILED so callers see exact rejection reason.
+            // Never rethrow here: the enclosing transaction must commit so the signal + order are saved.
+            String reason = ex.getMessage() != null
+                    ? ex.getMessage().substring(0, Math.min(ex.getMessage().length(), 450))
+                    : "broker_error";
+            log.error("broker.submit.failed orderId={} vendor={} reason={}",
+                    submitted.getId(), brokerVendor, reason);
+            return transition(submitted.getId(), OrderState.FAILED, "BROKER_REJECTED: " + reason);
+        }
     }
 
     /** Backward-compatible overload for non-live paths that don't carry broker credentials. */

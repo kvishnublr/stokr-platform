@@ -21,6 +21,8 @@ import com.stokr.oms.trace.ExecutionTraceEvent;
 import com.stokr.risk.model.LiveTraderEligibilityResult;
 import com.stokr.risk.service.LiveTradingTraderEligibilityService;
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.common.pipeline.messages.SignalPersistedMessage;
+import com.stokr.execution.pipeline.OrderIntentProcessor;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
@@ -48,6 +50,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class AdminTestSignalLabService {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
@@ -58,6 +61,7 @@ public class AdminTestSignalLabService {
     private final BrokerAccountRepository brokerAccountRepository;
     private final PlatformBrokerFeedSessionRepository platformBrokerFeedSessionRepository;
     private final StrategySignalPipelineService strategySignalPipelineService;
+    private final OrderIntentProcessor orderIntentProcessor;
     private final StrategyDefinitionRepository strategyDefinitionRepository;
     private final StrategySignalRepository strategySignalRepository;
     private final OmsOrderRepository omsOrderRepository;
@@ -131,12 +135,32 @@ public class AdminTestSignalLabService {
 
         String correlationId = "test-lab:" + run.getId();
         Instant start = Instant.now();
-        StrategySignalEntity savedSignal = strategySignalPipelineService.persistAndDispatch(signal, correlationId, run.getExecutionMode());
-        if (savedSignal != null) {
-            run.setSignalId(savedSignal.getId());
+
+        // Persist signal directly — bypass RabbitMQ for test lab runs.
+        // This eliminates both queue hops and makes execution synchronous:
+        //   signal save → risk → execution → broker → all within this transaction.
+        signal.setOutcomeStatus("RUNNING");
+        StrategySignalEntity savedSignal = strategySignalRepository.save(signal);
+        run.setSignalId(savedSignal.getId());
+        runRepository.save(run);
+
+        SignalPersistedMessage msg = new SignalPersistedMessage(
+                savedSignal.getId(),
+                run.getTraderUserId(),
+                correlationId,
+                null,
+                run.getExecutionMode()
+        );
+        try {
+            // synchronous=true → no execution queue, runs inline in this transaction
+            orderIntentProcessor.processSignalIntent(msg, true);
+        } catch (Exception ex) {
+            log.warn("test.lab.sync_execution_error runId={} signal={} reason={}",
+                    run.getId(), savedSignal.getId(), ex.getMessage());
         }
 
-        Optional<OmsOrder> order = waitForOrder(run.getSignalId(), run.getTraderUserId(), resolveOrderWaitTimeout(run));
+        // Order was created synchronously — short poll to allow Hibernate flush
+        Optional<OmsOrder> order = waitForOrder(run.getSignalId(), run.getTraderUserId(), Duration.ofSeconds(3));
         order = reconcileResolvedOrder(run, order);
 
         Map<String, Object> healthSnapshot = buildHealthSnapshot();
