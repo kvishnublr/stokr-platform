@@ -132,7 +132,7 @@ public class SignalHistoricalReplayService {
             case "MEAN_REVERSION_V2"       -> meanReversionV2Generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime);
             case "MOMENTUM_BREAKOUT"       -> momentumGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
             case "OPENING_RANGE_BREAKOUT"  -> orbGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
-            case "EMA_TREND_FOLLOWING"     -> emaTrendGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
+            case "EMA_TREND_FOLLOW"        -> emaTrendGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
             default -> {
                 log.warn("replay.unknown_strategy key={}", strategyKey);
                 yield null;

@@ -54,7 +54,7 @@ export function AdminSignalReplayPage() {
     { strategyKey: "MEAN_REVERSION_V2",       displayName: "Mean Reversion V2" },
     { strategyKey: "MOMENTUM_BREAKOUT",       displayName: "Momentum Breakout" },
     { strategyKey: "OPENING_RANGE_BREAKOUT",  displayName: "Opening Range Breakout" },
-    { strategyKey: "EMA_TREND_FOLLOWING",     displayName: "EMA Trend Following" },
+    { strategyKey: "EMA_TREND_FOLLOW",        displayName: "EMA Trend Following" },
   ];
 
   return (
