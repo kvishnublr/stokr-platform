@@ -6,6 +6,7 @@ import com.stokr.admin.domain.AdminTestSignalRun;
 import com.stokr.admin.dto.TestSignalLabDtos.TestSignalCheckResult;
 import com.stokr.admin.dto.TestSignalLabDtos.TestSignalExecutionReport;
 import com.stokr.admin.dto.TestSignalLabDtos.TestSignalLabRequest;
+import com.stokr.admin.dto.TestSignalLabDtos.TestSignalPreflightReport;
 import com.stokr.admin.dto.TestSignalLabDtos.TestSignalRunSummaryDto;
 import com.stokr.admin.dto.TestSignalLabDtos.TestSignalTimelineEvent;
 import com.stokr.admin.repository.AdminTestSignalRunRepository;
@@ -17,6 +18,8 @@ import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.oms.trace.ExecutionTimelineProjection;
 import com.stokr.oms.trace.ExecutionTraceEvent;
+import com.stokr.risk.model.LiveTraderEligibilityResult;
+import com.stokr.risk.service.LiveTradingTraderEligibilityService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
@@ -59,6 +62,7 @@ public class AdminTestSignalLabService {
     private final StrategySignalRepository strategySignalRepository;
     private final OmsOrderRepository omsOrderRepository;
     private final PortfolioPositionRepository portfolioPositionRepository;
+    private final LiveTradingTraderEligibilityService liveTradingTraderEligibilityService;
     private final ExecutionTimelineProjection executionTimelineProjection;
     private final AdminOperationalSnapshotService operationalSnapshotService;
     private final EntityManager entityManager;
@@ -66,6 +70,11 @@ public class AdminTestSignalLabService {
 
     @Transactional
     public TestSignalExecutionReport run(UUID requestedBy, TestSignalLabRequest request) {
+        TestSignalPreflightReport preflight = preflight(request);
+        if (!preflight.canSubmit()) {
+            throw new IllegalStateException("Test signal blocked by preflight: " + String.join(" | ", preflight.blockers()));
+        }
+
         AuthUser trader = authUserRepository.findById(request.traderUserId())
                 .filter(u -> !u.isDeleted())
                 .orElseThrow(() -> new IllegalArgumentException("Trader not found: " + request.traderUserId()));
@@ -361,20 +370,36 @@ public class AdminTestSignalLabService {
         List<TestSignalCheckResult> checks = new ArrayList<>();
         checks.add(check("signal_generated", "Signal Generated", run.getSignalId() != null, "Signal persisted", "Signal not persisted", "Check strategy_signal insert path", null));
 
+        boolean expectsOrder = !run.isDryRunOnly() && !"SIMULATED".equalsIgnoreCase(run.getExecutionMode());
         boolean orderCreated = order.isPresent();
-        checks.add(check("execution_submitted", "Execution Submitted", orderCreated, "OMS order created", "No OMS order created", "Inspect OMS listener / queue health", "OPEN_OMS_MONITOR"));
+        if (!expectsOrder) {
+            checks.add(new TestSignalCheckResult(
+                    "execution_submitted",
+                    "Execution Submitted",
+                    "SUCCESS",
+                    "Order submission intentionally skipped for dry-run/simulated mode",
+                    null,
+                    null
+            ));
+        } else {
+            String preOrderReason = findPreOrderBlockReason(run);
+            String failMessage = preOrderReason == null || preOrderReason.isBlank()
+                    ? "No OMS order created"
+                    : "No OMS order created. Gate/eligibility block: " + preOrderReason;
+            checks.add(check("execution_submitted", "Execution Submitted", orderCreated, "OMS order created", failMessage, "Inspect OMS listener / queue health", "OPEN_OMS_MONITOR"));
+        }
 
         boolean brokerAccepted = order.map(o -> "ACCEPTED".equals(o.getState().name()) || "FILLED".equals(o.getState().name()) || "PARTIALLY_FILLED".equals(o.getState().name())).orElse(false);
-        checks.add(check("broker_accepted", "Broker Accepted", brokerAccepted, "Broker accepted execution", "Broker did not accept", "Review broker auth/session in Broker Infra", "RECONNECT_BROKER"));
+        checks.add(check("broker_accepted", "Broker Accepted", !expectsOrder || brokerAccepted, "Broker accepted execution", "Broker did not accept", "Review broker auth/session in Broker Infra", "RECONNECT_BROKER"));
 
         boolean filled = order.map(o -> "FILLED".equals(o.getState().name()) || "PARTIALLY_FILLED".equals(o.getState().name())).orElse(false);
-        checks.add(check("order_filled", "Order Filled", filled, "Order filled", "Order not filled yet", "Inspect execution timeline for pending state", "OPEN_EXECUTION_TIMELINE"));
+        checks.add(check("order_filled", "Order Filled", !expectsOrder || filled, "Order filled", "Order not filled yet", "Inspect execution timeline for pending state", "OPEN_EXECUTION_TIMELINE"));
 
         boolean positionVisible = portfolioPositionRepository.findByUserIdAndSymbolAndDeletedFalse(run.getTraderUserId(), run.getSymbol())
                 .map(PortfolioPosition::getQuantity)
                 .map(q -> q.signum() != 0)
                 .orElse(false);
-        checks.add(check("position_visible", "Position Visible", positionVisible, "Position visible in terminal", "No position entry yet", "Open trader positions and verify sync", "OPEN_TRADER_POSITIONS"));
+        checks.add(check("position_visible", "Position Visible", !expectsOrder || positionVisible, "Position visible in terminal", "No position entry yet", "Open trader positions and verify sync", "OPEN_TRADER_POSITIONS"));
 
         boolean websocketOpen = platformBrokerFeedSessionRepository
                 .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(run.getBrokerVendor() == null ? "ZERODHA" : run.getBrokerVendor())
@@ -383,10 +408,10 @@ public class AdminTestSignalLabService {
         checks.add(check("websocket", "Websocket Delivered", websocketOpen, "Broker websocket OPEN", "Broker websocket not open", "Reconnect broker websocket session", "RECONNECT_BROKER"));
 
         boolean telegramLogged = order.map(o -> hasExecutionAlerts(o.getId())).orElse(false);
-        checks.add(check("telegram_alert", "Telegram Sent", telegramLogged, "Alert log entry found", "No alert log entry yet", "Check notification providers and execution alerts", "OPEN_ALERTS"));
+        checks.add(check("telegram_alert", "Telegram Sent", !expectsOrder || telegramLogged, "Alert log entry found", "No alert log entry yet", "Check notification providers and execution alerts", "OPEN_ALERTS"));
 
         boolean reconciled = order.map(o -> hasReconciliationEvent(o.getId())).orElse(false);
-        checks.add(check("reconciliation", "Reconciliation Successful", reconciled, "Reconciliation event found", "No reconciliation event found", "Check reconciliation worker and broker adapter", "OPEN_RECONCILIATION"));
+        checks.add(check("reconciliation", "Reconciliation Successful", !expectsOrder || reconciled, "Reconciliation event found", "No reconciliation event found", "Check reconciliation worker and broker adapter", "OPEN_RECONCILIATION"));
 
         long latency = run.getTotalLatencyMs() == null ? 0L : run.getTotalLatencyMs();
         boolean latencyOk = latency == 0 || latency < 15_000;
@@ -402,6 +427,37 @@ public class AdminTestSignalLabService {
                 staleState ? "OPEN_MARKET_FEED" : null
         ));
         return checks;
+    }
+
+    private String findPreOrderBlockReason(AdminTestSignalRun run) {
+        try {
+            Object[] row = (Object[]) entityManager.createNativeQuery("""
+                    select rule_code, message
+                    from risk_events
+                    where deleted = false
+                      and user_id = :userId
+                      and order_id is null
+                      and created_at >= :startedAt
+                    order by created_at desc
+                    limit 1
+                    """)
+                    .setParameter("userId", run.getTraderUserId())
+                    .setParameter("startedAt", run.getStartedAt())
+                    .getResultStream()
+                    .findFirst()
+                    .orElse(null);
+            if (row == null) {
+                return null;
+            }
+            String code = row[0] == null ? "" : String.valueOf(row[0]);
+            String msg = row[1] == null ? "" : String.valueOf(row[1]);
+            if (!code.isBlank() && !msg.isBlank()) {
+                return code + " - " + msg;
+            }
+            return !msg.isBlank() ? msg : code;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static TestSignalCheckResult check(

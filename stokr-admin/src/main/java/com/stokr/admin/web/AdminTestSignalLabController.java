@@ -2,6 +2,7 @@ package com.stokr.admin.web;
 
 import com.stokr.admin.dto.TestSignalLabDtos.TestSignalExecutionReport;
 import com.stokr.admin.dto.TestSignalLabDtos.TestSignalLabRequest;
+import com.stokr.admin.dto.TestSignalLabDtos.TestSignalPreflightReport;
 import com.stokr.admin.dto.TestSignalLabDtos.TestSignalRunSummaryDto;
 import com.stokr.admin.service.AdminTestSignalLabService;
 import com.stokr.admin.service.AdminTestSignalLabRemediationService;
@@ -48,6 +49,14 @@ public class AdminTestSignalLabController {
     ) {
         UUID requestedBy = principal != null ? principal.getId() : request.traderUserId();
         return ApiResponse.ok(testSignalLabService.run(requestedBy, request), CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/preflight")
+    @Operation(summary = "Run preflight checks and return submit eligibility for test execution")
+    public ApiResponse<TestSignalPreflightReport> preflight(
+            @Valid @RequestBody TestSignalLabRequest request
+    ) {
+        return ApiResponse.ok(testSignalLabService.preflight(request), CorrelationIdHolder.get());
     }
 
     @GetMapping("/runs")

@@ -82,6 +82,20 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             """)
     List<StrategySignalEntity> findAllPendingOutcomeTracking(Pageable pageable);
 
+    @Query("""
+            select s from StrategySignalEntity s
+            where s.deleted = false
+              and s.backtestRunId is null
+              and s.testTrade = false
+              and s.outcomeStatus = 'RUNNING'
+              and s.entryReferencePrice is not null
+              and s.targetPrice is not null
+              and s.stopPrice is not null
+              and s.createdAt >= :since
+            order by s.createdAt asc
+            """)
+    List<StrategySignalEntity> findRunningSignalsSince(@Param("since") Instant since, Pageable pageable);
+
     @Query(value = """
             SELECT
                 COUNT(*) FILTER (WHERE created_at >= :since)::bigint                                         AS total_today,

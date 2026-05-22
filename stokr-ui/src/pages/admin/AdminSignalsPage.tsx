@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fmtDateTime } from "../../lib/dateUtils";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { api } from "../../api/client";
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, Download, X,
@@ -368,12 +368,54 @@ export function AdminSignalsPage() {
   const [pipeline, setPipeline] = useState("ALL");
   const [outcomeStatus, setOutcomeStatus] = useState("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // Subscribe to admin SSE stream; invalidate signal queries immediately on signal/outcome events
+  useEffect(() => {
+    const controller = new AbortController();
+    const token = localStorage.getItem("accessToken");
+    if (!token) return;
+
+    let buffer = "";
+
+    fetch("/api/admin/operations/stream", {
+      headers: { Authorization: `Bearer ${token}`, Accept: "text/event-stream" },
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok || !res.body) return;
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let sep: number;
+          while ((sep = buffer.indexOf("\n\n")) >= 0) {
+            const frame = buffer.slice(0, sep).trim();
+            buffer = buffer.slice(sep + 2);
+            if (frame) {
+              const isSignalEvent = frame.includes("event: signal") || frame.includes("event:signal")
+                || frame.includes("event: signal_outcome") || frame.includes("event:signal_outcome")
+                || frame.includes("event: ops_realtime") || frame.includes("event:ops_realtime");
+              if (isSignalEvent) {
+                void queryClient.invalidateQueries({ queryKey: ["admin-signals"] });
+                void queryClient.invalidateQueries({ queryKey: ["admin-signal-stats"] });
+              }
+            }
+          }
+        }
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [queryClient]);
 
   const statsQ = useQuery<StatsResp>({
     queryKey: ["admin-signal-stats"],
     queryFn: async () => (await api.get("/api/admin/signals/stats")).data?.data,
-    refetchInterval: 30_000,
-    staleTime: 15_000,
+    refetchInterval: 20_000,
+    staleTime: 10_000,
   });
 
   const q = useQuery<PageResp>({
@@ -391,7 +433,7 @@ export function AdminSignalsPage() {
       const res = await api.get(`/api/admin/signals?${p.toString()}`);
       return res.data?.data as PageResp;
     },
-    refetchInterval: 15_000,
+    refetchInterval: 10_000,
   });
 
   const handleExport = useCallback(() => {

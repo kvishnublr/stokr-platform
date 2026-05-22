@@ -1,5 +1,7 @@
 package com.stokr.strategy.service;
 
+import com.stokr.common.events.OperationalRealtimeEvent;
+import com.stokr.common.events.SignalPublishedEvent;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.domain.StrategySignalEntity;
@@ -7,16 +9,20 @@ import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Tracks signal outcomes by scanning candle data after signal generation time.
@@ -33,16 +39,49 @@ public class SignalOutcomeTrackerService {
     private static final String STATUS_RUNNING     = "RUNNING";
     private static final String STATUS_EXPIRED     = "EXPIRED";
 
-    private static final int EXPIRY_HOURS = 8;
-    private static final int BATCH_SIZE   = 200;
+    private static final int EXPIRY_HOURS     = 8;
+    private static final int BATCH_SIZE       = 200;
+    private static final int FAST_BATCH_SIZE  = 50;
 
     private final StrategySignalRepository signalRepository;
     private final MarketDataQueryService marketDataQueryService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Scheduled(fixedDelayString = "${stokr.signal.outcome-track-ms:300000}")
     @Transactional
     public void trackOutcomes() {
         trackOutcomes(BATCH_SIZE);
+    }
+
+    /**
+     * Fast-path tracker: re-evaluates signals already marked RUNNING every 30 seconds
+     * so PnL and outcome status reflect fresh candle data without waiting 5 minutes.
+     */
+    @Scheduled(fixedDelayString = "${stokr.signal.outcome-fast-track-ms:30000}")
+    @Transactional
+    public void trackRunningSignals() {
+        Instant since = Instant.now().minus(EXPIRY_HOURS, ChronoUnit.HOURS);
+        List<StrategySignalEntity> running = signalRepository.findRunningSignalsSince(
+                since, PageRequest.of(0, FAST_BATCH_SIZE));
+        if (running.isEmpty()) return;
+        Instant now = Instant.now();
+        int updated = 0;
+        for (StrategySignalEntity sig : running) {
+            try {
+                String prevStatus = sig.getOutcomeStatus();
+                if (evaluate(sig, now)) {
+                    updated++;
+                    if (!sig.getOutcomeStatus().equals(prevStatus)) {
+                        broadcastOutcomeChange(sig);
+                    }
+                }
+            } catch (Exception ex) {
+                log.debug("signal.fast_track.eval_error signalId={} {}", sig.getId(), ex.getMessage());
+            }
+        }
+        if (updated > 0) {
+            log.debug("signal.fast_track.updated count={}", updated);
+        }
     }
 
     @Transactional
@@ -91,7 +130,12 @@ public class SignalOutcomeTrackerService {
         int updated = 0;
         for (StrategySignalEntity sig : pending) {
             try {
-                if (evaluate(sig, now)) updated++;
+                if (evaluate(sig, now)) {
+                    updated++;
+                    if (!STATUS_RUNNING.equals(sig.getOutcomeStatus())) {
+                        broadcastOutcomeChange(sig);
+                    }
+                }
             } catch (Exception ex) {
                 log.debug("signal.outcome.eval_error signalId={} {}", sig.getId(), ex.getMessage());
             }
@@ -264,5 +308,38 @@ public class SignalOutcomeTrackerService {
     private void expire(StrategySignalEntity sig, Instant now) {
         sig.setOutcomeStatus(STATUS_EXPIRED);
         sig.setOutcomeTime(now);
+    }
+
+    private void broadcastOutcomeChange(StrategySignalEntity sig) {
+        try {
+            String userId = sig.getUserId() != null ? sig.getUserId().toString() : "system";
+            SignalPublishedEvent signalEvt = new SignalPublishedEvent(
+                    sig.getId(), sig.getUserId(), sig.getSymbol(), sig.getStrategyName());
+            OperationalRealtimeEvent opsEvt = new OperationalRealtimeEvent(
+                    "signal_outcome",
+                    Map.of(
+                            "signalId", sig.getId().toString(),
+                            "symbol", sig.getSymbol() != null ? sig.getSymbol() : "",
+                            "strategyKey", sig.getStrategyName() != null ? sig.getStrategyName() : "",
+                            "outcomeStatus", sig.getOutcomeStatus(),
+                            "realizedPnl", sig.getRealizedPnl() != null ? sig.getRealizedPnl().toPlainString() : "0",
+                            "userId", userId
+                    )
+            );
+            if (TransactionSynchronizationManager.isActualTransactionActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        eventPublisher.publishEvent(signalEvt);
+                        eventPublisher.publishEvent(opsEvt);
+                    }
+                });
+            } else {
+                eventPublisher.publishEvent(signalEvt);
+                eventPublisher.publishEvent(opsEvt);
+            }
+        } catch (Exception ex) {
+            log.debug("signal.outcome.broadcast_error signalId={}", sig.getId(), ex);
+        }
     }
 }

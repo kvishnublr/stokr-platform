@@ -23,8 +23,10 @@ import com.stokr.risk.service.RiskEngineService;
 import com.stokr.risk.service.RiskEvaluationTraceService;
 import com.stokr.risk.service.RiskEventRecorder;
 import com.stokr.strategy.signals.SignalType;
+import com.stokr.strategy.domain.StrategyDefinition;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.domain.StrategyExecutionConfig;
+import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.service.StrategyExecutionConfigService;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +50,7 @@ import java.util.UUID;
 public class OrderIntentProcessor {
 
     private final StrategySignalRepository signalRepository;
+    private final StrategyDefinitionRepository strategyDefinitionRepository;
     private final OrderLifecycleService orderLifecycleService;
     private final RiskEngineService riskEngineService;
     private final RiskEvaluationTraceService riskEvaluationTraceService;
@@ -84,6 +87,29 @@ public class OrderIntentProcessor {
             return;
         }
 
+        // Guard: block execution for deleted or disabled strategies (critical safety check)
+        if (!Boolean.TRUE.equals(signal.getTestTrade())) {
+            String sigStrategyKey = signal.getStrategyName() != null
+                    ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
+            java.util.Optional<StrategyDefinition> defOpt =
+                    strategyDefinitionRepository.findByStrategyKeyAndDeletedFalse(sigStrategyKey);
+            if (defOpt.isEmpty()) {
+                log.warn("signal.blocked.strategy_not_found signalId={} strategyKey={}",
+                        signal.getId(), sigStrategyKey);
+                signalDistributionTelemetryService.recordGateRejected(
+                        signal.getUserId(), signal.getId(), "STRATEGY_NOT_FOUND");
+                return;
+            }
+            StrategyDefinition def = defOpt.get();
+            if (!def.isEnabled()) {
+                log.warn("signal.blocked.strategy_disabled signalId={} strategyKey={}",
+                        signal.getId(), sigStrategyKey);
+                signalDistributionTelemetryService.recordGateRejected(
+                        signal.getUserId(), signal.getId(), "STRATEGY_DISABLED");
+                return;
+            }
+        }
+
         // Use trader userId from message (fan-out path), fall back to signal entity userId
         UUID userId = resolveUserId(msg, signal);
         boolean isSystemUser = systemUserId.equals(userId);
@@ -93,7 +119,7 @@ public class OrderIntentProcessor {
                 signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
 
         // Resolve effective execution mode: strategy config takes precedence over the poll/message mode.
-        ExecutionMode mode = resolveEffectiveMode(msg.executionMode(), strategyKey, userId);
+        ExecutionMode mode = resolveEffectiveMode(msg.executionMode(), strategyKey, userId, signal);
 
         // System-generated signals bypass paper/SIM user-level gate (no trader account needed).
         // For LIVE mode: system signals only check platform gates (kill switch, live armed).
@@ -109,8 +135,9 @@ public class OrderIntentProcessor {
                     return;
                 }
             } else {
-                LiveTraderEligibilityResult gate =
-                        liveTradingTraderEligibilityService.evaluateForLiveOrder(userId, strategyKey, "ZERODHA");
+                LiveTraderEligibilityResult gate = Boolean.TRUE.equals(signal.getTestTrade())
+                        ? liveTradingTraderEligibilityService.evaluateForLiveStrategyActivation(userId, strategyKey, "ZERODHA")
+                        : liveTradingTraderEligibilityService.evaluateForLiveOrder(userId, strategyKey, "ZERODHA");
                 if (!gate.allowed()) {
                     log.warn("live.order.blocked.pre_signal signalId={} reason={}", signal.getId(), gate.reasonCode());
                     riskEventRecorder.record(userId, null, gate.reasonCode(), "REJECT", gate.message());
@@ -296,7 +323,10 @@ public class OrderIntentProcessor {
      * Strategy execution config takes precedence over the message/poll mode.
      * Falls back to message mode if no config or config has no explicit mode.
      */
-    private ExecutionMode resolveEffectiveMode(String msgMode, String strategyKey, UUID userId) {
+    private ExecutionMode resolveEffectiveMode(String msgMode, String strategyKey, UUID userId, StrategySignalEntity signal) {
+        if (Boolean.TRUE.equals(signal.getTestTrade())) {
+            return parseMode(msgMode);
+        }
         try {
             java.util.Optional<StrategyExecutionConfig> cfgOpt =
                     strategyExecutionConfigService.getByStrategyKeyForUser(userId, strategyKey);

@@ -72,6 +72,14 @@ public final class TestSignalLabDtos {
     ) {
     }
 
+    public record TestSignalPreflightReport(
+            boolean canSubmit,
+            String effectiveExecutionMode,
+            List<String> blockers,
+            List<TestSignalCheckResult> checks
+    ) {
+    }
+
     public record TestSignalRunSummaryDto(
             UUID id,
             Instant createdAt,
