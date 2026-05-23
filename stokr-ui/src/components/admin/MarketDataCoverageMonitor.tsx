@@ -1,13 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Badge,
-  Alert,
-  AlertDescription,
-} from '@/components/ui/shared';
+import { cn } from '../../lib/utils';
 
 interface SymbolCoverage {
   symbol: string;
@@ -75,11 +67,11 @@ export function MarketDataCoverageMonitor() {
   const completionPercentage = (completeScan / coverage.length) * 100;
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Market Data Coverage</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <div className="rounded-lg border border-gray-200 bg-white p-6">
+      <div className="mb-6">
+        <h2 className="text-lg font-bold">Market Data Coverage</h2>
+      </div>
+      <div className="space-y-6">
         {/* Summary */}
         <div className="grid grid-cols-3 gap-4">
           <div className="bg-blue-50 p-3 rounded-lg">
@@ -101,21 +93,22 @@ export function MarketDataCoverageMonitor() {
         ) : (
           <div className="space-y-3 max-h-96 overflow-y-auto">
             {coverage.map((symbol) => (
-              <div key={symbol.symbol} className="border rounded-lg p-3 space-y-2">
+              <div key={symbol.symbol} className="space-y-2 rounded border border-gray-200 p-3">
                 <div className="flex items-center justify-between">
                   <h4 className="font-semibold">{symbol.symbol}</h4>
-                  <Badge
-                    className={
+                  <span
+                    className={cn(
+                      'rounded px-2 py-1 text-xs font-medium',
                       symbol.isComplete
                         ? 'bg-green-100 text-green-800'
                         : 'bg-yellow-100 text-yellow-800'
-                    }
+                    )}
                   >
                     {symbol.isComplete ? 'Complete' : 'Partial'}
-                  </Badge>
+                  </span>
                 </div>
 
-                <div className="text-xs text-gray-600 space-y-1">
+                <div className="space-y-1 text-xs text-gray-600">
                   <p>
                     <strong>Timeframes:</strong> {symbol.timeframes.join(', ')}
                   </p>
@@ -128,11 +121,11 @@ export function MarketDataCoverageMonitor() {
                 </div>
 
                 {!symbol.isComplete && (
-                  <Alert className="bg-yellow-50 border-yellow-200">
-                    <AlertDescription className="text-xs text-yellow-800">
+                  <div className="rounded border border-yellow-200 bg-yellow-50 p-2">
+                    <p className="text-xs text-yellow-800">
                       Insufficient data for certain timeframes. Replay may use synthetic data fallback.
-                    </AlertDescription>
-                  </Alert>
+                    </p>
+                  </div>
                 )}
               </div>
             ))}
@@ -140,11 +133,11 @@ export function MarketDataCoverageMonitor() {
         )}
 
         {coverage.length === 0 && !loading && (
-          <Alert className="bg-gray-50">
-            <AlertDescription>No market data coverage available</AlertDescription>
-          </Alert>
+          <div className="rounded border border-gray-200 bg-gray-50 p-3">
+            <p className="text-sm text-gray-700">No market data coverage available</p>
+          </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

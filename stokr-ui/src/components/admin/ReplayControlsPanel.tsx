@@ -1,20 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Button,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Slider,
-  Input,
-  Progress,
-  Badge,
-} from '@/components/ui/shared';
+import { cn } from '../../lib/utils';
 
 interface ReplayStatus {
   status: 'RUNNING' | 'PAUSED' | 'STOPPED';
@@ -123,11 +108,11 @@ export function ReplayControlsPanel() {
   };
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Replay Controls</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <div className="rounded-lg border border-gray-200 bg-white p-6">
+      <div className="mb-6">
+        <h2 className="text-lg font-bold">Replay Controls</h2>
+      </div>
+      <div className="space-y-6">
         {/* Setup Section */}
         <div className="space-y-4">
           <h3 className="font-semibold text-sm">Setup Replay</h3>
@@ -135,32 +120,35 @@ export function ReplayControlsPanel() {
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-1">
               <label className="block text-xs font-medium">Symbol</label>
-              <Input
+              <input
                 type="text"
                 value={symbol}
-                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSymbol(e.target.value.toUpperCase())}
                 placeholder="e.g., SBIN"
                 disabled={replayStatus?.status === 'RUNNING'}
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
               />
             </div>
 
             <div className="space-y-1">
               <label className="block text-xs font-medium">Start Date</label>
-              <Input
+              <input
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)}
                 disabled={replayStatus?.status === 'RUNNING'}
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
               />
             </div>
 
             <div className="space-y-1">
               <label className="block text-xs font-medium">End Date</label>
-              <Input
+              <input
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)}
                 disabled={replayStatus?.status === 'RUNNING'}
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
               />
             </div>
           </div>
@@ -168,12 +156,13 @@ export function ReplayControlsPanel() {
           <div className="space-y-2">
             <label className="block text-xs font-medium">Replay Speed</label>
             <div className="flex items-center gap-4">
-              <Slider
+              <input
+                type="range"
                 min={0.5}
                 max={10.0}
                 step={0.5}
-                value={[speed]}
-                onValueChange={(value) => setSpeed(value[0])}
+                value={speed}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSpeed(parseFloat(e.target.value))}
                 disabled={replayStatus?.status === 'RUNNING'}
                 className="flex-1"
               />
@@ -181,26 +170,30 @@ export function ReplayControlsPanel() {
             </div>
             <div className="flex flex-wrap gap-2">
               {speedOptions.map((option) => (
-                <Button
+                <button
                   key={option.value}
-                  size="sm"
-                  variant={speed === option.value ? 'default' : 'outline'}
                   onClick={() => setSpeed(option.value)}
                   disabled={replayStatus?.status === 'RUNNING'}
+                  className={cn(
+                    'rounded px-3 py-1 text-sm font-medium',
+                    speed === option.value
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50'
+                  )}
                 >
                   {option.label}
-                </Button>
+                </button>
               ))}
             </div>
           </div>
 
-          <Button
+          <button
             onClick={handleStartReplay}
             disabled={loading || replayStatus?.status === 'RUNNING'}
-            className="w-full bg-blue-600 hover:bg-blue-700"
+            className="w-full rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             {loading ? 'Starting...' : 'Start Replay'}
-          </Button>
+          </button>
         </div>
 
         {/* Status Section */}
@@ -210,9 +203,9 @@ export function ReplayControlsPanel() {
 
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-600">Status:</span>
-              <Badge className={statusColor[replayStatus.status] || ''}>
+              <span className={cn('rounded px-3 py-1 text-xs font-medium', statusColor[replayStatus.status] || '')}>
                 {replayStatus.status}
-              </Badge>
+              </span>
             </div>
 
             <div className="space-y-1">
@@ -220,7 +213,12 @@ export function ReplayControlsPanel() {
                 <span>Progress</span>
                 <span>{(replayStatus.progress * 100).toFixed(1)}%</span>
               </div>
-              <Progress value={replayStatus.progress * 100} className="w-full" />
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                <div
+                  className="h-full bg-blue-600 transition-all"
+                  style={{ width: `${replayStatus.progress * 100}%` }}
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 text-sm">
@@ -239,37 +237,35 @@ export function ReplayControlsPanel() {
             {/* Control Buttons */}
             <div className="flex gap-2">
               {replayStatus.status === 'RUNNING' && (
-                <Button
+                <button
                   onClick={handlePauseReplay}
-                  variant="outline"
-                  className="flex-1"
+                  className="flex-1 rounded border border-gray-300 px-3 py-2 font-medium hover:bg-gray-50"
                 >
                   Pause
-                </Button>
+                </button>
               )}
 
               {replayStatus.status === 'PAUSED' && (
-                <Button
+                <button
                   onClick={handleResumeReplay}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  className="flex-1 rounded bg-green-600 px-3 py-2 font-medium text-white hover:bg-green-700"
                 >
                   Resume
-                </Button>
+                </button>
               )}
 
               {replayStatus.status !== 'STOPPED' && (
-                <Button
+                <button
                   onClick={handleStopReplay}
-                  variant="destructive"
-                  className="flex-1"
+                  className="flex-1 rounded bg-red-600 px-3 py-2 font-medium text-white hover:bg-red-700"
                 >
                   Stop
-                </Button>
+                </button>
               )}
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

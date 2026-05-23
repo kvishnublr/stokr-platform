@@ -1,5 +1,11 @@
-import { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+
+interface RealtimeMessage {
+  type: string;
+  channel: string;
+  data?: Record<string, unknown>;
+}
 
 /**
  * Hook for real-time trader terminal updates via WebSocket.
@@ -54,16 +60,16 @@ export function useTraderRealtime(userId: string) {
       subscribe('signals');
     };
 
-    socketRef.current.onmessage = (event) => {
+    socketRef.current.onmessage = (event: MessageEvent<string>) => {
       try {
-        const message = JSON.parse(event.data);
+        const message = JSON.parse(event.data) as RealtimeMessage;
         handleRealtimeUpdate(message, queryClient);
       } catch (error) {
         console.error('[Realtime] Error parsing message:', error);
       }
     };
 
-    socketRef.current.onerror = (error) => {
+    socketRef.current.onerror = (error: Event) => {
       console.error('[Realtime] WebSocket error:', error);
     };
 
@@ -88,7 +94,7 @@ export function useTraderRealtime(userId: string) {
 /**
  * Handle incoming real-time update and invalidate relevant queries.
  */
-function handleRealtimeUpdate(message: any, queryClient: any) {
+function handleRealtimeUpdate(message: RealtimeMessage, queryClient: ReturnType<typeof useQueryClient>) {
   const { type, channel, data } = message;
 
   console.log(`[Realtime] ${type} on ${channel}:`, data);
@@ -107,6 +113,12 @@ function handleRealtimeUpdate(message: any, queryClient: any) {
   }
 }
 
+interface PositionUpdateEvent extends CustomEvent {
+  detail?: {
+    symbol: string;
+  };
+}
+
 /**
  * Hook for position MTM updates.
  */
@@ -115,7 +127,7 @@ export function usePositionMtm(symbol: string) {
 
   useEffect(() => {
     const handleMessage = (event: Event) => {
-      const customEvent = event as CustomEvent;
+      const customEvent = event as unknown as PositionUpdateEvent;
       if (customEvent.detail?.symbol === symbol) {
         queryClient.invalidateQueries({ queryKey: ['position', symbol] });
       }
@@ -126,16 +138,23 @@ export function usePositionMtm(symbol: string) {
   }, [symbol, queryClient]);
 }
 
+interface OrderStateChangeEvent extends CustomEvent {
+  detail?: {
+    orderId: string;
+    state: string;
+  };
+}
+
 /**
  * Hook for order lifecycle visualization.
  */
 export function useOrderLifecycle(orderId: string) {
   const queryClient = useQueryClient();
-  const [orderState, setOrderState] = React.useState<string | null>(null);
+  const [orderState, setOrderState] = useState<string | null>(null);
 
   useEffect(() => {
     const handleStateChange = (event: Event) => {
-      const customEvent = event as CustomEvent;
+      const customEvent = event as unknown as OrderStateChangeEvent;
       if (customEvent.detail?.orderId === orderId) {
         setOrderState(customEvent.detail.state);
         queryClient.invalidateQueries({ queryKey: ['orderLifecycle', orderId] });
@@ -149,17 +168,21 @@ export function useOrderLifecycle(orderId: string) {
   return { orderState };
 }
 
+interface PnLUpdateEvent extends CustomEvent {
+  detail?: Record<string, unknown>;
+}
+
 /**
  * Hook for PnL updates.
  */
 export function usePnlUpdates() {
   const queryClient = useQueryClient();
-  const [pnlSnapshot, setPnlSnapshot] = React.useState<any>(null);
+  const [pnlSnapshot, setPnlSnapshot] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     const handlePnlUpdate = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      setPnlSnapshot(customEvent.detail);
+      const customEvent = event as unknown as PnLUpdateEvent;
+      setPnlSnapshot(customEvent.detail || null);
       queryClient.invalidateQueries({ queryKey: ['pnl'] });
     };
 
@@ -169,5 +192,3 @@ export function usePnlUpdates() {
 
   return { pnlSnapshot };
 }
-
-import React from 'react';

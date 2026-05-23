@@ -1,19 +1,5 @@
-import React, { useState } from 'react';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Button,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Input,
-  Alert,
-  AlertDescription,
-} from '@/components/ui/shared';
+import { useState } from 'react';
+import { cn } from '../../lib/utils';
 
 interface ExecutionModeOption {
   value: string;
@@ -48,7 +34,7 @@ export function ExecutionModeSelector() {
       riskLevel: 'HIGH',
     },
     {
-      value: 'HYBRID',
+      value: 'BOTH',
       label: 'Hybrid Mode',
       description: 'Paper + Live parallel execution',
       color: 'bg-yellow-100',
@@ -98,124 +84,121 @@ export function ExecutionModeSelector() {
   const isLiveModeSelected = targetMode === 'LIVE';
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Execution Mode Control</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="block text-sm font-medium">Current Mode</label>
-            <div
-              className={`p-4 rounded-lg border-2 font-bold text-lg ${
-                modes.find((m) => m.value === currentMode)?.color || 'bg-gray-100'
-              }`}
-            >
-              {currentMode}
-            </div>
-            {lastSwitchTime && (
-              <div className="text-xs text-gray-600">
-                <p>Last switched: {lastSwitchTime}</p>
-                <p>By: {lastSwitchedBy}</p>
-              </div>
+    <div className="rounded-lg border border-gray-200 bg-white p-6">
+      <h2 className="mb-6 text-lg font-bold">Execution Mode Control</h2>
+
+      <div className="mb-6 grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Current Mode</label>
+          <div
+            className={cn(
+              'mt-2 rounded-lg border-2 p-4 text-lg font-bold',
+              modes.find((m) => m.value === currentMode)?.color || 'bg-gray-100'
             )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-medium">Target Mode</label>
-            <Select value={targetMode} onValueChange={setTargetMode}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {modes.map((mode) => (
-                  <SelectItem key={mode.value} value={mode.value}>
-                    {mode.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {targetModeConfig && (
-          <Alert className={riskColors[targetModeConfig.riskLevel]}>
-            <AlertDescription>
-              <strong>{targetModeConfig.label}</strong>
-              <br />
-              {targetModeConfig.description}
-              <br />
-              Risk Level: <strong>{targetModeConfig.riskLevel}</strong>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {isLiveModeSelected && (
-          <Alert className="bg-red-50 border-red-200">
-            <AlertDescription className="text-red-700">
-              ⚠️ <strong>WARNING</strong>: You are about to switch to LIVE mode. Real funds will be at risk.
-              Ensure all safety checks are in place before proceeding.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <div className="space-y-2">
-          <label className="block text-sm font-medium">Reason for Switch</label>
-          <Input
-            type="text"
-            placeholder="Enter reason for execution mode change..."
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            className="w-full"
-          />
-        </div>
-
-        <div className="flex gap-2">
-          <Button
-            onClick={() => {
-              if (isLiveModeSelected) {
-                setConfirmDialog(true);
-              } else {
-                handleSwitchMode();
-              }
-            }}
-            disabled={loading || currentMode === targetMode}
-            className={isLiveModeSelected ? 'bg-red-600 hover:bg-red-700' : ''}
           >
-            {loading ? 'Switching...' : 'Switch Mode'}
-          </Button>
-          <Button variant="outline" onClick={() => setReason('')}>
-            Clear
-          </Button>
+            {currentMode}
+          </div>
+          {lastSwitchTime && (
+            <div className="mt-2 text-xs text-gray-600">
+              <p>Last switched: {lastSwitchTime}</p>
+              <p>By: {lastSwitchedBy}</p>
+            </div>
+          )}
         </div>
 
-        {confirmDialog && isLiveModeSelected && (
-          <Alert className="bg-red-50 border-red-400">
-            <AlertDescription className="space-y-3 text-red-700">
-              <p className="font-bold">Confirm LIVE Mode Switch</p>
-              <p>This action will enable real broker connections and use real funds.</p>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  onClick={handleSwitchMode}
-                  disabled={loading}
-                  className="bg-red-600 hover:bg-red-700"
-                >
-                  {loading ? 'Processing...' : 'I understand, proceed'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setConfirmDialog(false)}
-                  disabled={loading}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </AlertDescription>
-          </Alert>
-        )}
-      </CardContent>
-    </Card>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Target Mode</label>
+          <select
+            value={targetMode}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTargetMode(e.target.value)}
+            className="mt-2 w-full rounded border border-gray-300 px-3 py-2"
+          >
+            {modes.map((mode) => (
+              <option key={mode.value} value={mode.value}>
+                {mode.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {targetModeConfig && (
+        <div className={cn('mb-6 rounded-lg p-4', riskColors[targetModeConfig.riskLevel])}>
+          <strong>{targetModeConfig.label}</strong>
+          <br />
+          {targetModeConfig.description}
+          <br />
+          Risk Level: <strong>{targetModeConfig.riskLevel}</strong>
+        </div>
+      )}
+
+      {isLiveModeSelected && (
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+          ⚠️ <strong>WARNING</strong>: You are about to switch to LIVE mode. Real funds will be at risk.
+          Ensure all safety checks are in place before proceeding.
+        </div>
+      )}
+
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-gray-700">Reason for Switch</label>
+        <input
+          type="text"
+          placeholder="Enter reason for execution mode change..."
+          value={reason}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReason(e.target.value)}
+          className="mt-2 w-full rounded border border-gray-300 px-3 py-2"
+        />
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => {
+            if (isLiveModeSelected) {
+              setConfirmDialog(true);
+            } else {
+              handleSwitchMode();
+            }
+          }}
+          disabled={loading || currentMode === targetMode}
+          className={cn(
+            'rounded px-4 py-2 font-medium text-white disabled:opacity-50',
+            isLiveModeSelected ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
+          )}
+        >
+          {loading ? 'Switching...' : 'Switch Mode'}
+        </button>
+        <button
+          onClick={() => setReason('')}
+          className="rounded border border-gray-300 px-4 py-2 hover:bg-gray-50"
+        >
+          Clear
+        </button>
+      </div>
+
+      {confirmDialog && isLiveModeSelected && (
+        <div className="mt-6 rounded-lg border border-red-400 bg-red-50 p-4">
+          <p className="mb-2 font-bold text-red-700">Confirm LIVE Mode Switch</p>
+          <p className="mb-4 text-red-700">
+            This action will enable real broker connections and use real funds.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={handleSwitchMode}
+              disabled={loading}
+              className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {loading ? 'Processing...' : 'I understand, proceed'}
+            </button>
+            <button
+              onClick={() => setConfirmDialog(false)}
+              disabled={loading}
+              className="rounded border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

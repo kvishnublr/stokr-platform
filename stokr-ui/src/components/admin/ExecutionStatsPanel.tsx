@@ -1,11 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Progress,
-} from '@/components/ui/shared';
 
 interface ExecutionStats {
   ordersToday: number;
@@ -42,9 +35,9 @@ export function ExecutionStatsPanel() {
 
   if (loading || !stats) {
     return (
-      <Card className="w-full">
-        <CardContent className="p-6">Loading execution statistics...</CardContent>
-      </Card>
+      <div className="rounded-lg border border-gray-200 bg-white p-6">
+        <p>Loading execution statistics...</p>
+      </div>
     );
   }
 
@@ -53,11 +46,11 @@ export function ExecutionStatsPanel() {
   const pendingOrders = stats.ordersToday - stats.ordersFilled - stats.ordersRejected;
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Execution Statistics</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <div className="rounded-lg border border-gray-200 bg-white p-6">
+      <div className="mb-6">
+        <h2 className="text-lg font-bold">Execution Statistics</h2>
+      </div>
+      <div className="space-y-6">
         {/* Order Summary */}
         <div className="grid grid-cols-4 gap-3">
           <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
@@ -92,7 +85,9 @@ export function ExecutionStatsPanel() {
               <span>Filled Orders</span>
               <span className="font-semibold">{fillRate.toFixed(1)}%</span>
             </div>
-            <Progress value={fillRate} className="bg-gray-200" />
+            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+              <div className="h-full bg-green-600 transition-all" style={{ width: `${fillRate}%` }} />
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -100,7 +95,9 @@ export function ExecutionStatsPanel() {
               <span>Rejected Orders</span>
               <span className="font-semibold">{rejectRate.toFixed(1)}%</span>
             </div>
-            <Progress value={rejectRate} className="bg-red-100" />
+            <div className="h-2 w-full overflow-hidden rounded-full bg-red-100">
+              <div className="h-full bg-red-600 transition-all" style={{ width: `${rejectRate}%` }} />
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -110,10 +107,12 @@ export function ExecutionStatsPanel() {
                 {(((pendingOrders / stats.ordersToday) * 100) || 0).toFixed(1)}%
               </span>
             </div>
-            <Progress
-              value={((pendingOrders / stats.ordersToday) * 100) || 0}
-              className="bg-yellow-100"
-            />
+            <div className="h-2 w-full overflow-hidden rounded-full bg-yellow-100">
+              <div
+                className="h-full bg-yellow-600 transition-all"
+                style={{ width: `${((pendingOrders / stats.ordersToday) * 100) || 0}%` }}
+              />
+            </div>
           </div>
         </div>
 
@@ -185,7 +184,7 @@ export function ExecutionStatsPanel() {
             </div>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
