@@ -837,69 +837,144 @@ export function OMSLatencyMonitor({ snapshot }: { snapshot: OpsSnapshot | undefi
   const o = asRecord(snapshot?.oms);
   const fails = asArray(o?.recentFailures) ?? [];
 
+  const ordersPerSec = fmtNum(o?.ordersPerSecApprox, 3);
+  const rejectRate = fmtNum(o?.rejectRateApprox, 2);
+  const avgLatency = o?.executionAvgLatencyMs != null ? fmtNum(o.executionAvgLatencyMs, 0) : 0;
+  const failed = fmtInt(o?.ordersFailed);
+  const rejected = fmtInt(o?.ordersRejected);
+  const stuck = fmtInt(o?.stuckOrdersApprox);
+  const createdLast60s = fmtInt(o?.ordersCreatedLast60s);
+
   return (
     <OpsPanel title="OMS execution monitor" subtitle="Order store + execution latency aggregate.">
-      <dl className="grid gap-2 font-mono text-[11px] text-muted-foreground sm:grid-cols-2">
-        <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
-          <dt>Orders / sec (60s)</dt>
-          <dd className="text-foreground">{fmtNum(o?.ordersPerSecApprox, 3)}</dd>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Orders / sec Card */}
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2 hover:shadow-md transition-all animate-slide-up">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">Orders / Sec (60s)</span>
+            <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></div>
+          </div>
+          <p className="text-3xl font-bold text-blue-900">{ordersPerSec}</p>
+          <div className="w-full bg-blue-200 rounded-full h-1.5">
+            <div className="bg-blue-600 h-1.5 rounded-full" style={{width: `${Math.min(Number(ordersPerSec) / 10 * 100, 100)}%`}}></div>
+          </div>
         </div>
-        <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
-          <dt>Reject rate (all-time)</dt>
-          <dd className="text-foreground">{fmtNum(o?.rejectRateApprox, 2)}%</dd>
+
+        {/* Reject Rate Card */}
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 space-y-2 hover:shadow-md transition-all animate-slide-up" style={{animationDelay: '50ms'}}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Reject Rate</span>
+            <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse"></div>
+          </div>
+          <p className="text-3xl font-bold text-red-900">{rejectRate}%</p>
+          <div className="w-full bg-red-200 rounded-full h-1.5">
+            <div className="bg-red-600 h-1.5 rounded-full" style={{width: `${Math.min(Number(rejectRate), 100)}%`}}></div>
+          </div>
         </div>
-        <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
-          <dt>Ack latency avg</dt>
-          <dd className="text-foreground">{o?.executionAvgLatencyMs != null ? `${fmtNum(o.executionAvgLatencyMs, 0)} ms` : "-"}</dd>
+
+        {/* Avg Latency Card */}
+        <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 space-y-2 hover:shadow-md transition-all animate-slide-up" style={{animationDelay: '100ms'}}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">Avg Latency</span>
+            <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></div>
+          </div>
+          <p className="text-3xl font-bold text-purple-900">{avgLatency} <span className="text-lg">ms</span></p>
+          <div className="w-full bg-purple-200 rounded-full h-1.5">
+            <div className="bg-purple-600 h-1.5 rounded-full" style={{width: `${Math.min(Number(avgLatency) / 50 * 100, 100)}%`}}></div>
+          </div>
         </div>
-        <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
-          <dt>Failed + rejected (total)</dt>
-          <dd className="text-foreground">
-            {fmtInt(o?.ordersFailed)} / {fmtInt(o?.ordersRejected)}
-          </dd>
+
+        {/* Failed Orders Card */}
+        <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 space-y-2 hover:shadow-md transition-all animate-slide-up" style={{animationDelay: '150ms'}}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-orange-700 uppercase tracking-wider">Failed Orders</span>
+            <div className="w-2 h-2 rounded-full bg-orange-400 animate-pulse"></div>
+          </div>
+          <p className="text-3xl font-bold text-orange-900">{failed}</p>
+          <p className="text-xs text-orange-700">Failed in execution</p>
         </div>
-        <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
-          <dt>Stuck (5m risk states)</dt>
-          <dd className="text-foreground">{fmtInt(o?.stuckOrdersApprox)}</dd>
+
+        {/* Rejected Orders Card */}
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-2 hover:shadow-md transition-all animate-slide-up" style={{animationDelay: '200ms'}}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Rejected Orders</span>
+            <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
+          </div>
+          <p className="text-3xl font-bold text-amber-900">{rejected}</p>
+          <p className="text-xs text-amber-700">Rejected by broker</p>
         </div>
-        <div className="flex justify-between gap-2 rounded border border-border bg-background/50 px-2 py-1">
-          <dt>Orders created last 60s</dt>
-          <dd className="text-foreground">{fmtInt(o?.ordersCreatedLast60s)}</dd>
+
+        {/* Stuck Orders Card */}
+        <div className={`rounded-lg border p-4 space-y-2 hover:shadow-md transition-all animate-slide-up ${stuck === '0' ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`} style={{animationDelay: '250ms'}}>
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-semibold uppercase tracking-wider ${stuck === '0' ? 'text-green-700' : 'text-red-700'}`}>Stuck (5m risk)</span>
+            <div className={`w-2 h-2 rounded-full animate-pulse ${stuck === '0' ? 'bg-green-400' : 'bg-red-400'}`}></div>
+          </div>
+          <p className={`text-3xl font-bold ${stuck === '0' ? 'text-green-900' : 'text-red-900'}`}>{stuck}</p>
+          <p className={`text-xs ${stuck === '0' ? 'text-green-700' : 'text-red-700'}`}>{stuck === '0' ? 'All clear' : 'Action required'}</p>
         </div>
-      </dl>
-      <div className="mt-3 text-xs font-medium text-foreground">Recent failures / rejects</div>
-      <div className="mt-1 max-h-40 overflow-auto rounded-lg border border-border">
-        <table className="w-full border-collapse text-left font-mono text-[10px]">
-          <thead className="sticky top-0 bg-card text-muted-foreground">
-            <tr>
-              <th className="border-b border-border px-2 py-1">State</th>
-              <th className="border-b border-border px-2 py-1">Sym</th>
-              <th className="border-b border-border px-2 py-1">Mode</th>
-              <th className="border-b border-border px-2 py-1">Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {fails.length === 0 ? (
+      </div>
+
+      {/* Orders created last 60s - Summary Bar */}
+      <div className="mt-4 rounded-lg border border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-semibold text-slate-900">Order Throughput (Last 60s)</span>
+          <span className="text-2xl font-bold text-blue-900">{createdLast60s} orders</span>
+        </div>
+        <div className="w-full bg-slate-200 rounded-full h-2">
+          <div className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all" style={{width: `${Math.min(Number(createdLast60s) / 100 * 100, 100)}%`}}></div>
+        </div>
+      </div>
+
+      {/* Recent Failures Table */}
+      <div className="mt-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-900">Recent Failures / Rejects</h3>
+          {fails.length > 0 && (
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-700 text-xs font-bold">
+              {fails.length}
+            </span>
+          )}
+        </div>
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <td colSpan={4} className="px-2 py-2 text-muted-foreground">
-                  No recent REJECTED/FAILED rows.
-                </td>
+                <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700">State</th>
+                <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700">Symbol</th>
+                <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700">Mode</th>
+                <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700">Updated (IST)</th>
               </tr>
-            ) : (
-              fails.map((raw, i) => {
-                const r = asRecord(raw) ?? {};
-                return (
-                  <tr key={String(r.id ?? i)} className="border-b border-border/80">
-                    <td className="px-2 py-1 text-foreground">{String(r.state ?? "")}</td>
-                    <td className="px-2 py-1 text-muted-foreground">{String(r.symbol ?? "")}</td>
-                    <td className="px-2 py-1 text-muted-foreground">{String(r.executionMode ?? "")}</td>
-                    <td className="px-2 py-1 text-muted-foreground">{String(r.updatedAt ?? "").slice(0, 19)}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {fails.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-4 py-4 text-center text-slate-500">
+                    ✓ No recent failures or rejections
+                  </td>
+                </tr>
+              ) : (
+                fails.map((raw, i) => {
+                  const r = asRecord(raw) ?? {};
+                  const state = String(r.state ?? "");
+                  const isRejected = state.includes("REJECT");
+                  return (
+                    <tr key={String(r.id ?? i)} className={`border-b border-slate-200 ${isRejected ? 'bg-red-50 hover:bg-red-100' : 'bg-amber-50 hover:bg-amber-100'} transition-colors`}>
+                      <td className="px-4 py-2 font-mono text-xs">
+                        <span className={`inline-flex px-2 py-1 rounded text-xs font-semibold ${isRejected ? 'bg-red-200 text-red-800' : 'bg-amber-200 text-amber-800'}`}>
+                          {state}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 font-semibold text-slate-900">{String(r.symbol ?? "-")}</td>
+                      <td className="px-4 py-2 font-mono text-xs text-slate-700">{String(r.executionMode ?? "-")}</td>
+                      <td className="px-4 py-2 font-mono text-xs text-slate-600">{String(r.updatedAt ?? "").slice(0, 19)}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </OpsPanel>
   );
