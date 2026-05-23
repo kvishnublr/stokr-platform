@@ -11,6 +11,7 @@ import { INTRADAY_SETUPS } from "../lib/intradaySetups";
 import { cn } from "../lib/utils";
 import { useSessionStore } from "../state/session";
 import { useUiThemeStore } from "../state/uiTheme";
+import { StrategyPerformanceWidget } from "../components/trader/StrategyPerformanceWidget";
 
 type CatalogRow = { id: string; code: string; name: string; subscribed: boolean; subscriptionEnabled: boolean };
 type InstanceRow = { id: string; definitionId: string; executionMode: string; runtimeState: string; symbol: string };
@@ -379,6 +380,7 @@ function DataTable({ rows, cols }: { rows: Array<Record<string, unknown>>; cols:
 export function IntradayTraderPage() {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const token = useSessionStore((s) => s.accessToken);
+  const userId = useSessionStore((s) => s.userId);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [selectedStrategyKey, setSelectedStrategyKey] = useState<string>(INTRADAY_SETUPS[0]?.strategyKey ?? "");
@@ -1231,6 +1233,11 @@ export function IntradayTraderPage() {
                 <AccountStat label="Open Pos." value={String(workstation.accountSummary.openPositions)} />
               </div>
             </div>
+          )}
+
+          {/* strategy performance widget */}
+          {userId && (
+            <StrategyPerformanceWidget userId={userId} executionMode={workstation?.accountSummary?.executionMode} />
           )}
 
           {/* smart alerts */}

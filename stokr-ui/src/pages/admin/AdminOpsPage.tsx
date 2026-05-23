@@ -2,8 +2,12 @@ import { ExecutionModeSelector } from '../../components/admin/ExecutionModeSelec
 import { ReplayControlsPanel } from '../../components/admin/ReplayControlsPanel';
 import { MarketDataCoverageMonitor } from '../../components/admin/MarketDataCoverageMonitor';
 import { ExecutionStatsPanel } from '../../components/admin/ExecutionStatsPanel';
+import { StrategyPerformanceDashboard } from '../../components/admin/StrategyPerformanceDashboard';
+import { useSessionStore } from '../../state/session';
 
 export function AdminOpsPage() {
+  const userId = useSessionStore((s) => s.userId);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-neutral-950 dark:to-neutral-900 p-6">
       {/* Header */}
@@ -37,10 +41,17 @@ export function AdminOpsPage() {
             <ExecutionStatsPanel />
           </div>
         </div>
+
+        {/* Row 3: Strategy Performance Dashboard */}
+        {userId && (
+          <div className="animate-slide-up" style={{ animationDelay: '400ms' }}>
+            <StrategyPerformanceDashboard userId={userId} />
+          </div>
+        )}
       </div>
 
       {/* Footer Stats */}
-      <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4 animate-slide-up" style={{ animationDelay: '400ms' }}>
+      <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4 animate-slide-up" style={{ animationDelay: '500ms' }}>
         <div className="bg-white dark:bg-neutral-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
           <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-1">
             System Mode
