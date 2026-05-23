@@ -84,30 +84,28 @@ export function ExecutionModeSelector() {
   const isLiveModeSelected = targetMode === 'LIVE';
 
   return (
-    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-xl p-6 space-y-6 hover:border-blue-500/30 transition-all duration-300">
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-6 hover:border-blue-300 transition-all duration-300 shadow-sm animate-slide-up">
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <div className="w-1 h-6 bg-gradient-to-b from-blue-500 to-blue-600 rounded-full"></div>
-          <h2 className="text-xl font-bold text-white">Execution Mode Control</h2>
+          <h2 className="text-xl font-bold text-slate-900">Execution Mode</h2>
         </div>
-        <p className="text-xs text-slate-400">Switch between PAPER, LIVE, and BOTH (Hybrid) execution modes</p>
+        <p className="text-xs text-slate-600">Switch between PAPER, LIVE, and BOTH execution modes</p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-3">
-          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Current Mode</label>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Current</label>
           <div className="relative group">
-            <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-300"></div>
-            <div
-              className="relative rounded-xl border border-slate-600 bg-slate-900/50 p-4 text-center backdrop-blur-sm"
-            >
-              <span className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl blur opacity-0 group-hover:opacity-20 transition duration-300"></div>
+            <div className="relative rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
+              <span className="text-2xl font-bold text-blue-900">
                 {currentMode}
               </span>
             </div>
           </div>
           {lastSwitchTime && (
-            <div className="text-xs text-slate-400 space-y-1 px-2">
+            <div className="text-xs text-slate-500 space-y-1 px-2">
               <p>Last: {lastSwitchTime}</p>
               <p>By: {lastSwitchedBy}</p>
             </div>
@@ -115,14 +113,14 @@ export function ExecutionModeSelector() {
         </div>
 
         <div className="space-y-3">
-          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Target Mode</label>
+          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Target</label>
           <select
             value={targetMode}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTargetMode(e.target.value)}
-            className="w-full rounded-xl border border-slate-600 bg-slate-900/50 px-4 py-2.5 text-white font-medium backdrop-blur-sm hover:border-blue-500/50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-slate-900 font-medium hover:border-blue-300 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30"
           >
             {modes.map((mode) => (
-              <option key={mode.value} value={mode.value} className="bg-slate-900">
+              <option key={mode.value} value={mode.value}>
                 {mode.label}
               </option>
             ))}
@@ -131,30 +129,25 @@ export function ExecutionModeSelector() {
       </div>
 
       {targetModeConfig && (
-        <div className={cn('mb-6 rounded-lg p-4', riskColors[targetModeConfig.riskLevel])}>
-          <strong>{targetModeConfig.label}</strong>
-          <br />
-          {targetModeConfig.description}
-          <br />
-          Risk Level: <strong>{targetModeConfig.riskLevel}</strong>
+        <div className={cn('mb-4 rounded-lg p-3 text-sm', riskColors[targetModeConfig.riskLevel])}>
+          <strong>{targetModeConfig.label}</strong> · {targetModeConfig.description}
         </div>
       )}
 
       {isLiveModeSelected && (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-          ⚠️ <strong>WARNING</strong>: You are about to switch to LIVE mode. Real funds will be at risk.
-          Ensure all safety checks are in place before proceeding.
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 text-sm">
+          ⚠️ <strong>WARNING:</strong> Switching to LIVE mode will use real funds. Ensure all safety checks are in place.
         </div>
       )}
 
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700">Reason for Switch</label>
+      <div className="space-y-3">
+        <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Reason</label>
         <input
           type="text"
-          placeholder="Enter reason for execution mode change..."
+          placeholder="Why are you switching modes?"
           value={reason}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReason(e.target.value)}
-          className="mt-2 w-full rounded border border-gray-300 px-3 py-2"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 hover:border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-colors"
         />
       </div>
 
@@ -169,7 +162,7 @@ export function ExecutionModeSelector() {
           }}
           disabled={loading || currentMode === targetMode}
           className={cn(
-            'rounded px-4 py-2 font-medium text-white disabled:opacity-50',
+            'flex-1 rounded-lg px-4 py-2 font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed',
             isLiveModeSelected ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
           )}
         >
@@ -177,30 +170,30 @@ export function ExecutionModeSelector() {
         </button>
         <button
           onClick={() => setReason('')}
-          className="rounded border border-gray-300 px-4 py-2 hover:bg-gray-50"
+          className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
         >
           Clear
         </button>
       </div>
 
       {confirmDialog && isLiveModeSelected && (
-        <div className="mt-6 rounded-lg border border-red-400 bg-red-50 p-4">
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 animate-scale-in">
           <p className="mb-2 font-bold text-red-700">Confirm LIVE Mode Switch</p>
-          <p className="mb-4 text-red-700">
-            This action will enable real broker connections and use real funds.
+          <p className="mb-4 text-sm text-red-600">
+            This enables real broker connections with real funds at risk.
           </p>
           <div className="flex gap-2">
             <button
               onClick={handleSwitchMode}
               disabled={loading}
-              className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+              className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors disabled:opacity-50"
             >
               {loading ? 'Processing...' : 'I understand, proceed'}
             </button>
             <button
               onClick={() => setConfirmDialog(false)}
               disabled={loading}
-              className="rounded border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+              className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
