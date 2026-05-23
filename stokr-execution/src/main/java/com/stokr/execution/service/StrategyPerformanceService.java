@@ -74,6 +74,11 @@ public class StrategyPerformanceService {
             }
         }
 
+        // Finalize all strategy metrics (calculate averages)
+        for (StrategyMetrics metrics : strategyMetrics.values()) {
+            metrics.computeMetrics();
+        }
+
         // Calculate aggregates
         StrategyPerformanceReport.Aggregate aggregate = calculateAggregate(strategyMetrics.values());
 
@@ -186,7 +191,7 @@ public class StrategyPerformanceService {
             }
         }
 
-        public void finalize() {
+        public void computeMetrics() {
             if (this.totalOrders > 0) {
                 this.fillRatePercent = (this.filledOrders * 100.0) / this.totalOrders;
             }
