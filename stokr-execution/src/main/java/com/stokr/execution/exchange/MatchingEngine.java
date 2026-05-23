@@ -99,7 +99,7 @@ public class MatchingEngine {
             remainingQty = remainingQty.subtract(matchQty);
 
             log.debug("matching.limit_fill symbol={} side={} qty={} price={} latencyMs={}",
-                    orderBook.symbol, side, matchQty, fillPrice, latencyMs);
+                    orderBook.getSymbol(), side, matchQty, fillPrice, latencyMs);
         }
 
         return MatchResult.builder()
@@ -169,7 +169,7 @@ public class MatchingEngine {
             remainingQty = remainingQty.subtract(matchQty);
 
             log.debug("matching.market_fill symbol={} side={} qty={} price={} latencyMs={}",
-                    orderBook.symbol, side, matchQty, fillPrice, latencyMs);
+                    orderBook.getSymbol(), side, matchQty, fillPrice, latencyMs);
         }
 
         return MatchResult.builder()

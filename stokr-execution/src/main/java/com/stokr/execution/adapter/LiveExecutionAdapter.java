@@ -47,15 +47,15 @@ public class LiveExecutionAdapter implements ExecutionAdapter {
             String brokerVendor = "ZERODHA";
             BrokerAdapter brokerAdapter = brokerAdapterRegistry.get(brokerVendor);
 
-            // Build broker-specific request
-            BrokerOrderRequest brokerRequest = BrokerOrderRequest.builder()
-                    .symbol(request.getSymbol())
-                    .side(request.getSide())
-                    .quantity(request.getQuantity())
-                    .orderType(request.getOrderType())
-                    .limitPrice(request.getLimitPrice())
-                    .product(request.getProduct())
-                    .build();
+            // Build broker-specific request (BrokerOrderRequest is a record)
+            BrokerOrderRequest brokerRequest = new BrokerOrderRequest(
+                    request.getSymbol(),
+                    request.getSide(),
+                    request.getOrderType(),
+                    request.getQuantity(),
+                    request.getLimitPrice(),
+                    request.getOrderId().toString()
+            );
 
             // Submit to broker
             BrokerOrderResponse brokerResponse = brokerAdapter.placeOrder(brokerRequest);
@@ -66,14 +66,14 @@ public class LiveExecutionAdapter implements ExecutionAdapter {
             requestCache.put(request.getOrderId(), request);
 
             // Map broker response to unified response
-            OrderState status = brokerResponse.getStatus() != null
-                    ? OrderState.valueOf(brokerResponse.getStatus())
+            OrderState status = brokerResponse.status() != null
+                    ? OrderState.valueOf(brokerResponse.status())
                     : OrderState.SUBMITTED;
 
             return OrderExecutionResponse.builder()
                     .orderId(request.getOrderId())
                     .status(status)
-                    .brokerOrderId(brokerResponse.getBrokerOrderId())
+                    .brokerOrderId(brokerResponse.brokerOrderId())
                     .latencyMs(latencyMs)
                     .timestamp(Instant.now())
                     .build();

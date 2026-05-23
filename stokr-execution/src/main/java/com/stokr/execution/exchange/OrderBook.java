@@ -28,6 +28,10 @@ public class OrderBook {
         this.symbol = symbol;
     }
 
+    public String getSymbol() {
+        return symbol;
+    }
+
     /**
      * Add a limit order to the book.
      */

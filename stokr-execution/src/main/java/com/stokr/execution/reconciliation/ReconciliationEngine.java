@@ -82,9 +82,9 @@ public class ReconciliationEngine {
             } else {
                 report.setStatus("OK");
             }
-        } else if (currentMode == ExecutionMode.HYBRID) {
-            // In HYBRID mode, compare paper vs broker fills for each order
-            reconcileHybridMode(report);
+        } else if (currentMode == ExecutionMode.BOTH) {
+            // In BOTH mode, compare paper vs broker fills for each order
+            reconcileBothMode(report);
         }
 
         report.setPaperFillCount(paperFills.size());
@@ -94,7 +94,7 @@ public class ReconciliationEngine {
         return report;
     }
 
-    private void reconcileHybridMode(ReconciliationReport report) {
+    private void reconcileBothMode(ReconciliationReport report) {
         report.setStatus("OK");
 
         // Find all unique order IDs

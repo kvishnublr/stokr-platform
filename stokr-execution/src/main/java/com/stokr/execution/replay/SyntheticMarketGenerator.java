@@ -138,15 +138,15 @@ public class SyntheticMarketGenerator {
         // Synthetic volume (random 10K - 100K)
         BigDecimal volume = BigDecimal.valueOf(10_000 + random.nextInt(90_000));
 
-        return new MarketdataCandle(
-                symbol,
-                "1m",
-                openTime,
-                openPrice,
-                high,
-                low,
-                close,
-                volume
-        );
+        MarketdataCandle candle = new MarketdataCandle();
+        candle.setSymbol(symbol);
+        candle.setTimeframe("1m");
+        candle.setOpenTime(openTime);
+        candle.setOpenPrice(openPrice);
+        candle.setHighPrice(high);
+        candle.setLowPrice(low);
+        candle.setClosePrice(close);
+        candle.setVolume(volume);
+        return candle;
     }
 }

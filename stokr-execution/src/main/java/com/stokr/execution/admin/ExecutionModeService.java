@@ -65,7 +65,7 @@ public class ExecutionModeService {
             components.put("matching-engine", "READY");
             latencies.put("match-latency-p99-ms", 5L);
             latencies.put("fill-latency-p99-ms", 10L);
-        } else if (currentMode == ExecutionMode.HYBRID) {
+        } else if (currentMode == ExecutionMode.BOTH) {
             components.put("broker-adapter", "CONNECTED");
             components.put("paper-exchange", "RUNNING");
             components.put("matching-engine", "READY");

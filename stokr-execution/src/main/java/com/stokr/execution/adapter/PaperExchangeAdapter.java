@@ -173,7 +173,7 @@ public class PaperExchangeAdapter implements ExecutionAdapter {
             return Optional.of(OrderState.FILLED);
         }
         if (orders.containsKey(orderId)) {
-            return Optional.of(OrderState.OPEN);
+            return Optional.of(OrderState.SUBMITTED);
         }
         return Optional.empty();
     }
