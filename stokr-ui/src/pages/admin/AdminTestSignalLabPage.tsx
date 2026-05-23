@@ -136,26 +136,43 @@ function StrategySearchDropdown({
   );
 }
 
+const STORAGE_KEY = "testSignalLabDefaults";
+
+const DEFAULT_FORM: TestSignalLabRequest = {
+  traderUserId: "",
+  strategyKey: "",
+  symbol: "SBIN",
+  side: "BUY",
+  quantity: 1,
+  orderType: "MARKET",
+  executionMode: "LIVE",
+  triggerType: "INSTANT",
+  forceQuantityOne: true,
+  dryRunOnly: false,
+  skipActualBrokerExecution: false,
+  simulateRejection: false,
+  simulateTimeout: false,
+  simulateStaleWebsocket: false,
+  simulateMarginFailure: false,
+  simulateBrokerDisconnect: false,
+};
+
 export function AdminTestSignalLabPage() {
   const [selectedRunId, setSelectedRunId] = useState<string>("");
-  const [form, setForm] = useState<TestSignalLabRequest>({
-    traderUserId: "",
-    strategyKey: "",
-    symbol: "",
-    side: "BUY",
-    quantity: 1,
-    orderType: "MARKET",
-    executionMode: "LIVE",
-    triggerType: "INSTANT",
-    forceQuantityOne: true,
-    dryRunOnly: false,
-    skipActualBrokerExecution: false,
-    simulateRejection: false,
-    simulateTimeout: false,
-    simulateStaleWebsocket: false,
-    simulateMarginFailure: false,
-    simulateBrokerDisconnect: false,
+
+  const [form, setForm] = useState<TestSignalLabRequest>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return stored ? { ...DEFAULT_FORM, ...JSON.parse(stored) } : DEFAULT_FORM;
+    } catch {
+      return DEFAULT_FORM;
+    }
   });
+
+  // Persist form to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
+  }, [form]);
 
   const options = useQuery({
     queryKey: ["admin-test-signal-lab-options"],
@@ -412,6 +429,14 @@ export function AdminTestSignalLabPage() {
             onClick={() => runMutation.mutate(form)}
           >
             {runMutation.isPending ? "Running..." : "Run Test Signal"}
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-lg border border-border bg-muted px-3 py-2.5 text-sm font-semibold text-foreground shadow-sm transition hover:bg-muted/80"
+            onClick={() => setForm(DEFAULT_FORM)}
+            title="Reset form to defaults"
+          >
+            Reset Defaults
           </button>
           {runBlockedReason && <span className="text-xs text-amber-600">{runBlockedReason}</span>}
           {runMutation.isError && <span className="text-xs text-red-500">Run failed. Check config.</span>}
