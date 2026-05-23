@@ -94,7 +94,11 @@ public class ExecutionSimulator {
             return;
         }
 
+        log.info("execution.process orderId={} executionMode={} testTrade={} symbol={}",
+                order.getId(), order.getExecutionMode(), order.isTestTrade(), order.getSymbol());
+
         if (order.getExecutionMode() == ExecutionMode.LIVE) {
+            log.info("execution.live.path orderId={} mode={}", order.getId(), order.getExecutionMode());
             String vendor = msg.brokerVendor() != null ? msg.brokerVendor() : order.getBrokerVendor();
             final UUID liveUserId = order.getUserId();
             LiveTraderEligibilityResult gate = liveTradingTraderEligibilityService.evaluateForLiveOrder(

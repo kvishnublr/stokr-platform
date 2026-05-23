@@ -120,6 +120,8 @@ public class OrderIntentProcessor {
 
         // Resolve effective execution mode: strategy config takes precedence over the poll/message mode.
         ExecutionMode mode = resolveEffectiveMode(msg.executionMode(), strategyKey, userId, signal);
+        log.info("order.intent.mode_resolved signalId={} msgMode={} resolvedMode={} isTestTrade={}",
+                signal.getId(), msg.executionMode(), mode, Boolean.TRUE.equals(signal.getTestTrade()));
 
         // System-generated signals bypass paper/SIM user-level gate (no trader account needed).
         // For LIVE mode: system signals only check platform gates (kill switch, live armed).
@@ -235,6 +237,9 @@ public class OrderIntentProcessor {
             return;
         }
 
+        log.info("order.intent.before_dispatch orderId={} executionMode={} state={} symbol={}",
+                order.getId(), order.getExecutionMode(), order.getState(), order.getSymbol());
+
         long fillKey = fillDeterminismKey(signal);
         Instant anchor = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : order.getCreatedAt();
 
@@ -273,6 +278,7 @@ public class OrderIntentProcessor {
         o.setSignalId(signal.getId());
         o.setStrategyKey(signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY);
         o.setExecutionMode(mode);
+        log.info("order.draft.created symbol={} mode={} side={}", signal.getSymbol(), mode, mapSide(signal));
         o.setSymbol(signal.getSymbol());
         o.setSide(mapSide(signal));
         o.setOrderType("MARKET");
