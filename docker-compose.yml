@@ -88,6 +88,8 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     container_name: stokr-postgres
+    env_file:
+      - .env
     environment:
       POSTGRES_DB: ${DB_NAME:-stokr_platform}
       POSTGRES_USER: ${DB_USER:-postgres}
