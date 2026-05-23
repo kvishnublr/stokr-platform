@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Zap, Activity, TrendingUp, Gauge } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api/client";
 import { AdminOperationsCockpit } from "../components/admin/cockpit/AdminOperationsCockpit";
@@ -39,79 +39,150 @@ export function AdminOpsPage() {
   const r = readiness.data;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-6 text-foreground overflow-y-auto">
-      <div>
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 dark:from-blue-400 dark:to-blue-600 bg-clip-text text-transparent mb-2">
-          Operations Control Center
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Unified execution framework management · Mode switching · Replay controls · Real-time monitoring
-        </p>
-      </div>
-
-      {/* Readiness Status */}
-      <section
-        className={cn(
-          "overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm",
-          r?.blocking ? "border-red-500/50" : "border-border",
-        )}
-      >
-        <button
-          type="button"
-          className="flex w-full items-center justify-between gap-2 border-b border-border px-4 py-2.5 text-left text-sm font-medium hover:bg-background/50"
-          onClick={() => setReadinessOpen((o) => !o)}
-        >
-          <span>Live-trading readiness</span>
-          {readinessOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
-        </button>
-        {readinessOpen ? (
-          <div className="px-4 py-3">
-            {readiness.isLoading ? (
-              <div className="text-sm text-muted-foreground">Loading readiness...</div>
-            ) : readiness.isError ? (
-              <div className="text-sm text-red-600 dark:text-red-400">Could not load readiness (admin only).</div>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {r
-                  ? Object.entries(r.checks).map(([k, v]) => (
-                      <li key={k} className="flex flex-wrap justify-between gap-2 border-b border-border pb-2 last:border-0">
-                        <span className="font-mono text-xs text-muted-foreground">{k}</span>
-                        <span className={v.ok ? "text-emerald-600 dark:text-emerald-400" : "text-amber-700 dark:text-amber-300"}>
-                          {v.detail}
-                        </span>
-                      </li>
-                    ))
-                  : null}
-              </ul>
-            )}
-          </div>
-        ) : null}
-      </section>
-
-      {/* Main Operations Cockpit */}
-      <AdminOperationsCockpit snapshot={snapshot.data} isFetching={snapshot.isFetching} />
-
-      {/* Execution Framework Components */}
-      <div className="space-y-6">
-        <h2 className="text-2xl font-bold text-foreground mt-4">Execution Framework</h2>
-
-        {/* Row 1: Execution Mode + Replay Controls */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="animate-slide-up" style={{ animationDelay: '0ms' }}>
-            <ExecutionModeSelector />
-          </div>
-          <div className="animate-slide-up" style={{ animationDelay: '100ms' }}>
-            <ReplayControlsPanel />
+    <div className="flex min-h-0 flex-1 flex-col gap-8 text-foreground overflow-y-auto bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 dark:from-neutral-950 dark:via-neutral-950 dark:to-neutral-900">
+      {/* Premium Header */}
+      <div className="sticky top-0 z-10 backdrop-blur-xl bg-gradient-to-b from-slate-900/80 to-slate-900/20 border-b border-blue-500/10 px-6 pt-6 pb-4 animate-fade-in">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl blur-lg opacity-50 animate-glow-pulse"></div>
+                <div className="relative bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl p-3">
+                  <Zap className="w-6 h-6 text-white" />
+                </div>
+              </div>
+              <div>
+                <h1 className="text-4xl font-black bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent animate-neon-glow">
+                  Operations Control
+                </h1>
+                <p className="text-xs text-blue-300/70 font-semibold uppercase tracking-widest mt-1">Unified Execution Framework</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Real-time mode switching · Historical replay controls · Market data monitoring · Execution analytics
+            </p>
           </div>
         </div>
+      </div>
 
-        {/* Row 2: Market Data Coverage + Execution Stats */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="animate-slide-up" style={{ animationDelay: '200ms' }}>
-            <MarketDataCoverageMonitor />
+      <div className="px-6 pb-6 space-y-8 min-h-0">
+        {/* Quick Status Indicators */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { icon: Zap, label: "System Mode", value: "LIVE", color: "from-blue-500 to-blue-600" },
+            { icon: Activity, label: "Broker Status", value: "Connected", color: "from-green-500 to-green-600" },
+            { icon: Gauge, label: "Market Time", value: "09:15 IST", color: "from-purple-500 to-purple-600" },
+            { icon: TrendingUp, label: "Active Positions", value: "42", color: "from-orange-500 to-orange-600" },
+          ].map((stat, i) => {
+            const Icon = stat.icon;
+            return (
+              <div
+                key={i}
+                className="group relative overflow-hidden rounded-2xl border border-slate-700/50 backdrop-blur-sm hover-lift animate-slide-up"
+                style={{ animationDelay: `${i * 50}ms` }}
+              >
+                <div className={`absolute inset-0 bg-gradient-to-br ${stat.color} opacity-5 group-hover:opacity-10 transition-opacity`}></div>
+                <div className="relative p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Icon className={`w-5 h-5 text-${stat.color.split('-')[1]}-400`} />
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{stat.label}</p>
+                  <p className="text-2xl font-bold text-white">{stat.value}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Readiness Status */}
+        <section
+          className={cn(
+            "overflow-hidden rounded-2xl border backdrop-blur-sm transition-all duration-300",
+            r?.blocking
+              ? "border-red-500/30 bg-red-500/5"
+              : "border-slate-700/50 bg-slate-800/30 hover:border-blue-500/30 hover:bg-blue-500/5",
+          )}
+        >
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-2 px-6 py-4 text-left font-semibold hover:bg-white/5 transition-colors"
+            onClick={() => setReadinessOpen((o) => !o)}
+          >
+            <span className="text-lg">Live-trading Readiness</span>
+            <div className="transition-transform duration-300" style={{ transform: readinessOpen ? 'rotate(0)' : 'rotate(-90deg)' }}>
+              <ChevronDown className="h-5 w-5" />
+            </div>
+          </button>
+          {readinessOpen && (
+            <div className="border-t border-slate-700/30 px-6 py-4 space-y-3">
+              {readiness.isLoading ? (
+                <div className="text-sm text-slate-400 animate-pulse">Loading readiness checks...</div>
+              ) : readiness.isError ? (
+                <div className="text-sm text-red-400">Could not load readiness (admin only).</div>
+              ) : (
+                <ul className="space-y-2">
+                  {r
+                    ? Object.entries(r.checks).map(([k, v]) => (
+                        <li key={k} className="flex items-center justify-between gap-3 text-sm hover:bg-white/5 px-3 py-2 rounded-lg transition-colors">
+                          <span className="font-mono text-xs text-slate-400">{k}</span>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${v.ok ? 'bg-green-500' : 'bg-amber-500'} animate-pulse`}></div>
+                            <span className={v.ok ? "text-green-400 font-medium" : "text-amber-400 font-medium"}>
+                              {v.detail}
+                            </span>
+                          </div>
+                        </li>
+                      ))
+                    : null}
+                </ul>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* Main Operations Cockpit */}
+        <div className="animate-slide-up" style={{ animationDelay: '150ms' }}>
+          <AdminOperationsCockpit snapshot={snapshot.data} isFetching={snapshot.isFetching} />
+        </div>
+
+        {/* Execution Framework Section */}
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-1 bg-gradient-to-b from-blue-500 to-purple-500 rounded-full"></div>
+            <h2 className="text-3xl font-bold">Execution Framework</h2>
           </div>
-          <div className="animate-slide-up" style={{ animationDelay: '300ms' }}>
-            <ExecutionStatsPanel />
+
+          {/* Row 1: Execution Mode + Replay Controls */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="animate-slide-up hover-lift group" style={{ animationDelay: '200ms' }}>
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl blur opacity-0 group-hover:opacity-20 transition duration-500"></div>
+              <div className="relative">
+                <ExecutionModeSelector />
+              </div>
+            </div>
+            <div className="animate-slide-up hover-lift group" style={{ animationDelay: '250ms' }}>
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl blur opacity-0 group-hover:opacity-20 transition duration-500"></div>
+              <div className="relative">
+                <ReplayControlsPanel />
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2: Market Data Coverage + Execution Stats */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="animate-slide-up hover-lift group" style={{ animationDelay: '300ms' }}>
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-2xl blur opacity-0 group-hover:opacity-20 transition duration-500"></div>
+              <div className="relative">
+                <MarketDataCoverageMonitor />
+              </div>
+            </div>
+            <div className="animate-slide-up hover-lift group" style={{ animationDelay: '350ms' }}>
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500 to-red-500 rounded-2xl blur opacity-0 group-hover:opacity-20 transition duration-500"></div>
+              <div className="relative">
+                <ExecutionStatsPanel />
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -84,37 +84,45 @@ export function ExecutionModeSelector() {
   const isLiveModeSelected = targetMode === 'LIVE';
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6">
-      <h2 className="mb-6 text-lg font-bold">Execution Mode Control</h2>
+    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-xl p-6 space-y-6 hover:border-blue-500/30 transition-all duration-300">
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="w-1 h-6 bg-gradient-to-b from-blue-500 to-blue-600 rounded-full"></div>
+          <h2 className="text-xl font-bold text-white">Execution Mode Control</h2>
+        </div>
+        <p className="text-xs text-slate-400">Switch between PAPER, LIVE, and BOTH (Hybrid) execution modes</p>
+      </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Current Mode</label>
-          <div
-            className={cn(
-              'mt-2 rounded-lg border-2 p-4 text-lg font-bold',
-              modes.find((m) => m.value === currentMode)?.color || 'bg-gray-100'
-            )}
-          >
-            {currentMode}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-3">
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Current Mode</label>
+          <div className="relative group">
+            <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-300"></div>
+            <div
+              className="relative rounded-xl border border-slate-600 bg-slate-900/50 p-4 text-center backdrop-blur-sm"
+            >
+              <span className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                {currentMode}
+              </span>
+            </div>
           </div>
           {lastSwitchTime && (
-            <div className="mt-2 text-xs text-gray-600">
-              <p>Last switched: {lastSwitchTime}</p>
+            <div className="text-xs text-slate-400 space-y-1 px-2">
+              <p>Last: {lastSwitchTime}</p>
               <p>By: {lastSwitchedBy}</p>
             </div>
           )}
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Target Mode</label>
+        <div className="space-y-3">
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Target Mode</label>
           <select
             value={targetMode}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTargetMode(e.target.value)}
-            className="mt-2 w-full rounded border border-gray-300 px-3 py-2"
+            className="w-full rounded-xl border border-slate-600 bg-slate-900/50 px-4 py-2.5 text-white font-medium backdrop-blur-sm hover:border-blue-500/50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/50"
           >
             {modes.map((mode) => (
-              <option key={mode.value} value={mode.value}>
+              <option key={mode.value} value={mode.value} className="bg-slate-900">
                 {mode.label}
               </option>
             ))}
