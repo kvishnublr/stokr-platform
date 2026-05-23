@@ -169,4 +169,16 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             WHERE deleted = FALSE AND backtest_run_id IS NULL AND is_test_trade = FALSE
             """, nativeQuery = true)
     List<Object[]> computeStats(@Param("since") Instant since);
+
+    @Query("""
+            select o from OmsOrder o
+            where o.userId = :userId and o.executionMode = :executionMode and o.deleted = false
+            and o.createdAt >= :startTime and o.createdAt < :endTime
+            """)
+    List<OmsOrder> findByUserIdAndExecutionModeAndCreatedAtBetweenAndDeletedFalse(
+            @Param("userId") UUID userId,
+            @Param("executionMode") com.stokr.oms.domain.ExecutionMode executionMode,
+            @Param("startTime") Instant startTime,
+            @Param("endTime") Instant endTime
+    );
 }

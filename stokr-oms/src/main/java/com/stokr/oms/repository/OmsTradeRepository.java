@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,4 +27,16 @@ public interface OmsTradeRepository extends JpaRepository<OmsTrade, UUID>, JpaSp
             group by coalesce(o.brokerVendor, 'UNKNOWN')
             """)
     List<Object[]> sumNotionalByBrokerVendor(@Param("userId") UUID userId);
+
+    @Query("""
+            select t from OmsTrade t join fetch t.order o
+            where o.userId = :userId and t.deleted = false and o.deleted = false
+            and t.createdAt >= :startTime and t.createdAt < :endTime
+            order by t.createdAt asc
+            """)
+    List<OmsTrade> findByOrderUserIdAndCreatedAtBetweenAndDeletedFalse(
+            @Param("userId") UUID userId,
+            @Param("startTime") Instant startTime,
+            @Param("endTime") Instant endTime
+    );
 }
