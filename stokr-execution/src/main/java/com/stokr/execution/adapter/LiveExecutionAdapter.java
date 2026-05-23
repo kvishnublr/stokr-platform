@@ -73,7 +73,7 @@ public class LiveExecutionAdapter implements ExecutionAdapter {
             return OrderExecutionResponse.builder()
                     .orderId(request.getOrderId())
                     .status(status)
-                    .brokerOrderId(brokerResponse.brokerOrderId())
+                    .brokerOrderId(brokerResponse.brokerOrderId() != null ? brokerResponse.brokerOrderId().toString() : null)
                     .latencyMs(latencyMs)
                     .timestamp(Instant.now())
                     .build();
