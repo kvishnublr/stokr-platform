@@ -3,6 +3,10 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api/client";
 import { AdminOperationsCockpit } from "../components/admin/cockpit/AdminOperationsCockpit";
+import { ExecutionModeSelector } from "../components/admin/ExecutionModeSelector";
+import { ReplayControlsPanel } from "../components/admin/ReplayControlsPanel";
+import { MarketDataCoverageMonitor } from "../components/admin/MarketDataCoverageMonitor";
+import { ExecutionStatsPanel } from "../components/admin/ExecutionStatsPanel";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
 import { fetchAdminOpsSnapshotMerged } from "../lib/fetchAdminOpsSnapshotMerged";
 import { cn } from "../lib/utils";
@@ -35,15 +39,17 @@ export function AdminOpsPage() {
   const r = readiness.data;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 text-foreground">
+    <div className="flex min-h-0 flex-1 flex-col gap-6 text-foreground overflow-y-auto">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Operations cockpit</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Main control plane - global status strip is pinned above. SSE + snapshot share one cache (
-          <span className="font-mono">admin-operations-snapshot/global</span>).
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 dark:from-blue-400 dark:to-blue-600 bg-clip-text text-transparent mb-2">
+          Operations Control Center
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Unified execution framework management · Mode switching · Replay controls · Real-time monitoring
         </p>
       </div>
 
+      {/* Readiness Status */}
       <section
         className={cn(
           "overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm",
@@ -55,7 +61,7 @@ export function AdminOpsPage() {
           className="flex w-full items-center justify-between gap-2 border-b border-border px-4 py-2.5 text-left text-sm font-medium hover:bg-background/50"
           onClick={() => setReadinessOpen((o) => !o)}
         >
-          <span>Live-trading readiness (pre-broker)</span>
+          <span>Live-trading readiness</span>
           {readinessOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
         </button>
         {readinessOpen ? (
@@ -82,7 +88,33 @@ export function AdminOpsPage() {
         ) : null}
       </section>
 
+      {/* Main Operations Cockpit */}
       <AdminOperationsCockpit snapshot={snapshot.data} isFetching={snapshot.isFetching} />
+
+      {/* Execution Framework Components */}
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-foreground mt-4">Execution Framework</h2>
+
+        {/* Row 1: Execution Mode + Replay Controls */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="animate-slide-up" style={{ animationDelay: '0ms' }}>
+            <ExecutionModeSelector />
+          </div>
+          <div className="animate-slide-up" style={{ animationDelay: '100ms' }}>
+            <ReplayControlsPanel />
+          </div>
+        </div>
+
+        {/* Row 2: Market Data Coverage + Execution Stats */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="animate-slide-up" style={{ animationDelay: '200ms' }}>
+            <MarketDataCoverageMonitor />
+          </div>
+          <div className="animate-slide-up" style={{ animationDelay: '300ms' }}>
+            <ExecutionStatsPanel />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

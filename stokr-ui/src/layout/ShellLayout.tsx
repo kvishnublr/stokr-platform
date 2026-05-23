@@ -37,6 +37,7 @@ import {
   Radar,
   GitBranch,
   Zap,
+  Cpu,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
@@ -218,6 +219,7 @@ export function ShellLayout() {
   ], []);
 
   const adminExecutionLinks: SidebarLink[] = useMemo(() => [
+    { to: "/admin/ops",               label: "Execution Controls", icon: Cpu, matchPrefix: "/admin/ops" },
     { to: "/admin/pipeline-health",   label: "Pipeline Health", icon: Activity },
     { to: "/admin/execution",         label: "Execution Guard", icon: ShieldCheck },
     { to: "/admin/intraday",          label: "Intraday",        icon: Radar },
