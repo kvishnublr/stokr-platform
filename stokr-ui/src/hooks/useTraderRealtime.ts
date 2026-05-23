@@ -114,7 +114,7 @@ function handleRealtimeUpdate(message: RealtimeMessage, queryClient: ReturnType<
 }
 
 interface PositionUpdateEvent extends CustomEvent {
-  detail?: {
+  detail: {
     symbol: string;
   };
 }
@@ -139,7 +139,7 @@ export function usePositionMtm(symbol: string) {
 }
 
 interface OrderStateChangeEvent extends CustomEvent {
-  detail?: {
+  detail: {
     orderId: string;
     state: string;
   };
@@ -169,7 +169,7 @@ export function useOrderLifecycle(orderId: string) {
 }
 
 interface PnLUpdateEvent extends CustomEvent {
-  detail?: Record<string, unknown>;
+  detail: Record<string, unknown>;
 }
 
 /**
