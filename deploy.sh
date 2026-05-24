@@ -36,8 +36,8 @@ deploy_api_docker() {
     echo "==> [API] Building Docker image (uses Maven layer cache)..."
     docker compose --profile app build api
 
-    echo "==> [API] Restarting API container..."
-    docker compose --profile app up -d api
+    echo "==> [API] Restarting API container (without recreating dependencies)..."
+    docker compose --profile app up -d --no-deps api
 
     echo "==> [API] Waiting for health check..."
     sleep 10
@@ -51,8 +51,8 @@ deploy_ui_docker() {
     echo "==> [UI] Building Docker image..."
     docker compose --profile app build ui
 
-    echo "==> [UI] Restarting UI container..."
-    docker compose --profile app up -d ui
+    echo "==> [UI] Restarting UI container (without recreating dependencies)..."
+    docker compose --profile app up -d --no-deps ui
     echo "==> [UI] Done."
 }
 

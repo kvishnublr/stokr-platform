@@ -1,8 +1,14 @@
-name: Deploy to AWS
+name: Auto Deploy to Contabo
 
 on:
   push:
-    branches: [Release_v1]
+    branches:
+      - Release_v1
+  workflow_dispatch:
+
+concurrency:
+  group: contabo-deploy-release-v1
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -11,29 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Detect changed services
-        id: changes
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            api:
-              - 'stokr-auth/**'
-              - 'stokr-strategy/**'
-              - 'stokr-execution/**'
-              - 'stokr-risk/**'
-              - 'stokr-oms/**'
-              - 'stokr-broker/**'
-              - 'stokr-user/**'
-              - 'stokr-admin/**'
-              - 'stokr-common/**'
-              - 'stokr-bootstrap/**'
-              - 'pom.xml'
-              - 'Dockerfile'
-            ui:
-              - 'stokr-ui/**'
-
-      - name: Deploy API (jar hot-swap)
-        if: steps.changes.outputs.api == 'true' && steps.changes.outputs.ui == 'false'
+      - name: Deploy on Contabo
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -41,30 +25,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
+            git fetch origin Release_v1
             git pull origin Release_v1
-            ./deploy.sh jar
-
-      - name: Deploy UI only
-        if: steps.changes.outputs.ui == 'true' && steps.changes.outputs.api == 'false'
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            cd ${{ secrets.DEPLOY_PATH }}
-            git pull origin Release_v1
-            ./deploy.sh ui
-
-      - name: Deploy API + UI
-        if: steps.changes.outputs.api == 'true' && steps.changes.outputs.ui == 'true'
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            cd ${{ secrets.DEPLOY_PATH }}
-            git pull origin Release_v1
-            ./deploy.sh jar
-            ./deploy.sh ui
+            chmod +x ./deploy.sh
+            ./deploy.sh
