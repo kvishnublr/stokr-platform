@@ -113,66 +113,75 @@ export function RegisterPage() {
   const passwordStrength = getPasswordStrength(password);
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-neutral-950 via-neutral-950 to-neutral-900">
-      {/* Animated gradient orbs background */}
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50">
+      {/* Animated background shapes */}
       <div className="pointer-events-none absolute inset-0">
         <motion.div
           animate={{
-            x: [0, 100, 0],
-            y: [0, 50, 0],
+            x: [0, 150, 0],
+            y: [0, 80, 0],
           }}
-          transition={{ duration: 20, repeat: Infinity }}
-          className="absolute -top-40 -left-40 h-80 w-80 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 blur-3xl"
+          transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute -top-96 -right-96 h-96 w-96 rounded-full bg-gradient-to-br from-blue-300/40 to-purple-300/40 blur-3xl"
         />
         <motion.div
           animate={{
-            x: [0, -100, 0],
-            y: [0, -50, 0],
+            x: [0, -150, 0],
+            y: [0, -80, 0],
           }}
-          transition={{ duration: 25, repeat: Infinity }}
-          className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-gradient-to-br from-emerald-500/20 to-blue-500/20 blur-3xl"
+          transition={{ duration: 30, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute -bottom-96 -left-96 h-96 w-96 rounded-full bg-gradient-to-br from-emerald-300/40 to-cyan-300/40 blur-3xl"
         />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(59,130,246,0.1),transparent_50%)]" />
+        <motion.div
+          animate={{
+            scale: [1, 1.1, 1],
+            opacity: [0.3, 0.5, 0.3],
+          }}
+          transition={{ duration: 20, repeat: Infinity }}
+          className="absolute top-1/3 right-1/4 h-64 w-64 rounded-full bg-gradient-to-br from-pink-200/30 to-rose-200/30 blur-3xl"
+        />
       </div>
 
       <div className="relative flex min-h-screen items-center justify-center px-4 py-8 sm:py-16">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
+          transition={{ duration: 0.7 }}
           className="w-full max-w-md"
         >
           {/* Header */}
           <motion.div
-            initial={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-            className="mb-8 text-center"
+            transition={{ duration: 0.7, delay: 0.1 }}
+            className="mb-10 text-center"
           >
             <motion.div
-              animate={{ scale: [1, 1.05, 1] }}
-              transition={{ duration: 3, repeat: Infinity }}
+              animate={{ scale: [1, 1.1, 1], rotate: [0, 10, -10, 0] }}
+              transition={{ duration: 4, repeat: Infinity }}
               className="mb-4 inline-block"
             >
-              <CheckCircle2 className="h-12 w-12 text-emerald-400" />
+              <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-500 shadow-lg">
+                <CheckCircle2 className="h-8 w-8 text-white" />
+              </div>
             </motion.div>
-            <h1 className="text-4xl font-bold tracking-tighter text-white">
-              Join <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-emerald-400 bg-clip-text text-transparent">Stokr</span>
+            <h1 className="text-5xl font-bold tracking-tight text-gray-900">
+              Join <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">Stokr</span>
             </h1>
-            <p className="mt-3 text-sm text-neutral-400">
-              Start your trading journey · Premium <span className="font-semibold text-blue-300">TRADER</span> access
+            <p className="mt-4 text-base text-gray-600">
+              Begin your professional trading journey with <span className="font-semibold text-blue-600">Premium Access</span>
             </p>
           </motion.div>
 
           {/* Form Card */}
           <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            initial={{ opacity: 0, y: 30, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="relative overflow-hidden rounded-2xl border border-neutral-800/50 bg-neutral-950/60 p-8 shadow-2xl backdrop-blur-xl"
+            transition={{ duration: 0.7, delay: 0.2 }}
+            className="relative overflow-hidden rounded-3xl border border-white/80 bg-white/95 p-8 shadow-2xl backdrop-blur-xl"
           >
-            {/* Card shine effect */}
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-transparent" />
+            {/* Card gradient overlay */}
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-blue-50/50 via-transparent to-transparent" />
 
             <form className="relative z-10 space-y-5" onSubmit={onSubmit}>
               <motion.div
@@ -181,13 +190,13 @@ export function RegisterPage() {
                 transition={{ duration: 0.5, delay: 0.3 }}
                 className="space-y-2"
               >
-                <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-400">
-                  <User className="h-3 w-3 text-blue-400" />
+                <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-700">
+                  <User className="h-4 w-4 text-blue-600" />
                   Full Name
                 </label>
                 <input
                   required
-                  className="w-full rounded-xl border border-neutral-700/50 bg-neutral-900/40 px-4 py-3 text-sm text-white outline-none transition-all duration-300 placeholder:text-neutral-600 focus:border-blue-500/60 focus:bg-neutral-900/60 focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-2xl border-2 border-gray-200 bg-gray-50/50 px-4 py-3 text-sm text-gray-900 outline-none transition-all duration-300 placeholder:text-gray-400 focus:border-blue-500 focus:bg-white focus:shadow-md focus:ring-2 focus:ring-blue-200"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   autoComplete="name"
@@ -201,17 +210,17 @@ export function RegisterPage() {
                 transition={{ duration: 0.5, delay: 0.35 }}
                 className="space-y-2"
               >
-                <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-400">
-                  <User className="h-3 w-3 text-purple-400" />
+                <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-700">
+                  <User className="h-4 w-4 text-purple-600" />
                   Username
                 </label>
                 <input
                   required
                   className={cn(
-                    "w-full rounded-xl border bg-neutral-900/40 px-4 py-3 text-sm text-white outline-none transition-all duration-300 placeholder:text-neutral-600 focus:bg-neutral-900/60 focus:ring-2",
+                    "w-full rounded-2xl border-2 bg-gray-50/50 px-4 py-3 text-sm text-gray-900 outline-none transition-all duration-300 placeholder:text-gray-400 focus:bg-white focus:shadow-md focus:ring-2",
                     inlineErrors.username
-                      ? "border-red-700/50 focus:border-red-500 focus:ring-red-500/20"
-                      : "border-neutral-700/50 focus:border-purple-500/60 focus:ring-purple-500/20",
+                      ? "border-red-300 focus:border-red-500 focus:ring-red-200"
+                      : "border-gray-200 focus:border-purple-500 focus:ring-purple-200",
                   )}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -222,7 +231,7 @@ export function RegisterPage() {
                   <motion.p
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="text-xs text-red-400"
+                    className="text-xs font-medium text-red-600"
                   >
                     {inlineErrors.username}
                   </motion.p>
@@ -236,12 +245,12 @@ export function RegisterPage() {
                 className="grid gap-4 sm:grid-cols-2"
               >
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-400">
-                    <Smartphone className="h-3 w-3 text-blue-400" />
+                  <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-700">
+                    <Smartphone className="h-4 w-4 text-blue-600" />
                     Mobile
                   </label>
                   <input
-                    className="w-full rounded-xl border border-neutral-700/50 bg-neutral-900/40 px-4 py-3 text-sm text-white outline-none transition-all duration-300 placeholder:text-neutral-600 focus:border-blue-500/60 focus:bg-neutral-900/60 focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-2xl border-2 border-gray-200 bg-gray-50/50 px-4 py-3 text-sm text-gray-900 outline-none transition-all duration-300 placeholder:text-gray-400 focus:border-blue-500 focus:bg-white focus:shadow-md focus:ring-2 focus:ring-blue-200"
                     value={mobilePhone}
                     onChange={(e) => setMobilePhone(e.target.value)}
                     autoComplete="tel"
@@ -249,12 +258,12 @@ export function RegisterPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-400">
-                    <Send className="h-3 w-3 text-purple-400" />
+                  <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-700">
+                    <Send className="h-4 w-4 text-purple-600" />
                     Telegram
                   </label>
                   <input
-                    className="w-full rounded-xl border border-neutral-700/50 bg-neutral-900/40 px-4 py-3 text-sm text-white outline-none transition-all duration-300 placeholder:text-neutral-600 focus:border-purple-500/60 focus:bg-neutral-900/60 focus:ring-2 focus:ring-purple-500/20"
+                    className="w-full rounded-2xl border-2 border-gray-200 bg-gray-50/50 px-4 py-3 text-sm text-gray-900 outline-none transition-all duration-300 placeholder:text-gray-400 focus:border-purple-500 focus:bg-white focus:shadow-md focus:ring-2 focus:ring-purple-200"
                     value={telegramUsername}
                     onChange={(e) => setTelegramUsername(e.target.value)}
                     placeholder="username"
@@ -268,12 +277,12 @@ export function RegisterPage() {
                 transition={{ duration: 0.5, delay: 0.45 }}
                 className="space-y-2"
               >
-                <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-400">
-                  <Send className="h-3 w-3 text-emerald-400" />
+                <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-700">
+                  <Send className="h-4 w-4 text-emerald-600" />
                   WhatsApp
                 </label>
                 <input
-                  className="w-full rounded-xl border border-neutral-700/50 bg-neutral-900/40 px-4 py-3 text-sm text-white outline-none transition-all duration-300 placeholder:text-neutral-600 focus:border-emerald-500/60 focus:bg-neutral-900/60 focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full rounded-2xl border-2 border-gray-200 bg-gray-50/50 px-4 py-3 text-sm text-gray-900 outline-none transition-all duration-300 placeholder:text-gray-400 focus:border-emerald-500 focus:bg-white focus:shadow-md focus:ring-2 focus:ring-emerald-200"
                   value={whatsAppNumber}
                   onChange={(e) => setWhatsAppNumber(e.target.value)}
                   placeholder="+9198..."
@@ -286,18 +295,18 @@ export function RegisterPage() {
                 transition={{ duration: 0.5, delay: 0.5 }}
                 className="space-y-2"
               >
-                <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-400">
-                  <Mail className="h-3 w-3 text-blue-400" />
+                <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-700">
+                  <Mail className="h-4 w-4 text-blue-600" />
                   Email
                 </label>
                 <input
                   required
                   type="email"
                   className={cn(
-                    "w-full rounded-xl border bg-neutral-900/40 px-4 py-3 text-sm text-white outline-none transition-all duration-300 placeholder:text-neutral-600 focus:bg-neutral-900/60 focus:ring-2",
+                    "w-full rounded-2xl border-2 bg-gray-50/50 px-4 py-3 text-sm text-gray-900 outline-none transition-all duration-300 placeholder:text-gray-400 focus:bg-white focus:shadow-md focus:ring-2",
                     inlineErrors.email
-                      ? "border-red-700/50 focus:border-red-500 focus:ring-red-500/20"
-                      : "border-neutral-700/50 focus:border-blue-500/60 focus:ring-blue-500/20",
+                      ? "border-red-300 focus:border-red-500 focus:ring-red-200"
+                      : "border-gray-200 focus:border-blue-500 focus:ring-blue-200",
                   )}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -308,7 +317,7 @@ export function RegisterPage() {
                   <motion.p
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="text-xs text-red-400"
+                    className="text-xs font-medium text-red-600"
                   >
                     {inlineErrors.email}
                   </motion.p>
@@ -321,18 +330,18 @@ export function RegisterPage() {
                 transition={{ duration: 0.5, delay: 0.55 }}
                 className="space-y-3"
               >
-                <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-400">
-                  <Lock className="h-3 w-3 text-purple-400" />
+                <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-700">
+                  <Lock className="h-4 w-4 text-purple-600" />
                   Password
                 </label>
                 <input
                   required
                   type="password"
                   className={cn(
-                    "w-full rounded-xl border bg-neutral-900/40 px-4 py-3 text-sm text-white outline-none transition-all duration-300 placeholder:text-neutral-600 focus:bg-neutral-900/60 focus:ring-2",
+                    "w-full rounded-2xl border-2 bg-gray-50/50 px-4 py-3 text-sm text-gray-900 outline-none transition-all duration-300 placeholder:text-gray-400 focus:bg-white focus:shadow-md focus:ring-2",
                     inlineErrors.password
-                      ? "border-red-700/50 focus:border-red-500 focus:ring-red-500/20"
-                      : "border-neutral-700/50 focus:border-purple-500/60 focus:ring-purple-500/20",
+                      ? "border-red-300 focus:border-red-500 focus:ring-red-200"
+                      : "border-gray-200 focus:border-purple-500 focus:ring-purple-200",
                   )}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -348,17 +357,17 @@ export function RegisterPage() {
                     className="space-y-2"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-neutral-400">Strength</span>
-                      <span className={`text-xs font-semibold ${passwordStrength.color.includes("red") ? "text-red-400" : passwordStrength.color.includes("amber") ? "text-amber-400" : passwordStrength.color.includes("yellow") ? "text-yellow-400" : "text-emerald-400"}`}>
+                      <span className="text-xs font-semibold text-gray-600">Password Strength</span>
+                      <span className={`text-xs font-bold ${passwordStrength.color.includes("red") ? "text-red-600" : passwordStrength.color.includes("amber") ? "text-amber-600" : passwordStrength.color.includes("yellow") ? "text-yellow-600" : "text-emerald-600"}`}>
                         {passwordStrength.label}
                       </span>
                     </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-neutral-800">
+                    <div className="h-2.5 overflow-hidden rounded-full bg-gray-200">
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${(passwordStrength.score / 5) * 100}%` }}
                         transition={{ duration: 0.5 }}
-                        className={`h-full bg-gradient-to-r ${passwordStrength.color}`}
+                        className={`h-full bg-gradient-to-r ${passwordStrength.color} shadow-lg`}
                       />
                     </div>
                   </motion.div>
@@ -368,7 +377,7 @@ export function RegisterPage() {
                   <motion.p
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="text-xs text-red-400"
+                    className="text-xs font-medium text-red-600"
                   >
                     {inlineErrors.password}
                   </motion.p>
@@ -381,18 +390,18 @@ export function RegisterPage() {
                 transition={{ duration: 0.5, delay: 0.6 }}
                 className="space-y-2"
               >
-                <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-400">
-                  <Lock className="h-3 w-3 text-emerald-400" />
+                <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-700">
+                  <Lock className="h-4 w-4 text-emerald-600" />
                   Confirm Password
                 </label>
                 <input
                   required
                   type="password"
                   className={cn(
-                    "w-full rounded-xl border bg-neutral-900/40 px-4 py-3 text-sm text-white outline-none transition-all duration-300 placeholder:text-neutral-600 focus:bg-neutral-900/60 focus:ring-2",
+                    "w-full rounded-2xl border-2 bg-gray-50/50 px-4 py-3 text-sm text-gray-900 outline-none transition-all duration-300 placeholder:text-gray-400 focus:bg-white focus:shadow-md focus:ring-2",
                     inlineErrors.confirm
-                      ? "border-red-700/50 focus:border-red-500 focus:ring-red-500/20"
-                      : "border-neutral-700/50 focus:border-emerald-500/60 focus:ring-emerald-500/20",
+                      ? "border-red-300 focus:border-red-500 focus:ring-red-200"
+                      : "border-gray-200 focus:border-emerald-500 focus:ring-emerald-200",
                   )}
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
@@ -403,7 +412,7 @@ export function RegisterPage() {
                   <motion.p
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="text-xs text-red-400"
+                    className="text-xs font-medium text-red-600"
                   >
                     {inlineErrors.confirm}
                   </motion.p>
@@ -414,58 +423,64 @@ export function RegisterPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.65 }}
-                whileHover={{ scale: 1.02 }}
+                whileHover={{ scale: 1.02, boxShadow: "0 20px 40px rgba(59, 130, 246, 0.3)" }}
                 whileTap={{ scale: 0.98 }}
                 disabled={loading || Object.keys(inlineErrors).length > 0}
                 type="submit"
-                className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-blue-600 via-purple-600 to-emerald-600 py-3 font-semibold text-white shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="group relative w-full overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 py-3 font-bold text-white shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-500 to-emerald-500 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-700 via-purple-700 to-pink-700 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                 <div className="relative flex items-center justify-center gap-2">
                   {loading ? (
                     <>
                       <motion.div
                         animate={{ rotate: 360 }}
                         transition={{ duration: 1, repeat: Infinity }}
-                        className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full"
+                        className="h-5 w-5 border-2 border-white/40 border-t-white rounded-full"
                       />
                       Creating Account...
                     </>
                   ) : (
                     <>
-                      <UserPlus className="h-4 w-4 transition-transform duration-300 group-hover:scale-110" />
+                      <UserPlus className="h-5 w-5 transition-transform duration-300 group-hover:scale-125" />
                       Create Account
                     </>
                   )}
                 </div>
               </motion.button>
 
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.7 }}
-                className="text-center text-sm text-neutral-400"
+                className="pt-2 text-center"
               >
-                Already have access?{" "}
-                <Link
-                  className="font-semibold text-transparent bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text transition-all duration-300 hover:from-purple-400 hover:to-emerald-400"
-                  to="/login"
-                >
-                  Sign in
-                </Link>
-              </motion.p>
+                <p className="text-sm text-gray-600">
+                  Already have an account?{" "}
+                  <Link
+                    className="font-bold text-transparent bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text transition-all duration-300 hover:from-purple-600 hover:to-pink-600"
+                    to="/login"
+                  >
+                    Sign in
+                  </Link>
+                </p>
+              </motion.div>
             </form>
           </motion.div>
 
           {/* Footer note */}
-          <motion.p
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.75 }}
-            className="mt-6 text-center text-xs text-neutral-500"
+            className="mt-8 flex items-center justify-center gap-2 text-center"
           >
-            🔒 Your data is secure and encrypted · Privacy-first trading
-          </motion.p>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="h-1 w-1 rounded-full bg-gradient-to-r from-blue-500 to-purple-500" />
+              <span>Bank-grade security & SSL encryption</span>
+              <div className="h-1 w-1 rounded-full bg-gradient-to-r from-purple-500 to-pink-500" />
+            </div>
+          </motion.div>
         </motion.div>
       </div>
     </div>
