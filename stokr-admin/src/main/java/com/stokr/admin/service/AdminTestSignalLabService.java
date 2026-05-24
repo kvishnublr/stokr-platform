@@ -155,8 +155,10 @@ public class AdminTestSignalLabService {
             // synchronous=true → no execution queue, runs inline in this transaction
             orderIntentProcessor.processSignalIntent(msg, true);
         } catch (Exception ex) {
-            log.warn("test.lab.sync_execution_error runId={} signal={} reason={}",
-                    run.getId(), savedSignal.getId(), ex.getMessage());
+            log.error("test.lab.sync_execution_error runId={} signal={} reason={}",
+                    run.getId(), savedSignal.getId(), ex.getMessage(), ex);
+            // Rethrow to prevent transaction rollback-only state
+            throw new IllegalStateException("Signal processing failed: " + ex.getMessage(), ex);
         }
 
         // Order was created synchronously — short poll to allow Hibernate flush

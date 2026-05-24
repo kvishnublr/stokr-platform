@@ -18,7 +18,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -137,6 +139,38 @@ public class AdminUniverseGroupService {
         }
         log.info("universe.sync.triggered groupKey={} synced={}", group.getGroupKey(), total);
         return total;
+    }
+
+    /**
+     * Syncs ALL auto-managed universe groups with latest symbols.
+     * This will populate NIFTY50, NIFTY100, BANKNIFTY, FINNIFTY, etc. with their complete symbol lists.
+     */
+    @Transactional
+    public Map<String, Object> syncAllAutoManagedGroups() {
+        Map<String, Integer> results = new HashMap<>();
+        int totalSynced = 0;
+
+        for (UniverseSyncService svc : syncServices) {
+            for (String groupKey : svc.supportedGroupKeys()) {
+                try {
+                    // Try to sync via the service
+                    int count = svc.sync(groupKey);
+                    results.put(groupKey, count);
+                    totalSynced += count;
+                    log.info("universe.auto.sync.done groupKey={} symbols={}", groupKey, count);
+                } catch (Exception ex) {
+                    log.warn("universe.auto.sync.failed groupKey={} reason={}", groupKey, ex.getMessage());
+                    results.put(groupKey + "_ERROR", -1);
+                }
+            }
+        }
+
+        log.info("universe.auto.sync.all_complete totalSynced={} groups={}", totalSynced, results.size());
+        return Map.of(
+            "totalSymbolsSynced", totalSynced,
+            "groupResults", results,
+            "timestamp", System.currentTimeMillis()
+        );
     }
 
     private UniverseGroupDto toDto(StrategyUniverseGroup g) {

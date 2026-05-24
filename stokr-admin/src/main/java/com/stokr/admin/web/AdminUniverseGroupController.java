@@ -101,6 +101,13 @@ public class AdminUniverseGroupController {
         return ApiResponse.ok(Map.of("synced", synced), CorrelationIdHolder.get());
     }
 
+    @PostMapping("/sync-all")
+    @Operation(summary = "Auto-sync ALL universe groups with latest symbols (NIFTY50, NIFTY100, BANKNIFTY, etc.)")
+    public ApiResponse<Map<String, Object>> syncAll() {
+        var result = service.syncAllAutoManagedGroups();
+        return ApiResponse.ok(result, CorrelationIdHolder.get());
+    }
+
     @GetMapping("/symbols/search")
     @Operation(summary = "Search symbols across all universe groups (for strategy symbol picker)")
     public ApiResponse<List<String>> searchSymbols(
