@@ -33,7 +33,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class BrokerPositionTruthService {
 
-    private final KiteConnectBrokerAdapter brokerAdapter;
+    private final BrokerAdapter brokerAdapter;
     private final PortfolioPositionRepository positionRepository;
 
     /**
