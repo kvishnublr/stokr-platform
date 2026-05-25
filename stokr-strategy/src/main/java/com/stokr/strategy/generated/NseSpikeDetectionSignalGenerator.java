@@ -83,6 +83,24 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     @Value("${stokr.spike.emit-cooldown-seconds:300}")
     private long emitCooldownSeconds;
 
+    @Value("${stokr.spike.min-velocity-pct:0.20}")
+    private double minVelocityPct;
+
+    @Value("${stokr.spike.min-volume-multiple:2.5}")
+    private double minVolumeMultiple;
+
+    @Value("${stokr.spike.min-bar-quality:0.60}")
+    private double minBarQuality;
+
+    @Value("${stokr.spike.continuation-check:true}")
+    private boolean requireContinuationConfirmation;
+
+    @Value("${stokr.spike.wick-penalty-strict:35}")
+    private int wickPenaltyStrict;
+
+    @Value("${stokr.spike.wick-threshold-rejection:0.70}")
+    private double wickThresholdRejectBlock;
+
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     // ── Entry point ───────────────────────────────────────────────────────────
@@ -195,27 +213,28 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     }
 
     // ── Component 1: Price Velocity ───────────────────────────────────────────
-    // Thresholds calibrated for 1m NSE candles (e.g. INFY normal bar ≈ 0.05–0.12%)
+    // INSTITUTIONAL STANDARD: Only decisive moves count as spikes
+    // Noise floor raised from 0.10% → 0.20% (filters chop/noise)
     // 0.30%+/min is a decisive spike on a liquid large-cap
 
-    private static int velocityScore(double pctPerMin) {
+    private int velocityScore(double pctPerMin) {
         double abs = Math.abs(pctPerMin);
-        if (abs < 0.10) return 0;   // noise / normal drift
-        if (abs < 0.20) return 20;  // slow move
-        if (abs < 0.30) return 40;  // picking up
-        if (abs < 0.50) return 60;  // definite spike
-        if (abs < 0.80) return 80;  // strong spike
-        return 100;                  // extreme (news / algo-driven)
+        if (abs < minVelocityPct) return 0;     // noise / normal drift (now 0.20%)
+        if (abs < 0.30) return 30;              // slow move (raised from 20)
+        if (abs < 0.50) return 60;              // definite spike
+        if (abs < 0.80) return 80;              // strong spike
+        return 100;                              // extreme (news / algo-driven)
     }
 
     // ── Component 2: Volume Burst ─────────────────────────────────────────────
+    // INSTITUTIONAL STANDARD: Spikes require conviction volume
+    // Floor raised from 1.5x → 2.5x (filters low-volume fake spikes)
 
-    private static int volumeScore(double ratio) {
-        if (ratio < 1.5) return 0;
-        if (ratio < 2.0) return 25;
-        if (ratio < 3.0) return 50;
-        if (ratio < 4.0) return 75;
-        return 100;
+    private int volumeScore(double ratio) {
+        if (ratio < minVolumeMultiple) return 0;  // Below min (now 2.5x)
+        if (ratio < 3.0) return 40;               // Minimum accepted (raised from 25)
+        if (ratio < 4.0) return 70;               // Good volume (raised from 75)
+        return 100;                               // Exceptional volume
     }
 
     // ── Component 3: Bar Quality ──────────────────────────────────────────────
@@ -271,23 +290,26 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     }
 
     // ── Component 6: Rejection Wick Penalty ──────────────────────────────────
+    // INSTITUTIONAL STANDARD: Strong wick rejection blocks spike entirely
     // Check if within the current 1m bar the price spike was already rejected.
     // Bullish bar: large upper wick (close << high) = buyers tried but got sold into.
     // Bearish bar: large lower wick (close >> low)  = sellers tried but got bought into.
-    // Penalty is normalized (spec's -50 → -25 since we average 5 components).
+    // Penalty is normalized (spec's -50 → -35 since we average 5 components).
 
-    private static int rejectionPenalty(double close, double high, double low, double range, boolean bullish) {
+    private int rejectionPenalty(double close, double high, double low, double range, boolean bullish) {
         if (range <= 0) return 0;
         if (bullish) {
             double upperWick  = high - close;
             double wickRatio  = upperWick / range;
-            if (wickRatio > 0.80) return 25; // strong intra-bar rejection
-            if (wickRatio > 0.50) return 10; // partial rejection
+            if (wickRatio > wickThresholdRejectBlock) return 100; // Block entirely if > 70%
+            if (wickRatio > 0.80) return wickPenaltyStrict;       // strong rejection (35 vs 25)
+            if (wickRatio > 0.50) return 15;                      // partial rejection (raised from 10)
         } else {
             double lowerWick  = close - low;
             double wickRatio  = lowerWick / range;
-            if (wickRatio > 0.80) return 25;
-            if (wickRatio > 0.50) return 10;
+            if (wickRatio > wickThresholdRejectBlock) return 100; // Block entirely if > 70%
+            if (wickRatio > 0.80) return wickPenaltyStrict;       // strong rejection
+            if (wickRatio > 0.50) return 15;                      // partial rejection
         }
         return 0;
     }
