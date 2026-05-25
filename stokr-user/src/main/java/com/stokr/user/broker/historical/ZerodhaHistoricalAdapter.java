@@ -206,7 +206,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
     }
 
     private TokenResolution resolveInstrumentToken(String apiKey, String accessToken, String symbol) {
-        String target = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
+        String target = kiteTradingsymbol(symbol);
         if (target.isBlank()) {
             return new TokenResolution(-1L, "SYMBOL_NOT_MAPPED", "Blank symbol");
         }
@@ -341,6 +341,24 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         return false;
     }
 
+    /**
+     * Maps Stokr symbols to Kite NSE tradingsymbol (e.g. TATAMOTORS → TMCV after demerger).
+     */
+    private static String kiteTradingsymbol(String symbol) {
+        if (symbol == null) {
+            return "";
+        }
+        String t = symbol.trim().toUpperCase(Locale.ROOT);
+        int colon = t.indexOf(':');
+        if (colon >= 0 && colon < t.length() - 1) {
+            t = t.substring(colon + 1);
+        }
+        return switch (t) {
+            case "TATAMOTORS" -> "TMCV";
+            default -> t;
+        };
+    }
+
     private static String mapInterval(String timeframe) {
         String tf = timeframe == null ? "1m" : timeframe.trim().toLowerCase(Locale.ROOT);
         return switch (tf) {
@@ -357,11 +375,12 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
         if (raw == null || raw.isBlank()) {
             return null;
         }
+        String normalized = raw.replaceAll("\\+0530$", "+05:30").replaceAll("\\+0500$", "+05:00");
         try {
-            return OffsetDateTime.parse(raw).toInstant();
+            return OffsetDateTime.parse(normalized).toInstant();
         } catch (Exception ex) {
             try {
-                return Instant.parse(raw);
+                return Instant.parse(normalized);
             } catch (Exception ignored) {
                 return null;
             }
@@ -407,26 +426,27 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
     }
 
     private AccessTokenResolution resolveAccessToken() {
-        PlatformBrokerFeedSession platform = platformSessionRepository
-                .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc("ZERODHA")
-                .orElse(null);
-        if (platform != null && platform.getAccessTokenEnc() != null && !platform.getAccessTokenEnc().isBlank()) {
-            String token = safeDecrypt(platform.getAccessTokenEnc());
-            if (token != null && !token.isBlank()) {
-                return new AccessTokenResolution(token, "PLATFORM_SESSION", true, null, null);
-            }
-        }
+        // Trader OAuth first: platform market-feed tokens often cannot read Kite historical candles.
         BrokerAccount trader = brokerAccountRepository
                 .findFirstByVendorCodeIgnoreCaseAndDeletedFalseAndStatusIgnoreCaseAndAccessTokenEncIsNotNullOrderByUpdatedAtDesc("ZERODHA", "CONNECTED")
                 .orElse(null);
         if (trader != null && trader.getAccessTokenEnc() != null && !trader.getAccessTokenEnc().isBlank()) {
             String token = safeDecrypt(trader.getAccessTokenEnc());
             if (token != null && !token.isBlank()) {
-                log.warn("zerodha.historical.using_trader_token_fallback brokerUserId={}", trader.getBrokerUserId());
-                return new AccessTokenResolution(token, "TRADER_ACCOUNT_FALLBACK", true, null, null);
+                return new AccessTokenResolution(token, "TRADER_ACCOUNT", true, null, null);
             }
         }
-        return new AccessTokenResolution(null, "NONE", false, "NO_PLATFORM_SESSION", "No usable Zerodha token (platform/trader)");
+        PlatformBrokerFeedSession platform = platformSessionRepository
+                .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc("ZERODHA")
+                .orElse(null);
+        if (platform != null && platform.getAccessTokenEnc() != null && !platform.getAccessTokenEnc().isBlank()) {
+            String token = safeDecrypt(platform.getAccessTokenEnc());
+            if (token != null && !token.isBlank()) {
+                log.debug("zerodha.historical.using_platform_session_fallback");
+                return new AccessTokenResolution(token, "PLATFORM_SESSION", true, null, null);
+            }
+        }
+        return new AccessTokenResolution(null, "NONE", false, "NO_PLATFORM_SESSION", "No usable Zerodha token (trader/platform)");
     }
 
     private String safeDecrypt(String enc) {

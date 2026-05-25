@@ -210,15 +210,23 @@ public class AdminMarketBackfillService {
             if (!hasTradingSessionOverlap(rangeStart, rangeEnd)) {
             throw new BadRequestException("Backfill window has no NSE trading-session overlap (Mon-Fri, 09:15-15:30 IST).");
         }
-        Instant probeEnd = rangeStart.plus(Duration.ofMinutes(5));
+        // Probe near rangeEnd (active session) — Zerodha often returns empty for a 5m window at rangeStart.
+        Instant probeEnd = rangeEnd.minus(Duration.ofHours(1));
+        if (!probeEnd.isAfter(rangeStart)) {
+            probeEnd = rangeStart.plus(Duration.ofMinutes(5));
+        }
         if (!probeEnd.isBefore(rangeEnd)) {
             probeEnd = rangeEnd;
+        }
+        Instant probeStart = probeEnd.minus(Duration.ofMinutes(5));
+        if (probeStart.isBefore(rangeStart)) {
+            probeStart = rangeStart;
         }
         int sample = Math.max(1, Math.min(preflightSampleSize, symbols.size()));
         List<String> failed = new ArrayList<>();
         for (int i = 0; i < sample; i++) {
             String symbol = symbols.get(i);
-            HistoricalFetchResult probe = adapter.fetch(new HistoricalFetchRequest(symbol, timeframe, rangeStart, probeEnd));
+            HistoricalFetchResult probe = adapter.fetch(new HistoricalFetchRequest(symbol, timeframe, probeStart, probeEnd));
             if (!probe.success() || probe.candles().isEmpty()) {
                 String detail = probe.detail() == null ? "" : probe.detail().replaceAll("\\s+", " ").trim();
                 if (probe.success() && probe.candles().isEmpty()) {
