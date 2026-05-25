@@ -16,29 +16,30 @@ public record MeanReversionParams(
         BigDecimal confidenceScore
 ) {
 
-    // V1: Aggressive Range Fade (tighter thresholds for stronger signals)
-    // Updated: Tighten RSI thresholds to 25/75 (stronger extremes)
-    // Tighten range width to 0.9% (only true coiled springs)
-    // Boost confidence to 0.80 (more selective)
+    // V1: Balanced Range Fade (optimized thresholds for signal generation)
+    // Updated: Moderate RSI 30/70 (sweet spot for oversold/overbought)
+    // Range width 1.0% (compressed but realistic)
+    // High confidence 0.78 (good signal quality)
     public static final MeanReversionParams V1 = new MeanReversionParams(
             StrategyKeys.MEAN_REVERSION_RANGE_FADE,
-            "1.1.0",
-            new BigDecimal("25"),  // Changed from 30: stricter oversold (RSI < 25 = extreme)
-            new BigDecimal("75"),  // Changed from 70: stricter overbought (RSI > 75 = extreme)
-            new BigDecimal("0.9"), // Changed from 1.2: tighter range (compressed springs only)
-            new BigDecimal("0.80") // Changed from 0.72: higher confidence threshold
+            "1.2.0",
+            new BigDecimal("30"),  // RSI < 30 = oversold (realistic extreme)
+            new BigDecimal("70"),  // RSI > 70 = overbought (realistic extreme)
+            new BigDecimal("1.0"), // Range width 1.0% (strong compression)
+            new BigDecimal("0.78") // High confidence threshold
     );
 
-    // V2: Moderate Range Fade (balanced thresholds for consistent signals)
-    // Updated: Slightly tighten RSI to 30/70, range to 1.2%
-    // Higher confidence for better quality
+    // V2: Aggressive Range Fade (wider parameters for more opportunities)
+    // Updated: Relaxed RSI to 35/65 (more frequent signals)
+    // Range width 1.25% (wider compression allows more trades)
+    // Confidence 0.74 (balanced quality vs opportunity)
     public static final MeanReversionParams V2 = new MeanReversionParams(
             StrategyKeys.MEAN_REVERSION_V2,
-            "2.1.0",
-            new BigDecimal("30"),  // Changed from 35: stricter oversold
-            new BigDecimal("70"),  // Changed from 65: stricter overbought
-            new BigDecimal("1.2"), // Changed from 1.45: tighter range
-            new BigDecimal("0.75") // Changed from 0.68: higher confidence
+            "2.2.0",
+            new BigDecimal("35"),  // RSI < 35 = moderately oversold
+            new BigDecimal("65"),  // RSI > 65 = moderately overbought
+            new BigDecimal("1.25"), // Range width 1.25% (more trading opportunities)
+            new BigDecimal("0.74") // Moderate confidence (more signals generated)
     );
 
     public String toSnapshotJson() {
