@@ -63,6 +63,7 @@ import { TraderDashboard } from "./pages/trader/TraderDashboard";
 import { AdminOverviewPage } from "./pages/AdminOverviewPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { TraderExecutionConfigPage } from "./pages/TraderExecutionConfigPage";
+import { DemoPage } from "./pages/demo/DemoPage";
 
 /** Heavy chart surface - defer initial JS until navigation. */
 const BacktestReplayPage = lazy(async () => {
@@ -167,6 +168,7 @@ export default function App() {
       <ThemeHtmlSync />
       <SyncedToaster />
       <Routes>
+        <Route path="/demo" element={<DemoPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />

@@ -2,6 +2,7 @@ package com.stokr.broker.kite;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.stokr.broker.model.BrokerPosition;
+import com.stokr.broker.model.BrokerPositionDetail;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -17,50 +18,75 @@ public final class ZerodhaKitePositionsParser {
     }
 
     public static List<BrokerPosition> parse(JsonNode payload) {
+        return parseDetails(payload).stream()
+                .filter(d -> d.quantity() != null && d.quantity().compareTo(BigDecimal.ZERO) != 0)
+                .map(d -> new BrokerPosition(d.symbolKey(), d.quantity(), d.averagePrice()))
+                .toList();
+    }
+
+    public static List<BrokerPositionDetail> parseDetails(JsonNode payload) {
         if (payload == null || !"success".equalsIgnoreCase(payload.path("status").asText(""))) {
             return List.of();
         }
         JsonNode data = payload.path("data");
-        Map<String, BigDecimal> qtyBySymbol = new LinkedHashMap<>();
-        Map<String, BigDecimal> avgBySymbol = new LinkedHashMap<>();
-
-        mergeSection(data.path("net"), qtyBySymbol, avgBySymbol);
-        mergeSection(data.path("day"), qtyBySymbol, avgBySymbol);
-
-        List<BrokerPosition> out = new ArrayList<>();
-        for (Map.Entry<String, BigDecimal> e : qtyBySymbol.entrySet()) {
-            if (e.getValue() == null || e.getValue().compareTo(BigDecimal.ZERO) == 0) {
-                continue;
-            }
-            out.add(new BrokerPosition(e.getKey(), e.getValue(), avgBySymbol.get(e.getKey())));
-        }
-        return out;
+        Map<String, BrokerPositionDetail> merged = new LinkedHashMap<>();
+        mergeSectionDetails(data.path("net"), merged);
+        mergeSectionDetails(data.path("day"), merged);
+        return new ArrayList<>(merged.values());
     }
 
-    private static void mergeSection(
-            JsonNode rows,
-            Map<String, BigDecimal> qtyBySymbol,
-            Map<String, BigDecimal> avgBySymbol) {
+    private static void mergeSectionDetails(JsonNode rows, Map<String, BrokerPositionDetail> merged) {
         if (!rows.isArray()) {
             return;
         }
         for (JsonNode row : rows) {
-            String exchange = row.path("exchange").asText("").trim().toUpperCase(Locale.ROOT);
-            String tradingsymbol = row.path("tradingsymbol").asText("").trim().toUpperCase(Locale.ROOT);
-            if (tradingsymbol.isBlank()) {
+            BrokerPositionDetail d = toDetail(row);
+            if (d == null || d.quantity() == null || d.quantity().compareTo(BigDecimal.ZERO) == 0) {
                 continue;
             }
-            String key = exchange.isBlank() ? tradingsymbol : exchange + ":" + tradingsymbol;
-            BigDecimal qty = readQty(row);
-            if (qty.compareTo(BigDecimal.ZERO) == 0) {
-                continue;
-            }
-            qtyBySymbol.merge(key, qty, BigDecimal::add);
-            BigDecimal avg = readAvg(row);
-            if (avg != null) {
-                avgBySymbol.put(key, avg);
+            merged.merge(d.symbolKey(), d, ZerodhaKitePositionsParser::mergeDetail);
+        }
+    }
+
+    private static BrokerPositionDetail mergeDetail(BrokerPositionDetail a, BrokerPositionDetail b) {
+        return new BrokerPositionDetail(
+                a.exchange() != null ? a.exchange() : b.exchange(),
+                a.tradingsymbol() != null ? a.tradingsymbol() : b.tradingsymbol(),
+                a.symbolKey(),
+                b.quantity(),
+                b.averagePrice() != null ? b.averagePrice() : a.averagePrice(),
+                b.realisedPnl() != null ? b.realisedPnl() : a.realisedPnl(),
+                b.unrealisedPnl() != null ? b.unrealisedPnl() : a.unrealisedPnl(),
+                b.product() != null ? b.product() : a.product()
+        );
+    }
+
+    private static BrokerPositionDetail toDetail(JsonNode row) {
+        String exchange = row.path("exchange").asText("").trim().toUpperCase(Locale.ROOT);
+        String tradingsymbol = row.path("tradingsymbol").asText("").trim().toUpperCase(Locale.ROOT);
+        if (tradingsymbol.isBlank()) {
+            return null;
+        }
+        String key = exchange.isBlank() ? tradingsymbol : exchange + ":" + tradingsymbol;
+        return new BrokerPositionDetail(
+                exchange,
+                tradingsymbol,
+                key,
+                readQty(row),
+                readAvg(row),
+                readDecimal(row, "realised_pnl", "realized_pnl"),
+                readDecimal(row, "unrealised_pnl", "unrealized_pnl"),
+                row.path("product").asText("")
+        );
+    }
+
+    private static BigDecimal readDecimal(JsonNode row, String... fields) {
+        for (String f : fields) {
+            if (row.path(f).isNumber()) {
+                return BigDecimal.valueOf(row.path(f).asDouble());
             }
         }
+        return null;
     }
 
     private static BigDecimal readQty(JsonNode row) {

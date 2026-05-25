@@ -5,6 +5,8 @@ import com.stokr.backtest.domain.BacktestJobStatus;
 import com.stokr.backtest.repository.BacktestJobRepository;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.execution.broker.BrokerPositionTruthService;
+import com.stokr.execution.broker.BrokerPositionTruthSnapshot;
 import com.stokr.execution.guard.ExecutionGuardTelemetryService;
 import com.stokr.execution.guard.ExecutionQualityScoringService;
 import com.stokr.execution.guard.ExecutionTimelineService;
@@ -71,6 +73,7 @@ public class TraderTerminalViewService {
     private final ExecutionTimelineService executionTimelineService;
     private final ExecutionQualityScoringService executionQualityScoringService;
     private final StrategyUniverseResolverService strategyUniverseResolverService;
+    private final BrokerPositionTruthService brokerPositionTruthService;
 
     public TraderTerminalViewService(
             MarketDataQueryService marketDataQueryService,
@@ -88,7 +91,8 @@ public class TraderTerminalViewService {
             ExecutionGuardTelemetryService executionGuardTelemetryService,
             ExecutionTimelineService executionTimelineService,
             ExecutionQualityScoringService executionQualityScoringService,
-            StrategyUniverseResolverService strategyUniverseResolverService
+            StrategyUniverseResolverService strategyUniverseResolverService,
+            BrokerPositionTruthService brokerPositionTruthService
     ) {
         this.marketDataQueryService = marketDataQueryService;
         this.strategySignalRepository = strategySignalRepository;
@@ -106,6 +110,7 @@ public class TraderTerminalViewService {
         this.executionTimelineService = executionTimelineService;
         this.executionQualityScoringService = executionQualityScoringService;
         this.strategyUniverseResolverService = strategyUniverseResolverService;
+        this.brokerPositionTruthService = brokerPositionTruthService;
     }
 
     public List<Map<String, Object>> marketWatchProjection() {
@@ -220,6 +225,12 @@ public class TraderTerminalViewService {
     }
 
     public Map<String, Object> terminalWorkstation(UUID userId) {
+        BrokerPositionTruthSnapshot brokerTruth = brokerPositionTruthService.syncUser(userId);
+        Map<String, BrokerPositionTruthSnapshot.BrokerTruthPositionRow> truthBySymbol = new LinkedHashMap<>();
+        for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : brokerTruth.positions()) {
+            truthBySymbol.put(row.symbol(), row);
+        }
+
         PortfolioOverviewDto overview = portfolioQueryService.overview(userId);
         var exposure = portfolioQueryService.exposure(userId);
         var recon = omsReconciliationService.reconcileUser(userId);
@@ -295,6 +306,15 @@ public class TraderTerminalViewService {
             row.put("brokerStatus", broker.health());
             row.put("executionMode", mode.executionMode());
             row.put("parityState", parityState);
+            BrokerPositionTruthSnapshot.BrokerTruthPositionRow truth = truthBySymbol.get(
+                    BrokerPositionTruthService.normalizeSymbol(symbol));
+            if (truth != null) {
+                row.put("brokerQty", truth.brokerQty());
+                row.put("brokerSyncState", truth.rowSyncState());
+                row.put("brokerUnrealizedPnl", truth.brokerUnrealizedPnl());
+            } else {
+                row.put("brokerSyncState", brokerTruth.syncState().name());
+            }
             row.put("strategySource", strategyInstances.stream()
                     .filter(si -> symbol.equalsIgnoreCase(si.getSymbol()))
                     .map(si -> si.getDefinition() != null ? si.getDefinition().getStrategyKey() : null)
@@ -365,6 +385,7 @@ public class TraderTerminalViewService {
         out.put("executionQualityMetrics", executionGuardTelemetryService.recentQualityMetrics(userId, 100));
         out.put("executionTimeline", executionTimelineService.recentForUser(userId, 200));
         out.put("executionQualityScore", executionQualityScoringService.scoreForUser(userId));
+        out.put("brokerTruth", brokerTruth.toApiMap());
         return out;
     }
 

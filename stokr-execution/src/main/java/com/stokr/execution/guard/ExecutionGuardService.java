@@ -16,6 +16,7 @@ public class ExecutionGuardService {
 
     private final ExecutionGuardPolicyService policyService;
     private final MarketSnapshotService marketSnapshotService;
+    private final com.stokr.execution.broker.BrokerPositionTruthService brokerPositionTruthService;
 
     public ExecutionGuardResult validate(ExecutionContext ctx) {
         long startNs = System.nanoTime();
@@ -32,6 +33,10 @@ public class ExecutionGuardService {
         validateVolatility(policy, market, violations);
         validateCircuit(market, violations);
         validateSlippage(policy, market, violations);
+        if (ctx.executionMode() == com.stokr.oms.domain.ExecutionMode.LIVE) {
+            violations.addAll(brokerPositionTruthService.validateForExecution(
+                    ctx.userId(), ctx.symbol(), ctx.side(), ctx.guardMode(), ctx.now()));
+        }
 
         ExecutionGuardOutcome outcome = decideOutcome(ctx, policy, violations);
         long latencyMs = Math.max(0L, (System.nanoTime() - startNs) / 1_000_000L);

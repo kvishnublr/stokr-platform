@@ -5,11 +5,11 @@ interface StrategyCardProps {
   strategyName: string;
   symbol: string;
   status: 'running' | 'cooling' | 'idle' | 'blocked';
-  confidence: number; // 0-100
-  tradeProb: number; // 0-100
+  confidence: number;
+  tradeProb: number;
   regime?: string;
   riskWinRatio?: string;
-  signalStrength: number; // 0-100
+  signalStrength: number;
   activeOrders?: number;
   dayPnL?: number;
   drawdown?: number;
@@ -134,7 +134,7 @@ export function StrategyCard({
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="font-heading-sm text-white font-semibold">{strategyName}</h3>
+            <h3 className="text-sm font-semibold text-white">{strategyName}</h3>
             <p className="text-text-secondary text-xs mt-0.5">{symbol}</p>
           </div>
           <motion.div

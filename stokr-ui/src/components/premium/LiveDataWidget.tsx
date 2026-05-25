@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ReactNode } from 'react';
+import clsx from 'clsx';
 
 interface LiveDataWidgetProps {
   label: string;
@@ -7,10 +7,8 @@ interface LiveDataWidgetProps {
   unit?: string;
   change?: number;
   isPositive?: boolean;
-  icon?: ReactNode;
   isLive?: boolean;
   trend?: 'up' | 'down' | 'neutral';
-  animated?: boolean;
 }
 
 export function LiveDataWidget({
@@ -18,75 +16,66 @@ export function LiveDataWidget({
   value,
   unit,
   change,
-  isPositive,
-  icon,
-  isLive = true,
-  trend = 'neutral',
-  animated = true
+  isPositive = true,
+  isLive = false,
+  trend = 'neutral'
 }: LiveDataWidgetProps) {
-  const trendColor = trend === 'up' ? 'text-emerald-400' : trend === 'down' ? 'text-red-500' : 'text-cyan-400';
-  const changeBg = isPositive ? 'bg-emerald-400/10' : 'bg-red-500/10';
-
   return (
-    <motion.div
-      initial={animated ? { opacity: 0, y: 10 } : {}}
-      animate={animated ? { opacity: 1, y: 0 } : {}}
-      className="relative"
-    >
-      {/* Background shimmer for live updates */}
-      {isLive && (
-        <motion.div
-          animate={{ backgroundPosition: ['0% 0%', '100% 0%', '0% 0%'] }}
-          transition={{ duration: 3, repeat: Infinity }}
-          style={{
-            backgroundImage: 'linear-gradient(90deg, transparent, rgba(0,217,255,0.2), transparent)',
-            backgroundSize: '200% 100%'
-          }}
-          className="absolute inset-0 rounded-lg pointer-events-none"
-        />
-      )}
-
-      <div className="relative p-4 rounded-lg border border-cyan-500/20 bg-slate-900/40 backdrop-blur-xl shadow-md">
-        {/* Live indicator */}
+    <div className="space-y-1.5">
+      <div className="flex justify-between items-center">
+        <span className="text-text-tertiary text-xs font-medium">{label}</span>
         {isLive && (
           <motion.div
             animate={{ opacity: [1, 0.5, 1] }}
             transition={{ duration: 2, repeat: Infinity }}
-            className="absolute top-3 right-3 w-2 h-2 rounded-full bg-cyan-400"
-          />
-        )}
-
-        {/* Label */}
-        <div className="flex items-center gap-2 mb-2">
-          {icon && <div className="text-cyan-400">{icon}</div>}
-          <span className="text-text-secondary text-body-sm font-medium">{label}</span>
-        </div>
-
-        {/* Value with number counter animation */}
-        <motion.div
-          animate={animated ? { opacity: [0.8, 1] } : {}}
-          transition={{ duration: 0.6 }}
-          className="flex items-baseline gap-1"
-        >
-          <span className={`font-mono-lg font-bold text-white ${trendColor}`}>
-            {value}
-          </span>
-          {unit && <span className="text-text-tertiary text-body-sm">{unit}</span>}
-        </motion.div>
-
-        {/* Change indicator */}
-        {change !== undefined && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2 }}
-            className={`mt-2 inline-block px-2 py-1 rounded text-xs font-mono ${changeBg} ${trendColor}`}
+            className="flex items-center gap-1"
           >
-            {isPositive ? '+' : ''}{change}%
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span className="text-emerald-400 text-xs font-mono">LIVE</span>
           </motion.div>
         )}
       </div>
-    </motion.div>
+
+      {/* Value display with shimmer effect */}
+      <motion.div
+        animate={isLive ? { opacity: [0.8, 1, 0.8] } : {}}
+        transition={isLive ? { duration: 2, repeat: Infinity } : {}}
+        className="flex items-baseline gap-2"
+      >
+        <span className="font-mono text-lg font-bold text-white">
+          {value}
+        </span>
+        {unit && <span className="text-text-secondary text-sm">{unit}</span>}
+      </motion.div>
+
+      {/* Change badge */}
+      {change !== undefined && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className={clsx(
+            'text-xs font-mono font-semibold w-fit px-2 py-1 rounded',
+            isPositive
+              ? 'bg-emerald-500/20 text-emerald-400'
+              : 'bg-red-500/20 text-red-500'
+          )}
+        >
+          {isPositive ? '↑' : '↓'} {Math.abs(change).toFixed(2)}%
+        </motion.div>
+      )}
+
+      {/* Trend indicator */}
+      {trend !== 'neutral' && (
+        <div className="flex items-center gap-1">
+          <span className={clsx(
+            'text-xs font-semibold',
+            trend === 'up' ? 'text-emerald-400' : 'text-red-500'
+          )}>
+            {trend === 'up' ? '↑ Uptrend' : '↓ Downtrend'}
+          </span>
+        </div>
+      )}
+    </div>
   );
 }
 

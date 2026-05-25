@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import path from "path";
 
 /** Dev-only backend origin shared by HTTP + WS proxies (never used in production builds — nginx serves UI + proxies /api). */
 const backendTarget =
@@ -10,6 +11,11 @@ const backendTarget =
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   /** sockjs-client expects Node's `global`; browsers only have globalThis/window. */
   define: {
     global: "globalThis",

@@ -3,7 +3,10 @@ package com.stokr.execution.pipeline;
 import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
 import com.stokr.common.telemetry.SignalDistributionTelemetryService;
+import com.stokr.execution.broker.BrokerPositionTruthService;
 import com.stokr.execution.comparison.ExecutionComparisonService;
+import com.stokr.execution.guard.ExecutionGuardMode;
+import com.stokr.execution.guard.ExecutionGuardViolation;
 import com.stokr.execution.risk.RiskContextFactory;
 import com.stokr.execution.sizing.PositionSizingService;
 import com.stokr.execution.service.ExecutionService;
@@ -64,6 +67,7 @@ public class OrderIntentProcessor {
     private final PositionSizingService positionSizingService;
     private final ExecutionComparisonService executionComparisonService;
     private final StrategyExecutionConfigService strategyExecutionConfigService;
+    private final BrokerPositionTruthService brokerPositionTruthService;
 
     @Value("${stokr.risk.zone:Asia/Kolkata}")
     private String riskZone;
@@ -231,6 +235,27 @@ public class OrderIntentProcessor {
         ));
 
         order = orderLifecycleService.transition(order.getId(), OrderState.PENDING_SUBMISSION, null);
+
+        if (mode == ExecutionMode.LIVE) {
+            brokerPositionTruthService.syncUser(userId);
+            String side = order.getSide();
+            ExecutionGuardMode guardMode = "SELL".equalsIgnoreCase(side)
+                    ? ExecutionGuardMode.EXIT_SAFE
+                    : ExecutionGuardMode.ENTRY_STRICT;
+            var brokerViolations = brokerPositionTruthService.validateForExecution(
+                    userId, order.getSymbol(), side, guardMode, Instant.now());
+            if (!brokerViolations.isEmpty()) {
+                ExecutionGuardViolation v = brokerViolations.getFirst();
+                order = orderLifecycleService.transition(order.getId(), OrderState.REJECTED, v.message());
+                executionTraceService.trace(order, ExecutionEventType.EXECUTION_REJECTED, Map.of(
+                        "phase", "BROKER_TRUTH",
+                        "code", v.code(),
+                        "detail", v.detail() != null ? v.detail() : ""
+                ));
+                signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), v.code());
+                return;
+            }
+        }
 
         if ("SIMULATE_TIMEOUT".equals(testScenario)) {
             log.info("test.signal.timeout_simulated signalId={} orderId={}", signal.getId(), order.getId());

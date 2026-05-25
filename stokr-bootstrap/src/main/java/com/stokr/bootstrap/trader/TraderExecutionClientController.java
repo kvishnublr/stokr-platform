@@ -35,6 +35,7 @@ public class TraderExecutionClientController {
     private final ExecutionGuardStreamService executionGuardStreamService;
     private final ExecutionTimelineService executionTimelineService;
     private final ExecutionQualityScoringService executionQualityScoringService;
+    private final com.stokr.execution.broker.BrokerPositionTruthService brokerPositionTruthService;
 
     public TraderExecutionClientController(
             TraderTerminalViewService traderTerminalViewService,
@@ -42,7 +43,8 @@ public class TraderExecutionClientController {
             IntradayReadinessService intradayReadinessService,
             ExecutionGuardStreamService executionGuardStreamService,
             ExecutionTimelineService executionTimelineService,
-            ExecutionQualityScoringService executionQualityScoringService
+            ExecutionQualityScoringService executionQualityScoringService,
+            com.stokr.execution.broker.BrokerPositionTruthService brokerPositionTruthService
     ) {
         this.traderTerminalViewService = traderTerminalViewService;
         this.traderTerminalControlService = traderTerminalControlService;
@@ -50,6 +52,7 @@ public class TraderExecutionClientController {
         this.executionGuardStreamService = executionGuardStreamService;
         this.executionTimelineService = executionTimelineService;
         this.executionQualityScoringService = executionQualityScoringService;
+        this.brokerPositionTruthService = brokerPositionTruthService;
     }
 
     @GetMapping("/terminal/market/watch")
@@ -139,6 +142,16 @@ public class TraderExecutionClientController {
             @AuthenticationPrincipal StokrUserDetails user
     ) {
         return ApiResponse.ok(executionQualityScoringService.scoreForUser(user.getId()), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/terminal/broker-truth")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Broker position truth snapshot (Zerodha source of truth vs OMS)")
+    public ApiResponse<Map<String, Object>> brokerTruth(@AuthenticationPrincipal StokrUserDetails user) {
+        return ApiResponse.ok(
+                brokerPositionTruthService.syncUser(user.getId()).toApiMap(),
+                CorrelationIdHolder.get()
+        );
     }
 
     @GetMapping("/intraday/readiness")
