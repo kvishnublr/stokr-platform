@@ -125,6 +125,15 @@ public class AdminSignalController {
             out.put("immediatePoll", "triggered");
             out.put("catalogScan", catalogDrivenScanScheduler.getIfAvailable() != null ? "triggered" : "disabled");
         }
+        CompletableFuture.runAsync(() -> {
+            try {
+                int processed = outcomeTrackerService.trackAllPending();
+                log.info("activate-pipeline.outcome_backfill processed={}", processed);
+            } catch (Exception ex) {
+                log.warn("activate-pipeline.outcome_backfill_failed {}", ex.getMessage());
+            }
+        });
+        out.put("outcomeBackfill", "triggered_async");
         return ApiResponse.ok(out, CorrelationIdHolder.get());
     }
 

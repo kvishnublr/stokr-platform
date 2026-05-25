@@ -1,6 +1,7 @@
 package com.stokr.strategy.repository;
 
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.signals.SignalType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -60,8 +61,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             where s.deleted = false
               and s.backtestRunId is null
               and s.testTrade = false
-              and s.outcomeStatus is null
-              and s.entryReferencePrice is not null
+              and (s.outcomeStatus is null or s.outcomeStatus = 'PENDING')
               and s.createdAt >= :since
               and s.createdAt <= :before
             order by s.createdAt asc
@@ -76,8 +76,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             where s.deleted = false
               and s.backtestRunId is null
               and s.testTrade = false
-              and s.outcomeStatus is null
-              and s.entryReferencePrice is not null
+              and (s.outcomeStatus is null or s.outcomeStatus = 'PENDING')
             order by s.createdAt asc
             """)
     List<StrategySignalEntity> findAllPendingOutcomeTracking(Pageable pageable);
@@ -95,6 +94,23 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             order by s.createdAt asc
             """)
     List<StrategySignalEntity> findRunningSignalsSince(@Param("since") Instant since, Pageable pageable);
+
+    @Query("""
+            select case when count(s) > 0 then true else false end
+            from StrategySignalEntity s
+            where s.deleted = false
+              and s.testTrade = false
+              and s.backtestRunId is null
+              and s.strategyName = :strategyName
+              and s.symbol = :symbol
+              and s.signalType = :signalType
+              and s.createdAt >= :since
+            """)
+    boolean existsSimilarLiveSignal(
+            @Param("strategyName") String strategyName,
+            @Param("symbol") String symbol,
+            @Param("signalType") SignalType signalType,
+            @Param("since") Instant since);
 
     @Query(value = """
             SELECT

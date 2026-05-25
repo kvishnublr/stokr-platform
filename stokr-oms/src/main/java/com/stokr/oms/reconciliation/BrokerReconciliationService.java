@@ -76,6 +76,10 @@ public class BrokerReconciliationService {
             log.warn("reconciliation.broker_query_failed vendor={} user={} error={}", brokerVendor, userId, e.getMessage());
             return;
         }
+        if (brokerPositions == null || brokerPositions.isEmpty()) {
+            log.debug("reconciliation.skipped_no_broker_positions vendor={} user={}", brokerVendor, userId);
+            return;
+        }
 
         Map<String, BigDecimal> brokerBySymbol = brokerPositions.stream()
                 .collect(Collectors.toMap(BrokerPosition::symbol, BrokerPosition::quantity));

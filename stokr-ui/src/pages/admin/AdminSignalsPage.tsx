@@ -127,6 +127,9 @@ const OUTCOME_CFG: Record<string, { label: string; cls: string; dot: string }> =
 };
 
 function OutcomeChip({ status }: { status: string | null }) {
+  if (status === "PENDING") {
+    return <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">Pending</span>;
+  }
   if (!status) return <span className="text-slate-300 text-[11px]">—</span>;
   const cfg = OUTCOME_CFG[status] ?? { label: status, cls: "border-slate-200 bg-slate-50 text-slate-500", dot: "bg-slate-400" };
   return (
@@ -386,6 +389,17 @@ export function AdminSignalsPage() {
     },
   });
 
+  const trackOutcomes = useMutation({
+    mutationFn: async () => {
+      const res = await api.post("/api/admin/signals/track-outcomes");
+      return res.data?.data as { processed?: number };
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-signals"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-signal-stats"] });
+    },
+  });
+
   // Subscribe to admin SSE stream; invalidate signal queries immediately on signal/outcome events
   useEffect(() => {
     const controller = new AbortController();
@@ -537,6 +551,15 @@ export function AdminSignalsPage() {
             >
               <Zap className={`h-3.5 w-3.5 ${activatePipeline.isPending ? "animate-pulse" : ""}`} />
               {activatePipeline.isPending ? "Activating…" : "Start signal flow"}
+            </button>
+            <button
+              type="button"
+              disabled={trackOutcomes.isPending}
+              onClick={() => trackOutcomes.mutate()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-100 transition-colors shadow-sm disabled:opacity-60"
+            >
+              <Target className={`h-3.5 w-3.5 ${trackOutcomes.isPending ? "animate-pulse" : ""}`} />
+              {trackOutcomes.isPending ? "Tracking…" : "Track outcomes"}
             </button>
             <button type="button" onClick={() => void q.refetch()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm">

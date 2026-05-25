@@ -46,6 +46,7 @@ public class SignalOutcomeTrackerService {
     private final StrategySignalRepository signalRepository;
     private final MarketDataQueryService marketDataQueryService;
     private final ApplicationEventPublisher eventPublisher;
+    private final SignalPriceEnrichmentService signalPriceEnrichmentService;
 
     @Scheduled(fixedDelayString = "${stokr.signal.outcome-track-ms:300000}")
     @Transactional
@@ -68,6 +69,8 @@ public class SignalOutcomeTrackerService {
         int updated = 0;
         for (StrategySignalEntity sig : running) {
             try {
+                signalPriceEnrichmentService.enrichIfMissing(sig,
+                        sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt());
                 String prevStatus = sig.getOutcomeStatus();
                 if (evaluate(sig, now)) {
                     updated++;
@@ -106,6 +109,8 @@ public class SignalOutcomeTrackerService {
         int updated = 0;
         for (StrategySignalEntity sig : pending) {
             try {
+                signalPriceEnrichmentService.enrichIfMissing(sig,
+                        sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt());
                 if (evaluateHistorical(sig, now)) updated++;
             } catch (Exception ex) {
                 log.debug("signal.outcome.eval_error signalId={} {}", sig.getId(), ex.getMessage());
@@ -130,6 +135,8 @@ public class SignalOutcomeTrackerService {
         int updated = 0;
         for (StrategySignalEntity sig : pending) {
             try {
+                signalPriceEnrichmentService.enrichIfMissing(sig,
+                        sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt());
                 if (evaluate(sig, now)) {
                     updated++;
                     if (!STATUS_RUNNING.equals(sig.getOutcomeStatus())) {
@@ -183,6 +190,9 @@ public class SignalOutcomeTrackerService {
         }
 
         boolean isBuy  = type == SignalType.BUY;
+        BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
+        applyExcursionAndMarkToMarket(sig, postSignal, entry, isBuy, qty);
+
         boolean hitTgt = false;
         boolean hitSl  = false;
 
@@ -197,28 +207,14 @@ public class SignalOutcomeTrackerService {
             }
         }
 
-        BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
-
         if (hitTgt) {
-            sig.setOutcomeStatus(STATUS_TARGET_HIT);
-            sig.setHitTarget(true);
-            sig.setOutcomeTime(now);
-            BigDecimal pnl = isBuy
-                    ? target.subtract(entry).multiply(qty)
-                    : entry.subtract(target).multiply(qty);
-            sig.setRealizedPnl(pnl.setScale(2, RoundingMode.HALF_UP));
+            applyHitOutcome(sig, STATUS_TARGET_HIT, true, false, entry, target, qty, isBuy, now);
         } else if (hitSl) {
-            sig.setOutcomeStatus(STATUS_SL_HIT);
-            sig.setHitStoploss(true);
-            sig.setOutcomeTime(now);
-            BigDecimal pnl = isBuy
-                    ? sl.subtract(entry).multiply(qty)
-                    : entry.subtract(sl).multiply(qty);
-            sig.setRealizedPnl(pnl.setScale(2, RoundingMode.HALF_UP));
+            applyHitOutcome(sig, STATUS_SL_HIT, false, true, entry, sl, qty, isBuy, now);
         } else {
-            // All bars scanned with no hit — mark EXPIRED for historical signals
             sig.setOutcomeStatus(STATUS_EXPIRED);
             sig.setOutcomeTime(now);
+            sig.setUnrealizedPnl(null);
         }
 
         return true;
@@ -265,6 +261,9 @@ public class SignalOutcomeTrackerService {
         }
 
         boolean isBuy  = type == SignalType.BUY;
+        BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
+        applyExcursionAndMarkToMarket(sig, postSignal, entry, isBuy, qty);
+
         boolean hitTgt = false;
         boolean hitSl  = false;
 
@@ -279,30 +278,77 @@ public class SignalOutcomeTrackerService {
             }
         }
 
-        BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
-
         if (hitTgt) {
-            sig.setOutcomeStatus(STATUS_TARGET_HIT);
-            sig.setHitTarget(true);
-            sig.setOutcomeTime(now);
-            BigDecimal pnl = isBuy
-                    ? target.subtract(entry).multiply(qty)
-                    : entry.subtract(target).multiply(qty);
-            sig.setRealizedPnl(pnl.setScale(2, RoundingMode.HALF_UP));
+            applyHitOutcome(sig, STATUS_TARGET_HIT, true, false, entry, target, qty, isBuy, now);
         } else if (hitSl) {
-            sig.setOutcomeStatus(STATUS_SL_HIT);
-            sig.setHitStoploss(true);
-            sig.setOutcomeTime(now);
-            BigDecimal pnl = isBuy
-                    ? sl.subtract(entry).multiply(qty)
-                    : entry.subtract(sl).multiply(qty);
-            sig.setRealizedPnl(pnl.setScale(2, RoundingMode.HALF_UP));
+            applyHitOutcome(sig, STATUS_SL_HIT, false, true, entry, sl, qty, isBuy, now);
         } else {
             sig.setOutcomeStatus(STATUS_RUNNING);
             sig.setOutcomeTime(now);
         }
 
         return true;
+    }
+
+    private void applyHitOutcome(
+            StrategySignalEntity sig,
+            String status,
+            boolean hitTarget,
+            boolean hitSl,
+            BigDecimal entry,
+            BigDecimal exitLevel,
+            BigDecimal qty,
+            boolean isBuy,
+            Instant now) {
+        sig.setOutcomeStatus(status);
+        sig.setHitTarget(hitTarget);
+        sig.setHitStoploss(hitSl);
+        sig.setOutcomeTime(now);
+        sig.setExitPrice(exitLevel);
+        if (sig.getEntryPrice() == null) {
+            sig.setEntryPrice(entry);
+        }
+        BigDecimal pnl = isBuy
+                ? exitLevel.subtract(entry).multiply(qty)
+                : entry.subtract(exitLevel).multiply(qty);
+        sig.setRealizedPnl(pnl.setScale(2, RoundingMode.HALF_UP));
+        sig.setUnrealizedPnl(null);
+    }
+
+    private void applyExcursionAndMarkToMarket(
+            StrategySignalEntity sig,
+            List<MarketdataCandle> postSignal,
+            BigDecimal entry,
+            boolean isBuy,
+            BigDecimal qty) {
+        double mfe = 0;
+        double mae = 0;
+        for (MarketdataCandle c : postSignal) {
+            if (c.getHighPrice() == null || c.getLowPrice() == null) {
+                continue;
+            }
+            double fav;
+            double adv;
+            if (isBuy) {
+                fav = c.getHighPrice().subtract(entry).doubleValue();
+                adv = entry.subtract(c.getLowPrice()).doubleValue();
+            } else {
+                fav = entry.subtract(c.getLowPrice()).doubleValue();
+                adv = c.getHighPrice().subtract(entry).doubleValue();
+            }
+            mfe = Math.max(mfe, Math.max(0, fav));
+            mae = Math.max(mae, Math.max(0, adv));
+        }
+        sig.setMaxFavorableExcursion(BigDecimal.valueOf(mfe * qty.doubleValue()).setScale(2, RoundingMode.HALF_UP));
+        sig.setMaxAdverseExcursion(BigDecimal.valueOf(mae * qty.doubleValue()).setScale(2, RoundingMode.HALF_UP));
+
+        MarketdataCandle last = postSignal.get(postSignal.size() - 1);
+        if (last.getClosePrice() != null) {
+            BigDecimal uPnl = isBuy
+                    ? last.getClosePrice().subtract(entry).multiply(qty)
+                    : entry.subtract(last.getClosePrice()).multiply(qty);
+            sig.setUnrealizedPnl(uPnl.setScale(2, RoundingMode.HALF_UP));
+        }
     }
 
     private void expire(StrategySignalEntity sig, Instant now) {

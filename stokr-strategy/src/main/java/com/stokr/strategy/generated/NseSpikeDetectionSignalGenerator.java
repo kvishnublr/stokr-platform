@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -78,6 +79,11 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
 
     @Value("${stokr.spike.score-threshold:75.0}")
     private double scoreThreshold;
+
+    @Value("${stokr.spike.emit-cooldown-seconds:300}")
+    private long emitCooldownSeconds;
+
+    private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
@@ -169,6 +175,13 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         if (spikeScore < scoreThreshold) {
             return hold(context);
         }
+
+        Instant now = context.asOf() != null ? context.asOf() : Instant.now();
+        Instant last = lastEmitBySymbol.get(symbol);
+        if (last != null && Duration.between(last, now).getSeconds() < emitCooldownSeconds) {
+            return hold(context);
+        }
+        lastEmitBySymbol.put(symbol, now);
 
         SignalType type = bullish ? SignalType.BUY : SignalType.SELL;
         String reason = String.format(

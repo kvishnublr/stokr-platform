@@ -10,6 +10,8 @@ import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.strategy.service.SignalEmissionGuardService;
+import com.stokr.strategy.service.SignalPriceEnrichmentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +41,8 @@ public class StrategySignalPipelineService {
     private final ApplicationEventPublisher eventPublisher;
     private final SignalDistributionTelemetryService signalDistributionTelemetryService;
     private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
+    private final SignalPriceEnrichmentService signalPriceEnrichmentService;
+    private final SignalEmissionGuardService signalEmissionGuardService;
 
     @Value("${stokr.strategy.signal-session-guard.enabled:true}")
     private boolean signalSessionGuardEnabled;
@@ -75,6 +79,18 @@ public class StrategySignalPipelineService {
             log.info("signal.dropped_outside_session strategy={} symbol={} mode={}",
                     signal.getStrategyName(), signal.getSymbol(), executionMode);
             return null;
+        }
+        Instant signalTime = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
+        if (!Boolean.TRUE.equals(signal.getTestTrade()) && signal.getBacktestRunId() == null) {
+            signalPriceEnrichmentService.enrichIfMissing(signal, signalTime);
+            if (signalEmissionGuardService.shouldSuppress(signal)) {
+                log.info("signal.dropped_duplicate strategy={} symbol={} type={}",
+                        signal.getStrategyName(), signal.getSymbol(), signal.getSignalType());
+                return null;
+            }
+            if (signal.getOutcomeStatus() == null || signal.getOutcomeStatus().isBlank()) {
+                signal.setOutcomeStatus("PENDING");
+            }
         }
         StrategySignalEntity saved = signalRepository.save(signal);
 
