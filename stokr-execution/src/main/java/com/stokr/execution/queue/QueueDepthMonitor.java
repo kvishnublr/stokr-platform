@@ -3,7 +3,8 @@ package com.stokr.execution.queue;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.amqp.rabbit.rest.client.RabbitManagementTemplate;
+// COMMENTED OUT - does not exist in Spring AMQP
+// import org.springframework.amqp.rabbit.rest.client.RabbitManagementTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;

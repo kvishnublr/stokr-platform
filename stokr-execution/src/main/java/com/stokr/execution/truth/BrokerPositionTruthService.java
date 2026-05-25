@@ -1,7 +1,7 @@
 package com.stokr.execution.truth;
 
-import com.stokr.broker.zerodha.KiteConnectBrokerAdapter;
-import com.stokr.broker.zerodha.dto.Position;
+import com.stokr.broker.api.BrokerAdapter;
+import com.stokr.broker.model.BrokerPosition;
 import com.stokr.oms.domain.PortfolioPosition;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import lombok.RequiredArgsConstructor;
