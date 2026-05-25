@@ -10,7 +10,7 @@ import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -19,91 +19,109 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * NSE 1-minute spike detection strategy.
+ * NSE_SPIKE_DETECTION V2.0 - PURE DATA-DRIVEN INSTITUTIONAL STRATEGY
  *
- * Detects sudden momentum bursts on NSE equities using a 6-component composite score:
+ * Philosophy: Zero lagging indicators. Only raw price/volume structure.
+ * Removed: RSI, EMA, VWAP, fixed ATR multiples, index/sector alignment
  *
- *   1. Price Velocity  — % move per 1m bar (threshold-scored 0–100)
- *   2. Volume Burst    — current bar volume vs 20-bar rolling average (0–100)
- *   3. Bar Quality     — close position within the bar's range (0–100)
- *                        bullish spike: close near high = clean move, no upper wick rejection
- *                        bearish spike: close near low  = clean move, no lower wick rejection
- *   4. Index Alignment — stock direction vs NIFTY_FUT 5-bar trend (+100 / +80 / -20)
- *   5. Sector Align    — stock velocity vs NIFTY velocity (market-wide vs stock-specific) (+80 / +50 / -15)
- *   6. Rejection Wick  — penalty when bar spike reversed ≥ 80% within the 1m bar (-25 normalized)
+ * Entry Logic:
+ *   1. Spike Score (3 components, each 0-100):
+ *      - Velocity Score: % move per minute (0.25%+ = spike)
+ *      - Volume Score: Burst multiplier vs 20-bar average
+ *      - Bar Quality Score: Close position in range (rejection = low score)
  *
- * Final spike score = avg(components 1–5) − rejection_penalty, capped [0, 100].
- * Signal fired when spike_score ≥ 75.
+ *   2. Composite Score = (velocity + volume + barQuality) / 3
  *
- * Works on 1m candle data — adapts the tick-level spec to the finest available resolution.
- * Session gate: 09:15–15:20 IST (stops 10 min before close to avoid thin tape).
+ *   3. Fire if: composite_score >= 75 AND continuation_confirmed AND no_wick_rejection
+ *
+ * Stop Loss: DYNAMIC
+ *   - Not fixed ATR multiple
+ *   - Calculated as: Entry bar low/high ± 0.50%
+ *   - Adapts to actual bar structure, not pre-calculated volatility
+ *
+ * Target: DYNAMIC RETEST-BASED
+ *   - Based on: Range of last 5 bars structure
+ *   - Tight ranges (<1.0%): target = recent extreme ± 0.50% extension
+ *   - Wide ranges (>1.0%): target = recent extreme ± 1.50% extension
+ *
+ * Session: 09:15-15:20 IST (core trading hours)
  */
-@Component
+@Service
 @RequiredArgsConstructor
 @Slf4j
 @GeneratedStrategy(
-        strategyKey = "NSE_SPIKE_DETECTION",
-        assetClass  = "EQUITY",
-        segment     = "NSE",
-        exchange    = "NSE",
-        timeframe   = "1m"
+    strategyKey  = "NSE_SPIKE_DETECTION",
+    assetClass   = "EQUITY",
+    segment      = "NSE",
+    exchange     = "NSE",
+    timeframe    = "1m"
 )
 public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy implements TradingStrategy {
 
-    private static final String   TIMEFRAME      = "1m";
-    private static final String   NIFTY_SYMBOL   = "NIFTY_FUT";
-    private static final int      BARS_TO_FETCH  = 50;
-    private static final int      VOL_AVG_PERIOD = 20;
-    private static final int      NIFTY_BARS     = 7;
-    // NIFTY_FUT data is identical for every symbol in the same scan cycle.
-    // Cache it for 55s so 150 concurrent symbol evaluations share one DB fetch.
-    private static final Duration NIFTY_CACHE_TTL = Duration.ofSeconds(55);
+    private static final String TIMEFRAME = "1m";
+    private static final int BARS_FETCH = 25;
+    private static final int VOLUME_AVG_PERIOD = 20;
+    private static final int RETEST_LOOKBACK = 5;
 
     private final MarketDataQueryService marketDataQueryService;
-
-    // Shared across all evaluations — updated at most once per NIFTY_CACHE_TTL
-    private final AtomicReference<double[]> niftyCache   = new AtomicReference<>(null);
-    private volatile Instant                niftyCachedAt = Instant.EPOCH;
+    private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
 
-    @Value("${stokr.spike.session.start:09:15}")
-    private LocalTime sessionStart;
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PURE DATA PARAMETERS (no lagging indicators)
+    // ═══════════════════════════════════════════════════════════════════════════
 
-    @Value("${stokr.spike.session.end:15:20}")
-    private LocalTime sessionEnd;
-
-    @Value("${stokr.spike.score-threshold:75.0}")
-    private double scoreThreshold;
-
-    @Value("${stokr.spike.emit-cooldown-seconds:300}")
-    private long emitCooldownSeconds;
-
-    @Value("${stokr.spike.min-velocity-pct:0.20}")
+    // VELOCITY: Minimum % move per minute to qualify as spike
+    @Value("${stokr.spike.min-velocity-pct:0.25}")
     private double minVelocityPct;
 
-    @Value("${stokr.spike.min-volume-multiple:2.5}")
+    // VOLUME: Minimum multiplier vs 20-bar average to confirm conviction
+    @Value("${stokr.spike.min-volume-multiple:3.0}")
     private double minVolumeMultiple;
 
-    @Value("${stokr.spike.min-bar-quality:0.60}")
-    private double minBarQuality;
+    // BAR QUALITY: Close must be in upper/lower portion (not wicked)
+    @Value("${stokr.spike.min-bar-quality-threshold:70.0}")
+    private double minBarQualityThreshold;
 
-    @Value("${stokr.spike.continuation-check:true}")
-    private boolean requireContinuationConfirmation;
+    // WICK REJECTION: % of bar that is wick (not body)
+    @Value("${stokr.spike.max-wick-pct-before-reject:0.60}")
+    private double maxWickPctBeforeReject;
 
-    @Value("${stokr.spike.wick-penalty-strict:35}")
-    private int wickPenaltyStrict;
+    // CONTINUATION: Next candle must continue in spike direction
+    @Value("${stokr.spike.require-continuation-candle:true}")
+    private boolean requireContinuationCandle;
 
-    @Value("${stokr.spike.wick-threshold-rejection:0.70}")
-    private double wickThresholdRejectBlock;
+    // SCORE THRESHOLD: Composite score must be >= this to fire
+    @Value("${stokr.spike.min-composite-score:75.0}")
+    private double minCompositeScore;
 
-    private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
+    // COOLDOWN: Seconds between signals on same symbol
+    @Value("${stokr.spike.cooldown-seconds:300}")
+    private int cooldownSeconds;
 
-    // ── Entry point ───────────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DYNAMIC STOP LOSS PARAMETERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Value("${stokr.spike.sl-offset-pct:0.50}")
+    private double slOffsetPct;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DYNAMIC TARGET PARAMETERS (retest-based)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Value("${stokr.spike.target-tight-range-extension:0.50}")
+    private double targetTightRangeExtension;
+
+    @Value("${stokr.spike.target-wide-range-extension:1.50}")
+    private double targetWideRangeExtension;
+
+    @Value("${stokr.spike.range-width-threshold-pct:1.0}")
+    private double rangeWidthThreshold;
 
     @Override
     public String key() {
@@ -114,239 +132,257 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
 
-        // ── 1. Session gate ───────────────────────────────────────────────────
+        // ─────────────────────────────────────────────────────────────────────
+        // 1. SESSION GATE: 09:15-15:20 IST
+        // ─────────────────────────────────────────────────────────────────────
         if (context.asOf() != null) {
             LocalTime lt = context.asOf().atZone(zone).toLocalTime();
-            if (lt.isBefore(sessionStart) || lt.isAfter(sessionEnd)) {
+            if (lt.isBefore(LocalTime.of(9, 15)) || lt.isAfter(LocalTime.of(15, 20))) {
                 return hold(context);
             }
         }
 
-        // ── 2. Load stock 1m bars ─────────────────────────────────────────────
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAscEndingAt(
-                symbol, TIMEFRAME, BARS_TO_FETCH, context.asOf());
-
-        if (bars.size() < VOL_AVG_PERIOD + 2) {
-            log.debug("strategy.spike.insufficient_bars symbol={} have={}", symbol, bars.size());
+        // ─────────────────────────────────────────────────────────────────────
+        // 2. LOAD CANDLE DATA
+        // ─────────────────────────────────────────────────────────────────────
+        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, TIMEFRAME, BARS_FETCH);
+        int n = bars.size();
+        if (n < 3) {
+            log.debug("nse_spike.insufficient_bars symbol={} have={}", symbol, n);
             return hold(context);
         }
 
-        int n = bars.size();
-        double[] closes  = new double[n];
-        double[] highs   = new double[n];
-        double[] lows    = new double[n];
-        double[] volumes = new double[n];
-        for (int i = 0; i < n; i++) {
-            MarketdataCandle c = bars.get(i);
-            closes[i]  = toDouble(c.getClosePrice());
-            highs[i]   = toDouble(c.getHighPrice());
-            lows[i]    = toDouble(c.getLowPrice());
-            volumes[i] = toDouble(c.getVolume());
-        }
+        MarketdataCandle current = bars.get(n - 1);
+        MarketdataCandle prev = bars.get(n - 2);
 
-        double curClose  = closes[n - 1];
-        double prevClose = closes[n - 2];
-        double curHigh   = highs[n - 1];
-        double curLow    = lows[n - 1];
-        double curVol    = volumes[n - 1];
+        double curClose = toDouble(current.getClosePrice());
+        double curHigh = toDouble(current.getHighPrice());
+        double curLow = toDouble(current.getLowPrice());
+        double curVolume = toDouble(current.getVolume());
+        double prevClose = toDouble(prev.getClosePrice());
 
         if (curClose <= 0 || prevClose <= 0) return hold(context);
 
-        // ── 3. Component 1 — Price Velocity ───────────────────────────────────
-        double velocityPct = (curClose - prevClose) / prevClose * 100.0;
-        int velScore = velocityScore(velocityPct);
-        if (velScore == 0) return hold(context); // below minimum threshold — not a spike
+        // ─────────────────────────────────────────────────────────────────────
+        // 3. PURE DATA COMPONENT 1: VELOCITY SCORE
+        // ─────────────────────────────────────────────────────────────────────
+        double velocityPct = Math.abs(curClose - prevClose) / prevClose * 100;
+        double velocityScore = calculateVelocityScore(velocityPct);
 
-        boolean bullish = velocityPct > 0;
-
-        // ── 4. Component 2 — Volume Burst ─────────────────────────────────────
-        double avgVol     = rollingAvg(volumes, n - 1, VOL_AVG_PERIOD);
-        double volRatio   = avgVol > 0 ? curVol / avgVol : 0.0;
-        int    volScore   = volumeScore(volRatio);
-
-        // ── 5. Component 3 — Bar Quality (close position in range) ────────────
-        double range         = curHigh - curLow;
-        double closePosition = range > 0 ? (curClose - curLow) / range : 0.5;
-        int    barScore      = barQualityScore(closePosition, bullish);
-
-        // ── 6. Fetch NIFTY once — used for components 4 + 5 ──────────────────
-        double[] niftyCloses = niftyCloses(context);
-
-        // ── 7. Component 4 — Index Alignment ──────────────────────────────────
-        int idxScore = indexAlignmentScore(niftyCloses, bullish);
-
-        // ── 8. Component 5 — Sector Alignment ─────────────────────────────────
-        int secScore = sectorAlignmentScore(niftyCloses, velocityPct);
-
-        // ── 9. Component 6 — Rejection Wick Penalty ───────────────────────────
-        // Within the bar: if price spiked up but close is far below the high (or vice versa)
-        // the spike was rejected — penalty subtracts from the normalized average
-        int rejPenalty = rejectionPenalty(curClose, curHigh, curLow, range, bullish);
-
-        // ── 10. Final score ────────────────────────────────────────────────────
-        double rawAvg    = (velScore + volScore + barScore + idxScore + secScore) / 5.0;
-        double spikeScore = Math.max(0.0, Math.min(100.0, rawAvg - rejPenalty));
-
-        log.debug("strategy.spike.score symbol={} vel={} vol={} bar={} idx={} sec={} rej={} score={}",
-                symbol, velScore, volScore, barScore, idxScore, secScore, rejPenalty, String.format("%.1f", spikeScore));
-
-        if (spikeScore < scoreThreshold) {
+        if (velocityScore < 40) {
             return hold(context);
         }
 
+        boolean isBuySpike = curClose > prevClose;
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 4. PURE DATA COMPONENT 2: VOLUME SCORE
+        // ─────────────────────────────────────────────────────────────────────
+        double avgVolume = calculateAverageVolume(bars, n);
+        double volumeMultiple = avgVolume > 0 ? curVolume / avgVolume : 0.0;
+        double volumeScore = calculateVolumeScore(volumeMultiple);
+
+        if (volumeScore < 40) {
+            log.debug("nse_spike.low_volume symbol={} multiple={:.2f}", symbol, volumeMultiple);
+            return hold(context);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 5. PURE DATA COMPONENT 3: BAR QUALITY SCORE (wick rejection check)
+        // ─────────────────────────────────────────────────────────────────────
+        double barQualityScore = calculateBarQualityScore(current, isBuySpike);
+
+        if (barQualityScore <= 0) {
+            log.debug("nse_spike.wick_reject symbol={} score={}", symbol, barQualityScore);
+            return hold(context);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 6. COMPOSITE SCORE
+        // ─────────────────────────────────────────────────────────────────────
+        double compositeScore = (velocityScore + volumeScore + barQualityScore) / 3.0;
+
+        if (compositeScore < minCompositeScore) {
+            log.debug("nse_spike.low_score symbol={} composite={:.1f} min={}", symbol, compositeScore, minCompositeScore);
+            return hold(context);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 7. CONTINUATION CONFIRMATION
+        // ─────────────────────────────────────────────────────────────────────
+        if (requireContinuationCandle) {
+            if (isBuySpike) {
+                if (curHigh <= prevClose) {
+                    log.debug("nse_spike.no_continuation_buy symbol={} high={:.2f} <= prevClose={:.2f}",
+                              symbol, curHigh, prevClose);
+                    return hold(context);
+                }
+            } else {
+                if (curLow >= prevClose) {
+                    log.debug("nse_spike.no_continuation_sell symbol={} low={:.2f} >= prevClose={:.2f}",
+                              symbol, curLow, prevClose);
+                    return hold(context);
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 8. COOLDOWN CHECK
+        // ─────────────────────────────────────────────────────────────────────
         Instant now = context.asOf() != null ? context.asOf() : Instant.now();
-        Instant last = lastEmitBySymbol.get(symbol);
-        if (last != null && Duration.between(last, now).getSeconds() < emitCooldownSeconds) {
+        Instant lastEmit = lastEmitBySymbol.get(symbol);
+        if (lastEmit != null && Duration.between(lastEmit, now).getSeconds() < cooldownSeconds) {
+            log.debug("nse_spike.cooldown_active symbol={}", symbol);
             return hold(context);
         }
         lastEmitBySymbol.put(symbol, now);
 
-        SignalType type = bullish ? SignalType.BUY : SignalType.SELL;
-        String reason = String.format(
-                "Spike %s score=%.1f vel=%.3f%% volRatio=%.1fx [vel:%d vol:%d bar:%d idx:%d sec:%d rej:-%d]",
-                type, spikeScore, velocityPct, volRatio,
-                velScore, volScore, barScore, idxScore, secScore, rejPenalty);
+        // ─────────────────────────────────────────────────────────────────────
+        // 9. SIGNAL GENERATION WITH DYNAMIC SL & TARGET
+        // ─────────────────────────────────────────────────────────────────────
+        SignalType signalType;
+        double entryPrice, stopLoss, target;
+        String reason;
 
-        log.info("strategy.spike.signal symbol={} type={} score={} reason={}",
-                symbol, type, String.format("%.1f", spikeScore), reason);
-        return new StrategySignal(type, symbol, BigDecimal.ONE, reason);
-    }
+        if (isBuySpike) {
+            signalType = SignalType.BUY;
+            entryPrice = curClose;
+            stopLoss = curLow * (1.0 - slOffsetPct / 100.0);
+            target = calculateBuyTarget(bars, n);
 
-    // ── Component 1: Price Velocity ───────────────────────────────────────────
-    // INSTITUTIONAL STANDARD: Only decisive moves count as spikes
-    // Noise floor raised from 0.10% → 0.20% (filters chop/noise)
-    // 0.30%+/min is a decisive spike on a liquid large-cap
+            double rr = (target - entryPrice) / Math.max(0.0001, entryPrice - stopLoss);
+            reason = String.format(
+                "NSE_SPIKE BUY: velocity=%.2f%% volume=%.1fx barQuality=%.0f composite=%.1f " +
+                "entry=%.2f sl=%.2f target=%.2f rr=%.2f",
+                velocityPct, volumeMultiple, barQualityScore, compositeScore,
+                entryPrice, stopLoss, target, rr
+            );
 
-    private int velocityScore(double pctPerMin) {
-        double abs = Math.abs(pctPerMin);
-        if (abs < minVelocityPct) return 0;     // noise / normal drift (now 0.20%)
-        if (abs < 0.30) return 30;              // slow move (raised from 20)
-        if (abs < 0.50) return 60;              // definite spike
-        if (abs < 0.80) return 80;              // strong spike
-        return 100;                              // extreme (news / algo-driven)
-    }
-
-    // ── Component 2: Volume Burst ─────────────────────────────────────────────
-    // INSTITUTIONAL STANDARD: Spikes require conviction volume
-    // Floor raised from 1.5x → 2.5x (filters low-volume fake spikes)
-
-    private int volumeScore(double ratio) {
-        if (ratio < minVolumeMultiple) return 0;  // Below min (now 2.5x)
-        if (ratio < 3.0) return 40;               // Minimum accepted (raised from 25)
-        if (ratio < 4.0) return 70;               // Good volume (raised from 75)
-        return 100;                               // Exceptional volume
-    }
-
-    // ── Component 3: Bar Quality ──────────────────────────────────────────────
-    // For a bullish spike: close near the high = no upper-wick rejection yet = clean move.
-    // For a bearish spike: close near the low  = clean momentum downward.
-
-    private static int barQualityScore(double closePosition, boolean bullish) {
-        // closePosition ∈ [0, 1]: 0 = at low, 1 = at high
-        double quality = bullish ? closePosition : (1.0 - closePosition);
-        if (quality >= 0.80) return 100;
-        if (quality >= 0.60) return 75;
-        if (quality >= 0.40) return 50;
-        if (quality >= 0.20) return 25;
-        return 0;
-    }
-
-    // ── Component 4: Index Alignment ─────────────────────────────────────────
-    // Stock direction aligned with NIFTY trend = institutional confirmation.
-    // Stock against strong NIFTY = likely reversal, heavy penalty.
-
-    private static int indexAlignmentScore(double[] niftyCloses, boolean stockBullish) {
-        if (niftyCloses == null || niftyCloses.length < 2) return 50; // neutral
-        double niftyNow  = niftyCloses[niftyCloses.length - 1];
-        double niftyBase = niftyCloses[0];
-        if (niftyBase <= 0) return 50;
-        double niftyPct     = (niftyNow - niftyBase) / niftyBase * 100.0;
-        boolean niftyBullish = niftyPct > 0.0;
-        double  absNifty    = Math.abs(niftyPct);
-        if (stockBullish == niftyBullish) {
-            return absNifty >= 0.10 ? 100 : 80; // confirmed vs flat NIFTY
         } else {
-            return absNifty >= 0.10 ? -20 : 50; // against strong NIFTY vs flat
+            signalType = SignalType.SELL;
+            entryPrice = curClose;
+            stopLoss = curHigh * (1.0 + slOffsetPct / 100.0);
+            target = calculateSellTarget(bars, n);
+
+            double rr = (entryPrice - target) / Math.max(0.0001, stopLoss - entryPrice);
+            reason = String.format(
+                "NSE_SPIKE SELL: velocity=%.2f%% volume=%.1fx barQuality=%.0f composite=%.1f " +
+                "entry=%.2f sl=%.2f target=%.2f rr=%.2f",
+                velocityPct, volumeMultiple, barQualityScore, compositeScore,
+                entryPrice, stopLoss, target, rr
+            );
         }
+
+        log.info("nse_spike.signal symbol={} type={} reason={}", symbol, signalType, reason);
+        return new StrategySignal(signalType, symbol, BigDecimal.ONE, reason);
     }
 
-    // ── Component 5: Sector Alignment ────────────────────────────────────────
-    // Simplified: compare stock's 1-bar velocity vs NIFTY's 1-bar velocity.
-    // Same direction + NIFTY also moving = sector-wide move (more reliable).
-    // Stock vs flat/opposite NIFTY = stock-specific (neutral / risky).
+    // ═════════════════════════════════════════════════════════════════════════════
+    // PURE DATA CALCULATION METHODS
+    // ═════════════════════════════════════════════════════════════════════════════
 
-    private static int sectorAlignmentScore(double[] niftyCloses, double stockVelocityPct) {
-        if (niftyCloses == null || niftyCloses.length < 2) return 50;
-        double niftyNow  = niftyCloses[niftyCloses.length - 1];
-        double niftyPrev = niftyCloses[niftyCloses.length - 2];
-        if (niftyPrev <= 0) return 50;
-        double niftyVelocity  = (niftyNow - niftyPrev) / niftyPrev * 100.0;
-        boolean stockBullish  = stockVelocityPct > 0;
-        boolean niftyBullish  = niftyVelocity > 0;
-        if (stockBullish == niftyBullish) {
-            return Math.abs(niftyVelocity) >= 0.05 ? 80 : 50; // sector momentum vs stock-specific
-        }
-        return -15; // stock against sector direction
+    private double calculateVelocityScore(double velocityPct) {
+        if (velocityPct < minVelocityPct) return 0;
+        if (velocityPct < 0.35) return 40;
+        if (velocityPct < 0.50) return 60;
+        if (velocityPct < 0.80) return 80;
+        return 100;
     }
 
-    // ── Component 6: Rejection Wick Penalty ──────────────────────────────────
-    // INSTITUTIONAL STANDARD: Strong wick rejection blocks spike entirely
-    // Check if within the current 1m bar the price spike was already rejected.
-    // Bullish bar: large upper wick (close << high) = buyers tried but got sold into.
-    // Bearish bar: large lower wick (close >> low)  = sellers tried but got bought into.
-    // Penalty is normalized (spec's -50 → -35 since we average 5 components).
+    private double calculateVolumeScore(double volumeMultiple) {
+        if (volumeMultiple < minVolumeMultiple) return 0;
+        if (volumeMultiple < 4.0) return 80;
+        return 100;
+    }
 
-    private int rejectionPenalty(double close, double high, double low, double range, boolean bullish) {
-        if (range <= 0) return 0;
-        if (bullish) {
-            double upperWick  = high - close;
-            double wickRatio  = upperWick / range;
-            if (wickRatio > wickThresholdRejectBlock) return 100; // Block entirely if > 70%
-            if (wickRatio > 0.80) return wickPenaltyStrict;       // strong rejection (35 vs 25)
-            if (wickRatio > 0.50) return 15;                      // partial rejection (raised from 10)
+    private double calculateBarQualityScore(MarketdataCandle candle, boolean isBuySpike) {
+        double high = toDouble(candle.getHighPrice());
+        double low = toDouble(candle.getLowPrice());
+        double close = toDouble(candle.getClosePrice());
+        double open = toDouble(candle.getOpenPrice());
+
+        double barRange = high - low;
+        if (barRange <= 0) return 50;
+
+        if (isBuySpike) {
+            double wickSize = high - close;
+            double bodySize = close - open;
+            double wickPct = bodySize > 0 ? wickSize / (wickSize + bodySize) : 0;
+
+            if (wickPct > maxWickPctBeforeReject) {
+                return 0;
+            }
+
+            double closePos = (close - low) / barRange * 100;
+            if (closePos >= minBarQualityThreshold) return 100;
+            if (closePos >= 50) return 50;
+            return 0;
+
         } else {
-            double lowerWick  = close - low;
-            double wickRatio  = lowerWick / range;
-            if (wickRatio > wickThresholdRejectBlock) return 100; // Block entirely if > 70%
-            if (wickRatio > 0.80) return wickPenaltyStrict;       // strong rejection
-            if (wickRatio > 0.50) return 15;                      // partial rejection
-        }
-        return 0;
-    }
+            double wickSize = close - low;
+            double bodySize = open - close;
+            double wickPct = bodySize > 0 ? wickSize / (wickSize + bodySize) : 0;
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+            if (wickPct > maxWickPctBeforeReject) {
+                return 0;
+            }
 
-    /**
-     * NIFTY_FUT 1m closes — cached for NIFTY_CACHE_TTL (55s) across all symbol evaluations.
-     * With 150 symbols per scan cycle this replaces 150 identical DB fetches with one.
-     */
-    private double[] niftyCloses(StrategyContext context) {
-        Instant now = context.asOf() != null ? context.asOf() : Instant.now();
-        double[] cached = niftyCache.get();
-        if (cached != null && Duration.between(niftyCachedAt, now).abs().compareTo(NIFTY_CACHE_TTL) < 0) {
-            return cached;
-        }
-        try {
-            List<MarketdataCandle> nb = marketDataQueryService.lastBarsAscEndingAt(
-                    NIFTY_SYMBOL, TIMEFRAME, NIFTY_BARS, context.asOf());
-            if (nb.size() < 2) return null;
-            double[] arr = new double[nb.size()];
-            for (int i = 0; i < nb.size(); i++) arr[i] = toDouble(nb.get(i).getClosePrice());
-            niftyCache.set(arr);
-            niftyCachedAt = now;
-            return arr;
-        } catch (Exception ex) {
-            log.debug("strategy.spike.nifty_fetch_failed {}", ex.getMessage());
-            return cached; // return stale data rather than null if available
+            double closePos = (close - low) / barRange * 100;
+            if (closePos <= (100 - minBarQualityThreshold)) return 100;
+            if (closePos <= 50) return 50;
+            return 0;
         }
     }
 
-    /** Rolling average of {@code period} values ending at (but not including) {@code endExclusive}. */
-    private static double rollingAvg(double[] arr, int endExclusive, int period) {
-        if (endExclusive < period) return 0.0;
+    private double calculateAverageVolume(List<MarketdataCandle> bars, int currentIndex) {
+        int start = Math.max(0, currentIndex - VOLUME_AVG_PERIOD);
         double sum = 0;
-        for (int i = endExclusive - period; i < endExclusive; i++) sum += arr[i];
-        return sum / period;
+        for (int i = start; i < currentIndex - 1; i++) {
+            sum += toDouble(bars.get(i).getVolume());
+        }
+        return (currentIndex - start) > 0 ? sum / (currentIndex - start) : 0;
+    }
+
+    private double calculateBuyTarget(List<MarketdataCandle> bars, int currentIndex) {
+        int lookbackStart = Math.max(0, currentIndex - 1 - RETEST_LOOKBACK);
+        double rangeHigh = Double.NEGATIVE_INFINITY;
+        double rangeLow = Double.POSITIVE_INFINITY;
+
+        for (int i = lookbackStart; i < currentIndex - 1; i++) {
+            double h = toDouble(bars.get(i).getHighPrice());
+            double l = toDouble(bars.get(i).getLowPrice());
+            if (h > rangeHigh) rangeHigh = h;
+            if (l < rangeLow) rangeLow = l;
+        }
+
+        if (rangeHigh <= 0) return 0;
+
+        double rangeWidthPct = (rangeHigh - rangeLow) / rangeHigh * 100;
+        double extension = rangeWidthPct < rangeWidthThreshold ?
+                          targetTightRangeExtension : targetWideRangeExtension;
+
+        return rangeHigh * (1.0 + extension / 100.0);
+    }
+
+    private double calculateSellTarget(List<MarketdataCandle> bars, int currentIndex) {
+        int lookbackStart = Math.max(0, currentIndex - 1 - RETEST_LOOKBACK);
+        double rangeHigh = Double.NEGATIVE_INFINITY;
+        double rangeLow = Double.POSITIVE_INFINITY;
+
+        for (int i = lookbackStart; i < currentIndex - 1; i++) {
+            double h = toDouble(bars.get(i).getHighPrice());
+            double l = toDouble(bars.get(i).getLowPrice());
+            if (h > rangeHigh) rangeHigh = h;
+            if (l < rangeLow) rangeLow = l;
+        }
+
+        if (rangeLow <= 0) return 0;
+
+        double rangeWidthPct = (rangeHigh - rangeLow) / rangeHigh * 100;
+        double extension = rangeWidthPct < rangeWidthThreshold ?
+                          targetTightRangeExtension : targetWideRangeExtension;
+
+        return rangeLow * (1.0 - extension / 100.0);
     }
 
     private static double toDouble(BigDecimal v) {

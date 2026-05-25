@@ -9,9 +9,10 @@ import org.springframework.stereotype.Service;
 
 /**
  * Default range-fade mean reversion ({@link MeanReversionParams#V1}).
+ * DISABLED: User mandate - keep only VWAP_MEAN_REVERSION & NSE_SPIKE_DETECTION
  */
-@Service
-@Primary
+// @Service  // DISABLED
+// @Primary
 public class MeanReversionSignalGenerator extends AbstractMeanReversionSignalGenerator {
 
     public MeanReversionSignalGenerator(MarketDataQueryService marketDataQueryService) {

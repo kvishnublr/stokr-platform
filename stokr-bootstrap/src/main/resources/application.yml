@@ -197,6 +197,21 @@ stokr:
       end: ${STOKR_STRATEGY_SESSION_END:14:45}
     system-user-id: ${STOKR_STRATEGY_SYSTEM_USER_ID:33333333-3333-3333-3333-333333333333}
     default-quantity: ${STOKR_STRATEGY_DEFAULT_QTY:1}
+    # NSE_SPIKE_DETECTION V2.0 - Pure data-driven parameters
+    spike:
+      min-velocity-pct: ${STOKR_SPIKE_MIN_VELOCITY_PCT:0.25}
+      min-volume-multiple: ${STOKR_SPIKE_MIN_VOLUME_MULTIPLE:3.0}
+      min-bar-quality-threshold: ${STOKR_SPIKE_MIN_BAR_QUALITY_THRESHOLD:70.0}
+      max-wick-pct-before-reject: ${STOKR_SPIKE_MAX_WICK_PCT_BEFORE_REJECT:0.60}
+      require-continuation-candle: ${STOKR_SPIKE_REQUIRE_CONTINUATION_CANDLE:true}
+      min-composite-score: ${STOKR_SPIKE_MIN_COMPOSITE_SCORE:75.0}
+      cooldown-seconds: ${STOKR_SPIKE_COOLDOWN_SECONDS:300}
+      # Dynamic stop loss (not fixed ATR multiple)
+      sl-offset-pct: ${STOKR_SPIKE_SL_OFFSET_PCT:0.50}
+      # Dynamic target (retest-based)
+      target-tight-range-extension: ${STOKR_SPIKE_TARGET_TIGHT_RANGE_EXTENSION:0.50}
+      target-wide-range-extension: ${STOKR_SPIKE_TARGET_WIDE_RANGE_EXTENSION:1.50}
+      range-width-threshold-pct: ${STOKR_SPIKE_RANGE_WIDTH_THRESHOLD_PCT:1.0}
   simulation:
     candle-timeframe: ${STOKR_SIM_TF:1m}
     latency-ms: ${STOKR_SIM_LATENCY_MS:1500}

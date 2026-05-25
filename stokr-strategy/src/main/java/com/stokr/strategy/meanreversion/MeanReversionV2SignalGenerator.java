@@ -8,8 +8,9 @@ import org.springframework.stereotype.Service;
 
 /**
  * Mean reversion v2 — wider envelope / relaxed RSI gates ({@link MeanReversionParams#V2}).
+ * DISABLED: User mandate - keep only VWAP_MEAN_REVERSION & NSE_SPIKE_DETECTION
  */
-@Service
+// @Service  // DISABLED
 public class MeanReversionV2SignalGenerator extends AbstractMeanReversionSignalGenerator {
 
     public MeanReversionV2SignalGenerator(MarketDataQueryService marketDataQueryService) {
