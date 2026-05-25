@@ -151,6 +151,20 @@ public class ExecutionSimulator {
                         OrderState.ACCEPTED.name(),
                         ts
                 ));
+                if (order.isTestTrade()) {
+                    liveOrder = orderLifecycleService.transition(liveOrder.getId(), OrderState.FILLED, null);
+                    executionTraceService.trace(liveOrder, ExecutionEventType.ORDER_FILLED, Map.of(
+                            "channel", "LIVE",
+                            "reason", "TEST_LAB_ACCEPTED_AS_FILLED"
+                    ));
+                    eventPublisher.publishEvent(new RealtimeBridgeEvents.OrderUpdate(
+                            liveUserId,
+                            liveOrder.getId(),
+                            liveOrder.getSymbol(),
+                            OrderState.FILLED.name(),
+                            ts
+                    ));
+                }
             } else {
                 // Kite rejected — submitToBroker already set state=FAILED with rejectReason
                 executionTraceService.trace(liveOrder, ExecutionEventType.EXECUTION_REJECTED, Map.of(
@@ -194,17 +208,18 @@ public class ExecutionSimulator {
                 : null;
         BigDecimal atr = sig != null ? sig.getAtrValue() : null;
 
+        long effectiveLatencyMs = order.isTestTrade() ? 0L : latencyMs;
         List<BigDecimal> fillLots = splitQuantity(order.getQuantity(), Math.max(1, partialFillCount));
         BigDecimal lastFillPrice = null;
         for (int i = 0; i < fillLots.size(); i++) {
-            Instant fillAnchor = anchor.plusMillis(orderQueueDelayMs + (long) i * latencyMs);
+            Instant fillAnchor = anchor.plusMillis(orderQueueDelayMs + (long) i * effectiveLatencyMs);
             MarketdataCandle fillCandle = selectFillCandle(order.getSymbol(), fillAnchor);
             BigDecimal ref = fillCandle != null ? fillCandle.getClosePrice() : safePrice(order);
             BigDecimal fillPrice = applyExecutionCosts(ref, order.getSide(), atr, fillKey, i);
             lastFillPrice = fillPrice;
             Instant ts = fillCandle != null
-                    ? fillCandle.getOpenTime().plusMillis(latencyMs)
-                    : anchor.plusMillis(latencyMs + (long) i * latencyMs);
+                    ? fillCandle.getOpenTime().plusMillis(effectiveLatencyMs)
+                    : anchor.plusMillis(effectiveLatencyMs + (long) i * effectiveLatencyMs);
 
             String replaySource = order.getExecutionMode() != null ? order.getExecutionMode().name() : "SIMULATED";
             var ex = executionLedgerService.appendExecution(
@@ -214,7 +229,7 @@ public class ExecutionSimulator {
                     fillPrice,
                     "SIM",
                     ts,
-                    latencyMs,
+                    effectiveLatencyMs,
                     effectiveSlippageBps(atr, ref, fillKey, i),
                     baseSpreadBps,
                     ref,
@@ -253,7 +268,7 @@ public class ExecutionSimulator {
         if (order.getBacktestRunId() == null) {
             portfolioAccountingService.applyFill(order.getUserId(), order.getSymbol(), order.getStrategyKey());
         }
-        Instant bridgeTs = anchor.plusMillis(latencyMs * fillLots.size());
+        Instant bridgeTs = anchor.plusMillis(effectiveLatencyMs * fillLots.size());
         eventPublisher.publishEvent(new RealtimeBridgeEvents.OrderUpdate(
                 order.getUserId(),
                 order.getId(),

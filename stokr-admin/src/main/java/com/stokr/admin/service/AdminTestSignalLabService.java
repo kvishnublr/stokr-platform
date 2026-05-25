@@ -71,6 +71,9 @@ public class AdminTestSignalLabService {
     private final AdminOperationalSnapshotService operationalSnapshotService;
     private final EntityManager entityManager;
     private final ObjectMapper objectMapper;
+    private final AdminTestSignalLabSquareOffService squareOffService;
+
+    private static final String TEST_LAB_PRODUCT_MIS = "MIS";
 
     @Transactional
     public TestSignalExecutionReport run(UUID requestedBy, TestSignalLabRequest request) {
@@ -91,10 +94,12 @@ public class AdminTestSignalLabService {
         run.setBrokerVendor(broker != null ? broker.getVendorCode() : "ZERODHA");
         run.setStrategyKey(request.strategyKey().trim());
         run.setStrategyTemplate(request.strategyTemplate());
-        run.setSymbol(request.symbol().trim().toUpperCase());
+        String normalizedSymbol = AdminTestSignalLabSymbol.normalize(request.symbol(), request.exchange());
+        run.setSymbol(normalizedSymbol);
         run.setSide(request.side().trim().toUpperCase());
         run.setQuantity(resolveQuantity(request.quantity(), request.forceQuantityOne()));
-        run.setProductType(request.productType());
+        run.setProductType(resolveProductType(request.productType(), resolveDispatchMode(
+                request.executionMode(), request.dryRunOnly(), request.skipActualBrokerExecution())));
         run.setOrderType(request.orderType() == null || request.orderType().isBlank() ? "MARKET" : request.orderType().trim().toUpperCase());
         run.setExchange(request.exchange());
         run.setRequestedPrice(request.price());
@@ -108,10 +113,14 @@ public class AdminTestSignalLabService {
         run.setSimulateStaleWebsocket(request.simulateStaleWebsocket());
         run.setSimulateMarginFailure(request.simulateMarginFailure());
         run.setSimulateBrokerDisconnect(request.simulateBrokerDisconnect());
-        run.setAutoSquareOffMinutes(request.autoSquareOffMinutes());
-        if (request.autoSquareOffMinutes() != null && request.autoSquareOffMinutes() > 0) {
-            run.setAutoSquareOffDueAt(Instant.now().plus(Duration.ofMinutes(request.autoSquareOffMinutes())));
+        String effectiveMode = resolveDispatchMode(request.executionMode(), request.dryRunOnly(), request.skipActualBrokerExecution());
+        int squareOffMinutes = resolveAutoSquareOffMinutes(request.autoSquareOffMinutes(), effectiveMode);
+        run.setAutoSquareOffMinutes(squareOffMinutes);
+        if (squareOffMinutes > 0) {
+            run.setAutoSquareOffDueAt(Instant.now().plus(Duration.ofMinutes(squareOffMinutes)));
             run.setSquareOffStatus("PENDING");
+        } else if ("LIVE".equalsIgnoreCase(effectiveMode)) {
+            run.setSquareOffStatus("IMMEDIATE");
         }
         run.setStatus("RUNNING");
         run.setStartedAt(Instant.now());
@@ -170,6 +179,15 @@ public class AdminTestSignalLabService {
         order = reconcileResolvedOrder(run, order);
         if (order.isPresent()) {
             order = omsOrderRepository.findById(order.get().getId());
+        }
+
+        if ("LIVE".equalsIgnoreCase(run.getExecutionMode()) && order.isPresent()) {
+            OmsOrder entry = order.get();
+            if (isBrokerAcceptedState(entry.getState().name(), true)) {
+                squareOffService.squareOffImmediately(run, entry, true);
+                entityManager.flush();
+                order = omsOrderRepository.findById(entry.getId());
+            }
         }
 
         Map<String, Object> healthSnapshot = buildHealthSnapshot();
@@ -483,7 +501,7 @@ public class AdminTestSignalLabService {
             order = omsOrderRepository.findFirstBySignalIdAndUserIdAndDeletedFalseOrderByCreatedAtDesc(signalId, traderUserId);
             if (order.isPresent()) return order;
             try {
-                Thread.sleep(200);
+                Thread.sleep(50);
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 return Optional.empty();
@@ -513,15 +531,35 @@ public class AdminTestSignalLabService {
 
     private static Duration resolveOrderWaitTimeout(AdminTestSignalRun run) {
         if (run == null) {
-            return Duration.ofSeconds(15);
+            return Duration.ofSeconds(8);
         }
         if (run.isDryRunOnly() || "SIMULATED".equalsIgnoreCase(run.getExecutionMode())) {
             return Duration.ofSeconds(2);
         }
-        if ("LIVE".equalsIgnoreCase(run.getExecutionMode()) || "BOTH".equalsIgnoreCase(run.getExecutionMode())) {
-            return Duration.ofSeconds(60);
+        if ("LIVE".equalsIgnoreCase(run.getExecutionMode())) {
+            return Duration.ofSeconds(8);
         }
-        return Duration.ofSeconds(20);
+        if ("BOTH".equalsIgnoreCase(run.getExecutionMode())) {
+            return Duration.ofSeconds(15);
+        }
+        return Duration.ofSeconds(5);
+    }
+
+    private static String resolveProductType(String requested, String executionMode) {
+        if ("LIVE".equalsIgnoreCase(executionMode) || "BOTH".equalsIgnoreCase(executionMode)) {
+            return TEST_LAB_PRODUCT_MIS;
+        }
+        if (requested != null && !requested.isBlank()) {
+            return requested.trim().toUpperCase();
+        }
+        return TEST_LAB_PRODUCT_MIS;
+    }
+
+    private static int resolveAutoSquareOffMinutes(Integer requested, String executionMode) {
+        if ("LIVE".equalsIgnoreCase(executionMode)) {
+            return 0;
+        }
+        return requested == null ? 0 : Math.max(0, requested);
     }
 
     private Map<String, Object> buildHealthSnapshot() {
@@ -641,8 +679,28 @@ public class AdminTestSignalLabService {
         ));
 
         long latency = run.getTotalLatencyMs() == null ? 0L : run.getTotalLatencyMs();
-        boolean latencyOk = latency == 0 || latency < 15_000;
-        checks.add(check("latency", "Latency Acceptable", latencyOk, "Latency within threshold", "High end-to-end latency", "Inspect Rabbit queue and DB load", "OPEN_INFRA_HEALTH"));
+        long latencyTargetMs = liveMode ? 3_000L : 15_000L;
+        boolean latencyOk = latency == 0 || latency < latencyTargetMs;
+        String latencyMsg = latencyOk
+                ? "Latency " + latency + "ms (target <" + latencyTargetMs + "ms)"
+                : "Latency " + latency + "ms exceeds " + latencyTargetMs + "ms target";
+        checks.add(check("latency", "Latency Acceptable", latencyOk, latencyMsg, latencyMsg, "Inspect broker path and simulation latency-ms", "OPEN_INFRA_HEALTH"));
+
+        boolean squareOffOk = run.getSquareOffStatus() == null
+                || "COMPLETED".equalsIgnoreCase(run.getSquareOffStatus())
+                || "IMMEDIATE".equalsIgnoreCase(run.getSquareOffStatus())
+                || "NO_POSITION".equalsIgnoreCase(run.getSquareOffStatus());
+        if (expectsOrder && liveMode) {
+            checks.add(check(
+                    "square_off",
+                    "Position Squared Off",
+                    squareOffOk,
+                    "Square-off " + (run.getSquareOffStatus() != null ? run.getSquareOffStatus() : "pending"),
+                    "Square-off not completed",
+                    "Verify MIS exit order at broker",
+                    "OPEN_TRADER_POSITIONS"
+            ));
+        }
 
         boolean staleState = Boolean.TRUE.equals(readPath(healthSnapshot, "marketFreshness", "status", "STALE"));
         checks.add(new TestSignalCheckResult(
@@ -817,6 +875,9 @@ public class AdminTestSignalLabService {
         summary.put("symbol", run.getSymbol());
         summary.put("qty", run.getQuantity());
         summary.put("mode", run.getExecutionMode());
+        summary.put("productType", run.getProductType());
+        summary.put("squareOffStatus", run.getSquareOffStatus());
+        summary.put("latencyMs", run.getTotalLatencyMs());
         summary.put("result", run.getFinalStatus());
         summary.put("executionResult", run.getStatus());
 

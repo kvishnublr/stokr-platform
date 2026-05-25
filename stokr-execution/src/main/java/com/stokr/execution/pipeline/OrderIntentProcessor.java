@@ -279,7 +279,7 @@ public class OrderIntentProcessor {
         o.setStrategyKey(signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY);
         o.setExecutionMode(mode);
         log.info("order.draft.created symbol={} mode={} side={}", signal.getSymbol(), mode, mapSide(signal));
-        o.setSymbol(signal.getSymbol());
+        o.setSymbol(normalizeTestLabSymbol(signal));
         o.setSide(mapSide(signal));
         o.setOrderType("MARKET");
         o.setQuantity(positionSizingService.resolveQuantity(
@@ -306,6 +306,18 @@ public class OrderIntentProcessor {
             return null;
         }
         return signal.getAtrValue().divide(signal.getEntryReferencePrice(), 8, RoundingMode.HALF_UP);
+    }
+
+    private static String normalizeTestLabSymbol(StrategySignalEntity signal) {
+        String symbol = signal.getSymbol();
+        if (!Boolean.TRUE.equals(signal.getTestTrade()) || symbol == null || symbol.isBlank()) {
+            return symbol;
+        }
+        String trimmed = symbol.trim().toUpperCase();
+        if (trimmed.contains(":")) {
+            return trimmed;
+        }
+        return "NSE:" + trimmed;
     }
 
     private static String mapSide(StrategySignalEntity signal) {

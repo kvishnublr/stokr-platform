@@ -142,11 +142,12 @@ const STORAGE_KEY = "testSignalLabDefaults";
 const DEFAULT_FORM: TestSignalLabRequest = {
   traderUserId: "",
   strategyKey: "",
-  symbol: "INFY",
+  symbol: "NSE:INFY",
   side: "BUY",
   quantity: 1,
   orderType: "MARKET",
-  executionMode: "PAPER",
+  executionMode: "LIVE",
+  productType: "MIS",
   triggerType: "INSTANT",
   forceQuantityOne: true,
   dryRunOnly: false,
@@ -156,7 +157,7 @@ const DEFAULT_FORM: TestSignalLabRequest = {
   simulateStaleWebsocket: false,
   simulateMarginFailure: false,
   simulateBrokerDisconnect: false,
-  autoSquareOffMinutes: 5,
+  autoSquareOffMinutes: 0,
 };
 
 export function AdminTestSignalLabPage() {
@@ -243,7 +244,7 @@ export function AdminTestSignalLabPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Test Signal Lab</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Isolated infrastructure testing console for signal - execution - broker - terminal verification.
+              Signal → broker path for verification. LIVE uses MIS intraday at Zerodha with immediate square-off (0 min). PAPER is simulated only.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -300,7 +301,7 @@ export function AdminTestSignalLabPage() {
 
           <label className="space-y-1.5">
             <span className={sectionTitleClassName()}>Symbol</span>
-            <input className={fieldClassName()} placeholder="e.g. RELIANCE" value={form.symbol} onChange={(e) => setForm((p) => ({ ...p, symbol: e.target.value.toUpperCase() }))} />
+            <input className={fieldClassName()} placeholder="NSE:INFY or INFY" value={form.symbol} onChange={(e) => setForm((p) => ({ ...p, symbol: e.target.value.toUpperCase() }))} />
           </label>
 
           <label className="space-y-1.5">
@@ -325,7 +326,14 @@ export function AdminTestSignalLabPage() {
                 setForm((p) => {
                   const nextMode = e.target.value as "SIMULATED" | "PAPER" | "LIVE" | "BOTH";
                   if (nextMode === "LIVE" || nextMode === "BOTH") {
-                    return { ...p, executionMode: nextMode, dryRunOnly: false, skipActualBrokerExecution: false };
+                    return {
+                      ...p,
+                      executionMode: nextMode,
+                      productType: "MIS",
+                      autoSquareOffMinutes: 0,
+                      dryRunOnly: false,
+                      skipActualBrokerExecution: false,
+                    };
                   }
                   if (nextMode === "SIMULATED") {
                     return { ...p, executionMode: nextMode, dryRunOnly: true, skipActualBrokerExecution: true };
@@ -335,6 +343,18 @@ export function AdminTestSignalLabPage() {
               }
             >
               {(options.data?.executionModes ?? ["SIMULATED", "PAPER", "LIVE", "BOTH"]).map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className={sectionTitleClassName()}>Product (LIVE = MIS)</span>
+            <select
+              className={fieldClassName()}
+              value={form.productType ?? "MIS"}
+              onChange={(e) => setForm((p) => ({ ...p, productType: e.target.value }))}
+            >
+              <option value="MIS">MIS (intraday)</option>
+              <option value="CNC">CNC (delivery, PAPER only)</option>
             </select>
           </label>
 
@@ -352,7 +372,14 @@ export function AdminTestSignalLabPage() {
 
           <label className="space-y-1.5">
             <span className={sectionTitleClassName()}>Auto Square-off (minutes)</span>
-            <input type="number" className={fieldClassName()} placeholder="1, 5, etc. Optional" value={form.autoSquareOffMinutes ?? ""} onChange={(e) => setForm((p) => ({ ...p, autoSquareOffMinutes: e.target.value ? Number(e.target.value) : undefined }))} />
+            <input
+              type="number"
+              min={0}
+              className={fieldClassName()}
+              placeholder="0 = immediate on LIVE"
+              value={form.autoSquareOffMinutes ?? 0}
+              onChange={(e) => setForm((p) => ({ ...p, autoSquareOffMinutes: e.target.value === "" ? 0 : Number(e.target.value) }))}
+            />
           </label>
         </div>
 

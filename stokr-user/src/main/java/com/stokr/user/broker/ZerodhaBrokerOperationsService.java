@@ -381,7 +381,7 @@ public class ZerodhaBrokerOperationsService {
         }
         String product = req != null && req.product() != null && !req.product().isBlank()
                 ? req.product().trim().toUpperCase()
-                : "CNC";
+                : "MIS";
         if (!TEST_PRODUCTS.contains(product)) {
             throw new BadRequestException("product must be CNC or MIS for test orders");
         }
