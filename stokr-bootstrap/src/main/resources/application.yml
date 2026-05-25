@@ -163,6 +163,16 @@ stokr:
       enabled: ${STOKR_STRATEGY_QUALITY_GATE_ENABLED:true}
       min-confidence: ${STOKR_STRATEGY_MIN_CONFIDENCE:0.55}
       min-risk-reward: ${STOKR_STRATEGY_MIN_RR:1.2}
+    signal:
+      quality:
+        # Institutional-grade signal quality gates
+        min-rr: ${STOKR_SIGNAL_QUALITY_MIN_RR:2.0}
+        min-candle-body-pct: ${STOKR_SIGNAL_QUALITY_MIN_CANDLE_BODY_PCT:0.003}
+        max-atr-compression-pct: ${STOKR_SIGNAL_QUALITY_MAX_ATR_COMPRESSION_PCT:0.005}
+        max-atr-expansion-pct: ${STOKR_SIGNAL_QUALITY_MAX_ATR_EXPANSION_PCT:0.03}
+        stale-candle-seconds: ${STOKR_SIGNAL_QUALITY_STALE_CANDLE_SECONDS:60}
+        min-volume-ratio: ${STOKR_SIGNAL_QUALITY_MIN_VOLUME_RATIO:0.8}
+        max-concurrent-trades: ${STOKR_SIGNAL_QUALITY_MAX_CONCURRENT_TRADES:10}
     signal-dedup:
       cooldown-minutes: ${STOKR_STRATEGY_SIGNAL_DEDUP_MINUTES:15}
     exit:
