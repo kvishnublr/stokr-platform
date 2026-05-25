@@ -3,6 +3,7 @@ package com.stokr.strategy.vwap;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.engine.StrategyQualityGateService;
 import com.stokr.strategy.keys.StrategyKeys;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.runtime.SignalCooldownService;
@@ -31,6 +32,7 @@ public class VwapMeanReversionSignalGenerator {
 
     private final MarketDataQueryService marketDataQueryService;
     private final SignalCooldownService signalCooldownService;
+    private final StrategyQualityGateService qualityGateService;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
@@ -167,7 +169,10 @@ public class VwapMeanReversionSignalGenerator {
         sig.setRsiValue(BigDecimal.valueOf(rsi).setScale(2, RoundingMode.HALF_UP));
         sig.setAtrValue(atrBd);
         sig.setVwapDistance(dist.setScale(6, RoundingMode.HALF_UP));
-        return sig;
+
+        // Apply institutional quality gate filters before persistence
+        List<MarketdataCandle> barsFor14Atr = bars.size() >= 14 ? bars.subList(Math.max(0, bars.size() - 14), bars.size()) : bars;
+        return qualityGateService.validateSignal(sig, last, barsFor14Atr, barOpenTime);
     }
 
     private double calcRsi(List<MarketdataCandle> bars) {

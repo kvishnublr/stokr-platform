@@ -3,7 +3,9 @@ package com.stokr.strategy.ematrend;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.engine.StrategyQualityGateService;
 import com.stokr.strategy.keys.StrategyKeys;
+import com.stokr.strategy.runtime.SignalCooldownService;
 import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,6 +36,8 @@ public class EmaTrendFollowingSignalGenerator {
     private static final MathContext MC = new MathContext(12, RoundingMode.HALF_UP);
 
     private final MarketDataQueryService marketDataQueryService;
+    private final SignalCooldownService signalCooldownService;
+    private final StrategyQualityGateService qualityGateService;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
@@ -64,6 +68,11 @@ public class EmaTrendFollowingSignalGenerator {
             Instant barOpenTime,
             String timeframe
     ) {
+        // Signal cooldown check — prevent spam (EMA can fire multiple times on trend changes)
+        if (!signalCooldownService.shouldEmitSignal(symbol, StrategyKeys.EMA_TREND_FOLLOW, barOpenTime)) {
+            return null; // still in cooldown for this symbol+strategy
+        }
+
         List<MarketdataCandle> bars = marketDataQueryService.lastBarsAscEndingAt(symbol, timeframe, 400, barOpenTime);
         if (bars.size() < slow + 10) return null;
 
@@ -144,7 +153,10 @@ public class EmaTrendFollowingSignalGenerator {
             sig.setStopPrice(last.getClosePrice().add(slDist).setScale(2, RoundingMode.HALF_UP));
             sig.setTargetPrice(last.getClosePrice().subtract(targetDist).setScale(2, RoundingMode.HALF_UP));
         }
-        return sig;
+
+        // Apply institutional quality gate filters before persistence
+        List<MarketdataCandle> barsFor14Atr = bars.size() >= 14 ? bars.subList(Math.max(0, bars.size() - 14), bars.size()) : bars;
+        return qualityGateService.validateSignal(sig, last, barsFor14Atr, barOpenTime);
     }
 
     // ── ATR(14) ───────────────────────────────────────────────────────────────

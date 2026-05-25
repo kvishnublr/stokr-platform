@@ -3,7 +3,9 @@ package com.stokr.strategy.momentum;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.engine.StrategyQualityGateService;
 import com.stokr.strategy.keys.StrategyKeys;
+import com.stokr.strategy.runtime.SignalCooldownService;
 import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +35,8 @@ public class MomentumBreakoutSignalGenerator {
     private static final MathContext MC = new MathContext(12, RoundingMode.HALF_UP);
 
     private final MarketDataQueryService marketDataQueryService;
+    private final SignalCooldownService signalCooldownService;
+    private final StrategyQualityGateService qualityGateService;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
@@ -69,6 +73,11 @@ public class MomentumBreakoutSignalGenerator {
             Instant barOpenTime,
             String timeframe
     ) {
+        // Signal cooldown check — prevent spam (MOMENTUM_BREAKOUT can fire multiple times on strong moves)
+        if (!signalCooldownService.shouldEmitSignal(symbol, StrategyKeys.MOMENTUM_BREAKOUT, barOpenTime)) {
+            return null; // still in cooldown for this symbol+strategy
+        }
+
         List<MarketdataCandle> bars = marketDataQueryService.lastBarsAscEndingAt(symbol, timeframe, 320, barOpenTime);
         if (bars.size() < lookback + 5) return null;
 
@@ -149,7 +158,10 @@ public class MomentumBreakoutSignalGenerator {
             sig.setStopPrice(last.getClosePrice().add(slDistance).setScale(2, RoundingMode.HALF_UP));
             sig.setTargetPrice(last.getClosePrice().subtract(targetDistance).setScale(2, RoundingMode.HALF_UP));
         }
-        return sig;
+
+        // Apply institutional quality gate filters before persistence
+        List<MarketdataCandle> barsFor14Atr = bars.size() >= 14 ? bars.subList(Math.max(0, bars.size() - 14), bars.size()) : bars;
+        return qualityGateService.validateSignal(sig, last, barsFor14Atr, barOpenTime);
     }
 
     // ── ATR(14) using Wilder smoothing ────────────────────────────────────────
