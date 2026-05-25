@@ -3,9 +3,11 @@ package com.stokr.strategy.meanreversion;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.engine.StrategyQualityGateService;
 import com.stokr.strategy.meanreversion.runtime.MeanReversionEvaluationEnvelope;
 import com.stokr.strategy.meanreversion.runtime.MeanReversionReplayState;
 import com.stokr.strategy.meanreversion.runtime.MeanReversionRuntimeParams;
+import com.stokr.strategy.runtime.SignalCooldownService;
 import com.stokr.strategy.signals.SignalType;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,8 @@ import java.util.List;
 public abstract class AbstractMeanReversionSignalGenerator {
 
     protected final MarketDataQueryService marketDataQueryService;
+    protected StrategyQualityGateService qualityGateService;
+    protected SignalCooldownService signalCooldownService;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
@@ -48,7 +52,8 @@ public abstract class AbstractMeanReversionSignalGenerator {
         List<MarketdataCandle> bars5m = marketDataQueryService.lastBarsAsc(symbol, "5m", 120);
         ZonedDateTime evaluationZ = ZonedDateTime.now(zone);
         LocalDate vwapDay = evaluationZ.toLocalDate();
-        return evaluateFromBars(symbol, bars1m, bars5m, userId, backtestRunId, pipeline, evaluationZ, vwapDay, null);
+        Instant barOpenTime = evaluationZ.toInstant();
+        return evaluateFromBars(symbol, bars1m, bars5m, userId, backtestRunId, pipeline, evaluationZ, vwapDay, null, barOpenTime);
     }
 
     /**
@@ -86,7 +91,7 @@ public abstract class AbstractMeanReversionSignalGenerator {
         ZoneId z = env != null ? env.zone() : zone;
         ZonedDateTime evaluationZ = barOpenTime.atZone(z);
         LocalDate vwapDay = evaluationZ.toLocalDate();
-        return evaluateFromBars(symbol, barsPrimary, barsHigher, userId, backtestRunId, pipeline, evaluationZ, vwapDay, env);
+        return evaluateFromBars(symbol, barsPrimary, barsHigher, userId, backtestRunId, pipeline, evaluationZ, vwapDay, env, barOpenTime);
     }
 
     private StrategySignalEntity evaluateFromBars(
@@ -98,7 +103,8 @@ public abstract class AbstractMeanReversionSignalGenerator {
             String pipeline,
             ZonedDateTime evaluationZ,
             LocalDate vwapDay,
-            MeanReversionEvaluationEnvelope env
+            MeanReversionEvaluationEnvelope env,
+            Instant barOpenTime
     ) {
         MeanReversionParams catalog = variant();
         MeanReversionRuntimeParams rp = env != null
@@ -231,7 +237,9 @@ public abstract class AbstractMeanReversionSignalGenerator {
             sig.setEntryReferencePrice(last.getClosePrice());
             sig.setSuggestedQty(BigDecimal.ONE);
             st.recordSignalEmitted(barIndex);
-            return sig;
+            // Apply institutional quality gate filters before persistence
+            List<MarketdataCandle> barsFor14Atr = barsPrimary.size() >= 14 ? barsPrimary.subList(Math.max(0, barsPrimary.size() - 14), barsPrimary.size()) : barsPrimary;
+            return qualityGateService != null ? qualityGateService.validateSignal(sig, last, barsFor14Atr, barOpenTime) : sig;
         }
 
         if (touchHigh && rsi.compareTo(rp.rsiSellMin()) > 0 && bearishRejection && aboveVwap) {
@@ -248,7 +256,9 @@ public abstract class AbstractMeanReversionSignalGenerator {
             sig.setEntryReferencePrice(last.getClosePrice());
             sig.setSuggestedQty(BigDecimal.ONE);
             st.recordSignalEmitted(barIndex);
-            return sig;
+            // Apply institutional quality gate filters before persistence
+            List<MarketdataCandle> barsFor14Atr = barsPrimary.size() >= 14 ? barsPrimary.subList(Math.max(0, barsPrimary.size() - 14), barsPrimary.size()) : barsPrimary;
+            return qualityGateService != null ? qualityGateService.validateSignal(sig, last, barsFor14Atr, barOpenTime) : sig;
         }
 
         return null;
