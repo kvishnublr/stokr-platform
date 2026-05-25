@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS nse_stocks (
     prev_low DECIMAL(10,2),
     week_52_high DECIMAL(10,2),
     week_52_low DECIMAL(10,2),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_nse_stocks_sector ON nse_stocks(sector);
@@ -187,8 +187,8 @@ CREATE TABLE IF NOT EXISTS user_trades (
     entry_setup_quality_score DECIMAL(5,2),
     entry_probability DECIMAL(5,4),
 
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_trades_user_entry ON user_trades(user_id, entry_time DESC);
