@@ -373,6 +373,11 @@ export function AdminSignalsPage() {
   const activatePipeline = useMutation({
     mutationFn: async () => {
       const res = await api.post("/api/admin/signals/activate-pipeline?syncUniverses=true&runImmediatePoll=true");
+      try {
+        await api.post("/api/admin/signals/seed-replay-candles");
+      } catch {
+        /* seed endpoint optional on older API builds */
+      }
       return res.data?.data;
     },
     onSuccess: () => {
