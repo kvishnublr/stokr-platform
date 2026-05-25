@@ -8,6 +8,10 @@ import com.stokr.admin.signal.AdminSignalStatsDto;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.api.PageResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
+import com.stokr.risk.service.StrategyToggleService;
+import com.stokr.strategy.repository.StrategyDefinitionRepository;
+import com.stokr.strategy.runtime.SignalPipelineActivationService;
+import com.stokr.strategy.runtime.StrategyEvaluationScheduler;
 import com.stokr.strategy.service.SignalHistoricalReplayService;
 import com.stokr.strategy.service.SignalOutcomeTrackerService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,6 +33,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -44,6 +49,10 @@ public class AdminSignalController {
     private final AdminSignalQueryService queryService;
     private final SignalOutcomeTrackerService outcomeTrackerService;
     private final SignalHistoricalReplayService historicalReplayService;
+    private final SignalPipelineActivationService signalPipelineActivationService;
+    private final StrategyDefinitionRepository strategyDefinitionRepository;
+    private final StrategyToggleService strategyToggleService;
+    private final StrategyEvaluationScheduler strategyEvaluationScheduler;
 
     @GetMapping("/stats")
     @Operation(summary = "Aggregate signal stats for today or custom window")
@@ -79,6 +88,26 @@ public class AdminSignalController {
     @Operation(summary = "Signal detail with linked orders and execution timeline")
     public ApiResponse<AdminSignalDetailDto> detail(@PathVariable UUID id) {
         return ApiResponse.ok(queryService.detail(id), CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/activate-pipeline")
+    @Operation(summary = "Enable all strategies, runtime bindings, universe symbols, and run one immediate scanner cycle")
+    public ApiResponse<Map<String, Object>> activatePipeline(
+            @RequestParam(defaultValue = "true") boolean syncUniverses,
+            @RequestParam(defaultValue = "true") boolean runImmediatePoll
+    ) {
+        Map<String, Object> out = new LinkedHashMap<>(signalPipelineActivationService.activate(syncUniverses, false));
+        int redisToggles = 0;
+        for (var def : strategyDefinitionRepository.findAll().stream().filter(d -> !d.isDeleted()).toList()) {
+            strategyToggleService.setEnabled(def.getStrategyKey(), true);
+            redisToggles++;
+        }
+        out.put("redisTogglesSet", redisToggles);
+        if (runImmediatePoll) {
+            strategyEvaluationScheduler.poll();
+            out.put("immediatePoll", "triggered");
+        }
+        return ApiResponse.ok(out, CorrelationIdHolder.get());
     }
 
     @PostMapping("/track-outcomes")

@@ -146,7 +146,7 @@ stokr:
   catalog:
     scan:
       enabled: ${STOKR_CATALOG_SCAN_ENABLED:true}
-      poll-ms: ${STOKR_CATALOG_SCAN_POLL_MS:60000}
+      poll-ms: ${STOKR_CATALOG_SCAN_POLL_MS:5000}
     # How long resolved bindings + universe symbols are cached in memory before re-fetching from DB.
     # Default 5 min: a 60s scan cycle costs 0 DB queries for binding resolution.
     universe-cache-seconds: ${STOKR_CATALOG_UNIVERSE_CACHE_SECONDS:300}
@@ -160,12 +160,16 @@ stokr:
     subscription-default-symbol: ${STOKR_STRATEGY_SUBSCRIPTION_SYMBOL:NIFTY_FUT}
     mean-reversion:
       enabled: ${STOKR_STRATEGY_MR_ENABLED:true}
-    poll-ms: ${STOKR_STRATEGY_POLL_MS:60000}
+    poll-ms: ${STOKR_STRATEGY_POLL_MS:5000}
     # PAPER (default), LIVE, or SIMULATED — passed to OMS/execution via SignalPersistedMessage (OrderIntentProcessor).
     poll-execution-mode: ${STOKR_STRATEGY_POLL_EXECUTION_MODE:PAPER}
     symbols: ${STOKR_STRATEGY_SYMBOLS:NIFTY_FUT,BANKNIFTY_FUT}
     # Skip mean-reversion poll when platform Zerodha tape is not operational (no silent stale scans).
-    require-operational-live-path: ${STOKR_STRATEGY_REQUIRE_OPERATIONAL_LIVE_PATH:true}
+    require-operational-live-path: ${STOKR_STRATEGY_REQUIRE_OPERATIONAL_LIVE_PATH:false}
+    pipeline:
+      auto-activate: ${STOKR_SIGNAL_PIPELINE_AUTO_ACTIVATE:true}
+      default-universe-group: ${STOKR_SIGNAL_PIPELINE_UNIVERSE:NIFTY_50}
+      fast-scan-interval-seconds: ${STOKR_SIGNAL_PIPELINE_SCAN_SEC:5}
     session:
       zone: ${STOKR_STRATEGY_SESSION_ZONE:Asia/Kolkata}
       start: ${STOKR_STRATEGY_SESSION_START:09:25}

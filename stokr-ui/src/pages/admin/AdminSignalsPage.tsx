@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fmtDateTime } from "../../lib/dateUtils";
 import { useState, useCallback, useEffect } from "react";
 import { api } from "../../api/client";
@@ -370,6 +370,17 @@ export function AdminSignalsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
+  const activatePipeline = useMutation({
+    mutationFn: async () => {
+      const res = await api.post("/api/admin/signals/activate-pipeline?syncUniverses=true&runImmediatePoll=true");
+      return res.data?.data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-signals"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-signal-stats"] });
+    },
+  });
+
   // Subscribe to admin SSE stream; invalidate signal queries immediately on signal/outcome events
   useEffect(() => {
     const controller = new AbortController();
@@ -513,6 +524,15 @@ export function AdminSignalsPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={activatePipeline.isPending}
+              onClick={() => activatePipeline.mutate()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition-colors shadow-sm disabled:opacity-60"
+            >
+              <Zap className={`h-3.5 w-3.5 ${activatePipeline.isPending ? "animate-pulse" : ""}`} />
+              {activatePipeline.isPending ? "Activating…" : "Start signal flow"}
+            </button>
             <button type="button" onClick={() => void q.refetch()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm">
               <RefreshCw className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} /> Refresh
