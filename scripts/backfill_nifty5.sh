@@ -37,8 +37,15 @@ echo "jobId=$JOB"
 
 for i in $(seq 1 80); do
   curl -sf "$BASE/api/admin/market/backfill/jobs/$JOB" -H "$AUTH" -o /tmp/bf_job.json
-  python3 -c 'import json; j=json.load(open("/tmp/bf_job.json"))["data"]["job"]; print(j["status"], j.get("processedSymbols"), "/", j.get("totalSymbols"), "candles", j.get("totalCandlesFetched"), "fail", j.get("failureCount"))'
-  st=$(python3 -c 'import json; print(json.load(open("/tmp/bf_job.json"))["data"]["job"]["status"])')
+  python3 <<'PY'
+import json
+r=json.load(open("/tmp/bf_job.json"))
+d=r.get("data") or {}
+j=d.get("job") or d
+print(j.get("status"), j.get("processedSymbols"), "/", j.get("totalSymbols"), "candles", j.get("totalCandlesFetched"), "fail", j.get("failureCount"))
+open("/tmp/bf_job_status.txt","w").write(str(j.get("status") or ""))
+PY
+  st=$(cat /tmp/bf_job_status.txt)
   case "$st" in COMPLETED|FAILED|CANCELLED|PARTIAL) break ;; esac
   sleep 15
 done
