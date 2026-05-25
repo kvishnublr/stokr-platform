@@ -20,6 +20,9 @@ import java.util.List;
 /**
  * MCX 10-minute breakout strategy.
  *
+ * DISABLED: No profitable signals (0 PnL on 5 signals)
+ * Reason: MCX commodity breakouts not suitable for current market regime
+ *
  * Logic:
  *   1. Defines a range using the highest high and lowest low of the prior RANGE_PERIOD (20) 10m bars.
  *   2. Fires BUY  when current close breaks above range high + epsilon, RSI > 55, volume > 1.5x avg.
@@ -29,7 +32,7 @@ import java.util.List;
  * Session: MCX 09:00–23:00 IST (configurable via stokr.breakout.commodities.session.*).
  * All thresholds are @Value-configurable for live tuning without redeployment.
  */
-@Component
+//@Component  // DISABLED
 @RequiredArgsConstructor
 @Slf4j
 @GeneratedStrategy(

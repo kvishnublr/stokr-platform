@@ -27,8 +27,11 @@ import java.util.UUID;
  * 2. Strong close: bar closes in top/bottom 35% of its range
  * 3. ATR-based SL (1.5x ATR) — resists wick hunting
  * 4. RSI confirmation: BUY needs RSI > 52, SELL needs RSI < 48
+ *
+ * DISABLED: Major losses (-528.46 on 671 signals)
+ * Reason: RSI thresholds too tight, ATR target sizing not aligned with market moves
  */
-@Service
+//@Service  // DISABLED
 @RequiredArgsConstructor
 public class MomentumBreakoutSignalGenerator {
 

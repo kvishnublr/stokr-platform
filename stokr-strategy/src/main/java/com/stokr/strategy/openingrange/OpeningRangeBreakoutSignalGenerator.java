@@ -22,8 +22,11 @@ import java.util.UUID;
 
 /**
  * Opening range breakout / breakdown after an initial window from session start (deterministic on candle boundaries).
+ *
+ * DISABLED: Neutral signals (0 PnL on 8 signals)
+ * Reason: No consistent profit generation
  */
-@Service
+//@Service  // DISABLED
 @RequiredArgsConstructor
 public class OpeningRangeBreakoutSignalGenerator {
 

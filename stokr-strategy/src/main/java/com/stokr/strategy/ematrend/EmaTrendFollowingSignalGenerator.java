@@ -28,8 +28,11 @@ import java.util.UUID;
  * 2. Strong close: bar closes above EMA9 (BUY) or below EMA9 (SELL)
  * 3. ATR-based SL (1.5x ATR) — wider than EMA21, survives normal pullbacks
  * 4. RSI momentum: BUY needs RSI > 50, SELL needs RSI < 50
+ *
+ * DISABLED: Losing signals (-7.81 on 11 signals)
+ * Reason: EMA crossovers too noisy in sideways markets
  */
-@Service
+//@Service  // DISABLED
 @RequiredArgsConstructor
 public class EmaTrendFollowingSignalGenerator {
 

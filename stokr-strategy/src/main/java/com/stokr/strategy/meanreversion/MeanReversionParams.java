@@ -16,22 +16,29 @@ public record MeanReversionParams(
         BigDecimal confidenceScore
 ) {
 
+    // V1: Aggressive Range Fade (tighter thresholds for stronger signals)
+    // Updated: Tighten RSI thresholds to 25/75 (stronger extremes)
+    // Tighten range width to 0.9% (only true coiled springs)
+    // Boost confidence to 0.80 (more selective)
     public static final MeanReversionParams V1 = new MeanReversionParams(
             StrategyKeys.MEAN_REVERSION_RANGE_FADE,
-            "1.0.0",
-            new BigDecimal("30"),
-            new BigDecimal("70"),
-            new BigDecimal("1.2"),
-            new BigDecimal("0.72")
+            "1.1.0",
+            new BigDecimal("25"),  // Changed from 30: stricter oversold (RSI < 25 = extreme)
+            new BigDecimal("75"),  // Changed from 70: stricter overbought (RSI > 75 = extreme)
+            new BigDecimal("0.9"), // Changed from 1.2: tighter range (compressed springs only)
+            new BigDecimal("0.80") // Changed from 0.72: higher confidence threshold
     );
 
+    // V2: Moderate Range Fade (balanced thresholds for consistent signals)
+    // Updated: Slightly tighten RSI to 30/70, range to 1.2%
+    // Higher confidence for better quality
     public static final MeanReversionParams V2 = new MeanReversionParams(
             StrategyKeys.MEAN_REVERSION_V2,
-            "2.0.0",
-            new BigDecimal("35"),
-            new BigDecimal("65"),
-            new BigDecimal("1.45"),
-            new BigDecimal("0.68")
+            "2.1.0",
+            new BigDecimal("30"),  // Changed from 35: stricter oversold
+            new BigDecimal("70"),  // Changed from 65: stricter overbought
+            new BigDecimal("1.2"), // Changed from 1.45: tighter range
+            new BigDecimal("0.75") // Changed from 0.68: higher confidence
     );
 
     public String toSnapshotJson() {

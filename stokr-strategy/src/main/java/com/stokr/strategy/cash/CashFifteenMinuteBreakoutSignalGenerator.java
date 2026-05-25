@@ -22,8 +22,11 @@ import java.util.UUID;
 /**
  * Minimal deterministic 15m cash breakout strategy for E2E pipeline testing.
  * Intended for paper-mode validation, not production alpha.
+ *
+ * DISABLED: Critical losses (-88,752.56 on 623 signals)
+ * Reason: Parameter misalignment - unsuitable for live trading
  */
-@Service
+//@Service  // DISABLED
 @RequiredArgsConstructor
 public class CashFifteenMinuteBreakoutSignalGenerator {
 
