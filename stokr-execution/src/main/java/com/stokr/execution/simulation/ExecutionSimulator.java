@@ -106,11 +106,11 @@ public class ExecutionSimulator {
             log.info("execution.live.path orderId={} mode={}", order.getId(), order.getExecutionMode());
             String vendor = msg.brokerVendor() != null ? msg.brokerVendor() : order.getBrokerVendor();
             final UUID liveUserId = order.getUserId();
-            LiveTraderEligibilityResult gate = liveTradingTraderEligibilityService.evaluateForLiveOrder(
-                    liveUserId,
-                    order.getStrategyKey(),
-                    vendor != null ? vendor : "ZERODHA"
-            );
+            LiveTraderEligibilityResult gate = order.isTestTrade()
+                    ? liveTradingTraderEligibilityService.evaluateForLiveStrategyActivation(
+                            liveUserId, order.getStrategyKey(), vendor != null ? vendor : "ZERODHA")
+                    : liveTradingTraderEligibilityService.evaluateForLiveOrder(
+                            liveUserId, order.getStrategyKey(), vendor != null ? vendor : "ZERODHA");
             if (!gate.allowed()) {
                 log.warn("execution.sim.live_blocked orderId={} reason={}", order.getId(), gate.reasonCode());
                 riskEventRecorder.record(liveUserId, order.getId(), gate.reasonCode(), "REJECT", gate.message());

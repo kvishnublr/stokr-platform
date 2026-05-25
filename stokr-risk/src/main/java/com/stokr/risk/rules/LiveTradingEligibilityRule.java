@@ -27,11 +27,15 @@ public class LiveTradingEligibilityRule implements RiskRule {
         if (context.order().getExecutionMode() != ExecutionMode.LIVE) {
             return RiskDecision.ok();
         }
-        LiveTraderEligibilityResult r = traderEligibilityService.evaluateForLiveOrder(
-                context.userId(),
-                context.order().getStrategyKey(),
-                context.order().getBrokerVendor()
-        );
+        LiveTraderEligibilityResult r = context.order().isTestTrade()
+                ? traderEligibilityService.evaluateForLiveStrategyActivation(
+                        context.userId(),
+                        context.order().getStrategyKey(),
+                        context.order().getBrokerVendor())
+                : traderEligibilityService.evaluateForLiveOrder(
+                        context.userId(),
+                        context.order().getStrategyKey(),
+                        context.order().getBrokerVendor());
         if (!r.allowed()) {
             return RiskDecision.reject(r.reasonCode() != null ? r.reasonCode() : code(), r.message());
         }
