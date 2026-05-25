@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * Reduces signal spam while maintaining edge:
  * - Rejects stale candles (>60s old)
- * - Enforces minimum RR (2:1)
+ * - Enforces minimum RR (1.5:1)
  * - Enforces minimum candle body (0.3%)
  * - Rejects extreme ATR compression (<0.5% of price)
  * - Rejects excessive ATR expansion (>3% of price) - likely gaps/halts
@@ -34,7 +34,7 @@ public class StrategyQualityGateService {
 
     private static final MathContext MC = new MathContext(12, RoundingMode.HALF_UP);
 
-    @Value("${stokr.signal.quality.min-rr:2.0}")
+    @Value("${stokr.signal.quality.min-rr:1.5}")
     private double minRr;
 
     @Value("${stokr.signal.quality.min-candle-body-pct:0.003}")
