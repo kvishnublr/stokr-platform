@@ -16,16 +16,8 @@
         </appender>
     </springProfile>
 
-    <!-- Admin SSE ring-buffer appender (always on, threshold INFO) -->
-    <appender name="SSE_LOG" class="com.stokr.admin.log.SseLogAppender">
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>INFO</level>
-        </filter>
-    </appender>
-
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="SSE_LOG"/>
     </root>
 
     <!-- Reduce noise from framework internals -->
