@@ -34,6 +34,8 @@ import java.util.Optional;
 @Slf4j
 public class SignalPipelineActivationService {
 
+    public static final String LIVE_SINGLE_GROUP_KEY = "LIVE_SINGLE";
+
     private static final List<String> CASH_UNIVERSE_GROUP_KEYS = List.of("NIFTY_50", "NIFTY_100");
 
     private static final List<String> COMMODITY_STRATEGY_KEYS = List.of(
@@ -63,6 +65,90 @@ public class SignalPipelineActivationService {
         Map<String, Object> out = activateCore(universesSynced);
         out.put("runImmediatePoll", runImmediatePoll);
         log.info("signal.pipeline.activated {}", out);
+        return out;
+    }
+
+    /**
+     * Restrict catalog + poll scanners to one equity symbol for LIVE evaluation.
+     * Disables all other runtime bindings; enables only {@code strategyKey} → LIVE_SINGLE universe.
+     */
+    @Transactional
+    public Map<String, Object> activateLiveSingleSymbol(String symbol, String strategyKey) {
+        String sym = symbol == null ? "ITC" : symbol.trim().toUpperCase(Locale.ROOT);
+        String sk = strategyKey == null || strategyKey.isBlank()
+                ? "NSE_SPIKE_DETECTION"
+                : strategyKey.trim().toUpperCase(Locale.ROOT);
+
+        StrategyUniverseGroup group = groupRepository.findByGroupKey(LIVE_SINGLE_GROUP_KEY).orElseGet(() -> {
+            StrategyUniverseGroup g = new StrategyUniverseGroup();
+            g.setGroupKey(LIVE_SINGLE_GROUP_KEY);
+            g.setDisplayName("Live single-stock pilot");
+            g.setDescription("One symbol only — operator LIVE pilot universe");
+            g.setUniverseType("CUSTOM");
+            g.setExchange("NSE");
+            g.setAssetClass("EQUITY");
+            g.setEnabled(true);
+            return groupRepository.save(g);
+        });
+        group.setEnabled(true);
+        groupRepository.save(group);
+
+        int symbolsDisabled = 0;
+        for (StrategyUniverseSymbol row : symbolRepository.findAllByGroupId(group.getId())) {
+            boolean keep = sym.equalsIgnoreCase(row.getSymbol()) || sym.equalsIgnoreCase(row.getTradingSymbol());
+            if (row.isEnabled() != keep) {
+                row.setEnabled(keep);
+                symbolRepository.save(row);
+                if (!keep) {
+                    symbolsDisabled++;
+                }
+            }
+        }
+        boolean symbolAdded = ensureSymbol(group, sym);
+
+        StrategyDefinition target = definitionRepository.findByStrategyKeyAndDeletedFalse(sk)
+                .orElseThrow(() -> new IllegalArgumentException("Strategy not found: " + sk));
+        target.setEnabled(true);
+        definitionRepository.save(target);
+
+        int bindingsDisabled = 0;
+        for (StrategyRuntimeBinding b : bindingRepository.findAll()) {
+            if (b.isRuntimeEnabled()) {
+                b.setRuntimeEnabled(false);
+                bindingRepository.save(b);
+                bindingsDisabled++;
+            }
+        }
+
+        StrategyRuntimeBinding liveBinding = bindingRepository
+                .findByStrategyCatalogIdAndUniverseGroupId(target.getId(), group.getId())
+                .orElseGet(() -> {
+                    StrategyRuntimeBinding b = new StrategyRuntimeBinding();
+                    b.setStrategyCatalog(target);
+                    b.setUniverseGroup(group);
+                    return b;
+                });
+        liveBinding.setRuntimeEnabled(true);
+        liveBinding.setScanIntervalSeconds(fastScanIntervalSeconds);
+        liveBinding.setMaxPositions(1);
+        liveBinding.setRiskProfile("MEDIUM");
+        bindingRepository.save(liveBinding);
+
+        universeResolverService.invalidateCache();
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("mode", "LIVE_SINGLE");
+        out.put("symbol", sym);
+        out.put("strategyKey", sk);
+        out.put("universeGroup", LIVE_SINGLE_GROUP_KEY);
+        out.put("symbolAdded", symbolAdded);
+        out.put("symbolsDisabledInGroup", symbolsDisabled);
+        out.put("bindingsDisabled", bindingsDisabled);
+        out.put("liveBindingId", liveBinding.getId().toString());
+        out.put("activeBindings", bindingRepository.findAllActiveBindings().size());
+        out.put("pollExecutionModeNote", "Set STOKR_STRATEGY_POLL_EXECUTION_MODE=LIVE and restart API");
+        out.put("activatedAt", Instant.now().toString());
+        log.warn("signal.pipeline.live_single symbol={} strategy={} bindingsDisabled={}", sym, sk, bindingsDisabled);
         return out;
     }
 

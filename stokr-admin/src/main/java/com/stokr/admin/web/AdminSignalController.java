@@ -7,7 +7,12 @@ import com.stokr.admin.signal.AdminSignalQuantValidationDto;
 import com.stokr.admin.signal.AdminSignalQuantValidationService;
 import com.stokr.admin.signal.AdminSignalQueryService;
 import com.stokr.admin.signal.AdminSignalStatsDto;
+import com.stokr.auth.repository.AuthUserRepository;
 import com.stokr.common.api.ApiResponse;
+import com.stokr.risk.service.LiveTradingArmingService;
+import com.stokr.strategy.domain.StrategyInstance;
+import com.stokr.strategy.repository.StrategyInstanceRepository;
+import com.stokr.strategy.service.StrategyInstanceLifecycleService;
 import com.stokr.common.api.PageResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.risk.service.StrategyToggleService;
@@ -60,6 +65,10 @@ public class AdminSignalController {
 
     private final AdminSignalQueryService queryService;
     private final AdminSignalQuantValidationService quantValidationService;
+    private final LiveTradingArmingService liveTradingArmingService;
+    private final AuthUserRepository authUserRepository;
+    private final StrategyInstanceRepository strategyInstanceRepository;
+    private final StrategyInstanceLifecycleService strategyInstanceLifecycleService;
     private final SignalOutcomeTrackerService outcomeTrackerService;
     private final SignalHistoricalReplayService historicalReplayService;
     private final SignalPipelineActivationService signalPipelineActivationService;
@@ -120,6 +129,67 @@ public class AdminSignalController {
     @Operation(summary = "Signal detail with linked orders and execution timeline")
     public ApiResponse<AdminSignalDetailDto> detail(@PathVariable UUID id) {
         return ApiResponse.ok(queryService.detail(id), CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/activate-live-single")
+    @Operation(summary = "LIVE pilot: one symbol, one strategy binding, arm live, start trader instance, fire scanners")
+    public ApiResponse<Map<String, Object>> activateLiveSingle(
+            @RequestParam(defaultValue = "ITC") String symbol,
+            @RequestParam(defaultValue = "NSE_SPIKE_DETECTION") String strategyKey,
+            @RequestParam(defaultValue = "vishnualgo") String traderUsername,
+            @RequestParam(defaultValue = "true") boolean armLive,
+            @RequestParam(defaultValue = "true") boolean runImmediatePoll
+    ) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (armLive) {
+            liveTradingArmingService.setArmed(true);
+            out.put("liveTradingArmed", true);
+        }
+        out.putAll(signalPipelineActivationService.activateLiveSingleSymbol(symbol, strategyKey));
+
+        UUID traderId = authUserRepository.findByUsernameIgnoreCaseAndDeletedFalse(traderUsername.trim())
+                .map(u -> u.getId())
+                .orElse(null);
+        out.put("traderUsername", traderUsername);
+        out.put("traderUserId", traderId != null ? traderId.toString() : null);
+
+        String skUpper = strategyKey.trim().toUpperCase();
+        if (traderId != null) {
+            StrategyInstance inst = strategyInstanceRepository.findAllForUserWithDefinition(traderId).stream()
+                    .filter(si -> skUpper.equalsIgnoreCase(si.getDefinition().getStrategyKey()))
+                    .findFirst()
+                    .orElse(null);
+            if (inst != null) {
+                inst.setExecutionMode("LIVE");
+                inst.setSymbol(symbol.trim().toUpperCase());
+                inst.setEnabled(true);
+                strategyInstanceRepository.save(inst);
+                if (!"RUNNING".equalsIgnoreCase(inst.getRuntimeState())) {
+                    strategyInstanceLifecycleService.start(traderId, inst.getId());
+                    out.put("traderInstanceStarted", true);
+                } else {
+                    out.put("traderInstanceStarted", false);
+                    out.put("traderInstanceState", "already RUNNING");
+                }
+                out.put("traderInstanceId", inst.getId().toString());
+            } else {
+                out.put("traderInstanceStarted", false);
+                out.put("traderInstanceNote", "No subscription for " + skUpper + " — subscribe in UI first");
+            }
+        }
+
+        for (var def : strategyDefinitionRepository.findAll().stream().filter(d -> !d.isDeleted()).toList()) {
+            strategyToggleService.setEnabled(def.getStrategyKey(), skUpper.equalsIgnoreCase(def.getStrategyKey()));
+        }
+        out.put("redisToggles", "only " + skUpper + " enabled");
+
+        if (runImmediatePoll) {
+            strategyEvaluationScheduler.poll();
+            catalogDrivenScanScheduler.ifAvailable(CatalogDrivenScanScheduler::scan);
+            out.put("immediatePoll", "triggered");
+            out.put("catalogScan", catalogDrivenScanScheduler.getIfAvailable() != null ? "triggered" : "disabled");
+        }
+        return ApiResponse.ok(out, CorrelationIdHolder.get());
     }
 
     @PostMapping("/activate-pipeline")
