@@ -370,6 +370,7 @@ export function AdminSignalsPage() {
   const [signalType, setSignalType] = useState("ALL");
   const [pipeline, setPipeline] = useState("ALL");
   const [outcomeStatus, setOutcomeStatus] = useState("ALL");
+  const [includeReplayLab, setIncludeReplayLab] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -449,12 +450,13 @@ export function AdminSignalsPage() {
   });
 
   const q = useQuery<PageResp>({
-    queryKey: ["admin-signals", page, symbol, strategyName, signalType, pipeline, outcomeStatus],
+    queryKey: ["admin-signals", page, symbol, strategyName, signalType, pipeline, outcomeStatus, includeReplayLab],
     queryFn: async () => {
       const p = new URLSearchParams();
       p.set("page", String(page));
       p.set("size", "100");
       p.set("sort", "createdAt,desc");
+      if (includeReplayLab) p.set("includeReplayAndLab", "true");
       if (symbol.trim()) p.set("symbol", symbol.trim());
       if (strategyName.trim()) p.set("strategyName", strategyName.trim());
       if (signalType !== "ALL") p.set("signalType", signalType);
@@ -608,6 +610,16 @@ export function AdminSignalsPage() {
             <option value="CANCELLED">Cancelled</option>
             <option value="NO_EXECUTION">No Execution</option>
           </select>
+
+          <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 whitespace-nowrap ml-1">
+            <input
+              type="checkbox"
+              checked={includeReplayLab}
+              onChange={(e) => { setIncludeReplayLab(e.target.checked); setPage(0); }}
+              className="rounded border-slate-300"
+            />
+            Include replay/lab
+          </label>
 
           {/* Quick filters */}
           <div className="flex items-center gap-1 ml-1 border-l border-slate-200 pl-3">

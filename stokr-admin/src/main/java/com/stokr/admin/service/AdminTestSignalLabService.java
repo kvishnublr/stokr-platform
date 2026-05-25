@@ -26,6 +26,7 @@ import com.stokr.execution.pipeline.OrderIntentProcessor;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.user.domain.BrokerAccount;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
@@ -148,6 +149,7 @@ public class AdminTestSignalLabService {
         signal.setTestTrade(true);
         signal.setTestRunId(run.getId());
         signal.setTestScenario(resolveScenario(run));
+        signal.setSignalSource(SignalProvenance.LAB);
 
         String correlationId = "test-lab:" + run.getId();
         Instant start = Instant.now();
