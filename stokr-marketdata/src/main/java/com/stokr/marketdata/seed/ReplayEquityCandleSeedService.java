@@ -109,8 +109,8 @@ public class ReplayEquityCandleSeedService {
                 FROM (
                     SELECT t.ts AS ts, row_number() OVER (ORDER BY t.ts) - 1 AS i
                     FROM generate_series(:start, :end, interval '1 minute') AS t(ts)
-                    WHERE (t.ts AT TIME ZONE 'Asia/Kolkata')::time >= :sessStart::time
-                      AND (t.ts AT TIME ZONE 'Asia/Kolkata')::time <= :sessEnd::time
+                    WHERE (t.ts AT TIME ZONE 'Asia/Kolkata')::time >= CAST(:sessStart AS time)
+                      AND (t.ts AT TIME ZONE 'Asia/Kolkata')::time <= CAST(:sessEnd AS time)
                       AND extract(dow from (t.ts AT TIME ZONE 'Asia/Kolkata')) BETWEEN 1 AND 5
                 ) gs
                 ON CONFLICT (symbol, timeframe, open_time) WHERE deleted = false DO NOTHING
@@ -122,8 +122,8 @@ public class ReplayEquityCandleSeedService {
                 .setParameter("tf", TF)
                 .setParameter("start", Timestamp.from(start))
                 .setParameter("end", Timestamp.from(end))
-                .setParameter("sessStart", sessionStart.toString())
-                .setParameter("sessEnd", sessionEnd.toString())
+                .setParameter("sessStart", sessionStart.toString() + ":00")
+                .setParameter("sessEnd", sessionEnd.toString() + ":00")
                 .executeUpdate();
     }
 
