@@ -53,7 +53,7 @@ public class BrokerPositionTruthService {
     private static final Set<String> PENDING_KITE_STATUSES = Set.of(
             "OPEN", "VALIDATION PENDING", "PUT ORDER REQ RECEIVED", "TRIGGER PENDING",
             "OPEN PENDING", "MODIFY PENDING", "MODIFY VALIDATION PENDING", "CANCEL PENDING",
-            "PUT ORDER REQ RECEIVED", "AMO REQ RECEIVED"
+            "AMO REQ RECEIVED"
     );
 
     private final ZerodhaBrokerOperationsService zerodhaBrokerOperationsService;
