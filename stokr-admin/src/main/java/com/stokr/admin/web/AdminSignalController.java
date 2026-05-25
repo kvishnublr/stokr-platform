@@ -10,6 +10,7 @@ import com.stokr.common.api.PageResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.risk.service.StrategyToggleService;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
+import com.stokr.strategy.catalog.CatalogDrivenScanScheduler;
 import com.stokr.strategy.runtime.SignalPipelineActivationService;
 import com.stokr.strategy.runtime.StrategyEvaluationScheduler;
 import com.stokr.strategy.service.SignalHistoricalReplayService;
@@ -21,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -53,6 +55,7 @@ public class AdminSignalController {
     private final StrategyDefinitionRepository strategyDefinitionRepository;
     private final StrategyToggleService strategyToggleService;
     private final StrategyEvaluationScheduler strategyEvaluationScheduler;
+    private final ObjectProvider<CatalogDrivenScanScheduler> catalogDrivenScanScheduler;
 
     @GetMapping("/stats")
     @Operation(summary = "Aggregate signal stats for today or custom window")
@@ -105,7 +108,9 @@ public class AdminSignalController {
         out.put("redisTogglesSet", redisToggles);
         if (runImmediatePoll) {
             strategyEvaluationScheduler.poll();
+            catalogDrivenScanScheduler.ifAvailable(CatalogDrivenScanScheduler::scan);
             out.put("immediatePoll", "triggered");
+            out.put("catalogScan", catalogDrivenScanScheduler.getIfAvailable() != null ? "triggered" : "disabled");
         }
         return ApiResponse.ok(out, CorrelationIdHolder.get());
     }

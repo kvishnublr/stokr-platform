@@ -34,14 +34,10 @@ import java.util.Optional;
 @Slf4j
 public class SignalPipelineActivationService {
 
-    private static final List<String> CORE_INTRADAY_KEYS = List.of(
-            "MEAN_REVERSION_RANGE_FADE",
-            "VWAP_MEAN_REVERSION",
-            "OPENING_RANGE_BREAKOUT",
-            "EMA_TREND_FOLLOW",
-            "MOMENTUM_BREAKOUT",
-            "BREAKOUT_COMMODITIES",
-            "CASH_15M_BREAKOUT_TEST"
+    private static final List<String> CASH_UNIVERSE_GROUP_KEYS = List.of("NIFTY_50", "NIFTY_100");
+
+    private static final List<String> COMMODITY_STRATEGY_KEYS = List.of(
+            "BREAKOUT_COMMODITIES"
     );
 
     private static final List<String> WATCHLIST_SYMBOLS = List.of(
@@ -100,36 +96,9 @@ public class SignalPipelineActivationService {
             }
         }
 
-        StrategyUniverseGroup bindGroup = defaultGroup.orElse(watchlist);
-        if (bindGroup != null) {
-            for (String key : CORE_INTRADAY_KEYS) {
-                Optional<StrategyDefinition> def = definitionRepository.findByStrategyKeyAndDeletedFalse(key);
-                if (def.isEmpty()) {
-                    continue;
-                }
-                Optional<StrategyRuntimeBinding> existing = bindingRepository
-                        .findByStrategyCatalogIdAndUniverseGroupId(def.get().getId(), bindGroup.getId());
-                if (existing.isPresent()) {
-                    StrategyRuntimeBinding b = existing.get();
-                    if (!b.isRuntimeEnabled() || b.getScanIntervalSeconds() > fastScanIntervalSeconds) {
-                        b.setRuntimeEnabled(true);
-                        b.setScanIntervalSeconds(fastScanIntervalSeconds);
-                        bindingRepository.save(b);
-                        bindingsEnabled++;
-                    }
-                } else {
-                    StrategyRuntimeBinding b = new StrategyRuntimeBinding();
-                    b.setStrategyCatalog(def.get());
-                    b.setUniverseGroup(bindGroup);
-                    b.setRuntimeEnabled(true);
-                    b.setMaxPositions(5);
-                    b.setRiskProfile("MEDIUM");
-                    b.setScanIntervalSeconds(fastScanIntervalSeconds);
-                    bindingRepository.save(b);
-                    bindingsCreated++;
-                }
-            }
-        }
+        int[] cashBindingStats = ensureCashStrategyBindings();
+        bindingsEnabled += cashBindingStats[0];
+        bindingsCreated += cashBindingStats[1];
 
         for (StrategyRuntimeBinding b : bindingRepository.findAll()) {
             if (!b.isRuntimeEnabled()) {
@@ -150,7 +119,8 @@ public class SignalPipelineActivationService {
         out.put("bindingsCreated", bindingsCreated);
         out.put("symbolsSeeded", symbolsSeeded);
         out.put("universesSynced", universesSynced);
-        out.put("defaultUniverseGroup", bindGroup != null ? bindGroup.getGroupKey() : null);
+        out.put("cashUniverseGroups", CASH_UNIVERSE_GROUP_KEYS);
+        out.put("defaultUniverseGroup", defaultGroup.map(StrategyUniverseGroup::getGroupKey).orElse(null));
         out.put("activeBindings", bindingRepository.findAllActiveBindings().size());
         out.put("activatedAt", Instant.now().toString());
         return out;
@@ -177,6 +147,64 @@ public class SignalPipelineActivationService {
         }
         universeResolverService.invalidateCache();
         return universesSynced;
+    }
+
+    /** Bind every enabled cash/equity catalog strategy to NIFTY_50 and NIFTY_100. */
+    private int[] ensureCashStrategyBindings() {
+        int enabled = 0;
+        int created = 0;
+        for (StrategyDefinition def : definitionRepository.findAll().stream().filter(d -> !d.isDeleted()).toList()) {
+            if (!isCashEquityStrategy(def)) {
+                continue;
+            }
+            if (!def.isEnabled()) {
+                def.setEnabled(true);
+                definitionRepository.save(def);
+            }
+            for (String groupKey : CASH_UNIVERSE_GROUP_KEYS) {
+                Optional<StrategyUniverseGroup> group = groupRepository.findByGroupKey(groupKey);
+                if (group.isEmpty()) {
+                    continue;
+                }
+                Optional<StrategyRuntimeBinding> existing = bindingRepository
+                        .findByStrategyCatalogIdAndUniverseGroupId(def.getId(), group.get().getId());
+                if (existing.isPresent()) {
+                    StrategyRuntimeBinding b = existing.get();
+                    if (!b.isRuntimeEnabled() || b.getScanIntervalSeconds() > fastScanIntervalSeconds) {
+                        b.setRuntimeEnabled(true);
+                        b.setScanIntervalSeconds(fastScanIntervalSeconds);
+                        bindingRepository.save(b);
+                        enabled++;
+                    }
+                } else {
+                    StrategyRuntimeBinding b = new StrategyRuntimeBinding();
+                    b.setStrategyCatalog(def);
+                    b.setUniverseGroup(group.get());
+                    b.setRuntimeEnabled(true);
+                    b.setMaxPositions(5);
+                    b.setRiskProfile("MEDIUM");
+                    b.setScanIntervalSeconds(fastScanIntervalSeconds);
+                    bindingRepository.save(b);
+                    created++;
+                }
+            }
+        }
+        return new int[] {enabled, created};
+    }
+
+    private static boolean isCashEquityStrategy(StrategyDefinition def) {
+        if (COMMODITY_STRATEGY_KEYS.contains(def.getStrategyKey())) {
+            return false;
+        }
+        String assetClass = def.getAssetClass();
+        if (assetClass != null) {
+            String ac = assetClass.trim().toUpperCase(Locale.ROOT);
+            if ("COMMODITY".equals(ac) || "FUTURES".equals(ac) || "OPTIONS".equals(ac)) {
+                return false;
+            }
+        }
+        String key = def.getStrategyKey() != null ? def.getStrategyKey().toUpperCase(Locale.ROOT) : "";
+        return !key.contains("MCX") && !key.contains("COMMODIT");
     }
 
     private boolean ensureSymbol(StrategyUniverseGroup group, String symbol) {
