@@ -39,7 +39,7 @@ def main():
 
     act = req(
         "POST",
-        "/api/admin/signals/activate-pipeline?syncUniverses=true&runImmediatePoll=true",
+        "/api/admin/signals/activate-pipeline?syncUniverses=false&runImmediatePoll=true",
         token=token,
     )
     print("activate-pipeline:", json.dumps(act.get("data"), indent=2))

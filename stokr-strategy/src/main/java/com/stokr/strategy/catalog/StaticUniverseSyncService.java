@@ -9,7 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -207,8 +209,9 @@ public class StaticUniverseSyncService implements UniverseSyncService {
         StrategyUniverseGroup group = groupOpt.get();
         symbolRepository.deleteAllByGroupId(group.getId());
 
+        List<String> uniqueSymbols = new ArrayList<>(new LinkedHashSet<>(symbols));
         int count = 0;
-        for (String symbol : symbols) {
+        for (String symbol : uniqueSymbols) {
             StrategyUniverseSymbol s = new StrategyUniverseSymbol();
             s.setGroup(group);
             s.setSymbol(symbol);
