@@ -18,6 +18,7 @@ services:
       DB_NAME: ${DB_NAME:-stokr_platform}
       DB_USER: ${DB_USER:-stokr}
       DB_PASSWORD: ${DB_PASSWORD:-stokr}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-stokr_platform}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       RABBITMQ_HOST: rabbitmq
@@ -168,4 +169,3 @@ volumes:
   stokr_redis_data:
   stokr_rabbitmq_data:
   stokr_pgadmin_data:
-
