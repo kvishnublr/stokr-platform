@@ -89,6 +89,11 @@ public class SignalDistributionTelemetryService {
         }
     }
 
+    /** Consumed from strategy.signal.queue (broadcast lane). */
+    public void recordStrategySignalBroadcast(SignalPersistedMessage msg) {
+        rabbitDispatches.increment();
+    }
+
     public void recordOrderCreatedFromSignal(UUID userId, UUID orderId, UUID signalId) {
         ordersCreatedFromSignal.increment();
         UserAgg u = agg(userId);
