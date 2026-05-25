@@ -10,7 +10,11 @@ import com.stokr.common.api.PageResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.risk.service.StrategyToggleService;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
+import com.stokr.marketdata.seed.ReplayEquityCandleSeedService;
 import com.stokr.strategy.catalog.CatalogDrivenScanScheduler;
+import com.stokr.strategy.catalog.StrategyUniverseResolverService;
+import com.stokr.strategy.domain.StrategyRuntimeBinding;
+import com.stokr.strategy.domain.StrategyUniverseSymbol;
 import com.stokr.strategy.runtime.SignalPipelineActivationService;
 import com.stokr.strategy.runtime.StrategyEvaluationScheduler;
 import com.stokr.strategy.service.SignalHistoricalReplayService;
@@ -35,8 +39,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -56,6 +64,11 @@ public class AdminSignalController {
     private final StrategyToggleService strategyToggleService;
     private final StrategyEvaluationScheduler strategyEvaluationScheduler;
     private final ObjectProvider<CatalogDrivenScanScheduler> catalogDrivenScanScheduler;
+    private final ReplayEquityCandleSeedService replayEquityCandleSeedService;
+    private final StrategyUniverseResolverService universeResolverService;
+
+    private static final List<String> REPLAY_SEED_GROUP_KEYS = List.of("NIFTY_50", "NIFTY_100");
+    private static final List<String> REPLAY_SEED_EXTRA_SYMBOLS = List.of("NIFTY_FUT");
 
     @GetMapping("/stats")
     @Operation(summary = "Aggregate signal stats for today or custom window")
@@ -113,6 +126,28 @@ public class AdminSignalController {
             out.put("catalogScan", catalogDrivenScanScheduler.getIfAvailable() != null ? "triggered" : "disabled");
         }
         return ApiResponse.ok(out, CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/seed-replay-candles")
+    @Operation(summary = "Seed sparse 1m synthetic candles for NIFTY_50/NIFTY_100 equities (replay and catalog scan)")
+    public ApiResponse<Map<String, Object>> seedReplayCandles() {
+        Set<String> symbols = new LinkedHashSet<>(REPLAY_SEED_EXTRA_SYMBOLS);
+        for (String groupKey : REPLAY_SEED_GROUP_KEYS) {
+            universeResolverService.resolveActiveBindings().stream()
+                    .filter(b -> groupKey.equals(b.getUniverseGroup().getGroupKey()))
+                    .map(StrategyRuntimeBinding::getUniverseGroup)
+                    .distinct()
+                    .forEach(g -> {
+                        for (StrategyUniverseSymbol sym : universeResolverService.resolveSymbolEntitiesForGroup(g.getId())) {
+                            String s = sym.getTradingSymbol() != null ? sym.getTradingSymbol() : sym.getSymbol();
+                            if (s != null && !s.isBlank()) {
+                                symbols.add(s.trim().toUpperCase());
+                            }
+                        }
+                    });
+        }
+        Map<String, Object> seeded = replayEquityCandleSeedService.seedSymbols(new ArrayList<>(symbols));
+        return ApiResponse.ok(seeded, CorrelationIdHolder.get());
     }
 
     @PostMapping("/track-outcomes")

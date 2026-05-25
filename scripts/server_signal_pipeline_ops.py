@@ -44,12 +44,24 @@ def main():
     )
     print("activate-pipeline:", json.dumps(act.get("data"), indent=2))
 
-    replay = req(
-        "POST",
-        "/api/admin/signals/replay?strategyKey=NSE_SPIKE_DETECTION&from=2026-05-19&to=2026-05-23",
-        token=token,
-    )
-    print("replay:", json.dumps(replay.get("data"), indent=2))
+    try:
+        seed = req("POST", "/api/admin/signals/seed-replay-candles", token=token)
+        print("seed-replay-candles:", json.dumps(seed.get("data"), indent=2))
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            raise
+        print("seed-replay-candles: endpoint not deployed (404)", file=sys.stderr)
+
+    from datetime import date, timedelta
+    end = date.today()
+    start = end - timedelta(days=5)
+    for key in ("OPENING_RANGE_BREAKOUT", "NSE_SPIKE_DETECTION"):
+        replay = req(
+            "POST",
+            f"/api/admin/signals/replay?strategyKey={key}&from={start}&to={end}",
+            token=token,
+        )
+        print(f"replay {key}:", json.dumps(replay.get("data"), indent=2))
     import time
     time.sleep(50)
 
