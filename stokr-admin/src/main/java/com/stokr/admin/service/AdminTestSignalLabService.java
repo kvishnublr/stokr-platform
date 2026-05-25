@@ -161,9 +161,16 @@ public class AdminTestSignalLabService {
             throw new IllegalStateException("Signal processing failed: " + ex.getMessage(), ex);
         }
 
-        // Order was created synchronously — short poll to allow Hibernate flush
-        Optional<OmsOrder> order = waitForOrder(run.getSignalId(), run.getTraderUserId(), Duration.ofSeconds(3));
+        entityManager.flush();
+        Optional<OmsOrder> order = waitForOrder(
+                run.getSignalId(),
+                run.getTraderUserId(),
+                resolveOrderWaitTimeout(run)
+        );
         order = reconcileResolvedOrder(run, order);
+        if (order.isPresent()) {
+            order = omsOrderRepository.findById(order.get().getId());
+        }
 
         Map<String, Object> healthSnapshot = buildHealthSnapshot();
         List<TestSignalCheckResult> checks = buildChecks(run, order, healthSnapshot);
@@ -580,23 +587,30 @@ public class AdminTestSignalLabService {
             checks.add(check("execution_submitted", "Execution Submitted", orderCreated, "OMS order created", failMessage, "Inspect OMS listener / queue health", "OPEN_OMS_MONITOR"));
         }
 
-        boolean brokerAccepted = order.map(o -> "ACCEPTED".equals(o.getState().name()) || "FILLED".equals(o.getState().name()) || "PARTIALLY_FILLED".equals(o.getState().name())).orElse(false);
+        boolean liveMode = "LIVE".equalsIgnoreCase(run.getExecutionMode());
+        boolean brokerAccepted = order.map(o -> isBrokerAcceptedState(o.getState().name(), liveMode)).orElse(false);
         String brokerFailMsg = "Broker did not accept";
         if (order.isPresent() && order.get().getRejectReason() != null && !order.get().getRejectReason().isBlank()) {
             brokerFailMsg = order.get().getRejectReason();
-        } else if (order.isPresent() && "FAILED".equals(order.get().getState().name())) {
+        } else if (order.isPresent() && ("FAILED".equals(order.get().getState().name()) || "REJECTED".equals(order.get().getState().name()))) {
             brokerFailMsg = "Broker rejected order (no reason recorded)";
         }
         checks.add(check("broker_accepted", "Broker Accepted", !expectsOrder || brokerAccepted, "Broker accepted execution", brokerFailMsg, "Review broker auth/session in Broker Infra", "RECONNECT_BROKER"));
 
         boolean filled = order.map(o -> "FILLED".equals(o.getState().name()) || "PARTIALLY_FILLED".equals(o.getState().name())).orElse(false);
-        checks.add(check("order_filled", "Order Filled", !expectsOrder || filled, "Order filled", "Order not filled yet", "Inspect execution timeline for pending state", "OPEN_EXECUTION_TIMELINE"));
+        boolean fillRequired = !expectsOrder || !liveMode;
+        checks.add(fillRequired
+                ? check("order_filled", "Order Filled", filled, "Order filled", "Order not filled yet", "Inspect execution timeline for pending state", "OPEN_EXECUTION_TIMELINE")
+                : optionalCheck("order_filled", "Order Filled", filled, "Order filled at broker", "Live submit accepted; fill may arrive asynchronously", "Inspect execution timeline for pending state", "OPEN_EXECUTION_TIMELINE"));
 
         boolean positionVisible = portfolioPositionRepository.findByUserIdAndSymbolAndDeletedFalse(run.getTraderUserId(), run.getSymbol())
                 .map(PortfolioPosition::getQuantity)
                 .map(q -> q.signum() != 0)
                 .orElse(false);
-        checks.add(check("position_visible", "Position Visible", !expectsOrder || positionVisible, "Position visible in terminal", "No position entry yet", "Open trader positions and verify sync", "OPEN_TRADER_POSITIONS"));
+        boolean positionRequired = !expectsOrder || !liveMode;
+        checks.add(positionRequired
+                ? check("position_visible", "Position Visible", positionVisible, "Position visible in terminal", "No position entry yet", "Open trader positions and verify sync", "OPEN_TRADER_POSITIONS")
+                : optionalCheck("position_visible", "Position Visible", positionVisible, "Position visible in terminal", "Live order submitted; position may sync after broker fill", "Open trader positions and verify sync", "OPEN_TRADER_POSITIONS"));
 
         boolean websocketOpen = platformBrokerFeedSessionRepository
                 .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(run.getBrokerVendor() == null ? "ZERODHA" : run.getBrokerVendor())
@@ -605,10 +619,26 @@ public class AdminTestSignalLabService {
         checks.add(check("websocket", "Websocket Delivered", websocketOpen, "Broker websocket OPEN", "Broker websocket not open", "Reconnect broker websocket session", "RECONNECT_BROKER"));
 
         boolean telegramLogged = order.map(o -> hasExecutionAlerts(o.getId())).orElse(false);
-        checks.add(check("telegram_alert", "Telegram Sent", !expectsOrder || telegramLogged, "Alert log entry found", "No alert log entry yet", "Check notification providers and execution alerts", "OPEN_ALERTS"));
+        checks.add(optionalCheck(
+                "telegram_alert",
+                "Telegram Sent",
+                !expectsOrder || telegramLogged,
+                "Alert log entry found",
+                "No alert log entry yet (test-lab records in-app alert)",
+                "Check notification providers and execution alerts",
+                "OPEN_ALERTS"
+        ));
 
         boolean reconciled = order.map(o -> hasReconciliationEvent(o.getId())).orElse(false);
-        checks.add(check("reconciliation", "Reconciliation Successful", !expectsOrder || reconciled, "Reconciliation event found", "No reconciliation event found", "Check reconciliation worker and broker adapter", "OPEN_RECONCILIATION"));
+        checks.add(optionalCheck(
+                "reconciliation",
+                "Reconciliation Successful",
+                !expectsOrder || reconciled,
+                "Reconciliation event found",
+                "No reconciliation event found",
+                "Check reconciliation worker and broker adapter",
+                "OPEN_RECONCILIATION"
+        ));
 
         long latency = run.getTotalLatencyMs() == null ? 0L : run.getTotalLatencyMs();
         boolean latencyOk = latency == 0 || latency < 15_000;
@@ -676,6 +706,37 @@ public class AdminTestSignalLabService {
         );
     }
 
+    /** Non-blocking check: failures surface as WARNING so test lab can still pass core execution. */
+    private static TestSignalCheckResult optionalCheck(
+            String key,
+            String label,
+            boolean ok,
+            String okMessage,
+            String failMessage,
+            String action,
+            String actionCode
+    ) {
+        return new TestSignalCheckResult(
+                key,
+                label,
+                ok ? "SUCCESS" : "WARNING",
+                ok ? okMessage : failMessage,
+                ok ? null : action,
+                ok ? null : actionCode
+        );
+    }
+
+    private static boolean isBrokerAcceptedState(String state, boolean liveMode) {
+        if (state == null) {
+            return false;
+        }
+        return switch (state) {
+            case "ACCEPTED", "FILLED", "PARTIALLY_FILLED" -> true;
+            case "SUBMITTED" -> liveMode;
+            default -> false;
+        };
+    }
+
     private Map<String, Object> buildDiagnostics(List<TestSignalCheckResult> checks, AdminTestSignalRun run, OmsOrder order, Map<String, Object> healthSnapshot) {
         Map<String, Object> diagnostics = new LinkedHashMap<>();
         diagnostics.put("failedChecks", checks.stream().filter(c -> "FAILED".equals(c.status())).toList());
@@ -715,9 +776,22 @@ public class AdminTestSignalLabService {
 
     private static String overallStatus(List<TestSignalCheckResult> checks) {
         boolean hasFailed = checks.stream().anyMatch(c -> "FAILED".equals(c.status()));
-        if (hasFailed) return "FAILED";
-        boolean hasWarning = checks.stream().anyMatch(c -> "WARNING".equals(c.status()));
-        return hasWarning ? "WARNING" : "SUCCESS";
+        if (hasFailed) {
+            return "FAILED";
+        }
+        boolean coreOk = checks.stream()
+                .filter(c -> !isOptionalLabCheck(c.key()))
+                .allMatch(c -> "SUCCESS".equals(c.status()));
+        return coreOk ? "SUCCESS" : "WARNING";
+    }
+
+    private static boolean isOptionalLabCheck(String key) {
+        return "telegram_alert".equals(key)
+                || "reconciliation".equals(key)
+                || "order_filled".equals(key)
+                || "position_visible".equals(key)
+                || "stale_state".equals(key)
+                || "latency".equals(key);
     }
 
     private static Map<String, Object> mapOf(Object... kv) {

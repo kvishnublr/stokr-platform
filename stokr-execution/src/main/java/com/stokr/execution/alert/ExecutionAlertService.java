@@ -70,6 +70,20 @@ public class ExecutionAlertService {
         publish("RECONCILIATION_ALERT", null, symbol, null, text);
     }
 
+    /** Admin Test Signal Lab: persist alert log even when Telegram is disabled for the strategy. */
+    @Transactional
+    public void onTestLabExecution(OmsOrder order, String detail) {
+        if (order == null) {
+            return;
+        }
+        String text = "TEST_LAB: " + order.getStrategyKey()
+                + " " + order.getSymbol() + " " + order.getSide()
+                + " mode=" + (order.getExecutionMode() != null ? order.getExecutionMode().name() : "?")
+                + " state=" + (order.getState() != null ? order.getState().name() : "?")
+                + (detail != null && !detail.isBlank() ? " — " + detail : "");
+        publish("TEST_LAB_EXECUTION", order.getStrategyKey(), order.getSymbol(), order, text);
+    }
+
     private void publish(String alertType, String strategyKey, String symbol, OmsOrder order, String text) {
         boolean telegramEnabled = isTelegramEnabled(strategyKey);
         ExecutionAlertLog entry = new ExecutionAlertLog();

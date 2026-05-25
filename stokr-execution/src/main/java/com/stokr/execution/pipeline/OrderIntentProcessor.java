@@ -174,16 +174,16 @@ public class OrderIntentProcessor {
 
         String testScenario = normalizeTestScenario(signal);
         if ("SIMULATE_MARGIN_FAILURE".equals(testScenario)) {
-            orderLifecycleService.transition(order.getId(), OrderState.REJECTED, "Test scenario: insufficient margin");
+            rejectForTestScenario(order, "Test scenario: insufficient margin");
             signalDistributionTelemetryService.recordRiskRejected(userId, signal.getId());
             return;
         }
         if ("SIMULATE_REJECTION".equals(testScenario)) {
-            orderLifecycleService.transition(order.getId(), OrderState.REJECTED, "Test scenario: broker rejection");
+            rejectForTestScenario(order, "Test scenario: broker rejection");
             return;
         }
         if ("SIMULATE_BROKER_DISCONNECT".equals(testScenario)) {
-            orderLifecycleService.transition(order.getId(), OrderState.REJECTED, "Test scenario: broker disconnected");
+            rejectForTestScenario(order, "Test scenario: broker disconnected");
             return;
         }
 
@@ -322,6 +322,13 @@ public class OrderIntentProcessor {
             return "";
         }
         return signal.getTestScenario().trim().toUpperCase();
+    }
+
+    /** Test-lab simulate-* flags must follow CREATED → VALIDATED → RISK_CHECK → REJECTED (not CREATED → REJECTED). */
+    private void rejectForTestScenario(OmsOrder order, String message) {
+        orderLifecycleService.transition(order.getId(), OrderState.VALIDATED, null);
+        orderLifecycleService.transition(order.getId(), OrderState.RISK_CHECK, null);
+        orderLifecycleService.transition(order.getId(), OrderState.REJECTED, message);
     }
 
     /**

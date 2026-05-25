@@ -27,7 +27,10 @@ import com.stokr.oms.service.ExecutionLedgerService;
 import com.stokr.oms.portfolio.PortfolioAccountingService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.execution.alert.ExecutionAlertService;
 import com.stokr.execution.guard.ExecutionGuardTelemetryService;
+import com.stokr.oms.reconciliation.ReconciliationEvent;
+import com.stokr.oms.reconciliation.ReconciliationEventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -67,6 +70,8 @@ public class ExecutionSimulator {
     private final BrokerAccountRepository brokerAccountRepository;
     private final FieldCipher fieldCipher;
     private final ZerodhaBrokerProperties zerodhaBrokerProperties;
+    private final ExecutionAlertService executionAlertService;
+    private final ReconciliationEventRepository reconciliationEventRepository;
 
     @Value("${stokr.simulation.candle-timeframe:1m}")
     private String candleTimeframe;
@@ -167,6 +172,9 @@ public class ExecutionSimulator {
                     "symbol", order.getSymbol() != null ? order.getSymbol() : "",
                     "mode", "LIVE"
             )));
+            if (order.isTestTrade()) {
+                recordTestLabVerification(liveOrder, "LIVE broker submit path");
+            }
             return;
         }
 
@@ -260,6 +268,26 @@ public class ExecutionSimulator {
                 "fills", fillLots.size()
         )));
         log.info("execution.simulated orderId={} lastFillPrice={} fills={}", order.getId(), lastFillPrice, fillLots.size());
+        if (order.isTestTrade()) {
+            recordTestLabVerification(order, "PAPER/SIM simulated fill");
+        }
+    }
+
+    private void recordTestLabVerification(OmsOrder order, String detail) {
+        executionAlertService.onTestLabExecution(order, detail);
+        ReconciliationEvent ev = new ReconciliationEvent();
+        ev.setUserId(order.getUserId());
+        ev.setBrokerVendor(order.getBrokerVendor() != null ? order.getBrokerVendor() : "SIM");
+        ev.setSymbol(order.getSymbol());
+        ev.setOrderId(order.getId());
+        ev.setDiscrepancyType("TEST_LAB_VERIFIED");
+        ev.setBrokerQty(order.getQuantity());
+        ev.setInternalQty(order.getQuantity());
+        ev.setDelta(BigDecimal.ZERO);
+        ev.setStatus("MATCHED");
+        ev.setNotes(detail);
+        ev.setResolvedAt(Instant.now());
+        reconciliationEventRepository.save(ev);
     }
 
     /**

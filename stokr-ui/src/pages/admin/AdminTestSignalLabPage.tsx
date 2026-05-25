@@ -9,6 +9,7 @@ import {
   runTestSignalPreflight,
   type TestSignalLabRequest,
 } from "../../api/testSignalLab";
+import { parseAxiosMessage } from "../../api/client";
 
 function fieldClassName() {
   return "w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary";
@@ -141,20 +142,21 @@ const STORAGE_KEY = "testSignalLabDefaults";
 const DEFAULT_FORM: TestSignalLabRequest = {
   traderUserId: "",
   strategyKey: "",
-  symbol: "SBIN",
+  symbol: "INFY",
   side: "BUY",
   quantity: 1,
   orderType: "MARKET",
-  executionMode: "SIMULATED",
+  executionMode: "PAPER",
   triggerType: "INSTANT",
   forceQuantityOne: true,
-  dryRunOnly: true,
-  skipActualBrokerExecution: true,
+  dryRunOnly: false,
+  skipActualBrokerExecution: false,
   simulateRejection: false,
   simulateTimeout: false,
   simulateStaleWebsocket: false,
   simulateMarginFailure: false,
   simulateBrokerDisconnect: false,
+  autoSquareOffMinutes: 5,
 };
 
 export function AdminTestSignalLabPage() {
@@ -439,7 +441,11 @@ export function AdminTestSignalLabPage() {
             Reset Defaults
           </button>
           {runBlockedReason && <span className="text-xs text-amber-600">{runBlockedReason}</span>}
-          {runMutation.isError && <span className="text-xs text-red-500">Run failed. Check config.</span>}
+          {runMutation.isError && (
+            <span className="text-xs text-red-500">
+              {parseAxiosMessage(runMutation.error)}
+            </span>
+          )}
         </div>
       </div>
 
