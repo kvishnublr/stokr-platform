@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Arm LIVE trading and fire single-stock catalog scan (default ITC + NSE_SPIKE_DETECTION)."""
+"""Arm LIVE testing: any strategy may signal; risk allows only one open stock at a time."""
 import json
 import os
 import sys
@@ -9,8 +9,8 @@ import urllib.request
 BASE = os.environ.get("STOKR_API_BASE", "http://127.0.0.1:8080")
 ADMIN_USER = os.environ.get("STOKR_ADMIN_USER", "admin")
 ADMIN_PASS = os.environ.get("STOKR_ADMIN_PASS", "password")
-SYMBOL = os.environ.get("STOKR_LIVE_SYMBOL", "ITC")
-STRATEGY = os.environ.get("STOKR_LIVE_STRATEGY", "NSE_SPIKE_DETECTION")
+SYMBOL = os.environ.get("STOKR_LIVE_SYMBOL", "")
+STRATEGY = os.environ.get("STOKR_LIVE_STRATEGY", "ALL")
 TRADER = os.environ.get("STOKR_TRADER_USER", "vishnualgo")
 
 
@@ -32,16 +32,18 @@ def main():
         sys.exit("login failed")
     path = (
         f"/api/admin/signals/activate-live-single"
-        f"?symbol={SYMBOL}&strategyKey={STRATEGY}&traderUsername={TRADER}"
+        f"?strategyKey={STRATEGY}&traderUsername={TRADER}"
         f"&armLive=true&runImmediatePoll=true"
     )
+    if SYMBOL.strip():
+        path += f"&symbol={SYMBOL.strip()}"
     out = req("POST", path, token=token)
     print(json.dumps(out.get("data"), indent=2))
     stats = req("GET", "/api/admin/signals/stats", token=token)
     print("stats:", json.dumps(stats.get("data"), indent=2))
-    recent = req("GET", f"/api/admin/signals?page=0&size=5&symbol={SYMBOL}&pipeline=LIVE", token=token)
+    recent = req("GET", "/api/admin/signals?page=0&size=8&pipeline=LIVE", token=token)
     rows = recent.get("data", {}).get("content") or []
-    print(f"recent LIVE {SYMBOL} signals:", len(rows))
+    print(f"recent LIVE signals:", len(rows))
     for row in rows:
         print(
             " -",

@@ -134,10 +134,10 @@ public class AdminSignalController {
     }
 
     @PostMapping("/activate-live-single")
-    @Operation(summary = "LIVE pilot: one symbol, one strategy binding, arm live, start trader instance, fire scanners")
+    @Operation(summary = "LIVE testing: any strategy/symbol may signal; max one open stock (optional ITC+single-strategy legacy mode)")
     public ApiResponse<Map<String, Object>> activateLiveSingle(
-            @RequestParam(defaultValue = "ITC") String symbol,
-            @RequestParam(defaultValue = "NSE_SPIKE_DETECTION") String strategyKey,
+            @RequestParam(required = false) String symbol,
+            @RequestParam(defaultValue = "ALL") String strategyKey,
             @RequestParam(defaultValue = "vishnualgo") String traderUsername,
             @RequestParam(defaultValue = "true") boolean armLive,
             @RequestParam(defaultValue = "true") boolean runImmediatePoll
@@ -147,7 +147,14 @@ public class AdminSignalController {
             liveTradingArmingService.setArmed(true);
             out.put("liveTradingArmed", true);
         }
-        out.putAll(signalPipelineActivationService.activateLiveSingleSymbol(symbol, strategyKey));
+
+        boolean legacySingleStock = symbol != null && !symbol.isBlank()
+                && strategyKey != null && !strategyKey.isBlank() && !"ALL".equalsIgnoreCase(strategyKey.trim());
+        if (legacySingleStock) {
+            out.putAll(signalPipelineActivationService.activateLiveSingleSymbol(symbol, strategyKey));
+        } else {
+            out.putAll(signalPipelineActivationService.activateLiveTestingPilot());
+        }
 
         UUID traderId = authUserRepository.findByUsernameIgnoreCaseAndDeletedFalse(traderUsername.trim())
                 .map(u -> u.getId())
@@ -155,51 +162,63 @@ public class AdminSignalController {
         out.put("traderUsername", traderUsername);
         out.put("traderUserId", traderId != null ? traderId.toString() : null);
 
-        String skUpper = strategyKey.trim().toUpperCase();
+        int instancesStarted = 0;
+        int instancesCreated = 0;
         if (traderId != null) {
-            StrategyInstance inst = strategyInstanceRepository.findAllForUserWithDefinition(traderId).stream()
-                    .filter(si -> skUpper.equalsIgnoreCase(si.getDefinition().getStrategyKey()))
-                    .findFirst()
-                    .orElse(null);
-            if (inst == null) {
-                StrategyDefinition def = strategyDefinitionRepository.findByStrategyKeyAndDeletedFalse(skUpper)
+            List<StrategyDefinition> targets = strategyDefinitionRepository.findAll().stream()
+                    .filter(d -> !d.isDeleted() && d.isEnabled())
+                    .filter(d -> {
+                        if (legacySingleStock) {
+                            return strategyKey.trim().equalsIgnoreCase(d.getStrategyKey());
+                        }
+                        String k = d.getStrategyKey() != null ? d.getStrategyKey().toUpperCase() : "";
+                        return !k.contains("MCX") && !k.contains("COMMODIT")
+                                && !"BREAKOUT_COMMODITIES".equalsIgnoreCase(k);
+                    })
+                    .toList();
+            for (StrategyDefinition def : targets) {
+                StrategyInstance inst = strategyInstanceRepository
+                        .findByUserIdAndDefinition_IdAndDeletedFalse(traderId, def.getId())
                         .orElse(null);
-                if (def != null) {
-                    StrategyInstance created = new StrategyInstance();
-                    created.setDefinition(def);
-                    created.setUserId(traderId);
-                    created.setSymbol(symbol.trim().toUpperCase());
-                    created.setEnabled(true);
-                    created.setExecutionMode("LIVE");
-                    created.setRuntimeState("STOPPED");
-                    created.setRiskMultiplier(java.math.BigDecimal.ONE);
-                    inst = strategyInstanceRepository.save(created);
-                    out.put("traderInstanceCreated", true);
+                if (inst == null) {
+                    inst = new StrategyInstance();
+                    inst.setDefinition(def);
+                    inst.setUserId(traderId);
+                    inst.setSymbol(resolvePilotSymbol(def.getStrategyKey(), symbol));
+                    inst.setEnabled(true);
+                    inst.setExecutionMode("LIVE");
+                    inst.setRuntimeState("STOPPED");
+                    inst.setRiskMultiplier(java.math.BigDecimal.ONE);
+                    inst = strategyInstanceRepository.save(inst);
+                    instancesCreated++;
                 }
-            }
-            if (inst != null) {
                 inst.setExecutionMode("LIVE");
-                inst.setSymbol(symbol.trim().toUpperCase());
                 inst.setEnabled(true);
                 strategyInstanceRepository.save(inst);
                 if (!"RUNNING".equalsIgnoreCase(inst.getRuntimeState())) {
-                    strategyInstanceLifecycleService.start(traderId, inst.getId());
-                    out.put("traderInstanceStarted", true);
-                } else {
-                    out.put("traderInstanceStarted", false);
-                    out.put("traderInstanceState", "already RUNNING");
+                    try {
+                        strategyInstanceLifecycleService.start(traderId, inst.getId());
+                        instancesStarted++;
+                    } catch (Exception ex) {
+                        log.warn("activate-live.trader_start_failed strategy={} {}", def.getStrategyKey(), ex.getMessage());
+                    }
                 }
-                out.put("traderInstanceId", inst.getId().toString());
-            } else {
-                out.put("traderInstanceStarted", false);
-                out.put("traderInstanceNote", "No subscription for " + skUpper + " — subscribe in UI first");
             }
+            out.put("traderInstancesCreated", instancesCreated);
+            out.put("traderInstancesStarted", instancesStarted);
+            out.put("traderStrategiesTargeted", targets.size());
         }
 
+        boolean allStrategies = !legacySingleStock;
         for (var def : strategyDefinitionRepository.findAll().stream().filter(d -> !d.isDeleted()).toList()) {
-            strategyToggleService.setEnabled(def.getStrategyKey(), skUpper.equalsIgnoreCase(def.getStrategyKey()));
+            if (allStrategies) {
+                strategyToggleService.setEnabled(def.getStrategyKey(), true);
+            } else {
+                strategyToggleService.setEnabled(def.getStrategyKey(),
+                        strategyKey.trim().equalsIgnoreCase(def.getStrategyKey()));
+            }
         }
-        out.put("redisToggles", "only " + skUpper + " enabled");
+        out.put("redisToggles", allStrategies ? "all strategies enabled" : "only " + strategyKey);
 
         if (runImmediatePoll) {
             strategyEvaluationScheduler.poll();
@@ -208,6 +227,17 @@ public class AdminSignalController {
             out.put("catalogScan", catalogDrivenScanScheduler.getIfAvailable() != null ? "triggered" : "disabled");
         }
         return ApiResponse.ok(out, CorrelationIdHolder.get());
+    }
+
+    private String resolvePilotSymbol(String strategyKey, String symbolHint) {
+        if (symbolHint != null && !symbolHint.isBlank()) {
+            return symbolHint.trim().toUpperCase();
+        }
+        try {
+            return signalPipelineActivationService.resolveFirstBindingSymbol(strategyKey);
+        } catch (Exception ex) {
+            return "NIFTY_FUT";
+        }
     }
 
     @PostMapping("/activate-pipeline")

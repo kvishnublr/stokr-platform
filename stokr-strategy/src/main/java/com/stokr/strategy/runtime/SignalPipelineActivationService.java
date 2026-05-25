@@ -152,6 +152,70 @@ public class SignalPipelineActivationService {
         return out;
     }
 
+    /**
+     * LIVE testing: all cash strategies + NIFTY universes active; any symbol may signal.
+     * Execution capped at one open portfolio position per trader ({@code maxPositions=1} on bindings
+     * plus {@code stokr.risk.max-open-positions=1}).
+     */
+    @Transactional
+    public Map<String, Object> activateLiveTestingPilot() {
+        Optional<StrategyUniverseGroup> liveSingle = groupRepository.findByGroupKey(LIVE_SINGLE_GROUP_KEY);
+        int liveSingleDisabled = 0;
+        if (liveSingle.isPresent()) {
+            for (StrategyRuntimeBinding b : bindingRepository.findAllByUniverseGroupId(liveSingle.get().getId())) {
+                if (b.isRuntimeEnabled()) {
+                    b.setRuntimeEnabled(false);
+                    bindingRepository.save(b);
+                    liveSingleDisabled++;
+                }
+            }
+        }
+
+        int bindingsAdjusted = 0;
+        for (StrategyDefinition def : definitionRepository.findAll().stream().filter(d -> !d.isDeleted()).toList()) {
+            if (!def.isEnabled()) {
+                def.setEnabled(true);
+                definitionRepository.save(def);
+            }
+        }
+
+        int[] cashStats = ensureCashStrategyBindingsWithMaxPositions(1);
+        for (StrategyRuntimeBinding b : bindingRepository.findAll()) {
+            if (!isCashEquityStrategy(b.getStrategyCatalog())) {
+                if (b.isRuntimeEnabled()) {
+                    b.setRuntimeEnabled(false);
+                    bindingRepository.save(b);
+                    bindingsAdjusted++;
+                }
+                continue;
+            }
+            if (b.getMaxPositions() != 1) {
+                b.setMaxPositions(1);
+                bindingRepository.save(b);
+                bindingsAdjusted++;
+            }
+        }
+
+        universeResolverService.invalidateCache();
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("mode", "LIVE_TESTING_ANY_SIGNAL_ONE_STOCK");
+        out.put("symbolLock", "none — first signal’s symbol may trade");
+        out.put("strategies", "all cash/equity catalog strategies enabled");
+        out.put("universeGroups", CASH_UNIVERSE_GROUP_KEYS);
+        out.put("maxOpenPositionsPerBinding", 1);
+        out.put("riskNote", "Set STOKR_RISK_MAX_OPEN_POSITIONS=1 for one stock at a time");
+        out.put("liveSingleBindingsDisabled", liveSingleDisabled);
+        out.put("cashBindingsEnabled", cashStats[0]);
+        out.put("cashBindingsCreated", cashStats[1]);
+        out.put("bindingsAdjusted", bindingsAdjusted);
+        out.put("activeBindings", bindingRepository.findAllActiveBindings().size());
+        out.put("pollExecutionModeNote", "STOKR_STRATEGY_POLL_EXECUTION_MODE=LIVE");
+        out.put("activatedAt", Instant.now().toString());
+        log.warn("signal.pipeline.live_testing_pilot activeBindings={}", out.get("activeBindings"));
+        return out;
+    }
+
     /** Core enablement in one short transaction (no universe bulk sync). */
     @Transactional
     protected Map<String, Object> activateCore(int universesSynced) {
@@ -237,6 +301,10 @@ public class SignalPipelineActivationService {
 
     /** Bind every enabled cash/equity catalog strategy to NIFTY_50 and NIFTY_100. */
     private int[] ensureCashStrategyBindings() {
+        return ensureCashStrategyBindingsWithMaxPositions(5);
+    }
+
+    private int[] ensureCashStrategyBindingsWithMaxPositions(int maxPositions) {
         int enabled = 0;
         int created = 0;
         for (StrategyDefinition def : definitionRepository.findAll().stream().filter(d -> !d.isDeleted()).toList()) {
@@ -256,9 +324,20 @@ public class SignalPipelineActivationService {
                         .findByStrategyCatalogIdAndUniverseGroupId(def.getId(), group.get().getId());
                 if (existing.isPresent()) {
                     StrategyRuntimeBinding b = existing.get();
-                    if (!b.isRuntimeEnabled() || b.getScanIntervalSeconds() > fastScanIntervalSeconds) {
+                    boolean changed = false;
+                    if (!b.isRuntimeEnabled()) {
                         b.setRuntimeEnabled(true);
+                        changed = true;
+                    }
+                    if (b.getScanIntervalSeconds() > fastScanIntervalSeconds) {
                         b.setScanIntervalSeconds(fastScanIntervalSeconds);
+                        changed = true;
+                    }
+                    if (b.getMaxPositions() != maxPositions) {
+                        b.setMaxPositions(maxPositions);
+                        changed = true;
+                    }
+                    if (changed) {
                         bindingRepository.save(b);
                         enabled++;
                     }
@@ -267,7 +346,7 @@ public class SignalPipelineActivationService {
                     b.setStrategyCatalog(def);
                     b.setUniverseGroup(group.get());
                     b.setRuntimeEnabled(true);
-                    b.setMaxPositions(5);
+                    b.setMaxPositions(maxPositions);
                     b.setRiskProfile("MEDIUM");
                     b.setScanIntervalSeconds(fastScanIntervalSeconds);
                     bindingRepository.save(b);
@@ -291,6 +370,17 @@ public class SignalPipelineActivationService {
         }
         String key = def.getStrategyKey() != null ? def.getStrategyKey().toUpperCase(Locale.ROOT) : "";
         return !key.contains("MCX") && !key.contains("COMMODIT");
+    }
+
+    public String resolveFirstBindingSymbol(String strategyKey) {
+        StrategyDefinition def = definitionRepository.findByStrategyKeyAndDeletedFalse(strategyKey)
+                .orElseThrow(() -> new IllegalArgumentException("Strategy not found: " + strategyKey));
+        return universeResolverService.resolveBindingsForStrategy(def.getStrategyKey()).stream()
+                .findFirst()
+                .map(b -> universeResolverService.resolveSymbolsForGroup(b.getUniverseGroup().getId()))
+                .filter(list -> list != null && !list.isEmpty())
+                .map(list -> list.getFirst())
+                .orElseThrow(() -> new IllegalStateException("No symbols for strategy: " + strategyKey));
     }
 
     private boolean ensureSymbol(StrategyUniverseGroup group, String symbol) {

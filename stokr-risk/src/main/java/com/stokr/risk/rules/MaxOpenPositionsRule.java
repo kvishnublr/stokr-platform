@@ -35,7 +35,15 @@ public class MaxOpenPositionsRule implements RiskRule {
                 .filter(p -> p.getQuantity() != null && p.getQuantity().abs().compareTo(BigDecimal.ZERO) > 0)
                 .count();
         if (open >= maxOpenPositions) {
-            return RiskDecision.reject(code(), "Max open positions reached");
+            String held = list.stream()
+                    .filter(p -> p.getQuantity() != null && p.getQuantity().abs().compareTo(BigDecimal.ZERO) > 0)
+                    .map(PortfolioPosition::getSymbol)
+                    .findFirst()
+                    .orElse("?");
+            String msg = maxOpenPositions <= 1
+                    ? "Pilot: one stock at a time — holding " + held + ", close before new entries"
+                    : "Max open positions reached (" + open + "/" + maxOpenPositions + ")";
+            return RiskDecision.reject(code(), msg);
         }
         return RiskDecision.ok();
     }
