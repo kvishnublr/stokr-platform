@@ -874,7 +874,20 @@ public class AdminMarketBackfillService {
     }
 
     private static List<String> fallbackNifty100() {
-        return fallbackNifty50();
+        return List.of(
+                "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "ITC", "LT", "SBIN", "BHARTIARTL", "HINDUNILVR",
+                "KOTAKBANK", "AXISBANK", "BAJFINANCE", "MARUTI", "ASIANPAINT", "HCLTECH", "SUNPHARMA", "TITAN",
+                "ULTRACEMCO", "NESTLEIND", "WIPRO", "POWERGRID", "NTPC", "ONGC", "M&M", "ADANIENT", "ADANIPORTS",
+                "TATASTEEL", "JSWSTEEL", "COALINDIA", "TECHM", "INDUSINDBK", "BAJAJFINSV", "HINDALCO", "GRASIM",
+                "CIPLA", "DRREDDY", "EICHERMOT", "BPCL", "DIVISLAB", "APOLLOHOSP", "BRITANNIA", "HEROMOTOCO",
+                "TATAMOTORS", "SBILIFE", "HDFCLIFE", "PIDILITIND", "SIEMENS", "HAVELLS", "DLF", "GODREJCP",
+                "AMBUJACEM", "ICICIPRULI", "ICICIGI", "BANKBARODA", "PNB", "CANBK", "AUBANK", "IDFCFIRSTB",
+                "FEDERALBNK", "LICI", "HAL", "BEL", "IRCTC", "ZOMATO", "DMART", "NAUKRI", "PAYTM", "POLICYBZR",
+                "TRENT", "JIOFIN", "VBL", "TORNTPHARM", "ABB", "SHREECEM", "DABUR", "MARICO", "COLPAL", "BERGEPAINT",
+                "INDIGO", "MUTHOOTFIN", "CHOLAFIN", "BOSCHLTD", "MRF", "PAGEIND", "LTIM", "PERSISTENT", "COFORGE",
+                "MPHASIS", "OFSS", "TATAELXSI", "LODHA", "ADANIGREEN", "ADANIENSOL", "TATAPOWER", "GAIL", "IOC",
+                "VEDL", "JINDALSTEL", "SAIL", "NMDC", "BHEL", "RECLTD", "PFC", "IRFC", "NHPC", "SUZLON"
+        );
     }
 
     private static List<String> fallbackNifty200() {

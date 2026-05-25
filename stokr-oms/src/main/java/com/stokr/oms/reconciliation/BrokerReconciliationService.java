@@ -1,6 +1,7 @@
 package com.stokr.oms.reconciliation;
 
 import com.stokr.broker.api.BrokerAdapter;
+import com.stokr.broker.api.BrokerUserPositionsSource;
 import com.stokr.broker.model.BrokerPosition;
 import com.stokr.broker.registry.BrokerAdapterRegistry;
 import com.stokr.common.events.ExecutionAlertEvent;
@@ -37,6 +38,7 @@ public class BrokerReconciliationService {
     private final OmsExecutionRepository omsExecutionRepository;
     private final ReconciliationEventRepository reconciliationEventRepository;
     private final BrokerAdapterRegistry brokerAdapterRegistry;
+    private final List<BrokerUserPositionsSource> brokerUserPositionsSources;
     private final ApplicationEventPublisher eventPublisher;
 
     @Scheduled(fixedDelayString = "${stokr.reconciliation.interval-ms:30000}")
@@ -69,25 +71,22 @@ public class BrokerReconciliationService {
             return;
         }
 
-        List<BrokerPosition> brokerPositions;
-        try {
-            brokerPositions = adapter.getPositions();
-        } catch (Exception e) {
-            log.warn("reconciliation.broker_query_failed vendor={} user={} error={}", brokerVendor, userId, e.getMessage());
-            return;
-        }
-        if (brokerPositions == null || brokerPositions.isEmpty()) {
-            log.debug("reconciliation.skipped_no_broker_positions vendor={} user={}", brokerVendor, userId);
+        List<BrokerPosition> brokerPositions = resolveBrokerPositions(userId, brokerVendor, adapter);
+        if (brokerPositions == null) {
             return;
         }
 
         Map<String, BigDecimal> brokerBySymbol = brokerPositions.stream()
-                .collect(Collectors.toMap(BrokerPosition::symbol, BrokerPosition::quantity));
+                .collect(Collectors.toMap(BrokerPosition::symbol, BrokerPosition::quantity, BigDecimal::add));
         Map<String, BigDecimal> internalBySymbol = omsExecutionRepository.computeLiveNetQtyBySymbol(userId).stream()
                 .collect(Collectors.toMap(
                         row -> String.valueOf(row[0]),
                         row -> (BigDecimal) row[1]
                 ));
+
+        if (brokerBySymbol.isEmpty() && internalBySymbol.isEmpty()) {
+            return;
+        }
 
         for (Map.Entry<String, BigDecimal> brokerEntry : brokerBySymbol.entrySet()) {
             String symbol = brokerEntry.getKey();
@@ -111,6 +110,27 @@ public class BrokerReconciliationService {
 
     public void triggerForUser(UUID userId, String brokerVendor) {
         reconcileUser(userId, brokerVendor);
+    }
+
+    private List<BrokerPosition> resolveBrokerPositions(UUID userId, String brokerVendor, BrokerAdapter adapter) {
+        for (BrokerUserPositionsSource source : brokerUserPositionsSources) {
+            if (!source.supportsVendor(brokerVendor)) {
+                continue;
+            }
+            try {
+                return source.fetchPositions(userId, brokerVendor).orElse(List.of());
+            } catch (Exception e) {
+                log.warn("reconciliation.broker_query_failed vendor={} user={} error={}",
+                        brokerVendor, userId, e.getMessage());
+                return null;
+            }
+        }
+        try {
+            return adapter.getPositions();
+        } catch (Exception e) {
+            log.warn("reconciliation.broker_query_failed vendor={} user={} error={}", brokerVendor, userId, e.getMessage());
+            return null;
+        }
     }
 
     private void persist(UUID userId, String brokerVendor, String symbol, String type,

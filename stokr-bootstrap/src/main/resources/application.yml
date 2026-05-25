@@ -159,6 +159,15 @@ stokr:
   strategy:
     # Drop new signals when reference price exceeds ceiling (INR). 0 or negative = disabled.
     max-entry-price: ${STOKR_STRATEGY_MAX_ENTRY_PRICE:5000}
+    quality-gate:
+      enabled: ${STOKR_STRATEGY_QUALITY_GATE_ENABLED:true}
+      min-confidence: ${STOKR_STRATEGY_MIN_CONFIDENCE:0.55}
+      min-risk-reward: ${STOKR_STRATEGY_MIN_RR:1.2}
+    signal-dedup:
+      cooldown-minutes: ${STOKR_STRATEGY_SIGNAL_DEDUP_MINUTES:15}
+    exit:
+      breakeven-enabled: ${STOKR_STRATEGY_BREAKEVEN_EXIT_ENABLED:true}
+      breakeven-mfe-ratio: ${STOKR_STRATEGY_BREAKEVEN_MFE_RATIO:0.5}
     subscription-default-symbol: ${STOKR_STRATEGY_SUBSCRIPTION_SYMBOL:NIFTY_FUT}
     mean-reversion:
       enabled: ${STOKR_STRATEGY_MR_ENABLED:true}
@@ -188,6 +197,14 @@ stokr:
   execution:
     max-attempts: ${STOKR_EXECUTION_MAX_ATTEMPTS:5}
     live-trading-enabled: ${STOKR_LIVE_TRADING_ENABLED:false}
+    broker-fill-sync:
+      enabled: ${STOKR_BROKER_FILL_SYNC_ENABLED:true}
+      interval-ms: ${STOKR_BROKER_FILL_SYNC_MS:15000}
+  reconciliation:
+    interval-ms: ${STOKR_RECONCILIATION_INTERVAL_MS:30000}
+  signal:
+    outcome-track-ms: ${STOKR_SIGNAL_OUTCOME_TRACK_MS:300000}
+    outcome-fast-track-ms: ${STOKR_SIGNAL_OUTCOME_FAST_TRACK_MS:30000}
   runtime:
     live-heartbeat-stale-seconds: ${STOKR_RUNTIME_LIVE_STALE_SECONDS:600}
   crypto:

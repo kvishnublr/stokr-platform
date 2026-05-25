@@ -25,6 +25,10 @@
         </dependency>
         <dependency>
             <groupId>com.stokr</groupId>
+            <artifactId>stokr-broker</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.stokr</groupId>
             <artifactId>stokr-strategy</artifactId>
         </dependency>
         <dependency>

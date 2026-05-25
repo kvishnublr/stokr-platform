@@ -71,6 +71,16 @@ public class ZerodhaKiteApiClient {
         return readJson(body);
     }
 
+    /** Portfolio positions (day + net). */
+    public JsonNode getPositions(String apiKey, String accessToken) {
+        String body = http.get()
+                .uri(BASE + "/portfolio/positions")
+                .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
+                .retrieve()
+                .body(String.class);
+        return readJson(body);
+    }
+
     public JsonNode cancelOrder(String apiKey, String accessToken, String variety, String orderId) {
         String normalizedVariety = variety == null || variety.isBlank() ? "regular" : variety.trim().toLowerCase();
         String oid = orderId == null ? "" : orderId.trim();

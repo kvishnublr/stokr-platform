@@ -3,6 +3,7 @@ package com.stokr.broker.adapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.broker.api.BrokerAdapter;
+import com.stokr.broker.kite.ZerodhaKitePositionsParser;
 import com.stokr.broker.model.BrokerCredentials;
 import com.stokr.broker.model.BrokerOrderRequest;
 import com.stokr.broker.model.BrokerOrderResponse;
@@ -39,9 +40,15 @@ public class ZerodhaAdapter implements BrokerAdapter {
         return "ZERODHA";
     }
 
+    private static final ThreadLocal<BrokerCredentials> ACTIVE_CREDENTIALS = new ThreadLocal<>();
+
     @Override
     public void authenticate(BrokerCredentials credentials) {
-        // Session token auth — credentials are passed per-request via BrokerOrderRequest
+        if (credentials != null) {
+            ACTIVE_CREDENTIALS.set(credentials);
+        } else {
+            ACTIVE_CREDENTIALS.remove();
+        }
     }
 
     @Override
@@ -142,7 +149,23 @@ public class ZerodhaAdapter implements BrokerAdapter {
 
     @Override
     public List<BrokerPosition> getPositions() {
-        return Collections.emptyList();
+        BrokerCredentials credentials = ACTIVE_CREDENTIALS.get();
+        if (credentials == null
+                || credentials.apiKey() == null || credentials.apiKey().isBlank()
+                || credentials.additionalToken() == null || credentials.additionalToken().isBlank()) {
+            return Collections.emptyList();
+        }
+        try {
+            String raw = http.get()
+                    .uri(KITE_BASE + "/portfolio/positions")
+                    .header("Authorization", "token " + credentials.apiKey() + ":" + credentials.additionalToken())
+                    .retrieve()
+                    .body(String.class);
+            return ZerodhaKitePositionsParser.parse(readJson(raw));
+        } catch (Exception ex) {
+            log.warn("zerodha.get_positions.failed {}", ex.getMessage());
+            return Collections.emptyList();
+        }
     }
 
     @Override

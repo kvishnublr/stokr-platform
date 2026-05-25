@@ -3,6 +3,8 @@ package com.stokr.admin.web;
 import com.stokr.admin.signal.AdminSignalDetailDto;
 import com.stokr.admin.signal.AdminSignalDto;
 import com.stokr.admin.signal.AdminSignalParams;
+import com.stokr.admin.signal.AdminSignalQuantValidationDto;
+import com.stokr.admin.signal.AdminSignalQuantValidationService;
 import com.stokr.admin.signal.AdminSignalQueryService;
 import com.stokr.admin.signal.AdminSignalStatsDto;
 import com.stokr.common.api.ApiResponse;
@@ -57,6 +59,7 @@ import java.util.concurrent.CompletableFuture;
 public class AdminSignalController {
 
     private final AdminSignalQueryService queryService;
+    private final AdminSignalQuantValidationService quantValidationService;
     private final SignalOutcomeTrackerService outcomeTrackerService;
     private final SignalHistoricalReplayService historicalReplayService;
     private final SignalPipelineActivationService signalPipelineActivationService;
@@ -78,6 +81,17 @@ public class AdminSignalController {
         Instant from = since != null ? since
                 : Instant.now().atZone(java.time.ZoneId.of("Asia/Kolkata")).truncatedTo(ChronoUnit.DAYS).toInstant();
         return ApiResponse.ok(queryService.stats(from), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/quant-validation")
+    @Operation(summary = "Quant sanity checks on production signal analytics (replay isolation, sample size)")
+    public ApiResponse<AdminSignalQuantValidationDto> quantValidation(
+            @RequestParam(required = false) Instant since
+    ) {
+        Instant from = since != null ? since
+                : Instant.now().atZone(ZoneId.of("Asia/Kolkata")).truncatedTo(ChronoUnit.DAYS).toInstant();
+        AdminSignalStatsDto stats = queryService.stats(from);
+        return ApiResponse.ok(quantValidationService.validate(stats, from), CorrelationIdHolder.get());
     }
 
     @GetMapping

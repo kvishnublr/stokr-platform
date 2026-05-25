@@ -1,84 +1,71 @@
-import { ReactNode } from 'react';
-import { motion, MotionProps } from 'framer-motion';
+import { motion } from 'framer-motion';
 import clsx from 'clsx';
+import { ReactNode } from 'react';
 
-interface PremiumCardProps extends MotionProps {
+interface PremiumCardProps {
   children: ReactNode;
-  className?: string;
   glow?: 'blue' | 'emerald' | 'red' | 'purple' | 'none';
   interactive?: boolean;
   animated?: boolean;
   status?: 'default' | 'active' | 'warning' | 'error' | 'success';
+  className?: string;
 }
 
-const glowStyles = {
-  blue: 'hover:shadow-[0_0_20px_rgba(0,217,255,0.3)]',
-  emerald: 'hover:shadow-[0_0_20px_rgba(0,255,159,0.3)]',
-  red: 'hover:shadow-[0_0_20px_rgba(255,56,96,0.3)]',
-  purple: 'hover:shadow-[0_0_20px_rgba(199,125,255,0.3)]',
+const glowClasses = {
+  blue: 'shadow-glow',
+  emerald: 'shadow-glow-emerald',
+  red: 'shadow-glow-red',
+  purple: 'shadow-glow-purple',
   none: ''
 };
 
-const statusBorder = {
-  default: 'border-blue-500/20',
-  active: 'border-cyan-400/40 shadow-[0_0_20px_rgba(0,217,255,0.3)]',
-  warning: 'border-purple-400/30',
+const statusClasses = {
+  default: 'border-white/10',
+  active: 'border-cyan-500/40',
+  warning: 'border-purple-500/30',
   error: 'border-red-500/40',
-  success: 'border-emerald-400/40'
-};
-
-const statusBg = {
-  default: 'bg-slate-900/40',
-  active: 'bg-slate-900/60',
-  warning: 'bg-slate-900/50',
-  error: 'bg-slate-900/50',
-  success: 'bg-slate-900/50'
+  success: 'border-emerald-500/40'
 };
 
 export function PremiumCard({
   children,
-  className,
   glow = 'blue',
-  interactive = true,
+  interactive = false,
   animated = true,
   status = 'default',
-  ...motionProps
+  className
 }: PremiumCardProps) {
-  const baseStyles = clsx(
-    // Glass morphism
-    'backdrop-blur-xl',
-    statusBg[status],
-    statusBorder[status],
-    'border rounded-lg',
-
-    // Shadows & effects
-    'shadow-[0_4px_12px_rgba(0,0,0,0.2)]',
-    'shadow-inner shadow-white/5',
-    glowStyles[glow],
-
-    // Transitions
-    'transition-all duration-300',
-
-    // Interactive
-    interactive && 'hover:border-cyan-400/60 cursor-pointer',
-
-    className
-  );
-
-  const motionAnimations = animated ? {
-    initial: { opacity: 0, y: 20 },
-    animate: { opacity: 1, y: 0 },
-    transition: { type: 'spring', stiffness: 300, damping: 30 }
-  } : {};
-
   return (
     <motion.div
-      className={baseStyles}
-      whileHover={interactive ? { y: -4 } : undefined}
-      {...motionAnimations}
-      {...motionProps}
+      initial={animated ? { opacity: 0, y: 20 } : {}}
+      animate={animated ? { opacity: 1, y: 0 } : {}}
+      whileHover={interactive ? { y: -4 } : {}}
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      className={clsx(
+        'relative rounded-lg border backdrop-blur-xl',
+        'bg-slate-900/40',
+        statusClasses[status],
+        'shadow-[0_4px_12px_rgba(0,0,0,0.2)]',
+        'shadow-inner shadow-white/5',
+        'transition-all duration-300',
+        interactive && 'cursor-pointer hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]',
+        glowClasses[glow],
+        className
+      )}
     >
-      {children}
+      {/* Animated border glow on hover */}
+      {interactive && (
+        <motion.div
+          whileHover={{ opacity: 1 }}
+          initial={{ opacity: 0 }}
+          className="absolute inset-0 rounded-lg border border-cyan-400/40 pointer-events-none"
+        />
+      )}
+
+      {/* Content */}
+      <div className="relative">
+        {children}
+      </div>
     </motion.div>
   );
 }

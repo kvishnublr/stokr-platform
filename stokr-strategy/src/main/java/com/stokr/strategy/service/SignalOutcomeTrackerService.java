@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -38,6 +39,7 @@ public class SignalOutcomeTrackerService {
     private static final String STATUS_SL_HIT      = "STOPLOSS_HIT";
     private static final String STATUS_RUNNING     = "RUNNING";
     private static final String STATUS_EXPIRED     = "EXPIRED";
+    private static final String STATUS_BREAKEVEN   = "BREAKEVEN_EXIT";
 
     private static final int EXPIRY_HOURS     = 8;
     private static final int BATCH_SIZE       = 200;
@@ -47,6 +49,12 @@ public class SignalOutcomeTrackerService {
     private final MarketDataQueryService marketDataQueryService;
     private final ApplicationEventPublisher eventPublisher;
     private final SignalPriceEnrichmentService signalPriceEnrichmentService;
+
+    @Value("${stokr.strategy.exit.breakeven-mfe-ratio:0.5}")
+    private double breakevenMfeRatio;
+
+    @Value("${stokr.strategy.exit.breakeven-enabled:true}")
+    private boolean breakevenExitEnabled;
 
     @Scheduled(fixedDelayString = "${stokr.signal.outcome-track-ms:300000}")
     @Transactional
@@ -287,11 +295,52 @@ public class SignalOutcomeTrackerService {
             applyHitOutcome(sig, STATUS_TARGET_HIT, true, false, entry, target, qty, isBuy, now);
         } else if (hitSl) {
             applyHitOutcome(sig, STATUS_SL_HIT, false, true, entry, sl, qty, isBuy, now);
+        } else if (tryBreakevenExit(sig, postSignal, entry, target, isBuy, qty, now)) {
+            // closed at entry after partial favorable move
         } else {
             sig.setOutcomeStatus(STATUS_RUNNING);
             sig.setOutcomeTime(now);
         }
 
+        return true;
+    }
+
+    private boolean tryBreakevenExit(
+            StrategySignalEntity sig,
+            List<MarketdataCandle> postSignal,
+            BigDecimal entry,
+            BigDecimal target,
+            boolean isBuy,
+            BigDecimal qty,
+            Instant now) {
+        if (!breakevenExitEnabled || target == null || postSignal.isEmpty()) {
+            return false;
+        }
+        BigDecimal mfe = sig.getMaxFavorableExcursion();
+        if (mfe == null || mfe.signum() <= 0) {
+            return false;
+        }
+        BigDecimal targetMove = isBuy
+                ? target.subtract(entry).abs()
+                : entry.subtract(target).abs();
+        if (targetMove.signum() <= 0) {
+            return false;
+        }
+        BigDecimal mfePerUnit = mfe.divide(qty, 6, RoundingMode.HALF_UP);
+        if (mfePerUnit.compareTo(targetMove.multiply(BigDecimal.valueOf(breakevenMfeRatio))) < 0) {
+            return false;
+        }
+        MarketdataCandle last = postSignal.get(postSignal.size() - 1);
+        if (last.getClosePrice() == null) {
+            return false;
+        }
+        boolean crossedEntry = isBuy
+                ? last.getClosePrice().compareTo(entry) <= 0
+                : last.getClosePrice().compareTo(entry) >= 0;
+        if (!crossedEntry) {
+            return false;
+        }
+        applyHitOutcome(sig, STATUS_BREAKEVEN, false, false, entry, entry, qty, isBuy, now);
         return true;
     }
 

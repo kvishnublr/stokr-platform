@@ -3,6 +3,8 @@ package com.stokr.user.broker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.stokr.broker.kite.ZerodhaKitePositionsParser;
+import com.stokr.broker.model.BrokerPosition;
 import com.stokr.common.crypto.FieldCipher;
 import com.stokr.common.events.auth.AuthAuditEvents;
 import com.stokr.common.exception.BadRequestException;
@@ -202,6 +204,15 @@ public class ZerodhaBrokerOperationsService {
     public List<BrokerOpenOrderDto> recentOrders(UUID userId, int limit) {
         int capped = Math.max(1, Math.min(500, limit));
         return fetchOrders(userId, false, capped);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BrokerPosition> fetchBrokerPositions(UUID userId) {
+        Session s = requireSession(userId);
+        JsonNode payload = kiteApiClient.getPositions(s.apiKey(), s.accessToken());
+        List<BrokerPosition> positions = ZerodhaKitePositionsParser.parse(payload);
+        log.debug("zerodha.positions.fetched user={} count={}", userId, positions.size());
+        return positions;
     }
 
     private List<BrokerOpenOrderDto> fetchOrders(UUID userId, boolean onlyOpen, int limit) {

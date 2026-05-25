@@ -1,6 +1,7 @@
 package com.stokr.strategy.repository;
 
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,6 +16,8 @@ import java.util.UUID;
 public interface StrategySignalRepository extends JpaRepository<StrategySignalEntity, UUID>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<StrategySignalEntity> {
 
     long countByDeletedFalse();
+
+    long countBySignalSourceAndDeletedFalse(SignalProvenance signalSource);
 
     long countByCreatedAtAfterAndDeletedFalse(Instant since);
 

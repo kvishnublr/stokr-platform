@@ -12,6 +12,7 @@ import com.stokr.strategy.repository.StrategyInstanceRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.service.SignalEmissionGuardService;
 import com.stokr.strategy.service.SignalPriceEnrichmentService;
+import com.stokr.strategy.service.SignalQualityGateService;
 import com.stokr.strategy.service.SignalProvenanceResolver;
 import com.stokr.strategy.service.SignalSymbolPriceGateService;
 import com.stokr.strategy.signals.SignalProvenance;
@@ -48,6 +49,7 @@ public class StrategySignalPipelineService {
     private final SignalEmissionGuardService signalEmissionGuardService;
     private final SignalProvenanceResolver signalProvenanceResolver;
     private final SignalSymbolPriceGateService signalSymbolPriceGateService;
+    private final SignalQualityGateService signalQualityGateService;
 
     @Value("${stokr.strategy.signal-session-guard.enabled:true}")
     private boolean signalSessionGuardEnabled;
@@ -101,6 +103,9 @@ public class StrategySignalPipelineService {
                 && signal.getSignalSource() != null && signal.getSignalSource().isProductionAnalytics()) {
             signalPriceEnrichmentService.enrichIfMissing(signal, signalTime);
             if (signalSymbolPriceGateService.exceedsMaxPrice(signal, signalTime)) {
+                return null;
+            }
+            if (signalQualityGateService.shouldDrop(signal)) {
                 return null;
             }
             if (signalEmissionGuardService.shouldSuppress(signal)) {
