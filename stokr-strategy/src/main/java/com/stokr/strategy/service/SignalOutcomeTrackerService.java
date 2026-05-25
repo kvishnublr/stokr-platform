@@ -184,8 +184,7 @@ public class SignalOutcomeTrackerService {
                 .toList();
 
         if (postSignal.isEmpty()) {
-            sig.setOutcomeStatus(STATUS_RUNNING);
-            sig.setOutcomeTime(now);
+            markRunningNoBars(sig, now);
             return true;
         }
 
@@ -255,8 +254,7 @@ public class SignalOutcomeTrackerService {
                 .toList();
 
         if (postSignal.isEmpty()) {
-            sig.setOutcomeStatus(STATUS_RUNNING);
-            sig.setOutcomeTime(now);
+            markRunningNoBars(sig, now);
             return true;
         }
 
@@ -288,6 +286,14 @@ public class SignalOutcomeTrackerService {
         }
 
         return true;
+    }
+
+    private void markRunningNoBars(StrategySignalEntity sig, Instant now) {
+        sig.setOutcomeStatus(STATUS_RUNNING);
+        sig.setOutcomeTime(now);
+        if (sig.getUnrealizedPnl() == null) {
+            sig.setUnrealizedPnl(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+        }
     }
 
     private void applyHitOutcome(
