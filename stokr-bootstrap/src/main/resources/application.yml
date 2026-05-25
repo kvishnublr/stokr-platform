@@ -205,6 +205,10 @@ stokr:
   signal:
     outcome-track-ms: ${STOKR_SIGNAL_OUTCOME_TRACK_MS:300000}
     outcome-fast-track-ms: ${STOKR_SIGNAL_OUTCOME_FAST_TRACK_MS:30000}
+    # Symbol-level cooldown to prevent signal spam (e.g., VWAP was firing 3,937 signals/day)
+    # After a signal for SYMBOL+STRATEGY, skip next signals within cooldown window
+    # 300s = 5 min per symbol per strategy (reduce noise by ~95% while preserving quality)
+    cooldown-seconds: ${STOKR_SIGNAL_COOLDOWN_SECONDS:300}
   runtime:
     live-heartbeat-stale-seconds: ${STOKR_RUNTIME_LIVE_STALE_SECONDS:600}
   crypto:

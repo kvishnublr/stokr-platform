@@ -5,6 +5,7 @@ import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.keys.StrategyKeys;
 import com.stokr.strategy.signals.SignalType;
+import com.stokr.strategy.runtime.SignalCooldownService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class VwapMeanReversionSignalGenerator {
     private static final int ATR_PERIOD = 14;
 
     private final MarketDataQueryService marketDataQueryService;
+    private final SignalCooldownService signalCooldownService;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
@@ -69,6 +71,11 @@ public class VwapMeanReversionSignalGenerator {
             Instant barOpenTime,
             String timeframe
     ) {
+        // Signal cooldown check — prevent spam (VWAP was firing 3,937x per day)
+        if (!signalCooldownService.shouldEmitSignal(symbol, StrategyKeys.VWAP_MEAN_REVERSION, barOpenTime)) {
+            return null; // still in cooldown for this symbol+strategy
+        }
+
         List<MarketdataCandle> bars = marketDataQueryService.lastBarsAscEndingAt(symbol, timeframe, 240, barOpenTime);
         if (bars.size() < 40) {
             return null;
