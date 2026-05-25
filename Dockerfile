@@ -17,11 +17,11 @@ COPY stokr-broker/pom.xml stokr-broker/
 COPY stokr-websocket/pom.xml stokr-websocket/
 COPY stokr-bootstrap/pom.xml stokr-bootstrap/
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn -pl stokr-bootstrap -am dependency:go-offline -q
+    mvn -pl stokr-common,stokr-auth,stokr-user,stokr-broker,stokr-oms,stokr-risk,stokr-marketdata,stokr-strategy,stokr-websocket,stokr-bootstrap dependency:go-offline -q
 
 COPY . .
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn -pl stokr-bootstrap -am package -DskipTests
+    mvn -pl stokr-common,stokr-auth,stokr-user,stokr-broker,stokr-oms,stokr-risk,stokr-marketdata,stokr-strategy,stokr-websocket,stokr-bootstrap package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
