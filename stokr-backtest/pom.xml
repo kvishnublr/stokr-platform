@@ -25,10 +25,6 @@
         </dependency>
         <dependency>
             <groupId>com.stokr</groupId>
-            <artifactId>stokr-execution</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.stokr</groupId>
             <artifactId>stokr-oms</artifactId>
         </dependency>
         <dependency>
