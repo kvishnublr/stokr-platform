@@ -10,7 +10,9 @@ import com.stokr.admin.signal.AdminSignalStatsDto;
 import com.stokr.auth.repository.AuthUserRepository;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.risk.service.LiveTradingArmingService;
+import com.stokr.strategy.domain.StrategyDefinition;
 import com.stokr.strategy.domain.StrategyInstance;
+import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
 import com.stokr.strategy.service.StrategyInstanceLifecycleService;
 import com.stokr.common.api.PageResponse;
@@ -159,6 +161,22 @@ public class AdminSignalController {
                     .filter(si -> skUpper.equalsIgnoreCase(si.getDefinition().getStrategyKey()))
                     .findFirst()
                     .orElse(null);
+            if (inst == null) {
+                StrategyDefinition def = strategyDefinitionRepository.findByStrategyKeyAndDeletedFalse(skUpper)
+                        .orElse(null);
+                if (def != null) {
+                    StrategyInstance created = new StrategyInstance();
+                    created.setDefinition(def);
+                    created.setUserId(traderId);
+                    created.setSymbol(symbol.trim().toUpperCase());
+                    created.setEnabled(true);
+                    created.setExecutionMode("LIVE");
+                    created.setRuntimeState("STOPPED");
+                    created.setRiskMultiplier(java.math.BigDecimal.ONE);
+                    inst = strategyInstanceRepository.save(created);
+                    out.put("traderInstanceCreated", true);
+                }
+            }
             if (inst != null) {
                 inst.setExecutionMode("LIVE");
                 inst.setSymbol(symbol.trim().toUpperCase());
