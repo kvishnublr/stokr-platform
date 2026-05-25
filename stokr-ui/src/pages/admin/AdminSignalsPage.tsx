@@ -494,10 +494,11 @@ export function AdminSignalsPage() {
 
   const clearFilters = () => {
     setSymbol(""); setStrategyName(""); setSignalType("ALL");
-    setPipeline("ALL"); setOutcomeStatus("ALL"); setPage(0);
+    setPipeline("ALL"); setOutcomeStatus("ALL"); setIncludeReplayLab(false); setPage(0);
   };
 
-  const hasFilters = !!(symbol || strategyName || signalType !== "ALL" || pipeline !== "ALL" || outcomeStatus !== "ALL");
+  const hasFilters = !!(symbol || strategyName || signalType !== "ALL" || pipeline !== "ALL"
+    || outcomeStatus !== "ALL" || includeReplayLab);
 
   const rows = q.data?.content ?? [];
   const total = q.data?.totalElements ?? 0;
