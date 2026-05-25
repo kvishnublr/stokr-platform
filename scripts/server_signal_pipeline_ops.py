@@ -39,10 +39,19 @@ def main():
 
     act = req(
         "POST",
-        "/api/admin/signals/activate-pipeline?syncUniverses=false&runImmediatePoll=true",
+        "/api/admin/signals/activate-pipeline?syncUniverses=true&runImmediatePoll=true",
         token=token,
     )
     print("activate-pipeline:", json.dumps(act.get("data"), indent=2))
+
+    replay = req(
+        "POST",
+        "/api/admin/signals/replay?strategyKey=NSE_SPIKE_DETECTION&from=2026-05-19&to=2026-05-23",
+        token=token,
+    )
+    print("replay:", json.dumps(replay.get("data"), indent=2))
+    import time
+    time.sleep(50)
 
     stats = req("GET", "/api/admin/signals/stats", token=token)
     print("stats:", json.dumps(stats.get("data"), indent=2))
