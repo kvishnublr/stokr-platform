@@ -30,7 +30,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Service
+// @Service
 @RequiredArgsConstructor
 @Slf4j
 public class UnifiedStrategyRuntimeService {
