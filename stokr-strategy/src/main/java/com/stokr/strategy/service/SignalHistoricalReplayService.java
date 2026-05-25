@@ -21,6 +21,7 @@ import com.stokr.strategy.signals.StrategySignal;
 import com.stokr.strategy.vwap.VwapMeanReversionSignalGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -46,11 +47,11 @@ import java.util.UUID;
 public class SignalHistoricalReplayService {
 
     private final VwapMeanReversionSignalGenerator vwapGenerator;
-    private final MeanReversionSignalGenerator meanReversionGenerator;
-    private final MeanReversionV2SignalGenerator meanReversionV2Generator;
-    private final MomentumBreakoutSignalGenerator momentumGenerator;
-    private final OpeningRangeBreakoutSignalGenerator orbGenerator;
-    private final EmaTrendFollowingSignalGenerator emaTrendGenerator;
+    private final ObjectProvider<MeanReversionSignalGenerator> meanReversionGenerator;
+    private final ObjectProvider<MeanReversionV2SignalGenerator> meanReversionV2Generator;
+    private final ObjectProvider<MomentumBreakoutSignalGenerator> momentumGenerator;
+    private final ObjectProvider<OpeningRangeBreakoutSignalGenerator> orbGenerator;
+    private final ObjectProvider<EmaTrendFollowingSignalGenerator> emaTrendGenerator;
     private final StrategyUniverseResolverService resolverService;
     private final MarketDataQueryService marketDataQueryService;
     private final StrategySignalPipelineService pipelineService;
@@ -158,17 +159,57 @@ public class SignalHistoricalReplayService {
         StrategySignalEntity legacy = switch (strategyKey) {
             case "VWAP_MEAN_REVERSION"     -> vwapGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
             case "MEAN_REVERSION", "MEAN_REVERSION_RANGE_FADE" ->
-                    meanReversionGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime);
-            case "MEAN_REVERSION_V2"       -> meanReversionV2Generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime);
-            case "MOMENTUM_BREAKOUT"       -> momentumGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
-            case "OPENING_RANGE_BREAKOUT"  -> orbGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
-            case "EMA_TREND_FOLLOW"        -> emaTrendGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
+                    evaluateMeanReversionV1(symbol, barTime);
+            case "MEAN_REVERSION_V2"       -> evaluateMeanReversionV2(symbol, barTime);
+            case "MOMENTUM_BREAKOUT"       -> evaluateMomentum(symbol, barTime);
+            case "OPENING_RANGE_BREAKOUT"  -> evaluateOrb(symbol, barTime);
+            case "EMA_TREND_FOLLOW"        -> evaluateEmaTrend(symbol, barTime);
             default -> null;
         };
         if (legacy != null) {
             return legacy;
         }
         return evaluateRegistered(strategyKey, symbol, barTime);
+    }
+
+    private StrategySignalEntity evaluateMeanReversionV1(String symbol, Instant barTime) {
+        MeanReversionSignalGenerator generator = meanReversionGenerator.getIfAvailable();
+        if (generator == null) {
+            return null;
+        }
+        return generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime);
+    }
+
+    private StrategySignalEntity evaluateMeanReversionV2(String symbol, Instant barTime) {
+        MeanReversionV2SignalGenerator generator = meanReversionV2Generator.getIfAvailable();
+        if (generator == null) {
+            return null;
+        }
+        return generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime);
+    }
+
+    private StrategySignalEntity evaluateMomentum(String symbol, Instant barTime) {
+        MomentumBreakoutSignalGenerator generator = momentumGenerator.getIfAvailable();
+        if (generator == null) {
+            return null;
+        }
+        return generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
+    }
+
+    private StrategySignalEntity evaluateOrb(String symbol, Instant barTime) {
+        OpeningRangeBreakoutSignalGenerator generator = orbGenerator.getIfAvailable();
+        if (generator == null) {
+            return null;
+        }
+        return generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
+    }
+
+    private StrategySignalEntity evaluateEmaTrend(String symbol, Instant barTime) {
+        EmaTrendFollowingSignalGenerator generator = emaTrendGenerator.getIfAvailable();
+        if (generator == null) {
+            return null;
+        }
+        return generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
     }
 
     private StrategySignalEntity evaluateRegistered(String strategyKey, String symbol, Instant barTime) {
