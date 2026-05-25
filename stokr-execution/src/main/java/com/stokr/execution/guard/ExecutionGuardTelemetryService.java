@@ -130,6 +130,16 @@ public class ExecutionGuardTelemetryService {
                 : ex.getSlippageBps().divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP));
         q.setCapturedAt(Instant.now());
         qualityMetricRepository.save(q);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("expectedPrice", q.getExpectedPrice());
+        summary.put("actualFillPrice", q.getActualFillPrice());
+        summary.put("realizedSlippagePct", q.getRealizedSlippagePct());
+
+        Map<String, Object> marketSnapshot = new LinkedHashMap<>();
+        marketSnapshot.put("spreadAtExecutionPct", q.getSpreadAtExecutionPct());
+        marketSnapshot.put("volatilityAtExecutionPct", q.getVolatilityAtExecutionPct());
+
         timelineService.append(
                 order.getId(),
                 null,
@@ -139,19 +149,18 @@ public class ExecutionGuardTelemetryService {
                 order.getSymbol(),
                 "FILL_RECORDED",
                 Instant.now(),
-                Map.of(
-                        "expectedPrice", q.getExpectedPrice(),
-                        "actualFillPrice", q.getActualFillPrice(),
-                        "realizedSlippagePct", q.getRealizedSlippagePct()
-                ),
+                summary,
                 q.getFillLatencyMs(),
-                Map.of(
-                        "spreadAtExecutionPct", q.getSpreadAtExecutionPct(),
-                        "volatilityAtExecutionPct", q.getVolatilityAtExecutionPct()
-                ),
+                marketSnapshot,
                 "PASS",
                 "INFO"
         );
+
+        Map<String, Object> realtimePayload = new LinkedHashMap<>();
+        realtimePayload.put("orderId", order.getId().toString());
+        realtimePayload.put("slippagePct", q.getRealizedSlippagePct());
+        realtimePayload.put("latencyMs", q.getFillLatencyMs());
+
         realtimePublisher.publish(
                 order.getUserId(),
                 "INFO",
@@ -159,11 +168,7 @@ public class ExecutionGuardTelemetryService {
                 order.getSymbol(),
                 order.getStrategyKey(),
                 "execution_fill_quality",
-                Map.of(
-                        "orderId", order.getId().toString(),
-                        "slippagePct", q.getRealizedSlippagePct(),
-                        "latencyMs", q.getFillLatencyMs()
-                )
+                realtimePayload
         );
         Counter.builder("stokr.execution.fill.quality")
                 .tag("strategy", order.getStrategyKey() == null ? "UNKNOWN" : order.getStrategyKey())
