@@ -74,7 +74,8 @@ public class AdminTestSignalLabSquareOffService {
         draft.setOrderType("MARKET");
         draft.setQuantity(qty);
         draft.setStrategyKey(run.getStrategyKey());
-        draft.setSignalId(run.getSignalId());
+        // Exit leg must not reuse entry signal_id — ux_oms_orders_user_signal_live allows one order per signal.
+        draft.setSignalId(null);
         draft.setExecutionMode(mode);
         draft.setBrokerVendor(broker);
         draft.setTestTrade(true);

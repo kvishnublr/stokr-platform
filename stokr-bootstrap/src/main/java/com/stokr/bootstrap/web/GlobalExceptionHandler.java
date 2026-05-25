@@ -86,9 +86,23 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleDataIntegrity(DataIntegrityViolationException ex) {
         log.warn("Data integrity violation", ex);
         String cid = CorrelationIdHolder.get();
-        String msg = "Resource conflict";
+        String msg = resolveDataIntegrityMessage(ex);
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.fail(msg, cid, new ApiError("CONFLICT", msg)));
+    }
+
+    private static String resolveDataIntegrityMessage(DataIntegrityViolationException ex) {
+        String raw = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+        if (raw != null) {
+            String lower = raw.toLowerCase(Locale.ROOT);
+            if (lower.contains("ux_oms_orders_user_signal")) {
+                return "Duplicate OMS order for this signal (entry and exit cannot share the same signal id)";
+            }
+            if (lower.contains("ux_oms_orders_user_idempotency")) {
+                return "Duplicate order idempotency key for this trader";
+            }
+        }
+        return "Resource conflict";
     }
 
     @ExceptionHandler(DataAccessException.class)

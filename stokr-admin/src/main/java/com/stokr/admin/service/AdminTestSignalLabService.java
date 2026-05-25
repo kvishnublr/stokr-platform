@@ -191,9 +191,15 @@ public class AdminTestSignalLabService {
         if ("LIVE".equalsIgnoreCase(run.getExecutionMode()) && order.isPresent()) {
             OmsOrder entry = order.get();
             if (isBrokerAcceptedState(entry.getState().name(), true)) {
-                squareOffService.squareOffImmediately(run, entry, true);
-                entityManager.flush();
-                order = omsOrderRepository.findById(entry.getId());
+                try {
+                    squareOffService.squareOffImmediately(run, entry, true);
+                    entityManager.flush();
+                    order = omsOrderRepository.findById(entry.getId());
+                } catch (Exception ex) {
+                    log.error("test.lab.squareoff_failed runId={} orderId={} {}", run.getId(), entry.getId(), ex.toString());
+                    run.setSquareOffStatus("FAILED");
+                    runRepository.save(run);
+                }
             }
         }
 
