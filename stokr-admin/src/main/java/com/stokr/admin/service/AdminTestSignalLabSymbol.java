@@ -10,7 +10,7 @@ final class AdminTestSignalLabSymbol {
 
     static String normalize(String symbol, String exchangeHint) {
         if (symbol == null || symbol.isBlank()) {
-            return "NSE:INFY";
+            return "NSE:ITC";
         }
         String trimmed = symbol.trim().toUpperCase();
         if (trimmed.contains(":")) {

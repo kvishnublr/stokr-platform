@@ -8,7 +8,7 @@ import urllib.request
 
 BASE = "http://localhost:8080"
 TRADER = "6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4"
-PASSWORDS = ["admin", "Temp1234"]
+PASSWORDS = ["password", "admin", "Temp1234"]
 
 
 def post(path: str, body: dict, token: str | None = None) -> dict:
@@ -55,7 +55,7 @@ def main() -> int:
     payload = {
         "traderUserId": TRADER,
         "strategyKey": "OPENING_RANGE_BREAKOUT",
-        "symbol": "NSE:INFY",
+        "symbol": "NSE:ITC",
         "side": "BUY",
         "quantity": 1,
         "productType": "MIS",

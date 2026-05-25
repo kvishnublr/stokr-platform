@@ -137,12 +137,27 @@ function StrategySearchDropdown({
   );
 }
 
-const STORAGE_KEY = "testSignalLabDefaults";
+const STORAGE_KEY = "testSignalLabDefaults.v2";
+
+const LIVE_SAFETY_FLAGS = {
+  dryRunOnly: false,
+  skipActualBrokerExecution: false,
+  simulateRejection: false,
+  simulateTimeout: false,
+  simulateStaleWebsocket: false,
+  simulateMarginFailure: false,
+  simulateBrokerDisconnect: false,
+} as const;
+
+function migrateSymbol(symbol: string | undefined): string {
+  if (!symbol || symbol === "INFY" || symbol === "NSE:INFY") return "NSE:ITC";
+  return symbol;
+}
 
 const DEFAULT_FORM: TestSignalLabRequest = {
   traderUserId: "",
   strategyKey: "",
-  symbol: "NSE:INFY",
+  symbol: "NSE:ITC",
   side: "BUY",
   quantity: 1,
   orderType: "MARKET",
@@ -165,8 +180,18 @@ export function AdminTestSignalLabPage() {
 
   const [form, setForm] = useState<TestSignalLabRequest>(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? { ...DEFAULT_FORM, ...JSON.parse(stored) } : DEFAULT_FORM;
+      const stored = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem("testSignalLabDefaults");
+      if (!stored) return DEFAULT_FORM;
+      const parsed = JSON.parse(stored) as Partial<TestSignalLabRequest>;
+      return {
+        ...DEFAULT_FORM,
+        ...parsed,
+        symbol: migrateSymbol(parsed.symbol),
+        ...LIVE_SAFETY_FLAGS,
+        executionMode: parsed.executionMode === "PAPER" ? "PAPER" : DEFAULT_FORM.executionMode,
+        productType: DEFAULT_FORM.productType,
+        autoSquareOffMinutes: parsed.autoSquareOffMinutes ?? DEFAULT_FORM.autoSquareOffMinutes,
+      };
     } catch {
       return DEFAULT_FORM;
     }
@@ -301,7 +326,7 @@ export function AdminTestSignalLabPage() {
 
           <label className="space-y-1.5">
             <span className={sectionTitleClassName()}>Symbol</span>
-            <input className={fieldClassName()} placeholder="NSE:INFY or INFY" value={form.symbol} onChange={(e) => setForm((p) => ({ ...p, symbol: e.target.value.toUpperCase() }))} />
+            <input className={fieldClassName()} placeholder="NSE:ITC or ITC" value={form.symbol} onChange={(e) => setForm((p) => ({ ...p, symbol: e.target.value.toUpperCase() }))} />
           </label>
 
           <label className="space-y-1.5">
@@ -401,8 +426,10 @@ export function AdminTestSignalLabPage() {
                   type="checkbox"
                   checked={Boolean((form as any)[k])}
                   disabled={
-                    (k === "dryRunOnly" || k === "skipActualBrokerExecution") &&
-                    (form.executionMode === "LIVE" || form.executionMode === "BOTH")
+                    ((k === "dryRunOnly" || k === "skipActualBrokerExecution") &&
+                      (form.executionMode === "LIVE" || form.executionMode === "BOTH")) ||
+                    (k.startsWith("simulate") &&
+                      (form.executionMode === "LIVE" || form.executionMode === "BOTH"))
                   }
                   onChange={(e) => setForm((p) => ({ ...p, [k]: e.target.checked } as any))}
                 />

@@ -364,7 +364,7 @@ public class ZerodhaBrokerOperationsService {
         }
         String symbol = req != null && req.tradingsymbol() != null && !req.tradingsymbol().isBlank()
                 ? req.tradingsymbol().trim().toUpperCase()
-                : "INFY";
+                : "ITC";
         validateTestTradingsymbol(symbol);
         String side = req != null && req.side() != null && !req.side().isBlank() ? req.side().trim().toUpperCase() : "BUY";
         if (!"BUY".equals(side) && !"SELL".equals(side)) {

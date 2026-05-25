@@ -114,6 +114,13 @@ public class AdminTestSignalLabService {
         run.setSimulateMarginFailure(request.simulateMarginFailure());
         run.setSimulateBrokerDisconnect(request.simulateBrokerDisconnect());
         String effectiveMode = resolveDispatchMode(request.executionMode(), request.dryRunOnly(), request.skipActualBrokerExecution());
+        if ("LIVE".equalsIgnoreCase(effectiveMode)) {
+            run.setSimulateRejection(false);
+            run.setSimulateTimeout(false);
+            run.setSimulateStaleWebsocket(false);
+            run.setSimulateMarginFailure(false);
+            run.setSimulateBrokerDisconnect(false);
+        }
         int squareOffMinutes = resolveAutoSquareOffMinutes(request.autoSquareOffMinutes(), effectiveMode);
         run.setAutoSquareOffMinutes(squareOffMinutes);
         if (squareOffMinutes > 0) {
