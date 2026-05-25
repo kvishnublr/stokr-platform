@@ -14,7 +14,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -52,6 +54,7 @@ public class SignalPipelineActivationService {
     private final StrategyUniverseSymbolRepository symbolRepository;
     private final StrategyUniverseResolverService universeResolverService;
     private final List<UniverseSyncService> universeSyncServices;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("${stokr.strategy.pipeline.default-universe-group:NIFTY_50}")
     private String defaultUniverseGroupKey;
@@ -59,13 +62,21 @@ public class SignalPipelineActivationService {
     @Value("${stokr.strategy.pipeline.fast-scan-interval-seconds:5}")
     private int fastScanIntervalSeconds;
 
-    @Transactional
     public Map<String, Object> activate(boolean syncUniverses, boolean runImmediatePoll) {
+        int universesSynced = syncUniverses ? syncUniversesIsolated() : 0;
+        Map<String, Object> out = activateCore(universesSynced);
+        out.put("runImmediatePoll", runImmediatePoll);
+        log.info("signal.pipeline.activated {}", out);
+        return out;
+    }
+
+    /** Core enablement in one short transaction (no universe bulk sync). */
+    @Transactional
+    protected Map<String, Object> activateCore(int universesSynced) {
         int strategiesEnabled = 0;
         int bindingsEnabled = 0;
         int bindingsCreated = 0;
         int symbolsSeeded = 0;
-        int universesSynced = 0;
 
         for (StrategyDefinition def : definitionRepository.findAll().stream().filter(d -> !d.isDeleted()).toList()) {
             if (!def.isEnabled()) {
@@ -78,21 +89,6 @@ public class SignalPipelineActivationService {
         Optional<StrategyUniverseGroup> defaultGroup = groupRepository.findByGroupKey(defaultUniverseGroupKey);
         if (defaultGroup.isEmpty()) {
             defaultGroup = groupRepository.findByGroupKey("CUSTOM_WATCHLIST");
-        }
-
-        if (syncUniverses) {
-            for (UniverseSyncService sync : universeSyncServices) {
-                for (String groupKey : sync.supportedGroupKeys()) {
-                    try {
-                        int n = sync.sync(groupKey);
-                        if (n > 0) {
-                            universesSynced += n;
-                        }
-                    } catch (Exception ex) {
-                        log.warn("pipeline.activate.universe_sync_failed group={} {}", groupKey, ex.toString());
-                    }
-                }
-            }
         }
 
         StrategyUniverseGroup watchlist = groupRepository.findByGroupKey("CUSTOM_WATCHLIST").orElse(null);
@@ -156,10 +152,31 @@ public class SignalPipelineActivationService {
         out.put("universesSynced", universesSynced);
         out.put("defaultUniverseGroup", bindGroup != null ? bindGroup.getGroupKey() : null);
         out.put("activeBindings", bindingRepository.findAllActiveBindings().size());
-        out.put("runImmediatePoll", runImmediatePoll);
         out.put("activatedAt", Instant.now().toString());
-        log.info("signal.pipeline.activated {}", out);
         return out;
+    }
+
+    /** Each universe sync in its own transaction so duplicate-key races do not abort enablement. */
+    private int syncUniversesIsolated() {
+        int universesSynced = 0;
+        for (UniverseSyncService sync : universeSyncServices) {
+            for (String groupKey : sync.supportedGroupKeys()) {
+                Integer n = transactionTemplate.execute(status -> {
+                    try {
+                        return sync.sync(groupKey);
+                    } catch (Exception ex) {
+                        status.setRollbackOnly();
+                        log.warn("pipeline.activate.universe_sync_failed group={} {}", groupKey, ex.toString());
+                        return 0;
+                    }
+                });
+                if (n != null && n > 0) {
+                    universesSynced += n;
+                }
+            }
+        }
+        universeResolverService.invalidateCache();
+        return universesSynced;
     }
 
     private boolean ensureSymbol(StrategyUniverseGroup group, String symbol) {
@@ -169,14 +186,19 @@ public class SignalPipelineActivationService {
         if (exists) {
             return false;
         }
-        StrategyUniverseSymbol row = new StrategyUniverseSymbol();
-        row.setGroup(group);
-        row.setSymbol(upper);
-        row.setTradingSymbol(upper);
-        row.setExchange("NSE");
-        row.setInstrumentType("EQ");
-        row.setEnabled(true);
-        symbolRepository.save(row);
-        return true;
+        try {
+            StrategyUniverseSymbol row = new StrategyUniverseSymbol();
+            row.setGroup(group);
+            row.setSymbol(upper);
+            row.setTradingSymbol(upper);
+            row.setExchange("NSE");
+            row.setInstrumentType("EQ");
+            row.setEnabled(true);
+            symbolRepository.save(row);
+            return true;
+        } catch (DataIntegrityViolationException ex) {
+            log.debug("pipeline.activate.symbol_exists group={} symbol={}", group.getGroupKey(), upper);
+            return false;
+        }
     }
 }

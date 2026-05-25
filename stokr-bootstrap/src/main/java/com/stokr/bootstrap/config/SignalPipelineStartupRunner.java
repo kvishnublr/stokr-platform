@@ -30,7 +30,8 @@ public class SignalPipelineStartupRunner {
             return;
         }
         try {
-            var summary = activationService.activate(true, false);
+            // V51 migration already enables catalog/bindings; skip bulk universe sync on boot (avoids TX abort).
+            var summary = activationService.activate(false, false);
             log.info("signal.pipeline.startup_activation {}", summary);
             evaluationScheduler.ifAvailable(StrategyEvaluationScheduler::poll);
         } catch (Exception ex) {
