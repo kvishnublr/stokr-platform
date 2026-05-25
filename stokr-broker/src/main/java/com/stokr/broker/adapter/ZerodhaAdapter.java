@@ -114,7 +114,7 @@ public class ZerodhaAdapter implements BrokerAdapter {
                     kiteOrderId, tradingsymbol, side, qty);
             // Kite order IDs are numeric strings; derive a deterministic UUID for platform storage
             UUID brokerOrderId = UUID.nameUUIDFromBytes(kiteOrderId.getBytes(StandardCharsets.UTF_8));
-            return new BrokerOrderResponse(brokerOrderId, "ACCEPTED", request.symbol(), request.quantity());
+            return new BrokerOrderResponse(brokerOrderId, "ACCEPTED", request.symbol(), request.quantity(), kiteOrderId);
 
         } catch (RestClientResponseException ex) {
             String body = ex.getResponseBodyAsString();

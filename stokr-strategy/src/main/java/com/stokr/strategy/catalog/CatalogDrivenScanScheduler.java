@@ -6,6 +6,7 @@ import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.domain.StrategyUniverseSymbol;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
+import com.stokr.strategy.runtime.BindingScanThrottleService;
 import com.stokr.strategy.runtime.StrategyRegistry;
 import com.stokr.strategy.signals.StrategySignal;
 import com.stokr.strategy.signals.SignalType;
@@ -41,6 +42,7 @@ public class CatalogDrivenScanScheduler {
     private final StrategyUniverseResolverService resolverService;
     private final StrategyRegistry strategyRegistry;
     private final StrategySignalPipelineService signalPipelineService;
+    private final BindingScanThrottleService bindingScanThrottleService;
     private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
 
     // Separate from the main scanner gate — catalog strategies (e.g. MCX) manage their own session hours
@@ -77,6 +79,9 @@ public class CatalogDrivenScanScheduler {
         int totalSkipped = 0;
 
         for (StrategyRuntimeBinding binding : activeBindings) {
+            if (!bindingScanThrottleService.shouldScan(binding, tick)) {
+                continue;
+            }
             String strategyKey = binding.getStrategyCatalog().getStrategyKey();
             TradingStrategy strategy = strategyRegistry.get(strategyKey);
 

@@ -91,7 +91,9 @@ public class ZerodhaBrokerOperationsService {
             Double price,
             String status,
             Instant orderTimestamp,
-            String statusMessage
+            String statusMessage,
+            Integer filledQuantity,
+            Double averagePrice
     ) {
     }
 
@@ -231,7 +233,9 @@ public class ZerodhaBrokerOperationsService {
                     row.path("price").isNumber() ? row.path("price").asDouble() : null,
                     status,
                     parseKiteTimestamp(row.path("order_timestamp").asText("")),
-                    blankToNull(row.path("status_message").asText(""))
+                    blankToNull(row.path("status_message").asText("")),
+                    row.path("filled_quantity").isNumber() ? row.path("filled_quantity").asInt() : null,
+                    row.path("average_price").isNumber() ? row.path("average_price").asDouble() : null
             ));
         }
         out.sort((a, b) -> {

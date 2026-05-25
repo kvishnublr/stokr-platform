@@ -1,6 +1,7 @@
 package com.stokr.strategy.domain;
 
 import com.stokr.common.domain.BaseEntity;
+import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -92,6 +93,10 @@ public class StrategySignalEntity extends BaseEntity {
 
     @Column(name = "pipeline", length = 16)
     private String pipeline;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "signal_source", length = 16)
+    private SignalProvenance signalSource;
 
     @Column(name = "stop_price", precision = 24, scale = 8)
     private BigDecimal stopPrice;

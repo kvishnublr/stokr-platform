@@ -7,6 +7,10 @@ public record BrokerOrderResponse(
         UUID brokerOrderId,
         String status,
         String symbol,
-        BigDecimal filledQty
+        BigDecimal filledQty,
+        String externalOrderId
 ) {
+    public BrokerOrderResponse(UUID brokerOrderId, String status, String symbol, BigDecimal filledQty) {
+        this(brokerOrderId, status, symbol, filledQty, null);
+    }
 }

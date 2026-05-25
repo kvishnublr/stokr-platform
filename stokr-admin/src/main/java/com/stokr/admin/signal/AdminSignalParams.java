@@ -12,10 +12,11 @@ public record AdminSignalParams(
         Instant from,
         Instant to,
         String outcomeStatus,
-        Boolean includeTestTrades
+        Boolean includeTestTrades,
+        Boolean includeReplayAndLab
 ) {
     public AdminSignalParams(String strategyName, String symbol, String signalType,
                              String pipeline, UUID userId, Instant from, Instant to) {
-        this(strategyName, symbol, signalType, pipeline, userId, from, to, null, false);
+        this(strategyName, symbol, signalType, pipeline, userId, from, to, null, false, false);
     }
 }

@@ -72,9 +72,15 @@ public class SignalOutcomeTrackerService {
                 signalPriceEnrichmentService.enrichIfMissing(sig,
                         sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt());
                 String prevStatus = sig.getOutcomeStatus();
+                BigDecimal prevUnrealized = sig.getUnrealizedPnl();
                 if (evaluate(sig, now)) {
                     updated++;
-                    if (!sig.getOutcomeStatus().equals(prevStatus)) {
+                    boolean statusChanged = prevStatus != null && !prevStatus.equals(sig.getOutcomeStatus());
+                    boolean pnlChanged = (prevUnrealized == null && sig.getUnrealizedPnl() != null)
+                            || (prevUnrealized != null && sig.getUnrealizedPnl() != null
+                            && prevUnrealized.compareTo(sig.getUnrealizedPnl()) != 0)
+                            || (sig.getRealizedPnl() != null);
+                    if (statusChanged || pnlChanged) {
                         broadcastOutcomeChange(sig);
                     }
                 }
@@ -164,33 +170,33 @@ public class SignalOutcomeTrackerService {
             return true;
         }
 
+        Instant signalTime = sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt();
+        Instant scanEnd = signalTime.plus(EXPIRY_HOURS, ChronoUnit.HOURS);
+        if (scanEnd.isAfter(now)) {
+            scanEnd = now;
+        }
+        boolean isBuy = type == SignalType.BUY;
+        BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
+
+        List<MarketdataCandle> bars = marketDataQueryService.rangeAsc(sig.getSymbol(), "1m", signalTime, scanEnd);
+        if (bars.isEmpty()) {
+            bars = marketDataQueryService.rangeAsc(sig.getSymbol(), "5m", signalTime, scanEnd);
+        }
+        List<MarketdataCandle> postSignal = bars.stream()
+                .filter(c -> !c.getOpenTime().isBefore(signalTime))
+                .toList();
+        refreshMarkToMarket(sig, bars, postSignal, entry, isBuy, qty);
+
         if (target == null || sl == null) {
             sig.setOutcomeStatus(STATUS_RUNNING);
             sig.setOutcomeTime(now);
             return true;
         }
 
-        // For historical/replayed signals, use candleTimestamp as the signal time
-        Instant signalTime = sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt();
-        // Fetch 1m candles in the 8-hour window after the signal candle
-        Instant scanEnd = signalTime.plus(EXPIRY_HOURS, ChronoUnit.HOURS);
-        if (scanEnd.isAfter(now)) scanEnd = now;
-
-        List<MarketdataCandle> bars = marketDataQueryService.rangeAsc(
-                sig.getSymbol(), "1m", signalTime, scanEnd);
-
-        List<MarketdataCandle> postSignal = bars.stream()
-                .filter(c -> c.getOpenTime().isAfter(signalTime))
-                .toList();
-
         if (postSignal.isEmpty()) {
             markRunningNoBars(sig, now);
             return true;
         }
-
-        boolean isBuy  = type == SignalType.BUY;
-        BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
-        applyExcursionAndMarkToMarket(sig, postSignal, entry, isBuy, qty);
 
         boolean hitTgt = false;
         boolean hitSl  = false;
@@ -213,6 +219,9 @@ public class SignalOutcomeTrackerService {
         } else {
             sig.setOutcomeStatus(STATUS_EXPIRED);
             sig.setOutcomeTime(now);
+            if (sig.getUnrealizedPnl() != null) {
+                sig.setRealizedPnl(sig.getUnrealizedPnl());
+            }
             sig.setUnrealizedPnl(null);
         }
 
@@ -236,43 +245,41 @@ public class SignalOutcomeTrackerService {
             return true;
         }
 
-        // No target/SL → mark as RUNNING so it won't be re-processed endlessly
+        Instant signalTime = sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt();
+        boolean isBuy = type == SignalType.BUY;
+        BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
+
+        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAscEndingAt(sig.getSymbol(), "1m", 480, now);
+        if (bars.isEmpty()) {
+            bars = marketDataQueryService.lastBarsAscEndingAt(sig.getSymbol(), "5m", 200, now);
+        }
+        List<MarketdataCandle> postSignal = bars.stream()
+                .filter(c -> !c.getOpenTime().isBefore(signalTime))
+                .toList();
+
+        refreshMarkToMarket(sig, bars, postSignal, entry, isBuy, qty);
+
         if (target == null || sl == null) {
             sig.setOutcomeStatus(STATUS_RUNNING);
             sig.setOutcomeTime(now);
             return true;
         }
 
-        // Fetch 1m candles after signal creation time
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAscEndingAt(
-                sig.getSymbol(), "1m", 480, now);
-
-        // Filter to only bars after signal was generated
-        Instant signalTime = sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt();
-        List<MarketdataCandle> postSignal = bars.stream()
-                .filter(c -> c.getOpenTime().isAfter(signalTime))
-                .toList();
-
         if (postSignal.isEmpty()) {
             markRunningNoBars(sig, now);
             return true;
         }
 
-        boolean isBuy  = type == SignalType.BUY;
-        BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
-        applyExcursionAndMarkToMarket(sig, postSignal, entry, isBuy, qty);
-
         boolean hitTgt = false;
-        boolean hitSl  = false;
-
+        boolean hitSl = false;
         for (MarketdataCandle c : postSignal) {
             if (c.getHighPrice() == null || c.getLowPrice() == null) continue;
             if (isBuy) {
                 if (c.getHighPrice().compareTo(target) >= 0) { hitTgt = true; break; }
-                if (c.getLowPrice().compareTo(sl) <= 0)      { hitSl  = true; break; }
+                if (c.getLowPrice().compareTo(sl) <= 0) { hitSl = true; break; }
             } else {
-                if (c.getLowPrice().compareTo(target) <= 0)  { hitTgt = true; break; }
-                if (c.getHighPrice().compareTo(sl) >= 0)     { hitSl  = true; break; }
+                if (c.getLowPrice().compareTo(target) <= 0) { hitTgt = true; break; }
+                if (c.getHighPrice().compareTo(sl) >= 0) { hitSl = true; break; }
             }
         }
 
@@ -291,6 +298,25 @@ public class SignalOutcomeTrackerService {
     private void markRunningNoBars(StrategySignalEntity sig, Instant now) {
         sig.setOutcomeStatus(STATUS_RUNNING);
         sig.setOutcomeTime(now);
+        ensureUnrealizedPresent(sig);
+    }
+
+    private void refreshMarkToMarket(
+            StrategySignalEntity sig,
+            List<MarketdataCandle> allBars,
+            List<MarketdataCandle> postSignal,
+            BigDecimal entry,
+            boolean isBuy,
+            BigDecimal qty) {
+        List<MarketdataCandle> mtmBars = postSignal.isEmpty() ? allBars : postSignal;
+        if (!mtmBars.isEmpty()) {
+            applyExcursionAndMarkToMarket(sig, mtmBars, entry, isBuy, qty);
+        } else {
+            ensureUnrealizedPresent(sig);
+        }
+    }
+
+    private void ensureUnrealizedPresent(StrategySignalEntity sig) {
         if (sig.getUnrealizedPnl() == null) {
             sig.setUnrealizedPnl(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
         }
@@ -358,8 +384,21 @@ public class SignalOutcomeTrackerService {
     }
 
     private void expire(StrategySignalEntity sig, Instant now) {
+        if (sig.getEntryReferencePrice() != null && sig.getEntryReferencePrice().signum() > 0) {
+            BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
+            boolean isBuy = sig.getSignalType() == SignalType.BUY;
+            List<MarketdataCandle> bars = marketDataQueryService.lastBarsAscEndingAt(sig.getSymbol(), "1m", 5, now);
+            if (!bars.isEmpty()) {
+                refreshMarkToMarket(sig, bars, bars, sig.getEntryReferencePrice(), isBuy, qty);
+            }
+        }
         sig.setOutcomeStatus(STATUS_EXPIRED);
         sig.setOutcomeTime(now);
+        ensureUnrealizedPresent(sig);
+        if (sig.getRealizedPnl() == null && sig.getUnrealizedPnl() != null) {
+            sig.setRealizedPnl(sig.getUnrealizedPnl());
+            sig.setUnrealizedPnl(null);
+        }
     }
 
     private void broadcastOutcomeChange(StrategySignalEntity sig) {

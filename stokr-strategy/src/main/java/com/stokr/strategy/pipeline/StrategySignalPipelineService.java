@@ -12,6 +12,9 @@ import com.stokr.strategy.repository.StrategyInstanceRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.service.SignalEmissionGuardService;
 import com.stokr.strategy.service.SignalPriceEnrichmentService;
+import com.stokr.strategy.service.SignalProvenanceResolver;
+import com.stokr.strategy.service.SignalSymbolPriceGateService;
+import com.stokr.strategy.signals.SignalProvenance;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,6 +46,8 @@ public class StrategySignalPipelineService {
     private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
     private final SignalPriceEnrichmentService signalPriceEnrichmentService;
     private final SignalEmissionGuardService signalEmissionGuardService;
+    private final SignalProvenanceResolver signalProvenanceResolver;
+    private final SignalSymbolPriceGateService signalSymbolPriceGateService;
 
     @Value("${stokr.strategy.signal-session-guard.enabled:true}")
     private boolean signalSessionGuardEnabled;
@@ -70,6 +75,15 @@ public class StrategySignalPipelineService {
 
     @Transactional
     public StrategySignalEntity persistAndDispatch(StrategySignalEntity signal, String correlationId, String executionMode) {
+        return persistAndDispatch(signal, correlationId, executionMode, null);
+    }
+
+    @Transactional
+    public StrategySignalEntity persistAndDispatch(
+            StrategySignalEntity signal,
+            String correlationId,
+            String executionMode,
+            SignalProvenance provenanceOverride) {
         if (!executionPipelineRuntimeReadinessService.canRouteExecutionMode(executionMode)) {
             throw new IllegalStateException(
                     "Execution pipeline disabled: Rabbit listeners are OFF. Signal routing and OMS execution are inactive."
@@ -80,9 +94,15 @@ public class StrategySignalPipelineService {
                     signal.getStrategyName(), signal.getSymbol(), executionMode);
             return null;
         }
+        signalProvenanceResolver.applyForPersist(signal, executionMode, provenanceOverride);
+
         Instant signalTime = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
-        if (!Boolean.TRUE.equals(signal.getTestTrade()) && signal.getBacktestRunId() == null) {
+        if (!Boolean.TRUE.equals(signal.getTestTrade()) && signal.getBacktestRunId() == null
+                && signal.getSignalSource() != null && signal.getSignalSource().isProductionAnalytics()) {
             signalPriceEnrichmentService.enrichIfMissing(signal, signalTime);
+            if (signalSymbolPriceGateService.exceedsMaxPrice(signal, signalTime)) {
+                return null;
+            }
             if (signalEmissionGuardService.shouldSuppress(signal)) {
                 log.info("signal.dropped_duplicate strategy={} symbol={} type={}",
                         signal.getStrategyName(), signal.getSymbol(), signal.getSignalType());

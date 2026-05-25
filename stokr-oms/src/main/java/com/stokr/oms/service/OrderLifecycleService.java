@@ -128,6 +128,9 @@ public class OrderLifecycleService {
             BrokerOrderResponse res = adapter.placeOrder(req);
             submitted.setBrokerVendor(brokerVendor);
             submitted.setBrokerOrderId(res.brokerOrderId());
+            if (res.externalOrderId() != null && !res.externalOrderId().isBlank()) {
+                submitted.setBrokerExternalOrderId(res.externalOrderId().trim());
+            }
             return orderRepository.save(submitted);
         } catch (Exception ex) {
             // Catch all broker failures — persist as FAILED so callers see exact rejection reason.

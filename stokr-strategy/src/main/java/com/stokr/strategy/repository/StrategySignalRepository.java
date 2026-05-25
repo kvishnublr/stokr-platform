@@ -86,10 +86,8 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             where s.deleted = false
               and s.backtestRunId is null
               and s.testTrade = false
-              and s.outcomeStatus = 'RUNNING'
+              and s.outcomeStatus in ('RUNNING', 'PENDING')
               and s.entryReferencePrice is not null
-              and s.targetPrice is not null
-              and s.stopPrice is not null
               and s.createdAt >= :since
             order by s.createdAt asc
             """)
@@ -101,6 +99,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             where s.deleted = false
               and s.testTrade = false
               and s.backtestRunId is null
+              and (s.signalSource is null or s.signalSource not in (com.stokr.strategy.signals.SignalProvenance.REPLAY, com.stokr.strategy.signals.SignalProvenance.LAB))
               and s.strategyName = :strategyName
               and s.symbol = :symbol
               and s.signalType = :signalType
@@ -127,6 +126,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
                 COUNT(*)::bigint                                                                               AS total_all_time
             FROM strategy_signals
             WHERE deleted = FALSE AND backtest_run_id IS NULL AND is_test_trade = FALSE
+              AND (signal_source IS NULL OR signal_source IN ('LIVE', 'PAPER'))
             """, nativeQuery = true)
     List<Object[]> computeStats(@Param("since") Instant since);
 }

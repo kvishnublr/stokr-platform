@@ -79,6 +79,9 @@ public class OmsOrder extends BaseEntity {
     @Column(name = "broker_order_id")
     private UUID brokerOrderId;
 
+    @Column(name = "broker_external_order_id", length = 64)
+    private String brokerExternalOrderId;
+
     @Column(name = "reject_reason", length = 500)
     private String rejectReason;
 

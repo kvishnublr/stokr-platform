@@ -15,6 +15,7 @@ import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.runtime.StrategyRegistry;
+import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import com.stokr.strategy.vwap.VwapMeanReversionSignalGenerator;
@@ -114,7 +115,8 @@ public class SignalHistoricalReplayService {
                         try {
                             StrategySignalEntity sig = evaluate(strategyKey, symbol, bar.getOpenTime());
                             if (sig != null) {
-                                pipelineService.persistAndDispatch(sig, UUID.randomUUID().toString(), executionMode);
+                                pipelineService.persistAndDispatch(
+                                        sig, UUID.randomUUID().toString(), executionMode, SignalProvenance.REPLAY);
                                 totalSignals++;
                             }
                         } catch (Exception ex) {

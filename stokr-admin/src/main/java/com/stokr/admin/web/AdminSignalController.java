@@ -92,10 +92,12 @@ public class AdminSignalController {
             @RequestParam(required = false) Instant from,
             @RequestParam(required = false) Instant to,
             @RequestParam(required = false) String outcomeStatus,
-            @RequestParam(defaultValue = "false") boolean includeTestTrades
+            @RequestParam(defaultValue = "false") boolean includeTestTrades,
+            @RequestParam(defaultValue = "false") boolean includeReplayAndLab
     ) {
         var page = queryService.pageSignals(
-                new AdminSignalParams(strategyName, symbol, signalType, pipeline, userId, from, to, outcomeStatus, includeTestTrades),
+                new AdminSignalParams(strategyName, symbol, signalType, pipeline, userId, from, to,
+                        outcomeStatus, includeTestTrades, includeReplayAndLab),
                 pageable);
         return ApiResponse.ok(PageResponse.of(page), CorrelationIdHolder.get());
     }
