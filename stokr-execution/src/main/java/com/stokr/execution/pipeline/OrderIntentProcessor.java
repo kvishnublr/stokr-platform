@@ -32,6 +32,7 @@ import com.stokr.strategy.domain.StrategyExecutionConfig;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.service.StrategyExecutionConfigService;
+import com.stokr.user.service.TraderExecutionModePreferenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -68,6 +69,7 @@ public class OrderIntentProcessor {
     private final ExecutionComparisonService executionComparisonService;
     private final StrategyExecutionConfigService strategyExecutionConfigService;
     private final BrokerPositionTruthService brokerPositionTruthService;
+    private final TraderExecutionModePreferenceService traderExecutionModePreferenceService;
 
     @Value("${stokr.risk.zone:Asia/Kolkata}")
     private String riskZone;
@@ -121,6 +123,7 @@ public class OrderIntentProcessor {
 
         // Resolve effective execution mode: strategy config takes precedence over the poll/message mode.
         ExecutionMode mode = resolveEffectiveMode(msg.executionMode(), strategyKey, userId, signal);
+        mode = applyTraderExecutionPreference(mode, userId, isSystemUser);
         log.info("order.intent.mode_resolved signalId={} msgMode={} resolvedMode={} isTestTrade={}",
                 signal.getId(), msg.executionMode(), mode, Boolean.TRUE.equals(signal.getTestTrade()));
 
@@ -396,9 +399,26 @@ public class OrderIntentProcessor {
         return parseMode(msgMode);
     }
 
+    private ExecutionMode applyTraderExecutionPreference(ExecutionMode mode, UUID userId, boolean isSystemUser) {
+        if (isSystemUser || mode == ExecutionMode.BOTH) {
+            return mode;
+        }
+        if (mode == ExecutionMode.SIMULATED) {
+            return ExecutionMode.PAPER;
+        }
+        if (mode == ExecutionMode.LIVE) {
+            String pref = traderExecutionModePreferenceService.get(userId).executionMode();
+            if (!"LIVE".equalsIgnoreCase(pref)) {
+                log.info("order.intent.mode_capped_to_paper userId={} workspacePref={}", userId, pref);
+                return ExecutionMode.PAPER;
+            }
+        }
+        return mode;
+    }
+
     private static ExecutionMode parseMode(String executionMode) {
-        if (executionMode == null) {
-            return ExecutionMode.SIMULATED;
+        if (executionMode == null || executionMode.isBlank()) {
+            return ExecutionMode.PAPER;
         }
         String m = executionMode.trim().toUpperCase();
         if ("LIVE".equals(m)) {
@@ -410,7 +430,10 @@ public class OrderIntentProcessor {
         if ("BOTH".equals(m)) {
             return ExecutionMode.BOTH;
         }
-        return ExecutionMode.SIMULATED;
+        if ("SIMULATED".equals(m)) {
+            return ExecutionMode.PAPER;
+        }
+        return ExecutionMode.PAPER;
     }
 
     private UUID resolveUserId(SignalPersistedMessage msg, StrategySignalEntity signal) {

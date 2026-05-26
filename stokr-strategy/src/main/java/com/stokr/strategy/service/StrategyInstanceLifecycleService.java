@@ -49,7 +49,12 @@ public class StrategyInstanceLifecycleService {
             throw new BadRequestException("Enable subscription before starting this strategy");
         }
         refreshSymbolFromBinding(si);
-        if (si.getExecutionMode() != null && "LIVE".equalsIgnoreCase(si.getExecutionMode())) {
+        String mode = si.getExecutionMode() == null ? "" : si.getExecutionMode().trim().toUpperCase(Locale.ROOT);
+        if (mode.isBlank() || "SIMULATED".equals(mode)) {
+            si.setExecutionMode("PAPER");
+            mode = "PAPER";
+        }
+        if ("LIVE".equals(mode)) {
             liveStrategyGate.ifAvailable(g -> g.assertLiveRuntimeAllowed(userId, si.getDefinition().getStrategyKey()));
         }
         si.setRuntimeState(STATE_RUNNING);

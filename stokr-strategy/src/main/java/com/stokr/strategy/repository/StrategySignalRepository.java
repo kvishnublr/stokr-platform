@@ -31,13 +31,22 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
     Optional<StrategySignalEntity> findFirstByInstance_IdAndDeletedFalseOrderByCreatedAtDesc(UUID instanceId);
 
     @Query("""
-            select s from StrategySignalEntity s
+            select distinct s from StrategySignalEntity s
             left join s.instance i
             where s.deleted = false
               and s.testTrade = false
+              and s.backtestRunId is null
               and (
                     (i is not null and i.deleted = false and i.userId = :userId)
                     or s.userId = :userId
+                    or exists (
+                        select 1 from StrategyInstance si
+                        join si.definition d
+                        where si.userId = :userId
+                          and si.deleted = false
+                          and si.enabled = true
+                          and upper(d.strategyKey) = upper(s.strategyName)
+                    )
                   )
             order by s.createdAt desc
             """)

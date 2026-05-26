@@ -58,8 +58,10 @@ public class TraderExecutionClientController {
     @GetMapping("/terminal/market/watch")
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Watchlist projection (central cache — trader plane)")
-    public ApiResponse<List<Map<String, Object>>> marketWatch() {
-        return ApiResponse.ok(traderTerminalViewService.marketWatchProjection(), CorrelationIdHolder.get());
+    public ApiResponse<List<Map<String, Object>>> marketWatch(
+            @AuthenticationPrincipal StokrUserDetails user
+    ) {
+        return ApiResponse.ok(traderTerminalViewService.marketWatchProjection(user.getId()), CorrelationIdHolder.get());
     }
 
     @GetMapping("/terminal/market/chart")

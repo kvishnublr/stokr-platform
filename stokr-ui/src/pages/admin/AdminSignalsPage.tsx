@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fmtDateTime } from "../../lib/dateUtils";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { api } from "../../api/client";
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, Download, X,
@@ -61,6 +61,8 @@ type StatsResp = {
   liveToday: number; paperToday: number; avgConfidence: number | null;
   targetHit: number; slHit: number; running: number; expired: number; totalAllTime: number;
 };
+
+type CatalogSignalStats = { strategyKey: string; signalsToday: number; lastSignalAt: string | null };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -366,7 +368,7 @@ const QUICK_FILTERS = [
 export function AdminSignalsPage() {
   const [page, setPage] = useState(0);
   const [symbol, setSymbol] = useState("");
-  const [strategyName, setStrategyName] = useState("");
+  const [strategyFilter, setStrategyFilter] = useState("");
   const [signalType, setSignalType] = useState("ALL");
   const [pipeline, setPipeline] = useState("ALL");
   const [outcomeStatus, setOutcomeStatus] = useState("ALL");
@@ -387,6 +389,7 @@ export function AdminSignalsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin-signals"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-signal-stats"] });
+      void queryClient.invalidateQueries({ queryKey: ["strategy-catalog-signal-stats"] });
     },
   });
 
@@ -398,6 +401,7 @@ export function AdminSignalsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin-signals"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-signal-stats"] });
+      void queryClient.invalidateQueries({ queryKey: ["strategy-catalog-signal-stats"] });
     },
   });
 
@@ -432,6 +436,7 @@ export function AdminSignalsPage() {
               if (isSignalEvent) {
                 void queryClient.invalidateQueries({ queryKey: ["admin-signals"] });
                 void queryClient.invalidateQueries({ queryKey: ["admin-signal-stats"] });
+                void queryClient.invalidateQueries({ queryKey: ["strategy-catalog-signal-stats"] });
               }
             }
           }
@@ -449,8 +454,25 @@ export function AdminSignalsPage() {
     staleTime: 10_000,
   });
 
+  const strategyStatsQ = useQuery<CatalogSignalStats[]>({
+    queryKey: ["strategy-catalog-signal-stats"],
+    queryFn: async () => (await api.get("/api/strategies/catalog/signal-stats")).data?.data ?? [],
+    refetchInterval: 20_000,
+    staleTime: 10_000,
+  });
+
+  const strategyOptions = useMemo(() => {
+    const rows = [...(strategyStatsQ.data ?? [])].sort(
+      (a, b) => (b.signalsToday ?? 0) - (a.signalsToday ?? 0),
+    );
+    return rows.map((r) => ({
+      key: String(r.strategyKey ?? "").trim().toUpperCase(),
+      count: r.signalsToday ?? 0,
+    })).filter((r) => r.key.length > 0);
+  }, [strategyStatsQ.data]);
+
   const q = useQuery<PageResp>({
-    queryKey: ["admin-signals", page, symbol, strategyName, signalType, pipeline, outcomeStatus, includeReplayLab],
+    queryKey: ["admin-signals", page, symbol, strategyFilter, signalType, pipeline, outcomeStatus, includeReplayLab],
     queryFn: async () => {
       const p = new URLSearchParams();
       p.set("page", String(page));
@@ -458,7 +480,7 @@ export function AdminSignalsPage() {
       p.set("sort", "createdAt,desc");
       if (includeReplayLab) p.set("includeReplayAndLab", "true");
       if (symbol.trim()) p.set("symbol", symbol.trim());
-      if (strategyName.trim()) p.set("strategyName", strategyName.trim());
+      if (strategyFilter.trim()) p.set("strategyName", strategyFilter.trim());
       if (signalType !== "ALL") p.set("signalType", signalType);
       if (pipeline !== "ALL") p.set("pipeline", pipeline);
       if (outcomeStatus !== "ALL") p.set("outcomeStatus", outcomeStatus);
@@ -493,11 +515,11 @@ export function AdminSignalsPage() {
   };
 
   const clearFilters = () => {
-    setSymbol(""); setStrategyName(""); setSignalType("ALL");
+    setSymbol(""); setStrategyFilter(""); setSignalType("ALL");
     setPipeline("ALL"); setOutcomeStatus("ALL"); setIncludeReplayLab(false); setPage(0);
   };
 
-  const hasFilters = !!(symbol || strategyName || signalType !== "ALL" || pipeline !== "ALL"
+  const hasFilters = !!(symbol || strategyFilter || signalType !== "ALL" || pipeline !== "ALL"
     || outcomeStatus !== "ALL" || includeReplayLab);
 
   const rows = q.data?.content ?? [];
@@ -584,8 +606,21 @@ export function AdminSignalsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <input className={inputCls} placeholder="Symbol…" value={symbol}
             onChange={e => { setSymbol(e.target.value); setPage(0); }} />
-          <input className={inputCls} placeholder="Strategy…" value={strategyName}
-            onChange={e => { setStrategyName(e.target.value); setPage(0); }} />
+          <select
+            className={`${selectCls} min-w-[220px] max-w-[320px]`}
+            value={strategyFilter}
+            onChange={(e) => { setStrategyFilter(e.target.value); setPage(0); }}
+            title="Filter by strategy"
+          >
+            <option value="">
+              All strategies ({stats?.totalToday ?? strategyOptions.reduce((s, o) => s + o.count, 0)})
+            </option>
+            {strategyOptions.map(({ key, count }) => (
+              <option key={key} value={key}>
+                {key} ({count} today)
+              </option>
+            ))}
+          </select>
           <select className={selectCls} value={signalType} onChange={e => { setSignalType(e.target.value); setPage(0); }}>
             <option value="ALL">All sides</option>
             <option value="BUY">BUY</option>

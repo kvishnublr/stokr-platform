@@ -46,7 +46,7 @@ public class StrategySubscriptionService {
         created.setUserId(userId);
         created.setSymbol(resolveBindingSymbol(def.getStrategyKey()));
         created.setEnabled(true);
-        created.setExecutionMode("SIMULATED");
+        created.setExecutionMode("PAPER");
         created.setRuntimeState("STOPPED");
         created.setRiskMultiplier(BigDecimal.ONE);
         instanceRepository.save(created);

@@ -42,6 +42,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -118,32 +119,64 @@ public class TraderTerminalViewService {
     }
 
     public List<Map<String, Object>> marketWatchProjection() {
-        List<String> symbols = strategyUniverseResolverService.resolveActiveBindings().stream()
+        return marketWatchProjection(null);
+    }
+
+    public List<Map<String, Object>> marketWatchProjection(UUID userId) {
+        LinkedHashSet<String> symbols = new LinkedHashSet<>();
+        strategyUniverseResolverService.resolveActiveBindings().stream()
                 .flatMap(b -> strategyUniverseResolverService.resolveSymbolsForGroup(b.getUniverseGroup().getId()).stream())
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
-                .distinct()
-                .toList();
+                .forEach(symbols::add);
+        if (userId != null) {
+            for (StrategyInstance si : strategyInstanceRepository.findAllForUserWithDefinition(userId)) {
+                if (si.isEnabled() && !si.isDeleted() && si.getSymbol() != null && !si.getSymbol().isBlank()) {
+                    symbols.add(si.getSymbol().trim());
+                }
+            }
+        }
+        if (symbols.isEmpty()) {
+            symbols.addAll(DEFAULT_WATCH_SYMBOLS);
+        }
         List<Map<String, Object>> out = new ArrayList<>();
         for (String symbol : symbols) {
-            List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, "5m", 2);
-            if (bars.isEmpty()) {
-                continue;
+            Map<String, Object> row = watchRowForSymbol(symbol);
+            if (row != null) {
+                out.add(row);
             }
-            MarketdataCandle last = bars.get(bars.size() - 1);
-            MarketdataCandle prev = bars.size() > 1 ? bars.get(bars.size() - 2) : null;
-            double lastClose = bd(last.getClosePrice());
-            double prevClose = prev != null ? bd(prev.getClosePrice()) : lastClose;
-            double pct = prevClose == 0d ? 0d : ((lastClose - prevClose) / prevClose) * 100d;
-
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("symbol", symbol);
-            row.put("price", String.format("%.2f", lastClose));
-            row.put("changePct", String.format("%.2f", pct));
-            row.put("lastOpenTime", last.getOpenTime() != null ? last.getOpenTime().toString() : null);
-            out.add(row);
+        }
+        if (out.isEmpty()) {
+            for (String symbol : DEFAULT_WATCH_SYMBOLS) {
+                Map<String, Object> row = watchRowForSymbol(symbol);
+                if (row != null) {
+                    out.add(row);
+                }
+            }
         }
         return out;
+    }
+
+    private Map<String, Object> watchRowForSymbol(String symbol) {
+        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, "5m", 2);
+        if (bars.isEmpty()) {
+            bars = marketDataQueryService.lastBarsAsc(symbol, "1m", 2);
+        }
+        if (bars.isEmpty()) {
+            return null;
+        }
+        MarketdataCandle last = bars.get(bars.size() - 1);
+        MarketdataCandle prev = bars.size() > 1 ? bars.get(bars.size() - 2) : null;
+        double lastClose = bd(last.getClosePrice());
+        double prevClose = prev != null ? bd(prev.getClosePrice()) : lastClose;
+        double pct = prevClose == 0d ? 0d : ((lastClose - prevClose) / prevClose) * 100d;
+
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("symbol", symbol);
+        row.put("price", String.format("%.2f", lastClose));
+        row.put("changePct", String.format("%.2f", pct));
+        row.put("lastOpenTime", last.getOpenTime() != null ? last.getOpenTime().toString() : null);
+        return row;
     }
 
     public List<Map<String, Object>> chartSeries(String symbol, String intervalOrTf, int limit) {
@@ -175,6 +208,8 @@ public class TraderTerminalViewService {
             m.put("reason", s.getReason());
             m.put("suggestedQty", s.getSuggestedQty() != null ? s.getSuggestedQty().toPlainString() : null);
             m.put("confidenceScore", s.getConfidenceScore() != null ? s.getConfidenceScore().toPlainString() : null);
+            m.put("executionMode", s.getPipeline() != null ? s.getPipeline() : null);
+            m.put("pipeline", s.getPipeline());
             out.add(m);
         }
         return out;

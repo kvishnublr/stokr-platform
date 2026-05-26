@@ -48,12 +48,12 @@ type Readiness = {
 
 type SignalRow = {
   id: string; strategyName?: string; symbol?: string; signalType?: string; createdAt?: string;
-  confidenceScore?: string; reason?: string;
+  confidenceScore?: string; reason?: string; executionMode?: string;
 };
 
 type OrderRow = {
   id: string; symbol?: string; side?: string; state?: string;
-  createdAt?: string; executionMode?: string; strategyKey?: string;
+  createdAt?: string; executionMode?: string; strategyKey?: string; rejectReason?: string | null;
 };
 
 type StrategyRow = {
@@ -240,11 +240,22 @@ export function TraderDashboard() {
   });
 
   const ordersQ = useQuery<{ content: OrderRow[] }>({
-    queryKey: ["trader-dashboard-orders", selectedMode],
-    queryFn: async () => (await api.get(`/api/oms/orders?page=0&size=5&executionMode=${selectedMode}&sort=createdAt,desc`)).data?.data,
+    queryKey: ["trader-dashboard-orders"],
+    queryFn: async () => (await api.get("/api/oms/orders?page=0&size=8&sort=createdAt,desc")).data?.data,
     staleTime: 10_000,
     refetchInterval: 15_000,
-    enabled: queryEnabled && modeQ.isSuccess,
+    enabled: queryEnabled,
+  });
+
+  const signalsFeedQ = useQuery<Array<Record<string, unknown>>>({
+    queryKey: ["trader-dashboard-signals-feed"],
+    queryFn: async () => {
+      const r = await api.get("/api/trader/strategy-feed?limit=10");
+      return Array.isArray(r.data?.data) ? r.data.data : [];
+    },
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+    enabled: queryEnabled,
   });
 
   const candlesQ = useQuery<CandleRow[]>({
@@ -346,9 +357,8 @@ export function TraderDashboard() {
     return fromReady.slice(0, 8);
   }, [ws?.strategyAllocations, readinessQ.data?.strategies, ws?.accountSummary?.executionMode, selectedMode]);
 
-  const latestSignals = useMemo<SignalRow[]>(() => {
-    const rows = ws?.latestSignals ?? [];
-    return rows.slice(0, 8).map((s, i) => ({
+  const mapSignalRows = (rows: Array<Record<string, unknown>>): SignalRow[] =>
+    rows.slice(0, 10).map((s, i) => ({
       id: String(s.id ?? `sig-${i}`),
       strategyName: s.strategyName != null ? String(s.strategyName) : undefined,
       symbol: s.symbol != null ? String(s.symbol) : undefined,
@@ -356,8 +366,16 @@ export function TraderDashboard() {
       createdAt: s.createdAt != null ? String(s.createdAt) : undefined,
       confidenceScore: s.confidenceScore != null ? String(s.confidenceScore) : undefined,
       reason: s.reason != null ? String(s.reason) : undefined,
+      executionMode: String(s.executionMode ?? s.pipeline ?? "").toUpperCase() || undefined,
     }));
-  }, [ws?.latestSignals]);
+
+  const latestSignals = useMemo<SignalRow[]>(() => {
+    const fromFeed = mapSignalRows(signalsFeedQ.data ?? []);
+    if (fromFeed.length > 0) return fromFeed;
+    return mapSignalRows(ws?.latestSignals ?? []);
+  }, [signalsFeedQ.data, ws?.latestSignals]);
+
+  const recentOrders = useMemo(() => (ordersQ.data?.content ?? []).slice(0, 5), [ordersQ.data?.content]);
 
   const rejectedOrders = Number(executionSummaryQ.data?.rejectedOrders ?? 0);
   const totalOrders = Number(executionSummaryQ.data?.ordersTotal ?? 0);
@@ -402,6 +420,7 @@ export function TraderDashboard() {
     refetchPnl();
     void brokerFundsQ.refetch();
     void ordersQ.refetch();
+    void signalsFeedQ.refetch();
     void candlesQ.refetch();
     void watchQ.refetch();
     void readinessQ.refetch();
@@ -646,15 +665,16 @@ export function TraderDashboard() {
                   <Skeleton className="h-4 w-14" />
                 </div>
               ))}
-              {!ordersQ.isLoading && (ordersQ.data?.content ?? []).length === 0 && (
+              {!ordersQ.isLoading && recentOrders.length === 0 && (
                 <div className={cn("px-5 py-8 text-center text-xs", mutedCls)}>No orders yet</div>
               )}
-              {(ordersQ.data?.content ?? []).map(o => {
+              {recentOrders.map(o => {
                 const state = (o.state ?? "").toUpperCase();
                 const stateCls =
                   state === "FILLED" || state === "EXIT_FILLED" ? "text-emerald-500" :
                   state === "REJECTED" ? "text-rose-500" :
                   state.includes("FILL") ? "text-amber-500" : subCls;
+                const rejectReason = o.rejectReason?.trim() || null;
                 return (
                   <div key={o.id} className={cn("flex items-center justify-between px-5 py-3 gap-3 transition", rowHover)}>
                     <div className="flex items-center gap-3 min-w-0">
@@ -670,7 +690,16 @@ export function TraderDashboard() {
                         <div className={cn("font-mono text-sm font-bold truncate", headingCls)}>{o.symbol ?? "—"}</div>
                         <div className={cn("text-[10px] truncate", mutedCls)}>
                           {o.strategyKey ? `${o.strategyKey} · ` : ""}{fmtTime(o.createdAt)}
+                          {o.executionMode ? ` · ${o.executionMode}` : ""}
                         </div>
+                        {state === "REJECTED" && rejectReason && (
+                          <div
+                            className={cn("mt-0.5 max-w-[220px] truncate text-[10px] font-medium", isLight ? "text-rose-600" : "text-rose-400")}
+                            title={rejectReason}
+                          >
+                            {rejectReason}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className={cn("shrink-0 text-xs font-bold", stateCls)}>{state}</div>
@@ -753,19 +782,20 @@ export function TraderDashboard() {
               </Link>
             </div>
             <div className="divide-y" style={{ borderColor: isLight ? "#f3f4f6" : "rgba(255,255,255,0.05)" }}>
-              {workstationQ.isLoading && [1, 2, 3].map((i) => (
+              {(workstationQ.isLoading || signalsFeedQ.isLoading) && [1, 2, 3].map((i) => (
                 <div key={i} className="flex items-center justify-between px-5 py-3 gap-3">
                   <Skeleton className="h-4 w-20" />
                   <Skeleton className="h-4 w-14" />
                 </div>
               ))}
-              {!workstationQ.isLoading && latestSignals.length === 0 && (
+              {!workstationQ.isLoading && !signalsFeedQ.isLoading && latestSignals.length === 0 && (
                 <div className={cn("px-5 py-8 text-center text-xs", mutedCls)}>
-                  No signals yet — strategies begin scanning at market open.
+                  No signals yet — subscribe to a strategy and start it during market hours.
                 </div>
               )}
               {latestSignals.map((s) => {
                 const type = (s.signalType ?? "").toUpperCase();
+                const mode = (s.executionMode ?? "PAPER").toUpperCase();
                 return (
                   <div key={s.id} className={cn("flex items-center justify-between gap-3 px-5 py-3 transition", rowHover)}>
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -777,12 +807,20 @@ export function TraderDashboard() {
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-0.5 shrink-0">
-                      <span className={cn(
-                        "rounded-md px-1.5 py-0.5 text-[10px] font-black",
-                        type === "BUY" ? isLight ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/15 text-emerald-400"
-                          : type === "SELL" ? isLight ? "bg-rose-100 text-rose-700" : "bg-rose-500/15 text-rose-400"
-                          : isLight ? "bg-neutral-100 text-neutral-500" : "bg-neutral-700/50 text-neutral-400"
-                      )}>{type || "—"}</span>
+                      <div className="flex items-center gap-1">
+                        <span className={cn(
+                          "rounded-md px-1.5 py-0.5 text-[10px] font-black",
+                          type === "BUY" ? isLight ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/15 text-emerald-400"
+                            : type === "SELL" ? isLight ? "bg-rose-100 text-rose-700" : "bg-rose-500/15 text-rose-400"
+                            : isLight ? "bg-neutral-100 text-neutral-500" : "bg-neutral-700/50 text-neutral-400"
+                        )}>{type || "—"}</span>
+                        <span className={cn(
+                          "rounded-md px-1.5 py-0.5 text-[10px] font-bold",
+                          mode === "LIVE"
+                            ? isLight ? "bg-rose-100 text-rose-600" : "bg-rose-500/15 text-rose-400"
+                            : isLight ? "bg-amber-100 text-amber-600" : "bg-amber-500/15 text-amber-400",
+                        )}>{mode === "LIVE" ? "LIVE" : "PAPER"}</span>
+                      </div>
                       <span className={cn("text-[10px]", mutedCls)}>{fmtTime(s.createdAt)}</span>
                     </div>
                   </div>
@@ -825,7 +863,13 @@ export function TraderDashboard() {
                 );
               })}
               {!watchQ.isLoading && (watchQ.data ?? []).length === 0 && (
-                <div className={cn("px-5 py-6 text-center text-xs", mutedCls)}>No market data — connect broker</div>
+                <div className={cn("px-5 py-6 text-center text-xs", mutedCls)}>
+                  {watchQ.isError
+                    ? "Market watch unavailable — retry refresh"
+                    : brokerConnected
+                      ? "No candle data yet for watchlist symbols"
+                      : "Showing cached quotes when available — connect broker for live LTP"}
+                </div>
               )}
             </div>
           </div>
