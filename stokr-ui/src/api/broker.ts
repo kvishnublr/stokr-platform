@@ -25,12 +25,24 @@ export type BrokerTestConnectionDto = {
   marginSummary: string | null;
 };
 
+export type BrokerTestOrderLegDto = {
+  orderId: string;
+  status: string;
+  message: string;
+  filledQuantity: number | null;
+  averagePrice: number | null;
+};
+
 export type BrokerTestOrderDto = {
   dryRun: boolean;
   orderId: string;
   status: string;
   message: string;
   rawStatus: string;
+  entry?: BrokerTestOrderLegDto | null;
+  exit?: BrokerTestOrderLegDto | null;
+  squareOffStatus?: string | null;
+  pnl?: number | null;
 };
 
 export type BrokerTestOrderPayload = {

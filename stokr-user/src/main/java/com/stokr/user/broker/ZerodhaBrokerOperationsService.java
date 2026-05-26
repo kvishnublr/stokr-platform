@@ -47,6 +47,8 @@ public class ZerodhaBrokerOperationsService {
     private static final Set<String> TEST_EXCHANGES = Set.of("NSE", "BSE");
     private static final Set<String> TEST_PRODUCTS = Set.of("CNC", "MIS");
     private static final Set<String> TEST_VARIETIES = Set.of("REGULAR", "AMO");
+    private static final int TEST_ORDER_POLL_MS = 400;
+    private static final int TEST_ORDER_POLL_MAX_ATTEMPTS = 20;
 
     public record BrokerStatusDto(
             boolean connected,
@@ -78,7 +80,30 @@ public class ZerodhaBrokerOperationsService {
     ) {
     }
 
-    public record BrokerTestOrderDto(boolean dryRun, String orderId, String status, String message, String rawStatus) {
+    public record BrokerTestOrderLegDto(
+            String orderId,
+            String status,
+            String message,
+            Integer filledQuantity,
+            Double averagePrice
+    ) {
+    }
+
+    /**
+     * Round-trip sample trade result: entry leg, optional auto square-off exit leg, and summary fields
+     * ({@code orderId}/{@code status}/{@code message}) kept for backward compatibility.
+     */
+    public record BrokerTestOrderDto(
+            boolean dryRun,
+            String orderId,
+            String status,
+            String message,
+            String rawStatus,
+            BrokerTestOrderLegDto entry,
+            BrokerTestOrderLegDto exit,
+            String squareOffStatus,
+            Double pnl
+    ) {
     }
 
     public record BrokerOpenOrderDto(
@@ -372,7 +397,6 @@ public class ZerodhaBrokerOperationsService {
         return new BrokerTestConnectionDto(ok, message, profileUserName, marginSummary);
     }
 
-    @Transactional
     public BrokerTestOrderDto placeTestOrder(UUID userId, BrokerTestOrderRequest req) {
         if (!zerodhaBrokerProperties.isTestOrderEnabled()) {
             throw new BadRequestException("Test orders are disabled (set STOKR_ZERODHA_TEST_ORDER_ENABLED=true to enable)");
@@ -412,30 +436,35 @@ public class ZerodhaBrokerOperationsService {
 
         if (zerodhaBrokerProperties.isTestOrderDryRun()) {
             eventPublisher.publishEvent(new AuthAuditEvents.BrokerTestOrder(userId, s.account().getId(), "DRY_RUN", true, Instant.now()));
-            return new BrokerTestOrderDto(true, "DRY_RUN", "simulated", "Dry run — no order sent to exchange", "success");
+            BrokerTestOrderLegDto entryLeg = new BrokerTestOrderLegDto(
+                    "DRY_RUN_ENTRY",
+                    "simulated",
+                    "Entry MARKET " + side + " x" + qty,
+                    qty,
+                    null
+            );
+            BrokerTestOrderLegDto exitLeg = new BrokerTestOrderLegDto(
+                    "DRY_RUN_EXIT",
+                    "simulated",
+                    "Exit MARKET " + oppositeSide(side) + " x" + qty + " (auto square-off)",
+                    qty,
+                    null
+            );
+            return new BrokerTestOrderDto(
+                    true,
+                    "DRY_RUN_ENTRY",
+                    "simulated",
+                    "Dry run — round-trip simulated (no orders sent to exchange)",
+                    "success",
+                    entryLeg,
+                    exitLeg,
+                    "SIMULATED",
+                    null
+            );
         }
 
         try {
-            JsonNode resp = kiteApiClient.placeRegularOrder(
-                    s.apiKey(),
-                    s.accessToken(),
-                    variety,
-                    exchange,
-                    symbol,
-                    side,
-                    qty,
-                    orderType,
-                    product
-            );
-            String st = resp.path("status").asText("");
-            String orderId = resp.path("data").path("order_id").asText("");
-            if (!"success".equalsIgnoreCase(st) || orderId.isBlank()) {
-                String err = resp.path("message").asText("order_rejected");
-                eventPublisher.publishEvent(new AuthAuditEvents.BrokerTestOrder(userId, s.account().getId(), "", false, Instant.now()));
-                return new BrokerTestOrderDto(false, "", st, err, st);
-            }
-            eventPublisher.publishEvent(new AuthAuditEvents.BrokerTestOrder(userId, s.account().getId(), orderId, false, Instant.now()));
-            return new BrokerTestOrderDto(false, orderId, st, "placed", st);
+            return placeRoundTripTestOrder(userId, s, variety, exchange, symbol, side, qty, orderType, product);
         } catch (RestClientResponseException ex) {
             String kiteDetail = extractKiteErrorDetail(ex);
             log.warn(
@@ -450,6 +479,196 @@ public class ZerodhaBrokerOperationsService {
             log.warn("broker.test_order.http class={} message={}", ex.getClass().getSimpleName(), ex.getMessage());
             eventPublisher.publishEvent(new AuthAuditEvents.BrokerTestOrder(userId, s.account().getId(), "", false, Instant.now()));
             throw new BadRequestException("Kite order request failed before response from broker");
+        }
+    }
+
+    private BrokerTestOrderDto placeRoundTripTestOrder(
+            UUID userId,
+            Session s,
+            String variety,
+            String exchange,
+            String symbol,
+            String side,
+            int qty,
+            String orderType,
+            String product
+    ) {
+        JsonNode entryResp = kiteApiClient.placeRegularOrder(
+                s.apiKey(),
+                s.accessToken(),
+                variety,
+                exchange,
+                symbol,
+                side,
+                qty,
+                orderType,
+                product
+        );
+        String entryApiStatus = entryResp.path("status").asText("");
+        String entryOrderId = entryResp.path("data").path("order_id").asText("");
+        if (!"success".equalsIgnoreCase(entryApiStatus) || entryOrderId.isBlank()) {
+            String err = entryResp.path("message").asText("order_rejected");
+            eventPublisher.publishEvent(new AuthAuditEvents.BrokerTestOrder(userId, s.account().getId(), "", false, Instant.now()));
+            BrokerTestOrderLegDto entryLeg = new BrokerTestOrderLegDto("", entryApiStatus, err, 0, null);
+            return new BrokerTestOrderDto(
+                    false,
+                    "",
+                    entryApiStatus,
+                    err,
+                    entryApiStatus,
+                    entryLeg,
+                    null,
+                    "ENTRY_REJECTED",
+                    null
+            );
+        }
+
+        KiteOrderSnapshot entrySnap = pollOrderSnapshot(s, entryOrderId);
+        BrokerTestOrderLegDto entryLeg = toLeg(entryOrderId, entrySnap, "Entry placed");
+        int exitQty = entrySnap.filledQuantity() > 0 ? entrySnap.filledQuantity() : qty;
+        String squareOffStatus;
+        BrokerTestOrderLegDto exitLeg = null;
+        String summaryMessage;
+        Double pnl = null;
+
+        if (!isOrderComplete(entrySnap.status())) {
+            squareOffStatus = "ENTRY_NOT_FILLED";
+            summaryMessage = "Entry order " + entryOrderId + " not filled in time — square-off skipped";
+            log.warn(
+                    "broker.test_order.entry_not_filled userId={} orderId={} status={}",
+                    userId,
+                    entryOrderId,
+                    entrySnap.status()
+            );
+        } else {
+            String exitSide = oppositeSide(side);
+            JsonNode exitResp = kiteApiClient.placeRegularOrder(
+                    s.apiKey(),
+                    s.accessToken(),
+                    variety,
+                    exchange,
+                    symbol,
+                    exitSide,
+                    exitQty,
+                    orderType,
+                    product
+            );
+            String exitApiStatus = exitResp.path("status").asText("");
+            String exitOrderId = exitResp.path("data").path("order_id").asText("");
+            if (!"success".equalsIgnoreCase(exitApiStatus) || exitOrderId.isBlank()) {
+                String err = exitResp.path("message").asText("exit_rejected");
+                exitLeg = new BrokerTestOrderLegDto("", exitApiStatus, err, 0, null);
+                squareOffStatus = "EXIT_REJECTED";
+                summaryMessage = "Entry filled; exit rejected: " + err;
+                log.warn("broker.test_order.exit_rejected userId={} entryOrderId={} detail={}", userId, entryOrderId, err);
+            } else {
+                KiteOrderSnapshot exitSnap = pollOrderSnapshot(s, exitOrderId);
+                exitLeg = toLeg(exitOrderId, exitSnap, "Exit placed (auto square-off)");
+                squareOffStatus = isOrderComplete(exitSnap.status()) ? "COMPLETED" : "EXIT_PENDING";
+                summaryMessage = squareOffStatus.equals("COMPLETED")
+                        ? "Round-trip complete — entry " + entryOrderId + ", exit " + exitOrderId
+                        : "Entry filled; exit " + exitOrderId + " still " + exitSnap.status();
+                pnl = estimateRoundTripPnl(side, entrySnap.averagePrice(), exitSnap.averagePrice(), exitQty);
+            }
+        }
+
+        eventPublisher.publishEvent(new AuthAuditEvents.BrokerTestOrder(userId, s.account().getId(), entryOrderId, false, Instant.now()));
+        return new BrokerTestOrderDto(
+                false,
+                entryOrderId,
+                "success",
+                summaryMessage,
+                entryApiStatus,
+                entryLeg,
+                exitLeg,
+                squareOffStatus,
+                pnl
+        );
+    }
+
+    private static String oppositeSide(String side) {
+        return "SELL".equalsIgnoreCase(side) ? "BUY" : "SELL";
+    }
+
+    private static boolean isOrderComplete(String status) {
+        return status != null && "COMPLETE".equalsIgnoreCase(status.trim());
+    }
+
+    private BrokerTestOrderLegDto toLeg(String orderId, KiteOrderSnapshot snap, String fallbackMessage) {
+        String message = snap.statusMessage() != null && !snap.statusMessage().isBlank()
+                ? snap.statusMessage()
+                : fallbackMessage;
+        return new BrokerTestOrderLegDto(
+                orderId,
+                snap.status(),
+                message,
+                snap.filledQuantity() > 0 ? snap.filledQuantity() : null,
+                snap.averagePrice()
+        );
+    }
+
+    private static Double estimateRoundTripPnl(String entrySide, Double entryAvg, Double exitAvg, int qty) {
+        if (entryAvg == null || exitAvg == null || qty <= 0) {
+            return null;
+        }
+        double spread = "BUY".equalsIgnoreCase(entrySide) ? (exitAvg - entryAvg) : (entryAvg - exitAvg);
+        return Math.round(spread * qty * 100.0) / 100.0;
+    }
+
+    private KiteOrderSnapshot pollOrderSnapshot(Session s, String orderId) {
+        KiteOrderSnapshot last = KiteOrderSnapshot.empty(orderId);
+        for (int attempt = 0; attempt < TEST_ORDER_POLL_MAX_ATTEMPTS; attempt++) {
+            last = fetchOrderSnapshot(s, orderId).orElse(last);
+            if (isTerminalOrderStatus(last.status())) {
+                return last;
+            }
+            try {
+                Thread.sleep(TEST_ORDER_POLL_MS);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return last;
+            }
+        }
+        return last;
+    }
+
+    private Optional<KiteOrderSnapshot> fetchOrderSnapshot(Session s, String orderId) {
+        JsonNode payload = kiteApiClient.getOrders(s.apiKey(), s.accessToken());
+        if (!"success".equalsIgnoreCase(payload.path("status").asText(""))) {
+            return Optional.empty();
+        }
+        JsonNode rows = payload.path("data");
+        if (!rows.isArray()) {
+            return Optional.empty();
+        }
+        for (JsonNode row : rows) {
+            if (!orderId.equals(row.path("order_id").asText(""))) {
+                continue;
+            }
+            int filled = row.path("filled_quantity").isNumber() ? row.path("filled_quantity").asInt() : 0;
+            Double avg = row.path("average_price").isNumber() && row.path("average_price").asDouble() > 0
+                    ? row.path("average_price").asDouble()
+                    : null;
+            return Optional.of(new KiteOrderSnapshot(
+                    orderId,
+                    row.path("status").asText(""),
+                    blankToNull(row.path("status_message").asText("")),
+                    filled,
+                    avg
+            ));
+        }
+        return Optional.empty();
+    }
+
+    private record KiteOrderSnapshot(
+            String orderId,
+            String status,
+            String statusMessage,
+            int filledQuantity,
+            Double averagePrice
+    ) {
+        static KiteOrderSnapshot empty(String orderId) {
+            return new KiteOrderSnapshot(orderId, "OPEN", null, 0, null);
         }
     }
 
