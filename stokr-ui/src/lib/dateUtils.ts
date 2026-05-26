@@ -35,3 +35,24 @@ export function fmtDateRange(from: Date, to: Date): string {
   const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric", timeZone: IST_ZONE };
   return `${from.toLocaleDateString(IST_LOCALE, opts)} → ${to.toLocaleDateString(IST_LOCALE, opts)}`;
 }
+
+/** Live header: `NSE · Tue 26 May · 10:45 IST` */
+export function fmtNseClock(at: Date = new Date()): string {
+  const day = at.toLocaleDateString(IST_LOCALE, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: IST_ZONE,
+  });
+  const time = at.toLocaleTimeString(IST_LOCALE, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: IST_ZONE,
+  });
+  return `NSE · ${day} · ${time} IST`;
+}
+
+/** Aliases for callers that prefer explicit naming. */
+export const formatIstDateTime = fmtDateTime;
+export const formatNseTime = fmtTime;

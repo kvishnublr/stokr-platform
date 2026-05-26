@@ -1,25 +1,47 @@
 import { useQuery } from "@tanstack/react-query";
-import { fmtTime as fmtIst, fmtDateLong, IST_LOCALE, IST_ZONE } from "../../lib/dateUtils";
+import { fmtDateTime, fmtNseClock, fmtDateLong } from "../../lib/dateUtils";
 import { Navigate, Link } from "react-router-dom";
 import { useSessionStore } from "../../state/session";
 import { useUiThemeStore } from "../../state/uiTheme";
 import { api } from "../../api/client";
 import { cn } from "../../lib/utils";
 import { NiftyCandleChart } from "../../components/charts/NiftyCandleChart";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   TrendingUp, TrendingDown, Activity, RefreshCw,
   Zap, BarChart2, Layers, ArrowUpRight, ArrowDownRight,
-  CircleDot, ChevronRight,
+  CircleDot, ChevronRight, AlertTriangle, Radio,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PortfolioOverview = {
-  mtmPnl?: string; unrealizedPnl?: string; realizedPnl?: string;
-  totalCapital?: string; accountValue?: string; totalEquity?: string;
-  availableMargin?: string; cashAvailable?: string; marginUsedPct?: number;
-  mtmPnlDeltaLabel?: string; dayChangeLabel?: string;
+type Workstation = {
+  accountSummary?: {
+    totalPnl?: string | number;
+    realizedPnl?: string | number;
+    unrealizedPnl?: string | number;
+    openPositions?: number;
+    activeStrategies?: number;
+    brokerConnectionState?: string;
+    executionMode?: string;
+  };
+  latestSignals?: Array<Record<string, unknown>>;
+  strategyAllocations?: Array<Record<string, unknown>>;
+  badges?: string[];
+};
+
+type ReadinessStrategy = {
+  strategy?: string;
+  strategyKey?: string;
+  runtime?: string;
+  status?: string;
+  lastSignalTime?: string;
+  historicalCoverage?: { symbol?: string; state?: string };
+};
+
+type Readiness = {
+  strategies?: ReadinessStrategy[];
+  broker?: { status?: string; tokenValid?: boolean };
 };
 
 type SignalRow = {
@@ -33,8 +55,15 @@ type OrderRow = {
 };
 
 type StrategyRow = {
-  strategyKey?: string; name?: string; code?: string;
-  executionMode?: string; unrealizedPnl?: string; subscribed?: boolean;
+  strategyKey?: string;
+  strategyName?: string;
+  name?: string;
+  code?: string;
+  symbol?: string;
+  executionMode?: string;
+  runtimeState?: string;
+  unrealizedPnl?: string;
+  subscribed?: boolean;
 };
 
 type CandleRow = {
@@ -62,7 +91,18 @@ const fmtCurrency = (v: unknown) => {
   }).format(n);
 };
 
-const fmtTime = fmtIst;
+const fmtTime = fmtDateTime;
+
+function NseClock({ className }: { className?: string }) {
+  const [label, setLabel] = useState(() => fmtNseClock());
+  useEffect(() => {
+    const tick = () => setLabel(fmtNseClock());
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, []);
+  return <span className={className}>{label}</span>;
+}
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -146,9 +186,33 @@ export function TraderDashboard() {
   });
   const selectedMode = modeQ.data ?? "PAPER";
 
-  const portfolioQ = useQuery<{ overview: PortfolioOverview; profile?: { displayName?: string } }>({
-    queryKey: ["trader-dashboard-portfolio"],
-    queryFn: async () => (await api.get("/api/portfolio/dashboard?equityPoints=8")).data?.data,
+  const workstationQ = useQuery<Workstation>({
+    queryKey: ["trader-dashboard-workstation"],
+    queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data,
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+  });
+
+  const brokerFundsQ = useQuery<Array<{ cashAvailable?: number; availableMargin?: number }>>({
+    queryKey: ["trader-dashboard-broker-funds"],
+    queryFn: async () => {
+      const r = await api.get("/api/trader/broker/accounts").catch(() => null);
+      return Array.isArray(r?.data?.data) ? r.data.data : [];
+    },
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+  });
+
+  const readinessQ = useQuery<Readiness>({
+    queryKey: ["trader-dashboard-readiness"],
+    queryFn: async () => (await api.get("/api/trader/intraday/readiness")).data?.data,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  const executionSummaryQ = useQuery<Record<string, unknown>>({
+    queryKey: ["trader-dashboard-exec-summary"],
+    queryFn: async () => (await api.get("/api/trader/execution-summary")).data?.data,
     staleTime: 15_000,
     refetchInterval: 30_000,
   });
@@ -159,31 +223,6 @@ export function TraderDashboard() {
     staleTime: 10_000,
     refetchInterval: 15_000,
     enabled: modeQ.isSuccess,
-  });
-
-  const strategiesQ = useQuery<StrategyRow[]>({
-    queryKey: ["trader-dashboard-strategies"],
-    queryFn: async () => {
-      const r = await api.get("/api/strategies/runtime-metrics").catch(() => null);
-      const rows = r?.data?.data;
-      if (Array.isArray(rows) && rows.length > 0) return rows.slice(0, 6);
-      // fallback to catalog
-      const cat = await api.get("/api/strategies/catalog?size=20").catch(() => null);
-      const content = cat?.data?.data?.content ?? [];
-      return content.filter((s: StrategyRow) => s.subscribed).slice(0, 6);
-    },
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-  });
-
-  const signalsQ = useQuery<SignalRow[]>({
-    queryKey: ["trader-dashboard-signals"],
-    queryFn: async () => {
-      const r = await api.get("/api/trader/strategy-feed?limit=6");
-      return Array.isArray(r.data?.data) ? r.data.data : [];
-    },
-    staleTime: 10_000,
-    refetchInterval: 15_000,
   });
 
   const candlesQ = useQuery<CandleRow[]>({
@@ -208,8 +247,69 @@ export function TraderDashboard() {
 
   // ── Derived data ───────────────────────────────────────────────────────────
 
-  const ov = portfolioQ.data?.overview;
-  const greetName = displayName ?? portfolioQ.data?.profile?.displayName ?? "Trader";
+  const ws = workstationQ.data;
+  const acct = ws?.accountSummary;
+  const greetName = displayName ?? "Trader";
+
+  const brokerConnected =
+    String(acct?.brokerConnectionState ?? "").includes("CONNECTED") ||
+    (brokerFundsQ.data?.length ?? 0) > 0;
+
+  const availableMargin = useMemo(() => {
+    const row = brokerFundsQ.data?.[0];
+    if (!row) return null;
+    return safeNum(row.availableMargin ?? row.cashAvailable);
+  }, [brokerFundsQ.data]);
+
+  const activeStrategies = useMemo<StrategyRow[]>(() => {
+    const fromWs = (ws?.strategyAllocations ?? [])
+      .filter((s) => {
+        const state = String(s.runtimeState ?? "").toUpperCase();
+        return state.includes("RUN") || state === "ACTIVE";
+      })
+      .map((s) => ({
+        strategyKey: String(s.strategyKey ?? ""),
+        strategyName: String(s.strategyName ?? s.strategyKey ?? "Strategy"),
+        symbol: s.symbol != null ? String(s.symbol) : undefined,
+        executionMode: String(s.executionMode ?? acct?.executionMode ?? selectedMode),
+        runtimeState: String(s.runtimeState ?? ""),
+      }));
+    if (fromWs.length > 0) return fromWs.slice(0, 8);
+
+    const fromReady = (readinessQ.data?.strategies ?? [])
+      .filter((s) => String(s.runtime ?? "").includes("RUN") || String(s.status ?? "").includes("READY"))
+      .map((s) => ({
+        strategyKey: s.strategyKey,
+        strategyName: s.strategy ?? s.strategyKey,
+        symbol: s.historicalCoverage?.symbol,
+        executionMode: acct?.executionMode ?? selectedMode,
+        runtimeState: s.runtime,
+      }));
+    return fromReady.slice(0, 8);
+  }, [ws?.strategyAllocations, readinessQ.data?.strategies, acct?.executionMode, selectedMode]);
+
+  const latestSignals = useMemo<SignalRow[]>(() => {
+    const rows = ws?.latestSignals ?? [];
+    return rows.slice(0, 8).map((s, i) => ({
+      id: String(s.id ?? `sig-${i}`),
+      strategyName: s.strategyName != null ? String(s.strategyName) : undefined,
+      symbol: s.symbol != null ? String(s.symbol) : undefined,
+      signalType: s.signalType != null ? String(s.signalType) : undefined,
+      createdAt: s.createdAt != null ? String(s.createdAt) : undefined,
+      confidenceScore: s.confidenceScore != null ? String(s.confidenceScore) : undefined,
+      reason: s.reason != null ? String(s.reason) : undefined,
+    }));
+  }, [ws?.latestSignals]);
+
+  const rejectedOrders = Number(executionSummaryQ.data?.rejectedOrders ?? 0);
+  const totalOrders = Number(executionSummaryQ.data?.ordersTotal ?? 0);
+  const rejectionPct =
+    totalOrders > 0 ? `${((rejectedOrders / totalOrders) * 100).toFixed(0)}% rejected today` : undefined;
+
+  const mtmPnl = acct?.totalPnl;
+  const unrealizedPnl = acct?.unrealizedPnl;
+  const realizedPnl = acct?.realizedPnl;
+  const openPosCount = acct?.openPositions ?? 0;
 
   const candles = (candlesQ.data ?? [])
     .map(r => ({ time: Number(r.time ?? r.ts ?? 0), open: Number(r.open ?? 0), high: Number(r.high ?? 0), low: Number(r.low ?? 0), close: Number(r.close ?? 0) }))
@@ -232,7 +332,18 @@ export function TraderDashboard() {
   const rowHover = isLight ? "hover:bg-neutral-50" : "hover:bg-white/[0.04]";
   const rowBg = isLight ? "bg-neutral-50/50" : "bg-white/[0.02]";
 
-  const isLoading = portfolioQ.isLoading;
+  const isLoading = workstationQ.isLoading;
+  const hasChartData = candles.length > 0;
+
+  const refetchAll = () => {
+    void workstationQ.refetch();
+    void brokerFundsQ.refetch();
+    void ordersQ.refetch();
+    void candlesQ.refetch();
+    void watchQ.refetch();
+    void readinessQ.refetch();
+    void executionSummaryQ.refetch();
+  };
 
   return (
     <div className={cn("min-h-full space-y-6 pb-10", pageBg)}>
@@ -242,8 +353,17 @@ export function TraderDashboard() {
           <h1 className={cn("text-2xl font-black tracking-tight", headingCls)}>
             Welcome back, {greetName}
           </h1>
-          <p className={cn("mt-1 text-sm", subCls)}>
-            {selectedMode === "LIVE" ? "🔴 Live trading" : "📄 Paper mode"} · {fmtDateLong(new Date())}
+          <p className={cn("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm", subCls)}>
+            <span className={cn(
+              "inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+              selectedMode === "LIVE"
+                ? isLight ? "bg-rose-100 text-rose-700" : "bg-rose-500/15 text-rose-400"
+                : isLight ? "bg-amber-100 text-amber-700" : "bg-amber-500/15 text-amber-400",
+            )}>
+              {selectedMode === "LIVE" ? "Live" : "Paper"}
+            </span>
+            <NseClock className={cn("font-mono text-xs", mutedCls)} />
+            <span className={mutedCls}>· {fmtDateLong(new Date())}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -261,44 +381,66 @@ export function TraderDashboard() {
           </Link>
           <button
             type="button"
-            onClick={() => { void portfolioQ.refetch(); void ordersQ.refetch(); void signalsQ.refetch(); }}
+            onClick={refetchAll}
             className={cn(
               "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition",
               isLight ? "border-neutral-200 bg-white text-neutral-600" : "border-white/[0.1] bg-white/[0.05] text-neutral-400"
             )}
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", (portfolioQ.isFetching || ordersQ.isFetching) && "animate-spin")} />
+            <RefreshCw className={cn("h-3.5 w-3.5", (workstationQ.isFetching || ordersQ.isFetching) && "animate-spin")} />
           </button>
         </div>
       </div>
+
+      {!brokerConnected && !workstationQ.isLoading && (
+        <div className={cn(
+          "flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-3 text-sm",
+          isLight ? "border-amber-200 bg-amber-50 text-amber-900" : "border-amber-500/30 bg-amber-500/10 text-amber-200",
+        )}>
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span className="flex-1 min-w-[200px]">
+            Broker disconnected — P&amp;L reflects OMS positions; margin and live quotes need a connected Zerodha session.
+          </span>
+          <Link
+            to="/brokers"
+            className={cn(
+              "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
+              isLight ? "bg-amber-200/80 text-amber-900 hover:bg-amber-200" : "bg-amber-500/20 text-amber-100 hover:bg-amber-500/30",
+            )}
+          >
+            Connect broker
+          </Link>
+        </div>
+      )}
 
       {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
           label="MTM P&L" loading={isLoading}
-          value={fmtCurrency(ov?.mtmPnl)}
-          delta={String(ov?.mtmPnlDeltaLabel ?? ov?.dayChangeLabel ?? "")}
-          positive={(safeNum(ov?.mtmPnl) ?? 0) >= 0}
+          value={fmtCurrency(mtmPnl)}
+          delta={openPosCount > 0 ? `${openPosCount} open position${openPosCount === 1 ? "" : "s"}` : rejectionPct}
+          positive={(safeNum(mtmPnl) ?? 0) >= 0}
           icon={TrendingUp}
-          accent={(safeNum(ov?.mtmPnl) ?? 0) >= 0 ? "bg-emerald-500" : "bg-rose-500"}
+          accent={(safeNum(mtmPnl) ?? 0) >= 0 ? "bg-emerald-500" : "bg-rose-500"}
         />
         <KpiCard
           label="Unrealized P&L" loading={isLoading}
-          value={fmtCurrency(ov?.unrealizedPnl)}
-          positive={(safeNum(ov?.unrealizedPnl) ?? 0) >= 0}
+          value={fmtCurrency(unrealizedPnl)}
+          positive={(safeNum(unrealizedPnl) ?? 0) >= 0}
           icon={Activity}
-          accent={(safeNum(ov?.unrealizedPnl) ?? 0) >= 0 ? "bg-sky-400" : "bg-amber-400"}
+          accent={(safeNum(unrealizedPnl) ?? 0) >= 0 ? "bg-sky-400" : "bg-amber-400"}
         />
         <KpiCard
           label="Realized P&L" loading={isLoading}
-          value={fmtCurrency(ov?.realizedPnl)}
-          positive={(safeNum(ov?.realizedPnl) ?? 0) >= 0}
+          value={fmtCurrency(realizedPnl)}
+          positive={(safeNum(realizedPnl) ?? 0) >= 0}
           icon={BarChart2}
-          accent={(safeNum(ov?.realizedPnl) ?? 0) >= 0 ? "bg-violet-400" : "bg-rose-400"}
+          accent={(safeNum(realizedPnl) ?? 0) >= 0 ? "bg-violet-400" : "bg-rose-400"}
         />
         <KpiCard
-          label="Available Margin" loading={isLoading}
-          value={fmtCurrency(ov?.availableMargin ?? ov?.cashAvailable)}
+          label="Available Margin" loading={isLoading || brokerFundsQ.isLoading}
+          value={brokerConnected ? fmtCurrency(availableMargin) : "—"}
+          delta={brokerConnected ? undefined : "Connect broker for live margin"}
           positive={true}
           icon={Layers}
           accent="bg-amber-400"
@@ -360,10 +502,30 @@ export function TraderDashboard() {
               </div>
             </div>
             <div className={cn("h-72 rounded-xl", isLight ? "bg-neutral-50 border border-neutral-100" : "bg-neutral-950/60 border border-white/[0.05]")}>
-              {candlesQ.isLoading
-                ? <div className="flex h-full items-center justify-center"><Skeleton className="h-48 w-full rounded-xl" /></div>
-                : <NiftyCandleChart variant={isLight ? "light" : "dark"} height={272} candles={candles} volumes={volumes} />
-              }
+              {candlesQ.isLoading ? (
+                <div className="flex h-full items-center justify-center"><Skeleton className="h-48 w-full rounded-xl" /></div>
+              ) : hasChartData ? (
+                <NiftyCandleChart variant={isLight ? "light" : "dark"} height={272} candles={candles} volumes={volumes} />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+                  <Radio className={cn("h-8 w-8", mutedCls)} />
+                  <p className={cn("text-sm font-medium", subCls)}>No candle data for this symbol yet</p>
+                  <p className={cn("text-xs", mutedCls)}>
+                    {brokerConnected
+                      ? "Market tape may still be warming up — try another symbol or open the intraday cockpit."
+                      : "Connect your broker and open the intraday workspace for live charts."}
+                  </p>
+                  <Link
+                    to="/intraday"
+                    className={cn(
+                      "mt-1 rounded-lg px-3 py-1.5 text-xs font-semibold",
+                      isLight ? "bg-sky-600 text-white hover:bg-sky-700" : "bg-sky-500 text-white hover:bg-sky-600",
+                    )}
+                  >
+                    Open Intraday Cockpit
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
 
@@ -406,7 +568,9 @@ export function TraderDashboard() {
                       </div>
                       <div className="min-w-0">
                         <div className={cn("font-mono text-sm font-bold truncate", headingCls)}>{o.symbol ?? "—"}</div>
-                        <div className={cn("text-[10px] truncate", mutedCls)}>{o.strategyKey ?? fmtTime(o.createdAt)}</div>
+                        <div className={cn("text-[10px] truncate", mutedCls)}>
+                          {o.strategyKey ? `${o.strategyKey} · ` : ""}{fmtTime(o.createdAt)}
+                        </div>
                       </div>
                     </div>
                     <div className={cn("shrink-0 text-xs font-bold", stateCls)}>{state}</div>
@@ -430,38 +594,48 @@ export function TraderDashboard() {
               </Link>
             </div>
             <div className="divide-y" style={{ borderColor: isLight ? "#f3f4f6" : "rgba(255,255,255,0.05)" }}>
-              {strategiesQ.isLoading && [1,2,3].map(i => (
+              {workstationQ.isLoading && [1, 2, 3].map((i) => (
                 <div key={i} className="flex items-center justify-between px-5 py-3 gap-3">
                   <Skeleton className="h-4 w-32" />
                   <Skeleton className="h-4 w-10" />
                 </div>
               ))}
-              {!strategiesQ.isLoading && (strategiesQ.data ?? []).length === 0 && (
+              {!workstationQ.isLoading && activeStrategies.length === 0 && (
                 <div className={cn("px-5 py-8 text-center text-xs", mutedCls)}>
-                  No strategies yet.{" "}
+                  No running strategies.{" "}
                   <Link to="/strategies" className={cn("font-semibold underline", isLight ? "text-sky-600" : "text-sky-400")}>
-                    Add one →
+                    Start one →
                   </Link>
                 </div>
               )}
-              {(strategiesQ.data ?? []).map((s, i) => {
-                const name = s.strategyKey ?? s.code ?? s.name ?? "Strategy";
+              {activeStrategies.map((s, i) => {
+                const name = s.strategyName ?? s.strategyKey ?? s.code ?? s.name ?? "Strategy";
                 const mode = (s.executionMode ?? selectedMode).toUpperCase();
-                const pnl = safeNum(s.unrealizedPnl);
+                const runtime = (s.runtimeState ?? "RUNNING").toUpperCase();
                 return (
-                  <div key={i} className={cn("flex items-center justify-between px-5 py-3 transition", rowHover)}>
+                  <div key={`${s.strategyKey ?? name}-${i}`} className={cn("flex items-center justify-between gap-3 px-5 py-3 transition", rowHover)}>
                     <div className="min-w-0">
                       <div className={cn("truncate text-xs font-semibold", headingCls)} title={name}>{name}</div>
-                      <span className={cn(
-                        "mt-0.5 inline-block rounded-md px-1.5 py-0.5 text-[10px] font-bold",
-                        mode === "LIVE"
-                          ? isLight ? "bg-rose-100 text-rose-600" : "bg-rose-500/15 text-rose-400"
-                          : isLight ? "bg-amber-100 text-amber-600" : "bg-amber-500/15 text-amber-400"
-                      )}>{mode}</span>
-                    </div>
-                    <div className={cn("shrink-0 font-mono text-xs font-bold",
-                      pnl == null ? subCls : pnl >= 0 ? "text-emerald-500" : "text-rose-500")}>
-                      {pnl != null ? fmtCurrency(pnl) : "—"}
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {s.symbol && (
+                          <span className={cn(
+                            "rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold",
+                            isLight ? "bg-sky-50 text-sky-700" : "bg-sky-500/15 text-sky-300",
+                          )}>
+                            {s.symbol}
+                          </span>
+                        )}
+                        <span className={cn(
+                          "rounded-md px-1.5 py-0.5 text-[10px] font-bold",
+                          mode === "LIVE"
+                            ? isLight ? "bg-rose-100 text-rose-600" : "bg-rose-500/15 text-rose-400"
+                            : isLight ? "bg-amber-100 text-amber-600" : "bg-amber-500/15 text-amber-400",
+                        )}>{mode}</span>
+                        <span className={cn(
+                          "rounded-md px-1.5 py-0.5 text-[10px] font-bold",
+                          isLight ? "bg-emerald-50 text-emerald-700" : "bg-emerald-500/15 text-emerald-400",
+                        )}>{runtime}</span>
+                      </div>
                     </div>
                   </div>
                 );
@@ -479,18 +653,18 @@ export function TraderDashboard() {
               </Link>
             </div>
             <div className="divide-y" style={{ borderColor: isLight ? "#f3f4f6" : "rgba(255,255,255,0.05)" }}>
-              {signalsQ.isLoading && [1,2,3].map(i => (
+              {workstationQ.isLoading && [1, 2, 3].map((i) => (
                 <div key={i} className="flex items-center justify-between px-5 py-3 gap-3">
                   <Skeleton className="h-4 w-20" />
                   <Skeleton className="h-4 w-14" />
                 </div>
               ))}
-              {!signalsQ.isLoading && (signalsQ.data ?? []).length === 0 && (
+              {!workstationQ.isLoading && latestSignals.length === 0 && (
                 <div className={cn("px-5 py-8 text-center text-xs", mutedCls)}>
                   No signals yet — strategies begin scanning at market open.
                 </div>
               )}
-              {(signalsQ.data ?? []).map((s) => {
+              {latestSignals.map((s) => {
                 const type = (s.signalType ?? "").toUpperCase();
                 return (
                   <div key={s.id} className={cn("flex items-center justify-between gap-3 px-5 py-3 transition", rowHover)}>

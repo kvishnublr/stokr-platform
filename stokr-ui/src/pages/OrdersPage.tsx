@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
+import { fmtDateTime } from "../lib/dateUtils";
 import { api } from "../api/client";
 import { DataGrid } from "../components/data/DataGrid";
 import { useUiThemeStore } from "../state/uiTheme";
@@ -47,7 +48,15 @@ export function OrdersPage(props?: { embedded?: boolean }) {
 
   const cols = useMemo<ColumnDef<OrderRow>[]>(
     () => [
-      { accessorKey: "createdAt", header: "Time" },
+      {
+        accessorKey: "createdAt",
+        header: "Time",
+        cell: ({ getValue }) => (
+          <span className={isLight ? "font-mono text-xs text-neutral-600" : "font-mono text-xs text-neutral-300"}>
+            {fmtDateTime(getValue() as string)}
+          </span>
+        ),
+      },
       { accessorKey: "symbol", header: "Symbol" },
       { accessorKey: "side", header: "Side" },
       {
