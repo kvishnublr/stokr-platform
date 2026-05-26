@@ -1,4 +1,4 @@
--- V30: Strategy Overhaul — Remove all old strategies, keep only NSE_SPIKE_DETECTION + add 4 new
+-- V40: Strategy Overhaul — Remove all old strategies, keep only NSE_SPIKE_DETECTION + add 4 new
 -- Date: 2026-05-26
 
 -- 1. Delete ALL runtime bindings for strategies being removed
