@@ -3,6 +3,13 @@ import { Link } from "react-router-dom";
 import { fmtDateTime } from "../../lib/dateUtils";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { api } from "../../api/client";
+import { useUiThemeStore } from "../../state/uiTheme";
+import { cn } from "../../lib/utils";
+import { AdminPageShell, AdminPanel, AdminSection } from "../../components/admin/institutional/AdminDesignSystem";
+import { LiveSignalCard } from "../../components/admin/institutional/experience/LiveSignalCard";
+import { SignalQualityEngine } from "../../components/admin/institutional/experience/SignalQualityEngine";
+import { SignalLifecycleTimeline, StrategyPerformanceHeatmap } from "../../components/admin/institutional/experience/SignalLifecycleTimeline";
+import { resolveProvenance } from "../../components/admin/institutional/experience/provenanceTheme";
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, Download, X,
   ChevronRight, AlertTriangle, Target,
@@ -367,6 +374,7 @@ const QUICK_FILTERS = [
 ] as const;
 
 export function AdminSignalsPage() {
+  const isLight = useUiThemeStore((s) => s.mode === "light");
   const [page, setPage] = useState(0);
   const [symbol, setSymbol] = useState("");
   const [strategyFilter, setStrategyFilter] = useState("");
@@ -374,6 +382,9 @@ export function AdminSignalsPage() {
   const [pipeline, setPipeline] = useState("ALL");
   const [outcomeStatus, setOutcomeStatus] = useState("ALL");
   const [includeReplayLab, setIncludeReplayLab] = useState(false);
+  const [provenanceTab, setProvenanceTab] = useState<"PROD" | "REPLAY_LAB">("PROD");
+  const [viewMode, setViewMode] = useState<"stream" | "grid">("stream");
+  const [showDetailGrid, setShowDetailGrid] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -524,9 +535,31 @@ export function AdminSignalsPage() {
     || outcomeStatus !== "ALL" || includeReplayLab);
 
   const rows = q.data?.content ?? [];
+  const filteredRows = useMemo(() => {
+    if (provenanceTab === "REPLAY_LAB") {
+      return rows.filter((r) => {
+        const p = resolveProvenance(r.pipeline);
+        return p === "REPLAY" || p === "LAB";
+      });
+    }
+    return rows.filter((r) => {
+      const p = resolveProvenance(r.pipeline);
+      return p === "LIVE" || p === "PAPER" || p === "UNKNOWN";
+    });
+  }, [rows, provenanceTab]);
+
+  const selectedRow = filteredRows.find((r) => r.id === selectedId) ?? rows.find((r) => r.id === selectedId);
   const total = q.data?.totalElements ?? 0;
   const totalPages = q.data?.totalPages ?? 1;
   const stats = statsQ.data;
+
+  const heatmapRows = useMemo(
+    () =>
+      [...(strategyStatsQ.data ?? [])]
+        .sort((a, b) => (b.signalsToday ?? 0) - (a.signalsToday ?? 0))
+        .map((r) => ({ strategyKey: r.strategyKey, signalsToday: r.signalsToday ?? 0 })),
+    [strategyStatsQ.data],
+  );
 
   const rowOutcomeBg = (outcome: string | null) => {
     if (outcome === "TARGET_HIT") return "bg-emerald-50/50";
@@ -535,233 +568,203 @@ export function AdminSignalsPage() {
     return "";
   };
 
-  const inputCls = "h-8 rounded-lg border border-slate-300 bg-white px-3 text-xs text-slate-900 placeholder-slate-400 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors";
-  const selectCls = "h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-800 outline-none focus:border-blue-400 transition-colors cursor-pointer";
+  const inputCls = cn(
+    "h-9 rounded-xl border px-3 text-xs outline-none transition focus:ring-2 focus:ring-blue-500/30",
+    isLight
+      ? "border-neutral-300 bg-white text-neutral-900 placeholder-neutral-400"
+      : "border-neutral-700 bg-neutral-900/60 text-neutral-100 placeholder-neutral-500",
+  );
+  const selectCls = inputCls;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-
-      {/* ── Page Header + KPI strip ─────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-slate-50/80 px-4 py-2.5 sm:px-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-4 flex-wrap">
-            <div>
-              <h1 className="text-base font-bold tracking-tight text-slate-900">Signal Intelligence</h1>
-              <p className="text-[10px] text-slate-500">Production analytics: LIVE + PAPER only (replay/lab excluded)</p>
-            </div>
-            {/* Inline KPI pills */}
-            <div className="flex items-center gap-2 flex-wrap text-[11px]">
-              {[
-                { label: "Today", value: stats?.totalToday ?? 0, cls: "text-blue-700 bg-blue-50 border-blue-200" },
-                { label: "BUY", value: stats?.buyToday ?? 0, cls: "text-emerald-700 bg-emerald-50 border-emerald-200" },
-                { label: "SELL", value: stats?.sellToday ?? 0, cls: "text-rose-700 bg-rose-50 border-rose-200" },
-                { label: "LIVE", value: stats?.liveToday ?? 0, cls: "text-orange-700 bg-orange-50 border-orange-200" },
-                { label: "PAPER", value: stats?.paperToday ?? 0, cls: "text-slate-600 bg-slate-50 border-slate-200" },
-                { label: "Conf", value: stats?.avgConfidence != null ? `${(stats.avgConfidence * 100).toFixed(0)}%` : "—", cls: "text-violet-700 bg-violet-50 border-violet-200" },
-                { label: "Win%",
-                  value: stats && (stats.targetHit + stats.slHit) > 0
-                    ? `${Math.round(stats.targetHit / (stats.targetHit + stats.slHit) * 100)}%` : "—",
-                  cls: "text-teal-700 bg-teal-50 border-teal-200" },
-                { label: "All-time", value: (stats?.totalAllTime ?? 0).toLocaleString(), cls: "text-slate-500 bg-white border-slate-200" },
-              ].map(({ label, value, cls }) => (
-                <span key={label} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${cls}`}>
-                  <span className="text-slate-400 font-normal">{label}</span>
-                  <span className="tabular-nums">{value}</span>
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/admin/signal-lab"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 transition-colors shadow-sm"
-            >
-              <BarChart3 className="h-3.5 w-3.5" /> Cleanup &amp; benchmark
-            </Link>
-            <button
-              type="button"
-              disabled={activatePipeline.isPending}
-              onClick={() => activatePipeline.mutate()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition-colors shadow-sm disabled:opacity-60"
-            >
-              <Zap className={`h-3.5 w-3.5 ${activatePipeline.isPending ? "animate-pulse" : ""}`} />
-              {activatePipeline.isPending ? "Activating…" : "Start signal flow"}
-            </button>
-            <button
-              type="button"
-              disabled={trackOutcomes.isPending}
-              onClick={() => trackOutcomes.mutate()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-100 transition-colors shadow-sm disabled:opacity-60"
-            >
-              <Target className={`h-3.5 w-3.5 ${trackOutcomes.isPending ? "animate-pulse" : ""}`} />
-              {trackOutcomes.isPending ? "Tracking…" : "Track outcomes"}
-            </button>
-            <button type="button" onClick={() => void q.refetch()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm">
-              <RefreshCw className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} /> Refresh
-            </button>
-            <button type="button" onClick={handleExport}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm">
-              <Download className="h-3.5 w-3.5" /> CSV
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Filter Bar ───────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-2 sm:px-6">
+    <AdminPageShell
+      isLight={isLight}
+      eyebrow="Strategies & signals"
+      title="Signal Intelligence War Room"
+      subtitle="Live signal stream, quality engine, lifecycle timeline, and strategy clusters — production and lab surfaces are visually isolated."
+      actions={
         <div className="flex flex-wrap items-center gap-2">
-          <input className={inputCls} placeholder="Symbol…" value={symbol}
-            onChange={e => { setSymbol(e.target.value); setPage(0); }} />
-          <select
-            className={`${selectCls} min-w-[220px] max-w-[320px]`}
-            value={strategyFilter}
-            onChange={(e) => { setStrategyFilter(e.target.value); setPage(0); }}
-            title="Filter by strategy"
+          <Link
+            to="/admin/signal-lab"
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold",
+              isLight ? "border-indigo-300 bg-indigo-50 text-indigo-800" : "border-indigo-500/40 bg-indigo-500/10 text-indigo-200",
+            )}
           >
-            <option value="">
-              All strategies ({stats?.totalToday ?? strategyOptions.reduce((s, o) => s + o.count, 0)})
-            </option>
-            {strategyOptions.map(({ key, count }) => (
-              <option key={key} value={key}>
-                {key} ({count} today)
-              </option>
-            ))}
-          </select>
-          <select className={selectCls} value={signalType} onChange={e => { setSignalType(e.target.value); setPage(0); }}>
-            <option value="ALL">All sides</option>
-            <option value="BUY">BUY</option>
-            <option value="SELL">SELL</option>
-            <option value="HOLD">HOLD</option>
-          </select>
-          <select className={selectCls} value={pipeline} onChange={e => { setPipeline(e.target.value); setPage(0); }}>
-            <option value="ALL">All modes</option>
-            <option value="LIVE">LIVE</option>
-            <option value="PAPER">PAPER</option>
-            <option value="SIMULATED">SIMULATED</option>
-          </select>
-          <select className={selectCls} value={outcomeStatus} onChange={e => { setOutcomeStatus(e.target.value); setPage(0); }}>
-            <option value="ALL">All outcomes</option>
-            <option value="TARGET_HIT">Target Hit</option>
-            <option value="STOPLOSS_HIT">SL Hit</option>
-            <option value="RUNNING">Running</option>
-            <option value="PARTIAL_TARGET">Partial Target</option>
-            <option value="BREAKEVEN_EXIT">Breakeven</option>
-            <option value="EXPIRED">Expired</option>
-            <option value="MISSED">Missed</option>
-            <option value="REJECTED">Rejected</option>
-            <option value="CANCELLED">Cancelled</option>
-            <option value="NO_EXECUTION">No Execution</option>
-          </select>
-
-          <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 whitespace-nowrap ml-1">
-            <input
-              type="checkbox"
-              checked={includeReplayLab}
-              onChange={(e) => { setIncludeReplayLab(e.target.checked); setPage(0); }}
-              className="rounded border-slate-300"
-            />
-            Include replay/lab
-          </label>
-
-          {/* Quick filters */}
-          <div className="flex items-center gap-1 ml-1 border-l border-slate-200 pl-3">
-            {QUICK_FILTERS.map(qf => (
-              <button key={qf.label} type="button"
-                onClick={() => setQuickFilter(qf)}
-                className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition-colors whitespace-nowrap">
-                {qf.label}
-              </button>
-            ))}
-          </div>
-
-          {hasFilters && (
-            <button type="button" onClick={clearFilters}
-              className="ml-auto flex items-center gap-1 text-xs text-slate-400 hover:text-rose-500 transition-colors">
-              <X className="h-3 w-3" /> Clear
-            </button>
-          )}
-          {!hasFilters && (
-            <span className="ml-auto text-[11px] text-slate-400">auto-refresh 15s</span>
-          )}
+            <BarChart3 className="h-3.5 w-3.5" /> Lab
+          </Link>
+          <button
+            type="button"
+            disabled={activatePipeline.isPending}
+            onClick={() => activatePipeline.mutate()}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-60",
+              isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+            )}
+          >
+            <Zap className={cn("h-3.5 w-3.5", activatePipeline.isPending && "animate-pulse")} />
+            {activatePipeline.isPending ? "Activating…" : "Start flow"}
+          </button>
+          <button type="button" onClick={() => void q.refetch()} className={cn("rounded-xl border px-3 py-2 text-xs font-semibold", isLight ? "border-neutral-300 bg-white" : "border-neutral-700 bg-neutral-900 text-neutral-200")}>
+            <RefreshCw className={cn("inline h-3.5 w-3.5", q.isFetching && "animate-spin")} /> Refresh
+          </button>
         </div>
-      </div>
+      }
+    >
+      <div className="space-y-6">
+        <SignalQualityEngine stats={stats} isLight={isLight} />
 
-      {/* ── Data Grid ────────────────────────────────────────────────────────── */}
-      <div className="relative flex-1 min-h-0 overflow-auto overscroll-x-contain bg-white">
-        <table className="w-full min-w-[1100px] border-collapse text-xs">
-          <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 shadow-[0_1px_0_0_rgba(226,232,240,1)] backdrop-blur-sm">
-            <tr>
-              {["Time", "Strategy", "Symbol", "Side", "Confidence", "Entry", "SL", "Target", "Qty", "Outcome", "PnL", "Mode"].map(h => (
-                <th key={h} className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 last:border-r-0 sm:px-4">
-                  {h}
-                </th>
+        <div className="flex flex-wrap gap-2">
+          {(["PROD", "REPLAY_LAB"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setProvenanceTab(tab)}
+              className={cn(
+                "rounded-full border px-4 py-1.5 text-[11px] font-bold uppercase tracking-wide transition",
+                provenanceTab === tab
+                  ? tab === "PROD"
+                    ? isLight
+                      ? "border-rose-300 bg-rose-50 text-rose-800"
+                      : "border-rose-500/40 bg-rose-500/15 text-rose-100"
+                    : isLight
+                      ? "border-violet-300 bg-violet-50 text-violet-800"
+                      : "border-violet-500/40 bg-violet-500/15 text-violet-100"
+                  : isLight
+                    ? "border-neutral-200 bg-white text-neutral-600"
+                    : "border-neutral-800 bg-neutral-900/50 text-neutral-400",
+              )}
+            >
+              {tab === "PROD" ? "Live + Paper" : "Replay + Lab"}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              setIncludeReplayLab(provenanceTab === "REPLAY_LAB");
+              setPage(0);
+              void q.refetch();
+            }}
+            className={cn("ml-auto text-[11px] underline-offset-2 hover:underline", isLight ? "text-neutral-500" : "text-neutral-400")}
+          >
+            Sync API filter
+          </button>
+        </div>
+
+        {selectedRow ? (
+          <AdminPanel isLight={isLight} title="Signal lifecycle" subtitle={`${selectedRow.symbol} · ${selectedRow.strategyName}`}>
+            <SignalLifecycleTimeline outcome={selectedRow.outcomeStatus} isLight={isLight} />
+          </AdminPanel>
+        ) : null}
+
+        <AdminSection isLight={isLight} title="Strategy performance clusters" subtitle="Heat intensity by signals today">
+          <StrategyPerformanceHeatmap rows={heatmapRows} isLight={isLight} />
+        </AdminSection>
+
+        {/* Filters */}
+        <AdminPanel isLight={isLight} title="Stream filters" noPadding>
+          <div className="flex flex-wrap items-center gap-2 px-5 py-4">
+            <input className={inputCls} placeholder="Symbol…" value={symbol} onChange={(e) => { setSymbol(e.target.value); setPage(0); }} />
+            <select className={cn(selectCls, "min-w-[180px]")} value={strategyFilter} onChange={(e) => { setStrategyFilter(e.target.value); setPage(0); }}>
+              <option value="">All strategies</option>
+              {strategyOptions.map(({ key, count }) => (
+                <option key={key} value={key}>{key} ({count})</option>
               ))}
-              <th className="w-8 px-2" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {q.isLoading && (
-              <tr><td colSpan={13} className="px-4 py-16 text-center text-slate-400">
-                <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin opacity-50" />
-                Loading signals…
-              </td></tr>
-            )}
-            {!q.isLoading && rows.length === 0 && (
-              <tr><td colSpan={13} className="px-4 py-16 text-center">
-                <AlertTriangle className="mx-auto mb-2 h-6 w-6 text-amber-400" />
-                <div className="text-sm font-medium text-slate-600">No signals found</div>
-                <div className="text-xs text-slate-400 mt-1">Try adjusting the filters above</div>
-              </td></tr>
-            )}
-            {rows.map((r, i) => (
-              <tr key={r.id}
-                onClick={() => setSelectedId(r.id)}
-                className={`group cursor-pointer transition-colors hover:bg-blue-50/70 ${
-                  i % 2 === 1 ? "bg-slate-50/80" : "bg-white"
-                } ${rowOutcomeBg(r.outcomeStatus)} ${selectedId === r.id ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""}`}>
-                <td className="whitespace-nowrap px-3 py-1.5 font-mono text-slate-400 text-[11px]">{fmtTime(r.createdAt)}</td>
-                <td className="max-w-[150px] px-3 py-1.5 font-medium text-slate-700 truncate" title={r.strategyName ?? ""}>{r.strategyName ?? "—"}</td>
-                <td className="px-3 py-1.5 font-mono font-bold text-slate-900">{r.symbol ?? "—"}</td>
-                <td className="px-3 py-1.5"><SideChip type={r.signalType} /></td>
-                <td className="px-3 py-1.5"><ConfidenceBar score={r.confidenceScore} /></td>
-                <td className="px-3 py-1.5 font-mono text-slate-700">{fmt(r.entryReferencePrice)}</td>
-                <td className="px-3 py-1.5 font-mono text-rose-600">{fmt(r.stopPrice)}</td>
-                <td className="px-3 py-1.5 font-mono text-emerald-600">{fmt(r.targetPrice)}</td>
-                <td className="px-3 py-1.5 font-mono text-slate-600">{fmt(r.suggestedQty, 0)}</td>
-                <td className="px-3 py-1.5"><OutcomeChip status={r.outcomeStatus} /></td>
-                <td className={`px-3 py-1.5 font-mono text-xs ${pnlClass(r.realizedPnl ?? r.unrealizedPnl)}`}>
-                  {fmtPnl(r.realizedPnl ?? r.unrealizedPnl)}
-                </td>
-                <td className="px-3 py-1.5"><ModeChip mode={r.pipeline} /></td>
-                <td className="px-2 py-1.5 text-slate-300 group-hover:text-slate-500 transition-colors">
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </select>
+            <select className={selectCls} value={signalType} onChange={(e) => { setSignalType(e.target.value); setPage(0); }}>
+              <option value="ALL">All sides</option>
+              <option value="BUY">BUY</option>
+              <option value="SELL">SELL</option>
+            </select>
+            <select className={selectCls} value={outcomeStatus} onChange={(e) => { setOutcomeStatus(e.target.value); setPage(0); }}>
+              <option value="ALL">All outcomes</option>
+              <option value="TARGET_HIT">Target hit</option>
+              <option value="STOPLOSS_HIT">SL hit</option>
+              <option value="RUNNING">Running</option>
+              <option value="EXPIRED">Expired</option>
+            </select>
+            <div className="ml-auto flex gap-2">
+              <button type="button" onClick={() => setViewMode("stream")} className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold", viewMode === "stream" ? "bg-blue-600 text-white" : isLight ? "bg-neutral-100" : "bg-neutral-800")}>Stream</button>
+              <button type="button" onClick={() => setViewMode("grid")} className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold", viewMode === "grid" ? "bg-blue-600 text-white" : isLight ? "bg-neutral-100" : "bg-neutral-800")}>Grid</button>
+              <button type="button" onClick={() => setShowDetailGrid((v) => !v)} className={cn("rounded-lg border px-3 py-1.5 text-xs font-semibold", isLight ? "border-neutral-300" : "border-neutral-700")}>
+                {showDetailGrid ? "Hide" : "Show"} detail grid
+              </button>
+            </div>
+          </div>
+        </AdminPanel>
 
-      {/* ── Pagination ───────────────────────────────────────────────────────── */}
-      <div className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-6">
-        <span className="text-xs text-slate-500">
-          {total > 0 ? `${page * 100 + 1}–${Math.min((page + 1) * 100, total)} of ${total.toLocaleString()} signals` : "0 results"}
-        </span>
-        <div className="flex items-center gap-2">
-          <button type="button" disabled={page <= 0} onClick={() => setPage(p => Math.max(0, p - 1))}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
-            ← Prev
-          </button>
-          <span className="text-xs font-medium text-slate-500 tabular-nums px-2">Page {page + 1} / {totalPages}</span>
-          <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
-            Next →
-          </button>
+        {/* Live signal stream */}
+        <AdminSection isLight={isLight} title="Live signal stream" subtitle={`${filteredRows.length} visible · ${total.toLocaleString()} total matched`}>
+          {q.isLoading ? (
+            <div className={cn("py-16 text-center text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>
+              <RefreshCw className="mx-auto mb-2 h-6 w-6 animate-spin opacity-50" /> Loading signals…
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <div className={cn("rounded-2xl border border-dashed py-16 text-center", isLight ? "border-neutral-300" : "border-neutral-800")}>
+              <AlertTriangle className="mx-auto mb-2 h-6 w-6 text-amber-400" />
+              <p className="text-sm font-medium">No signals in this provenance lane</p>
+            </div>
+          ) : (
+            <div className={cn(viewMode === "stream" ? "flex flex-col gap-3" : "grid gap-3 sm:grid-cols-2 xl:grid-cols-3")}>
+              {filteredRows.map((r, i) => (
+                <LiveSignalCard
+                  key={r.id}
+                  signal={r}
+                  isLight={isLight}
+                  selected={selectedId === r.id}
+                  index={i}
+                  onSelect={() => setSelectedId(r.id)}
+                />
+              ))}
+            </div>
+          )}
+        </AdminSection>
+
+        {showDetailGrid ? (
+          <AdminPanel isLight={isLight} title="Detail grid" subtitle="Secondary drill-down surface" noPadding accent>
+            <div className="max-h-[420px] overflow-auto">
+              <table className="w-full min-w-[900px] border-collapse text-xs">
+                <thead className={cn("sticky top-0 z-10 border-b", isLight ? "bg-neutral-50" : "bg-neutral-900")}>
+                  <tr>
+                    {["Time", "Strategy", "Symbol", "Side", "Conf", "Outcome", "PnL", "Mode"].map((h) => (
+                      <th key={h} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider opacity-60">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.map((r) => (
+                    <tr key={r.id} onClick={() => setSelectedId(r.id)} className={cn("cursor-pointer border-b transition hover:bg-blue-500/5", isLight ? "border-neutral-100" : "border-neutral-800", selectedId === r.id && "bg-blue-500/10")}>
+                      <td className="px-3 py-2 font-mono opacity-70">{fmtTime(r.createdAt)}</td>
+                      <td className="max-w-[140px] truncate px-3 py-2">{r.strategyName}</td>
+                      <td className="px-3 py-2 font-mono font-bold">{r.symbol}</td>
+                      <td className="px-3 py-2"><SideChip type={r.signalType} /></td>
+                      <td className="px-3 py-2"><ConfidenceBar score={r.confidenceScore} /></td>
+                      <td className="px-3 py-2"><OutcomeChip status={r.outcomeStatus} /></td>
+                      <td className={cn("px-3 py-2 font-mono", pnlClass(r.realizedPnl ?? r.unrealizedPnl))}>{fmtPnl(r.realizedPnl ?? r.unrealizedPnl)}</td>
+                      <td className="px-3 py-2"><ModeChip mode={r.pipeline} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </AdminPanel>
+        ) : null}
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-400")}>
+            {total > 0 ? `Page ${page + 1} / ${totalPages} · ${total.toLocaleString()} signals` : "0 results"}
+          </span>
+          <div className="flex gap-2">
+            <button type="button" disabled={page <= 0} onClick={() => setPage((p) => Math.max(0, p - 1))} className={cn("rounded-lg border px-3 py-1.5 text-xs disabled:opacity-40", isLight ? "border-neutral-300 bg-white" : "border-neutral-700 bg-neutral-900")}>← Prev</button>
+            <button type="button" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)} className={cn("rounded-lg border px-3 py-1.5 text-xs disabled:opacity-40", isLight ? "border-neutral-300 bg-white" : "border-neutral-700 bg-neutral-900")}>Next →</button>
+            <button type="button" onClick={handleExport} className={cn("rounded-lg border px-3 py-1.5 text-xs", isLight ? "border-neutral-300 bg-white" : "border-neutral-700 bg-neutral-900 text-neutral-200")}>
+              <Download className="inline h-3.5 w-3.5" /> CSV
+            </button>
+          </div>
         </div>
       </div>
 
       {selectedId && <SignalDetailDrawer id={selectedId} onClose={() => setSelectedId(null)} />}
-    </div>
+    </AdminPageShell>
   );
 }

@@ -24,3 +24,4 @@ stokr-ui/tsconfig.tsbuildinfo
 
 **/node_modules/
 
+deploy/contabo_github_deploy.key

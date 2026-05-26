@@ -2,6 +2,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { fmtDateTime } from "../lib/dateUtils";
 import { useState } from "react";
 import { api } from "../api/client";
+import { useUiThemeStore } from "../state/uiTheme";
+import { AdminPageShell } from "../components/admin/institutional/AdminDesignSystem";
+import { ExecutionLaneVisualization } from "../components/admin/institutional/experience/ExecutionLaneVisualization";
+import { cn } from "../lib/utils";
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, X,
   ChevronRight, AlertTriangle, Zap, Activity,
@@ -321,6 +325,7 @@ function OrderDetailDrawer({ order, onClose }: { order: OrderRow; onClose: () =>
 const ORDER_STATES = ["CREATED","VALIDATED","SUBMITTED","ACCEPTED","PARTIALLY_FILLED","FILLED","REJECTED","CANCELLED","EXPIRED","FAILED"];
 
 export function AdminOmsMonitorPage() {
+  const isLight = useUiThemeStore((s) => s.mode === "light");
   const [page, setPage] = useState(0);
   const [symbol, setSymbol] = useState("");
   const [strategy, setStrategy] = useState("");
@@ -405,40 +410,28 @@ export function AdminOmsMonitorPage() {
   const selectCls = "h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400 transition-colors cursor-pointer";
 
   return (
-    <div className="flex h-full flex-col bg-slate-50">
-
-      {/* ── Page Header ─────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-bold tracking-tight text-slate-900">OMS Monitor</h1>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Platform-wide order surveillance · {total.toLocaleString()} results · live feed
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => expireMut.mutate()} disabled={expireMut.isPending}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50 transition-colors shadow-sm">
-              {expireMut.isPending
-                ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Expiring…</>
-                : <><Trash2 className="h-3.5 w-3.5" /> Expire Stuck Orders</>}
-            </button>
-            {expireMut.isSuccess && (
-              <span className="text-xs text-rose-600 font-medium">
-                ✓ {(expireMut.data as any)?.expired ?? 0} expired
-              </span>
-            )}
-            <button type="button" onClick={() => void q.refetch()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm">
-              <RefreshCw className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} /> Refresh
-            </button>
-          </div>
+    <AdminPageShell
+      isLight={isLight}
+      eyebrow="Trading operations"
+      title="Execution Monitor"
+      subtitle="Institutional OMS surveillance — live execution lanes, order lifecycle, and broker truth."
+      actions={
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => expireMut.mutate()} disabled={expireMut.isPending}
+            className={cn("inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50", isLight ? "border-rose-300 bg-rose-50 text-rose-700" : "border-rose-500/40 bg-rose-500/10 text-rose-200")}>
+            {expireMut.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            Expire stuck
+          </button>
+          <button type="button" onClick={() => void q.refetch()} className={cn("rounded-xl border px-3 py-2 text-xs font-semibold", isLight ? "border-neutral-300 bg-white" : "border-neutral-700 bg-neutral-900 text-neutral-200")}>
+            <RefreshCw className={cn("inline h-3.5 w-3.5", q.isFetching && "animate-spin")} /> Refresh
+          </button>
         </div>
-      </div>
+      }
+    >
+    <div className="space-y-6">
+      <ExecutionLaneVisualization stats={stats} isLight={isLight} />
 
-      {/* ── KPI Stats Bar ────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
-        <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
           <StatCard label="Orders Today" value={(stats?.totalToday ?? 0).toLocaleString()} sub={`${(stats?.totalAllTime ?? 0).toLocaleString()} all-time`} accent="border-l-blue-500" icon={Activity} />
           <StatCard label="Filled" value={(stats?.filledToday ?? 0).toLocaleString()} sub={stats?.totalToday ? `${Math.round((stats.filledToday / stats.totalToday) * 100)}% fill rate` : "—"} accent="border-l-emerald-500" icon={CheckCircle2} />
           <StatCard label="Rejected" value={(stats?.rejectedToday ?? 0).toLocaleString()} sub={stats?.totalToday ? `${Math.round((stats.rejectedToday / stats.totalToday) * 100)}% reject rate` : "—"} accent="border-l-rose-500" icon={XCircle} />
@@ -446,7 +439,6 @@ export function AdminOmsMonitorPage() {
           <StatCard label="Pending" value={(stats?.pendingToday ?? 0).toLocaleString()} sub="awaiting execution" accent="border-l-sky-500" icon={Clock} />
           <StatCard label="Fill Rate" value={`${fillRate}%`} sub={`${stats?.cancelledToday ?? 0} cancelled today`} accent="border-l-teal-500" icon={Zap} />
         </div>
-      </div>
 
       {/* ── Reject Breakdown ────────────────────────────────────────────────── */}
       {(rejectReasonsQ.data ?? []).length > 0 && (
@@ -589,5 +581,6 @@ export function AdminOmsMonitorPage() {
 
       {selectedOrder && <OrderDetailDrawer order={selectedOrder} onClose={() => setSelectedOrder(null)} />}
     </div>
+    </AdminPageShell>
   );
 }

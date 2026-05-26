@@ -31,6 +31,7 @@ import {
   AdminSection,
   adminStagger,
 } from "../../components/admin/institutional/AdminDesignSystem";
+import { LivePlatformTopology } from "../../components/admin/institutional/experience/LivePlatformTopology";
 
 function extractLatencyMs(snapshot: OpsSnapshot | undefined): string {
   const oms = asRecord(snapshot?.oms);
@@ -160,6 +161,8 @@ export function AdminCommandCenterPage() {
       }
     >
       <motion.div variants={adminStagger} initial="hidden" animate="show" className="space-y-8">
+        <LivePlatformTopology snapshot={snapshot} isLight={isLight} />
+
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             panelVariant={panel}
