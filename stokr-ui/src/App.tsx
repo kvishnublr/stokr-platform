@@ -4,6 +4,7 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { AdminConsoleLayout } from "./layout/AdminConsoleLayout";
 import { ShellLayout } from "./layout/ShellLayout";
 import { LoginPage } from "./pages/LoginPage";
+import { ZerodhaOauthCompletePage } from "./pages/ZerodhaOauthCompletePage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
@@ -178,6 +179,7 @@ export default function App() {
       <Routes>
         <Route path="/demo" element={<DemoPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/brokers/zerodha-complete" element={<ZerodhaOauthCompletePage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />

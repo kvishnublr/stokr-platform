@@ -83,38 +83,78 @@ export function BrokersPage() {
     const z = params.get("zerodha");
     if (z !== "ok" && z !== "error") return;
 
-    // OAuth completed inside a popup: tell opener and close this window.
+    // Legacy callback URL (/brokers?zerodha=ok): forward to lightweight completion page.
     if (window.opener && !window.opener.closed) {
+      const q = z === "ok" ? "ok" : "error";
       try {
-        // Use "*" so delivery is not blocked when callback UI origin differs from opener (e.g. www vs apex).
-        // Opener still validates `ev.origin` in isTrustedZerodhaOauthMessageOrigin.
-        window.opener.postMessage(
-          { type: ZERODHA_OAUTH_MESSAGE, status: z === "ok" ? "ok" : "error" },
-          "*",
-        );
+        window.opener.postMessage({ type: ZERODHA_OAUTH_MESSAGE, status: q }, "*");
       } catch {
-        /* ignore cross-window errors */
+        /* ignore */
       }
-      params.delete("zerodha");
-      const rest = params.toString();
-      const path = `${window.location.pathname}${rest ? `?${rest}` : ""}`;
-      window.history.replaceState(null, "", path);
       window.close();
       return;
     }
+    window.location.replace(`/brokers/zerodha-complete?zerodha=${z === "ok" ? "ok" : "error"}`);
+  }, []);
 
-    if (z === "ok") {
+  function finishOauthFromParent(status: "ok" | "error") {
+    oauthHandledRef.current = true;
+    oauthCleanupRef.current?.();
+    oauthCleanupRef.current = null;
+    if (oauthPollRef.current) {
+      clearInterval(oauthPollRef.current);
+      oauthPollRef.current = null;
+    }
+    if (oauthCloseGraceRef.current) {
+      clearTimeout(oauthCloseGraceRef.current);
+      oauthCloseGraceRef.current = null;
+    }
+    setConnectingOAuth(false);
+    if (status === "ok") {
       toast.success("Zerodha session linked");
       void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
+      void statusQuery.refetch();
     } else {
       toast.error("Zerodha linking failed - try again");
     }
+  }
 
-    params.delete("zerodha");
-    const rest = params.toString();
-    const path = `${window.location.pathname}${rest ? `?${rest}` : ""}`;
-    window.history.replaceState(null, "", path);
-  }, [qc]);
+  useEffect(() => {
+    const onStorage = (ev: StorageEvent) => {
+      if (ev.key !== "stokr_zerodha_oauth_result" || !ev.newValue) return;
+      try {
+        const data = JSON.parse(ev.newValue) as { type?: string; status?: string };
+        if (data.type !== ZERODHA_OAUTH_MESSAGE) return;
+        finishOauthFromParent(data.status === "ok" ? "ok" : "error");
+        localStorage.removeItem("stokr_zerodha_oauth_result");
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect(() => {
+    if (!connectingOAuth) return;
+    const poll = setInterval(() => {
+      void statusQuery.refetch().then((r) => {
+        if (r.data?.connected && r.data?.tokenValid) {
+          finishOauthFromParent("ok");
+        }
+      });
+    }, 2000);
+    const timeout = setTimeout(() => {
+      if (!oauthHandledRef.current) {
+        setConnectingOAuth(false);
+        toast.message("Still connecting… If the popup is stuck, close it and click Refresh.");
+      }
+    }, 120_000);
+    return () => {
+      clearInterval(poll);
+      clearTimeout(timeout);
+    };
+  }, [connectingOAuth]);
 
   useEffect(() => {
     return () => {
@@ -240,24 +280,9 @@ export function BrokersPage() {
         if (!isTrustedZerodhaOauthMessageOrigin(ev.origin)) return;
         const data = ev.data as { type?: string; status?: string } | undefined;
         if (!data || data.type !== ZERODHA_OAUTH_MESSAGE) return;
-        oauthHandledRef.current = true;
-        if (oauthCloseGraceRef.current) {
-          clearTimeout(oauthCloseGraceRef.current);
-          oauthCloseGraceRef.current = null;
-        }
         window.removeEventListener("message", onMessage);
-        if (oauthPollRef.current) {
-          clearInterval(oauthPollRef.current);
-          oauthPollRef.current = null;
-        }
         oauthCleanupRef.current = null;
-        setConnectingOAuth(false);
-        if (data.status === "ok") {
-          toast.success("Zerodha session linked");
-          void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
-        } else {
-          toast.error("Zerodha linking failed - try again");
-        }
+        finishOauthFromParent(data.status === "ok" ? "ok" : "error");
       };
       window.addEventListener("message", onMessage);
 

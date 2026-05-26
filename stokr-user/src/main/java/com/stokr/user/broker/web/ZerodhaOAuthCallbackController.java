@@ -80,7 +80,7 @@ public class ZerodhaOAuthCallbackController {
     }
 
     private RedirectView redirect(String query) {
-        String url = uiPublicBaseUrl.replaceAll("/+$", "") + "/brokers" + query;
+        String url = uiPublicBaseUrl.replaceAll("/+$", "") + "/brokers/zerodha-complete" + query;
         return new RedirectView(url);
     }
 
