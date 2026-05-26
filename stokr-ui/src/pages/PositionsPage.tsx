@@ -19,14 +19,15 @@ import { cn } from "../lib/utils";
 import {
   AnimatedKpiCard,
   EmptyState,
-  PnlCell,
+  LivePositionsCommandTable,
+  PnlCommandRail,
   PnlSourceBadge,
   PremiumPanel,
-  SideBadge,
   TraderPageShell,
+  type CommandPositionRow,
   fadeUp,
 } from "../components/trader/TraderPremium";
-import { ArrowUpDown, Download, ExternalLink, RefreshCw, TrendingUp } from "lucide-react";
+import { Download, ExternalLink, RefreshCw, TrendingUp } from "lucide-react";
 
 type Exposure = {
   bySymbol: {
@@ -74,8 +75,6 @@ export function PositionsPage(props?: { embedded?: boolean }) {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const [symbolQuery, setSymbolQuery] = useState("");
   const [sideFilter, setSideFilter] = useState<"ALL" | "LONG" | "SHORT">("ALL");
-  const [sortBy, setSortBy] = useState<"symbol" | "mtm" | "notional">("mtm");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -187,15 +186,9 @@ export function PositionsPage(props?: { embedded?: boolean }) {
 
   const sortedRows = useMemo(() => {
     const arr = [...filteredRows];
-    arr.sort((a, b) => {
-      let cmp = 0;
-      if (sortBy === "symbol") cmp = a.symbol.localeCompare(b.symbol);
-      if (sortBy === "mtm") cmp = (a.mtmPnl ?? 0) - (b.mtmPnl ?? 0);
-      if (sortBy === "notional") cmp = a.notional - b.notional;
-      return sortDir === "asc" ? cmp : -cmp;
-    });
+    arr.sort((a, b) => (b.mtmPnl ?? 0) - (a.mtmPnl ?? 0));
     return arr;
-  }, [filteredRows, sortBy, sortDir]);
+  }, [filteredRows]);
 
   const summary = useMemo(() => {
     const totalSymbols = mergedRows.length;
@@ -216,14 +209,6 @@ export function PositionsPage(props?: { embedded?: boolean }) {
       .sort((a, b) => Math.abs(b.notionalNum) - Math.abs(a.notionalNum))
       .map((r) => ({ ...r, sharePct: total > 0 ? (Math.abs(r.notionalNum) / total) * 100 : 0 }));
   }, [exposureQ.data?.byBrokerNotional]);
-
-  function toggleSort(next: typeof sortBy) {
-    if (sortBy === next) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortBy(next);
-      setSortDir(next === "symbol" ? "asc" : "desc");
-    }
-  }
 
   function downloadCsv() {
     const headers = ["Symbol", "Side", "Qty", "Avg", "LTP", "MTM", "Unrealized", "Realized", "Notional", "Source", "Parity"];
@@ -288,16 +273,39 @@ export function PositionsPage(props?: { embedded?: boolean }) {
         ) : null}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <AnimatedKpiCard label="MTM P&L" loading={loading} value={formatPnlDisplay(accountPnl.mtm)} pnlValue={accountPnl.mtm} accent={(accountPnl.mtm ?? 0) >= 0 ? "bg-emerald-500" : "bg-rose-500"} />
-        <AnimatedKpiCard label="Unrealized" loading={loading} value={formatPnlDisplay(accountPnl.unrealized)} pnlValue={accountPnl.unrealized} accent="bg-sky-400" />
-        <AnimatedKpiCard label="Realized" loading={loading} value={formatPnlDisplay(accountPnl.realized)} pnlValue={accountPnl.realized} accent="bg-violet-400" />
+      <PnlCommandRail
+        mtm={accountPnl.mtm}
+        unrealized={accountPnl.unrealized}
+        realized={accountPnl.realized}
+        loading={loading}
+        openPositions={summary.totalSymbols}
+        sublabel={`Net qty ${fmtNum(summary.netQty, 0)}`}
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2">
         <AnimatedKpiCard label="Open symbols" loading={loading} value={String(summary.totalSymbols)} sublabel={`Net qty ${fmtNum(summary.netQty, 0)}`} icon={TrendingUp} accent="bg-amber-400" />
         <AnimatedKpiCard label="Gross notional" loading={loading} value={formatInr(summary.grossNotional)} sublabel={summary.top ? `Top · ${summary.top.symbol}` : undefined} accent="bg-indigo-400" />
       </div>
 
-      <PremiumPanel
-        title="Live positions"
+      <LivePositionsCommandTable
+        title={`Positions (${sortedRows.length})`}
+        subtitle="Broker-backed quantities · mark-to-market"
+        rows={sortedRows.map((r): CommandPositionRow => ({
+          symbol: r.symbol,
+          side: r.side,
+          qty: r.qty,
+          avgPrice: r.avgPrice,
+          ltp: r.ltp,
+          mtmPnl: r.mtmPnl,
+          unrealizedPnl: r.unrealizedPnl,
+          realizedPnl: r.realizedPnl,
+          notional: r.notional,
+          quantitySource: r.quantitySource,
+          parityBadge: r.parityBadge,
+        }))}
+        loading={loading}
+        footerMtm={summary.totalMtm}
+        showExtendedColumns
         action={
           <div className="flex flex-wrap items-center gap-2">
             <input className={inputCls} placeholder="Search symbol…" value={symbolQuery} onChange={(e) => setSymbolQuery(e.target.value)} />
@@ -307,7 +315,7 @@ export function PositionsPage(props?: { embedded?: boolean }) {
                 type="button"
                 onClick={() => setSideFilter(k)}
                 className={cn(
-                  "rounded-full px-2.5 py-1 text-[11px] font-bold uppercase",
+                  "rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide",
                   sideFilter === k
                     ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
                     : isLight ? "bg-neutral-100 text-neutral-600" : "bg-white/10 text-neutral-400",
@@ -316,91 +324,12 @@ export function PositionsPage(props?: { embedded?: boolean }) {
                 {k}
               </button>
             ))}
-            <button type="button" onClick={downloadCsv} className={cn("inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold", isLight ? "border-neutral-200" : "border-white/10")}>
-              <Download className="h-3 w-3" /> CSV
+            <button type="button" onClick={downloadCsv} className={cn("inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold uppercase tracking-wide", isLight ? "border-neutral-200 bg-white" : "border-white/10")}>
+              <Download className="h-3 w-3" /> Export
             </button>
           </div>
         }
-      >
-        <div className="overflow-x-auto px-2 pb-2">
-          <table className="min-w-full text-left text-xs">
-            <thead className={cn("sticky top-0 z-10 text-[10px] uppercase tracking-wider", isLight ? "bg-white text-neutral-500" : "bg-neutral-900 text-neutral-400")}>
-              <tr>
-                {[
-                  ["symbol", "Symbol"],
-                  ["mtm", "MTM P&L"],
-                  ["side", "Side"],
-                  ["qty", "Qty"],
-                  ["avg", "Avg"],
-                  ["ltp", "LTP"],
-                  ["unrealized", "Unrealized"],
-                  ["realized", "Realized"],
-                  ["notional", "Notional"],
-                  ["source", "Source"],
-                ].map(([key, label]) => (
-                  <th key={key} className="px-3 py-3 font-semibold">
-                    {key === "symbol" || key === "mtm" || key === "notional" ? (
-                      <button type="button" className="inline-flex items-center gap-1 hover:opacity-80" onClick={() => toggleSort(key as typeof sortBy)}>
-                        {label} <ArrowUpDown className="h-3 w-3 opacity-50" />
-                      </button>
-                    ) : (
-                      label
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={10} className="px-3 py-8 text-center text-neutral-500">Loading positions…</td></tr>
-              ) : sortedRows.length === 0 ? (
-                <tr><td colSpan={10}><EmptyState message="No open positions match your filters" /></td></tr>
-              ) : (
-                sortedRows.map((r, i) => (
-                  <motion.tr
-                    key={r.symbol}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.03, duration: 0.25 }}
-                    className={cn("border-t transition hover:bg-sky-500/[0.04]", isLight ? "border-neutral-100" : "border-white/[0.06]")}
-                  >
-                    <td className="px-3 py-3">
-                      <div className="font-mono font-bold">{r.symbol}</div>
-                      {r.parityBadge ? (
-                        <span
-                          className={cn(
-                            "mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold",
-                            r.parityBadge.tone === "rose"
-                              ? "bg-rose-500/15 text-rose-700"
-                              : r.parityBadge.tone === "sky"
-                                ? "bg-sky-500/15 text-sky-700"
-                                : "bg-amber-500/15 text-amber-700",
-                          )}
-                        >
-                          {r.parityBadge.label}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-3"><PnlCell value={r.mtmPnl} /></td>
-                    <td className="px-3 py-3"><SideBadge side={r.side} /></td>
-                    <td className={cn("px-3 py-3 font-mono font-semibold tabular-nums", pnlToneClass(r.qty, isLight))}>{fmtNum(r.qty, 0)}</td>
-                    <td className="px-3 py-3 font-mono tabular-nums">{r.avgPrice != null ? fmtNum(r.avgPrice) : "—"}</td>
-                    <td className="px-3 py-3 font-mono tabular-nums">{r.ltp != null ? fmtNum(r.ltp) : "—"}</td>
-                    <td className="px-3 py-3"><PnlCell value={r.unrealizedPnl} /></td>
-                    <td className="px-3 py-3"><PnlCell value={r.realizedPnl} /></td>
-                    <td className="px-3 py-3 font-mono tabular-nums">{formatInr(r.notional)}</td>
-                    <td className="px-3 py-3">
-                      <span className={cn("rounded-md px-2 py-0.5 text-[10px] font-bold uppercase", r.quantitySource === "BROKER" ? "bg-emerald-500/15 text-emerald-700" : "bg-neutral-500/10 text-neutral-600")}>
-                        {r.quantitySource}
-                      </span>
-                    </td>
-                  </motion.tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </PremiumPanel>
+      />
 
       <PremiumPanel title="Broker exposure mix">
         <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">

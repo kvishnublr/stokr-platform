@@ -12,12 +12,12 @@ import {
 } from "../../lib/traderExecutionMode";
 import { cn } from "../../lib/utils";
 import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl } from "../../lib/moneyUtils";
-import { AnimatedKpiCard, PnlCell, PnlSourceBadge, PremiumPanel, SideBadge, fadeUp } from "../../components/trader/TraderPremium";
+import { AnimatedKpiCard, PnlCommandRail, PnlSourceBadge, LivePositionsCommandTable, TerminalLinkAction, type CommandPositionRow } from "../../components/trader/TraderPremium";
 import { NiftyCandleChart } from "../../components/charts/NiftyCandleChart";
 import { useEffect, useMemo, useState } from "react";
 import {
   TrendingUp, TrendingDown, Activity, RefreshCw,
-  Zap, BarChart2, Layers, ArrowUpRight, ArrowDownRight,
+  Zap, Layers, ArrowUpRight, ArrowDownRight,
   CircleDot, ChevronRight, AlertTriangle, Radio,
 } from "lucide-react";
 
@@ -459,36 +459,34 @@ export function TraderDashboard() {
         </Link>
       </div>
 
-      {/* ── KPI Cards ── */}
-      <motion.div initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.07 } } }} className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <AnimatedKpiCard label="MTM P&L" loading={isLoading} value={fmtKpiPnl(mtmPnl)} pnlValue={mtmPnl} sublabel={openPosCount > 0 ? `${openPosCount} open position${openPosCount === 1 ? "" : "s"}` : rejectionPct} accent={(mtmPnl ?? 0) >= 0 ? "bg-emerald-500" : "bg-rose-500"} icon={TrendingUp} />
-        <AnimatedKpiCard label="Unrealized P&L" loading={isLoading} value={fmtKpiPnl(unrealizedPnl)} pnlValue={unrealizedPnl} accent={(unrealizedPnl ?? 0) >= 0 ? "bg-sky-400" : "bg-amber-400"} icon={Activity} />
-        <AnimatedKpiCard label="Realized P&L" loading={isLoading} value={fmtKpiPnl(realizedPnl)} pnlValue={realizedPnl} accent={(realizedPnl ?? 0) >= 0 ? "bg-violet-400" : "bg-rose-400"} icon={BarChart2} />
-        <AnimatedKpiCard label="Available Margin" loading={marginLoading} value={!brokerConnected ? "—" : marginFailed ? "—" : marginReady ? formatInr(availableMargin) : "—"} sublabel={!brokerConnected ? "Connect broker for live margin" : marginFailed ? marginErrorMsg ?? "Load failed" : undefined} accent="bg-amber-400" icon={Layers} />
-      </motion.div>
+      {/* ── P&L Command Rail ── */}
+      <PnlCommandRail
+        mtm={mtmPnl}
+        unrealized={unrealizedPnl}
+        realized={realizedPnl}
+        loading={isLoading}
+        openPositions={openPosCount}
+        sublabel={rejectionPct}
+      />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        <AnimatedKpiCard label="Available Margin" loading={marginLoading} value={!brokerConnected ? "—" : marginFailed ? "—" : marginReady ? formatInr(availableMargin) : "—"} sublabel={!brokerConnected ? "Connect broker for live margin" : marginFailed ? marginErrorMsg ?? "Load failed" : undefined} accent="bg-amber-400" icon={Layers} index={3} />
+      </div>
 
       {openPositionRows.length > 0 ? (
-        <PremiumPanel title="Live positions" action={<Link to="/terminal" className={cn("text-xs font-semibold", isLight ? "text-sky-600" : "text-sky-400")}>Terminal →</Link>}>
-          <div className="overflow-x-auto px-3 pb-3">
-            <table className="min-w-full text-left text-xs">
-              <thead className={cn("text-[10px] uppercase tracking-wide", mutedCls)}>
-                <tr>{["Symbol", "Side", "Qty", "LTP", "MTM P&L", "Unrealized"].map((h) => <th key={h} className="px-2 py-2 font-semibold">{h}</th>)}</tr>
-              </thead>
-              <tbody>
-                {openPositionRows.map((r, i) => (
-                  <motion.tr key={String(r.symbol ?? i)} variants={fadeUp} initial="hidden" animate="show" className={cn("border-t", dividerCls)}>
-                    <td className="px-2 py-2 font-mono font-bold">{String(r.symbol ?? "—")}</td>
-                    <td className="px-2 py-2"><SideBadge side={String(r.side ?? "LONG")} /></td>
-                    <td className="px-2 py-2 font-mono tabular-nums">{String(r.qty ?? "—")}</td>
-                    <td className="px-2 py-2 font-mono tabular-nums">{r.ltp != null ? String(r.ltp) : "—"}</td>
-                    <td className="px-2 py-2"><PnlCell value={r.mtmPnl} /></td>
-                    <td className="px-2 py-2"><PnlCell value={r.unrealizedPnl} /></td>
-                  </motion.tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </PremiumPanel>
+        <LivePositionsCommandTable
+          rows={openPositionRows.map((r): CommandPositionRow => ({
+            symbol: String(r.symbol ?? "—"),
+            side: String(r.side ?? "LONG"),
+            qty: r.qty != null ? Number(r.qty) : null,
+            ltp: parseMoney(r.ltp),
+            mtmPnl: parseMoney(r.mtmPnl),
+            unrealizedPnl: parseMoney(r.unrealizedPnl),
+          }))}
+          loading={workstationQ.isLoading}
+          footerMtm={mtmPnl}
+          action={<TerminalLinkAction to="/terminal" />}
+        />
       ) : null}
 
       {/* ── Main 2-col layout ── */}

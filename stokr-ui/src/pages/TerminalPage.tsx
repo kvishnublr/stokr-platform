@@ -10,7 +10,7 @@ import { cn } from "../lib/utils";
 import { fmtDateTime, fmtNseClock } from "../lib/dateUtils";
 import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl } from "../lib/moneyUtils";
 import { assessExecutionRisk } from "../lib/executionRisk";
-import { AnimatedKpiCard, PnlCell, PnlSourceBadge, SideBadge } from "../components/trader/TraderPremium";
+import { PnlCommandRail, AnimatedKpiCard, PnlCell, PnlSourceBadge, SideBadge } from "../components/trader/TraderPremium";
 
 type Workstation = {
   accountSummary: {
@@ -447,10 +447,15 @@ export function TerminalPage() {
         <PnlSourceBadge source={accountPnl.source} brokerConnected={brokerConnected} />
       </div>
 
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <AnimatedKpiCard label="MTM P&L" loading={q.isLoading} value={formatPnlDisplay(accountPnl.mtm)} pnlValue={accountPnl.mtm} accent={(accountPnl.mtm ?? 0) >= 0 ? "bg-emerald-500" : "bg-rose-500"} />
-        <AnimatedKpiCard label="Realized P&L" loading={q.isLoading} value={formatPnlDisplay(accountPnl.realized)} pnlValue={accountPnl.realized} accent="bg-violet-400" />
-        <AnimatedKpiCard label="Unrealized P&L" loading={q.isLoading} value={formatPnlDisplay(accountPnl.unrealized)} pnlValue={accountPnl.unrealized} accent="bg-sky-400" />
+      <PnlCommandRail
+        mtm={accountPnl.mtm}
+        unrealized={accountPnl.unrealized}
+        realized={accountPnl.realized}
+        loading={q.isLoading}
+        openPositions={accountPnl.openPositions}
+      />
+
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid gap-3 md:grid-cols-3">
         <AnimatedKpiCard label="Open Positions" loading={q.isLoading} value={q.isLoading ? "…" : fmt(sum?.openPositions)} accent="bg-indigo-400" />
         <AnimatedKpiCard label="Active Strategies" loading={q.isLoading} value={q.isLoading ? "…" : fmt(sum?.activeStrategies)} accent="bg-amber-400" />
         <AnimatedKpiCard label="Execution Mode" loading={q.isLoading} value={q.isLoading ? "…" : fmt(sum?.executionMode)} accent="bg-neutral-400" />
