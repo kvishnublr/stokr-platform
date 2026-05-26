@@ -31,4 +31,13 @@ public final class RealtimeBridgeEvents {
 
     public record StrategyRuntime(UUID userId, UUID instanceId, String runtimeState, Instant at) {
     }
+
+    /** Emitted when broker position truth snapshot changes (qty, P&L, sync state). */
+    public record PositionUpdated(
+            UUID userId,
+            String syncState,
+            int openPositionCount,
+            Instant lastSyncAt
+    ) {
+    }
 }

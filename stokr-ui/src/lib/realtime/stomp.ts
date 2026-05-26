@@ -4,6 +4,7 @@ import { Client, type IMessage } from "@stomp/stompjs";
 export type RealtimeHandlers = {
   onOrder?: (msg: IMessage) => void;
   onPnl?: (msg: IMessage) => void;
+  onPosition?: (msg: IMessage) => void;
   onStrategy?: (msg: IMessage) => void;
   onBacktestJob?: (msg: IMessage) => void;
 };
@@ -29,6 +30,7 @@ export function connectStomp(token: string | null, userId: string | null, handle
       if (!userId) return;
       if (handlers.onOrder) client.subscribe(`/topic/orders.${userId}`, handlers.onOrder);
       if (handlers.onPnl) client.subscribe(`/topic/pnl.${userId}`, handlers.onPnl);
+      if (handlers.onPosition) client.subscribe(`/topic/positions.${userId}`, handlers.onPosition);
       if (handlers.onStrategy) client.subscribe(`/topic/strategies.${userId}`, handlers.onStrategy);
       if (handlers.onBacktestJob) client.subscribe(`/topic/backtest.jobs.${userId}`, handlers.onBacktestJob);
     },

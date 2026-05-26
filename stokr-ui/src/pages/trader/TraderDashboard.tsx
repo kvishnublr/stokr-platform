@@ -12,6 +12,7 @@ import {
 } from "../../lib/traderExecutionMode";
 import { cn } from "../../lib/utils";
 import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl } from "../../lib/moneyUtils";
+import { useBrokerPositionSync } from "../../lib/hooks/useBrokerPositionSync";
 import { AnimatedKpiCard, PnlCommandRail, PnlSourceBadge, LivePositionsCommandTable, TerminalLinkAction, type CommandPositionRow } from "../../components/trader/TraderPremium";
 import { NiftyCandleChart } from "../../components/charts/NiftyCandleChart";
 import { useEffect, useMemo, useState } from "react";
@@ -112,6 +113,8 @@ function Skeleton({ className }: { className?: string }) {
 
 export function TraderDashboard() {
   const accessToken = useSessionStore((s) => s.accessToken);
+  const userId = useSessionStore((s) => s.userId);
+  useBrokerPositionSync(accessToken, userId, true);
   const hasTraderAccess = useSessionStore((s) => s.hasTraderAccess());
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const displayName = useSessionStore((s) => s.displayName);
@@ -135,8 +138,8 @@ export function TraderDashboard() {
   const workstationQ = useQuery<Workstation>({
     queryKey: ["trader-dashboard-workstation", selectedMode],
     queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
-    staleTime: 10_000,
-    refetchInterval: 20_000,
+    staleTime: 2_000,
+    refetchInterval: 3_000,
     enabled: queryEnabled,
     retry: 2,
   });

@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import { RefreshCw } from "lucide-react";
 import { api, parseAxiosMessage } from "../api/client";
 import { TRADER_EXECUTION_MODE_QUERY_KEY, fetchTraderExecutionMode } from "../lib/traderExecutionMode";
+import { useBrokerPositionSync } from "../lib/hooks/useBrokerPositionSync";
+import { useSessionStore } from "../state/session";
 import { WorkspaceTabPanel, WorkspaceTabs } from "../components/ds/WorkspaceTabs";
 import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
@@ -111,6 +113,9 @@ function Chip({ value }: { value: string }) {
 
 export function TerminalPage() {
   const isLight = useUiThemeStore((s) => s.mode === "light");
+  const accessToken = useSessionStore((s) => s.accessToken);
+  const userId = useSessionStore((s) => s.userId);
+  useBrokerPositionSync(accessToken, userId, true);
   const [tab, setTab] = useState("open");
   const [controlResult, setControlResult] = useState<Record<string, unknown> | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
@@ -150,7 +155,7 @@ export function TerminalPage() {
     queryKey: ["trader-workstation", executionMode],
     queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
     staleTime: 2_000,
-    refetchInterval: 5_000,
+    refetchInterval: 3_000,
     retry: 2,
   });
 
