@@ -48,8 +48,8 @@ public class BrokerAwarePortfolioQueryService extends PortfolioQueryService {
 
     @Override
     public PortfolioExposureDto exposure(UUID userId) {
-        BrokerPositionTruthSnapshot snap = brokerPositionTruthService.syncUser(userId);
-        if (!snap.brokerConnected() || snap.lastSyncAt() == null || snap.positions().isEmpty()) {
+        BrokerPositionTruthSnapshot snap = brokerPositionTruthService.snapshot(userId);
+        if (!snap.brokerConnected() || snap.lastSyncAt() == null) {
             return super.exposure(userId);
         }
         return exposureFromBrokerTruth(userId, snap);
@@ -68,8 +68,9 @@ public class BrokerAwarePortfolioQueryService extends PortfolioQueryService {
             String norm = BrokerPositionTruthService.normalizeSymbol(row.symbol());
             brokerOpenNorm.add(norm);
             PortfolioPosition oms = omsByNorm.get(norm);
-            BigDecimal omsQty = oms != null ? nullSafe(oms.getQuantity()) : BigDecimal.ZERO;
-            sym.add(buildSymbolExposure(row.symbol(), brokerQty, omsQty, oms, row.brokerAvgPrice()));
+            BigDecimal internalQty = row.internalQty() != null ? row.internalQty() : BigDecimal.ZERO;
+            BigDecimal omsQty = oms != null ? nullSafe(oms.getQuantity()) : internalQty;
+            sym.add(buildSymbolExposure(row.symbol(), brokerQty, omsQty, internalQty, oms, row.brokerAvgPrice()));
         }
 
         for (Map.Entry<String, PortfolioPosition> entry : omsByNorm.entrySet()) {
@@ -84,6 +85,7 @@ public class BrokerAwarePortfolioQueryService extends PortfolioQueryService {
             sym.add(buildSymbolExposure(
                     p.getSymbol(),
                     BigDecimal.ZERO,
+                    omsQty,
                     omsQty,
                     p,
                     p.getMtmPrice() != null ? p.getMtmPrice() : p.getAvgPrice()
@@ -107,6 +109,7 @@ public class BrokerAwarePortfolioQueryService extends PortfolioQueryService {
             String symbol,
             BigDecimal displayQty,
             BigDecimal omsQty,
+            BigDecimal internalQty,
             PortfolioPosition oms,
             BigDecimal brokerAvgPrice
     ) {
@@ -117,7 +120,8 @@ public class BrokerAwarePortfolioQueryService extends PortfolioQueryService {
         BigDecimal notional = px != null
                 ? displayQty.abs().multiply(px)
                 : displayQty.abs();
-        String parity = displayQty.compareTo(omsQty) == 0 ? "SYNCED" : "MISMATCH";
+        BigDecimal parityBaseline = internalQty != null ? internalQty : omsQty;
+        String parity = displayQty.compareTo(parityBaseline) == 0 ? "SYNCED" : "MISMATCH";
         String source = displayQty.compareTo(BigDecimal.ZERO) != 0 ? "BROKER" : "OMS";
         return new PortfolioExposureDto.SymbolExposure(
                 displaySymbol(symbol),

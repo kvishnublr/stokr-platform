@@ -1,6 +1,8 @@
 package com.stokr.bootstrap.trader;
 
 import com.stokr.common.exception.BadRequestException;
+import com.stokr.execution.broker.BrokerPositionTruthService;
+import com.stokr.execution.broker.BrokerPositionTruthSnapshot;
 import com.stokr.execution.dto.CreateOrderRequest;
 import com.stokr.execution.service.OrderPlacementService;
 import com.stokr.oms.domain.ExecutionMode;
@@ -18,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -50,6 +53,7 @@ public class TraderTerminalControlService {
     private final PortfolioPositionRepository portfolioPositionRepository;
     private final TraderExecutionModePreferenceService executionModePreferenceService;
     private final OrderPlacementService orderPlacementService;
+    private final BrokerPositionTruthService brokerPositionTruthService;
 
     private final Map<String, PendingPlan> pendingPlans = new ConcurrentHashMap<>();
 
@@ -219,39 +223,65 @@ public class TraderTerminalControlService {
     private int flattenOpenPositions(UUID userId, List<String> notes, List<Map<String, Object>> flattenResults) {
         int created = 0;
         ExecutionMode mode = resolveExecutionMode(userId);
-        List<PortfolioPosition> positions = portfolioPositionRepository.findByUserIdAndDeletedFalse(userId);
-        for (PortfolioPosition p : positions) {
-            if (p.getQuantity() == null || p.getQuantity().signum() == 0) {
-                continue;
+        brokerPositionTruthService.syncUser(userId);
+        BrokerPositionTruthSnapshot snap = brokerPositionTruthService.snapshot(userId);
+
+        List<FlattenTarget> targets = new ArrayList<>();
+        if (snap.brokerConnected() && snap.lastSyncAt() != null) {
+            for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : snap.positions()) {
+                if (row.brokerQty() != null && row.brokerQty().signum() != 0) {
+                    targets.add(new FlattenTarget(row.symbol(), row.brokerQty(), row.product()));
+                }
             }
-            String side = p.getQuantity().signum() > 0 ? "SELL" : "BUY";
+        }
+        if (targets.isEmpty()) {
+            List<PortfolioPosition> positions = portfolioPositionRepository.findByUserIdAndDeletedFalse(userId);
+            for (PortfolioPosition p : positions) {
+                if (p.getQuantity() != null && p.getQuantity().signum() != 0) {
+                    targets.add(new FlattenTarget(p.getSymbol(), p.getQuantity(), null));
+                }
+            }
+        }
+
+        for (FlattenTarget target : targets) {
+            BigDecimal qty = target.qty().abs();
+            String side = target.qty().signum() > 0 ? "SELL" : "BUY";
             try {
                 OmsOrder o = orderPlacementService.place(userId, new CreateOrderRequest(
-                        p.getSymbol(),
+                        target.symbol(),
                         side,
                         "MARKET",
-                        p.getQuantity().abs(),
+                        qty,
                         null,
                         mode,
                         mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM",
                         "TERMINAL_FLATTEN",
-                        "terminal:flatten:" + userId + ":" + p.getSymbol() + ":" + Instant.now().toEpochMilli()
+                        "terminal:flatten:" + userId + ":" + target.symbol() + ":" + Instant.now().toEpochMilli(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        true,
+                        "EXIT_SAFE",
+                        false,
+                        null
                 ));
                 created++;
                 flattenResults.add(Map.of(
-                        "symbol", p.getSymbol(),
+                        "symbol", target.symbol(),
                         "side", side,
-                        "qty", p.getQuantity().abs().toPlainString(),
+                        "qty", qty.toPlainString(),
                         "orderId", o.getId().toString(),
                         "state", o.getState().name(),
-                        "mode", mode.name()
+                        "mode", mode.name(),
+                        "product", target.product() != null ? target.product() : ""
                 ));
             } catch (Exception ex) {
-                notes.add("flatten failed " + p.getSymbol() + ": " + ex.getClass().getSimpleName());
+                notes.add("flatten failed " + target.symbol() + ": " + ex.getClass().getSimpleName());
                 flattenResults.add(Map.of(
-                        "symbol", p.getSymbol(),
+                        "symbol", target.symbol(),
                         "side", side,
-                        "qty", p.getQuantity().abs().toPlainString(),
+                        "qty", qty.toPlainString(),
                         "state", "FAILED",
                         "error", ex.getClass().getSimpleName()
                 ));
@@ -259,6 +289,8 @@ public class TraderTerminalControlService {
         }
         return created;
     }
+
+    private record FlattenTarget(String symbol, java.math.BigDecimal qty, String product) {}
 
     private ExecutionMode resolveExecutionMode(UUID userId) {
         String m = executionModePreferenceService.get(userId).executionMode();

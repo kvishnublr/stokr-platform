@@ -148,7 +148,9 @@ public class BrokerPositionTruthService {
                         symbol, "GHOST_INTERNAL_POSITION", bQty, iQty, Instant.now()));
                 handleExternalBrokerExit(userId, symbol, iQty);
                 brokerClosed.add(symbol);
-                blocked.add(symbol);
+                if (isWithinExitBlockWindow(userId, symbol, Instant.now())) {
+                    blocked.add(symbol);
+                }
             } else if (bQty.compareTo(iQty) != 0) {
                 mismatches.add(new BrokerPositionTruthSnapshot.BrokerTruthMismatch(
                         symbol, "QUANTITY_MISMATCH", bQty, iQty, Instant.now()));
@@ -284,7 +286,7 @@ public class BrokerPositionTruthService {
             ));
         }
 
-        if (hasPendingExitOrder(userId, norm) && isExitSide(side)) {
+        if (hasPendingExitOrder(userId, norm, snap) && isReducingSide(norm, side, snap)) {
             out.add(new ExecutionGuardViolation(
                     "DUPLICATE_EXIT",
                     ExecutionGuardSeverity.CRITICAL,
@@ -392,15 +394,27 @@ public class BrokerPositionTruthService {
         }
     }
 
-    private boolean hasPendingExitOrder(UUID userId, String symbol) {
+    private boolean hasPendingExitOrder(UUID userId, String symbol, BrokerPositionTruthSnapshot snap) {
         return omsOrderRepository.findAllLiveActiveOrders(ACTIVE_ORDER_STATES).stream()
                 .anyMatch(o -> userId.equals(o.getUserId())
                         && symbol.equals(normalizeSymbol(o.getSymbol()))
-                        && "SELL".equalsIgnoreCase(o.getSide()));
+                        && isReducingSide(symbol, o.getSide(), snap));
     }
 
-    private static boolean isExitSide(String side) {
-        return side != null && "SELL".equalsIgnoreCase(side.trim());
+    private boolean isWithinExitBlockWindow(UUID userId, String symbol, Instant now) {
+        if (blockExitMinutes <= 0) {
+            return true;
+        }
+        String key = userId + ":" + normalizeSymbol(symbol);
+        Instant closedAt = brokerClosedAt.get(key);
+        if (closedAt == null) {
+            return true;
+        }
+        if (Duration.between(closedAt, now).toMinutes() >= blockExitMinutes) {
+            brokerClosedAt.remove(key);
+            return false;
+        }
+        return true;
     }
 
     private static boolean isEntrySide(String side, BrokerPositionTruthSnapshot snap, String symbol) {

@@ -76,7 +76,7 @@ class BrokerAwarePortfolioQueryServiceTest {
                 0,
                 "1 reconciliation item(s)"
         );
-        when(brokerPositionTruthService.syncUser(userId)).thenReturn(snap);
+        when(brokerPositionTruthService.snapshot(userId)).thenReturn(snap);
 
         PortfolioExposureDto exposure = service.exposure(userId);
 
@@ -87,6 +87,32 @@ class BrokerAwarePortfolioQueryServiceTest {
         assertThat(row.omsQuantity()).isEqualByComparingTo("4");
         assertThat(row.quantitySource()).isEqualTo("BROKER");
         assertThat(row.parityState()).isEqualTo("MISMATCH");
+    }
+
+    @Test
+    void exposure_usesBrokerTruthWhenConnectedAndFlat() {
+        UUID userId = UUID.randomUUID();
+
+        when(positionRepository.findByUserIdAndDeletedFalse(userId)).thenReturn(List.of());
+        when(tradeRepository.sumNotionalByBrokerVendor(userId)).thenReturn(List.of());
+
+        BrokerPositionTruthSnapshot snap = new BrokerPositionTruthSnapshot(
+                BrokerPositionTruthSyncState.VERIFIED,
+                Instant.now(),
+                5L,
+                true,
+                List.of(),
+                List.of(),
+                Set.of(),
+                Set.of(),
+                0,
+                "flat"
+        );
+        when(brokerPositionTruthService.snapshot(userId)).thenReturn(snap);
+
+        PortfolioExposureDto exposure = service.exposure(userId);
+
+        assertThat(exposure.bySymbol()).isEmpty();
     }
 
     @Test
@@ -101,7 +127,7 @@ class BrokerAwarePortfolioQueryServiceTest {
 
         when(positionRepository.findByUserIdAndDeletedFalse(userId)).thenReturn(List.of(infyOms));
         when(tradeRepository.sumNotionalByBrokerVendor(userId)).thenReturn(List.of());
-        when(brokerPositionTruthService.syncUser(userId))
+        when(brokerPositionTruthService.snapshot(userId))
                 .thenReturn(BrokerPositionTruthSnapshot.empty(false));
 
         PortfolioExposureDto exposure = service.exposure(userId);

@@ -152,7 +152,10 @@ public class CatalogDrivenScanScheduler {
                     executionMode,
                     "2.0.0"
             );
-            signalPipelineService.persistAndDispatch(entity, UUID.randomUUID().toString(), executionMode);
+            StrategySignalEntity saved = signalPipelineService.persistAndDispatch(entity, UUID.randomUUID().toString(), executionMode);
+            if (saved != null) {
+                signalCooldownService.recordEmitted(symbol, strategyKey, candleTime);
+            }
         } catch (Exception ex) {
             log.warn("catalog.scan.persist_failed strategyKey={} symbol={} {}", strategyKey, symbol, ex.toString());
         }

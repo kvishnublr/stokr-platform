@@ -173,11 +173,16 @@ stokr:
         stale-candle-seconds: ${STOKR_SIGNAL_QUALITY_STALE_CANDLE_SECONDS:60}
         min-volume-ratio: ${STOKR_SIGNAL_QUALITY_MIN_VOLUME_RATIO:0.8}
         max-concurrent-trades: ${STOKR_SIGNAL_QUALITY_MAX_CONCURRENT_TRADES:10}
+      cooldown-seconds: ${STOKR_SIGNAL_COOLDOWN_SECONDS:900}
     signal-dedup:
       cooldown-minutes: ${STOKR_STRATEGY_SIGNAL_DEDUP_MINUTES:15}
     exit:
       breakeven-enabled: ${STOKR_STRATEGY_BREAKEVEN_EXIT_ENABLED:true}
       breakeven-mfe-ratio: ${STOKR_STRATEGY_BREAKEVEN_MFE_RATIO:0.5}
+      auto-exit-enabled: ${STOKR_STRATEGY_AUTO_EXIT_ENABLED:true}
+      auto-exit-on-breakeven: ${STOKR_STRATEGY_AUTO_EXIT_BREAKEVEN:true}
+    replay:
+      dispatch-to-oms: ${STOKR_STRATEGY_REPLAY_DISPATCH_OMS:false}
     subscription-default-symbol: ${STOKR_STRATEGY_SUBSCRIPTION_SYMBOL:NIFTY_FUT}
     mean-reversion:
       enabled: ${STOKR_STRATEGY_MR_ENABLED:true}

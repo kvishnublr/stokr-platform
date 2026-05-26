@@ -278,6 +278,12 @@ public class TraderTerminalViewService {
         List<StrategyInstance> strategyInstances = strategyInstanceRepository.findAllForUserWithDefinition(userId);
         List<PortfolioPosition> positions = portfolioPositionRepository.findByUserIdAndDeletedFalse(userId);
         List<OmsExecution> executions = omsExecutionRepository.findAllForUserOrdered(userId);
+        OmsReadParams liveParams = new OmsReadParams(
+                null, null, null, null, null, null, null, PipelineMode.LIVE
+        );
+        List<OmsOrderSummaryDto> orders = omsQueryService.pageOrders(userId, liveParams, PageRequest.of(0, 50)).getContent();
+        Map<String, BigDecimal> stopBySymbol = slTargetBySymbol(userId, true);
+        Map<String, BigDecimal> targetBySymbol = slTargetBySymbol(userId, false);
 
         Map<String, BigDecimal> netExecQtyBySymbol = new LinkedHashMap<>();
         Map<String, Instant> lastFillAtBySymbol = new LinkedHashMap<>();
@@ -367,7 +373,8 @@ public class TraderTerminalViewService {
                     .distinct()
                     .toList());
             row.put("currentSignalState", latestSignalState(symbol, userId));
-            row.put("stopLoss", null);
+            row.put("stopLoss", stopBySymbol.get(BrokerPositionTruthService.normalizeSymbol(symbol)));
+            row.put("targetPrice", targetBySymbol.get(BrokerPositionTruthService.normalizeSymbol(symbol)));
             row.put("trailingStop", null);
             if (qty.compareTo(BigDecimal.ZERO) == 0) {
                 row.put("exitReason", "FLAT");
@@ -378,11 +385,8 @@ public class TraderTerminalViewService {
             }
         }
 
-        OmsReadParams liveParams = new OmsReadParams(
-                null, null, null, null, null, null, null, PipelineMode.LIVE
-        );
-        List<OmsOrderSummaryDto> orders = omsQueryService.pageOrders(userId, liveParams, PageRequest.of(0, 50)).getContent();
-        List<OmsExecutionRowDto> execRows = omsQueryService.pageExecutions(userId, liveParams, PageRequest.of(0, 100)).getContent();
+        OmsReadParams liveParamsDup = liveParams;
+        List<OmsExecutionRowDto> execRows = omsQueryService.pageExecutions(userId, liveParamsDup, PageRequest.of(0, 100)).getContent();
         List<Map<String, Object>> unifiedOrders = buildUnifiedOrders(userId, orders);
 
         boolean brokerPnlSource = brokerTruth.brokerConnected() && brokerTruth.lastSyncAt() != null;
@@ -396,7 +400,9 @@ public class TraderTerminalViewService {
                     strategyInstances,
                     userId,
                     lastFillAtBySymbol,
-                    netExecQtyBySymbol
+                    netExecQtyBySymbol,
+                    stopBySymbol,
+                    targetBySymbol
             );
         }
 
@@ -534,6 +540,28 @@ public class TraderTerminalViewService {
                 .orElse("GENERATED");
     }
 
+    private Map<String, BigDecimal> slTargetBySymbol(UUID userId, boolean stopLoss) {
+        Map<String, BigDecimal> out = new LinkedHashMap<>();
+        List<StrategySignalEntity> rows = strategySignalRepository.findRecentForTrader(userId, PageRequest.of(0, 100));
+        for (StrategySignalEntity sig : rows) {
+            if (sig.getSymbol() == null) {
+                continue;
+            }
+            String status = sig.getOutcomeStatus();
+            if (status != null
+                    && !"PENDING".equalsIgnoreCase(status)
+                    && !"RUNNING".equalsIgnoreCase(status)) {
+                continue;
+            }
+            BigDecimal value = stopLoss ? sig.getStopPrice() : sig.getTargetPrice();
+            if (value == null) {
+                continue;
+            }
+            out.putIfAbsent(BrokerPositionTruthService.normalizeSymbol(sig.getSymbol()), value);
+        }
+        return out;
+    }
+
     private BigDecimal lastPrice(String symbol) {
         List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, "1m", 1);
         if (bars.isEmpty() || bars.getFirst().getClosePrice() == null) {
@@ -616,7 +644,9 @@ public class TraderTerminalViewService {
             List<StrategyInstance> strategyInstances,
             UUID userId,
             Map<String, Instant> lastFillAtBySymbol,
-            Map<String, BigDecimal> netExecQtyBySymbol
+            Map<String, BigDecimal> netExecQtyBySymbol,
+            Map<String, BigDecimal> stopBySymbol,
+            Map<String, BigDecimal> targetBySymbol
     ) {
         List<Map<String, Object>> brokerOpen = new ArrayList<>();
         List<Map<String, Object>> brokerClosed = new ArrayList<>();
@@ -626,7 +656,8 @@ public class TraderTerminalViewService {
             BigDecimal bq = truth.brokerQty() != null ? truth.brokerQty() : BigDecimal.ZERO;
             if (bq.compareTo(BigDecimal.ZERO) != 0) {
                 brokerOpen.add(mapBrokerPositionRow(
-                        truth, userId, broker, mode, strategyInstances, lastFillAtBySymbol, netExecQtyBySymbol));
+                        truth, userId, broker, mode, strategyInstances, lastFillAtBySymbol, netExecQtyBySymbol,
+                        stopBySymbol, targetBySymbol));
                 brokerOpenSymbols.add(truth.symbol());
             } else if (hasBrokerPnl(truth)) {
                 brokerClosed.add(mapBrokerFlatRow(truth, userId, broker, mode));
@@ -676,7 +707,9 @@ public class TraderTerminalViewService {
             TraderExecutionModePreferenceDto mode,
             List<StrategyInstance> strategyInstances,
             Map<String, Instant> lastFillAtBySymbol,
-            Map<String, BigDecimal> netExecQtyBySymbol
+            Map<String, BigDecimal> netExecQtyBySymbol,
+            Map<String, BigDecimal> stopBySymbol,
+            Map<String, BigDecimal> targetBySymbol
     ) {
         String symbol = truth.symbol();
         BigDecimal qty = truth.brokerQty() != null ? truth.brokerQty() : BigDecimal.ZERO;
@@ -705,7 +738,8 @@ public class TraderTerminalViewService {
         row.put("product", truth.product());
         row.put("strategySource", strategyKeysForSymbol(strategyInstances, symbol));
         row.put("currentSignalState", latestSignalState(symbol, userId));
-        row.put("stopLoss", null);
+        row.put("stopLoss", stopBySymbol.get(BrokerPositionTruthService.normalizeSymbol(symbol)));
+        row.put("targetPrice", targetBySymbol.get(BrokerPositionTruthService.normalizeSymbol(symbol)));
         row.put("trailingStop", null);
         row.put("pnlSource", "BROKER");
         return row;
