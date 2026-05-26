@@ -1,21 +1,31 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   enqueueReplayJob,
+  fetchReplayCoverageBounds,
+  fetchReplayReadiness,
   pollReplayJobUntilTerminal,
   type ExecutionRequest,
 } from "../../../api/backtest";
 import { api, parseAxiosMessage } from "../../../api/client";
 import { fetchStrategyMetadata } from "../../../api/strategyMetadata";
 import { buildStrategyParametersFromDefaults, validateClientExecution } from "../../../lib/strategyExecutionForm";
+import {
+  clampReplayRange,
+  computePresetRange,
+  formatReplayBoundsLabel,
+  resolveReplayMaxEnd,
+  resolveReplayMinStart,
+  type DateRangePreset,
+} from "../../../lib/replayDateRange";
 import { cn } from "../../../lib/utils";
 import { useSessionStore } from "../../../state/session";
 import { useUiThemeStore } from "../../../state/uiTheme";
 import { CapitalAllocationCard } from "./CapitalAllocationCard";
-import { computePresetRange, DateRangeChips, type DateRangePreset } from "./DateRangeChips";
+import { DateRangeChips } from "./DateRangeChips";
 import { ExecutionModeToggle, type ExecutionModeChoice } from "./ExecutionModeToggle";
 import { ReplaySummaryBar } from "./ReplaySummaryBar";
 import { StrategyPreviewCard } from "./StrategyPreviewCard";
@@ -56,15 +66,6 @@ type Props = {
   strategyKey: string;
 };
 
-type ReadinessAuthority = {
-  symbol: string;
-  timeframe: string;
-  useCase: string;
-  ready: boolean;
-  state: string;
-  detail: string;
-};
-
 export function StrategyExecutionLauncher({ strategyKey }: Props) {
   const navigate = useNavigate();
   const accessToken = useSessionStore((s) => s.accessToken);
@@ -85,6 +86,40 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
 
   const meta = metaQuery.data;
   const dd = meta?.deploymentDefaults;
+
+  const boundsQuery = useQuery({
+    queryKey: ["backtest-coverage-bounds", dd?.symbol, dd?.timeframe],
+    queryFn: () => fetchReplayCoverageBounds(dd!.symbol, dd!.timeframe),
+    enabled: Boolean(accessToken && dd?.symbol && dd?.timeframe),
+    staleTime: 60_000,
+    retry: 1,
+  });
+
+  const coverageBounds = boundsQuery.data ?? null;
+  const boundsLabel = useMemo(() => formatReplayBoundsLabel(coverageBounds), [coverageBounds]);
+  const minFrom = useMemo(() => resolveReplayMinStart(coverageBounds), [coverageBounds]);
+  const maxTo = useMemo(() => resolveReplayMaxEnd(coverageBounds), [coverageBounds]);
+
+  useEffect(() => {
+    if (!coverageBounds) return;
+    setRange((prev) => clampReplayRange(prev.from, prev.to, coverageBounds));
+  }, [coverageBounds?.coveredFrom, coverageBounds?.latestCandleAt, coverageBounds?.effectiveReplayEnd]);
+
+  const coverageQuery = useQuery({
+    queryKey: ["backtest-launch-coverage-readiness", dd?.symbol, dd?.timeframe, from.toISOString(), to.toISOString()],
+    queryFn: () => fetchReplayReadiness(dd!.symbol, dd!.timeframe, from.toISOString(), to.toISOString()),
+    enabled: Boolean(accessToken && dd?.symbol && dd?.timeframe),
+    refetchInterval: 20_000,
+    retry: 1,
+  });
+
+  const opsQuery = useQuery({
+    queryKey: ["backtest-launch-ops"],
+    queryFn: async () => (await api.get("/api/admin/operations/snapshot")).data?.data as Record<string, any>,
+    enabled: Boolean(accessToken),
+    refetchInterval: 20_000,
+    retry: 1,
+  });
 
   const m = useMutation({
     mutationFn: async (body: ExecutionRequest) => {
@@ -125,36 +160,17 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
     },
   });
 
-  const coverageQuery = useQuery({
-    queryKey: ["backtest-launch-coverage-readiness", dd?.symbol, dd?.timeframe, from.toISOString(), to.toISOString()],
-    queryFn: async () =>
-      (
-        await api.get("/api/admin/market/backfill/readiness", {
-          params: {
-            symbol: dd?.symbol,
-            timeframe: dd?.timeframe,
-            from: from.toISOString(),
-            to: to.toISOString(),
-            useCase: "REPLAY",
-          },
-        })
-      ).data?.data as ReadinessAuthority,
-    enabled: Boolean(accessToken && dd?.symbol && dd?.timeframe),
-    refetchInterval: 20_000,
-    retry: 1,
-  });
-
-  const opsQuery = useQuery({
-    queryKey: ["backtest-launch-ops"],
-    queryFn: async () => (await api.get("/api/admin/operations/snapshot")).data?.data as Record<string, any>,
-    enabled: Boolean(accessToken),
-    refetchInterval: 20_000,
-    retry: 1,
-  });
-
   function handlePresetChange(p: DateRangePreset) {
     setPreset(p);
-    setRange(computePresetRange(p));
+    setRange(computePresetRange(p, coverageBounds));
+  }
+
+  function handleFromChange(nextFrom: Date) {
+    setRange(clampReplayRange(nextFrom, to, coverageBounds));
+  }
+
+  function handleToChange(nextTo: Date) {
+    setRange(clampReplayRange(from, nextTo, coverageBounds));
   }
 
   const rangeSummary = useMemo(() => {
@@ -170,12 +186,15 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
 
   const preflightBlocker = useMemo(() => {
     if (!dd) return null;
-    if (coverageQuery.isError) return null;
+    if (coverageQuery.isLoading || boundsQuery.isLoading) return null;
+    if (coverageQuery.isError) {
+      return { code: "READINESS_CHECK_FAILED", detail: parseAxiosMessage(coverageQuery.error) };
+    }
     const row = coverageQuery.data;
     const brokerState = String(
       opsQuery.data?.platformMarketFeed?.vendors?.ZERODHA?.connectionState ??
-      opsQuery.data?.operationalLifecycle?.platformTapeState ??
-      "",
+        opsQuery.data?.operationalLifecycle?.platformTapeState ??
+        "",
     ).toUpperCase();
     if (brokerState === "AUTH_EXPIRED" || brokerState === "TOKEN_INVALID") {
       return { code: "TOKEN_INVALID", detail: "Platform broker token invalid/expired." };
@@ -187,17 +206,27 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
       return { code: "NO_DATA", detail: "Historical data unavailable. Admin market backfill required." };
     }
     if (!row.ready) {
-      return { code: String(row.state || "BLOCKED").toUpperCase(), detail: row.detail || `Replay blocked for ${dd.symbol} ${dd.timeframe}.` };
+      const boundsHint = boundsLabel ? ` Available history: ${boundsLabel}.` : "";
+      return {
+        code: String(row.state || "BLOCKED").toUpperCase(),
+        detail: (row.detail || `Replay blocked for ${dd.symbol} ${dd.timeframe}.`) + boundsHint,
+      };
     }
     return null;
-  }, [dd, coverageQuery.data, coverageQuery.isError, opsQuery.data]);
+  }, [dd, boundsLabel, boundsQuery.isLoading, coverageQuery.data, coverageQuery.error, coverageQuery.isError, coverageQuery.isLoading, opsQuery.data]);
 
   function runBacktest() {
     if (!meta || !dd) {
       toast.error("Strategy metadata not loaded.");
       return;
     }
-    if (!(from.getTime() < to.getTime())) {
+    const clamped = clampReplayRange(from, to, coverageBounds);
+    if (clamped.from.getTime() !== from.getTime() || clamped.to.getTime() !== to.getTime()) {
+      setRange(clamped);
+    }
+    const launchFrom = clamped.from;
+    const launchTo = clamped.to;
+    if (!(launchFrom.getTime() < launchTo.getTime())) {
       toast.error("End must be after start.");
       return;
     }
@@ -223,8 +252,8 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
       slippageModel: dd.slippageModel,
       seed: null,
       range: {
-        from: from.toISOString(),
-        to: to.toISOString(),
+        from: launchFrom.toISOString(),
+        to: launchTo.toISOString(),
         timezone: tz,
       },
       strategyParameters,
@@ -239,24 +268,9 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
     <div className="relative min-h-[70vh] pb-28">
       {loading ? (
         <div className="space-y-4">
-          <div
-            className={cn(
-              "h-48 animate-pulse rounded-2xl",
-              isLight ? "bg-[#F8FAFC]" : "bg-[#111827]",
-            )}
-          />
-          <div
-            className={cn(
-              "h-40 animate-pulse rounded-2xl",
-              isLight ? "bg-[#F8FAFC]" : "bg-[#111827]",
-            )}
-          />
-          <div
-            className={cn(
-              "h-36 animate-pulse rounded-2xl",
-              isLight ? "bg-[#F8FAFC]" : "bg-[#111827]",
-            )}
-          />
+          <div className={cn("h-48 animate-pulse rounded-2xl", isLight ? "bg-[#F8FAFC]" : "bg-[#111827]")} />
+          <div className={cn("h-40 animate-pulse rounded-2xl", isLight ? "bg-[#F8FAFC]" : "bg-[#111827]")} />
+          <div className={cn("h-36 animate-pulse rounded-2xl", isLight ? "bg-[#F8FAFC]" : "bg-[#111827]")} />
         </div>
       ) : null}
 
@@ -264,9 +278,7 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
         <p
           className={cn(
             "rounded-xl border p-4 text-sm shadow-sm",
-            isLight
-              ? "border-rose-200 bg-rose-50 text-rose-900"
-              : "border-rose-500/30 bg-rose-950/20 text-rose-200",
+            isLight ? "border-rose-200 bg-rose-50 text-rose-900" : "border-rose-500/30 bg-rose-950/20 text-rose-200",
           )}
         >
           Could not load strategy metadata. {parseAxiosMessage(metaQuery.error)}
@@ -275,6 +287,11 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
 
       {meta && dd ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="space-y-5">
+          {boundsLabel ? (
+            <p className={cn("text-xs", isLight ? "text-[#64748B]" : "text-[#94A3B8]")}>
+              Available market history: {boundsLabel}
+            </p>
+          ) : null}
           {preflightBlocker ? (
             <div
               className={cn(
@@ -284,7 +301,7 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
             >
               <div className="font-semibold">Historical data unavailable</div>
               <div className="mt-1">Blocker: {preflightBlocker.code}</div>
-              <div className="text-xs mt-1 opacity-90">{preflightBlocker.detail}</div>
+              <div className="mt-1 text-xs opacity-90">{preflightBlocker.detail}</div>
             </div>
           ) : null}
           <StrategyPreviewCard meta={meta} />
@@ -298,9 +315,11 @@ export function StrategyExecutionLauncher({ strategyKey }: Props) {
               onCustomOpenChange={setCustomOpen}
               from={from}
               to={to}
-              onFromChange={(d) => setRange({ from: d, to })}
-              onToChange={(d) => setRange({ from, to: d })}
+              onFromChange={handleFromChange}
+              onToChange={handleToChange}
               disabled={m.isPending}
+              minFrom={minFrom}
+              maxTo={maxTo}
               className="lg:col-span-2"
             />
           </div>

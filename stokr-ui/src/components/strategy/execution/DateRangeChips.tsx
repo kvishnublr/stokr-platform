@@ -4,7 +4,9 @@ import { useMemo, useRef } from "react";
 import { cn } from "../../../lib/utils";
 import { useUiThemeStore } from "../../../state/uiTheme";
 
-export type DateRangePreset = "1W" | "15D" | "1M" | "3M" | "6M" | "1Y";
+import { computePresetRange as computePresetRangeWithBounds, type DateRangePreset } from "../../../lib/replayDateRange";
+
+export type { DateRangePreset };
 
 const PRESETS: { id: DateRangePreset; label: string }[] = [
   { id: "1W", label: "1W" },
@@ -15,33 +17,8 @@ const PRESETS: { id: DateRangePreset; label: string }[] = [
   { id: "1Y", label: "1Y" },
 ];
 
-export function computePresetRange(preset: DateRangePreset, now = new Date()): { from: Date; to: Date } {
-  const end = new Date(now);
-  end.setSeconds(0, 0);
-  const start = new Date(end);
-  switch (preset) {
-    case "1W":
-      start.setDate(start.getDate() - 7);
-      break;
-    case "15D":
-      start.setDate(start.getDate() - 15);
-      break;
-    case "1M":
-      start.setMonth(start.getMonth() - 1);
-      break;
-    case "3M":
-      start.setMonth(start.getMonth() - 3);
-      break;
-    case "6M":
-      start.setMonth(start.getMonth() - 6);
-      break;
-    case "1Y":
-      start.setFullYear(start.getFullYear() - 1);
-      break;
-    default:
-      start.setMonth(start.getMonth() - 3);
-  }
-  return { from: start, to: end };
+export function computePresetRange(preset: DateRangePreset, now = new Date()) {
+  return computePresetRangeWithBounds(preset, null, now);
 }
 
 function toDatetimeLocalValue(d: Date): string {
@@ -69,6 +46,8 @@ type Props = {
   onToChange: (d: Date) => void;
   disabled?: boolean;
   className?: string;
+  minFrom?: Date | null;
+  maxTo?: Date | null;
 };
 
 export function DateRangeChips({
@@ -82,6 +61,8 @@ export function DateRangeChips({
   onToChange,
   disabled,
   className,
+  minFrom,
+  maxTo,
 }: Props) {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const startRef = useRef<HTMLInputElement>(null);
@@ -172,6 +153,8 @@ export function DateRangeChips({
                     ref={startRef}
                     type="datetime-local"
                     disabled={disabled}
+                    min={minFrom ? toDatetimeLocalValue(minFrom) : undefined}
+                    max={maxTo ? toDatetimeLocalValue(maxTo) : undefined}
                     value={toDatetimeLocalValue(from)}
                     onChange={(e) => onFromChange(new Date(e.target.value))}
                     className={inputClass}
@@ -193,6 +176,8 @@ export function DateRangeChips({
                     ref={endRef}
                     type="datetime-local"
                     disabled={disabled}
+                    min={minFrom ? toDatetimeLocalValue(minFrom) : undefined}
+                    max={maxTo ? toDatetimeLocalValue(maxTo) : undefined}
                     value={toDatetimeLocalValue(to)}
                     onChange={(e) => onToChange(new Date(e.target.value))}
                     className={inputClass}

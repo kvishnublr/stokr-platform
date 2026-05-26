@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.stokr.backtest.web.dto.ExecutionRequestDto;
 import com.stokr.backtest.web.dto.TimeRangeDto;
 import com.stokr.common.exception.BadRequestException;
-import com.stokr.marketdata.repository.MarketDataCoverageRepository;
+import com.stokr.marketdata.service.MarketDataCoverageService;
 import com.stokr.strategy.dto.metadata.StrategyMetadataResponseDto;
 import com.stokr.strategy.dto.metadata.StrategyParameterFieldDto;
 import com.stokr.strategy.service.StrategyMetadataQueryService;
@@ -36,7 +36,7 @@ public class StrategyExecutionRequestValidator {
     );
 
     private final StrategyMetadataQueryService strategyMetadataQueryService;
-    private final MarketDataCoverageRepository marketDataCoverageRepository;
+    private final MarketDataCoverageService marketDataCoverageService;
 
     public StrategyMetadataResponseDto validateAndLoadMetadata(ExecutionRequestDto req) {
         if (req.strategyKey() == null || req.strategyKey().isBlank()) {
@@ -90,20 +90,29 @@ public class StrategyExecutionRequestValidator {
     }
 
     private void validateCoverage(ExecutionRequestDto req) {
-        var c = marketDataCoverageRepository
-                .findBySymbolAndTimeframeAndDeletedFalse(req.symbol(), req.timeframe())
-                .orElseThrow(() -> new BadRequestException("NOT_BACKFILLED: no historical coverage for symbol/timeframe"));
-        if (c.getCoveredFrom() == null || c.getCoveredTo() == null
-                || c.getCoveredFrom().isAfter(req.range().from())
-                || c.getCoveredTo().isBefore(req.range().to())) {
-            throw new BadRequestException("INCOMPLETE_RANGE: requested replay window is outside covered market range");
+        var assessment = marketDataCoverageService.assessReadiness(
+                req.symbol(),
+                req.timeframe(),
+                req.range().from(),
+                req.range().to(),
+                "REPLAY",
+                true
+        );
+        if (assessment.ready()) {
+            return;
         }
-        if (c.isGapsPresent()) {
-            throw new BadRequestException("GAPS_PRESENT: repair gaps before replay");
+        String detail = assessment.detail() == null ? "" : assessment.detail();
+        if ("INCOMPLETE_RANGE".equalsIgnoreCase(assessment.state())
+                && assessment.coverageStart() != null
+                && assessment.coverageEnd() != null) {
+            detail = detail + " (available "
+                    + assessment.coverageStart()
+                    + " to "
+                    + assessment.coverageEnd()
+                    + (assessment.latestCandleAt() != null ? ", latest bar " + assessment.latestCandleAt() : "")
+                    + ")";
         }
-        if (!"READY".equalsIgnoreCase(c.getCompleteness())) {
-            throw new BadRequestException(c.getCompleteness() + ": replay not ready");
-        }
+        throw new BadRequestException(assessment.state() + ": " + detail);
     }
 
     private static void assertInList(String value, List<String> allowed, String field) {

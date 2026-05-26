@@ -25,13 +25,18 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.stokr.marketdata.service.MarketDataCoverageService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -47,6 +52,49 @@ public class BacktestController {
     private final StrategyExecutionRequestValidator strategyExecutionRequestValidator;
     private final StrategyDefinitionRepository strategyDefinitionRepository;
     private final BacktestJobEnqueueService backtestJobEnqueueService;
+    private final MarketDataCoverageService marketDataCoverageService;
+
+    @GetMapping("/coverage/bounds")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Historical replay coverage bounds for symbol/timeframe")
+    public ApiResponse<Map<String, Object>> coverageBounds(
+            @RequestParam("symbol") String symbol,
+            @RequestParam("timeframe") String timeframe
+    ) {
+        var bounds = marketDataCoverageService.replayBounds(symbol, timeframe);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("symbol", bounds.symbol());
+        out.put("timeframe", bounds.timeframe());
+        out.put("coveredFrom", bounds.coveredFrom() != null ? bounds.coveredFrom().toString() : null);
+        out.put("coveredTo", bounds.coveredTo() != null ? bounds.coveredTo().toString() : null);
+        out.put("latestCandleAt", bounds.latestCandleAt() != null ? bounds.latestCandleAt().toString() : null);
+        out.put("effectiveReplayEnd", bounds.effectiveReplayEnd() != null ? bounds.effectiveReplayEnd().toString() : null);
+        return ApiResponse.ok(out, CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/coverage/readiness")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Replay readiness for requested window (all authenticated users)")
+    public ApiResponse<Map<String, Object>> coverageReadiness(
+            @RequestParam("symbol") String symbol,
+            @RequestParam("timeframe") String timeframe,
+            @RequestParam("from") Instant from,
+            @RequestParam("to") Instant to
+    ) {
+        var assessment = marketDataCoverageService.assessReadiness(symbol, timeframe, from, to, "REPLAY", true);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("symbol", assessment.symbol());
+        out.put("timeframe", assessment.timeframe());
+        out.put("useCase", assessment.useCase());
+        out.put("ready", assessment.ready());
+        out.put("state", assessment.state());
+        out.put("detail", assessment.detail());
+        out.put("latestCandleAt", assessment.latestCandleAt() != null ? assessment.latestCandleAt().toString() : null);
+        out.put("freshnessAgeSeconds", assessment.freshnessAgeSeconds());
+        out.put("coverageStart", assessment.coverageStart() != null ? assessment.coverageStart().toString() : null);
+        out.put("coverageEnd", assessment.coverageEnd() != null ? assessment.coverageEnd().toString() : null);
+        return ApiResponse.ok(out, CorrelationIdHolder.get());
+    }
 
     @PostMapping("/jobs")
     @PreAuthorize("isAuthenticated()")

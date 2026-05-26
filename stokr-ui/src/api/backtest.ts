@@ -84,6 +84,53 @@ export type ExecutionTimeRange = {
   timezone: string;
 };
 
+export type ReplayCoverageBounds = {
+  symbol: string;
+  timeframe: string;
+  coveredFrom: string | null;
+  coveredTo: string | null;
+  latestCandleAt: string | null;
+  effectiveReplayEnd: string | null;
+};
+
+export type ReplayReadiness = {
+  symbol: string;
+  timeframe: string;
+  useCase: string;
+  ready: boolean;
+  state: string;
+  detail: string;
+  latestCandleAt: string | null;
+  freshnessAgeSeconds: number | null;
+  coverageStart: string | null;
+  coverageEnd: string | null;
+};
+
+export async function fetchReplayCoverageBounds(symbol: string, timeframe: string): Promise<ReplayCoverageBounds> {
+  const res = await api.get<ApiEnvelope<ReplayCoverageBounds>>("/api/backtest/coverage/bounds", {
+    params: { symbol, timeframe },
+  });
+  if (!res.data?.data) {
+    throw new Error("Coverage bounds response missing data");
+  }
+  return res.data.data;
+}
+
+export async function fetchReplayReadiness(
+  symbol: string,
+  timeframe: string,
+  from: string,
+  to: string,
+): Promise<ReplayReadiness> {
+  const res = await api.get<ApiEnvelope<ReplayReadiness>>("/api/backtest/coverage/readiness", {
+    params: { symbol, timeframe, from, to },
+  });
+  if (!res.data?.data) {
+    throw new Error("Replay readiness response missing data");
+  }
+  return res.data.data;
+}
+
 /** PR-2 unified synchronous backtest envelope (matches `ExecutionRequestDto`). */
 export type ExecutionRequest = {
   strategyKey: string;
