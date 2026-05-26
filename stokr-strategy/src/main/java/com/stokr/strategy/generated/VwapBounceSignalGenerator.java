@@ -70,19 +70,19 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     // ═══════════════════════════════════════════════════════════════════════════
 
     /** Maximum distance from VWAP to qualify as "touch" (% of price) */
-    @Value("${stokr.vwapbounce.touch-threshold-pct:0.15}")
+    @Value("${stokr.vwapbounce.touch-threshold-pct:0.20}")
     private double touchThresholdPct;
 
     /** Minimum VWAP slope per bar to confirm trend direction (% per bar) */
-    @Value("${stokr.vwapbounce.min-slope-pct:0.003}")
+    @Value("${stokr.vwapbounce.min-slope-pct:0.001}")
     private double minSlopePct;
 
     /** Minimum volume multiple on touch bar vs session average */
-    @Value("${stokr.vwapbounce.min-volume-multiple:1.3}")
+    @Value("${stokr.vwapbounce.min-volume-multiple:0.8}")
     private double minVolumeMultiple;
 
     /** Bounce confirmation: close must be this % away from VWAP in trend direction */
-    @Value("${stokr.vwapbounce.bounce-confirm-pct:0.08}")
+    @Value("${stokr.vwapbounce.bounce-confirm-pct:0.04}")
     private double bounceConfirmPct;
 
     /** Target: sigma multiplier from VWAP (1.0 = 1 std dev) */
@@ -233,7 +233,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
         for (int i = Math.max(0, lastIdx - 5); i < lastIdx; i++) {
             double prevPrice = toDouble(bars.get(sessionStart + i).getClosePrice());
             double prevDist = Math.abs(prevPrice - vwapArr[i]) / vwapArr[i] * 100;
-            if (prevDist > touchThresholdPct * 3) {
+            if (prevDist > touchThresholdPct * 2) {
                 wasAway = true;
                 break;
             }

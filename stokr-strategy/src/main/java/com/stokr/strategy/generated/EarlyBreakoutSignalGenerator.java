@@ -73,27 +73,27 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
     // ═══════════════════════════════════════════════════════════════════════════
 
     /** Minimum opening range height as % of price (too small = noise) */
-    @Value("${stokr.earlybreakout.min-range-pct:0.30}")
+    @Value("${stokr.earlybreakout.min-range-pct:0.10}")
     private double minRangePct;
 
     /** Maximum opening range height as % (too wide = no clear breakout level) */
-    @Value("${stokr.earlybreakout.max-range-pct:1.5}")
+    @Value("${stokr.earlybreakout.max-range-pct:2.5}")
     private double maxRangePct;
 
     /** Minimum volume multiple on breakout bar vs OR average */
-    @Value("${stokr.earlybreakout.min-volume-multiple:1.8}")
+    @Value("${stokr.earlybreakout.min-volume-multiple:0.8}")
     private double minVolumeMultiple;
 
     /** Minimum body-to-range ratio on breakout bar (strong close) */
-    @Value("${stokr.earlybreakout.min-body-ratio:0.55}")
+    @Value("${stokr.earlybreakout.min-body-ratio:0.40}")
     private double minBodyRatio;
 
     /** Breakout must exceed OR high/low by at least this % to confirm */
-    @Value("${stokr.earlybreakout.breakout-exceed-pct:0.05}")
+    @Value("${stokr.earlybreakout.breakout-exceed-pct:0.02}")
     private double breakoutExceedPct;
 
     /** Compression filter: OR range must be <= this multiple of average bar range */
-    @Value("${stokr.earlybreakout.max-compression-ratio:3.0}")
+    @Value("${stokr.earlybreakout.max-compression-ratio:5.0}")
     private double maxCompressionRatio;
 
     /** Stop buffer beyond opposite side of OR */
@@ -105,7 +105,7 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
     private double targetMultiplier;
 
     /** Cooldown seconds */
-    @Value("${stokr.earlybreakout.cooldown-seconds:900}")
+    @Value("${stokr.earlybreakout.cooldown-seconds:300}")
     private int cooldownSeconds;
 
     @Override
@@ -122,7 +122,7 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
         // ─────────────────────────────────────────────────────────────────────
         if (context.asOf() != null) {
             LocalTime lt = context.asOf().atZone(zone).toLocalTime();
-            if (lt.isBefore(LocalTime.of(9, 45)) || lt.isAfter(LocalTime.of(11, 30))) {
+            if (lt.isBefore(LocalTime.of(9, 45)) || lt.isAfter(LocalTime.of(14, 30))) {
                 return hold(context);
             }
         }

@@ -78,23 +78,23 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
     // ═══════════════════════════════════════════════════════════════════════════
 
     /** Minimum sector/index move % over lookback to qualify as "strong sector move" */
-    @Value("${stokr.sectorlaggard.min-sector-move-pct:0.40}")
+    @Value("${stokr.sectorlaggard.min-sector-move-pct:0.15}")
     private double minSectorMovePct;
 
     /** Minimum divergence: stock must lag sector by at least this % */
-    @Value("${stokr.sectorlaggard.min-divergence-pct:0.50}")
+    @Value("${stokr.sectorlaggard.min-divergence-pct:0.20}")
     private double minDivergencePct;
 
     /** Stock must not be moving AGAINST sector (max allowed negative move vs sector) */
-    @Value("${stokr.sectorlaggard.max-counter-move-pct:0.80}")
+    @Value("${stokr.sectorlaggard.max-counter-move-pct:1.20}")
     private double maxCounterMovePct;
 
     /** Confirmation: reversal bar body must be this % of bar range in sector direction */
-    @Value("${stokr.sectorlaggard.min-reversal-body-ratio:0.50}")
+    @Value("${stokr.sectorlaggard.min-reversal-body-ratio:0.35}")
     private double minReversalBodyRatio;
 
     /** Volume rising: current bar volume vs previous 5-bar average */
-    @Value("${stokr.sectorlaggard.min-volume-rise:1.2}")
+    @Value("${stokr.sectorlaggard.min-volume-rise:0.8}")
     private double minVolumeRise;
 
     /** Target: capture this fraction of the divergence (e.g., 0.6 = 60% of the gap) */

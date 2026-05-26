@@ -76,31 +76,31 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     // ═══════════════════════════════════════════════════════════════════════════
 
     // VELOCITY: Minimum % move per minute to qualify as spike
-    @Value("${stokr.spike.min-velocity-pct:0.25}")
+    @Value("${stokr.spike.min-velocity-pct:0.12}")
     private double minVelocityPct;
 
     // VOLUME: Minimum multiplier vs 20-bar average to confirm conviction
-    @Value("${stokr.spike.min-volume-multiple:3.0}")
+    @Value("${stokr.spike.min-volume-multiple:1.3}")
     private double minVolumeMultiple;
 
     // BAR QUALITY: Close must be in upper/lower portion (not wicked)
-    @Value("${stokr.spike.min-bar-quality-threshold:70.0}")
+    @Value("${stokr.spike.min-bar-quality-threshold:55.0}")
     private double minBarQualityThreshold;
 
     // WICK REJECTION: % of bar that is wick (not body)
-    @Value("${stokr.spike.max-wick-pct-before-reject:0.60}")
+    @Value("${stokr.spike.max-wick-pct-before-reject:0.70}")
     private double maxWickPctBeforeReject;
 
     // CONTINUATION: Next candle must continue in spike direction
-    @Value("${stokr.spike.require-continuation-candle:true}")
+    @Value("${stokr.spike.require-continuation-candle:false}")
     private boolean requireContinuationCandle;
 
     // SCORE THRESHOLD: Composite score must be >= this to fire
-    @Value("${stokr.spike.min-composite-score:75.0}")
+    @Value("${stokr.spike.min-composite-score:50.0}")
     private double minCompositeScore;
 
     // COOLDOWN: Seconds between signals on same symbol
-    @Value("${stokr.spike.cooldown-seconds:300}")
+    @Value("${stokr.spike.cooldown-seconds:120}")
     private int cooldownSeconds;
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -283,15 +283,18 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
 
     private double calculateVelocityScore(double velocityPct) {
         if (velocityPct < minVelocityPct) return 0;
-        if (velocityPct < 0.35) return 40;
-        if (velocityPct < 0.50) return 60;
-        if (velocityPct < 0.80) return 80;
+        if (velocityPct < 0.20) return 40;
+        if (velocityPct < 0.30) return 55;
+        if (velocityPct < 0.50) return 75;
+        if (velocityPct < 0.80) return 90;
         return 100;
     }
 
     private double calculateVolumeScore(double volumeMultiple) {
         if (volumeMultiple < minVolumeMultiple) return 0;
-        if (volumeMultiple < 4.0) return 80;
+        if (volumeMultiple < 1.8) return 50;
+        if (volumeMultiple < 2.5) return 70;
+        if (volumeMultiple < 4.0) return 85;
         return 100;
     }
 

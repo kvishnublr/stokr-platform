@@ -56,7 +56,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class GapFillSignalGenerator extends BaseGeneratedStrategy implements TradingStrategy {
 
     private static final int PREV_SESSION_BARS = 60;   // Last hour of prev day for close reference
-    private static final int SESSION_BARS = 15;        // First 15 bars of current session
+    private static final int SESSION_BARS = 90;        // First 90 bars of current session (90min window)
     private static final int VOLUME_AVG_BARS = 20;
 
     private final MarketDataQueryService marketDataQueryService;
@@ -70,23 +70,23 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
     // ═══════════════════════════════════════════════════════════════════════════
 
     /** Minimum gap % to qualify (below this is noise, not a real gap) */
-    @Value("${stokr.gapfill.min-gap-pct:0.30}")
+    @Value("${stokr.gapfill.min-gap-pct:0.15}")
     private double minGapPct;
 
     /** Maximum gap % (above this, likely news/earnings — continuation probable) */
-    @Value("${stokr.gapfill.max-gap-pct:2.5}")
+    @Value("${stokr.gapfill.max-gap-pct:3.0}")
     private double maxGapPct;
 
     /** Minimum confirmation ratio: body toward fill / total bar range */
-    @Value("${stokr.gapfill.min-fill-direction-ratio:0.55}")
+    @Value("${stokr.gapfill.min-fill-direction-ratio:0.40}")
     private double minFillDirectionRatio;
 
     /** Required volume multiple vs average to confirm gap is tradeable */
-    @Value("${stokr.gapfill.min-volume-multiple:1.5}")
+    @Value("${stokr.gapfill.min-volume-multiple:0.8}")
     private double minVolumeMultiple;
 
     /** Number of confirmation bars required (min bars showing fill direction) */
-    @Value("${stokr.gapfill.confirmation-bars:3}")
+    @Value("${stokr.gapfill.confirmation-bars:2}")
     private int confirmationBars;
 
     /** Stop loss: gap extreme + this % buffer */
@@ -94,11 +94,11 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
     private double slBufferPct;
 
     /** Cooldown seconds between signals on same symbol */
-    @Value("${stokr.gapfill.cooldown-seconds:600}")
+    @Value("${stokr.gapfill.cooldown-seconds:300}")
     private int cooldownSeconds;
 
     /** Only signal during this window after open (minutes) */
-    @Value("${stokr.gapfill.signal-window-minutes:30}")
+    @Value("${stokr.gapfill.signal-window-minutes:90}")
     private int signalWindowMinutes;
 
     @Override
