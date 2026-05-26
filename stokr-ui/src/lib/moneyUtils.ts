@@ -34,6 +34,10 @@ export type AccountPnlSnapshot = {
   openPositions: number | null;
 };
 
+export type PnlDataSource = "BROKER" | "WORKSTATION" | "POSITIONS" | "OMS" | "UNKNOWN";
+
+export type ResolvedAccountPnl = AccountPnlSnapshot & { source: PnlDataSource };
+
 function pickMoney(obj: Record<string, unknown> | undefined, ...keys: string[]): number | null {
   if (!obj) return null;
   for (const key of keys) {
@@ -99,4 +103,44 @@ export function extractAccountPnl(
     realized: pickMoney(summary, "realizedPnl", "realized_pnl"),
     openPositions: Number.isFinite(openParsed) ? openParsed : openPositionsFallback ?? null,
   };
+}
+
+/** Unified P&L resolution: broker truth first, then workstation summary, position rows, OMS overview. */
+export function resolveAccountPnl(input: {
+  brokerTruth?: Record<string, unknown>;
+  accountSummary?: Record<string, unknown>;
+  openPositions?: Array<Record<string, unknown>>;
+  portfolioOverview?: Record<string, unknown>;
+}): ResolvedAccountPnl {
+  const fromBroker = extractBrokerTruthPnl(input.brokerTruth);
+  if (fromBroker) {
+    return { ...fromBroker, source: "BROKER" };
+  }
+  const fromWs = extractAccountPnl(input.accountSummary);
+  if (fromWs.mtm != null || fromWs.unrealized != null || fromWs.realized != null) {
+    return { ...fromWs, source: "WORKSTATION" };
+  }
+  const fromRows = sumPositionsPnl(input.openPositions);
+  if (fromRows.mtm != null) {
+    return { ...fromRows, source: "POSITIONS" };
+  }
+  const fromOms = extractAccountPnl(input.portfolioOverview);
+  if (fromOms.mtm != null || fromOms.unrealized != null || fromOms.realized != null) {
+    return { ...fromOms, source: "OMS" };
+  }
+  return { mtm: null, unrealized: null, realized: null, openPositions: null, source: "UNKNOWN" };
+}
+
+export function pnlToneClass(value: number | null | undefined, isLight = true): string {
+  if (value == null || !Number.isFinite(value)) {
+    return isLight ? "text-neutral-900" : "text-neutral-100";
+  }
+  if (value > 0) return "text-emerald-600 dark:text-emerald-400";
+  if (value < 0) return "text-rose-600 dark:text-rose-400";
+  return isLight ? "text-neutral-700" : "text-neutral-300";
+}
+
+export function formatPnlDisplay(value: number | null | undefined, opts?: { compact?: boolean }): string {
+  if (value == null) return "—";
+  return formatInr(value, opts);
 }

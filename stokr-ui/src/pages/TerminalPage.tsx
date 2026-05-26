@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { RefreshCw } from "lucide-react";
 import { api, parseAxiosMessage } from "../api/client";
 import { TRADER_EXECUTION_MODE_QUERY_KEY, fetchTraderExecutionMode } from "../lib/traderExecutionMode";
@@ -7,7 +8,8 @@ import { WorkspaceTabPanel, WorkspaceTabs } from "../components/ds/WorkspaceTabs
 import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
 import { fmtDateTime, fmtNseClock } from "../lib/dateUtils";
-import { extractAccountPnl, extractBrokerTruthPnl, formatInr, sumPositionsPnl } from "../lib/moneyUtils";
+import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl } from "../lib/moneyUtils";
+import { AnimatedKpiCard, PnlCell, PnlSourceBadge, SideBadge } from "../components/trader/TraderPremium";
 
 type Workstation = {
   accountSummary: {
@@ -57,8 +59,23 @@ function fmt(v: unknown) {
 }
 
 function fmtCell(v: unknown, col: string) {
-  if (col === "createdAt" || col === "executedAt" || col === "eventTime" || col === "emittedAt" || col === "openTime") {
+  const c = col.toLowerCase();
+  if (c === "createdat" || c === "executedat" || c === "eventtime" || c === "emittedat" || c === "opentime" || c === "filltime" || c === "executiontimestamp") {
     return fmtDateTime(String(v ?? ""));
+  }
+  if (c.includes("pnl") || c === "mtmpnl" || c === "realizedpnl" || c === "unrealizedpnl") {
+    const n = parseMoney(v);
+    return formatPnlDisplay(n);
+  }
+  if (c === "avgprice" || c === "ltp" || c === "referenceprice") {
+    const n = parseMoney(v);
+    return n != null ? formatInr(n) : "—";
+  }
+  if (c === "holddurationseconds" && v != null) {
+    const sec = Number(v);
+    if (!Number.isFinite(sec)) return "—";
+    if (sec < 60) return `${sec}s`;
+    return `${Math.floor(sec / 60)}m ${sec % 60}s`;
   }
   return fmt(v);
 }
@@ -292,19 +309,16 @@ export function TerminalPage() {
 
   const sum = q.data?.accountSummary;
   const open = q.data?.openPositions ?? [];
-  const accountPnl = useMemo(() => {
-    const fromBroker = extractBrokerTruthPnl(q.data?.brokerTruth);
-    const fromSummary = extractAccountPnl(
-      sum as Record<string, unknown> | undefined,
-      typeof sum?.openPositions === "number" ? sum.openPositions : null,
-    );
-    const fromRows = sumPositionsPnl(open);
-    return {
-      mtm: fromBroker?.mtm ?? fromSummary.mtm ?? fromRows.mtm,
-      unrealized: fromBroker?.unrealized ?? fromSummary.unrealized ?? fromRows.unrealized,
-      realized: fromBroker?.realized ?? fromSummary.realized ?? fromRows.realized,
-    };
-  }, [sum, open, q.data?.brokerTruth]);
+  const accountPnl = useMemo(
+    () =>
+      resolveAccountPnl({
+        brokerTruth: q.data?.brokerTruth,
+        accountSummary: sum as Record<string, unknown> | undefined,
+        openPositions: open,
+      }),
+    [sum, open, q.data?.brokerTruth],
+  );
+  const brokerConnected = accountPnl.source === "BROKER" || String(sum?.brokerConnectionState ?? "").includes("CONNECTED");
   const closed = q.data?.closedPositions ?? [];
   const orders = q.data?.orders ?? [];
   const execs = q.data?.executions ?? [];
@@ -423,14 +437,18 @@ export function TerminalPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Metric title="MTM P&L" value={q.isLoading ? "…" : formatInr(accountPnl.mtm ?? 0)} loading={q.isLoading} pnlValue={accountPnl.mtm} />
-        <Metric title="Realized P&L" value={q.isLoading ? "…" : formatInr(accountPnl.realized ?? 0)} loading={q.isLoading} pnlValue={accountPnl.realized} />
-        <Metric title="Unrealized P&L" value={q.isLoading ? "…" : formatInr(accountPnl.unrealized ?? 0)} loading={q.isLoading} pnlValue={accountPnl.unrealized} />
-        <Metric title="Open Positions" value={q.isLoading ? "…" : fmt(sum?.openPositions)} loading={q.isLoading} />
-        <Metric title="Active Strategies" value={q.isLoading ? "…" : fmt(sum?.activeStrategies)} loading={q.isLoading} />
-        <Metric title="Execution Mode" value={q.isLoading ? "…" : fmt(sum?.executionMode)} loading={q.isLoading} />
+      <div className="flex flex-wrap items-center gap-2">
+        <PnlSourceBadge source={accountPnl.source} brokerConnected={brokerConnected} />
       </div>
+
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <AnimatedKpiCard label="MTM P&L" loading={q.isLoading} value={formatPnlDisplay(accountPnl.mtm)} pnlValue={accountPnl.mtm} accent={(accountPnl.mtm ?? 0) >= 0 ? "bg-emerald-500" : "bg-rose-500"} />
+        <AnimatedKpiCard label="Realized P&L" loading={q.isLoading} value={formatPnlDisplay(accountPnl.realized)} pnlValue={accountPnl.realized} accent="bg-violet-400" />
+        <AnimatedKpiCard label="Unrealized P&L" loading={q.isLoading} value={formatPnlDisplay(accountPnl.unrealized)} pnlValue={accountPnl.unrealized} accent="bg-sky-400" />
+        <AnimatedKpiCard label="Open Positions" loading={q.isLoading} value={q.isLoading ? "…" : fmt(sum?.openPositions)} accent="bg-indigo-400" />
+        <AnimatedKpiCard label="Active Strategies" loading={q.isLoading} value={q.isLoading ? "…" : fmt(sum?.activeStrategies)} accent="bg-amber-400" />
+        <AnimatedKpiCard label="Execution Mode" loading={q.isLoading} value={q.isLoading ? "…" : fmt(sum?.executionMode)} accent="bg-neutral-400" />
+      </motion.div>
 
       {riskBlock ? (
         <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
@@ -491,12 +509,12 @@ export function TerminalPage() {
             rows={open}
             loading={q.isLoading}
             emptyLabel="No open positions"
-            cols={["symbol", "side", "qty", "avgPrice", "ltp", "mtmPnl", "realizedPnl", "unrealizedPnl", "exposurePct", "parityState", "executionMode", "brokerStatus", "currentSignalState"]}
+            cols={["symbol", "side", "qty", "brokerQty", "avgPrice", "ltp", "mtmPnl", "realizedPnl", "unrealizedPnl", "exposurePct", "parityState", "executionMode", "brokerStatus", "currentSignalState"]}
           />
         </WorkspaceTabPanel>
 
         <WorkspaceTabPanel id="closed" active={tab}>
-          <Table rows={closed} cols={["symbol", "side", "qty", "avgPrice", "mtmPnl", "realizedPnl", "exitReason", "parityState"]} />
+          <Table rows={closed} cols={["symbol", "side", "qty", "avgPrice", "mtmPnl", "realizedPnl", "holdDurationSeconds", "exitReason", "parityState"]} />
         </WorkspaceTabPanel>
 
         <WorkspaceTabPanel id="orders" active={tab}>
@@ -522,7 +540,7 @@ export function TerminalPage() {
         </WorkspaceTabPanel>
 
         <WorkspaceTabPanel id="execs" active={tab}>
-          <Table rows={execs} cols={["createdAt", "symbol", "filledQty", "avgPrice", "latencyMs", "slippageBps", "executionMode", "orderState"]} />
+          <Table rows={execs} cols={["fillTime", "symbol", "strategyKey", "filledQty", "avgPrice", "referencePrice", "latencyMs", "slippageBps", "spreadBps", "executionKind", "orderState", "executionMode", "brokerExecutionId"]} />
         </WorkspaceTabPanel>
 
         <WorkspaceTabPanel id="alloc" active={tab}>
@@ -985,17 +1003,27 @@ function Table({
         </thead>
         <tbody className="text-neutral-700 dark:text-neutral-200">
           {rows.map((r, i) => (
-            <tr key={String(r.id ?? `${i}`)} className="border-t border-neutral-200/80 dark:border-neutral-800">
+            <motion.tr
+              key={String(r.id ?? `${i}`)}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.02, duration: 0.2 }}
+              className="border-t border-neutral-200/80 dark:border-neutral-800 hover:bg-sky-500/[0.03]"
+            >
               {cols.map((c) => (
-                <td key={c} className="py-2 pr-3 font-mono">
-                  {c.toLowerCase().includes("state") || c.toLowerCase().includes("mode") || c.toLowerCase().includes("status") ? (
+                <td key={c} className="py-2.5 pr-3 font-mono text-[11px]">
+                  {c.toLowerCase() === "side" ? (
+                    <SideBadge side={fmt(r[c])} />
+                  ) : c.toLowerCase().includes("pnl") || c.toLowerCase() === "mtmpnl" ? (
+                    <PnlCell value={r[c]} />
+                  ) : c.toLowerCase().includes("state") || c.toLowerCase().includes("mode") || c.toLowerCase().includes("status") ? (
                     <Chip value={fmt(r[c]).toUpperCase()} />
                   ) : (
                     fmtCell(r[c], c)
                   )}
                 </td>
               ))}
-            </tr>
+            </motion.tr>
           ))}
         </tbody>
       </table>

@@ -1,7 +1,29 @@
 ﻿import { useMemo, useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { api } from "../api/client";
+import { TRADER_EXECUTION_MODE_QUERY_KEY, fetchTraderExecutionMode } from "../lib/traderExecutionMode";
+import {
+  formatInr,
+  formatPnlDisplay,
+  parseMoney,
+  pnlToneClass,
+  resolveAccountPnl,
+} from "../lib/moneyUtils";
 import { useUiThemeStore } from "../state/uiTheme";
+import { cn } from "../lib/utils";
+import {
+  AnimatedKpiCard,
+  EmptyState,
+  PnlCell,
+  PnlSourceBadge,
+  PremiumPanel,
+  SideBadge,
+  TraderPageShell,
+  fadeUp,
+} from "../components/trader/TraderPremium";
+import { ArrowUpDown, Download, ExternalLink, RefreshCw, TrendingUp } from "lucide-react";
 
 type Exposure = {
   bySymbol: {
@@ -15,20 +37,32 @@ type Exposure = {
   byBrokerNotional: { brokerVendor: string; tradedNotionalApprox: string }[];
 };
 
-type ParsedSymbolExposure = {
-  symbol: string;
-  quantityNum: number;
-  notionalNum: number;
-  omsQuantityNum: number | null;
-  quantitySource: string;
-  parityState: string | null;
+type Workstation = {
+  accountSummary?: Record<string, unknown>;
+  brokerTruth?: Record<string, unknown>;
+  openPositions?: Array<Record<string, unknown>>;
 };
 
-function fmtNumber(value: number, fraction = 2) {
-  return new Intl.NumberFormat("en-IN", {
-    maximumFractionDigits: fraction,
-    minimumFractionDigits: fraction,
-  }).format(value);
+type PositionRow = {
+  symbol: string;
+  side: string;
+  qty: number;
+  brokerQty: number | null;
+  avgPrice: number | null;
+  ltp: number | null;
+  notional: number;
+  mtmPnl: number | null;
+  unrealizedPnl: number | null;
+  realizedPnl: number | null;
+  exposurePct: number | null;
+  quantitySource: string;
+  parityState: string | null;
+  executionMode: string | null;
+  brokerStatus: string | null;
+};
+
+function fmtNum(v: number, dec = 2) {
+  return new Intl.NumberFormat("en-IN", { minimumFractionDigits: dec, maximumFractionDigits: dec }).format(v);
 }
 
 export function PositionsPage(props?: { embedded?: boolean }) {
@@ -36,11 +70,10 @@ export function PositionsPage(props?: { embedded?: boolean }) {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const [symbolQuery, setSymbolQuery] = useState("");
   const [sideFilter, setSideFilter] = useState<"ALL" | "LONG" | "SHORT">("ALL");
-  const [sortBy, setSortBy] = useState<"symbol" | "quantity" | "notional">("notional");
+  const [sortBy, setSortBy] = useState<"symbol" | "mtm" | "notional">("mtm");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const queryClient = useQueryClient();
 
-  // Invalidate position data on SSE position/ops events for near-realtime updates
   useEffect(() => {
     const controller = new AbortController();
     const token = localStorage.getItem("accessToken");
@@ -62,12 +95,9 @@ export function PositionsPage(props?: { embedded?: boolean }) {
           while ((sep = buffer.indexOf("\n\n")) >= 0) {
             const frame = buffer.slice(0, sep).trim();
             buffer = buffer.slice(sep + 2);
-            if (frame) {
-              const isPositionEvent = frame.includes("event: tick") || frame.includes("event:tick")
-                || frame.includes("event: ops_realtime") || frame.includes("event:ops_realtime");
-              if (isPositionEvent) {
-                void queryClient.invalidateQueries({ queryKey: ["portfolio-exposure"] });
-              }
+            if (frame && (frame.includes("tick") || frame.includes("ops_realtime"))) {
+              void queryClient.invalidateQueries({ queryKey: ["portfolio-exposure"] });
+              void queryClient.invalidateQueries({ queryKey: ["positions-workstation"] });
             }
           }
         }
@@ -76,64 +106,108 @@ export function PositionsPage(props?: { embedded?: boolean }) {
     return () => controller.abort();
   }, [queryClient]);
 
-  const q = useQuery({
-    queryKey: ["portfolio-exposure"],
-    queryFn: async () => {
-      const res = await api.get("/api/portfolio/exposure");
-      return res.data?.data as Exposure;
-    },
-    refetchInterval: 10_000,
+  const modeQ = useQuery({
+    queryKey: [...TRADER_EXECUTION_MODE_QUERY_KEY],
+    queryFn: fetchTraderExecutionMode,
+    staleTime: 30_000,
   });
 
-  const parsedBySymbol = useMemo<ParsedSymbolExposure[]>(() => {
-    return (q.data?.bySymbol ?? []).map((r) => ({
-      symbol: r.symbol,
-      quantityNum: Number(r.quantity || 0),
-      notionalNum: Number(r.exposureNotional || 0),
-      omsQuantityNum: r.omsQuantity != null && r.omsQuantity !== "" ? Number(r.omsQuantity) : null,
-      quantitySource: (r.quantitySource || "OMS").toUpperCase(),
-      parityState: r.parityState ? r.parityState.toUpperCase() : null,
-    }));
-  }, [q.data?.bySymbol]);
+  const exposureQ = useQuery({
+    queryKey: ["portfolio-exposure"],
+    queryFn: async () => (await api.get("/api/portfolio/exposure")).data?.data as Exposure,
+    refetchInterval: 8_000,
+  });
 
-  const brokerQtySource = useMemo(
-    () => parsedBySymbol.some((r) => r.quantitySource === "BROKER"),
-    [parsedBySymbol],
+  const wsQ = useQuery<Workstation>({
+    queryKey: ["positions-workstation", modeQ.data],
+    queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
+    refetchInterval: 8_000,
+  });
+
+  const accountPnl = useMemo(
+    () =>
+      resolveAccountPnl({
+        brokerTruth: wsQ.data?.brokerTruth,
+        accountSummary: wsQ.data?.accountSummary,
+        openPositions: wsQ.data?.openPositions,
+      }),
+    [wsQ.data],
   );
 
+  const brokerConnected =
+    accountPnl.source === "BROKER" ||
+    String(wsQ.data?.accountSummary?.brokerConnectionState ?? "").includes("CONNECTED");
+
+  const mergedRows = useMemo<PositionRow[]>(() => {
+    const wsBySymbol = new Map<string, Record<string, unknown>>();
+    for (const row of wsQ.data?.openPositions ?? []) {
+      const sym = String(row.symbol ?? "").toUpperCase();
+      if (sym) wsBySymbol.set(sym, row);
+    }
+    const exposureRows = exposureQ.data?.bySymbol ?? [];
+    const symbols = new Set<string>();
+    exposureRows.forEach((r) => symbols.add(r.symbol.toUpperCase()));
+    wsBySymbol.forEach((_, sym) => symbols.add(sym));
+
+    return Array.from(symbols).map((symbol) => {
+      const exp = exposureRows.find((r) => r.symbol.toUpperCase() === symbol);
+      const ws = wsBySymbol.get(symbol);
+      const qty = parseMoney(ws?.qty ?? exp?.quantity) ?? 0;
+      const side = String(ws?.side ?? (qty >= 0 ? "LONG" : "SHORT"));
+      return {
+        symbol,
+        side,
+        qty,
+        brokerQty: parseMoney(ws?.brokerQty),
+        avgPrice: parseMoney(ws?.avgPrice),
+        ltp: parseMoney(ws?.ltp),
+        notional: Math.abs(parseMoney(exp?.exposureNotional) ?? parseMoney(ws?.exposureNotional) ?? 0),
+        mtmPnl: parseMoney(ws?.mtmPnl),
+        unrealizedPnl: parseMoney(ws?.unrealizedPnl),
+        realizedPnl: parseMoney(ws?.realizedPnl),
+        exposurePct: parseMoney(ws?.exposurePct),
+        quantitySource: String(exp?.quantitySource ?? ws?.quantitySource ?? "OMS").toUpperCase(),
+        parityState: exp?.parityState ? String(exp.parityState).toUpperCase() : null,
+        executionMode: ws?.executionMode != null ? String(ws.executionMode) : null,
+        brokerStatus: ws?.brokerStatus != null ? String(ws.brokerStatus) : null,
+      };
+    });
+  }, [exposureQ.data, wsQ.data]);
+
   const filteredRows = useMemo(() => {
-    let rows = parsedBySymbol;
+    let rows = mergedRows;
     if (symbolQuery.trim()) {
       const needle = symbolQuery.trim().toUpperCase();
-      rows = rows.filter((r) => r.symbol.toUpperCase().includes(needle));
+      rows = rows.filter((r) => r.symbol.includes(needle));
     }
-    if (sideFilter === "LONG") rows = rows.filter((r) => r.quantityNum > 0);
-    if (sideFilter === "SHORT") rows = rows.filter((r) => r.quantityNum < 0);
+    if (sideFilter === "LONG") rows = rows.filter((r) => r.qty > 0);
+    if (sideFilter === "SHORT") rows = rows.filter((r) => r.qty < 0);
     return rows;
-  }, [parsedBySymbol, symbolQuery, sideFilter]);
+  }, [mergedRows, symbolQuery, sideFilter]);
 
   const sortedRows = useMemo(() => {
     const arr = [...filteredRows];
     arr.sort((a, b) => {
       let cmp = 0;
       if (sortBy === "symbol") cmp = a.symbol.localeCompare(b.symbol);
-      if (sortBy === "quantity") cmp = a.quantityNum - b.quantityNum;
-      if (sortBy === "notional") cmp = a.notionalNum - b.notionalNum;
+      if (sortBy === "mtm") cmp = (a.mtmPnl ?? 0) - (b.mtmPnl ?? 0);
+      if (sortBy === "notional") cmp = a.notional - b.notional;
       return sortDir === "asc" ? cmp : -cmp;
     });
     return arr;
   }, [filteredRows, sortBy, sortDir]);
 
   const summary = useMemo(() => {
-    const totalSymbols = parsedBySymbol.length;
-    const netQty = parsedBySymbol.reduce((s, r) => s + r.quantityNum, 0);
-    const grossNotional = parsedBySymbol.reduce((s, r) => s + Math.abs(r.notionalNum), 0);
-    const top = [...parsedBySymbol].sort((a, b) => Math.abs(b.notionalNum) - Math.abs(a.notionalNum))[0];
-    return { totalSymbols, netQty, grossNotional, top };
-  }, [parsedBySymbol]);
+    const totalSymbols = mergedRows.length;
+    const netQty = mergedRows.reduce((s, r) => s + r.qty, 0);
+    const grossNotional = mergedRows.reduce((s, r) => s + r.notional, 0);
+    const totalMtm = mergedRows.reduce((s, r) => s + (r.mtmPnl ?? 0), 0);
+    const top = [...mergedRows].sort((a, b) => b.notional - a.notional)[0];
+    return { totalSymbols, netQty, grossNotional, totalMtm, top };
+  }, [mergedRows]);
 
   const brokerRows = useMemo(() => {
-    const rows = (q.data?.byBrokerNotional ?? []).map((r) => ({
+    const rows = (exposureQ.data?.byBrokerNotional ?? []).map((r) => ({
       brokerVendor: r.brokerVendor,
       notionalNum: Number(r.tradedNotionalApprox || 0),
     }));
@@ -141,208 +215,216 @@ export function PositionsPage(props?: { embedded?: boolean }) {
     return rows
       .sort((a, b) => Math.abs(b.notionalNum) - Math.abs(a.notionalNum))
       .map((r) => ({ ...r, sharePct: total > 0 ? (Math.abs(r.notionalNum) / total) * 100 : 0 }));
-  }, [q.data?.byBrokerNotional]);
+  }, [exposureQ.data?.byBrokerNotional]);
 
-  function toggleSort(next: "symbol" | "quantity" | "notional") {
-    if (sortBy === next) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-      return;
+  function toggleSort(next: typeof sortBy) {
+    if (sortBy === next) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortBy(next);
+      setSortDir(next === "symbol" ? "asc" : "desc");
     }
-    setSortBy(next);
-    setSortDir(next === "symbol" ? "asc" : "desc");
   }
 
-  function downloadCsv(filename: string, headers: string[], rows: (string | number)[][]) {
-    const escape = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
-    const lines = [headers.map(escape).join(","), ...rows.map((r) => r.map(escape).join(","))];
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
+  function downloadCsv() {
+    const headers = ["Symbol", "Side", "Qty", "Avg", "LTP", "MTM", "Unrealized", "Realized", "Notional", "Source", "Parity"];
+    const lines = [
+      headers.join(","),
+      ...sortedRows.map((r) =>
+        [
+          r.symbol,
+          r.side,
+          r.qty,
+          r.avgPrice ?? "",
+          r.ltp ?? "",
+          r.mtmPnl ?? "",
+          r.unrealizedPnl ?? "",
+          r.realizedPnl ?? "",
+          r.notional,
+          r.quantitySource,
+          r.parityState ?? "",
+        ].join(","),
+      ),
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
+    a.href = URL.createObjectURL(blob);
+    a.download = "positions.csv";
     a.click();
-    URL.revokeObjectURL(url);
   }
 
-  const cardCls = isLight
-    ? "rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"
-    : "rounded-2xl border border-neutral-800 bg-neutral-950/60 p-5";
-  const mutedCls = isLight ? "text-neutral-600" : "text-neutral-400";
-  const headingCls = isLight ? "text-neutral-900" : "text-white";
-  const tableHeadCls = isLight ? "text-neutral-500" : "text-neutral-400";
-  const rowBorderCls = isLight ? "border-t border-neutral-100" : "border-t border-neutral-900";
+  const loading = exposureQ.isLoading || wsQ.isLoading;
   const inputCls = isLight
-    ? "rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm outline-none transition focus:border-blue-500"
-    : "rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 shadow-sm outline-none transition focus:border-blue-500";
+    ? "rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+    : "rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-sky-500";
 
-  return (
-    <div className="space-y-8">
-      {!embedded ? (
-        <div>
-          <h1 className={isLight ? "text-2xl font-semibold tracking-tight text-neutral-900" : "text-2xl font-semibold tracking-tight text-white"}>Positions & exposure</h1>
-          <p className={isLight ? "mt-2 max-w-2xl text-sm text-neutral-600" : "mt-2 max-w-2xl text-sm text-neutral-400"}>
-            Symbol exposure uses broker net quantity when Zerodha is connected; otherwise OMS ledger positions. Broker notionals aggregate historical traded volume by routing vendor.
-          </p>
-        </div>
-      ) : null}
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className={cardCls}>
-          <div className={`text-xs uppercase tracking-wide ${mutedCls}`}>Tracked symbols</div>
-          <div className={`mt-2 text-2xl font-semibold ${headingCls}`}>{summary.totalSymbols}</div>
-        </div>
-        <div className={cardCls}>
-          <div className={`text-xs uppercase tracking-wide ${mutedCls}`}>Net quantity</div>
-          <div className={`mt-2 text-2xl font-semibold ${headingCls}`}>{fmtNumber(summary.netQty, 0)}</div>
-        </div>
-        <div className={cardCls}>
-          <div className={`text-xs uppercase tracking-wide ${mutedCls}`}>Gross notional</div>
-          <div className={`mt-2 text-2xl font-semibold ${headingCls}`}>INR {fmtNumber(summary.grossNotional)}</div>
-        </div>
-        <div className={cardCls}>
-          <div className={`text-xs uppercase tracking-wide ${mutedCls}`}>Largest exposure</div>
-          <div className={`mt-2 text-base font-semibold ${headingCls}`}>{summary.top?.symbol ?? "—"}</div>
-          <div className={`text-xs ${mutedCls}`}>INR {fmtNumber(Math.abs(summary.top?.notionalNum ?? 0))}</div>
-        </div>
+  const content = (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <PnlSourceBadge source={accountPnl.source} brokerConnected={brokerConnected} />
+        <button
+          type="button"
+          onClick={() => {
+            void exposureQ.refetch();
+            void wsQ.refetch();
+          }}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold",
+            isLight ? "border-neutral-200 bg-white hover:bg-neutral-50" : "border-white/10 bg-white/5 hover:bg-white/10",
+          )}
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", (exposureQ.isFetching || wsQ.isFetching) && "animate-spin")} />
+          Refresh
+        </button>
+        {!embedded ? (
+          <Link
+            to="/terminal"
+            className={cn(
+              "inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-semibold",
+              isLight ? "border-indigo-200 bg-indigo-50 text-indigo-800" : "border-indigo-500/30 bg-indigo-500/10 text-indigo-300",
+            )}
+          >
+            Terminal <ExternalLink className="h-3 w-3" />
+          </Link>
+        ) : null}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className={cardCls}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className={`flex items-center gap-2 text-sm font-medium ${headingCls}`}>
-              <span>By symbol</span>
-              {brokerQtySource ? (
-                <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-                  Broker qty
-                </span>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className={isLight ? "rounded-md border border-neutral-200 px-2.5 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-50" : "rounded-md border border-neutral-700 px-2.5 py-1 text-xs font-semibold text-neutral-200 hover:bg-neutral-800"}
-              onClick={() =>
-                downloadCsv(
-                  "positions-by-symbol.csv",
-                  ["Symbol", "Quantity", "Notional"],
-                  sortedRows.map((r) => [r.symbol, r.quantityNum, r.notionalNum]),
-                )
-              }
-            >
-              Export CSV
-            </button>
-          </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <AnimatedKpiCard label="MTM P&L" loading={loading} value={formatPnlDisplay(accountPnl.mtm)} pnlValue={accountPnl.mtm} accent={(accountPnl.mtm ?? 0) >= 0 ? "bg-emerald-500" : "bg-rose-500"} />
+        <AnimatedKpiCard label="Unrealized" loading={loading} value={formatPnlDisplay(accountPnl.unrealized)} pnlValue={accountPnl.unrealized} accent="bg-sky-400" />
+        <AnimatedKpiCard label="Realized" loading={loading} value={formatPnlDisplay(accountPnl.realized)} pnlValue={accountPnl.realized} accent="bg-violet-400" />
+        <AnimatedKpiCard label="Open symbols" loading={loading} value={String(summary.totalSymbols)} sublabel={`Net qty ${fmtNum(summary.netQty, 0)}`} icon={TrendingUp} accent="bg-amber-400" />
+        <AnimatedKpiCard label="Gross notional" loading={loading} value={formatInr(summary.grossNotional)} sublabel={summary.top ? `Top · ${summary.top.symbol}` : undefined} accent="bg-indigo-400" />
+      </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <input className={inputCls} placeholder="Search symbol..." value={symbolQuery} onChange={(e) => setSymbolQuery(e.target.value)} />
+      <PremiumPanel
+        title="Live positions"
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <input className={inputCls} placeholder="Search symbol…" value={symbolQuery} onChange={(e) => setSymbolQuery(e.target.value)} />
             {(["ALL", "LONG", "SHORT"] as const).map((k) => (
               <button
                 key={k}
                 type="button"
                 onClick={() => setSideFilter(k)}
-                className={sideFilter === k ? "rounded-full border border-blue-500 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700" : isLight ? "rounded-full border border-neutral-200 px-2.5 py-1 text-xs font-semibold text-neutral-600" : "rounded-full border border-neutral-700 px-2.5 py-1 text-xs font-semibold text-neutral-300"}
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-[11px] font-bold uppercase",
+                  sideFilter === k
+                    ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
+                    : isLight ? "bg-neutral-100 text-neutral-600" : "bg-white/10 text-neutral-400",
+                )}
               >
                 {k}
               </button>
             ))}
-          </div>
-
-          <div className="mt-4 max-h-[540px] overflow-auto">
-            <table className="w-full text-left text-xs">
-              <thead className={`${tableHeadCls} sticky top-0 ${isLight ? "bg-white" : "bg-neutral-950"}`}>
-                <tr>
-                  <th className="pb-2 pr-2">
-                    <button type="button" className="font-semibold" onClick={() => toggleSort("symbol")}>Symbol</button>
-                  </th>
-                  <th className="pb-2 pr-2">
-                    <button type="button" className="font-semibold" onClick={() => toggleSort("quantity")}>Qty</button>
-                  </th>
-                  <th className="pb-2 pr-2">
-                    <button type="button" className="font-semibold" onClick={() => toggleSort("notional")}>Notional</button>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className={isLight ? "text-neutral-700" : "text-neutral-200"}>
-                {q.isLoading ? (
-                  <tr><td className="py-3 text-xs text-neutral-500" colSpan={3}>Loading exposure...</td></tr>
-                ) : sortedRows.length === 0 ? (
-                  <tr><td className="py-3 text-xs text-neutral-500" colSpan={3}>No symbols match current filters.</td></tr>
-                ) : sortedRows.map((r) => (
-                  <tr key={r.symbol} className={rowBorderCls}>
-                    <td className="py-2 font-mono">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span>{r.symbol}</span>
-                        {r.parityState === "MISMATCH" && r.omsQuantityNum != null ? (
-                          <span
-                            className="rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
-                            title={`OMS qty ${fmtNumber(r.omsQuantityNum, 0)}`}
-                          >
-                            OMS {fmtNumber(r.omsQuantityNum, 0)}
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className={`py-2 font-mono ${r.quantityNum > 0 ? "text-emerald-600" : r.quantityNum < 0 ? "text-rose-600" : ""}`}>
-                      {fmtNumber(r.quantityNum, 0)}
-                    </td>
-                    <td className="py-2 font-mono">INR {fmtNumber(r.notionalNum)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className={cardCls}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className={`text-sm font-medium ${headingCls}`}>Broker traded notional (approx)</div>
-            <button
-              type="button"
-              className={isLight ? "rounded-md border border-neutral-200 px-2.5 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-50" : "rounded-md border border-neutral-700 px-2.5 py-1 text-xs font-semibold text-neutral-200 hover:bg-neutral-800"}
-              onClick={() =>
-                downloadCsv(
-                  "broker-notional.csv",
-                  ["Broker", "Notional", "SharePct"],
-                  brokerRows.map((r) => [r.brokerVendor, r.notionalNum, r.sharePct.toFixed(2)]),
-                )
-              }
-            >
-              Export CSV
+            <button type="button" onClick={downloadCsv} className={cn("inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold", isLight ? "border-neutral-200" : "border-white/10")}>
+              <Download className="h-3 w-3" /> CSV
             </button>
           </div>
-
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className={tableHeadCls}>
-                <tr>
-                  <th className="pb-2 pr-2">Broker</th>
-                  <th className="pb-2 pr-2">Notional</th>
-                  <th className="pb-2">Share</th>
-                </tr>
-              </thead>
-              <tbody className={isLight ? "text-neutral-700" : "text-neutral-200"}>
-                {q.isLoading ? (
-                  <tr><td className="py-3 text-xs text-neutral-500" colSpan={3}>Loading broker exposure...</td></tr>
-                ) : brokerRows.length === 0 ? (
-                  <tr><td className="py-3 text-xs text-neutral-500" colSpan={3}>No broker exposure data available.</td></tr>
-                ) : brokerRows.map((r) => (
-                  <tr key={r.brokerVendor} className={rowBorderCls}>
-                    <td className="py-2 font-mono">{r.brokerVendor}</td>
-                    <td className="py-2 font-mono">INR {fmtNumber(r.notionalNum)}</td>
-                    <td className="py-2">
-                      <div className="flex items-center gap-2">
-                        <div className={isLight ? "h-1.5 w-28 rounded bg-neutral-100" : "h-1.5 w-28 rounded bg-neutral-800"}>
-                          <div className="h-1.5 rounded bg-blue-500" style={{ width: `${Math.max(4, Math.min(100, r.sharePct))}%` }} />
-                        </div>
-                        <span className="font-mono text-[11px]">{fmtNumber(r.sharePct, 1)}%</span>
-                      </div>
-                    </td>
-                  </tr>
+        }
+      >
+        <div className="overflow-x-auto px-2 pb-2">
+          <table className="min-w-full text-left text-xs">
+            <thead className={cn("sticky top-0 z-10 text-[10px] uppercase tracking-wider", isLight ? "bg-white text-neutral-500" : "bg-neutral-900 text-neutral-400")}>
+              <tr>
+                {[
+                  ["symbol", "Symbol"],
+                  ["mtm", "MTM P&L"],
+                  ["side", "Side"],
+                  ["qty", "Qty"],
+                  ["avg", "Avg"],
+                  ["ltp", "LTP"],
+                  ["unrealized", "Unrealized"],
+                  ["realized", "Realized"],
+                  ["notional", "Notional"],
+                  ["source", "Source"],
+                ].map(([key, label]) => (
+                  <th key={key} className="px-3 py-3 font-semibold">
+                    {key === "symbol" || key === "mtm" || key === "notional" ? (
+                      <button type="button" className="inline-flex items-center gap-1 hover:opacity-80" onClick={() => toggleSort(key as typeof sortBy)}>
+                        {label} <ArrowUpDown className="h-3 w-3 opacity-50" />
+                      </button>
+                    ) : (
+                      label
+                    )}
+                  </th>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={10} className="px-3 py-8 text-center text-neutral-500">Loading positions…</td></tr>
+              ) : sortedRows.length === 0 ? (
+                <tr><td colSpan={10}><EmptyState message="No open positions match your filters" /></td></tr>
+              ) : (
+                sortedRows.map((r, i) => (
+                  <motion.tr
+                    key={r.symbol}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.03, duration: 0.25 }}
+                    className={cn("border-t transition hover:bg-sky-500/[0.04]", isLight ? "border-neutral-100" : "border-white/[0.06]")}
+                  >
+                    <td className="px-3 py-3">
+                      <div className="font-mono font-bold">{r.symbol}</div>
+                      {r.parityState === "MISMATCH" ? (
+                        <span className="mt-1 inline-block rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">PARITY MISMATCH</span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-3"><PnlCell value={r.mtmPnl} /></td>
+                    <td className="px-3 py-3"><SideBadge side={r.side} /></td>
+                    <td className={cn("px-3 py-3 font-mono font-semibold tabular-nums", pnlToneClass(r.qty, isLight))}>{fmtNum(r.qty, 0)}</td>
+                    <td className="px-3 py-3 font-mono tabular-nums">{r.avgPrice != null ? fmtNum(r.avgPrice) : "—"}</td>
+                    <td className="px-3 py-3 font-mono tabular-nums">{r.ltp != null ? fmtNum(r.ltp) : "—"}</td>
+                    <td className="px-3 py-3"><PnlCell value={r.unrealizedPnl} /></td>
+                    <td className="px-3 py-3"><PnlCell value={r.realizedPnl} /></td>
+                    <td className="px-3 py-3 font-mono tabular-nums">{formatInr(r.notional)}</td>
+                    <td className="px-3 py-3">
+                      <span className={cn("rounded-md px-2 py-0.5 text-[10px] font-bold uppercase", r.quantitySource === "BROKER" ? "bg-emerald-500/15 text-emerald-700" : "bg-neutral-500/10 text-neutral-600")}>
+                        {r.quantitySource}
+                      </span>
+                    </td>
+                  </motion.tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      </div>
-    </div>
+      </PremiumPanel>
+
+      <PremiumPanel title="Broker exposure mix">
+        <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
+          {brokerRows.length === 0 ? (
+            <EmptyState message="No broker notional breakdown yet" />
+          ) : (
+            brokerRows.map((r) => (
+              <motion.div key={r.brokerVendor} variants={fadeUp} className={cn("rounded-xl border p-4", isLight ? "border-neutral-200 bg-neutral-50/50" : "border-white/10 bg-white/[0.03]")}>
+                <div className="text-xs font-bold uppercase tracking-wide text-neutral-500">{r.brokerVendor}</div>
+                <div className="mt-1 font-mono text-lg font-black tabular-nums">{formatInr(r.notionalNum)}</div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-neutral-200/80 dark:bg-neutral-800">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.max(4, r.sharePct)}%` }}
+                    transition={{ duration: 0.6, ease: "easeOut" }}
+                    className="h-full rounded-full bg-gradient-to-r from-sky-500 to-indigo-500"
+                  />
+                </div>
+                <div className="mt-1 text-[11px] font-semibold text-neutral-500">{fmtNum(r.sharePct, 1)}% of routed volume</div>
+              </motion.div>
+            ))
+          )}
+        </div>
+      </PremiumPanel>
+    </>
+  );
+
+  if (embedded) return <div className="space-y-6">{content}</div>;
+
+  return (
+    <TraderPageShell
+      title="Positions"
+      subtitle="Live broker-backed quantities and mark-to-market — synced from your workstation when Zerodha is connected."
+    >
+      {content}
+    </TraderPageShell>
   );
 }

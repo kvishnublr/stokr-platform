@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { fmtDateTime, fmtNseClock, fmtDateLong } from "../../lib/dateUtils";
 import { Navigate, Link } from "react-router-dom";
 import { useSessionStore } from "../../state/session";
@@ -10,7 +11,8 @@ import {
   signalMatchesExecutionMode,
 } from "../../lib/traderExecutionMode";
 import { cn } from "../../lib/utils";
-import { extractAccountPnl, extractBrokerTruthPnl, formatInr, parseMoney, sumPositionsPnl } from "../../lib/moneyUtils";
+import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl } from "../../lib/moneyUtils";
+import { AnimatedKpiCard, PnlCell, PnlSourceBadge, PremiumPanel, SideBadge, fadeUp } from "../../components/trader/TraderPremium";
 import { NiftyCandleChart } from "../../components/charts/NiftyCandleChart";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -297,23 +299,16 @@ export function TraderDashboard() {
   const greetName = displayName ?? "Trader";
 
   const accountPnl = useMemo(() => {
-    const fromBroker = extractBrokerTruthPnl(ws?.brokerTruth);
-    const fromWs = extractAccountPnl(
-      ws?.accountSummary as Record<string, unknown> | undefined,
-    );
-    const fromRows = sumPositionsPnl(ws?.openPositions);
-    const fromPortfolio = extractAccountPnl(portfolioOverviewQ.data);
-    return {
-      mtm: fromBroker?.mtm ?? fromWs.mtm ?? fromRows.mtm ?? fromPortfolio.mtm,
-      unrealized: fromBroker?.unrealized ?? fromWs.unrealized ?? fromRows.unrealized ?? fromPortfolio.unrealized,
-      realized: fromBroker?.realized ?? fromWs.realized ?? fromRows.realized ?? fromPortfolio.realized,
-      openPositions:
-        fromBroker?.openPositions
-        ?? fromWs.openPositions
-        ?? fromRows.openPositions
-        ?? fromPortfolio.openPositions,
-    };
+    const resolved = resolveAccountPnl({
+      brokerTruth: ws?.brokerTruth,
+      accountSummary: ws?.accountSummary as Record<string, unknown> | undefined,
+      openPositions: ws?.openPositions,
+      portfolioOverview: portfolioOverviewQ.data,
+    });
+    return resolved;
   }, [ws?.accountSummary, ws?.openPositions, ws?.brokerTruth, portfolioOverviewQ.data]);
+
+  const openPositionRows = useMemo(() => (ws?.openPositions ?? []).slice(0, 6), [ws?.openPositions]);
 
   const pnlLoading = workstationQ.isLoading && portfolioOverviewQ.isLoading;
   const pnlFailed = workstationQ.isError && portfolioOverviewQ.isError;
@@ -325,10 +320,11 @@ export function TraderDashboard() {
 
   const fmtKpiPnl = (n: number | null) => {
     if (!pnlReady) return "—";
-    return formatInr(n ?? 0, { compact: true });
+    return formatPnlDisplay(n, { compact: true });
   };
 
   const brokerConnected =
+    accountPnl.source === "BROKER" ||
     String(ws?.accountSummary?.brokerConnectionState ?? "").includes("CONNECTED") ||
     (brokerFundsQ.data?.length ?? 0) > 0;
 
@@ -516,70 +512,50 @@ export function TraderDashboard() {
         </p>
       )}
 
-      {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard
-          label="MTM P&L" loading={isLoading}
-          value={fmtKpiPnl(mtmPnl)}
-          failed={pnlFailed}
-          onRetry={refetchPnl}
-          delta={
-            pnlFailed
-              ? pnlErrorMsg ?? "Load failed"
-              : openPosCount > 0
-                ? `${openPosCount} open position${openPosCount === 1 ? "" : "s"}`
-                : rejectionPct
-          }
-          positive={(mtmPnl ?? 0) >= 0}
-          icon={TrendingUp}
-          accent={(mtmPnl ?? 0) >= 0 ? "bg-emerald-500" : "bg-rose-500"}
-        />
-        <KpiCard
-          label="Unrealized P&L" loading={isLoading}
-          value={fmtKpiPnl(unrealizedPnl)}
-          failed={pnlFailed}
-          onRetry={refetchPnl}
-          delta={pnlFailed ? pnlErrorMsg ?? "Load failed" : undefined}
-          positive={(unrealizedPnl ?? 0) >= 0}
-          icon={Activity}
-          accent={(unrealizedPnl ?? 0) >= 0 ? "bg-sky-400" : "bg-amber-400"}
-        />
-        <KpiCard
-          label="Realized P&L" loading={isLoading}
-          value={fmtKpiPnl(realizedPnl)}
-          failed={pnlFailed}
-          onRetry={refetchPnl}
-          delta={pnlFailed ? pnlErrorMsg ?? "Load failed" : undefined}
-          positive={(realizedPnl ?? 0) >= 0}
-          icon={BarChart2}
-          accent={(realizedPnl ?? 0) >= 0 ? "bg-violet-400" : "bg-rose-400"}
-        />
-        <KpiCard
-          label="Available Margin"
-          loading={marginLoading}
-          value={
-            !brokerConnected
-              ? "—"
-              : marginFailed
-                ? "—"
-                : marginReady
-                  ? formatInr(availableMargin ?? 0)
-                  : "—"
-          }
-          failed={brokerConnected && marginFailed}
-          onRetry={() => void brokerFundsQ.refetch()}
-          delta={
-            !brokerConnected
-              ? "Connect broker for live margin"
-              : marginFailed
-                ? marginErrorMsg ?? "Load failed"
-                : undefined
-          }
-          positive={true}
-          icon={Layers}
-          accent="bg-amber-400"
-        />
+      <div className="flex flex-wrap items-center gap-2">
+        <PnlSourceBadge source={accountPnl.source} brokerConnected={brokerConnected} />
+        <Link
+          to="/positions"
+          className={cn(
+            "rounded-full border px-3 py-1 text-[11px] font-semibold",
+            isLight ? "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50" : "border-white/10 bg-white/5 text-neutral-300",
+          )}
+        >
+          View all positions
+        </Link>
       </div>
+
+      {/* ── KPI Cards ── */}
+      <motion.div initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.07 } } }} className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <AnimatedKpiCard label="MTM P&L" loading={isLoading} value={fmtKpiPnl(mtmPnl)} pnlValue={mtmPnl} sublabel={openPosCount > 0 ? `${openPosCount} open position${openPosCount === 1 ? "" : "s"}` : rejectionPct} accent={(mtmPnl ?? 0) >= 0 ? "bg-emerald-500" : "bg-rose-500"} icon={TrendingUp} />
+        <AnimatedKpiCard label="Unrealized P&L" loading={isLoading} value={fmtKpiPnl(unrealizedPnl)} pnlValue={unrealizedPnl} accent={(unrealizedPnl ?? 0) >= 0 ? "bg-sky-400" : "bg-amber-400"} icon={Activity} />
+        <AnimatedKpiCard label="Realized P&L" loading={isLoading} value={fmtKpiPnl(realizedPnl)} pnlValue={realizedPnl} accent={(realizedPnl ?? 0) >= 0 ? "bg-violet-400" : "bg-rose-400"} icon={BarChart2} />
+        <AnimatedKpiCard label="Available Margin" loading={marginLoading} value={!brokerConnected ? "—" : marginFailed ? "—" : marginReady ? formatInr(availableMargin) : "—"} sublabel={!brokerConnected ? "Connect broker for live margin" : marginFailed ? marginErrorMsg ?? "Load failed" : undefined} accent="bg-amber-400" icon={Layers} />
+      </motion.div>
+
+      {openPositionRows.length > 0 ? (
+        <PremiumPanel title="Live positions" action={<Link to="/terminal" className={cn("text-xs font-semibold", isLight ? "text-sky-600" : "text-sky-400")}>Terminal →</Link>}>
+          <div className="overflow-x-auto px-3 pb-3">
+            <table className="min-w-full text-left text-xs">
+              <thead className={cn("text-[10px] uppercase tracking-wide", mutedCls)}>
+                <tr>{["Symbol", "Side", "Qty", "LTP", "MTM P&L", "Unrealized"].map((h) => <th key={h} className="px-2 py-2 font-semibold">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {openPositionRows.map((r, i) => (
+                  <motion.tr key={String(r.symbol ?? i)} variants={fadeUp} initial="hidden" animate="show" className={cn("border-t", dividerCls)}>
+                    <td className="px-2 py-2 font-mono font-bold">{String(r.symbol ?? "—")}</td>
+                    <td className="px-2 py-2"><SideBadge side={String(r.side ?? "LONG")} /></td>
+                    <td className="px-2 py-2 font-mono tabular-nums">{String(r.qty ?? "—")}</td>
+                    <td className="px-2 py-2 font-mono tabular-nums">{r.ltp != null ? String(r.ltp) : "—"}</td>
+                    <td className="px-2 py-2"><PnlCell value={r.mtmPnl} /></td>
+                    <td className="px-2 py-2"><PnlCell value={r.unrealizedPnl} /></td>
+                  </motion.tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </PremiumPanel>
+      ) : null}
 
       {/* ── Main 2-col layout ── */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_340px]">
