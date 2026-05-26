@@ -4,7 +4,14 @@ import { api } from "../api/client";
 import { useUiThemeStore } from "../state/uiTheme";
 
 type Exposure = {
-  bySymbol: { symbol: string; quantity: string; exposureNotional: string }[];
+  bySymbol: {
+    symbol: string;
+    quantity: string;
+    exposureNotional: string;
+    omsQuantity?: string | null;
+    quantitySource?: string | null;
+    parityState?: string | null;
+  }[];
   byBrokerNotional: { brokerVendor: string; tradedNotionalApprox: string }[];
 };
 
@@ -12,6 +19,9 @@ type ParsedSymbolExposure = {
   symbol: string;
   quantityNum: number;
   notionalNum: number;
+  omsQuantityNum: number | null;
+  quantitySource: string;
+  parityState: string | null;
 };
 
 function fmtNumber(value: number, fraction = 2) {
@@ -80,8 +90,16 @@ export function PositionsPage(props?: { embedded?: boolean }) {
       symbol: r.symbol,
       quantityNum: Number(r.quantity || 0),
       notionalNum: Number(r.exposureNotional || 0),
+      omsQuantityNum: r.omsQuantity != null && r.omsQuantity !== "" ? Number(r.omsQuantity) : null,
+      quantitySource: (r.quantitySource || "OMS").toUpperCase(),
+      parityState: r.parityState ? r.parityState.toUpperCase() : null,
     }));
   }, [q.data?.bySymbol]);
+
+  const brokerQtySource = useMemo(
+    () => parsedBySymbol.some((r) => r.quantitySource === "BROKER"),
+    [parsedBySymbol],
+  );
 
   const filteredRows = useMemo(() => {
     let rows = parsedBySymbol;
@@ -163,7 +181,7 @@ export function PositionsPage(props?: { embedded?: boolean }) {
         <div>
           <h1 className={isLight ? "text-2xl font-semibold tracking-tight text-neutral-900" : "text-2xl font-semibold tracking-tight text-white"}>Positions & exposure</h1>
           <p className={isLight ? "mt-2 max-w-2xl text-sm text-neutral-600" : "mt-2 max-w-2xl text-sm text-neutral-400"}>
-            Symbol exposure from rebuilt ledger positions; broker notionals aggregate historical traded volume by routing vendor.
+            Symbol exposure uses broker net quantity when Zerodha is connected; otherwise OMS ledger positions. Broker notionals aggregate historical traded volume by routing vendor.
           </p>
         </div>
       ) : null}
@@ -191,7 +209,14 @@ export function PositionsPage(props?: { embedded?: boolean }) {
       <div className="grid gap-6 lg:grid-cols-2">
         <div className={cardCls}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className={`text-sm font-medium ${headingCls}`}>By symbol</div>
+            <div className={`flex items-center gap-2 text-sm font-medium ${headingCls}`}>
+              <span>By symbol</span>
+              {brokerQtySource ? (
+                <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                  Broker qty
+                </span>
+              ) : null}
+            </div>
             <button
               type="button"
               className={isLight ? "rounded-md border border-neutral-200 px-2.5 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-50" : "rounded-md border border-neutral-700 px-2.5 py-1 text-xs font-semibold text-neutral-200 hover:bg-neutral-800"}
@@ -243,7 +268,19 @@ export function PositionsPage(props?: { embedded?: boolean }) {
                   <tr><td className="py-3 text-xs text-neutral-500" colSpan={3}>No symbols match current filters.</td></tr>
                 ) : sortedRows.map((r) => (
                   <tr key={r.symbol} className={rowBorderCls}>
-                    <td className="py-2 font-mono">{r.symbol}</td>
+                    <td className="py-2 font-mono">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span>{r.symbol}</span>
+                        {r.parityState === "MISMATCH" && r.omsQuantityNum != null ? (
+                          <span
+                            className="rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                            title={`OMS qty ${fmtNumber(r.omsQuantityNum, 0)}`}
+                          >
+                            OMS {fmtNumber(r.omsQuantityNum, 0)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
                     <td className={`py-2 font-mono ${r.quantityNum > 0 ? "text-emerald-600" : r.quantityNum < 0 ? "text-rose-600" : ""}`}>
                       {fmtNumber(r.quantityNum, 0)}
                     </td>

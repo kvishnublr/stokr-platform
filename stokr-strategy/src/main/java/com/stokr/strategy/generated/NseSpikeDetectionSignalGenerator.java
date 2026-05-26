@@ -1,9 +1,9 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
-import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
+import com.stokr.strategy.service.StrategyCandleLoader;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
@@ -64,8 +64,9 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     private static final int BARS_FETCH = 25;
     private static final int VOLUME_AVG_PERIOD = 20;
     private static final int RETEST_LOOKBACK = 5;
+    private static final int REGIME_LOOKBACK = 10;
 
-    private final MarketDataQueryService marketDataQueryService;
+    private final StrategyCandleLoader candleLoader;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -76,51 +77,63 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     // ═══════════════════════════════════════════════════════════════════════════
 
     // VELOCITY: Minimum % move per minute to qualify as spike
-    @Value("${stokr.spike.min-velocity-pct:0.08}")
+    @Value("${stokr.strategy.spike.min-velocity-pct:0.12}")
     private double minVelocityPct;
 
     // VOLUME: Minimum multiplier vs 20-bar average to confirm conviction
-    @Value("${stokr.spike.min-volume-multiple:0.5}")
+    @Value("${stokr.strategy.spike.min-volume-multiple:1.2}")
     private double minVolumeMultiple;
 
     // BAR QUALITY: Close must be in upper/lower portion (not wicked)
-    @Value("${stokr.spike.min-bar-quality-threshold:55.0}")
+    @Value("${stokr.strategy.spike.min-bar-quality-threshold:60.0}")
     private double minBarQualityThreshold;
 
     // WICK REJECTION: % of bar that is wick (not body)
-    @Value("${stokr.spike.max-wick-pct-before-reject:0.70}")
+    @Value("${stokr.strategy.spike.max-wick-pct-before-reject:0.70}")
     private double maxWickPctBeforeReject;
 
     // CONTINUATION: Next candle must continue in spike direction
-    @Value("${stokr.spike.require-continuation-candle:false}")
+    @Value("${stokr.strategy.spike.require-continuation-candle:true}")
     private boolean requireContinuationCandle;
 
     // SCORE THRESHOLD: Composite score must be >= this to fire
-    @Value("${stokr.spike.min-composite-score:50.0}")
+    @Value("${stokr.strategy.spike.min-composite-score:65.0}")
     private double minCompositeScore;
 
     // COOLDOWN: Seconds between signals on same symbol
-    @Value("${stokr.spike.cooldown-seconds:120}")
+    @Value("${stokr.strategy.spike.cooldown-seconds:300}")
     private int cooldownSeconds;
+
+    @Value("${stokr.strategy.spike.min-risk-reward:1.2}")
+    private double minRiskReward;
+
+    @Value("${stokr.strategy.spike.regime-min-range-pct:0.60}")
+    private double regimeMinRangePct;
+
+    @Value("${stokr.strategy.spike.regime-min-directional-bars:6}")
+    private int regimeMinDirectionalBars;
+
+    @Value("${stokr.strategy.spike.require-prev-bar-alignment:true}")
+    private boolean requirePrevBarAlignment;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // DYNAMIC STOP LOSS PARAMETERS
     // ═══════════════════════════════════════════════════════════════════════════
 
-    @Value("${stokr.spike.sl-offset-pct:0.50}")
+    @Value("${stokr.strategy.spike.sl-offset-pct:0.50}")
     private double slOffsetPct;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // DYNAMIC TARGET PARAMETERS (retest-based)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    @Value("${stokr.spike.target-tight-range-extension:0.50}")
+    @Value("${stokr.strategy.spike.target-tight-range-extension:0.50}")
     private double targetTightRangeExtension;
 
-    @Value("${stokr.spike.target-wide-range-extension:1.50}")
+    @Value("${stokr.strategy.spike.target-wide-range-extension:1.50}")
     private double targetWideRangeExtension;
 
-    @Value("${stokr.spike.range-width-threshold-pct:1.0}")
+    @Value("${stokr.strategy.spike.range-width-threshold-pct:1.0}")
     private double rangeWidthThreshold;
 
     @Override
@@ -145,7 +158,7 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         // ─────────────────────────────────────────────────────────────────────
         // 2. LOAD CANDLE DATA
         // ─────────────────────────────────────────────────────────────────────
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, TIMEFRAME, BARS_FETCH);
+        List<MarketdataCandle> bars = candleLoader.bars(context, TIMEFRAME, BARS_FETCH);
         int n = bars.size();
         if (n < 3) {
             log.debug("nse_spike.insufficient_bars symbol={} have={}", symbol, n);
@@ -160,8 +173,13 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         double curLow = toDouble(current.getLowPrice());
         double curVolume = toDouble(current.getVolume());
         double prevClose = toDouble(prev.getClosePrice());
+        double prevOpen = toDouble(prev.getOpenPrice());
 
         if (curClose <= 0 || prevClose <= 0) return hold(context);
+
+        if (isChoppyRegime(bars, n)) {
+            return hold(context);
+        }
 
         // ─────────────────────────────────────────────────────────────────────
         // 3. PURE DATA COMPONENT 1: VELOCITY SCORE
@@ -174,6 +192,14 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         }
 
         boolean isBuySpike = curClose > prevClose;
+
+        if (requirePrevBarAlignment) {
+            boolean prevBullish = prevClose > prevOpen;
+            boolean prevBearish = prevClose < prevOpen;
+            if ((isBuySpike && !prevBullish) || (!isBuySpike && !prevBearish)) {
+                return hold(context);
+            }
+        }
 
         // ─────────────────────────────────────────────────────────────────────
         // 4. PURE DATA COMPONENT 2: VOLUME SCORE
@@ -249,8 +275,8 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         if (isBuySpike) {
             signalType = SignalType.BUY;
             entryPrice = curClose;
-            stopLoss = curLow * (1.0 - slOffsetPct / 100.0);
-            target = calculateBuyTarget(bars, n);
+            stopLoss = calculateAdaptiveBuyStop(bars, n, curLow);
+            target = calculateAdaptiveBuyTarget(bars, n, entryPrice, stopLoss);
 
             double rr = (target - entryPrice) / Math.max(0.0001, entryPrice - stopLoss);
             reason = String.format(
@@ -263,8 +289,8 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         } else {
             signalType = SignalType.SELL;
             entryPrice = curClose;
-            stopLoss = curHigh * (1.0 + slOffsetPct / 100.0);
-            target = calculateSellTarget(bars, n);
+            stopLoss = calculateAdaptiveSellStop(bars, n, curHigh);
+            target = calculateAdaptiveSellTarget(bars, n, entryPrice, stopLoss);
 
             double rr = (entryPrice - target) / Math.max(0.0001, stopLoss - entryPrice);
             reason = String.format(
@@ -275,8 +301,28 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
             );
         }
 
+        if (isBuySpike) {
+            double rr = (target - entryPrice) / Math.max(0.0001, entryPrice - stopLoss);
+            if (rr < minRiskReward) {
+                return hold(context);
+            }
+        } else {
+            double rr = (entryPrice - target) / Math.max(0.0001, stopLoss - entryPrice);
+            if (rr < minRiskReward) {
+                return hold(context);
+            }
+        }
+
         log.info("nse_spike.signal symbol={} type={} reason={}", symbol, signalType, reason);
-        return new StrategySignal(signalType, symbol, BigDecimal.ONE, reason);
+        return new StrategySignal(
+                signalType,
+                symbol,
+                BigDecimal.ONE,
+                reason,
+                BigDecimal.valueOf(entryPrice),
+                BigDecimal.valueOf(stopLoss),
+                BigDecimal.valueOf(target)
+        );
     }
 
     // ═════════════════════════════════════════════════════════════════════════════
@@ -391,6 +437,76 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
                           targetTightRangeExtension : targetWideRangeExtension;
 
         return rangeLow * (1.0 - extension / 100.0);
+    }
+
+    private boolean isChoppyRegime(List<MarketdataCandle> bars, int currentIndex) {
+        int start = Math.max(1, currentIndex - REGIME_LOOKBACK);
+        if (currentIndex - start < 5) {
+            return false;
+        }
+
+        double high = Double.NEGATIVE_INFINITY;
+        double low = Double.POSITIVE_INFINITY;
+        int directionalBars = 0;
+
+        for (int i = start; i < currentIndex; i++) {
+            MarketdataCandle c = bars.get(i);
+            double cHigh = toDouble(c.getHighPrice());
+            double cLow = toDouble(c.getLowPrice());
+            double cOpen = toDouble(c.getOpenPrice());
+            double cClose = toDouble(c.getClosePrice());
+            if (cHigh > high) high = cHigh;
+            if (cLow < low) low = cLow;
+            if (Math.abs(cClose - cOpen) > 0) directionalBars++;
+        }
+
+        if (high <= 0 || low <= 0 || high <= low) {
+            return true;
+        }
+        double rangePct = (high - low) / high * 100.0;
+        return rangePct < regimeMinRangePct || directionalBars < regimeMinDirectionalBars;
+    }
+
+    private double recentAverageRangePct(List<MarketdataCandle> bars, int currentIndex) {
+        int start = Math.max(0, currentIndex - REGIME_LOOKBACK);
+        double sum = 0.0;
+        int count = 0;
+        for (int i = start; i < currentIndex; i++) {
+            double h = toDouble(bars.get(i).getHighPrice());
+            double l = toDouble(bars.get(i).getLowPrice());
+            double c = toDouble(bars.get(i).getClosePrice());
+            if (h > 0 && l > 0 && c > 0 && h > l) {
+                sum += (h - l) / c * 100.0;
+                count++;
+            }
+        }
+        return count == 0 ? 0.30 : sum / count;
+    }
+
+    private double calculateAdaptiveBuyStop(List<MarketdataCandle> bars, int currentIndex, double curLow) {
+        double avgRangePct = recentAverageRangePct(bars, currentIndex);
+        double dynamicOffset = Math.max(slOffsetPct, Math.min(1.20, avgRangePct * 0.9));
+        return curLow * (1.0 - dynamicOffset / 100.0);
+    }
+
+    private double calculateAdaptiveSellStop(List<MarketdataCandle> bars, int currentIndex, double curHigh) {
+        double avgRangePct = recentAverageRangePct(bars, currentIndex);
+        double dynamicOffset = Math.max(slOffsetPct, Math.min(1.20, avgRangePct * 0.9));
+        return curHigh * (1.0 + dynamicOffset / 100.0);
+    }
+
+    private double calculateAdaptiveBuyTarget(List<MarketdataCandle> bars, int currentIndex, double entryPrice, double stopLoss) {
+        double structureTarget = calculateBuyTarget(bars, currentIndex);
+        double risk = Math.max(0.0001, entryPrice - stopLoss);
+        double rrTarget = entryPrice + (risk * Math.max(minRiskReward, 1.8));
+        return Math.max(structureTarget, rrTarget);
+    }
+
+    private double calculateAdaptiveSellTarget(List<MarketdataCandle> bars, int currentIndex, double entryPrice, double stopLoss) {
+        double structureTarget = calculateSellTarget(bars, currentIndex);
+        double risk = Math.max(0.0001, stopLoss - entryPrice);
+        double rrTarget = entryPrice - (risk * Math.max(minRiskReward, 1.8));
+        return Math.min(structureTarget, rrTarget);
     }
 
     private static double toDouble(BigDecimal v) {

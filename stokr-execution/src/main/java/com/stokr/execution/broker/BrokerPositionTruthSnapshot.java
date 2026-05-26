@@ -86,6 +86,26 @@ public record BrokerPositionTruthSnapshot(
         out.put("blockedSymbols", blockedSymbols);
         out.put("pendingBrokerOrders", pendingBrokerOrders);
         out.put("message", message != null ? message : "");
+
+        BigDecimal totalRealized = BigDecimal.ZERO;
+        BigDecimal totalUnrealized = BigDecimal.ZERO;
+        int openPositionCount = 0;
+        for (BrokerTruthPositionRow p : positions) {
+            totalRealized = totalRealized.add(nullSafe(p.brokerRealizedPnl()));
+            totalUnrealized = totalUnrealized.add(nullSafe(p.brokerUnrealizedPnl()));
+            if (p.brokerQty() != null && p.brokerQty().compareTo(BigDecimal.ZERO) != 0) {
+                openPositionCount++;
+            }
+        }
+        BigDecimal totalMtm = totalRealized.add(totalUnrealized);
+        out.put("totalRealizedPnl", totalRealized);
+        out.put("totalUnrealizedPnl", totalUnrealized);
+        out.put("totalMtmPnl", totalMtm);
+        out.put("openPositionCount", openPositionCount);
         return out;
+    }
+
+    private static BigDecimal nullSafe(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
     }
 }

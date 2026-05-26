@@ -41,7 +41,12 @@ public final class ZerodhaKitePositionsParser {
         }
         for (JsonNode row : rows) {
             BrokerPositionDetail d = toDetail(row);
-            if (d == null || d.quantity() == null || d.quantity().compareTo(BigDecimal.ZERO) == 0) {
+            if (d == null) {
+                continue;
+            }
+            boolean openQty = d.quantity() != null && d.quantity().compareTo(BigDecimal.ZERO) != 0;
+            boolean hasPnl = hasNonZeroPnl(d);
+            if (!openQty && !hasPnl) {
                 continue;
             }
             merged.merge(d.symbolKey(), d, ZerodhaKitePositionsParser::mergeDetail);
@@ -104,5 +109,13 @@ public final class ZerodhaKitePositionsParser {
             return BigDecimal.valueOf(row.path("average_price").asDouble());
         }
         return null;
+    }
+
+    private static boolean hasNonZeroPnl(BrokerPositionDetail d) {
+        return isNonZero(d.realisedPnl()) || isNonZero(d.unrealisedPnl());
+    }
+
+    private static boolean isNonZero(BigDecimal v) {
+        return v != null && v.compareTo(BigDecimal.ZERO) != 0;
     }
 }

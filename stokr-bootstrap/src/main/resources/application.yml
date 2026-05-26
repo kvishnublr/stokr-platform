@@ -199,19 +199,47 @@ stokr:
     default-quantity: ${STOKR_STRATEGY_DEFAULT_QTY:1}
     # NSE_SPIKE_DETECTION V2.0 - Pure data-driven parameters
     spike:
-      min-velocity-pct: ${STOKR_SPIKE_MIN_VELOCITY_PCT:0.25}
-      min-volume-multiple: ${STOKR_SPIKE_MIN_VOLUME_MULTIPLE:3.0}
-      min-bar-quality-threshold: ${STOKR_SPIKE_MIN_BAR_QUALITY_THRESHOLD:70.0}
-      max-wick-pct-before-reject: ${STOKR_SPIKE_MAX_WICK_PCT_BEFORE_REJECT:0.60}
+      min-velocity-pct: ${STOKR_SPIKE_MIN_VELOCITY_PCT:0.40}
+      min-volume-multiple: ${STOKR_SPIKE_MIN_VOLUME_MULTIPLE:4.5}
+      min-bar-quality-threshold: ${STOKR_SPIKE_MIN_BAR_QUALITY_THRESHOLD:80.0}
+      max-wick-pct-before-reject: ${STOKR_SPIKE_MAX_WICK_PCT_BEFORE_REJECT:0.40}
       require-continuation-candle: ${STOKR_SPIKE_REQUIRE_CONTINUATION_CANDLE:true}
-      min-composite-score: ${STOKR_SPIKE_MIN_COMPOSITE_SCORE:75.0}
-      cooldown-seconds: ${STOKR_SPIKE_COOLDOWN_SECONDS:300}
+      min-composite-score: ${STOKR_SPIKE_MIN_COMPOSITE_SCORE:85.0}
+      cooldown-seconds: ${STOKR_SPIKE_COOLDOWN_SECONDS:900}
       # Dynamic stop loss (not fixed ATR multiple)
       sl-offset-pct: ${STOKR_SPIKE_SL_OFFSET_PCT:0.50}
       # Dynamic target (retest-based)
       target-tight-range-extension: ${STOKR_SPIKE_TARGET_TIGHT_RANGE_EXTENSION:0.50}
       target-wide-range-extension: ${STOKR_SPIKE_TARGET_WIDE_RANGE_EXTENSION:1.50}
       range-width-threshold-pct: ${STOKR_SPIKE_RANGE_WIDTH_THRESHOLD_PCT:1.0}
+      min-risk-reward: ${STOKR_SPIKE_MIN_RR:1.8}
+      regime-min-range-pct: ${STOKR_SPIKE_REGIME_MIN_RANGE_PCT:0.60}
+      regime-min-directional-bars: ${STOKR_SPIKE_REGIME_MIN_DIRECTIONAL_BARS:6}
+      require-prev-bar-alignment: ${STOKR_SPIKE_REQUIRE_PREV_BAR_ALIGNMENT:true}
+    earlybreakout:
+      min-range-pct: ${STOKR_EARLYBREAKOUT_MIN_RANGE_PCT:0.15}
+      max-range-pct: ${STOKR_EARLYBREAKOUT_MAX_RANGE_PCT:2.0}
+      min-volume-multiple: ${STOKR_EARLYBREAKOUT_MIN_VOLUME_MULTIPLE:1.2}
+      min-body-ratio: ${STOKR_EARLYBREAKOUT_MIN_BODY_RATIO:0.50}
+      breakout-exceed-pct: ${STOKR_EARLYBREAKOUT_BREAKOUT_EXCEED_PCT:0.05}
+      cooldown-seconds: ${STOKR_EARLYBREAKOUT_COOLDOWN_SECONDS:600}
+      min-risk-reward: ${STOKR_EARLYBREAKOUT_MIN_RR:1.2}
+    vwapbounce:
+      touch-threshold-pct: ${STOKR_VWAPBOUNCE_TOUCH_THRESHOLD_PCT:0.12}
+      min-slope-pct: ${STOKR_VWAPBOUNCE_MIN_SLOPE_PCT:0.002}
+      min-volume-multiple: ${STOKR_VWAPBOUNCE_MIN_VOLUME_MULTIPLE:1.0}
+      bounce-confirm-pct: ${STOKR_VWAPBOUNCE_BOUNCE_CONFIRM_PCT:0.06}
+      cooldown-seconds: ${STOKR_VWAPBOUNCE_COOLDOWN_SECONDS:600}
+      min-risk-reward: ${STOKR_VWAPBOUNCE_MIN_RR:1.2}
+    daily-cap:
+      enabled: ${STOKR_STRATEGY_DAILY_CAP_ENABLED:true}
+      default: ${STOKR_STRATEGY_DAILY_CAP_DEFAULT:120}
+      per-strategy:
+        NSE_SPIKE_DETECTION: ${STOKR_SPIKE_DAILY_CAP:80}
+        EARLY_BREAKOUT: ${STOKR_EARLYBREAKOUT_DAILY_CAP:40}
+        VWAP_BOUNCE: ${STOKR_VWAPBOUNCE_DAILY_CAP:25}
+        GAP_FILL: ${STOKR_GAPFILL_DAILY_CAP:30}
+        SECTOR_LAGGARD: ${STOKR_SECTOR_LAGGARD_DAILY_CAP:30}
   simulation:
     candle-timeframe: ${STOKR_SIM_TF:1m}
     latency-ms: ${STOKR_SIM_LATENCY_MS:1500}
@@ -235,7 +263,7 @@ stokr:
     # Symbol-level cooldown to prevent signal spam (e.g., VWAP was firing 3,937 signals/day)
     # After a signal for SYMBOL+STRATEGY, skip next signals within cooldown window
     # 300s = 5 min per symbol per strategy (reduce noise by ~95% while preserving quality)
-    cooldown-seconds: ${STOKR_SIGNAL_COOLDOWN_SECONDS:300}
+    cooldown-seconds: ${STOKR_SIGNAL_COOLDOWN_SECONDS:900}
   runtime:
     live-heartbeat-stale-seconds: ${STOKR_RUNTIME_LIVE_STALE_SECONDS:600}
   crypto:

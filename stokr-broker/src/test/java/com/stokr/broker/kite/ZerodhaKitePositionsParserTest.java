@@ -41,4 +41,29 @@ class ZerodhaKitePositionsParserTest {
         assertEquals(0, d.averagePrice().compareTo(new BigDecimal("450.5")));
         assertTrue(d.product().contains("MIS"));
     }
+
+    @Test
+    void parseDetails_includesZeroQtyWithDayPnl() throws Exception {
+        String json = """
+                {
+                  "status": "success",
+                  "data": {
+                    "net": [],
+                    "day": [{
+                      "exchange": "NSE",
+                      "tradingsymbol": "ITC",
+                      "quantity": 0,
+                      "average_price": 0,
+                      "realised_pnl": -0.45,
+                      "unrealised_pnl": 0,
+                      "product": "MIS"
+                    }]
+                  }
+                }
+                """;
+        List<BrokerPositionDetail> rows = ZerodhaKitePositionsParser.parseDetails(mapper.readTree(json));
+        assertEquals(1, rows.size());
+        assertEquals(0, rows.getFirst().quantity().compareTo(BigDecimal.ZERO));
+        assertEquals(0, rows.getFirst().realisedPnl().compareTo(new BigDecimal("-0.45")));
+    }
 }

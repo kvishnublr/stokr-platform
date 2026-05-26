@@ -385,10 +385,31 @@ public class TraderTerminalViewService {
         List<OmsExecutionRowDto> execRows = omsQueryService.pageExecutions(userId, liveParams, PageRequest.of(0, 100)).getContent();
         List<Map<String, Object>> unifiedOrders = buildUnifiedOrders(userId, orders);
 
+        boolean brokerPnlSource = brokerTruth.brokerConnected() && brokerTruth.lastSyncAt() != null;
+        if (brokerPnlSource) {
+            applyBrokerFirstWorkstation(
+                    brokerTruth,
+                    openPositions,
+                    closedPositions,
+                    broker,
+                    mode,
+                    strategyInstances,
+                    userId,
+                    lastFillAtBySymbol,
+                    netExecQtyBySymbol
+            );
+        }
+
         BigDecimal totalRealized = sumRealized.setScale(8, java.math.RoundingMode.HALF_UP);
         BigDecimal totalUnrealized = sumUnrealized.setScale(8, java.math.RoundingMode.HALF_UP);
-        BigDecimal totalPnl = totalRealized.add(totalUnrealized).setScale(8, java.math.RoundingMode.HALF_UP);
         int openCount = openPositions.size() > 0 ? openPositions.size() : overview.openPositionCount();
+        if (brokerPnlSource) {
+            BrokerPnlTotals brokerTotals = summarizeBrokerTotals(brokerTruth);
+            totalRealized = brokerTotals.realized();
+            totalUnrealized = brokerTotals.unrealized();
+            openCount = brokerTotals.openCount();
+        }
+        BigDecimal totalPnl = totalRealized.add(totalUnrealized).setScale(8, java.math.RoundingMode.HALF_UP);
 
         Map<String, Object> out = new LinkedHashMap<>();
         Map<String, Object> accountSummary = new LinkedHashMap<>();
@@ -397,6 +418,7 @@ public class TraderTerminalViewService {
         accountSummary.put("realizedPnl", totalRealized);
         accountSummary.put("unrealizedPnl", totalUnrealized);
         accountSummary.put("openPositions", openCount);
+        accountSummary.put("pnlSource", brokerPnlSource ? "BROKER" : "OMS");
         accountSummary.put("activeStrategies", strategyInstances.stream()
                 .filter(si -> "RUNNING".equalsIgnoreCase(si.getRuntimeState())).count());
         accountSummary.put("brokerConnectionState", broker.connected() ? "BROKER_CONNECTED" : "BROKER_DISCONNECTED");
@@ -558,5 +580,201 @@ public class TraderTerminalViewService {
 
     private static double bd(BigDecimal v) {
         return v == null ? 0d : v.doubleValue();
+    }
+
+    private record BrokerPnlTotals(
+            BigDecimal realized,
+            BigDecimal unrealized,
+            BigDecimal mtm,
+            int openCount
+    ) {
+    }
+
+    private static BrokerPnlTotals summarizeBrokerTotals(BrokerPositionTruthSnapshot brokerTruth) {
+        BigDecimal realized = BigDecimal.ZERO;
+        BigDecimal unrealized = BigDecimal.ZERO;
+        int openCount = 0;
+        for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : brokerTruth.positions()) {
+            realized = realized.add(row.brokerRealizedPnl() != null ? row.brokerRealizedPnl() : BigDecimal.ZERO);
+            unrealized = unrealized.add(row.brokerUnrealizedPnl() != null ? row.brokerUnrealizedPnl() : BigDecimal.ZERO);
+            BigDecimal bq = row.brokerQty() != null ? row.brokerQty() : BigDecimal.ZERO;
+            if (bq.compareTo(BigDecimal.ZERO) != 0) {
+                openCount++;
+            }
+        }
+        realized = realized.setScale(8, java.math.RoundingMode.HALF_UP);
+        unrealized = unrealized.setScale(8, java.math.RoundingMode.HALF_UP);
+        return new BrokerPnlTotals(realized, unrealized, realized.add(unrealized), openCount);
+    }
+
+    private void applyBrokerFirstWorkstation(
+            BrokerPositionTruthSnapshot brokerTruth,
+            List<Map<String, Object>> openPositions,
+            List<Map<String, Object>> closedPositions,
+            ZerodhaBrokerOperationsService.BrokerStatusDto broker,
+            TraderExecutionModePreferenceDto mode,
+            List<StrategyInstance> strategyInstances,
+            UUID userId,
+            Map<String, Instant> lastFillAtBySymbol,
+            Map<String, BigDecimal> netExecQtyBySymbol
+    ) {
+        List<Map<String, Object>> brokerOpen = new ArrayList<>();
+        List<Map<String, Object>> brokerClosed = new ArrayList<>();
+        Set<String> brokerOpenSymbols = new LinkedHashSet<>();
+
+        for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow truth : brokerTruth.positions()) {
+            BigDecimal bq = truth.brokerQty() != null ? truth.brokerQty() : BigDecimal.ZERO;
+            if (bq.compareTo(BigDecimal.ZERO) != 0) {
+                brokerOpen.add(mapBrokerPositionRow(
+                        truth, userId, broker, mode, strategyInstances, lastFillAtBySymbol, netExecQtyBySymbol));
+                brokerOpenSymbols.add(truth.symbol());
+            } else if (hasBrokerPnl(truth)) {
+                brokerClosed.add(mapBrokerFlatRow(truth, userId, broker, mode));
+            }
+        }
+
+        List<Map<String, Object>> omsOnlyOpen = new ArrayList<>();
+        for (Map<String, Object> omsRow : openPositions) {
+            String sym = BrokerPositionTruthService.normalizeSymbol(String.valueOf(omsRow.get("symbol")));
+            if (!brokerOpenSymbols.contains(sym)) {
+                omsRow.put("parityState", "MISMATCH");
+                omsRow.put("brokerSyncState", brokerTruth.syncState().name());
+                omsOnlyOpen.add(omsRow);
+            }
+        }
+
+        openPositions.clear();
+        openPositions.addAll(brokerOpen);
+        openPositions.addAll(omsOnlyOpen);
+
+        Set<String> flatBrokerSymbols = brokerTruth.positions().stream()
+                .filter(t -> t.brokerQty() == null || t.brokerQty().compareTo(BigDecimal.ZERO) == 0)
+                .map(BrokerPositionTruthSnapshot.BrokerTruthPositionRow::symbol)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        List<Map<String, Object>> mergedClosed = new ArrayList<>(brokerClosed);
+        for (Map<String, Object> omsClosed : closedPositions) {
+            String sym = BrokerPositionTruthService.normalizeSymbol(String.valueOf(omsClosed.get("symbol")));
+            if (!flatBrokerSymbols.contains(sym) && !brokerOpenSymbols.contains(sym)) {
+                mergedClosed.add(omsClosed);
+            }
+        }
+        closedPositions.clear();
+        closedPositions.addAll(mergedClosed);
+    }
+
+    private static boolean hasBrokerPnl(BrokerPositionTruthSnapshot.BrokerTruthPositionRow truth) {
+        BigDecimal r = truth.brokerRealizedPnl() != null ? truth.brokerRealizedPnl() : BigDecimal.ZERO;
+        BigDecimal u = truth.brokerUnrealizedPnl() != null ? truth.brokerUnrealizedPnl() : BigDecimal.ZERO;
+        return r.compareTo(BigDecimal.ZERO) != 0 || u.compareTo(BigDecimal.ZERO) != 0;
+    }
+
+    private Map<String, Object> mapBrokerPositionRow(
+            BrokerPositionTruthSnapshot.BrokerTruthPositionRow truth,
+            UUID userId,
+            ZerodhaBrokerOperationsService.BrokerStatusDto broker,
+            TraderExecutionModePreferenceDto mode,
+            List<StrategyInstance> strategyInstances,
+            Map<String, Instant> lastFillAtBySymbol,
+            Map<String, BigDecimal> netExecQtyBySymbol
+    ) {
+        String symbol = truth.symbol();
+        BigDecimal qty = truth.brokerQty() != null ? truth.brokerQty() : BigDecimal.ZERO;
+        BigDecimal avg = truth.brokerAvgPrice() != null ? truth.brokerAvgPrice() : BigDecimal.ZERO;
+        BigDecimal ltp = lastPrice(symbol);
+        BigDecimal realized = truth.brokerRealizedPnl() != null ? truth.brokerRealizedPnl() : BigDecimal.ZERO;
+        BigDecimal unreal = truth.brokerUnrealizedPnl() != null ? truth.brokerUnrealizedPnl() : BigDecimal.ZERO;
+
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("symbol", symbol);
+        row.put("side", qty.compareTo(BigDecimal.ZERO) >= 0 ? "LONG" : "SHORT");
+        row.put("qty", qty);
+        row.put("avgPrice", avg);
+        row.put("ltp", ltp);
+        row.put("mtmPnl", realized.add(unreal));
+        row.put("realizedPnl", realized);
+        row.put("unrealizedPnl", unreal);
+        row.put("exposurePct", BigDecimal.ZERO);
+        row.put("openTime", lastFillAtBySymbol.get(symbol) != null ? lastFillAtBySymbol.get(symbol).toString() : null);
+        row.put("brokerStatus", broker.health());
+        row.put("executionMode", mode.executionMode());
+        row.put("parityState", parityStateForBrokerRow(symbol, qty, netExecQtyBySymbol));
+        row.put("brokerQty", qty);
+        row.put("brokerSyncState", truth.rowSyncState());
+        row.put("brokerUnrealizedPnl", unreal);
+        row.put("product", truth.product());
+        row.put("strategySource", strategyKeysForSymbol(strategyInstances, symbol));
+        row.put("currentSignalState", latestSignalState(symbol, userId));
+        row.put("stopLoss", null);
+        row.put("trailingStop", null);
+        row.put("pnlSource", "BROKER");
+        return row;
+    }
+
+    private Map<String, Object> mapBrokerFlatRow(
+            BrokerPositionTruthSnapshot.BrokerTruthPositionRow truth,
+            UUID userId,
+            ZerodhaBrokerOperationsService.BrokerStatusDto broker,
+            TraderExecutionModePreferenceDto mode
+    ) {
+        BigDecimal realized = truth.brokerRealizedPnl() != null ? truth.brokerRealizedPnl() : BigDecimal.ZERO;
+        BigDecimal unreal = truth.brokerUnrealizedPnl() != null ? truth.brokerUnrealizedPnl() : BigDecimal.ZERO;
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("symbol", truth.symbol());
+        row.put("side", "FLAT");
+        row.put("qty", BigDecimal.ZERO);
+        row.put("avgPrice", truth.brokerAvgPrice() != null ? truth.brokerAvgPrice() : BigDecimal.ZERO);
+        row.put("ltp", lastPrice(truth.symbol()));
+        row.put("mtmPnl", realized.add(unreal));
+        row.put("realizedPnl", realized);
+        row.put("unrealizedPnl", unreal);
+        row.put("brokerStatus", broker.health());
+        row.put("executionMode", mode.executionMode());
+        row.put("parityState", "FLAT");
+        row.put("brokerQty", BigDecimal.ZERO);
+        row.put("brokerSyncState", truth.rowSyncState());
+        row.put("product", truth.product());
+        row.put("exitReason", "BROKER_DAY_FLAT");
+        row.put("pnlSource", "BROKER");
+        row.put("currentSignalState", latestSignalState(truth.symbol(), userId));
+        return row;
+    }
+
+    private static String parityStateForBrokerRow(
+            String symbol,
+            BigDecimal brokerQty,
+            Map<String, BigDecimal> netExecQtyBySymbol
+    ) {
+        BigDecimal execNet = execNetQtyForSymbol(symbol, netExecQtyBySymbol);
+        if (execNet.compareTo(brokerQty) == 0) {
+            return "SYNCED";
+        }
+        if (brokerQty.compareTo(BigDecimal.ZERO) != 0 && execNet.abs().compareTo(brokerQty.abs()) < 0) {
+            return "PARTIAL_FILL";
+        }
+        return "MISMATCH";
+    }
+
+    private static BigDecimal execNetQtyForSymbol(String symbol, Map<String, BigDecimal> netExecQtyBySymbol) {
+        if (netExecQtyBySymbol.containsKey(symbol)) {
+            return netExecQtyBySymbol.get(symbol);
+        }
+        String norm = BrokerPositionTruthService.normalizeSymbol(symbol);
+        for (Map.Entry<String, BigDecimal> entry : netExecQtyBySymbol.entrySet()) {
+            if (BrokerPositionTruthService.normalizeSymbol(entry.getKey()).equals(norm)) {
+                return entry.getValue();
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private static List<String> strategyKeysForSymbol(List<StrategyInstance> strategyInstances, String symbol) {
+        return strategyInstances.stream()
+                .filter(si -> symbol.equalsIgnoreCase(si.getSymbol())
+                        || BrokerPositionTruthService.normalizeSymbol(si.getSymbol()).equals(symbol))
+                .map(si -> si.getDefinition() != null ? si.getDefinition().getStrategyKey() : null)
+                .filter(s -> s != null && !s.isBlank())
+                .distinct()
+                .toList();
     }
 }

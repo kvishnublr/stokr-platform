@@ -7,7 +7,10 @@ import com.stokr.strategy.domain.StrategyUniverseSymbol;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.runtime.BindingScanThrottleService;
+import com.stokr.strategy.runtime.SignalCooldownService;
 import com.stokr.strategy.runtime.StrategyRegistry;
+import com.stokr.strategy.service.StrategyDailySignalCapService;
+import com.stokr.strategy.service.StrategySignalEntityMapper;
 import com.stokr.strategy.signals.StrategySignal;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.context.StrategyContext;
@@ -43,6 +46,8 @@ public class CatalogDrivenScanScheduler {
     private final StrategyRegistry strategyRegistry;
     private final StrategySignalPipelineService signalPipelineService;
     private final BindingScanThrottleService bindingScanThrottleService;
+    private final SignalCooldownService signalCooldownService;
+    private final StrategyDailySignalCapService dailySignalCapService;
     private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
 
     // Separate from the main scanner gate — catalog strategies (e.g. MCX) manage their own session hours
@@ -83,6 +88,10 @@ public class CatalogDrivenScanScheduler {
                 continue;
             }
             String strategyKey = binding.getStrategyCatalog().getStrategyKey();
+            if (dailySignalCapService.isOverCap(strategyKey, tick)) {
+                log.debug("catalog.scan.daily_cap strategyKey={}", strategyKey);
+                continue;
+            }
             TradingStrategy strategy = strategyRegistry.get(strategyKey);
 
             if (strategy == null) {
@@ -109,8 +118,11 @@ public class CatalogDrivenScanScheduler {
                     StrategySignal signal = strategy.evaluate(ctx);
 
                     if (signal != null && signal.type() != SignalType.HOLD) {
+                        if (!signalCooldownService.shouldEmitSignal(symbol, strategyKey, tick)) {
+                            continue;
+                        }
                         bindingSignals++;
-                        persistSignal(signal, strategyKey, symbol);
+                        persistSignal(signal, strategyKey, symbol, tick);
                         log.info("catalog.scan.signal strategyKey={} symbol={} type={} reason={}",
                                 strategyKey, symbol, signal.type(), signal.reason());
                     }
@@ -129,21 +141,17 @@ public class CatalogDrivenScanScheduler {
                 activeBindings.size(), totalSymbols, totalSignals, totalSkipped);
     }
 
-    private void persistSignal(StrategySignal signal, String strategyKey, String symbol) {
+    private void persistSignal(StrategySignal signal, String strategyKey, String symbol, Instant candleTime) {
         try {
-            StrategySignalEntity entity = new StrategySignalEntity();
-            entity.setSignalType(signal.type());
-            entity.setSymbol(symbol);
-            entity.setStrategyName(strategyKey);
-            entity.setStrategyVersion("1.0.0");
-            entity.setReasonText(signal.reason());
-            entity.setReason(signal.reason());
-            entity.setSuggestedQty(signal.suggestedQty() != null ? signal.suggestedQty() : BigDecimal.ONE);
-            entity.setCandleTimestamp(Instant.now());
-            entity.setUserId(systemUserId);
-            entity.setPipeline(executionMode);
-            entity.setHitTarget(false);
-            entity.setHitStoploss(false);
+            StrategySignalEntity entity = StrategySignalEntityMapper.baseEntity(
+                    signal,
+                    strategyKey,
+                    symbol,
+                    candleTime,
+                    systemUserId,
+                    executionMode,
+                    "2.0.0"
+            );
             signalPipelineService.persistAndDispatch(entity, UUID.randomUUID().toString(), executionMode);
         } catch (Exception ex) {
             log.warn("catalog.scan.persist_failed strategyKey={} symbol={} {}", strategyKey, symbol, ex.toString());

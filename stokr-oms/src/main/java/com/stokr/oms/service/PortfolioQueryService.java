@@ -44,8 +44,10 @@ public class PortfolioQueryService {
         int open = 0;
         for (PortfolioPosition p : positions) {
             realized = realized.add(nullSafe(p.getRealizedPnl()));
-            unrealized = unrealized.add(nullSafe(p.getUnrealizedPnl()));
-            if (p.getQuantity() != null && p.getQuantity().compareTo(BigDecimal.ZERO) != 0) {
+            BigDecimal qty = p.getQuantity();
+            boolean openQty = qty != null && qty.compareTo(BigDecimal.ZERO) != 0;
+            if (openQty) {
+                unrealized = unrealized.add(nullSafe(p.getUnrealizedPnl()));
                 open++;
             }
         }

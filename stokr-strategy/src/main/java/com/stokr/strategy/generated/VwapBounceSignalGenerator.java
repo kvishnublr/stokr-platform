@@ -1,9 +1,9 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
-import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
+import com.stokr.strategy.service.StrategyCandleLoader;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
@@ -59,7 +59,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     private static final int BARS_FETCH = 120;  // ~2 hours of 1m bars
     private static final int MIN_BARS_FOR_VWAP = 15;  // Need at least 15 min of session
 
-    private final MarketDataQueryService marketDataQueryService;
+    private final StrategyCandleLoader candleLoader;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -70,32 +70,35 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     // ═══════════════════════════════════════════════════════════════════════════
 
     /** Maximum distance from VWAP to qualify as "touch" (% of price) */
-    @Value("${stokr.vwapbounce.touch-threshold-pct:0.20}")
+    @Value("${stokr.strategy.vwapbounce.touch-threshold-pct:0.12}")
     private double touchThresholdPct;
 
     /** Minimum VWAP slope per bar to confirm trend direction (% per bar) */
-    @Value("${stokr.vwapbounce.min-slope-pct:0.001}")
+    @Value("${stokr.strategy.vwapbounce.min-slope-pct:0.002}")
     private double minSlopePct;
 
     /** Minimum volume multiple on touch bar vs session average */
-    @Value("${stokr.vwapbounce.min-volume-multiple:0.8}")
+    @Value("${stokr.strategy.vwapbounce.min-volume-multiple:1.0}")
     private double minVolumeMultiple;
 
     /** Bounce confirmation: close must be this % away from VWAP in trend direction */
-    @Value("${stokr.vwapbounce.bounce-confirm-pct:0.04}")
+    @Value("${stokr.strategy.vwapbounce.bounce-confirm-pct:0.06}")
     private double bounceConfirmPct;
 
     /** Target: sigma multiplier from VWAP (1.0 = 1 std dev) */
-    @Value("${stokr.vwapbounce.target-sigma:1.0}")
+    @Value("${stokr.strategy.vwapbounce.target-sigma:1.0}")
     private double targetSigma;
 
     /** Stop: sigma multiplier below VWAP */
-    @Value("${stokr.vwapbounce.stop-sigma:0.5}")
+    @Value("${stokr.strategy.vwapbounce.stop-sigma:0.5}")
     private double stopSigma;
 
     /** Cooldown seconds */
-    @Value("${stokr.vwapbounce.cooldown-seconds:300}")
+    @Value("${stokr.strategy.vwapbounce.cooldown-seconds:600}")
     private int cooldownSeconds;
+
+    @Value("${stokr.strategy.vwapbounce.min-risk-reward:1.2}")
+    private double minRiskReward;
 
     @Override
     public String key() {
@@ -119,7 +122,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
         // ─────────────────────────────────────────────────────────────────────
         // 2. LOAD SESSION BARS
         // ─────────────────────────────────────────────────────────────────────
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, "1m", BARS_FETCH);
+        List<MarketdataCandle> bars = candleLoader.bars(context, "1m", BARS_FETCH);
         if (bars.size() < MIN_BARS_FOR_VWAP) {
             return hold(context);
         }
@@ -219,11 +222,9 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
         // ─────────────────────────────────────────────────────────────────────
         // 7. VOLUME SURGE: Touch bar should have above-average volume
         // ─────────────────────────────────────────────────────────────────────
-        // Volume check is soft — broker feed provides tick counts, not actual volume
         double avgVol = totalVol / (lastIdx + 1);
         double volRatio = avgVol > 0 ? currentVolume / avgVol : 1.0;
-        // Only reject extremely low volume — data is tick-count granularity
-        if (volRatio < 0.3) {
+        if (volRatio < minVolumeMultiple) {
             log.debug("vwapbounce.very_low_volume symbol={} ratio={:.2f}", symbol, volRatio);
             return hold(context);
         }
@@ -272,6 +273,9 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
         }
 
         double rr = Math.abs(currentPrice - target) / Math.max(0.0001, Math.abs(currentPrice - stopLoss));
+        if (rr < minRiskReward) {
+            return hold(context);
+        }
         String reason = String.format(
             "VWAP_BOUNCE %s: vwap=%.2f sigma=%.2f dist=%.3f%% slope=%.4f%% " +
             "volRatio=%.1fx entry=%.2f target=%.2f sl=%.2f rr=%.2f",
@@ -281,7 +285,15 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
         );
 
         log.info("vwapbounce.signal symbol={} {}", symbol, reason);
-        return new StrategySignal(signalType, symbol, BigDecimal.ONE, reason);
+        return new StrategySignal(
+                signalType,
+                symbol,
+                BigDecimal.ONE,
+                reason,
+                BigDecimal.valueOf(currentPrice),
+                BigDecimal.valueOf(stopLoss),
+                BigDecimal.valueOf(target)
+        );
     }
 
     private int findSessionStart(List<MarketdataCandle> bars) {

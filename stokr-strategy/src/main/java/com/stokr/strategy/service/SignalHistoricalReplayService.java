@@ -131,19 +131,7 @@ public class SignalHistoricalReplayService {
     }
 
     private StrategySignalEntity toEntity(String strategyKey, String symbol, StrategySignal signal, Instant barTime) {
-        StrategySignalEntity entity = new StrategySignalEntity();
-        entity.setSignalType(signal.type());
-        entity.setSymbol(symbol);
-        entity.setStrategyName(strategyKey);
-        entity.setStrategyVersion("2.0.0");
-        entity.setReasonText(signal.reason());
-        entity.setReason(signal.reason());
-        entity.setSuggestedQty(signal.suggestedQty() != null ? signal.suggestedQty() : BigDecimal.ONE);
-        entity.setCandleTimestamp(barTime);
-        entity.setUserId(systemUserId);
-        entity.setPipeline(executionMode);
-        entity.setHitTarget(false);
-        entity.setHitStoploss(false);
-        return entity;
+        return StrategySignalEntityMapper.baseEntity(
+                signal, strategyKey, symbol, barTime, systemUserId, executionMode, "2.0.0");
     }
 }

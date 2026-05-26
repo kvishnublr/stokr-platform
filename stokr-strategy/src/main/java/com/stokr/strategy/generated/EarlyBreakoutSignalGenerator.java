@@ -1,9 +1,9 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
-import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
+import com.stokr.strategy.service.StrategyCandleLoader;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
@@ -62,7 +62,7 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
     private static final int OR_BARS = 6;       // First 30 min (6 x 5m bars) = opening range
     private static final int CONFIRM_BARS = 2;  // Bars that must hold outside OR
 
-    private final MarketDataQueryService marketDataQueryService;
+    private final StrategyCandleLoader candleLoader;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -73,40 +73,43 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
     // ═══════════════════════════════════════════════════════════════════════════
 
     /** Minimum opening range height as % of price (too small = noise) */
-    @Value("${stokr.earlybreakout.min-range-pct:0.10}")
+    @Value("${stokr.strategy.earlybreakout.min-range-pct:0.10}")
     private double minRangePct;
 
     /** Maximum opening range height as % (too wide = no clear breakout level) */
-    @Value("${stokr.earlybreakout.max-range-pct:2.5}")
+    @Value("${stokr.strategy.earlybreakout.max-range-pct:2.5}")
     private double maxRangePct;
 
     /** Minimum volume multiple on breakout bar vs OR average */
-    @Value("${stokr.earlybreakout.min-volume-multiple:0.8}")
+    @Value("${stokr.strategy.earlybreakout.min-volume-multiple:1.2}")
     private double minVolumeMultiple;
 
     /** Minimum body-to-range ratio on breakout bar (strong close) */
-    @Value("${stokr.earlybreakout.min-body-ratio:0.40}")
+    @Value("${stokr.strategy.earlybreakout.min-body-ratio:0.50}")
     private double minBodyRatio;
 
     /** Breakout must exceed OR high/low by at least this % to confirm */
-    @Value("${stokr.earlybreakout.breakout-exceed-pct:0.02}")
+    @Value("${stokr.strategy.earlybreakout.breakout-exceed-pct:0.05}")
     private double breakoutExceedPct;
 
     /** Compression filter: OR range must be <= this multiple of average bar range */
-    @Value("${stokr.earlybreakout.max-compression-ratio:5.0}")
+    @Value("${stokr.strategy.earlybreakout.max-compression-ratio:5.0}")
     private double maxCompressionRatio;
 
     /** Stop buffer beyond opposite side of OR */
-    @Value("${stokr.earlybreakout.sl-buffer-pct:0.20}")
+    @Value("${stokr.strategy.earlybreakout.sl-buffer-pct:0.20}")
     private double slBufferPct;
 
     /** Target: measured move (range height projected from breakout) multiplier */
-    @Value("${stokr.earlybreakout.target-multiplier:1.0}")
+    @Value("${stokr.strategy.earlybreakout.target-multiplier:1.0}")
     private double targetMultiplier;
 
     /** Cooldown seconds */
-    @Value("${stokr.earlybreakout.cooldown-seconds:300}")
+    @Value("${stokr.strategy.earlybreakout.cooldown-seconds:600}")
     private int cooldownSeconds;
+
+    @Value("${stokr.strategy.earlybreakout.min-risk-reward:1.2}")
+    private double minRiskReward;
 
     @Override
     public String key() {
@@ -130,7 +133,7 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
         // ─────────────────────────────────────────────────────────────────────
         // 2. LOAD SESSION BARS (5m timeframe)
         // ─────────────────────────────────────────────────────────────────────
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, "5m", BARS_FETCH);
+        List<MarketdataCandle> bars = candleLoader.bars(context, "5m", BARS_FETCH);
         if (bars.size() < OR_BARS + CONFIRM_BARS + 1) {
             return hold(context);
         }
@@ -274,6 +277,9 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
         }
 
         double rr = Math.abs(currentClose - target) / Math.max(0.0001, Math.abs(currentClose - stopLoss));
+        if (rr < minRiskReward) {
+            return hold(context);
+        }
         String reason = String.format(
             "EARLY_BREAKOUT %s: orHigh=%.2f orLow=%.2f orRange=%.2f%% " +
             "bodyRatio=%.2f volRatio=%.1fx holdBars=%d " +
@@ -284,7 +290,15 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
         );
 
         log.info("earlybreakout.signal symbol={} {}", symbol, reason);
-        return new StrategySignal(signalType, symbol, BigDecimal.ONE, reason);
+        return new StrategySignal(
+                signalType,
+                symbol,
+                BigDecimal.ONE,
+                reason,
+                BigDecimal.valueOf(currentClose),
+                BigDecimal.valueOf(stopLoss),
+                BigDecimal.valueOf(target)
+        );
     }
 
     private int findTodaySessionStart(List<MarketdataCandle> bars) {
