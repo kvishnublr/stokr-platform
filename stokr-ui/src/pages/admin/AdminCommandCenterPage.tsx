@@ -32,10 +32,12 @@ import {
   adminStagger,
 } from "../../components/admin/institutional/AdminDesignSystem";
 import { LivePlatformTopology } from "../../components/admin/institutional/experience/LivePlatformTopology";
+import { OperationalInsightsStrip } from "../../components/admin/institutional/experience/RiskTerminalPanels";
+import { extractOmsLatencyMs, buildOperationalInsights } from "../../lib/adminOperationalIntelligence";
+import { fetchRiskDashboard } from "../../api/riskDashboard";
 
 function extractLatencyMs(snapshot: OpsSnapshot | undefined): string {
-  const oms = asRecord(snapshot?.oms);
-  const v = oms?.avgLatencyMs ?? oms?.p95LatencyMs ?? oms?.latencyMs;
+  const v = extractOmsLatencyMs(snapshot);
   return v != null ? `${fmtNum(v, 0)}ms` : "—";
 }
 
@@ -81,7 +83,15 @@ export function AdminCommandCenterPage() {
     retry: 2,
   });
 
+  const riskQ = useQuery({
+    queryKey: ["admin-risk-dashboard"],
+    queryFn: fetchRiskDashboard,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+
   const snapshot = snapshotQ.data;
+  const insights = buildOperationalInsights(snapshot, riskQ.data, []);
   const readiness = computeSystemReadiness(snapshot);
   const brokerLive = hasActiveBrokerMarketFeed(snapshot);
   const killOn = Boolean(health.data?.killSwitch);
@@ -161,6 +171,7 @@ export function AdminCommandCenterPage() {
       }
     >
       <motion.div variants={adminStagger} initial="hidden" animate="show" className="space-y-8">
+        <OperationalInsightsStrip insights={insights} isLight={isLight} />
         <LivePlatformTopology snapshot={snapshot} isLight={isLight} />
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

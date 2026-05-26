@@ -1,11 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, ShieldOff, Zap, RefreshCw, Activity } from "lucide-react";
-import { fetchRiskDashboard, type StrategyRiskStateDto } from "../../api/riskDashboard";
+import { AlertTriangle, RefreshCw } from "lucide-react";
+import { fetchRiskDashboard, fetchGlobalCapital, type StrategyRiskStateDto } from "../../api/riskDashboard";
+import { fetchReconciliationEvents, triggerReconciliationRun } from "../../api/reconciliation";
 import { patchExecutionConfig, fetchExecutionConfigs } from "../../api/executionConfig";
 import { useUiThemeStore } from "../../state/uiTheme";
-import { AdminPageShell, AdminPanel } from "../../components/admin/institutional/AdminDesignSystem";
+import { AdminPageShell, AdminSection } from "../../components/admin/institutional/AdminDesignSystem";
+import {
+  BrokerDivergencePanel,
+  DrawdownEnginePanel,
+  KillSwitchCenterPanel,
+  LiveExposureMapPanel,
+  RiskHeatmapGrid,
+} from "../../components/admin/institutional/experience/RiskTerminalPanels";
 import { fmtDateTime } from "../../lib/dateUtils";
+import { cn } from "../../lib/utils";
 
 const QK = ["admin-risk-dashboard"] as const;
 const CFG_QK = ["admin-execution-configs"] as const;
@@ -26,6 +35,24 @@ export function AdminRiskDashboardPage() {
     refetchInterval: 30_000,
   });
 
+  const capitalQ = useQuery({
+    queryKey: ["admin-global-capital"],
+    queryFn: fetchGlobalCapital,
+    refetchInterval: 30_000,
+  });
+
+  const reconQ = useQuery({
+    queryKey: ["admin-reconciliation-events"],
+    queryFn: () => fetchReconciliationEvents("ALL", 50),
+    refetchInterval: 20_000,
+  });
+
+  const snapshotQ = useQuery({
+    queryKey: ADMIN_OPS_SNAPSHOT_KEY,
+    queryFn: fetchAdminOpsSnapshotMerged,
+    staleTime: 10_000,
+  });
+
   const { data: configs } = useQuery({
     queryKey: CFG_QK,
     queryFn: fetchExecutionConfigs,
@@ -40,6 +67,15 @@ export function AdminRiskDashboardPage() {
       qc.invalidateQueries({ queryKey: CFG_QK });
     },
     onError: () => toast.error("Failed to update emergency stop"),
+  });
+
+  const reconMut = useMutation({
+    mutationFn: triggerReconciliationRun,
+    onSuccess: () => {
+      toast.success("Reconciliation run triggered");
+      void qc.invalidateQueries({ queryKey: ["admin-reconciliation-events"] });
+    },
+    onError: () => toast.error("Reconciliation trigger failed"),
   });
 
   function handleEmergencyStop(row: StrategyRiskStateDto, stop: boolean) {
@@ -62,131 +98,122 @@ export function AdminRiskDashboardPage() {
       isLight={isLight}
       eyebrow="Risk & exposure"
       title="Risk Terminal"
-      subtitle="Live drawdown, emergency stops, strategy limits, and reconciliation alerts."
+      subtitle="Live exposure map, drawdown engine, broker divergence, kill switch center, and risk heatmaps."
       actions={
-        <span className="text-xs text-muted-foreground">
-          Updated {dataUpdatedAt ? fmtDateTime(new Date(dataUpdatedAt).toISOString()) : "—"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            Updated {dataUpdatedAt ? fmtDateTime(new Date(dataUpdatedAt).toISOString()) : "—"}
+          </span>
+          <button
+            type="button"
+            onClick={() => { void qc.invalidateQueries({ queryKey: QK }); void reconQ.refetch(); }}
+            className={cn("rounded-lg border px-2 py-1 text-xs", isLight ? "border-neutral-300" : "border-neutral-700")}
+          >
+            <RefreshCw className="inline h-3.5 w-3.5" /> Refresh
+          </button>
+        </div>
       }
       alert={
-        data.killSwitchActive || data.brokerHalt ? (
+        data.killSwitchActive || data.brokerHalt || data.openReconciliationAlerts > 0 ? (
           <div className="flex items-center gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
             <AlertTriangle className="h-5 w-5 shrink-0" />
             <span>
               {data.killSwitchActive ? "Global kill switch is ACTIVE. " : ""}
-              {data.brokerHalt ? "Broker halt engaged." : ""}
+              {data.brokerHalt ? "Broker halt engaged. " : ""}
+              {data.openReconciliationAlerts > 0 ? `${data.openReconciliationAlerts} recon alert(s).` : ""}
             </span>
           </div>
         ) : undefined
       }
     >
-    <div className="space-y-6">
+      <div className="space-y-6">
+        <KillSwitchCenterPanel risk={data} isLight={isLight} onEmergencyStop={(key, stop) => {
+          const row = data.strategyRiskStates.find((r) => r.strategyKey === key);
+          if (row) handleEmergencyStop(row, stop);
+        }} />
 
-      {/* Global state row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Pill label="Kill Switch" active={data.killSwitchActive} danger />
-        <Pill label="Broker Halt" active={data.brokerHalt} danger />
-        <Pill label="Live Armed" active={data.liveTradingArmed} />
-        <Pill label="Recon Alerts" value={String(data.openReconciliationAlerts)} danger={data.openReconciliationAlerts > 0} />
-      </div>
+        <AdminSection isLight={isLight} title="Risk heatmaps" subtitle="Concentration, volatility, PnL instability, queue congestion, broker instability">
+          <RiskHeatmapGrid risk={data} isLight={isLight} />
+        </AdminSection>
 
-      {/* Today's OMS stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <StatCard label="Today Orders" value={data.todayOrders} />
-        <StatCard label="Today Fills" value={data.todayFills} />
-        <StatCard label="Today Rejects" value={data.todayRejects} danger={data.todayRejects > 0} />
-      </div>
-
-      {/* Per-strategy table */}
-      <div className="rounded-md border overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40">
-            <tr>
-              {["Strategy", "Mode", "Enabled", "Live", "E-Stop", "Today PnL / Limit", "Positions", ""].map((h) => (
-                <th key={h} className="text-left px-3 py-2 font-medium text-muted-foreground">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.strategyRiskStates.map((row) => (
-              <tr key={row.strategyKey} className="border-t hover:bg-muted/20">
-                <td className="px-3 py-2 font-mono text-xs">{row.strategyKey}</td>
-                <td className="px-3 py-2">
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${
-                    row.executionMode === "LIVE" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
-                    row.executionMode === "BOTH" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
-                    "bg-muted text-muted-foreground"}`}>
-                    {row.executionMode}
-                  </span>
-                </td>
-                <td className="px-3 py-2">{row.enabled ? "✓" : <span className="text-muted-foreground">—</span>}</td>
-                <td className="px-3 py-2">{row.liveEnabled ? <span className="text-green-500">✓</span> : <span className="text-muted-foreground">—</span>}</td>
-                <td className="px-3 py-2">
-                  {row.emergencyStopEnabled
-                    ? <span className="text-red-500 font-semibold">STOP</span>
-                    : <span className="text-muted-foreground">—</span>}
-                </td>
-                <td className={`px-3 py-2 ${pnlColor(row.todayPnl, row.dailyLossLimit)}`}>
-                  {row.todayPnl != null ? row.todayPnl.toFixed(2) : "—"}
-                  {row.dailyLossLimit != null && <span className="text-muted-foreground text-xs"> / {row.dailyLossLimit}</span>}
-                </td>
-                <td className="px-3 py-2">
-                  {row.openPositions} / {row.maxPositions}
-                </td>
-                <td className="px-3 py-2">
-                  {row.emergencyStopEnabled ? (
-                    <button
-                      className="text-xs px-2 py-1 rounded border border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
-                      onClick={() => handleEmergencyStop(row, false)}
-                      disabled={stopMutation.isPending}
-                    >
-                      Clear Stop
-                    </button>
-                  ) : (
-                    <button
-                      className="text-xs px-2 py-1 rounded border border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                      onClick={() => handleEmergencyStop(row, true)}
-                      disabled={stopMutation.isPending}
-                    >
-                      Emergency Stop
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {data.strategyRiskStates.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">No strategy configs found</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    </AdminPageShell>
-  );
-}
-
-function Pill({ label, active, value, danger }: { label: string; active?: boolean; value?: string; danger?: boolean }) {
-  const isOn = active || (value != null && value !== "0");
-  return (
-    <div className={`rounded-lg border px-4 py-3 flex items-center gap-2 ${danger && isOn ? "border-red-400 bg-red-50 dark:bg-red-900/20" : "bg-card"}`}>
-      <Activity className={`h-4 w-4 ${danger && isOn ? "text-red-500" : isOn ? "text-green-500" : "text-muted-foreground"}`} />
-      <div>
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className={`text-sm font-semibold ${danger && isOn ? "text-red-500" : isOn ? "text-green-500" : "text-muted-foreground"}`}>
-          {value ?? (active ? "ACTIVE" : "OFF")}
+        <div className="grid gap-4 xl:grid-cols-2">
+          <LiveExposureMapPanel risk={data} capital={capitalQ.data} isLight={isLight} />
+          <DrawdownEnginePanel risk={data} isLight={isLight} />
         </div>
-      </div>
-    </div>
-  );
-}
 
-function StatCard({ label, value, danger }: { label: string; value: number; danger?: boolean }) {
-  return (
-    <div className="rounded-lg border px-4 py-3 bg-card">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={`text-2xl font-bold ${danger && value > 0 ? "text-red-500" : ""}`}>{value}</div>
-    </div>
+        <BrokerDivergencePanel
+          events={reconQ.data ?? []}
+          isLight={isLight}
+          onReconcile={() => reconMut.mutate()}
+        />
+
+        <AdminSection isLight={isLight} title="Strategy risk state" subtitle="Per-strategy limits, PnL, and emergency stops">
+          <div className="rounded-md border overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40">
+                <tr>
+                  {["Strategy", "Mode", "Enabled", "Live", "E-Stop", "Today PnL / Limit", "Positions", ""].map((h) => (
+                    <th key={h} className="text-left px-3 py-2 font-medium text-muted-foreground">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.strategyRiskStates.map((row) => (
+                  <tr key={row.strategyKey} className="border-t hover:bg-muted/20">
+                    <td className="px-3 py-2 font-mono text-xs">{row.strategyKey}</td>
+                    <td className="px-3 py-2">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        row.executionMode === "LIVE" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+                        row.executionMode === "BOTH" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                        "bg-muted text-muted-foreground"}`}>
+                        {row.executionMode}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">{row.enabled ? "✓" : <span className="text-muted-foreground">—</span>}</td>
+                    <td className="px-3 py-2">{row.liveEnabled ? <span className="text-green-500">✓</span> : <span className="text-muted-foreground">—</span>}</td>
+                    <td className="px-3 py-2">
+                      {row.emergencyStopEnabled
+                        ? <span className="text-red-500 font-semibold">STOP</span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className={`px-3 py-2 ${pnlColor(row.todayPnl, row.dailyLossLimit)}`}>
+                      {row.todayPnl != null ? row.todayPnl.toFixed(2) : "—"}
+                      {row.dailyLossLimit != null && <span className="text-muted-foreground text-xs"> / {row.dailyLossLimit}</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      {row.openPositions} / {row.maxPositions}
+                    </td>
+                    <td className="px-3 py-2">
+                      {row.emergencyStopEnabled ? (
+                        <button
+                          className="text-xs px-2 py-1 rounded border border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+                          onClick={() => handleEmergencyStop(row, false)}
+                          disabled={stopMutation.isPending}
+                        >
+                          Clear Stop
+                        </button>
+                      ) : (
+                        <button
+                          className="text-xs px-2 py-1 rounded border border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          onClick={() => handleEmergencyStop(row, true)}
+                          disabled={stopMutation.isPending}
+                        >
+                          Emergency Stop
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {data.strategyRiskStates.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">No strategy configs found</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </AdminSection>
+      </div>
+    </AdminPageShell>
   );
 }

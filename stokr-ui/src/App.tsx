@@ -36,6 +36,7 @@ import { AdminAuditPage } from "./pages/admin/AdminAuditPage";
 import { AdminBackfillPage } from "./pages/admin/AdminBackfillPage";
 import { AdminExecutionPage } from "./pages/admin/AdminExecutionPage";
 import { AdminExecutionConfigPage } from "./pages/admin/AdminExecutionConfigPage";
+import { AdminResearchLabPage } from "./pages/admin/AdminResearchLabPage";
 import { AdminRiskDashboardPage } from "./pages/admin/AdminRiskDashboardPage";
 import { AdminCapitalPage } from "./pages/admin/AdminCapitalPage";
 import { AdminHistoryPage } from "./pages/admin/AdminHistoryPage";
@@ -247,6 +248,7 @@ export default function App() {
               <Route path="signals" element={<AdminSignalsPage />} />
               <Route path="signal-replay" element={<AdminSignalReplayPage />} />
               <Route path="signal-lab" element={<AdminSignalLabPage />} />
+              <Route path="research-lab" element={<AdminResearchLabPage />} />
               <Route path="execution" element={<AdminExecutionPage />} />
               <Route path="traders-health" element={<AdminTraderHealthPage />} />
               <Route path="backfill" element={<AdminBackfillPage />} />

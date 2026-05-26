@@ -3,6 +3,13 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { cn } from "../../../../lib/utils";
 import { AdminPulseDot } from "../AdminDesignSystem";
+import {
+  RejectionWaterfallPanel,
+  StrategyDnaPanel,
+  StrategyMarketFitPanel,
+} from "./StrategyIntelligenceLayer";
+import type { OpsSnapshot } from "../../cockpit/opsTypes";
+import type { StrategyEngineIntelInput } from "../../../../lib/adminOperationalIntelligence";
 
 export type StrategyEngineData = {
   id: string;
@@ -33,20 +40,41 @@ function whyNotFiring(s: StrategyEngineData): string[] {
   return reasons.slice(0, 3);
 }
 
+function toIntelInput(s: StrategyEngineData, marketRegime?: string): StrategyEngineIntelInput {
+  return {
+    code: s.code,
+    enabled: s.enabled,
+    visibleToUsers: s.visibleToUsers,
+    riskLevel: s.riskLevel,
+    signalsToday: s.signalsToday,
+    runningInstances: s.runningInstances,
+    scanFailures: s.scanFailures,
+    haltedReason: s.haltedReason,
+    boundGroups: s.boundGroups,
+    lastSignalAt: s.lastSignalAt,
+    marketRegime,
+  };
+}
+
 export function StrategyEngineCard({
   strategy,
   isLight,
   onToggleEnabled,
   onToggleVisible,
   bindingSlot,
+  marketRegime,
+  opsSnapshot,
 }: {
   strategy: StrategyEngineData;
   isLight: boolean;
   onToggleEnabled: () => void;
   onToggleVisible: () => void;
   bindingSlot?: React.ReactNode;
+  marketRegime?: string;
+  opsSnapshot?: OpsSnapshot;
 }) {
   const reasons = whyNotFiring(strategy);
+  const intel = toIntelInput(strategy, marketRegime);
   const firing = strategy.enabled && (strategy.signalsToday ?? 0) > 0 && (strategy.runningInstances ?? 0) > 0;
   const healthPct = firing ? 78 : strategy.enabled ? 42 : 12;
 
@@ -118,6 +146,13 @@ export function StrategyEngineCard({
           </div>
         ))}
       </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <StrategyDnaPanel code={strategy.code} riskLevel={strategy.riskLevel} isLight={isLight} />
+        <StrategyMarketFitPanel engine={intel} snapshot={opsSnapshot} isLight={isLight} />
+      </div>
+
+      {!firing ? <div className="mt-3"><RejectionWaterfallPanel engine={intel} isLight={isLight} /></div> : null}
 
       {!firing && reasons.length > 0 ? (
         <div className={cn("mt-4 rounded-xl border px-3 py-2.5", isLight ? "border-amber-200 bg-amber-50/80" : "border-amber-500/30 bg-amber-500/10")}>

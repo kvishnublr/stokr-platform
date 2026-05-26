@@ -10,6 +10,7 @@ import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
 import { fetchAdminOpsSnapshotMerged } from "../lib/fetchAdminOpsSnapshotMerged";
 import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
+import { OperatorConsole } from "../components/admin/institutional/experience/OperatorConsole";
 
 /**
  * Wraps all `/admin/*` content: shared operations snapshot + SSE, persistent global ops header,
@@ -99,6 +100,7 @@ export function AdminConsoleLayout() {
       <div className="flex min-h-0 flex-1 flex-col">
         <Outlet />
       </div>
+      <OperatorConsole isLight={isLight} />
     </div>
   );
 }

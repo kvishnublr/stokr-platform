@@ -8,6 +8,11 @@ import { cn } from "../../lib/utils";
 import { AdminPageShell, AdminPanel, AdminSection } from "../../components/admin/institutional/AdminDesignSystem";
 import { LiveSignalCard } from "../../components/admin/institutional/experience/LiveSignalCard";
 import { SignalQualityEngine } from "../../components/admin/institutional/experience/SignalQualityEngine";
+import {
+  SignalClusterStormPanel,
+  SignalConfidenceEnginePanel,
+  SignalReplayIntelPanel,
+} from "../../components/admin/institutional/experience/SignalIntelligenceOS";
 import { SignalLifecycleTimeline, StrategyPerformanceHeatmap } from "../../components/admin/institutional/experience/SignalLifecycleTimeline";
 import { resolveProvenance } from "../../components/admin/institutional/experience/provenanceTheme";
 import {
@@ -580,8 +585,8 @@ export function AdminSignalsPage() {
     <AdminPageShell
       isLight={isLight}
       eyebrow="Strategies & signals"
-      title="Signal Intelligence War Room"
-      subtitle="Live signal stream, quality engine, lifecycle timeline, and strategy clusters — production and lab surfaces are visually isolated."
+      title="Live Signal Operating System"
+      subtitle="Predictive signal intelligence — confidence engine, false breakout detection, cluster storms, and live replay trust surfaces."
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <Link
@@ -613,6 +618,15 @@ export function AdminSignalsPage() {
     >
       <div className="space-y-6">
         <SignalQualityEngine stats={stats} isLight={isLight} />
+
+        <AdminSection isLight={isLight} title="Signal cluster detection" subtitle="Storms, heat waves, and correlated firing">
+          <SignalClusterStormPanel signals={filteredRows} isLight={isLight} />
+        </AdminSection>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <SignalConfidenceEnginePanel signal={selectedRow} isLight={isLight} />
+          <SignalReplayIntelPanel signal={selectedRow} isLight={isLight} />
+        </div>
 
         <div className="flex flex-wrap gap-2">
           {(["PROD", "REPLAY_LAB"] as const).map((tab) => (

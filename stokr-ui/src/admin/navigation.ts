@@ -154,6 +154,14 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         keywords: ["replay", "historical"],
       },
       {
+        to: "/admin/research-lab",
+        label: "Research Lab",
+        description: "Walk-forward, regime matrix, false breakout analysis",
+        icon: FileBarChart,
+        tier: "frequent",
+        keywords: ["research", "quant", "backtest"],
+      },
+      {
         to: "/admin/strategy-catalog",
         label: "Strategy Catalog",
         description: "Create and manage strategy definitions",

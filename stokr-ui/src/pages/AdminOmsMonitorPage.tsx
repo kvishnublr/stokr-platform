@@ -5,6 +5,15 @@ import { api } from "../api/client";
 import { useUiThemeStore } from "../state/uiTheme";
 import { AdminPageShell } from "../components/admin/institutional/AdminDesignSystem";
 import { ExecutionLaneVisualization } from "../components/admin/institutional/experience/ExecutionLaneVisualization";
+import {
+  BrokerTruthScorePanel,
+  ExecutionLatencyVisualizer,
+  ExecutionStateMachinePanel,
+  PositionTruthPanel,
+} from "../components/admin/institutional/experience/ExecutionTruthPanels";
+import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
+import { fetchAdminOpsSnapshotMerged } from "../lib/fetchAdminOpsSnapshotMerged";
+import { fetchReconciliationEvents } from "../api/reconciliation";
 import { cn } from "../lib/utils";
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, X,
@@ -340,6 +349,18 @@ export function AdminOmsMonitorPage() {
     staleTime: 15_000,
   });
 
+  const snapshotQ = useQuery({
+    queryKey: ADMIN_OPS_SNAPSHOT_KEY,
+    queryFn: fetchAdminOpsSnapshotMerged,
+    staleTime: 10_000,
+  });
+
+  const reconQ = useQuery({
+    queryKey: ["admin-reconciliation-events"],
+    queryFn: () => fetchReconciliationEvents("ALL", 50),
+    refetchInterval: 20_000,
+  });
+
   const rejectReasonsQ = useQuery<{ reason: string; count: number }[]>({
     queryKey: ["admin-oms-reject-reasons"],
     queryFn: async () => (await api.get("/api/admin/oms/reject-reasons")).data?.data ?? [],
@@ -413,8 +434,8 @@ export function AdminOmsMonitorPage() {
     <AdminPageShell
       isLight={isLight}
       eyebrow="Trading operations"
-      title="Execution Monitor"
-      subtitle="Institutional OMS surveillance — live execution lanes, order lifecycle, and broker truth."
+      title="Execution Truth Platform"
+      subtitle="Live execution state machine, broker truth confidence, position truth, and latency propagation."
       actions={
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => expireMut.mutate()} disabled={expireMut.isPending}
@@ -430,6 +451,16 @@ export function AdminOmsMonitorPage() {
     >
     <div className="space-y-6">
       <ExecutionLaneVisualization stats={stats} isLight={isLight} />
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <BrokerTruthScorePanel snapshot={snapshotQ.data} reconEvents={reconQ.data ?? []} isLight={isLight} />
+        <ExecutionLatencyVisualizer snapshot={snapshotQ.data} isLight={isLight} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <ExecutionStateMachinePanel orderState={selectedOrder?.state ?? q.data?.content?.[0]?.state ?? null} isLight={isLight} />
+        <PositionTruthPanel reconEvents={reconQ.data ?? []} isLight={isLight} />
+      </div>
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
           <StatCard label="Orders Today" value={(stats?.totalToday ?? 0).toLocaleString()} sub={`${(stats?.totalAllTime ?? 0).toLocaleString()} all-time`} accent="border-l-blue-500" icon={Activity} />

@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { AlertCircle, Cpu, Radio, Shield, TrendingUp, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { cn } from "../../../../lib/utils";
+import { buildTopologyLoad, extractOmsLatencyMs } from "../../../../lib/adminOperationalIntelligence";
 import { asArray, asRecord, type OpsSnapshot } from "../../cockpit/opsTypes";
 
 type NodeDef = {
@@ -58,7 +59,7 @@ export function LivePlatformTopology({ snapshot, isLight }: { snapshot: OpsSnaps
       icon: Cpu,
       status: String(oms?.health ?? oms?.status ?? "—"),
       tone: oms?.health === "DEGRADED" ? "warn" : "ok",
-      delayMs: typeof oms?.avgLatencyMs === "number" ? Number(oms.avgLatencyMs) : undefined,
+      delayMs: extractOmsLatencyMs(snapshot) ?? undefined,
       to: "/admin/oms",
     },
     {
@@ -72,6 +73,7 @@ export function LivePlatformTopology({ snapshot, isLight }: { snapshot: OpsSnaps
   ];
 
   const incidents = asArray(snapshot?.incidents)?.length ?? 0;
+  const load = buildTopologyLoad(snapshot);
 
   return (
     <div
@@ -154,6 +156,36 @@ export function LivePlatformTopology({ snapshot, isLight }: { snapshot: OpsSnaps
           );
         })}
       </div>
+
+      <div className="relative mt-5 grid grid-cols-2 gap-2 border-t border-dashed pt-4 sm:grid-cols-3 lg:grid-cols-5">
+        {[
+          { label: "Queue congestion", value: `${load.queueCongestion}%`, hot: load.queueCongestion > 50 },
+          { label: "Throughput", value: load.throughput, hot: false },
+          { label: "Strategy load", value: `${load.strategyLoad}%`, hot: load.strategyLoad > 70 },
+          { label: "Latency propagation", value: load.latencyPropagation ? `${Math.round(load.latencyPropagation)}ms` : "—", hot: load.latencyPropagation > 600 },
+          { label: "Risk pressure", value: `${load.riskPressure}%`, hot: load.riskPressure > 55 },
+        ].map((m) => (
+          <div
+            key={m.label}
+            className={cn(
+              "rounded-lg border px-2.5 py-2",
+              m.hot
+                ? isLight ? "border-amber-300 bg-amber-50/70" : "border-amber-500/35 bg-amber-500/10"
+                : isLight ? "border-neutral-200 bg-white/60" : "border-neutral-800 bg-neutral-900/40",
+            )}
+          >
+            <p className="text-[9px] uppercase tracking-wide opacity-60">{m.label}</p>
+            <p className="font-mono text-xs font-bold">{m.value}</p>
+          </div>
+        ))}
+      </div>
+      {(load.brokerDegradation || load.replayActivity > 0) ? (
+        <p className={cn("relative mt-3 text-[10px]", isLight ? "text-neutral-500" : "text-neutral-400")}>
+          {load.brokerDegradation ? "Broker degradation detected · " : ""}
+          WS {load.websocketTraffic}
+          {load.replayActivity > 0 ? ` · ${load.replayActivity} replay job(s) active` : ""}
+        </p>
+      ) : null}
     </div>
   );
 }

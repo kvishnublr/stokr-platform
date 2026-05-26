@@ -14,6 +14,8 @@ import { asArray, asRecord } from "../components/admin/cockpit/opsTypes";
 import { useUiThemeStore } from "../state/uiTheme";
 import { AdminPageShell, AdminSection } from "../components/admin/institutional/AdminDesignSystem";
 import { StrategyEngineCard, StrategyControlTowerHeader, type StrategyEngineData } from "../components/admin/institutional/experience/StrategyEngineCard";
+import { StrategyCorrelationPanel } from "../components/admin/institutional/experience/StrategyIntelligenceLayer";
+import { extractMarketRegime } from "../lib/adminOperationalIntelligence";
 import { cn } from "../lib/utils";
 
 type StrategyRow = {
@@ -104,6 +106,8 @@ export function AdminStrategiesPage() {
   const scannerRows = asArray(asRecord(opsQ.data?.scannerTelemetry)?.strategyRows) ?? [];
   const statsByKey = new Map((signalStatsQ.data ?? []).map((s) => [String(s.strategyKey).toUpperCase(), s]));
 
+  const marketRegime = extractMarketRegime(opsQ.data);
+
   const engines: StrategyEngineData[] = (q.data?.content ?? []).map((s) => {
     const scan = asRecord(scannerRows.find((raw) => String(asRecord(raw)?.strategyKey ?? "").toUpperCase() === s.code.toUpperCase()));
     const stat = statsByKey.get(s.code.toUpperCase());
@@ -130,7 +134,7 @@ export function AdminStrategiesPage() {
       isLight={isLight}
       eyebrow="Strategies & signals"
       title="Strategy Control Tower"
-      subtitle="Live trading engines with health rings, signal quality, runtime posture, and explicit 'why not firing' diagnostics."
+      subtitle="Institutional strategy orchestration — DNA profiles, market fit engine, rejection waterfall, and correlation network."
       actions={<StrategyControlTowerHeader isLight={isLight} />}
     >
       <div className="mb-4 flex flex-wrap gap-2">
@@ -156,7 +160,8 @@ export function AdminStrategiesPage() {
         </div>
       ) : (
         <AdminSection isLight={isLight} title="Live strategy engines" subtitle={`${engines.filter((e) => e.enabled).length} enabled · ${engines.filter((e) => (e.signalsToday ?? 0) > 0).length} firing today`}>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <StrategyCorrelationPanel engines={engines} isLight={isLight} />
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
             {engines.map((engine) => {
               const allBindings = bindingsQ.data?.content ?? [];
               const bound = allBindings.filter((b) => b.strategyCatalogId === engine.id);
@@ -169,6 +174,8 @@ export function AdminStrategiesPage() {
                   key={engine.id}
                   strategy={engine}
                   isLight={isLight}
+                  marketRegime={marketRegime}
+                  opsSnapshot={opsQ.data}
                   onToggleEnabled={() => patch.mutate({ id: engine.id, body: { enabled: !engine.enabled } })}
                   onToggleVisible={() => patch.mutate({ id: engine.id, body: { visibleToUsers: !engine.visibleToUsers } })}
                   bindingSlot={
