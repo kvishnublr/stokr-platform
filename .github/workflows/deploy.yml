@@ -17,15 +17,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/contabo_deploy
+          chmod 600 ~/.ssh/contabo_deploy
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
       - name: Deploy on Contabo
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          key_path: ~/.ssh/contabo_deploy
+          port: 22
+          timeout: 60s
+          command_timeout: 45m
           script: |
+            set -euo pipefail
             cd ${{ secrets.DEPLOY_PATH }}
             git fetch origin Release_v1
+            git checkout Release_v1
             git pull origin Release_v1
-            chmod +x ./deploy.sh
-            ./deploy.sh
+            chmod +x ./deploy.sh ./health-check.sh
+            ./health-check.sh restart || true
+            ./deploy.sh api ui
+            ./health-check.sh status || true
+            curl -sf http://127.0.0.1:8080/actuator/health
+            curl -sf -o /dev/null -w "ui_http=%{http_code}\n" http://127.0.0.1:3000/
