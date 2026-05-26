@@ -4,6 +4,13 @@ import { toast } from "sonner";
 import { cn } from "../../../../lib/utils";
 import { AdminHeatCell } from "../AdminDesignSystem";
 import {
+  mapInsightTone,
+  toneButtonClasses,
+  toneChipClasses,
+  toneEyebrowClasses,
+  toneSectionClasses,
+} from "../../../../lib/statusTone";
+import {
   buildDrawdownEngine,
   buildExposureMap,
   type OperationalInsight,
@@ -66,26 +73,26 @@ export function DrawdownEnginePanel({ risk, isLight }: { risk: AdminRiskDashboar
       </p>
       <div className="mt-3 flex flex-wrap items-end gap-4">
         <div>
-          <p className="text-[10px] uppercase opacity-60">Session PnL</p>
+          <p className={cn("text-[10px] uppercase", isLight ? "text-neutral-600" : "text-neutral-400")}>Session PnL</p>
           <p className={cn("text-2xl font-bold tabular-nums", dd.sessionPnl >= 0 ? "text-emerald-500" : "text-rose-500")}>
             {dd.sessionPnl >= 0 ? "+" : ""}{dd.sessionPnl.toFixed(0)}
           </p>
         </div>
         <div>
-          <p className="text-[10px] uppercase opacity-60">Rolling stress</p>
-          <p className="text-2xl font-bold tabular-nums">{dd.rollingStress}%</p>
+          <p className={cn("text-[10px] uppercase", isLight ? "text-neutral-600" : "text-neutral-400")}>Rolling stress</p>
+          <p className={cn("text-2xl font-bold tabular-nums", isLight ? "text-neutral-900" : "text-neutral-100")}>{dd.rollingStress}%</p>
         </div>
       </div>
       <div className="mt-4">
-        <p className="mb-2 text-[10px] font-bold uppercase opacity-60">Worst strategies today</p>
+        <p className={cn("mb-2 text-[10px] font-bold uppercase", isLight ? "text-neutral-600" : "text-neutral-400")}>Worst strategies today</p>
         {dd.worstStrategies.length === 0 ? (
-          <p className="text-xs opacity-50">No PnL data</p>
+          <p className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-500")}>No PnL data</p>
         ) : (
           <div className="space-y-1">
             {dd.worstStrategies.map((s) => (
-              <div key={s.strategyKey} className="flex justify-between font-mono text-[11px]">
+              <div key={s.strategyKey} className={cn("flex justify-between font-mono text-[11px]", isLight ? "text-neutral-800" : "text-neutral-200")}>
                 <span>{s.strategyKey}</span>
-                <span className="text-rose-400">{s.todayPnl?.toFixed(0)}</span>
+                <span className="text-rose-500">{s.todayPnl?.toFixed(0)}</span>
               </div>
             ))}
           </div>
@@ -112,7 +119,13 @@ export function BrokerDivergencePanel({
           Broker divergence alerts
         </p>
         {onReconcile ? (
-          <button type="button" onClick={onReconcile} className="rounded-lg border px-2 py-1 text-[10px] font-semibold">Run recon</button>
+          <button
+            type="button"
+            onClick={onReconcile}
+            className={cn("rounded-lg border px-2 py-1 text-[10px] font-semibold", toneButtonClasses(isLight, "secondary"))}
+          >
+            Run recon
+          </button>
         ) : null}
       </div>
       {open.length === 0 ? (
@@ -222,8 +235,10 @@ export function RiskHeatmapGrid({
 export function OperationalInsightsStrip({ insights, isLight }: { insights: OperationalInsight[]; isLight: boolean }) {
   if (insights.length === 0) return null;
   return (
-    <div className={cn("rounded-2xl border p-4", isLight ? "border-indigo-200 bg-indigo-50/40" : "border-indigo-500/30 bg-indigo-500/10")}>
-      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-400">Operational insights</p>
+    <div className={cn("rounded-2xl border p-4", toneSectionClasses(isLight, "indigo"))}>
+      <p className={cn("mb-2 text-[10px] font-bold uppercase tracking-[0.18em]", toneEyebrowClasses(isLight, "indigo"))}>
+        Operational insights
+      </p>
       <div className="flex flex-wrap gap-2">
         {insights.map((ins) => (
           <Link
@@ -231,13 +246,11 @@ export function OperationalInsightsStrip({ insights, isLight }: { insights: Oper
             to={ins.action ?? "#"}
             className={cn(
               "rounded-xl border px-3 py-2 text-[11px] transition hover:-translate-y-0.5",
-              ins.tone === "critical" ? "border-rose-500/40 bg-rose-500/10 text-rose-200" :
-              ins.tone === "warn" ? "border-amber-500/40 bg-amber-500/10 text-amber-100" :
-              "border-blue-500/30 bg-blue-500/10 text-blue-100",
+              toneChipClasses(isLight, mapInsightTone(ins.tone)),
             )}
           >
             <span className="font-semibold">{ins.title}</span>
-            <span className="ml-2 opacity-80">{ins.detail}</span>
+            <span className={cn("ml-2", isLight ? "opacity-80" : "opacity-90")}>{ins.detail}</span>
           </Link>
         ))}
       </div>

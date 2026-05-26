@@ -1,3 +1,5 @@
+import { toneChipClasses } from "../../../../lib/statusTone";
+
 export type SignalProvenance = "LIVE" | "PAPER" | "SIMULATED" | "REPLAY" | "LAB" | "UNKNOWN";
 
 export function resolveProvenance(pipeline: string | null | undefined): SignalProvenance {
@@ -34,17 +36,21 @@ export function provenanceShell(isLight: boolean, provenance: SignalProvenance) 
   return isLight ? "border-neutral-200 bg-white" : "border-neutral-800 bg-neutral-950/60";
 }
 
-export function provenanceBadge(provenance: SignalProvenance) {
+export function provenanceBadge(provenance: SignalProvenance, isLight = false) {
   switch (provenance) {
     case "LIVE":
-      return "border-rose-500/40 bg-rose-500/15 text-rose-200";
+      return toneChipClasses(isLight, "critical");
     case "PAPER":
-      return "border-amber-500/40 bg-amber-500/15 text-amber-100";
+      return toneChipClasses(isLight, "warn");
     case "REPLAY":
-      return "border-violet-500/40 bg-violet-500/15 text-violet-100";
+      return isLight
+        ? "border-violet-300 bg-violet-50 text-violet-900"
+        : "border-violet-500/40 bg-violet-500/15 text-violet-100";
     case "LAB":
-      return "border-cyan-500/40 bg-cyan-500/15 text-cyan-100";
+      return isLight
+        ? "border-cyan-300 bg-cyan-50 text-cyan-900"
+        : "border-cyan-500/40 bg-cyan-500/15 text-cyan-100";
     default:
-      return "border-neutral-600 bg-neutral-800 text-neutral-300";
+      return toneChipClasses(isLight, "neutral");
   }
 }

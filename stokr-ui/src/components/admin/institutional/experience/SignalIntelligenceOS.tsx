@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { AlertTriangle, Radar, Target, TrendingDown } from "lucide-react";
 import { cn } from "../../../../lib/utils";
+import { toneChipClasses } from "../../../../lib/statusTone";
 import {
   buildSignalConfidenceProfile,
   detectFalseBreakoutFlags,
@@ -123,9 +124,7 @@ export function SignalConfidenceEnginePanel({
               title={f.detail}
               className={cn(
                 "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold",
-                f.severity === "high" ? "border-rose-500/40 bg-rose-500/10 text-rose-300" :
-                f.severity === "medium" ? "border-amber-500/40 bg-amber-500/10 text-amber-200" :
-                "border-neutral-500/30 bg-neutral-500/10 text-neutral-300",
+                toneChipClasses(isLight, f.severity === "high" ? "critical" : f.severity === "medium" ? "warn" : "neutral"),
               )}
             >
               <AlertTriangle className="h-3 w-3" /> {f.label}

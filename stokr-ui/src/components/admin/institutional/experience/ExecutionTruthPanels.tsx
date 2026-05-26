@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Activity, CheckCircle2, Clock, Radio, ShieldCheck } from "lucide-react";
 import { cn } from "../../../../lib/utils";
+import { toneChipClasses } from "../../../../lib/statusTone";
 import {
   buildBrokerTruthScore,
   extractOmsLatencyMs,
@@ -17,6 +18,18 @@ export function ExecutionStateMachinePanel({
   isLight: boolean;
 }) {
   const steps = mapOrderToExecutionSteps(orderState);
+
+  function stepClasses(status: string) {
+    if (status === "done") return toneChipClasses(isLight, "success");
+    if (status === "active") return isLight
+      ? "border-blue-400 bg-blue-50 text-blue-900 ring-1 ring-blue-300/60"
+      : "border-blue-500/40 bg-blue-500/15 text-blue-200 ring-1 ring-blue-500/30";
+    if (status === "failed") return toneChipClasses(isLight, "critical");
+    return isLight
+      ? "border-neutral-300 bg-neutral-100 text-neutral-600"
+      : "border-neutral-700 bg-neutral-900/40 text-neutral-400";
+  }
+
   return (
     <div className={cn("rounded-2xl border p-5", isLight ? "border-neutral-200 bg-white" : "border-neutral-800 bg-neutral-950/50")}>
       <p className={cn("mb-4 text-[10px] font-bold uppercase tracking-[0.18em]", isLight ? "text-sky-700" : "text-sky-400")}>
@@ -28,10 +41,7 @@ export function ExecutionStateMachinePanel({
             <div
               className={cn(
                 "rounded-lg border px-2 py-1.5 text-[10px] font-semibold",
-                step.status === "done" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" :
-                step.status === "active" ? "border-blue-500/40 bg-blue-500/15 text-blue-200 ring-1 ring-blue-500/30" :
-                step.status === "failed" ? "border-rose-500/40 bg-rose-500/10 text-rose-300" :
-                "border-neutral-700 bg-neutral-900/40 text-neutral-500",
+                stepClasses(step.status),
               )}
             >
               {step.label}
@@ -81,13 +91,13 @@ export function BrokerTruthScorePanel({
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {metrics.map((m) => (
           <div key={m.label} className={cn("rounded-lg border px-2 py-2 text-center", isLight ? "border-neutral-200" : "border-neutral-800")}>
-            <p className="text-[9px] uppercase opacity-60">{m.label}</p>
-            <p className="font-mono text-sm font-bold">{m.value}%</p>
+            <p className={cn("text-[9px] uppercase", isLight ? "text-neutral-600" : "text-neutral-400")}>{m.label}</p>
+            <p className={cn("font-mono text-sm font-bold", isLight ? "text-neutral-900" : "text-neutral-100")}>{m.value}%</p>
           </div>
         ))}
       </div>
       {truth.flags.length > 0 ? (
-        <ul className="mt-3 space-y-1 text-[11px] text-amber-200">
+        <ul className={cn("mt-3 space-y-1 text-[11px]", isLight ? "text-amber-900" : "text-amber-200")}>
           {truth.flags.map((f) => <li key={f}>• {f}</li>)}
         </ul>
       ) : (

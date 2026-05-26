@@ -71,9 +71,19 @@ export function AdminResearchLabPage() {
               {active.description} Use Signal Lab and Signal Replay for live data; backtest jobs feed walk-forward and regime matrices when replay infrastructure completes.
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
-              <Link to="/admin/signal-lab" className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">Signal Lab</Link>
-              <Link to="/admin/signal-replay" className="rounded-lg border px-3 py-1.5 text-xs font-semibold">Signal Replay</Link>
-              <Link to="/admin/backfill" className="rounded-lg border px-3 py-1.5 text-xs font-semibold">Backfill data</Link>
+              <Link to="/admin/signal-lab" className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">Signal Lab</Link>
+              <Link
+                to="/admin/signal-replay"
+                className={cn("rounded-lg border px-3 py-1.5 text-xs font-semibold", isLight ? "border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-50" : "border-neutral-700 bg-neutral-900/60 text-neutral-200 hover:bg-neutral-800")}
+              >
+                Signal Replay
+              </Link>
+              <Link
+                to="/admin/backfill"
+                className={cn("rounded-lg border px-3 py-1.5 text-xs font-semibold", isLight ? "border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-50" : "border-neutral-700 bg-neutral-900/60 text-neutral-200 hover:bg-neutral-800")}
+              >
+                Backfill data
+              </Link>
             </div>
           </div>
         </AdminPanel>

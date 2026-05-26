@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Activity, Dna, GitBranch, TrendingUp } from "lucide-react";
 import { cn } from "../../../../lib/utils";
+import { toneEyebrowClasses } from "../../../../lib/statusTone";
 import {
   assessMarketFit,
   buildRejectionWaterfall,
@@ -123,8 +124,10 @@ export function StrategyCorrelationPanel({
   return (
     <div className={cn("rounded-2xl border p-4", isLight ? "border-neutral-200 bg-white" : "border-neutral-800 bg-neutral-950/50")}>
       <div className="mb-3 flex items-center gap-2">
-        <GitBranch className="h-4 w-4 text-indigo-400" />
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-400">Strategy correlation engine</p>
+        <GitBranch className={cn("h-4 w-4", toneEyebrowClasses(isLight, "indigo"))} />
+        <p className={cn("text-[10px] font-bold uppercase tracking-[0.18em]", toneEyebrowClasses(isLight, "indigo"))}>
+          Strategy correlation engine
+        </p>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         {pairs.map((p) => (
@@ -137,7 +140,7 @@ export function StrategyCorrelationPanel({
             <div className={cn("mt-1.5 h-1.5 overflow-hidden rounded-full", isLight ? "bg-neutral-200" : "bg-neutral-800")}>
               <div className="h-full rounded-full bg-indigo-500" style={{ width: `${p.overlap}%` }} />
             </div>
-            <p className="mt-1 text-[10px] opacity-60">{p.overlap}% overlap · duplicate risk</p>
+            <p className={cn("mt-1 text-[10px]", isLight ? "text-neutral-600" : "text-neutral-400")}>{p.overlap}% overlap · duplicate risk</p>
           </div>
         ))}
       </div>

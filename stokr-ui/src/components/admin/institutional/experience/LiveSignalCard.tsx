@@ -141,7 +141,7 @@ export function LiveSignalCard({
             </p>
           </div>
         </div>
-        <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider", provenanceBadge(provenance))}>
+        <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider", provenanceBadge(provenance, isLight))}>
           {provenance}
         </span>
       </div>

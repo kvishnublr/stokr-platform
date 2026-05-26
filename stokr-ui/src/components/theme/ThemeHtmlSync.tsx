@@ -5,9 +5,14 @@ export function ThemeHtmlSync() {
   const mode = useUiThemeStore((s) => s.mode);
 
   useEffect(() => {
-    document.documentElement.dataset.stokrTheme = mode;
+    const root = document.documentElement;
+    root.dataset.stokrTheme = mode;
+    root.classList.toggle("dark", mode === "dark");
+    root.style.colorScheme = mode;
     return () => {
-      delete document.documentElement.dataset.stokrTheme;
+      delete root.dataset.stokrTheme;
+      root.classList.remove("dark");
+      root.style.colorScheme = "";
     };
   }, [mode]);
 

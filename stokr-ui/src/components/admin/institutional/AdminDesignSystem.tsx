@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import { cn } from "../../../lib/utils";
+import { toneChipClasses, type StatusTone } from "../../../lib/statusTone";
 import { GlassPanel } from "../../ds/GlassPanel";
 
 export const adminFadeUp = {
@@ -221,6 +222,24 @@ export function AdminEmptyState({
       ) : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
+  );
+}
+
+export function AdminStatusChip({
+  tone,
+  isLight,
+  children,
+  className,
+}: {
+  tone: StatusTone;
+  isLight: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold", toneChipClasses(isLight, tone), className)}>
+      {children}
+    </span>
   );
 }
 

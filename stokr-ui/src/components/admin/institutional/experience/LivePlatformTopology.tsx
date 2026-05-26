@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { AlertCircle, Cpu, Radio, Shield, TrendingUp, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { cn } from "../../../../lib/utils";
+import { toneChipClasses } from "../../../../lib/statusTone";
 import { buildTopologyLoad, extractOmsLatencyMs } from "../../../../lib/adminOperationalIntelligence";
 import { asArray, asRecord, type OpsSnapshot } from "../../cockpit/opsTypes";
 
@@ -103,7 +104,7 @@ export function LivePlatformTopology({ snapshot, isLight }: { snapshot: OpsSnaps
           </p>
         </div>
         {incidents > 0 ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/40 bg-rose-500/10 px-2.5 py-1 text-[10px] font-bold uppercase text-rose-200">
+          <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase", toneChipClasses(isLight, "critical"))}>
             <AlertCircle className="h-3 w-3" /> {incidents} alert(s)
           </span>
         ) : null}
@@ -174,8 +175,8 @@ export function LivePlatformTopology({ snapshot, isLight }: { snapshot: OpsSnaps
                 : isLight ? "border-neutral-200 bg-white/60" : "border-neutral-800 bg-neutral-900/40",
             )}
           >
-            <p className="text-[9px] uppercase tracking-wide opacity-60">{m.label}</p>
-            <p className="font-mono text-xs font-bold">{m.value}</p>
+            <p className={cn("text-[9px] uppercase tracking-wide", isLight ? "text-neutral-600" : "text-neutral-400")}>{m.label}</p>
+            <p className={cn("font-mono text-xs font-bold", isLight ? "text-neutral-900" : "text-neutral-100")}>{m.value}</p>
           </div>
         ))}
       </div>
