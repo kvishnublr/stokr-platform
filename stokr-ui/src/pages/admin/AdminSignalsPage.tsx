@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { fmtDateTime } from "../../lib/dateUtils";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { api } from "../../api/client";
@@ -571,6 +572,12 @@ export function AdminSignalsPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              to="/admin/signal-lab"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 transition-colors shadow-sm"
+            >
+              <BarChart3 className="h-3.5 w-3.5" /> Cleanup &amp; benchmark
+            </Link>
             <button
               type="button"
               disabled={activatePipeline.isPending}

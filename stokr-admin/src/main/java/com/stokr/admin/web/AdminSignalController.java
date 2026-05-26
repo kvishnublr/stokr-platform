@@ -1,5 +1,9 @@
 package com.stokr.admin.web;
 
+import com.stokr.admin.signal.AdminSignalBenchmarkResultDto;
+import com.stokr.admin.signal.AdminSignalBenchmarkService;
+import com.stokr.admin.signal.AdminSignalCleanupResultDto;
+import com.stokr.admin.signal.AdminSignalCleanupService;
 import com.stokr.admin.signal.AdminSignalDetailDto;
 import com.stokr.admin.signal.AdminSignalDto;
 import com.stokr.admin.signal.AdminSignalParams;
@@ -7,6 +11,7 @@ import com.stokr.admin.signal.AdminSignalQuantValidationDto;
 import com.stokr.admin.signal.AdminSignalQuantValidationService;
 import com.stokr.admin.signal.AdminSignalQueryService;
 import com.stokr.admin.signal.AdminSignalStatsDto;
+import com.stokr.admin.signal.AdminSignalStrategyStatsDto;
 import com.stokr.auth.repository.AuthUserRepository;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.risk.service.LiveTradingArmingService;
@@ -66,6 +71,8 @@ import java.util.concurrent.CompletableFuture;
 public class AdminSignalController {
 
     private final AdminSignalQueryService queryService;
+    private final AdminSignalCleanupService cleanupService;
+    private final AdminSignalBenchmarkService benchmarkService;
     private final AdminSignalQuantValidationService quantValidationService;
     private final LiveTradingArmingService liveTradingArmingService;
     private final AuthUserRepository authUserRepository;
@@ -91,6 +98,79 @@ public class AdminSignalController {
         Instant from = since != null ? since
                 : Instant.now().atZone(java.time.ZoneId.of("Asia/Kolkata")).truncatedTo(ChronoUnit.DAYS).toInstant();
         return ApiResponse.ok(queryService.stats(from), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/stats/detailed")
+    @Operation(summary = "Per-strategy signal stats for a date range (today or custom)")
+    public ApiResponse<List<AdminSignalStrategyStatsDto>> statsDetailed(
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(required = false, defaultValue = "ALL") String strategyKey,
+            @RequestParam(defaultValue = "true") boolean includeReplayAndLab
+    ) {
+        LocalDate fromDate = from != null && !from.isBlank() ? LocalDate.parse(from) : LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        LocalDate toDate = to != null && !to.isBlank() ? LocalDate.parse(to) : fromDate;
+        return ApiResponse.ok(
+                cleanupService.statsByStrategy(fromDate, toDate, strategyKey, includeReplayAndLab),
+                CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/cleanup")
+    @Operation(summary = "Soft-delete signals for today or a date range (optional strategy filter)")
+    public ApiResponse<AdminSignalCleanupResultDto> cleanup(
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(required = false, defaultValue = "ALL") String strategyKey,
+            @RequestParam(defaultValue = "false") boolean includeReplayAndLab,
+            @RequestParam(defaultValue = "false") boolean dryRun
+    ) {
+        LocalDate fromDate = from != null && !from.isBlank() ? LocalDate.parse(from) : LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        LocalDate toDate = to != null && !to.isBlank() ? LocalDate.parse(to) : fromDate;
+        return ApiResponse.ok(
+                cleanupService.cleanup(fromDate, toDate, strategyKey, includeReplayAndLab, dryRun),
+                CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/benchmark/rerun")
+    @Operation(summary = "Purge (optional), replay with current logic, track outcomes, return per-strategy stats")
+    public ApiResponse<Object> benchmarkRerun(
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(required = false, defaultValue = "ALL") String strategyKey,
+            @RequestParam(defaultValue = "true") boolean purgeBeforeRerun,
+            @RequestParam(defaultValue = "true") boolean includeReplayAndLab,
+            @RequestParam(defaultValue = "false") boolean async
+    ) {
+        LocalDate fromDate = from != null && !from.isBlank() ? LocalDate.parse(from) : LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        LocalDate toDate = to != null && !to.isBlank() ? LocalDate.parse(to) : fromDate;
+        boolean allStrategies = strategyKey == null || strategyKey.isBlank() || "ALL".equalsIgnoreCase(strategyKey.trim());
+        String correlationId = CorrelationIdHolder.get();
+
+        if (async || allStrategies) {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    AdminSignalBenchmarkResultDto result = benchmarkService.rerun(
+                            fromDate, toDate, strategyKey, purgeBeforeRerun, includeReplayAndLab);
+                    log.info("benchmark.async_done strategyKey={} from={} to={} signals={} outcomes={}",
+                            result.strategyKey(), result.fromDate(), result.toDate(),
+                            result.totalSignalsGenerated(), result.outcomesProcessed());
+                } catch (Exception ex) {
+                    log.error("benchmark.async_error strategyKey={} {}", strategyKey, ex.getMessage(), ex);
+                }
+            });
+            return ApiResponse.ok(Map.of(
+                    "status", "STARTED",
+                    "strategyKey", allStrategies ? "ALL" : strategyKey.trim(),
+                    "from", fromDate.toString(),
+                    "to", toDate.toString(),
+                    "purgeBeforeRerun", purgeBeforeRerun,
+                    "message", "Benchmark rerun running in background. Poll /stats/detailed or refresh this page."
+            ), correlationId);
+        }
+
+        AdminSignalBenchmarkResultDto result = benchmarkService.rerun(
+                fromDate, toDate, strategyKey, purgeBeforeRerun, includeReplayAndLab);
+        return ApiResponse.ok(result, correlationId);
     }
 
     @GetMapping("/quant-validation")

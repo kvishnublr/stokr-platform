@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { Play, RefreshCw, CheckCircle, AlertTriangle, Clock } from "lucide-react";
@@ -58,11 +59,16 @@ export function AdminSignalReplayPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900">Signal Replay</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Replay historical sessions through the live strategy logic and generate signals with outcomes.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Signal Replay</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Replay historical sessions through the live strategy logic and generate signals with outcomes.
+          </p>
+        </div>
+        <Link to="/admin/signal-lab" className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-800 hover:bg-indigo-100">
+          Open Signal Lab (cleanup + benchmark)
+        </Link>
       </div>
 
       {/* Config card */}
