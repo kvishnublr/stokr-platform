@@ -7,6 +7,7 @@ import com.stokr.strategy.domain.StrategyDefinition;
 import com.stokr.strategy.dto.metadata.StrategyDeploymentDefaultsDto;
 import com.stokr.strategy.dto.metadata.StrategyMetadataResponseDto;
 import com.stokr.strategy.dto.metadata.StrategyPreviewMetricsDto;
+import com.stokr.strategy.metadata.StrategyMetadataDefaultsFactory;
 import com.stokr.strategy.metadata.StrategyMetadataDocumentValidator;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import lombok.RequiredArgsConstructor;
@@ -33,13 +34,17 @@ public class StrategyMetadataQueryService {
                 .orElseThrow(() -> new NotFoundException("Strategy definition not found: " + key));
         String raw = def.getParameterMetadataJson();
         if (raw == null || raw.isBlank()) {
-            // Operational fallback: try NSE_SPIKE_DETECTION metadata as canonical reference
-            raw = definitionRepository.findByStrategyKeyAndDeletedFalse("NSE_SPIKE_DETECTION")
-                    .map(StrategyDefinition::getParameterMetadataJson)
-                    .orElse(null);
-        }
-        if (raw == null || raw.isBlank()) {
-            throw new BadRequestException("No parameter metadata published for strategy: " + key);
+            StrategyMetadataResponseDto synthesized = StrategyMetadataDefaultsFactory.synthesize(def);
+            if (synthesized == null) {
+                throw new BadRequestException("No parameter metadata published for strategy: " + key);
+            }
+            StrategyMetadataResponseDto effective = enrichPresentation(normalizeMetadataKey(synthesized, def));
+            try {
+                StrategyMetadataDocumentValidator.validateOrThrow(effective);
+            } catch (IllegalStateException ise) {
+                throw new BadRequestException(ise.getMessage());
+            }
+            return effective;
         }
         try {
             StrategyMetadataResponseDto dto = objectMapper.readValue(raw, StrategyMetadataResponseDto.class);
