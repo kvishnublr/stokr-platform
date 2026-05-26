@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -58,15 +59,15 @@ public interface HistoricalWinRateRepository extends JpaRepository<HistoricalWin
      * Get best time of day for a specific setup
      */
     @Query("SELECT hwr FROM HistoricalWinRate hwr WHERE hwr.setupType = :setupType " +
-            "AND hwr.hourOfDay IS NOT NULL ORDER BY hwr.winRate DESC LIMIT 3")
+            "AND hwr.hourOfDay IS NOT NULL ORDER BY hwr.winRate DESC")
     List<HistoricalWinRate> findBestHoursForSetup(@Param("setupType") String setupType);
 
     /**
      * Get all win rates that need updating (older than N days)
      */
     @Query("SELECT hwr FROM HistoricalWinRate hwr WHERE hwr.lastUpdated IS NULL " +
-            "OR hwr.lastUpdated < CURRENT_TIMESTAMP - INTERVAL '7 days'")
-    List<HistoricalWinRate> findStaleWinRates();
+            "OR hwr.lastUpdated < :cutoff")
+    List<HistoricalWinRate> findStaleWinRates(@Param("cutoff") Instant cutoff);
 
     /**
      * Get average win rate across all market regimes for a setup
