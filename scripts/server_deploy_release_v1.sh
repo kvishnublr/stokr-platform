@@ -11,6 +11,8 @@ echo "==> Pull Release_v1"
 git fetch origin Release_v1
 git checkout Release_v1
 git pull origin Release_v1
+DEPLOY_SHA="$(git rev-parse --short HEAD)"
+echo "==> Deploy commit: $DEPLOY_SHA ($(git log -1 --format='%s'))"
 git log --oneline -5
 
 chmod +x ./deploy.sh ./health-check.sh
@@ -31,6 +33,7 @@ chmod +x ./scripts/verify_release_deploy.sh
 STOKR_API_BASE=http://127.0.0.1:8080 EXPECTED_GIT_COMMIT="$(git rev-parse --short HEAD)" \
   bash ./scripts/verify_release_deploy.sh || echo "WARN: verify_release_deploy.sh reported failures — check output above"
 
-echo "==> Done. Public URLs:"
+echo "==> Done. Deployed commit: $DEPLOY_SHA"
+echo "==> Public URLs:"
 echo "  API: http://173.249.55.84:8080/actuator/health"
 echo "  UI:  http://173.249.55.84:3000/"

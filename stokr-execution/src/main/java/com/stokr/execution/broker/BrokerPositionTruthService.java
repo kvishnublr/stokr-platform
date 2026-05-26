@@ -250,8 +250,8 @@ public class BrokerPositionTruthService {
             sb.append(row.symbol()).append(':')
                     .append(row.brokerQty()).append(':')
                     .append(row.brokerAvgPrice()).append(':')
-                    .append(row.brokerRealisedPnl()).append(':')
-                    .append(row.brokerUnrealisedPnl()).append(';');
+                    .append(row.brokerRealizedPnl()).append(':')
+                    .append(row.brokerUnrealizedPnl()).append(';');
         }
         return sb.toString();
     }
