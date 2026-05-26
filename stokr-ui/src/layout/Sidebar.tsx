@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { motion } from "framer-motion";
 import { NavLink, useLocation } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
 import { Moon, Settings, Sun } from "lucide-react";
@@ -16,17 +17,24 @@ export type SidebarLink = {
 
 function DiamondMark({ className }: { className?: string }) {
   return (
-    <div
+    <motion.div
+      whileHover={{ scale: 1.04, rotate: 2 }}
+      transition={{ type: "spring", stiffness: 420, damping: 24 }}
       className={cn(
-        "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-[0_12px_30px_-8px_rgba(59,130,246,0.55)]",
+        "relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 shadow-[0_12px_30px_-8px_rgba(59,130,246,0.55)]",
         className,
       )}
       aria-hidden
     >
-      <svg viewBox="0 0 24 24" className="h-[22px] w-[22px] fill-white opacity-95">
+      <motion.div
+        className="absolute inset-0 bg-gradient-to-tr from-white/25 to-transparent"
+        animate={{ x: ["-120%", "120%"] }}
+        transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut", repeatDelay: 2 }}
+      />
+      <svg viewBox="0 0 24 24" className="relative h-[22px] w-[22px] fill-white opacity-95">
         <path d="M12 2 22 12 12 22 2 12Z" />
       </svg>
-    </div>
+    </motion.div>
   );
 }
 

@@ -47,12 +47,6 @@ export function AdminRiskDashboardPage() {
     refetchInterval: 20_000,
   });
 
-  const snapshotQ = useQuery({
-    queryKey: ADMIN_OPS_SNAPSHOT_KEY,
-    queryFn: fetchAdminOpsSnapshotMerged,
-    staleTime: 10_000,
-  });
-
   const { data: configs } = useQuery({
     queryKey: CFG_QK,
     queryFn: fetchExecutionConfigs,

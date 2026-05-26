@@ -1,5 +1,6 @@
 import { Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -462,19 +463,21 @@ export function ShellLayout() {
               markRead();
             }}
             rightExtra={
-              <button
+              <motion.button
                 type="button"
+                whileHover={{ y: -1, scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => void logout()}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-[11px] font-bold uppercase tracking-wide transition",
+                  "inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-[11px] font-bold uppercase tracking-[0.14em] transition-colors duration-300",
                   isLightUi
-                    ? "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50"
-                    : "border-white/[0.1] bg-neutral-900/60 text-neutral-300 hover:border-neutral-600 hover:bg-neutral-800",
+                    ? "border-neutral-200/90 bg-white/90 text-neutral-700 shadow-[0_10px_30px_-22px_rgba(15,23,42,0.22)] hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                    : "border-white/[0.1] bg-neutral-900/60 text-neutral-300 hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-200",
                 )}
               >
                 <LogOut className="h-3.5 w-3.5" />
                 Sign out
-              </button>
+              </motion.button>
             }
           />
         }

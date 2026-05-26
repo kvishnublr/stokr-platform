@@ -107,10 +107,10 @@ export function AppShell({
         <div className="flex min-h-0 h-full flex-col">
           <header
             className={cn(
-              "sticky top-0 z-20 backdrop-blur-xl",
+              "sticky top-0 z-20 backdrop-blur-2xl",
               isLight
-                ? "border-b border-neutral-200 bg-white/[0.88]"
-                : "border-b border-neutral-900/80 bg-neutral-950/85",
+                ? "border-b border-neutral-200/80 bg-white/[0.82] shadow-[0_18px_40px_-32px_rgba(15,23,42,0.18)]"
+                : "border-b border-neutral-900/80 bg-neutral-950/82 shadow-[0_18px_40px_-32px_rgba(0,0,0,0.55)]",
             )}
           >
             {topNav}
