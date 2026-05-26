@@ -72,7 +72,7 @@ export function AdminConsoleLayout() {
         lastOpsPushAt={lastOpsPushAt}
         streamError={streamError}
       />
-      <div className="min-h-0 flex-1 pt-4">
+      <div className="flex min-h-0 flex-1 flex-col pt-4">
         <Outlet />
       </div>
     </div>

@@ -516,10 +516,10 @@ export function AdminSignalsPage() {
   const selectCls = "h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-800 outline-none focus:border-blue-400 transition-colors cursor-pointer";
 
   return (
-    <div className="flex h-full flex-col bg-slate-50">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
 
       {/* ── Page Header + KPI strip ─────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-2.5">
+      <div className="shrink-0 border-b border-slate-200 bg-slate-50/80 px-4 py-2.5 sm:px-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4 flex-wrap">
             <div>
@@ -580,7 +580,7 @@ export function AdminSignalsPage() {
       </div>
 
       {/* ── Filter Bar ───────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-2">
+      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-2 sm:px-6">
         <div className="flex flex-wrap items-center gap-2">
           <input className={inputCls} placeholder="Symbol…" value={symbol}
             onChange={e => { setSymbol(e.target.value); setPage(0); }} />
@@ -646,19 +646,19 @@ export function AdminSignalsPage() {
       </div>
 
       {/* ── Data Grid ────────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-auto">
-        <table className="w-full min-w-[1100px] text-xs border-collapse">
-          <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50">
+      <div className="relative flex-1 min-h-0 overflow-auto overscroll-x-contain bg-white">
+        <table className="w-full min-w-[1100px] border-collapse text-xs">
+          <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 shadow-[0_1px_0_0_rgba(226,232,240,1)] backdrop-blur-sm">
             <tr>
               {["Time", "Strategy", "Symbol", "Side", "Confidence", "Entry", "SL", "Target", "Qty", "Outcome", "PnL", "Mode"].map(h => (
-                <th key={h} className="whitespace-nowrap px-4 py-2 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400 border-r border-slate-100 last:border-r-0">
+                <th key={h} className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 last:border-r-0 sm:px-4">
                   {h}
                 </th>
               ))}
               <th className="w-8 px-2" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-100 bg-white">
             {q.isLoading && (
               <tr><td colSpan={13} className="px-4 py-16 text-center text-slate-400">
                 <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin opacity-50" />
@@ -672,10 +672,12 @@ export function AdminSignalsPage() {
                 <div className="text-xs text-slate-400 mt-1">Try adjusting the filters above</div>
               </td></tr>
             )}
-            {rows.map((r) => (
+            {rows.map((r, i) => (
               <tr key={r.id}
                 onClick={() => setSelectedId(r.id)}
-                className={`group cursor-pointer transition-colors hover:bg-blue-50/60 ${rowOutcomeBg(r.outcomeStatus)} ${selectedId === r.id ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""}`}>
+                className={`group cursor-pointer transition-colors hover:bg-blue-50/70 ${
+                  i % 2 === 1 ? "bg-slate-50/80" : "bg-white"
+                } ${rowOutcomeBg(r.outcomeStatus)} ${selectedId === r.id ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""}`}>
                 <td className="whitespace-nowrap px-3 py-1.5 font-mono text-slate-400 text-[11px]">{fmtTime(r.createdAt)}</td>
                 <td className="max-w-[150px] px-3 py-1.5 font-medium text-slate-700 truncate" title={r.strategyName ?? ""}>{r.strategyName ?? "—"}</td>
                 <td className="px-3 py-1.5 font-mono font-bold text-slate-900">{r.symbol ?? "—"}</td>
@@ -700,7 +702,7 @@ export function AdminSignalsPage() {
       </div>
 
       {/* ── Pagination ───────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-t border-slate-200 bg-white px-6 py-3 flex items-center justify-between">
+      <div className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-6">
         <span className="text-xs text-slate-500">
           {total > 0 ? `${page * 100 + 1}–${Math.min((page + 1) * 100, total)} of ${total.toLocaleString()} signals` : "0 results"}
         </span>
