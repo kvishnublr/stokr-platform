@@ -6,11 +6,6 @@ import com.stokr.strategy.catalog.StrategyUniverseResolverService;
 import com.stokr.strategy.domain.StrategyRuntimeBinding;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.domain.StrategyUniverseSymbol;
-import com.stokr.strategy.ematrend.EmaTrendFollowingSignalGenerator;
-import com.stokr.strategy.meanreversion.MeanReversionSignalGenerator;
-import com.stokr.strategy.meanreversion.MeanReversionV2SignalGenerator;
-import com.stokr.strategy.momentum.MomentumBreakoutSignalGenerator;
-import com.stokr.strategy.openingrange.OpeningRangeBreakoutSignalGenerator;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
@@ -18,10 +13,8 @@ import com.stokr.strategy.runtime.StrategyRegistry;
 import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
-import com.stokr.strategy.vwap.VwapMeanReversionSignalGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -38,20 +31,14 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Replays a historical trading session through live-signal generators and persists
- * results as real signals (no backtestRunId). Supports any strategy key and date range.
+ * Replays a historical trading session through registered catalog strategies and persists
+ * results as real signals (no backtestRunId). All strategies are resolved via StrategyRegistry.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class SignalHistoricalReplayService {
 
-    private final VwapMeanReversionSignalGenerator vwapGenerator;
-    private final ObjectProvider<MeanReversionSignalGenerator> meanReversionGenerator;
-    private final ObjectProvider<MeanReversionV2SignalGenerator> meanReversionV2Generator;
-    private final ObjectProvider<MomentumBreakoutSignalGenerator> momentumGenerator;
-    private final ObjectProvider<OpeningRangeBreakoutSignalGenerator> orbGenerator;
-    private final ObjectProvider<EmaTrendFollowingSignalGenerator> emaTrendGenerator;
     private final StrategyUniverseResolverService resolverService;
     private final MarketDataQueryService marketDataQueryService;
     private final StrategySignalPipelineService pipelineService;
@@ -75,14 +62,16 @@ public class SignalHistoricalReplayService {
     public record ReplayResult(String strategyKey, LocalDate from, LocalDate to,
                                int symbolsScanned, int barsProcessed, int signalsGenerated) {}
 
-    /**
-     * Replays all bound symbols for a strategy across a date range.
-     * Signals are saved as live signals (backtestRunId = null).
-     */
     public ReplayResult replay(String strategyKey, LocalDate from, LocalDate to) {
         if (from == null) from = LocalDate.now(zone);
         if (to == null) to = from;
         if (to.isBefore(from)) to = from;
+
+        TradingStrategy strategy = strategyRegistry.get(strategyKey);
+        if (strategy == null) {
+            log.warn("replay.strategy_not_registered key={}", strategyKey);
+            return new ReplayResult(strategyKey, from, to, 0, 0, 0);
+        }
 
         List<StrategyRuntimeBinding> bindings = resolverService.resolveBindingsForStrategy(strategyKey);
         if (bindings.isEmpty()) {
@@ -108,16 +97,22 @@ public class SignalHistoricalReplayService {
 
             for (String symbol : symbols) {
                 try {
-                    List<MarketdataCandle> bars = loadSessionBars(strategyKey, symbol, sessionOpen, sessionClose);
+                    List<MarketdataCandle> bars = marketDataQueryService.rangeAsc(symbol, "1m", sessionOpen, sessionClose);
+                    if (bars.isEmpty()) {
+                        bars = marketDataQueryService.rangeAsc(symbol, "5m", sessionOpen, sessionClose);
+                    }
                     if (bars.isEmpty()) continue;
 
                     totalBars += bars.size();
                     for (MarketdataCandle bar : bars) {
                         try {
-                            StrategySignalEntity sig = evaluate(strategyKey, symbol, bar.getOpenTime());
-                            if (sig != null) {
+                            StrategyContext ctx = new StrategyContext(symbol, bar.getOpenTime(), Map.of(),
+                                    bar.getClosePrice() != null ? bar.getClosePrice() : BigDecimal.ZERO);
+                            StrategySignal signal = strategy.evaluate(ctx);
+                            if (signal != null && signal.type() != SignalType.HOLD) {
+                                StrategySignalEntity entity = toEntity(strategyKey, symbol, signal, bar.getOpenTime());
                                 pipelineService.persistAndDispatch(
-                                        sig, UUID.randomUUID().toString(), executionMode, SignalProvenance.REPLAY);
+                                        entity, UUID.randomUUID().toString(), executionMode, SignalProvenance.REPLAY);
                                 totalSignals++;
                             }
                         } catch (Exception ex) {
@@ -135,98 +130,12 @@ public class SignalHistoricalReplayService {
         return new ReplayResult(strategyKey, from, to, symbols.size(), totalBars, totalSignals);
     }
 
-    private List<MarketdataCandle> loadSessionBars(String strategyKey, String symbol, Instant sessionOpen, Instant sessionClose) {
-        for (String tf : timeframesFor(strategyKey)) {
-            List<MarketdataCandle> bars = marketDataQueryService.rangeAsc(symbol, tf, sessionOpen, sessionClose);
-            if (!bars.isEmpty()) {
-                return bars;
-            }
-        }
-        return List.of();
-    }
-
-    private static List<String> timeframesFor(String strategyKey) {
-        if ("NSE_SPIKE_DETECTION".equals(strategyKey)) {
-            return List.of("1m", "5m");
-        }
-        if ("BREAKOUT_COMMODITIES".equals(strategyKey)) {
-            return List.of("10m", "5m", "1m");
-        }
-        return List.of("5m", "1m");
-    }
-
-    private StrategySignalEntity evaluate(String strategyKey, String symbol, Instant barTime) {
-        StrategySignalEntity legacy = switch (strategyKey) {
-            case "VWAP_MEAN_REVERSION"     -> vwapGenerator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
-            case "MEAN_REVERSION", "MEAN_REVERSION_RANGE_FADE" ->
-                    evaluateMeanReversionV1(symbol, barTime);
-            case "MEAN_REVERSION_V2"       -> evaluateMeanReversionV2(symbol, barTime);
-            case "MOMENTUM_BREAKOUT"       -> evaluateMomentum(symbol, barTime);
-            case "OPENING_RANGE_BREAKOUT"  -> evaluateOrb(symbol, barTime);
-            case "EMA_TREND_FOLLOW"        -> evaluateEmaTrend(symbol, barTime);
-            default -> null;
-        };
-        if (legacy != null) {
-            return legacy;
-        }
-        return evaluateRegistered(strategyKey, symbol, barTime);
-    }
-
-    private StrategySignalEntity evaluateMeanReversionV1(String symbol, Instant barTime) {
-        MeanReversionSignalGenerator generator = meanReversionGenerator.getIfAvailable();
-        if (generator == null) {
-            return null;
-        }
-        return generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime);
-    }
-
-    private StrategySignalEntity evaluateMeanReversionV2(String symbol, Instant barTime) {
-        MeanReversionV2SignalGenerator generator = meanReversionV2Generator.getIfAvailable();
-        if (generator == null) {
-            return null;
-        }
-        return generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime);
-    }
-
-    private StrategySignalEntity evaluateMomentum(String symbol, Instant barTime) {
-        MomentumBreakoutSignalGenerator generator = momentumGenerator.getIfAvailable();
-        if (generator == null) {
-            return null;
-        }
-        return generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
-    }
-
-    private StrategySignalEntity evaluateOrb(String symbol, Instant barTime) {
-        OpeningRangeBreakoutSignalGenerator generator = orbGenerator.getIfAvailable();
-        if (generator == null) {
-            return null;
-        }
-        return generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
-    }
-
-    private StrategySignalEntity evaluateEmaTrend(String symbol, Instant barTime) {
-        EmaTrendFollowingSignalGenerator generator = emaTrendGenerator.getIfAvailable();
-        if (generator == null) {
-            return null;
-        }
-        return generator.evaluatePersistableAtOpen(symbol, systemUserId, null, executionMode, barTime, "5m");
-    }
-
-    private StrategySignalEntity evaluateRegistered(String strategyKey, String symbol, Instant barTime) {
-        TradingStrategy strategy = strategyRegistry.get(strategyKey);
-        if (strategy == null) {
-            return null;
-        }
-        StrategyContext ctx = new StrategyContext(symbol, barTime, Map.of(), BigDecimal.ZERO);
-        StrategySignal signal = strategy.evaluate(ctx);
-        if (signal == null || signal.type() == SignalType.HOLD) {
-            return null;
-        }
+    private StrategySignalEntity toEntity(String strategyKey, String symbol, StrategySignal signal, Instant barTime) {
         StrategySignalEntity entity = new StrategySignalEntity();
         entity.setSignalType(signal.type());
         entity.setSymbol(symbol);
         entity.setStrategyName(strategyKey);
-        entity.setStrategyVersion("1.0.0");
+        entity.setStrategyVersion("2.0.0");
         entity.setReasonText(signal.reason());
         entity.setReason(signal.reason());
         entity.setSuggestedQty(signal.suggestedQty() != null ? signal.suggestedQty() : BigDecimal.ONE);

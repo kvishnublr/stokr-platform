@@ -9,7 +9,7 @@ type AsyncResponse = { strategyKey: string; from: string; to: string; status: st
 const today = () => new Date().toISOString().slice(0, 10);
 
 export function AdminSignalReplayPage() {
-  const [strategyKey, setStrategyKey] = useState("VWAP_MEAN_REVERSION");
+  const [strategyKey, setStrategyKey] = useState("NSE_SPIKE_DETECTION");
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
   const [replayStarted, setReplayStarted] = useState<AsyncResponse | null>(null);
@@ -49,12 +49,11 @@ export function AdminSignalReplayPage() {
   });
 
   const strategies: StrategyCatalogItem[] = catalogQ.data ?? [
-    { strategyKey: "VWAP_MEAN_REVERSION",    displayName: "VWAP Mean Reversion" },
-    { strategyKey: "MEAN_REVERSION",          displayName: "Mean Reversion" },
-    { strategyKey: "MEAN_REVERSION_V2",       displayName: "Mean Reversion V2" },
-    { strategyKey: "MOMENTUM_BREAKOUT",       displayName: "Momentum Breakout" },
-    { strategyKey: "OPENING_RANGE_BREAKOUT",  displayName: "Opening Range Breakout" },
-    { strategyKey: "EMA_TREND_FOLLOW",        displayName: "EMA Trend Following" },
+    { strategyKey: "NSE_SPIKE_DETECTION",  displayName: "NSE Spike Detection" },
+    { strategyKey: "GAP_FILL",             displayName: "Gap Fill (82%)" },
+    { strategyKey: "VWAP_BOUNCE",          displayName: "VWAP Bounce (71%)" },
+    { strategyKey: "SECTOR_LAGGARD",       displayName: "Sector Laggard (73%)" },
+    { strategyKey: "EARLY_BREAKOUT",       displayName: "Early Breakout (68%)" },
   ];
 
   return (

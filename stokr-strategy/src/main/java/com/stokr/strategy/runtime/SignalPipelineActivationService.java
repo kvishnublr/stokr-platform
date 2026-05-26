@@ -53,6 +53,7 @@ public class SignalPipelineActivationService {
     private final StrategyUniverseResolverService universeResolverService;
     private final List<UniverseSyncService> universeSyncServices;
     private final TransactionTemplate transactionTemplate;
+    private final StrategyRegistry strategyRegistry;
 
     @Value("${stokr.strategy.pipeline.default-universe-group:NIFTY_50}")
     private String defaultUniverseGroupKey;
@@ -216,15 +217,28 @@ public class SignalPipelineActivationService {
         return out;
     }
 
-    /** Core enablement in one short transaction (no universe bulk sync). */
+    /** Core enablement in one short transaction (no universe bulk sync).
+     *  Only enables strategies that have a registered Java implementation in StrategyRegistry. */
     @Transactional
     protected Map<String, Object> activateCore(int universesSynced) {
         int strategiesEnabled = 0;
+        int strategiesSkipped = 0;
         int bindingsEnabled = 0;
         int bindingsCreated = 0;
         int symbolsSeeded = 0;
 
+        // Only enable strategies with registered Java implementations
         for (StrategyDefinition def : definitionRepository.findAll().stream().filter(d -> !d.isDeleted()).toList()) {
+            boolean hasImplementation = strategyRegistry.get(def.getStrategyKey()) != null;
+            if (!hasImplementation) {
+                // Strategy has no Java class — do NOT force-enable
+                if (def.isEnabled()) {
+                    def.setEnabled(false);
+                    definitionRepository.save(def);
+                }
+                strategiesSkipped++;
+                continue;
+            }
             if (!def.isEnabled()) {
                 def.setEnabled(true);
                 definitionRepository.save(def);
@@ -250,7 +264,17 @@ public class SignalPipelineActivationService {
         bindingsEnabled += cashBindingStats[0];
         bindingsCreated += cashBindingStats[1];
 
+        // Only enable bindings for strategies that have implementations
         for (StrategyRuntimeBinding b : bindingRepository.findAll()) {
+            boolean hasImpl = strategyRegistry.get(b.getStrategyCatalog().getStrategyKey()) != null;
+            if (!hasImpl) {
+                // Disable bindings for strategies without Java classes
+                if (b.isRuntimeEnabled()) {
+                    b.setRuntimeEnabled(false);
+                    bindingRepository.save(b);
+                }
+                continue;
+            }
             if (!b.isRuntimeEnabled()) {
                 b.setRuntimeEnabled(true);
                 if (b.getScanIntervalSeconds() > fastScanIntervalSeconds) {
@@ -265,6 +289,7 @@ public class SignalPipelineActivationService {
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("strategiesEnabled", strategiesEnabled);
+        out.put("strategiesSkipped", strategiesSkipped);
         out.put("bindingsEnabled", bindingsEnabled);
         out.put("bindingsCreated", bindingsCreated);
         out.put("symbolsSeeded", symbolsSeeded);

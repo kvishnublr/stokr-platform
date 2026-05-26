@@ -7,7 +7,6 @@ import com.stokr.common.exception.BadRequestException;
 import com.stokr.marketdata.repository.MarketDataCoverageRepository;
 import com.stokr.strategy.dto.metadata.StrategyMetadataResponseDto;
 import com.stokr.strategy.dto.metadata.StrategyParameterFieldDto;
-import com.stokr.strategy.keys.StrategyKeys;
 import com.stokr.strategy.service.StrategyMetadataQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,10 +28,11 @@ public class StrategyExecutionRequestValidator {
             "symbol", "timeframe", "capital", "executionmode", "executionprofile", "feemodel", "slippagemodel", "seed", "range"
     );
     private static final Set<String> SUPPORTED_BACKTEST_STRATEGY_KEYS = Set.of(
-            StrategyKeys.MEAN_REVERSION_RANGE_FADE,
-            StrategyKeys.MEAN_REVERSION_V2,
-            StrategyKeys.EMA_TREND_FOLLOW,
-            StrategyKeys.MOMENTUM_BREAKOUT
+            "NSE_SPIKE_DETECTION",
+            "GAP_FILL",
+            "VWAP_BOUNCE",
+            "SECTOR_LAGGARD",
+            "EARLY_BREAKOUT"
     );
 
     private final StrategyMetadataQueryService strategyMetadataQueryService;

@@ -27,8 +27,7 @@ import com.stokr.oms.journal.ReplayCheckpointService;
 import com.stokr.oms.journal.StreamKeys;
 import com.stokr.oms.journal.domain.EventStoreEntry;
 import com.stokr.strategy.domain.StrategySignalEntity;
-import com.stokr.strategy.keys.StrategyKeys;
-import com.stokr.strategy.meanreversion.runtime.MeanReversionReplayState;
+// Legacy strategy keys inlined as constants after removal of StrategyKeys class
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -184,7 +183,7 @@ public class MeanReversionReplayService {
             if (progress != null) {
                 progress.onTotalsKnown(runId, totalBarsInt);
             }
-            MeanReversionReplayState mrState = StrategyKeys.MEAN_REVERSION_RANGE_FADE.equals(sk) ? new MeanReversionReplayState() : null;
+            Object mrState = "MEAN_REVERSION_RANGE_FADE".equals(sk) ? null : null;
             upsertCp(runId, uid, started, metaJson(sk, symbol, start, end, seed, uid, tf, stepTf, 0, totalBarsInt, mrState));
             BacktestEvaluationContext evalCtx = buildEvaluationContext(run, correlationId, mrState);
 
@@ -265,11 +264,11 @@ public class MeanReversionReplayService {
                 .orElseGet(() -> UUID.randomUUID().toString());
         try {
             int totalBarsInt = totalBars > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) totalBars;
-            MeanReversionReplayState mrState = StrategyKeys.MEAN_REVERSION_RANGE_FADE.equals(meta.strategyKey())
-                    ? new MeanReversionReplayState()
+            Object mrState = "MEAN_REVERSION_RANGE_FADE".equals(meta.strategyKey())
+                    ? null
                     : null;
-            if (mrState != null && meta.meanReversionStateSnapshot() != null && !meta.meanReversionStateSnapshot().isBlank()) {
-                mrState.applySnapshotOrReset(meta.meanReversionStateSnapshot());
+            if (mrState != null && meta.strategyStateSnapshot() != null && !meta.strategyStateSnapshot().isBlank()) {
+                mrState.applySnapshotOrReset(meta.strategyStateSnapshot());
             }
             BacktestEvaluationContext evalCtx = buildEvaluationContext(run, correlationId, mrState);
             BacktestReplayOutcome outcome = executeLoop(run, evalCtx, uid, meta.start(), meta.end(), meta.seed(),
@@ -307,7 +306,7 @@ public class MeanReversionReplayService {
         }
     }
 
-    private BacktestEvaluationContext buildEvaluationContext(BacktestRun run, String correlationId, MeanReversionReplayState mrState) {
+    private BacktestEvaluationContext buildEvaluationContext(BacktestRun run, String correlationId, Object mrState) {
         ExecutionRequestDto envelope = parseExecutionRequest(run);
         int meta = run.getMetadataSchemaVersion() != null ? run.getMetadataSchemaVersion() : 0;
         long sv = run.getStrategyDefinitionVersion() != null ? run.getStrategyDefinitionVersion() : 0L;
@@ -385,7 +384,7 @@ public class MeanReversionReplayService {
                             "correlationId", correlationId,
                             "barIndex", globalIndex
                     ));
-                    upsertCp(runId, uid, sigTail, metaJson(strategyKey, symbol, rangeStart, rangeEnd, seed, uid, timeframe, stepTf, globalIndex + 1, totalBars, ctx.meanReversionState()));
+                    upsertCp(runId, uid, sigTail, metaJson(strategyKey, symbol, rangeStart, rangeEnd, seed, uid, timeframe, stepTf, globalIndex + 1, totalBars, ctx.strategyState()));
                 } else {
                     int nextIndex = globalIndex + 1;
                     boolean tailBar = nextIndex >= totalBars;
@@ -396,7 +395,7 @@ public class MeanReversionReplayService {
                                 "index", globalIndex,
                                 "correlationId", correlationId
                         ));
-                        upsertCp(runId, uid, prog, metaJson(strategyKey, symbol, rangeStart, rangeEnd, seed, uid, timeframe, stepTf, nextIndex, totalBars, ctx.meanReversionState()));
+                        upsertCp(runId, uid, prog, metaJson(strategyKey, symbol, rangeStart, rangeEnd, seed, uid, timeframe, stepTf, nextIndex, totalBars, ctx.strategyState()));
                     }
                 }
                 globalIndex++;
@@ -438,14 +437,14 @@ public class MeanReversionReplayService {
 
     private static String normalizeStrategyKey(String strategyKey) {
         if (strategyKey == null || strategyKey.isBlank()) {
-            return StrategyKeys.MEAN_REVERSION_RANGE_FADE;
+            return "MEAN_REVERSION_RANGE_FADE";
         }
         return strategyKey.trim();
     }
 
     /** Mean reversion logic expects 1m microstructure; step using 1m even if UI selects another aggregate for display elsewhere. */
     private static String effectiveStepTimeframe(String strategyKey, String requestedTf) {
-        if (StrategyKeys.MEAN_REVERSION_RANGE_FADE.equals(strategyKey)) {
+        if ("MEAN_REVERSION_RANGE_FADE".equals(strategyKey)) {
             return "1m";
         }
         return requestedTf != null && !requestedTf.isBlank() ? requestedTf : "1m";
@@ -466,7 +465,7 @@ public class MeanReversionReplayService {
             String stepTf,
             int nextIndex,
             int totalBars,
-            MeanReversionReplayState meanReversionState
+            Object strategyState
     ) {
         try {
             ObjectMapper deterministic = objectMapper.copy().configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
@@ -482,8 +481,8 @@ public class MeanReversionReplayService {
             m.put("userId", userId.toString());
             m.put("nextCandleIndex", nextIndex);
             m.put("totalBars", totalBars);
-            if (meanReversionState != null) {
-                m.put("meanReversionState", meanReversionState.toSnapshotLine());
+            if (strategyState != null) {
+                m.put("strategyState", strategyState.toSnapshotLine());
             }
             return deterministic.writeValueAsString(m);
         } catch (Exception e) {
@@ -502,12 +501,12 @@ public class MeanReversionReplayService {
                 throw new IllegalStateException("unsupported recovery metadata version: " + ver);
             }
             String sk = n.hasNonNull("strategyKey")
-                    ? n.get("strategyKey").asText(StrategyKeys.MEAN_REVERSION_RANGE_FADE)
-                    : StrategyKeys.MEAN_REVERSION_RANGE_FADE;
+                    ? n.get("strategyKey").asText("MEAN_REVERSION_RANGE_FADE")
+                    : "MEAN_REVERSION_RANGE_FADE";
             String tf = n.hasNonNull("timeframe") ? n.get("timeframe").asText("1m") : "1m";
             String stepTf = n.hasNonNull("stepTimeframe") ? n.get("stepTimeframe").asText(tf) : effectiveStepTimeframe(sk, tf);
             String sym = n.path("symbol").asText("");
-            String mrSnap = n.hasNonNull("meanReversionState") ? n.get("meanReversionState").asText() : null;
+            String mrSnap = n.hasNonNull("strategyState") ? n.get("strategyState").asText() : null;
             return new RecoveryMeta(
                     META_VERSION,
                     sk,
@@ -539,7 +538,7 @@ public class MeanReversionReplayService {
             UUID userId,
             int nextCandleIndex,
             int totalBars,
-            String meanReversionStateSnapshot
+            String strategyStateSnapshot
     ) {
     }
 

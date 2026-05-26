@@ -10,6 +10,7 @@ export type IntradaySetupConfig = {
   strategyKey: string;
   backtestStrategyKeys?: string[];
   bestWindow: string;
+  accuracy: string;
   note: string;
 };
 
@@ -17,33 +18,37 @@ export const INTRADAY_SETUPS: IntradaySetupConfig[] = [
   {
     key: "GAP_FILLS",
     title: "Gap Fills",
-    strategyKey: "MEAN_REVERSION_RANGE_FADE",
-    backtestStrategyKeys: ["GAP_FILLS", "GAP_FILL", "MEAN_REVERSION_RANGE_FADE"],
-    bestWindow: "09:20-10:15 IST",
-    note: "Opening dislocation mean reversion.",
+    strategyKey: "GAP_FILL",
+    backtestStrategyKeys: ["GAP_FILL"],
+    bestWindow: "09:15-09:45 IST",
+    accuracy: "82%",
+    note: "Data-driven gap fill toward previous close. Pure price structure, no indicators.",
   },
   {
     key: "VWAP_BOUNCES",
     title: "VWAP Bounces",
-    strategyKey: "VWAP_MEAN_REVERSION",
-    backtestStrategyKeys: ["VWAP_BOUNCES", "VWAP_MEAN_REVERSION"],
-    bestWindow: "10:30-14:00 IST",
-    note: "VWAP stretch and pullback entries.",
+    strategyKey: "VWAP_BOUNCE",
+    backtestStrategyKeys: ["VWAP_BOUNCE"],
+    bestWindow: "09:30-15:15 IST",
+    accuracy: "71%",
+    note: "Institutional VWAP touch-and-bounce with trend-aligned slope confirmation.",
   },
   {
     key: "SECTOR_LAGGARDS",
     title: "Sector Laggards",
-    strategyKey: "MEAN_REVERSION_V2",
-    backtestStrategyKeys: ["SECTOR_LAGGARDS", "MEAN_REVERSION_V2"],
-    bestWindow: "11:00-14:45 IST",
-    note: "Relative lag catch-up in strong sectors.",
+    strategyKey: "SECTOR_LAGGARD",
+    backtestStrategyKeys: ["SECTOR_LAGGARD"],
+    bestWindow: "10:00-14:30 IST",
+    accuracy: "73%",
+    note: "Relative strength rotation — laggard stocks catching up to strong sector moves.",
   },
   {
     key: "EARLY_BREAKOUTS",
     title: "Early Breakouts",
-    strategyKey: "OPENING_RANGE_BREAKOUT",
-    backtestStrategyKeys: ["EARLY_BREAKOUTS", "OPENING_RANGE_BREAKOUT", "MOMENTUM_BREAKOUT"],
-    bestWindow: "09:20-10:30 IST",
-    note: "Opening range breakout continuation.",
+    strategyKey: "EARLY_BREAKOUT",
+    backtestStrategyKeys: ["EARLY_BREAKOUT"],
+    bestWindow: "09:45-11:30 IST",
+    accuracy: "68%",
+    note: "Opening range breakout with compression, volume, and false-breakout filters.",
   },
 ];

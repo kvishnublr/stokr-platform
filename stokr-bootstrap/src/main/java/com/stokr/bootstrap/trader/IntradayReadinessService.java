@@ -39,10 +39,10 @@ public class IntradayReadinessService {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final List<SetupDef> INTRADAY_SETUPS = List.of(
-            new SetupDef("Gap Fills", "MEAN_REVERSION_RANGE_FADE"),
-            new SetupDef("VWAP Bounces", "VWAP_MEAN_REVERSION"),
-            new SetupDef("Sector Laggards", "MEAN_REVERSION_V2"),
-            new SetupDef("Early Breakouts", "OPENING_RANGE_BREAKOUT")
+            new SetupDef("Gap Fills", "GAP_FILL"),
+            new SetupDef("VWAP Bounces", "VWAP_BOUNCE"),
+            new SetupDef("Sector Laggards", "SECTOR_LAGGARD"),
+            new SetupDef("Early Breakouts", "EARLY_BREAKOUT")
     );
     private static final long ACTION_COOLDOWN_SECONDS = 8;
     private final Map<String, Instant> actionCooldown = new ConcurrentHashMap<>();

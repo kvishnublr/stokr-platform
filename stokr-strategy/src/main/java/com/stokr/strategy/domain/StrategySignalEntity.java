@@ -27,7 +27,7 @@ import java.util.UUID;
 @Table(name = "strategy_signals")
 public class StrategySignalEntity extends BaseEntity {
 
-    public static final String STRATEGY_KEY = "MEAN_REVERSION_RANGE_FADE";
+    public static final String STRATEGY_KEY = "NSE_SPIKE_DETECTION";
     public static final String VERSION = "1.0.0";
 
     @ManyToOne(fetch = FetchType.LAZY, optional = true)
