@@ -1,6 +1,9 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
+import com.stokr.marketdata.service.OrderBookPressureTracker;
+import com.stokr.marketdata.service.OrderBookPressureTracker.PressureAnalysis;
+import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.service.StrategyCandleLoader;
@@ -21,32 +24,30 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * NSE_SPIKE_DETECTION V2.0 - PURE DATA-DRIVEN INSTITUTIONAL STRATEGY
+ * NSE_SPIKE_DETECTION V3.0 — PRESSURE-BASED INSTITUTIONAL STRATEGY
  *
- * Philosophy: Zero lagging indicators. Only raw price/volume structure.
- * Removed: RSI, EMA, VWAP, fixed ATR multiples, index/sector alignment
+ * CORE PHILOSOPHY:
+ *   Entries are driven by ORDER BOOK IMBALANCE (real buy/sell pressure from NSE),
+ *   NOT by lagging price patterns. When institutions pile into one side of the book
+ *   and price confirms with multi-bar momentum + rising volume, that's a real signal.
  *
- * Entry Logic:
- *   1. Spike Score (3 components, each 0-100):
- *      - Velocity Score: % move per minute (0.25%+ = spike)
- *      - Volume Score: Burst multiplier vs 20-bar average
- *      - Bar Quality Score: Close position in range (rejection = low score)
+ * DATA SOURCES (all real-time, zero lag):
+ *   1. Order Book: totalBuyQty / totalSellQty from Kite quote-mode WebSocket
+ *   2. Price Action: 1m OHLCV candles from CandleAggregator
+ *   3. Volume: Real share volume from Kite (not tick counts)
  *
- *   2. Composite Score = (velocity + volume + barQuality) / 3
+ * ENTRY MODEL — 4 Components (weighted composite):
+ *   ① ORDER BOOK IMBALANCE (35%) — buyQty/(buyQty+sellQty) ratio
+ *   ② MULTI-BAR MOMENTUM   (25%) — 3 consecutive bars in same direction
+ *   ③ VOLUME ACCELERATION   (25%) — volume increasing over last 3 bars
+ *   ④ BAR QUALITY           (15%) — strong close, no rejection wicks
  *
- *   3. Fire if: composite_score >= 75 AND continuation_confirmed AND no_wick_rejection
+ * FIRE IF: composite ≥ 75 AND imbalance ≥ 50 AND momentum ≥ 30
  *
- * Stop Loss: DYNAMIC
- *   - Not fixed ATR multiple
- *   - Calculated as: Entry bar low/high ± 0.50%
- *   - Adapts to actual bar structure, not pre-calculated volatility
+ * DYNAMIC STOP: 3-bar swing low/high + buffer (structural support/resistance)
+ * TARGET: 2.0× risk from entry (minimum 1.5 R:R)
  *
- * Target: DYNAMIC RETEST-BASED
- *   - Based on: Range of last 5 bars structure
- *   - Tight ranges (<1.0%): target = recent extreme ± 0.50% extension
- *   - Wide ranges (>1.0%): target = recent extreme ± 1.50% extension
- *
- * Session: 09:15-15:20 IST (core trading hours)
+ * EXPECTED: 15-30 high-conviction signals per day
  */
 @Service
 @RequiredArgsConstructor
@@ -61,80 +62,77 @@ import java.util.concurrent.ConcurrentHashMap;
 public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy implements TradingStrategy {
 
     private static final String TIMEFRAME = "1m";
-    private static final int BARS_FETCH = 25;
-    private static final int VOLUME_AVG_PERIOD = 20;
-    private static final int RETEST_LOOKBACK = 5;
-    private static final int REGIME_LOOKBACK = 10;
+    private static final int BARS_FETCH = 30;
+    private static final int MOMENTUM_BARS = 3;       // Multi-bar momentum window
+    private static final int VOLUME_AVG_PERIOD = 15;   // Bars for volume average
+    private static final int SWING_SL_BARS = 3;        // Bars for swing stop loss
 
     private final StrategyCandleLoader candleLoader;
+    private final OrderBookPressureTracker pressureTracker;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // PURE DATA PARAMETERS (no lagging indicators)
+    // PRESSURE PARAMETERS
     // ═══════════════════════════════════════════════════════════════════════════
 
-    // VELOCITY: Minimum % move per minute to qualify as spike
-    @Value("${stokr.strategy.spike.min-velocity-pct:0.12}")
-    private double minVelocityPct;
+    /** Order book imbalance threshold for buy pressure (buyQty / total > this) */
+    @Value("${stokr.strategy.spike.buy-pressure-threshold:0.58}")
+    private double buyPressureThreshold;
 
-    // VOLUME: Minimum multiplier vs 20-bar average to confirm conviction
+    /** Order book imbalance threshold for sell pressure (buyQty / total < this) */
+    @Value("${stokr.strategy.spike.sell-pressure-threshold:0.42}")
+    private double sellPressureThreshold;
+
+    /** Minimum pressure consistency: fraction of recent ticks with consistent direction */
+    @Value("${stokr.strategy.spike.min-pressure-consistency:0.55}")
+    private double minPressureConsistency;
+
+    /** Lookback ticks for pressure analysis (at ~1 tick/sec, 60 = ~1 min) */
+    @Value("${stokr.strategy.spike.pressure-lookback-ticks:90}")
+    private int pressureLookbackTicks;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MOMENTUM + VOLUME PARAMETERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** Minimum cumulative % move over 3 bars to confirm momentum */
+    @Value("${stokr.strategy.spike.min-momentum-pct:0.10}")
+    private double minMomentumPct;
+
+    /** Minimum volume multiple vs average for current bar */
     @Value("${stokr.strategy.spike.min-volume-multiple:1.2}")
     private double minVolumeMultiple;
 
-    // BAR QUALITY: Close must be in upper/lower portion (not wicked)
-    @Value("${stokr.strategy.spike.min-bar-quality-threshold:60.0}")
-    private double minBarQualityThreshold;
+    /** Maximum wick % before rejecting bar quality */
+    @Value("${stokr.strategy.spike.max-wick-pct:0.60}")
+    private double maxWickPct;
 
-    // WICK REJECTION: % of bar that is wick (not body)
-    @Value("${stokr.strategy.spike.max-wick-pct-before-reject:0.70}")
-    private double maxWickPctBeforeReject;
+    // ═══════════════════════════════════════════════════════════════════════════
+    // COMPOSITE + RISK PARAMETERS
+    // ═══════════════════════════════════════════════════════════════════════════
 
-    // CONTINUATION: Next candle must continue in spike direction
-    @Value("${stokr.strategy.spike.require-continuation-candle:true}")
-    private boolean requireContinuationCandle;
-
-    // SCORE THRESHOLD: Composite score must be >= this to fire
-    @Value("${stokr.strategy.spike.min-composite-score:65.0}")
+    /** Minimum composite score to fire (weighted average of 4 components) */
+    @Value("${stokr.strategy.spike.min-composite-score:72.0}")
     private double minCompositeScore;
 
-    // COOLDOWN: Seconds between signals on same symbol
-    @Value("${stokr.strategy.spike.cooldown-seconds:300}")
-    private int cooldownSeconds;
+    /** Risk-reward multiplier for target calculation */
+    @Value("${stokr.strategy.spike.target-rr-multiple:2.0}")
+    private double targetRrMultiple;
 
-    @Value("${stokr.strategy.spike.min-risk-reward:1.2}")
+    /** Minimum R:R to emit signal */
+    @Value("${stokr.strategy.spike.min-risk-reward:1.5}")
     private double minRiskReward;
 
-    @Value("${stokr.strategy.spike.regime-min-range-pct:0.60}")
-    private double regimeMinRangePct;
+    /** SL buffer beyond swing point (%) */
+    @Value("${stokr.strategy.spike.sl-buffer-pct:0.15}")
+    private double slBufferPct;
 
-    @Value("${stokr.strategy.spike.regime-min-directional-bars:6}")
-    private int regimeMinDirectionalBars;
-
-    @Value("${stokr.strategy.spike.require-prev-bar-alignment:true}")
-    private boolean requirePrevBarAlignment;
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // DYNAMIC STOP LOSS PARAMETERS
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    @Value("${stokr.strategy.spike.sl-offset-pct:0.50}")
-    private double slOffsetPct;
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // DYNAMIC TARGET PARAMETERS (retest-based)
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    @Value("${stokr.strategy.spike.target-tight-range-extension:0.50}")
-    private double targetTightRangeExtension;
-
-    @Value("${stokr.strategy.spike.target-wide-range-extension:1.50}")
-    private double targetWideRangeExtension;
-
-    @Value("${stokr.strategy.spike.range-width-threshold-pct:1.0}")
-    private double rangeWidthThreshold;
+    /** Cooldown seconds between signals per symbol */
+    @Value("${stokr.strategy.spike.cooldown-seconds:600}")
+    private int cooldownSeconds;
 
     @Override
     public String key() {
@@ -146,11 +144,11 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         String symbol = context.symbol();
 
         // ─────────────────────────────────────────────────────────────────────
-        // 1. SESSION GATE: 09:15-15:20 IST
+        // 1. SESSION GATE: 09:20-15:15 IST (skip first 5 min noise + last 15 min)
         // ─────────────────────────────────────────────────────────────────────
         if (context.asOf() != null) {
             LocalTime lt = context.asOf().atZone(zone).toLocalTime();
-            if (lt.isBefore(LocalTime.of(9, 15)) || lt.isAfter(LocalTime.of(15, 20))) {
+            if (lt.isBefore(LocalTime.of(9, 20)) || lt.isAfter(LocalTime.of(15, 15))) {
                 return hold(context);
             }
         }
@@ -160,164 +158,185 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         // ─────────────────────────────────────────────────────────────────────
         List<MarketdataCandle> bars = candleLoader.bars(context, TIMEFRAME, BARS_FETCH);
         int n = bars.size();
-        if (n < 3) {
-            log.debug("nse_spike.insufficient_bars symbol={} have={}", symbol, n);
-            return hold(context);
-        }
-
-        MarketdataCandle current = bars.get(n - 1);
-        MarketdataCandle prev = bars.get(n - 2);
-
-        double curClose = toDouble(current.getClosePrice());
-        double curHigh = toDouble(current.getHighPrice());
-        double curLow = toDouble(current.getLowPrice());
-        double curVolume = toDouble(current.getVolume());
-        double prevClose = toDouble(prev.getClosePrice());
-        double prevOpen = toDouble(prev.getOpenPrice());
-
-        if (curClose <= 0 || prevClose <= 0) return hold(context);
-
-        if (isChoppyRegime(bars, n)) {
+        if (n < MOMENTUM_BARS + VOLUME_AVG_PERIOD) {
             return hold(context);
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // 3. PURE DATA COMPONENT 1: VELOCITY SCORE
+        // 3. COMPONENT ①: ORDER BOOK IMBALANCE (weight: 35%)
+        //    Primary signal — real institutional buy/sell pressure
         // ─────────────────────────────────────────────────────────────────────
-        double velocityPct = Math.abs(curClose - prevClose) / prevClose * 100;
-        double velocityScore = calculateVelocityScore(velocityPct);
+        PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
+        PressureAnalysis pressureAnalysis = pressureTracker.analyze(symbol, pressureLookbackTicks);
 
-        if (velocityScore < 30) {
-            return hold(context);
-        }
+        double imbalanceScore;
+        boolean pressureBuy;
 
-        boolean isBuySpike = curClose > prevClose;
+        if (snapshot == null || pressureAnalysis == null) {
+            // No pressure data yet — use price-only fallback (reduced score)
+            imbalanceScore = 0;
+            pressureBuy = toDouble(bars.get(n - 1).getClosePrice()) > toDouble(bars.get(n - 2).getClosePrice());
+        } else {
+            double ratio = snapshot.imbalanceRatio();
+            pressureBuy = ratio > 0.50;
 
-        if (requirePrevBarAlignment) {
-            boolean prevBullish = prevClose > prevOpen;
-            boolean prevBearish = prevClose < prevOpen;
-            if ((isBuySpike && !prevBullish) || (!isBuySpike && !prevBearish)) {
-                return hold(context);
+            if (pressureBuy) {
+                // Buy pressure scoring
+                if (ratio > 0.70) imbalanceScore = 100;
+                else if (ratio > 0.65) imbalanceScore = 85;
+                else if (ratio > 0.60) imbalanceScore = 70;
+                else if (ratio > buyPressureThreshold) imbalanceScore = 55;
+                else imbalanceScore = 0;
+            } else {
+                // Sell pressure scoring (mirror)
+                if (ratio < 0.30) imbalanceScore = 100;
+                else if (ratio < 0.35) imbalanceScore = 85;
+                else if (ratio < 0.40) imbalanceScore = 70;
+                else if (ratio < sellPressureThreshold) imbalanceScore = 55;
+                else imbalanceScore = 0;
+            }
+
+            // Penalize if pressure is inconsistent over time
+            if (pressureAnalysis.pressureConsistency() < minPressureConsistency) {
+                imbalanceScore *= 0.5;  // Halve score if pressure is flickering
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // 4. PURE DATA COMPONENT 2: VOLUME SCORE
-        //    Real share volume from Kite quote-mode WebSocket
-        // ─────────────────────────────────────────────────────────────────────
-        double avgVolume = calculateAverageVolume(bars, n);
-        double volumeMultiple = avgVolume > 0 ? curVolume / avgVolume : 1.0;
-        double volumeScore = calculateVolumeScore(volumeMultiple);
-
-        if (volumeScore < 30) {
-            log.debug("nse_spike.low_volume symbol={} multiple={:.2f}", symbol, volumeMultiple);
+        // Hard gate: must have at least some book pressure signal
+        if (imbalanceScore < 40) {
             return hold(context);
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // 5. PURE DATA COMPONENT 3: BAR QUALITY SCORE (wick rejection check)
+        // 4. COMPONENT ②: MULTI-BAR MOMENTUM (weight: 25%)
+        //    3 consecutive bars must confirm the pressure direction
         // ─────────────────────────────────────────────────────────────────────
-        double barQualityScore = calculateBarQualityScore(current, isBuySpike);
+        double momentumScore = calculateMomentumScore(bars, n, pressureBuy);
 
-        if (barQualityScore <= 0) {
-            log.debug("nse_spike.wick_reject symbol={} score={}", symbol, barQualityScore);
+        // Hard gate: need at least weak momentum alignment
+        if (momentumScore < 30) {
             return hold(context);
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // 6. COMPOSITE SCORE
+        // 5. COMPONENT ③: VOLUME ACCELERATION (weight: 25%)
+        //    Volume should be rising — institutions executing, not fading
         // ─────────────────────────────────────────────────────────────────────
-        double compositeScore = (velocityScore + volumeScore + barQualityScore) / 3.0;
+        double volumeAccelScore = calculateVolumeAccelerationScore(bars, n);
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 6. COMPONENT ④: BAR QUALITY (weight: 15%)
+        //    Current bar should have strong close in pressure direction
+        // ─────────────────────────────────────────────────────────────────────
+        double barQualityScore = calculateBarQualityScore(bars.get(n - 1), pressureBuy);
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 7. WEIGHTED COMPOSITE SCORE
+        // ─────────────────────────────────────────────────────────────────────
+        double compositeScore = (imbalanceScore * 0.35)
+                              + (momentumScore * 0.25)
+                              + (volumeAccelScore * 0.25)
+                              + (barQualityScore * 0.15);
 
         if (compositeScore < minCompositeScore) {
-            log.debug("nse_spike.low_score symbol={} composite={:.1f} min={}", symbol, compositeScore, minCompositeScore);
+            log.debug("spike.low_composite symbol={} score={:.1f} [imb={:.0f} mom={:.0f} vol={:.0f} bar={:.0f}]",
+                    symbol, compositeScore, imbalanceScore, momentumScore, volumeAccelScore, barQualityScore);
             return hold(context);
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // 7. CONTINUATION CONFIRMATION
+        // 8. PRESSURE + PRICE AGREEMENT CHECK
+        //    Book pressure and price must agree — no divergence
         // ─────────────────────────────────────────────────────────────────────
-        if (requireContinuationCandle) {
-            if (isBuySpike) {
-                if (curHigh <= prevClose) {
-                    log.debug("nse_spike.no_continuation_buy symbol={} high={:.2f} <= prevClose={:.2f}",
-                              symbol, curHigh, prevClose);
-                    return hold(context);
-                }
-            } else {
-                if (curLow >= prevClose) {
-                    log.debug("nse_spike.no_continuation_sell symbol={} low={:.2f} >= prevClose={:.2f}",
-                              symbol, curLow, prevClose);
-                    return hold(context);
-                }
-            }
+        double curClose = toDouble(bars.get(n - 1).getClosePrice());
+        double prevClose = toDouble(bars.get(n - 2).getClosePrice());
+        boolean priceUp = curClose > prevClose;
+
+        if (pressureBuy != priceUp) {
+            // Pressure says buy but price is falling (or vice versa) — divergence, skip
+            log.debug("spike.pressure_price_divergence symbol={} pressureBuy={} priceUp={}", symbol, pressureBuy, priceUp);
+            return hold(context);
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // 8. COOLDOWN CHECK
+        // 9. COOLDOWN CHECK
         // ─────────────────────────────────────────────────────────────────────
         Instant now = context.asOf() != null ? context.asOf() : Instant.now();
         Instant lastEmit = lastEmitBySymbol.get(symbol);
         if (lastEmit != null && Duration.between(lastEmit, now).getSeconds() < cooldownSeconds) {
-            log.debug("nse_spike.cooldown_active symbol={}", symbol);
             return hold(context);
         }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 10. DYNAMIC STOP LOSS — 3-bar swing structure
+        // ─────────────────────────────────────────────────────────────────────
+        double entryPrice = curClose;
+        double stopLoss;
+
+        if (pressureBuy) {
+            // BUY: SL = lowest low of last 3 bars - buffer
+            double swingLow = Double.MAX_VALUE;
+            for (int i = n - SWING_SL_BARS; i < n; i++) {
+                double low = toDouble(bars.get(i).getLowPrice());
+                if (low > 0 && low < swingLow) swingLow = low;
+            }
+            stopLoss = swingLow * (1.0 - slBufferPct / 100.0);
+        } else {
+            // SELL: SL = highest high of last 3 bars + buffer
+            double swingHigh = Double.MIN_VALUE;
+            for (int i = n - SWING_SL_BARS; i < n; i++) {
+                double high = toDouble(bars.get(i).getHighPrice());
+                if (high > swingHigh) swingHigh = high;
+            }
+            stopLoss = swingHigh * (1.0 + slBufferPct / 100.0);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 11. TARGET — R:R based
+        // ─────────────────────────────────────────────────────────────────────
+        double risk = Math.abs(entryPrice - stopLoss);
+        double target;
+        if (pressureBuy) {
+            target = entryPrice + (risk * targetRrMultiple);
+        } else {
+            target = entryPrice - (risk * targetRrMultiple);
+        }
+
+        double rr = risk > 0 ? Math.abs(target - entryPrice) / risk : 0;
+        if (rr < minRiskReward) {
+            return hold(context);
+        }
+
+        // Mark cooldown
         lastEmitBySymbol.put(symbol, now);
 
         // ─────────────────────────────────────────────────────────────────────
-        // 9. SIGNAL GENERATION WITH DYNAMIC SL & TARGET
+        // 12. SIGNAL
         // ─────────────────────────────────────────────────────────────────────
-        SignalType signalType;
-        double entryPrice, stopLoss, target;
-        String reason;
+        SignalType signalType = pressureBuy ? SignalType.BUY : SignalType.SELL;
 
-        if (isBuySpike) {
-            signalType = SignalType.BUY;
-            entryPrice = curClose;
-            stopLoss = calculateAdaptiveBuyStop(bars, n, curLow);
-            target = calculateAdaptiveBuyTarget(bars, n, entryPrice, stopLoss);
+        // Pressure details for logging
+        String pressureInfo = snapshot != null
+                ? String.format("imb=%.0f%%", snapshot.imbalanceRatio() * 100)
+                : "imb=N/A";
+        String consistencyInfo = pressureAnalysis != null
+                ? String.format("consist=%.0f%%", pressureAnalysis.pressureConsistency() * 100)
+                : "";
 
-            double rr = (target - entryPrice) / Math.max(0.0001, entryPrice - stopLoss);
-            reason = String.format(
-                "NSE_SPIKE BUY: velocity=%.2f%% volume=%.1fx barQuality=%.0f composite=%.1f " +
-                "entry=%.2f sl=%.2f target=%.2f rr=%.2f",
-                velocityPct, volumeMultiple, barQualityScore, compositeScore,
-                entryPrice, stopLoss, target, rr
-            );
+        double volMultiple = calculateCurrentVolumeMultiple(bars, n);
+        double momPct = calculateCumulativeMomentum(bars, n, MOMENTUM_BARS);
 
-        } else {
-            signalType = SignalType.SELL;
-            entryPrice = curClose;
-            stopLoss = calculateAdaptiveSellStop(bars, n, curHigh);
-            target = calculateAdaptiveSellTarget(bars, n, entryPrice, stopLoss);
+        String reason = String.format(
+            "NSE_SPIKE_V3 %s: %s %s mom=%.2f%% vol=%.1fx composite=%.1f " +
+            "[imb=%.0f mom=%.0f vol=%.0f bar=%.0f] entry=%.2f sl=%.2f target=%.2f rr=%.1f",
+            signalType, pressureInfo, consistencyInfo, momPct, volMultiple, compositeScore,
+            imbalanceScore, momentumScore, volumeAccelScore, barQualityScore,
+            entryPrice, stopLoss, target, rr
+        );
 
-            double rr = (entryPrice - target) / Math.max(0.0001, stopLoss - entryPrice);
-            reason = String.format(
-                "NSE_SPIKE SELL: velocity=%.2f%% volume=%.1fx barQuality=%.0f composite=%.1f " +
-                "entry=%.2f sl=%.2f target=%.2f rr=%.2f",
-                velocityPct, volumeMultiple, barQualityScore, compositeScore,
-                entryPrice, stopLoss, target, rr
-            );
-        }
-
-        if (isBuySpike) {
-            double rr = (target - entryPrice) / Math.max(0.0001, entryPrice - stopLoss);
-            if (rr < minRiskReward) {
-                return hold(context);
-            }
-        } else {
-            double rr = (entryPrice - target) / Math.max(0.0001, stopLoss - entryPrice);
-            if (rr < minRiskReward) {
-                return hold(context);
-            }
-        }
-
-        log.info("nse_spike.signal symbol={} type={} reason={}", symbol, signalType, reason);
+        log.info("spike_v3.signal symbol={} {}", symbol, reason);
         return new StrategySignal(
-                signalType,
-                symbol,
-                BigDecimal.ONE,
-                reason,
+                signalType, symbol, BigDecimal.ONE, reason,
                 BigDecimal.valueOf(entryPrice),
                 BigDecimal.valueOf(stopLoss),
                 BigDecimal.valueOf(target)
@@ -325,187 +344,160 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     }
 
     // ═════════════════════════════════════════════════════════════════════════════
-    // PURE DATA CALCULATION METHODS
+    // SCORING METHODS
     // ═════════════════════════════════════════════════════════════════════════════
 
-    private double calculateVelocityScore(double velocityPct) {
-        if (velocityPct < minVelocityPct) return 0;
-        if (velocityPct < 0.12) return 35;
-        if (velocityPct < 0.20) return 50;
-        if (velocityPct < 0.30) return 65;
-        if (velocityPct < 0.50) return 80;
-        if (velocityPct < 0.80) return 90;
-        return 100;
-    }
+    /**
+     * MULTI-BAR MOMENTUM: Checks last 3 bars for sustained directional movement.
+     * Eliminates single-bar noise and whipsaws.
+     */
+    private double calculateMomentumScore(List<MarketdataCandle> bars, int n, boolean expectBuy) {
+        if (n < MOMENTUM_BARS + 1) return 0;
 
-    private double calculateVolumeScore(double volumeMultiple) {
-        // Real share volume — ratios are meaningful
-        if (volumeMultiple < minVolumeMultiple) return 0;
-        if (volumeMultiple < 1.5) return 40;
-        if (volumeMultiple < 2.0) return 55;
-        if (volumeMultiple < 3.0) return 70;
-        if (volumeMultiple < 5.0) return 85;
-        return 100;
-    }
+        int alignedBars = 0;
+        boolean allIncreasing = true;  // Each bar more extreme than previous
+        double cumulativeMove = 0;
 
-    private double calculateBarQualityScore(MarketdataCandle candle, boolean isBuySpike) {
-        double high = toDouble(candle.getHighPrice());
-        double low = toDouble(candle.getLowPrice());
-        double close = toDouble(candle.getClosePrice());
-        double open = toDouble(candle.getOpenPrice());
+        for (int i = n - MOMENTUM_BARS; i < n; i++) {
+            double close = toDouble(bars.get(i).getClosePrice());
+            double open = toDouble(bars.get(i).getOpenPrice());
+            double prevClose = toDouble(bars.get(i - 1).getClosePrice());
 
-        double barRange = high - low;
-        if (barRange <= 0) return 50;
-
-        if (isBuySpike) {
-            double wickSize = high - close;
-            double bodySize = close - open;
-            double wickPct = bodySize > 0 ? wickSize / (wickSize + bodySize) : 0;
-
-            if (wickPct > maxWickPctBeforeReject) {
-                return 0;
+            if (expectBuy) {
+                if (close > open) alignedBars++;  // Green bar
+                if (i > n - MOMENTUM_BARS && close <= toDouble(bars.get(i - 1).getClosePrice())) {
+                    allIncreasing = false;
+                }
+            } else {
+                if (close < open) alignedBars++;  // Red bar
+                if (i > n - MOMENTUM_BARS && close >= toDouble(bars.get(i - 1).getClosePrice())) {
+                    allIncreasing = false;
+                }
             }
-
-            double closePos = (close - low) / barRange * 100;
-            if (closePos >= minBarQualityThreshold) return 100;
-            if (closePos >= 50) return 50;
-            return 0;
-
-        } else {
-            double wickSize = close - low;
-            double bodySize = open - close;
-            double wickPct = bodySize > 0 ? wickSize / (wickSize + bodySize) : 0;
-
-            if (wickPct > maxWickPctBeforeReject) {
-                return 0;
-            }
-
-            double closePos = (close - low) / barRange * 100;
-            if (closePos <= (100 - minBarQualityThreshold)) return 100;
-            if (closePos <= 50) return 50;
-            return 0;
+            cumulativeMove += (close - prevClose) / prevClose * 100;
         }
+
+        double absMomentum = Math.abs(cumulativeMove);
+
+        // All 3 bars aligned + each making new extremes + strong move
+        if (alignedBars == MOMENTUM_BARS && allIncreasing && absMomentum >= minMomentumPct * 2) return 100;
+        // All 3 aligned + decent move
+        if (alignedBars == MOMENTUM_BARS && absMomentum >= minMomentumPct) return 80;
+        // 2 of 3 aligned + some move
+        if (alignedBars >= 2 && absMomentum >= minMomentumPct) return 55;
+        // 2 of 3 aligned
+        if (alignedBars >= 2) return 35;
+        // Weak
+        return 0;
     }
 
-    private double calculateAverageVolume(List<MarketdataCandle> bars, int currentIndex) {
-        int start = Math.max(0, currentIndex - VOLUME_AVG_PERIOD);
-        double sum = 0;
-        for (int i = start; i < currentIndex - 1; i++) {
-            sum += toDouble(bars.get(i).getVolume());
-        }
-        return (currentIndex - start) > 0 ? sum / (currentIndex - start) : 0;
-    }
+    /**
+     * VOLUME ACCELERATION: Volume should be INCREASING over last 3 bars.
+     * Institutional moves accelerate — retail pops fade.
+     */
+    private double calculateVolumeAccelerationScore(List<MarketdataCandle> bars, int n) {
+        if (n < MOMENTUM_BARS + VOLUME_AVG_PERIOD) return 50;
 
-    private double calculateBuyTarget(List<MarketdataCandle> bars, int currentIndex) {
-        int lookbackStart = Math.max(0, currentIndex - 1 - RETEST_LOOKBACK);
-        double rangeHigh = Double.NEGATIVE_INFINITY;
-        double rangeLow = Double.POSITIVE_INFINITY;
-
-        for (int i = lookbackStart; i < currentIndex - 1; i++) {
-            double h = toDouble(bars.get(i).getHighPrice());
-            double l = toDouble(bars.get(i).getLowPrice());
-            if (h > rangeHigh) rangeHigh = h;
-            if (l < rangeLow) rangeLow = l;
-        }
-
-        if (rangeHigh <= 0) return 0;
-
-        double rangeWidthPct = (rangeHigh - rangeLow) / rangeHigh * 100;
-        double extension = rangeWidthPct < rangeWidthThreshold ?
-                          targetTightRangeExtension : targetWideRangeExtension;
-
-        return rangeHigh * (1.0 + extension / 100.0);
-    }
-
-    private double calculateSellTarget(List<MarketdataCandle> bars, int currentIndex) {
-        int lookbackStart = Math.max(0, currentIndex - 1 - RETEST_LOOKBACK);
-        double rangeHigh = Double.NEGATIVE_INFINITY;
-        double rangeLow = Double.POSITIVE_INFINITY;
-
-        for (int i = lookbackStart; i < currentIndex - 1; i++) {
-            double h = toDouble(bars.get(i).getHighPrice());
-            double l = toDouble(bars.get(i).getLowPrice());
-            if (h > rangeHigh) rangeHigh = h;
-            if (l < rangeLow) rangeLow = l;
-        }
-
-        if (rangeLow <= 0) return 0;
-
-        double rangeWidthPct = (rangeHigh - rangeLow) / rangeHigh * 100;
-        double extension = rangeWidthPct < rangeWidthThreshold ?
-                          targetTightRangeExtension : targetWideRangeExtension;
-
-        return rangeLow * (1.0 - extension / 100.0);
-    }
-
-    private boolean isChoppyRegime(List<MarketdataCandle> bars, int currentIndex) {
-        int start = Math.max(1, currentIndex - REGIME_LOOKBACK);
-        if (currentIndex - start < 5) {
-            return false;
-        }
-
-        double high = Double.NEGATIVE_INFINITY;
-        double low = Double.POSITIVE_INFINITY;
-        int directionalBars = 0;
-
-        for (int i = start; i < currentIndex; i++) {
-            MarketdataCandle c = bars.get(i);
-            double cHigh = toDouble(c.getHighPrice());
-            double cLow = toDouble(c.getLowPrice());
-            double cOpen = toDouble(c.getOpenPrice());
-            double cClose = toDouble(c.getClosePrice());
-            if (cHigh > high) high = cHigh;
-            if (cLow < low) low = cLow;
-            if (Math.abs(cClose - cOpen) > 0) directionalBars++;
-        }
-
-        if (high <= 0 || low <= 0 || high <= low) {
-            return true;
-        }
-        double rangePct = (high - low) / high * 100.0;
-        return rangePct < regimeMinRangePct || directionalBars < regimeMinDirectionalBars;
-    }
-
-    private double recentAverageRangePct(List<MarketdataCandle> bars, int currentIndex) {
-        int start = Math.max(0, currentIndex - REGIME_LOOKBACK);
-        double sum = 0.0;
+        // Average volume of older bars (baseline)
+        double avgVol = 0;
         int count = 0;
-        for (int i = start; i < currentIndex; i++) {
-            double h = toDouble(bars.get(i).getHighPrice());
-            double l = toDouble(bars.get(i).getLowPrice());
-            double c = toDouble(bars.get(i).getClosePrice());
-            if (h > 0 && l > 0 && c > 0 && h > l) {
-                sum += (h - l) / c * 100.0;
-                count++;
+        for (int i = n - MOMENTUM_BARS - VOLUME_AVG_PERIOD; i < n - MOMENTUM_BARS; i++) {
+            if (i < 0) continue;
+            double v = toDouble(bars.get(i).getVolume());
+            if (v > 0) { avgVol += v; count++; }
+        }
+        avgVol = count > 0 ? avgVol / count : 0;
+        if (avgVol <= 0) return 50;
+
+        // Volume of last 3 bars
+        double[] recentVol = new double[MOMENTUM_BARS];
+        for (int i = 0; i < MOMENTUM_BARS; i++) {
+            recentVol[i] = toDouble(bars.get(n - MOMENTUM_BARS + i).getVolume());
+        }
+
+        double currentMultiple = recentVol[MOMENTUM_BARS - 1] / avgVol;
+
+        // Check if volume is accelerating (each bar higher than previous)
+        boolean accelerating = true;
+        for (int i = 1; i < MOMENTUM_BARS; i++) {
+            if (recentVol[i] < recentVol[i - 1] * 0.9) { // Allow 10% tolerance
+                accelerating = false;
+                break;
             }
         }
-        return count == 0 ? 0.30 : sum / count;
+
+        // Accelerating + high multiple
+        if (accelerating && currentMultiple >= 3.0) return 100;
+        if (accelerating && currentMultiple >= 2.0) return 85;
+        if (accelerating && currentMultiple >= minVolumeMultiple) return 70;
+        // High volume but not accelerating
+        if (currentMultiple >= 2.0) return 60;
+        if (currentMultiple >= minVolumeMultiple) return 45;
+        // Below average
+        if (currentMultiple >= 0.8) return 20;
+        return 0;
     }
 
-    private double calculateAdaptiveBuyStop(List<MarketdataCandle> bars, int currentIndex, double curLow) {
-        double avgRangePct = recentAverageRangePct(bars, currentIndex);
-        double dynamicOffset = Math.max(slOffsetPct, Math.min(1.20, avgRangePct * 0.9));
-        return curLow * (1.0 - dynamicOffset / 100.0);
+    /**
+     * BAR QUALITY: Current bar should close strongly in the pressure direction.
+     * Reject wicky/indecisive candles.
+     */
+    private double calculateBarQualityScore(MarketdataCandle bar, boolean isBuy) {
+        double high = toDouble(bar.getHighPrice());
+        double low = toDouble(bar.getLowPrice());
+        double close = toDouble(bar.getClosePrice());
+        double open = toDouble(bar.getOpenPrice());
+        double range = high - low;
+
+        if (range <= 0) return 40;
+
+        double bodySize = Math.abs(close - open);
+        double bodyRatio = bodySize / range;
+
+        if (isBuy) {
+            // BUY: want close near high, small upper wick
+            double upperWick = high - Math.max(close, open);
+            double wickRatio = range > 0 ? upperWick / range : 0;
+            if (wickRatio > maxWickPct) return 0;  // Rejection candle
+
+            if (close > open && bodyRatio > 0.60) return 100;  // Strong green bar
+            if (close > open && bodyRatio > 0.40) return 70;
+            if (close > open) return 50;  // Green but small body
+            return 15;  // Red bar in buy setup — weak
+        } else {
+            // SELL: want close near low, small lower wick
+            double lowerWick = Math.min(close, open) - low;
+            double wickRatio = range > 0 ? lowerWick / range : 0;
+            if (wickRatio > maxWickPct) return 0;  // Rejection candle
+
+            if (close < open && bodyRatio > 0.60) return 100;  // Strong red bar
+            if (close < open && bodyRatio > 0.40) return 70;
+            if (close < open) return 50;
+            return 15;  // Green bar in sell setup — weak
+        }
     }
 
-    private double calculateAdaptiveSellStop(List<MarketdataCandle> bars, int currentIndex, double curHigh) {
-        double avgRangePct = recentAverageRangePct(bars, currentIndex);
-        double dynamicOffset = Math.max(slOffsetPct, Math.min(1.20, avgRangePct * 0.9));
-        return curHigh * (1.0 + dynamicOffset / 100.0);
+    // ═════════════════════════════════════════════════════════════════════════════
+    // UTILITY METHODS
+    // ═════════════════════════════════════════════════════════════════════════════
+
+    private double calculateCurrentVolumeMultiple(List<MarketdataCandle> bars, int n) {
+        double avgVol = 0;
+        int count = 0;
+        for (int i = Math.max(0, n - VOLUME_AVG_PERIOD - 1); i < n - 1; i++) {
+            double v = toDouble(bars.get(i).getVolume());
+            if (v > 0) { avgVol += v; count++; }
+        }
+        avgVol = count > 0 ? avgVol / count : 0;
+        double curVol = toDouble(bars.get(n - 1).getVolume());
+        return avgVol > 0 ? curVol / avgVol : 1.0;
     }
 
-    private double calculateAdaptiveBuyTarget(List<MarketdataCandle> bars, int currentIndex, double entryPrice, double stopLoss) {
-        double structureTarget = calculateBuyTarget(bars, currentIndex);
-        double risk = Math.max(0.0001, entryPrice - stopLoss);
-        double rrTarget = entryPrice + (risk * Math.max(minRiskReward, 1.8));
-        return Math.max(structureTarget, rrTarget);
-    }
-
-    private double calculateAdaptiveSellTarget(List<MarketdataCandle> bars, int currentIndex, double entryPrice, double stopLoss) {
-        double structureTarget = calculateSellTarget(bars, currentIndex);
-        double risk = Math.max(0.0001, stopLoss - entryPrice);
-        double rrTarget = entryPrice - (risk * Math.max(minRiskReward, 1.8));
-        return Math.min(structureTarget, rrTarget);
+    private double calculateCumulativeMomentum(List<MarketdataCandle> bars, int n, int lookback) {
+        if (n < lookback + 1) return 0;
+        double startPrice = toDouble(bars.get(n - lookback - 1).getClosePrice());
+        double endPrice = toDouble(bars.get(n - 1).getClosePrice());
+        return startPrice > 0 ? (endPrice - startPrice) / startPrice * 100 : 0;
     }
 
     private static double toDouble(BigDecimal v) {

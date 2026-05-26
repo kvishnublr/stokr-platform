@@ -621,7 +621,8 @@ public class PlatformZerodhaLiveFeedRuntime {
                     }
                     eventPublisher.publishEvent(new PlatformLiveTickEvent(
                             sym, packetArrival, t.lastPricePaise(), t.instrumentToken(),
-                            t.lastTradedQuantity(), t.volumeTraded()));
+                            t.lastTradedQuantity(), t.volumeTraded(),
+                            t.totalBuyQuantity(), t.totalSellQuantity()));
                 }
             }
             webSocket.request(1);
