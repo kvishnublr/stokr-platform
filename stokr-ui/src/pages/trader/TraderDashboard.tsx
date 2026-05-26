@@ -3,8 +3,9 @@ import { fmtDateTime, fmtNseClock, fmtDateLong } from "../../lib/dateUtils";
 import { Navigate, Link } from "react-router-dom";
 import { useSessionStore } from "../../state/session";
 import { useUiThemeStore } from "../../state/uiTheme";
-import { api } from "../../api/client";
+import { api, parseAxiosMessage } from "../../api/client";
 import { cn } from "../../lib/utils";
+import { extractAccountPnl, formatInr, parseMoney } from "../../lib/moneyUtils";
 import { NiftyCandleChart } from "../../components/charts/NiftyCandleChart";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -77,19 +78,7 @@ type WatchRow = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const safeNum = (v: unknown): number | null => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-};
-
-const fmtCurrency = (v: unknown) => {
-  const n = safeNum(v);
-  if (n == null) return "—";
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency", currency: "INR", notation: Math.abs(n) >= 1e7 ? "compact" : "standard",
-    maximumFractionDigits: 2,
-  }).format(n);
-};
+const safeNum = (v: unknown): number | null => parseMoney(v);
 
 const fmtTime = fmtDateTime;
 
@@ -113,10 +102,11 @@ function Skeleton({ className }: { className?: string }) {
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
 
 function KpiCard({
-  label, value, delta, positive, loading, icon: Icon, accent,
+  label, value, delta, positive, loading, icon: Icon, accent, onRetry, failed,
 }: {
   label: string; value: string; delta?: string; positive?: boolean;
   loading?: boolean; icon?: React.ElementType; accent?: string;
+  onRetry?: () => void; failed?: boolean;
 }) {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   return (
@@ -142,8 +132,21 @@ function KpiCard({
         <div className="mt-3">
           {loading
             ? <Skeleton className="h-7 w-28" />
-            : <span className={cn("text-2xl font-black tabular-nums tracking-tight",
+            : failed && onRetry ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                className={cn(
+                  "text-sm font-bold underline underline-offset-2",
+                  isLight ? "text-rose-600 hover:text-rose-700" : "text-rose-400 hover:text-rose-300",
+                )}
+              >
+                Retry
+              </button>
+            ) : (
+              <span className={cn("text-2xl font-black tabular-nums tracking-tight",
                 isLight ? "text-neutral-900" : "text-white")}>{value}</span>
+            )
           }
         </div>
         {(delta || loading) && (
@@ -176,6 +179,8 @@ export function TraderDashboard() {
 
   // ── Independent parallel queries (each shows immediately as it resolves) ──
 
+  const queryEnabled = Boolean(accessToken);
+
   const modeQ = useQuery({
     queryKey: ["trader-exec-mode"],
     queryFn: async () => {
@@ -183,24 +188,38 @@ export function TraderDashboard() {
       return String(r?.data?.data?.executionMode ?? "PAPER").toUpperCase();
     },
     staleTime: 60_000,
+    enabled: queryEnabled,
   });
   const selectedMode = modeQ.data ?? "PAPER";
 
   const workstationQ = useQuery<Workstation>({
     queryKey: ["trader-dashboard-workstation"],
-    queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data,
+    queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
     staleTime: 10_000,
     refetchInterval: 20_000,
+    enabled: queryEnabled,
+    retry: 2,
   });
 
-  const brokerFundsQ = useQuery<Array<{ cashAvailable?: number; availableMargin?: number }>>({
+  const portfolioOverviewQ = useQuery<Record<string, unknown>>({
+    queryKey: ["trader-dashboard-portfolio-overview"],
+    queryFn: async () => (await api.get("/api/portfolio/overview")).data?.data as Record<string, unknown>,
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+    enabled: queryEnabled,
+    retry: 2,
+  });
+
+  const brokerFundsQ = useQuery<Array<Record<string, unknown>>>({
     queryKey: ["trader-dashboard-broker-funds"],
     queryFn: async () => {
-      const r = await api.get("/api/trader/broker/accounts").catch(() => null);
-      return Array.isArray(r?.data?.data) ? r.data.data : [];
+      const r = await api.get("/api/trader/broker/accounts");
+      return Array.isArray(r?.data?.data) ? (r.data.data as Array<Record<string, unknown>>) : [];
     },
     staleTime: 20_000,
     refetchInterval: 30_000,
+    enabled: queryEnabled,
+    retry: 1,
   });
 
   const readinessQ = useQuery<Readiness>({
@@ -208,6 +227,7 @@ export function TraderDashboard() {
     queryFn: async () => (await api.get("/api/trader/intraday/readiness")).data?.data,
     staleTime: 30_000,
     refetchInterval: 60_000,
+    enabled: queryEnabled,
   });
 
   const executionSummaryQ = useQuery<Record<string, unknown>>({
@@ -215,6 +235,7 @@ export function TraderDashboard() {
     queryFn: async () => (await api.get("/api/trader/execution-summary")).data?.data,
     staleTime: 15_000,
     refetchInterval: 30_000,
+    enabled: queryEnabled,
   });
 
   const ordersQ = useQuery<{ content: OrderRow[] }>({
@@ -222,7 +243,7 @@ export function TraderDashboard() {
     queryFn: async () => (await api.get(`/api/oms/orders?page=0&size=5&executionMode=${selectedMode}&sort=createdAt,desc`)).data?.data,
     staleTime: 10_000,
     refetchInterval: 15_000,
-    enabled: modeQ.isSuccess,
+    enabled: queryEnabled && modeQ.isSuccess,
   });
 
   const candlesQ = useQuery<CandleRow[]>({
@@ -233,6 +254,7 @@ export function TraderDashboard() {
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
+    enabled: queryEnabled,
   });
 
   const watchQ = useQuery<WatchRow[]>({
@@ -243,23 +265,56 @@ export function TraderDashboard() {
     },
     staleTime: 15_000,
     refetchInterval: 20_000,
+    enabled: queryEnabled,
   });
 
   // ── Derived data ───────────────────────────────────────────────────────────
 
   const ws = workstationQ.data;
-  const acct = ws?.accountSummary;
   const greetName = displayName ?? "Trader";
 
+  const accountPnl = useMemo(() => {
+    const fromWs = extractAccountPnl(
+      ws?.accountSummary as Record<string, unknown> | undefined,
+    );
+    const fromPortfolio = extractAccountPnl(portfolioOverviewQ.data);
+    return {
+      mtm: fromWs.mtm ?? fromPortfolio.mtm,
+      unrealized: fromWs.unrealized ?? fromPortfolio.unrealized,
+      realized: fromWs.realized ?? fromPortfolio.realized,
+      openPositions: fromWs.openPositions ?? fromPortfolio.openPositions,
+    };
+  }, [ws?.accountSummary, portfolioOverviewQ.data]);
+
+  const pnlLoading = workstationQ.isLoading && portfolioOverviewQ.isLoading;
+  const pnlFailed = workstationQ.isError && portfolioOverviewQ.isError;
+  const pnlReady = workstationQ.isSuccess || portfolioOverviewQ.isSuccess;
+  const pnlErrorMsg =
+    pnlFailed
+      ? parseAxiosMessage(workstationQ.error ?? portfolioOverviewQ.error)
+      : null;
+
+  const fmtKpiPnl = (n: number | null) => {
+    if (!pnlReady) return "—";
+    return formatInr(n ?? 0, { compact: true });
+  };
+
   const brokerConnected =
-    String(acct?.brokerConnectionState ?? "").includes("CONNECTED") ||
+    String(ws?.accountSummary?.brokerConnectionState ?? "").includes("CONNECTED") ||
     (brokerFundsQ.data?.length ?? 0) > 0;
 
   const availableMargin = useMemo(() => {
     const row = brokerFundsQ.data?.[0];
     if (!row) return null;
-    return safeNum(row.availableMargin ?? row.cashAvailable);
+    return parseMoney(
+      row.availableMargin ?? row.available_margin ?? row.cashAvailable ?? row.cash_available,
+    );
   }, [brokerFundsQ.data]);
+
+  const marginLoading = brokerFundsQ.isLoading;
+  const marginFailed = brokerFundsQ.isError;
+  const marginReady = brokerFundsQ.isSuccess;
+  const marginErrorMsg = marginFailed ? parseAxiosMessage(brokerFundsQ.error) : null;
 
   const activeStrategies = useMemo<StrategyRow[]>(() => {
     const fromWs = (ws?.strategyAllocations ?? [])
@@ -271,7 +326,7 @@ export function TraderDashboard() {
         strategyKey: String(s.strategyKey ?? ""),
         strategyName: String(s.strategyName ?? s.strategyKey ?? "Strategy"),
         symbol: s.symbol != null ? String(s.symbol) : undefined,
-        executionMode: String(s.executionMode ?? acct?.executionMode ?? selectedMode),
+        executionMode: String(s.executionMode ?? ws?.accountSummary?.executionMode ?? selectedMode),
         runtimeState: String(s.runtimeState ?? ""),
       }));
     if (fromWs.length > 0) return fromWs.slice(0, 8);
@@ -282,11 +337,11 @@ export function TraderDashboard() {
         strategyKey: s.strategyKey,
         strategyName: s.strategy ?? s.strategyKey,
         symbol: s.historicalCoverage?.symbol,
-        executionMode: acct?.executionMode ?? selectedMode,
+        executionMode: ws?.accountSummary?.executionMode ?? selectedMode,
         runtimeState: s.runtime,
       }));
     return fromReady.slice(0, 8);
-  }, [ws?.strategyAllocations, readinessQ.data?.strategies, acct?.executionMode, selectedMode]);
+  }, [ws?.strategyAllocations, readinessQ.data?.strategies, ws?.accountSummary?.executionMode, selectedMode]);
 
   const latestSignals = useMemo<SignalRow[]>(() => {
     const rows = ws?.latestSignals ?? [];
@@ -306,10 +361,10 @@ export function TraderDashboard() {
   const rejectionPct =
     totalOrders > 0 ? `${((rejectedOrders / totalOrders) * 100).toFixed(0)}% rejected today` : undefined;
 
-  const mtmPnl = acct?.totalPnl;
-  const unrealizedPnl = acct?.unrealizedPnl;
-  const realizedPnl = acct?.realizedPnl;
-  const openPosCount = acct?.openPositions ?? 0;
+  const mtmPnl = accountPnl.mtm;
+  const unrealizedPnl = accountPnl.unrealized;
+  const realizedPnl = accountPnl.realized;
+  const openPosCount = accountPnl.openPositions ?? 0;
 
   const candles = (candlesQ.data ?? [])
     .map(r => ({ time: Number(r.time ?? r.ts ?? 0), open: Number(r.open ?? 0), high: Number(r.high ?? 0), low: Number(r.low ?? 0), close: Number(r.close ?? 0) }))
@@ -332,11 +387,16 @@ export function TraderDashboard() {
   const rowHover = isLight ? "hover:bg-neutral-50" : "hover:bg-white/[0.04]";
   const rowBg = isLight ? "bg-neutral-50/50" : "bg-white/[0.02]";
 
-  const isLoading = workstationQ.isLoading;
+  const isLoading = pnlLoading;
   const hasChartData = candles.length > 0;
 
-  const refetchAll = () => {
+  const refetchPnl = () => {
     void workstationQ.refetch();
+    void portfolioOverviewQ.refetch();
+  };
+
+  const refetchAll = () => {
+    refetchPnl();
     void brokerFundsQ.refetch();
     void ordersQ.refetch();
     void candlesQ.refetch();
@@ -413,34 +473,71 @@ export function TraderDashboard() {
         </div>
       )}
 
+      {pnlErrorMsg && (
+        <p className={cn("text-xs font-medium", isLight ? "text-rose-600" : "text-rose-400")}>
+          P&amp;L snapshot unavailable: {pnlErrorMsg}
+        </p>
+      )}
+
       {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
           label="MTM P&L" loading={isLoading}
-          value={fmtCurrency(mtmPnl)}
-          delta={openPosCount > 0 ? `${openPosCount} open position${openPosCount === 1 ? "" : "s"}` : rejectionPct}
-          positive={(safeNum(mtmPnl) ?? 0) >= 0}
+          value={fmtKpiPnl(mtmPnl)}
+          failed={pnlFailed}
+          onRetry={refetchPnl}
+          delta={
+            pnlFailed
+              ? pnlErrorMsg ?? "Load failed"
+              : openPosCount > 0
+                ? `${openPosCount} open position${openPosCount === 1 ? "" : "s"}`
+                : rejectionPct
+          }
+          positive={(mtmPnl ?? 0) >= 0}
           icon={TrendingUp}
-          accent={(safeNum(mtmPnl) ?? 0) >= 0 ? "bg-emerald-500" : "bg-rose-500"}
+          accent={(mtmPnl ?? 0) >= 0 ? "bg-emerald-500" : "bg-rose-500"}
         />
         <KpiCard
           label="Unrealized P&L" loading={isLoading}
-          value={fmtCurrency(unrealizedPnl)}
-          positive={(safeNum(unrealizedPnl) ?? 0) >= 0}
+          value={fmtKpiPnl(unrealizedPnl)}
+          failed={pnlFailed}
+          onRetry={refetchPnl}
+          delta={pnlFailed ? pnlErrorMsg ?? "Load failed" : undefined}
+          positive={(unrealizedPnl ?? 0) >= 0}
           icon={Activity}
-          accent={(safeNum(unrealizedPnl) ?? 0) >= 0 ? "bg-sky-400" : "bg-amber-400"}
+          accent={(unrealizedPnl ?? 0) >= 0 ? "bg-sky-400" : "bg-amber-400"}
         />
         <KpiCard
           label="Realized P&L" loading={isLoading}
-          value={fmtCurrency(realizedPnl)}
-          positive={(safeNum(realizedPnl) ?? 0) >= 0}
+          value={fmtKpiPnl(realizedPnl)}
+          failed={pnlFailed}
+          onRetry={refetchPnl}
+          delta={pnlFailed ? pnlErrorMsg ?? "Load failed" : undefined}
+          positive={(realizedPnl ?? 0) >= 0}
           icon={BarChart2}
-          accent={(safeNum(realizedPnl) ?? 0) >= 0 ? "bg-violet-400" : "bg-rose-400"}
+          accent={(realizedPnl ?? 0) >= 0 ? "bg-violet-400" : "bg-rose-400"}
         />
         <KpiCard
-          label="Available Margin" loading={isLoading || brokerFundsQ.isLoading}
-          value={brokerConnected ? fmtCurrency(availableMargin) : "—"}
-          delta={brokerConnected ? undefined : "Connect broker for live margin"}
+          label="Available Margin"
+          loading={marginLoading}
+          value={
+            !brokerConnected
+              ? "—"
+              : marginFailed
+                ? "—"
+                : marginReady
+                  ? formatInr(availableMargin ?? 0)
+                  : "—"
+          }
+          failed={brokerConnected && marginFailed}
+          onRetry={() => void brokerFundsQ.refetch()}
+          delta={
+            !brokerConnected
+              ? "Connect broker for live margin"
+              : marginFailed
+                ? marginErrorMsg ?? "Load failed"
+                : undefined
+          }
           positive={true}
           icon={Layers}
           accent="bg-amber-400"
