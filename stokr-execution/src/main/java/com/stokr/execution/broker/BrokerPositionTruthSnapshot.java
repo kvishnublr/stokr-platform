@@ -2,6 +2,7 @@ package com.stokr.execution.broker;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -55,32 +56,36 @@ public record BrokerPositionTruthSnapshot(
     }
 
     public Map<String, Object> toApiMap() {
-        return Map.of(
-                "syncState", syncState.name(),
-                "lastSyncAt", lastSyncAt != null ? lastSyncAt.toString() : null,
-                "syncLatencyMs", syncLatencyMs,
-                "brokerConnected", brokerConnected,
-                "positions", positions.stream().map(p -> Map.of(
-                        "symbol", p.symbol(),
-                        "brokerQty", p.brokerQty(),
-                        "internalQty", p.internalQty(),
-                        "brokerAvgPrice", p.brokerAvgPrice(),
-                        "brokerRealizedPnl", p.brokerRealizedPnl(),
-                        "brokerUnrealizedPnl", p.brokerUnrealizedPnl(),
-                        "product", p.product() != null ? p.product() : "",
-                        "rowSyncState", p.rowSyncState()
-                )).toList(),
-                "mismatches", mismatches.stream().map(m -> Map.of(
-                        "symbol", m.symbol(),
-                        "kind", m.kind(),
-                        "brokerQty", m.brokerQty(),
-                        "internalQty", m.internalQty(),
-                        "detectedAt", m.detectedAt() != null ? m.detectedAt().toString() : null
-                )).toList(),
-                "brokerClosedSymbols", brokerClosedSymbols,
-                "blockedSymbols", blockedSymbols,
-                "pendingBrokerOrders", pendingBrokerOrders,
-                "message", message != null ? message : ""
-        );
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("syncState", syncState != null ? syncState.name() : "STALE");
+        out.put("lastSyncAt", lastSyncAt != null ? lastSyncAt.toString() : null);
+        out.put("syncLatencyMs", syncLatencyMs);
+        out.put("brokerConnected", brokerConnected);
+        out.put("positions", positions.stream().map(p -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("symbol", p.symbol());
+            row.put("brokerQty", p.brokerQty());
+            row.put("internalQty", p.internalQty());
+            row.put("brokerAvgPrice", p.brokerAvgPrice());
+            row.put("brokerRealizedPnl", p.brokerRealizedPnl());
+            row.put("brokerUnrealizedPnl", p.brokerUnrealizedPnl());
+            row.put("product", p.product() != null ? p.product() : "");
+            row.put("rowSyncState", p.rowSyncState() != null ? p.rowSyncState() : "");
+            return row;
+        }).toList());
+        out.put("mismatches", mismatches.stream().map(m -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("symbol", m.symbol());
+            row.put("kind", m.kind());
+            row.put("brokerQty", m.brokerQty());
+            row.put("internalQty", m.internalQty());
+            row.put("detectedAt", m.detectedAt() != null ? m.detectedAt().toString() : null);
+            return row;
+        }).toList());
+        out.put("brokerClosedSymbols", brokerClosedSymbols);
+        out.put("blockedSymbols", blockedSymbols);
+        out.put("pendingBrokerOrders", pendingBrokerOrders);
+        out.put("message", message != null ? message : "");
+        return out;
     }
 }

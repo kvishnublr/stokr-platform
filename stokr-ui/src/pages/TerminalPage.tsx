@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../api/client";
+import { RefreshCw } from "lucide-react";
+import { api, parseAxiosMessage } from "../api/client";
 import { WorkspaceTabPanel, WorkspaceTabs } from "../components/ds/WorkspaceTabs";
 import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
+import { fmtDateTime, fmtNseClock } from "../lib/dateUtils";
+import { extractAccountPnl, formatInr, sumPositionsPnl } from "../lib/moneyUtils";
 
 type Workstation = {
   accountSummary: {
@@ -46,9 +49,16 @@ const TABS = [
 ];
 
 function fmt(v: unknown) {
-  if (v == null) return "-";
+  if (v == null || v === "") return "—";
   if (typeof v === "number") return v.toFixed(2);
   return String(v);
+}
+
+function fmtCell(v: unknown, col: string) {
+  if (col === "createdAt" || col === "executedAt" || col === "eventTime" || col === "emittedAt" || col === "openTime") {
+    return fmtDateTime(String(v ?? ""));
+  }
+  return fmt(v);
 }
 
 function severityTone(v: string) {
@@ -115,7 +125,10 @@ export function TerminalPage() {
     queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
     staleTime: 2_000,
     refetchInterval: 5_000,
+    retry: 2,
   });
+
+  const wsError = q.isError ? parseAxiosMessage(q.error) : null;
 
   useEffect(() => {
     const token = localStorage.getItem("accessToken");
@@ -271,6 +284,18 @@ export function TerminalPage() {
 
   const sum = q.data?.accountSummary;
   const open = q.data?.openPositions ?? [];
+  const accountPnl = useMemo(() => {
+    const fromSummary = extractAccountPnl(
+      sum as Record<string, unknown> | undefined,
+      typeof sum?.openPositions === "number" ? sum.openPositions : null,
+    );
+    const fromRows = sumPositionsPnl(open);
+    return {
+      mtm: fromSummary.mtm ?? fromRows.mtm,
+      unrealized: fromSummary.unrealized ?? fromRows.unrealized,
+      realized: fromSummary.realized ?? fromRows.realized,
+    };
+  }, [sum, open]);
   const closed = q.data?.closedPositions ?? [];
   const orders = q.data?.orders ?? [];
   const execs = q.data?.executions ?? [];
@@ -305,9 +330,14 @@ export function TerminalPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className={cn("text-2xl font-semibold tracking-tight", isLight ? "text-neutral-900" : "text-white")}>Trader Execution Workstation</h1>
+          <p className={cn("text-[11px] font-semibold uppercase tracking-widest", isLight ? "text-neutral-500" : "text-neutral-400")}>
+            Analytics · {fmtNseClock()}
+          </p>
+          <h1 className={cn("text-2xl font-semibold tracking-tight", isLight ? "text-neutral-900" : "text-white")}>
+            Trader Execution Workstation
+          </h1>
           <div className="mt-2 flex flex-wrap gap-2">
-            {(q.data?.badges ?? []).map((b) => <Chip key={b} value={b} />)}
+            {(q.isLoading ? ["LOADING…"] : q.data?.badges ?? []).map((b) => <Chip key={b} value={b} />)}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -363,13 +393,34 @@ export function TerminalPage() {
         </div>
       </div>
 
+      {wsError ? (
+        <div className={cn(
+          "flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm",
+          isLight ? "border-rose-200 bg-rose-50 text-rose-800" : "border-rose-900 bg-rose-950/40 text-rose-300",
+        )}>
+          <span>Could not load workstation data: {wsError}</span>
+          <button
+            type="button"
+            onClick={() => void q.refetch()}
+            disabled={q.isFetching}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold",
+              isLight ? "border-rose-300 bg-white hover:bg-rose-100" : "border-rose-800 hover:bg-rose-900/60",
+            )}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", q.isFetching && "animate-spin")} />
+            Retry
+          </button>
+        </div>
+      ) : null}
+
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Metric title="Total PnL" value={fmt(sum?.totalPnl)} />
-        <Metric title="Realized" value={fmt(sum?.realizedPnl)} />
-        <Metric title="Unrealized" value={fmt(sum?.unrealizedPnl)} />
-        <Metric title="Open Positions" value={fmt(sum?.openPositions)} />
-        <Metric title="Active Strategies" value={fmt(sum?.activeStrategies)} />
-        <Metric title="Execution Mode" value={fmt(sum?.executionMode)} />
+        <Metric title="MTM P&L" value={q.isLoading ? "…" : formatInr(accountPnl.mtm ?? 0)} loading={q.isLoading} pnlValue={accountPnl.mtm} />
+        <Metric title="Realized P&L" value={q.isLoading ? "…" : formatInr(accountPnl.realized ?? 0)} loading={q.isLoading} pnlValue={accountPnl.realized} />
+        <Metric title="Unrealized P&L" value={q.isLoading ? "…" : formatInr(accountPnl.unrealized ?? 0)} loading={q.isLoading} pnlValue={accountPnl.unrealized} />
+        <Metric title="Open Positions" value={q.isLoading ? "…" : fmt(sum?.openPositions)} loading={q.isLoading} />
+        <Metric title="Active Strategies" value={q.isLoading ? "…" : fmt(sum?.activeStrategies)} loading={q.isLoading} />
+        <Metric title="Execution Mode" value={q.isLoading ? "…" : fmt(sum?.executionMode)} loading={q.isLoading} />
       </div>
 
       {riskBlock ? (
@@ -429,6 +480,8 @@ export function TerminalPage() {
         <WorkspaceTabPanel id="open" active={tab}>
           <Table
             rows={open}
+            loading={q.isLoading}
+            emptyLabel="No open positions"
             cols={["symbol", "side", "qty", "avgPrice", "ltp", "mtmPnl", "realizedPnl", "unrealizedPnl", "exposurePct", "parityState", "executionMode", "brokerStatus", "currentSignalState"]}
           />
         </WorkspaceTabPanel>
@@ -784,11 +837,39 @@ export function TerminalPage() {
   );
 }
 
-function Metric({ title, value }: { title: string; value: string }) {
+function Metric({
+  title,
+  value,
+  loading,
+  pnlValue,
+}: {
+  title: string;
+  value: string;
+  loading?: boolean;
+  pnlValue?: number | null;
+}) {
+  const isLight = useUiThemeStore((s) => s.mode === "light");
+  const n = pnlValue != null ? pnlValue : NaN;
+  const tone =
+    pnlValue != null && Number.isFinite(n)
+      ? n > 0
+        ? "text-emerald-600 dark:text-emerald-400"
+        : n < 0
+          ? "text-rose-600 dark:text-rose-400"
+          : ""
+      : "";
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950/60">
-      <div className="text-[11px] uppercase tracking-wide text-neutral-500">{title}</div>
-      <div className="mt-1 font-mono text-base font-semibold text-neutral-900 dark:text-neutral-100">{value}</div>
+    <div className={cn(
+      "rounded-xl border p-3 shadow-sm transition-shadow hover:shadow-md",
+      isLight ? "border-neutral-200 bg-white" : "border-neutral-800 bg-neutral-950/60",
+    )}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{title}</div>
+      <div className={cn(
+        "mt-1 font-mono text-base font-semibold tabular-nums",
+        loading ? "animate-pulse text-neutral-400" : tone || (isLight ? "text-neutral-900" : "text-neutral-100"),
+      )}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -837,7 +918,7 @@ function OrdersTable({
                     {c.toLowerCase().includes("state") || c.toLowerCase().includes("mode") || c.toLowerCase().includes("status") ? (
                       <Chip value={fmt(r[c]).toUpperCase()} />
                     ) : (
-                      fmt(r[c])
+                      fmtCell(r[c], c)
                     )}
                   </td>
                 ))}
@@ -872,7 +953,17 @@ function OrdersTable({
   );
 }
 
-function Table({ rows, cols }: { rows: Array<Record<string, unknown>>; cols: string[] }) {
+function Table({
+  rows,
+  cols,
+  loading,
+  emptyLabel = "No records",
+}: {
+  rows: Array<Record<string, unknown>>;
+  cols: string[];
+  loading?: boolean;
+  emptyLabel?: string;
+}) {
   return (
     <div className="mt-4 overflow-x-auto">
       <table className="w-full text-left text-xs">
@@ -891,7 +982,7 @@ function Table({ rows, cols }: { rows: Array<Record<string, unknown>>; cols: str
                   {c.toLowerCase().includes("state") || c.toLowerCase().includes("mode") || c.toLowerCase().includes("status") ? (
                     <Chip value={fmt(r[c]).toUpperCase()} />
                   ) : (
-                    fmt(r[c])
+                    fmtCell(r[c], c)
                   )}
                 </td>
               ))}
@@ -899,7 +990,11 @@ function Table({ rows, cols }: { rows: Array<Record<string, unknown>>; cols: str
           ))}
         </tbody>
       </table>
-      {rows.length === 0 ? <div className="py-6 text-center text-sm text-neutral-500">No records</div> : null}
+      {rows.length === 0 ? (
+        <div className="py-6 text-center text-sm text-neutral-500">
+          {loading ? "Loading…" : emptyLabel}
+        </div>
+      ) : null}
     </div>
   );
 }

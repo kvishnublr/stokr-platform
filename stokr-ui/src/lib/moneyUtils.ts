@@ -45,6 +45,27 @@ function pickMoney(obj: Record<string, unknown> | undefined, ...keys: string[]):
   return null;
 }
 
+/** Sum per-position P&L rows (workstation openPositions). */
+export function sumPositionsPnl(
+  rows: Array<Record<string, unknown>> | undefined,
+): AccountPnlSnapshot {
+  if (!rows?.length) {
+    return { mtm: null, unrealized: null, realized: null, openPositions: null };
+  }
+  let realized = 0;
+  let unrealized = 0;
+  for (const row of rows) {
+    realized += parseMoney(row.realizedPnl) ?? 0;
+    unrealized += parseMoney(row.unrealizedPnl) ?? 0;
+  }
+  return {
+    mtm: realized + unrealized,
+    unrealized,
+    realized,
+    openPositions: rows.length,
+  };
+}
+
 /** Normalize workstation or portfolio overview payloads. */
 export function extractAccountPnl(
   summary: Record<string, unknown> | undefined,

@@ -5,7 +5,7 @@ import { useSessionStore } from "../../state/session";
 import { useUiThemeStore } from "../../state/uiTheme";
 import { api, parseAxiosMessage } from "../../api/client";
 import { cn } from "../../lib/utils";
-import { extractAccountPnl, formatInr, parseMoney } from "../../lib/moneyUtils";
+import { extractAccountPnl, formatInr, parseMoney, sumPositionsPnl } from "../../lib/moneyUtils";
 import { NiftyCandleChart } from "../../components/charts/NiftyCandleChart";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -29,6 +29,7 @@ type Workstation = {
   latestSignals?: Array<Record<string, unknown>>;
   strategyAllocations?: Array<Record<string, unknown>>;
   badges?: string[];
+  openPositions?: Array<Record<string, unknown>>;
 };
 
 type ReadinessStrategy = {
@@ -277,14 +278,16 @@ export function TraderDashboard() {
     const fromWs = extractAccountPnl(
       ws?.accountSummary as Record<string, unknown> | undefined,
     );
+    const fromRows = sumPositionsPnl(ws?.openPositions);
     const fromPortfolio = extractAccountPnl(portfolioOverviewQ.data);
     return {
-      mtm: fromWs.mtm ?? fromPortfolio.mtm,
-      unrealized: fromWs.unrealized ?? fromPortfolio.unrealized,
-      realized: fromWs.realized ?? fromPortfolio.realized,
-      openPositions: fromWs.openPositions ?? fromPortfolio.openPositions,
+      mtm: fromWs.mtm ?? fromRows.mtm ?? fromPortfolio.mtm,
+      unrealized: fromWs.unrealized ?? fromRows.unrealized ?? fromPortfolio.unrealized,
+      realized: fromWs.realized ?? fromRows.realized ?? fromPortfolio.realized,
+      openPositions:
+        fromWs.openPositions ?? fromRows.openPositions ?? fromPortfolio.openPositions,
     };
-  }, [ws?.accountSummary, portfolioOverviewQ.data]);
+  }, [ws?.accountSummary, ws?.openPositions, portfolioOverviewQ.data]);
 
   const pnlLoading = workstationQ.isLoading && portfolioOverviewQ.isLoading;
   const pnlFailed = workstationQ.isError && portfolioOverviewQ.isError;

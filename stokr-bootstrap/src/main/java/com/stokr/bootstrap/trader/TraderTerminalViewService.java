@@ -27,6 +27,7 @@ import com.stokr.oms.service.PortfolioQueryService;
 import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.catalog.StrategyUniverseResolverService;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
+import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.user.broker.ZerodhaBrokerOperationsService;
@@ -56,6 +57,9 @@ import java.util.stream.Collectors;
 public class TraderTerminalViewService {
 
     private static final int CHART_CAP = 500;
+    private static final List<String> DEFAULT_WATCH_SYMBOLS = List.of(
+            "NIFTY_FUT", "BANKNIFTY_FUT", "NIFTY", "RELIANCE", "BERGEPAINT"
+    );
 
     private final MarketDataQueryService marketDataQueryService;
     private final StrategySignalRepository strategySignalRepository;
@@ -264,14 +268,22 @@ public class TraderTerminalViewService {
 
         List<Map<String, Object>> openPositions = new ArrayList<>();
         List<Map<String, Object>> closedPositions = new ArrayList<>();
+        BigDecimal sumRealized = BigDecimal.ZERO;
+        BigDecimal sumUnrealized = BigDecimal.ZERO;
         for (PortfolioPosition p : positions) {
             BigDecimal qty = p.getQuantity() == null ? BigDecimal.ZERO : p.getQuantity();
             String symbol = p.getSymbol();
             BigDecimal ltp = lastPrice(symbol);
             BigDecimal avg = p.getAvgPrice() == null ? BigDecimal.ZERO : p.getAvgPrice();
-            BigDecimal unreal = p.getUnrealizedPnl() == null ? BigDecimal.ZERO : p.getUnrealizedPnl();
+            BrokerPositionTruthSnapshot.BrokerTruthPositionRow truth = truthBySymbol.get(
+                    BrokerPositionTruthService.normalizeSymbol(symbol));
+            BigDecimal unreal = resolveUnrealizedPnl(qty, avg, ltp, p.getUnrealizedPnl(), truth);
             BigDecimal realized = p.getRealizedPnl() == null ? BigDecimal.ZERO : p.getRealizedPnl();
             BigDecimal mtm = realized.add(unreal);
+            sumRealized = sumRealized.add(realized);
+            if (qty.compareTo(BigDecimal.ZERO) != 0) {
+                sumUnrealized = sumUnrealized.add(unreal);
+            }
             BigDecimal absQty = qty.abs();
             BigDecimal exposureNotional = absQty.multiply(ltp.compareTo(BigDecimal.ZERO) > 0 ? ltp : avg);
             BigDecimal totalExposure = exposure.bySymbol().stream()
@@ -306,8 +318,6 @@ public class TraderTerminalViewService {
             row.put("brokerStatus", broker.health());
             row.put("executionMode", mode.executionMode());
             row.put("parityState", parityState);
-            BrokerPositionTruthSnapshot.BrokerTruthPositionRow truth = truthBySymbol.get(
-                    BrokerPositionTruthService.normalizeSymbol(symbol));
             if (truth != null) {
                 row.put("brokerQty", truth.brokerQty());
                 row.put("brokerSyncState", truth.rowSyncState());
@@ -340,16 +350,23 @@ public class TraderTerminalViewService {
         List<OmsExecutionRowDto> execRows = omsQueryService.pageExecutions(userId, liveParams, PageRequest.of(0, 100)).getContent();
         List<Map<String, Object>> unifiedOrders = buildUnifiedOrders(userId, orders);
 
+        BigDecimal totalRealized = sumRealized.setScale(8, java.math.RoundingMode.HALF_UP);
+        BigDecimal totalUnrealized = sumUnrealized.setScale(8, java.math.RoundingMode.HALF_UP);
+        BigDecimal totalPnl = totalRealized.add(totalUnrealized).setScale(8, java.math.RoundingMode.HALF_UP);
+        int openCount = openPositions.size() > 0 ? openPositions.size() : overview.openPositionCount();
+
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("accountSummary", Map.of(
-                "totalPnl", overview.cumulativePnl(),
-                "realizedPnl", overview.realizedPnl(),
-                "unrealizedPnl", overview.unrealizedPnl(),
-                "openPositions", overview.openPositionCount(),
-                "activeStrategies", strategyInstances.stream().filter(si -> "RUNNING".equalsIgnoreCase(si.getRuntimeState())).count(),
-                "brokerConnectionState", broker.connected() ? "BROKER_CONNECTED" : "BROKER_DISCONNECTED",
-                "executionMode", mode.executionMode()
-        ));
+        Map<String, Object> accountSummary = new LinkedHashMap<>();
+        accountSummary.put("totalPnl", totalPnl);
+        accountSummary.put("mtmPnl", totalPnl);
+        accountSummary.put("realizedPnl", totalRealized);
+        accountSummary.put("unrealizedPnl", totalUnrealized);
+        accountSummary.put("openPositions", openCount);
+        accountSummary.put("activeStrategies", strategyInstances.stream()
+                .filter(si -> "RUNNING".equalsIgnoreCase(si.getRuntimeState())).count());
+        accountSummary.put("brokerConnectionState", broker.connected() ? "BROKER_CONNECTED" : "BROKER_DISCONNECTED");
+        accountSummary.put("executionMode", mode.executionMode());
+        out.put("accountSummary", accountSummary);
         out.put("badges", List.of(
                 mode.executionMode(),
                 broker.connected() ? "BROKER_CONNECTED" : "BROKER_DISCONNECTED",
@@ -466,6 +483,25 @@ public class TraderTerminalViewService {
             return BigDecimal.ZERO;
         }
         return bars.getFirst().getClosePrice();
+    }
+
+    private static BigDecimal resolveUnrealizedPnl(
+            BigDecimal qty,
+            BigDecimal avg,
+            BigDecimal ltp,
+            BigDecimal storedUnrealized,
+            BrokerPositionTruthSnapshot.BrokerTruthPositionRow truth
+    ) {
+        if (qty == null || qty.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+        if (truth != null && truth.brokerUnrealizedPnl() != null) {
+            return truth.brokerUnrealizedPnl();
+        }
+        if (ltp != null && ltp.compareTo(BigDecimal.ZERO) > 0 && avg != null) {
+            return ltp.subtract(avg).multiply(qty).setScale(8, java.math.RoundingMode.HALF_UP);
+        }
+        return storedUnrealized != null ? storedUnrealized : BigDecimal.ZERO;
     }
 
     private static List<Map<String, Object>> mapCandlesToChartRows(List<MarketdataCandle> bars) {
