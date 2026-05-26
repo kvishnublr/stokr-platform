@@ -105,7 +105,19 @@ export function extractAccountPnl(
   };
 }
 
-/** Unified P&L resolution: broker truth first, then workstation summary, position rows, OMS overview. */
+/** True when every P&L leg is zero or unknown. */
+function isZeroPnlSnapshot(snapshot: AccountPnlSnapshot): boolean {
+  const mtm = snapshot.mtm ?? 0;
+  const unrealized = snapshot.unrealized ?? 0;
+  const realized = snapshot.realized ?? 0;
+  return mtm === 0 && unrealized === 0 && realized === 0;
+}
+
+function hasPnlValues(snapshot: AccountPnlSnapshot): boolean {
+  return snapshot.mtm != null || snapshot.unrealized != null || snapshot.realized != null;
+}
+
+/** Unified P&L resolution: broker truth when it has open legs or non-zero P&L, else workstation rows. */
 export function resolveAccountPnl(input: {
   brokerTruth?: Record<string, unknown>;
   accountSummary?: Record<string, unknown>;
@@ -113,21 +125,40 @@ export function resolveAccountPnl(input: {
   portfolioOverview?: Record<string, unknown>;
 }): ResolvedAccountPnl {
   const fromBroker = extractBrokerTruthPnl(input.brokerTruth);
-  if (fromBroker) {
+  const fromRows = sumPositionsPnl(input.openPositions);
+  const fromWs = extractAccountPnl(input.accountSummary, fromRows.openPositions);
+  const fromOms = extractAccountPnl(input.portfolioOverview);
+
+  const brokerHasOpen = (fromBroker?.openPositions ?? 0) > 0;
+  const brokerHasPnl = fromBroker != null && !isZeroPnlSnapshot(fromBroker);
+  if (fromBroker && (brokerHasOpen || brokerHasPnl)) {
     return { ...fromBroker, source: "BROKER" };
   }
-  const fromWs = extractAccountPnl(input.accountSummary);
-  if (fromWs.mtm != null || fromWs.unrealized != null || fromWs.realized != null) {
+
+  if ((fromRows.openPositions ?? 0) > 0 && fromRows.mtm != null && !isZeroPnlSnapshot(fromRows)) {
+    return { ...fromRows, source: "POSITIONS" };
+  }
+
+  if (hasPnlValues(fromWs) && !isZeroPnlSnapshot(fromWs)) {
     return { ...fromWs, source: "WORKSTATION" };
   }
-  const fromRows = sumPositionsPnl(input.openPositions);
+
   if (fromRows.mtm != null) {
     return { ...fromRows, source: "POSITIONS" };
   }
-  const fromOms = extractAccountPnl(input.portfolioOverview);
-  if (fromOms.mtm != null || fromOms.unrealized != null || fromOms.realized != null) {
+
+  if (hasPnlValues(fromWs)) {
+    return { ...fromWs, source: "WORKSTATION" };
+  }
+
+  if (fromBroker) {
+    return { ...fromBroker, source: "BROKER" };
+  }
+
+  if (hasPnlValues(fromOms)) {
     return { ...fromOms, source: "OMS" };
   }
+
   return { mtm: null, unrealized: null, realized: null, openPositions: null, source: "UNKNOWN" };
 }
 

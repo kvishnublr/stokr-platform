@@ -415,11 +415,17 @@ public class TraderTerminalViewService {
         BigDecimal totalRealized = sumRealized.setScale(8, java.math.RoundingMode.HALF_UP);
         BigDecimal totalUnrealized = sumUnrealized.setScale(8, java.math.RoundingMode.HALF_UP);
         int openCount = openPositions.size() > 0 ? openPositions.size() : overview.openPositionCount();
+        String pnlSource = "OMS";
         if (brokerPnlSource) {
             BrokerPnlTotals brokerTotals = summarizeBrokerTotals(brokerTruth);
-            totalRealized = brokerTotals.realized();
-            totalUnrealized = brokerTotals.unrealized();
-            openCount = brokerTotals.openCount();
+            boolean brokerHasOpen = brokerTotals.openCount() > 0;
+            boolean brokerHasPnl = brokerTotals.mtm().compareTo(BigDecimal.ZERO) != 0;
+            if (brokerHasOpen || brokerHasPnl) {
+                totalRealized = brokerTotals.realized();
+                totalUnrealized = brokerTotals.unrealized();
+                openCount = brokerTotals.openCount();
+                pnlSource = "BROKER";
+            }
         }
         BigDecimal totalPnl = totalRealized.add(totalUnrealized).setScale(8, java.math.RoundingMode.HALF_UP);
 
@@ -430,7 +436,7 @@ public class TraderTerminalViewService {
         accountSummary.put("realizedPnl", totalRealized);
         accountSummary.put("unrealizedPnl", totalUnrealized);
         accountSummary.put("openPositions", openCount);
-        accountSummary.put("pnlSource", brokerPnlSource ? "BROKER" : "OMS");
+        accountSummary.put("pnlSource", pnlSource);
         accountSummary.put("activeStrategies", strategyInstances.stream()
                 .filter(si -> "RUNNING".equalsIgnoreCase(si.getRuntimeState())).count());
         accountSummary.put("brokerConnectionState", broker.connected() ? "BROKER_CONNECTED" : "BROKER_DISCONNECTED");
