@@ -10,6 +10,7 @@ export type LiveSignalCardData = {
   symbol: string | null;
   signalType: string | null;
   pipeline: string | null;
+  signalSource?: string | null;
   confidenceScore: number | null;
   entryReferencePrice: number | null;
   stopPrice: number | null;
@@ -72,7 +73,7 @@ export function LiveSignalCard({
 }) {
   const side = String(signal.signalType ?? "").toUpperCase();
   const isBuy = side === "BUY";
-  const provenance = resolveProvenance(signal.pipeline);
+  const provenance = resolveProvenance(signal.pipeline, signal.signalSource);
   const conf = confidencePct(signal.confidenceScore);
   const pnl = signal.realizedPnl ?? signal.unrealizedPnl;
   const pnlNum = pnl != null ? Number(pnl) : null;

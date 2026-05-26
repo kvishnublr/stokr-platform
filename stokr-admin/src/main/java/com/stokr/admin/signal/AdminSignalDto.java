@@ -10,6 +10,7 @@ public record AdminSignalDto(
         String symbol,
         String signalType,
         String pipeline,
+        String signalSource,
         BigDecimal confidenceScore,
         BigDecimal entryReferencePrice,
         BigDecimal stopPrice,

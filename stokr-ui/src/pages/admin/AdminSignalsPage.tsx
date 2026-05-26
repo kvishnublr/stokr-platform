@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { fmtDateTime } from "../../lib/dateUtils";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { api } from "../../api/client";
@@ -29,6 +29,7 @@ type SignalRow = {
   symbol: string | null;
   signalType: string | null;
   pipeline: string | null;
+  signalSource: string | null;
   confidenceScore: number | null;
   entryReferencePrice: number | null;
   stopPrice: number | null;
@@ -380,14 +381,18 @@ const QUICK_FILTERS = [
 
 export function AdminSignalsPage() {
   const isLight = useUiThemeStore((s) => s.mode === "light");
+  const [searchParams] = useSearchParams();
+  const provenanceFromUrl = searchParams.get("provenance");
   const [page, setPage] = useState(0);
   const [symbol, setSymbol] = useState("");
   const [strategyFilter, setStrategyFilter] = useState("");
   const [signalType, setSignalType] = useState("ALL");
   const [pipeline, setPipeline] = useState("ALL");
   const [outcomeStatus, setOutcomeStatus] = useState("ALL");
-  const [includeReplayLab, setIncludeReplayLab] = useState(false);
-  const [provenanceTab, setProvenanceTab] = useState<"PROD" | "REPLAY_LAB">("PROD");
+  const [includeReplayLab, setIncludeReplayLab] = useState(provenanceFromUrl === "replay");
+  const [provenanceTab, setProvenanceTab] = useState<"PROD" | "REPLAY_LAB">(
+    provenanceFromUrl === "replay" ? "REPLAY_LAB" : "PROD",
+  );
   const [viewMode, setViewMode] = useState<"stream" | "grid">("stream");
   const [showDetailGrid, setShowDetailGrid] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -543,12 +548,12 @@ export function AdminSignalsPage() {
   const filteredRows = useMemo(() => {
     if (provenanceTab === "REPLAY_LAB") {
       return rows.filter((r) => {
-        const p = resolveProvenance(r.pipeline);
+        const p = resolveProvenance(r.pipeline, r.signalSource);
         return p === "REPLAY" || p === "LAB";
       });
     }
     return rows.filter((r) => {
-      const p = resolveProvenance(r.pipeline);
+      const p = resolveProvenance(r.pipeline, r.signalSource);
       return p === "LIVE" || p === "PAPER" || p === "UNKNOWN";
     });
   }, [rows, provenanceTab]);

@@ -105,6 +105,9 @@ springdoc:
     path: /swagger-ui
 
 stokr:
+  deploy:
+    git-commit: ${STOKR_GIT_COMMIT:unknown}
+    branch: ${STOKR_DEPLOY_BRANCH:Release_v1}
   rabbit:
     # Gates @RabbitListener registration (see stokr-execution messaging). Same env as spring.rabbitmq.listener.*.auto-startup.
     # false = no AMQP consumer reconnect loop when RabbitMQ is down (typical local IntelliJ + DB only).

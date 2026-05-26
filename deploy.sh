@@ -49,7 +49,14 @@ record_deploy_sha() {
     git rev-parse HEAD > "$DEPLOY_STATE_FILE" 2>/dev/null || true
 }
 
+export_deploy_metadata() {
+    export STOKR_GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    export STOKR_DEPLOY_BRANCH="${STOKR_DEPLOY_BRANCH:-Release_v1}"
+    echo "==> Deploy metadata: branch=$STOKR_DEPLOY_BRANCH commit=$STOKR_GIT_COMMIT"
+}
+
 deploy_api_docker() {
+    export_deploy_metadata
     echo "==> [API] Pulling latest code..."
     git pull origin Release_v1
 
@@ -70,6 +77,7 @@ deploy_api_docker() {
 }
 
 deploy_ui_docker() {
+    export_deploy_metadata
     echo "==> [UI] Pulling latest code..."
     git pull origin Release_v1
 

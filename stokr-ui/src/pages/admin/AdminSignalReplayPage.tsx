@@ -56,8 +56,15 @@ export function AdminSignalReplayPage() {
     queryFn: async () =>
       (await api.get("/api/admin/signals/replay/preflight", { params: { strategyKey, from, to } })).data?.data as ReplayPreflight,
     enabled: Boolean(strategyKey && from && to),
-    retry: 1,
+    retry: false,
   });
+
+  const preflightEndpointMissing =
+    preflightQ.isError &&
+    typeof preflightQ.error === "object" &&
+    preflightQ.error !== null &&
+    "response" in preflightQ.error &&
+    (preflightQ.error as { response?: { status?: number } }).response?.status === 404;
 
   const replayMut = useMutation({
     mutationFn: async () => {
@@ -94,7 +101,9 @@ export function AdminSignalReplayPage() {
   ];
 
   const preflight = preflightQ.data;
-  const canRun = Boolean(preflight?.ready) && !replayMut.isPending;
+  const canRun = preflightEndpointMissing
+    ? !replayMut.isPending
+    : Boolean(preflight?.ready) && !replayMut.isPending;
 
   const preflightSummary = useMemo(() => {
     if (!preflight) return null;
@@ -123,6 +132,21 @@ export function AdminSignalReplayPage() {
           Open Signal Lab
         </Link>
       </div>
+
+      {preflightEndpointMissing ? (
+        <div className={toneBannerClasses(isLight, "warn")}>
+          <div className="flex items-start gap-2 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-semibold">Server update required</p>
+              <p className="mt-1 text-xs">
+                Replay preflight API is not deployed. Run replay may start but fail silently in the background. Deploy{" "}
+                <code className="rounded bg-black/5 px-1">Release_v1</code> on the server, then refresh.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {preflight && !preflight.ready ? (
         <div className={toneBannerClasses(isLight, "warn")}>
@@ -245,7 +269,10 @@ export function AdminSignalReplayPage() {
           <div className={cn("text-sm", isLight ? "text-blue-900" : "text-blue-100")}>
             {replayStarted.strategyKey} · {replayStarted.from} → {replayStarted.to}
           </div>
-          <div className={cn("text-xs", isLight ? "text-blue-700" : "text-blue-200/90")}>{replayStarted.message}</div>
+          <div className={cn("text-xs", isLight ? "text-blue-700" : "text-blue-200/90")}>
+            {replayStarted.message}
+            {" "}Use the <strong>Replay / Lab</strong> tab in Signal Monitor — production stats exclude REPLAY signals.
+          </div>
 
           <button
             type="button"
@@ -273,6 +300,12 @@ export function AdminSignalReplayPage() {
 
           <Link to="/admin/signals" className={cn("inline-flex text-xs font-semibold underline", isLight ? "text-blue-800" : "text-blue-200")}>
             Open Signal Monitor →
+          </Link>
+          <Link
+            to="/admin/signals?provenance=replay"
+            className={cn("inline-flex text-xs font-semibold underline", isLight ? "text-violet-800" : "text-violet-200")}
+          >
+            View REPLAY signals tab →
           </Link>
         </div>
       ) : null}

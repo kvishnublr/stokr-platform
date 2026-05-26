@@ -8,6 +8,7 @@ import com.stokr.strategy.repository.StrategyInstanceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,6 +29,12 @@ public class AdminOpsController {
     private final StrategyInstanceRepository strategyInstanceRepository;
     private final ObjectProvider<SimpUserRegistry> simpUserRegistry;
 
+    @Value("${stokr.deploy.git-commit:unknown}")
+    private String gitCommit;
+
+    @Value("${stokr.deploy.branch:Release_v1}")
+    private String deployBranch;
+
     @GetMapping("/status")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<Map<String, Object>> status() {
@@ -35,6 +42,8 @@ public class AdminOpsController {
         body.put("registeredUsers", authUserRepository.countByDeletedFalse());
         body.put("runningStrategies", strategyInstanceRepository.countByRuntimeStateAndDeletedFalse("RUNNING"));
         body.put("websocketUsersApprox", websocketUsers());
+        body.put("gitCommit", gitCommit);
+        body.put("deployBranch", deployBranch);
         Map<String, Object> queues = new LinkedHashMap<>();
         queues.put(PipelineQueues.STRATEGY_SIGNAL, queueProps(PipelineQueues.STRATEGY_SIGNAL));
         queues.put(PipelineQueues.OMS_ORDER, queueProps(PipelineQueues.OMS_ORDER));

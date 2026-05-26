@@ -123,6 +123,7 @@ public class AdminSignalQueryService {
                 s.getSymbol(),
                 s.getSignalType() != null ? s.getSignalType().name() : null,
                 s.getPipeline(),
+                s.getSignalSource() != null ? s.getSignalSource().name() : null,
                 s.getConfidenceScore(),
                 s.getEntryReferencePrice(),
                 s.getStopPrice(),

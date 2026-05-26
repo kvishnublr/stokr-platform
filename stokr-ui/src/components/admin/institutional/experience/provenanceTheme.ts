@@ -2,11 +2,20 @@ import { toneChipClasses } from "../../../../lib/statusTone";
 
 export type SignalProvenance = "LIVE" | "PAPER" | "SIMULATED" | "REPLAY" | "LAB" | "UNKNOWN";
 
-export function resolveProvenance(pipeline: string | null | undefined): SignalProvenance {
+export function resolveProvenance(
+  pipeline: string | null | undefined,
+  signalSource?: string | null | undefined,
+): SignalProvenance {
+  const source = String(signalSource ?? "").toUpperCase();
+  if (source === "REPLAY") return "REPLAY";
+  if (source === "LAB") return "LAB";
+  if (source === "LIVE") return "LIVE";
+  if (source === "PAPER") return "PAPER";
+
   const v = String(pipeline ?? "").toUpperCase();
   if (v === "LIVE") return "LIVE";
   if (v === "PAPER") return "PAPER";
-  if (v === "SIMULATED") return "PAPER";
+  if (v === "SIMULATED") return "REPLAY";
   if (v.includes("REPLAY")) return "REPLAY";
   if (v.includes("LAB") || v.includes("TEST")) return "LAB";
   return "UNKNOWN";
