@@ -4,8 +4,13 @@ import { Navigate, Link } from "react-router-dom";
 import { useSessionStore } from "../../state/session";
 import { useUiThemeStore } from "../../state/uiTheme";
 import { api, parseAxiosMessage } from "../../api/client";
+import {
+  TRADER_EXECUTION_MODE_QUERY_KEY,
+  fetchTraderExecutionMode,
+  signalMatchesExecutionMode,
+} from "../../lib/traderExecutionMode";
 import { cn } from "../../lib/utils";
-import { extractAccountPnl, formatInr, parseMoney, sumPositionsPnl } from "../../lib/moneyUtils";
+import { extractAccountPnl, extractBrokerTruthPnl, formatInr, parseMoney, sumPositionsPnl } from "../../lib/moneyUtils";
 import { NiftyCandleChart } from "../../components/charts/NiftyCandleChart";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -30,6 +35,7 @@ type Workstation = {
   strategyAllocations?: Array<Record<string, unknown>>;
   badges?: string[];
   openPositions?: Array<Record<string, unknown>>;
+  brokerTruth?: Record<string, unknown>;
 };
 
 type ReadinessStrategy = {
@@ -183,18 +189,15 @@ export function TraderDashboard() {
   const queryEnabled = Boolean(accessToken);
 
   const modeQ = useQuery({
-    queryKey: ["trader-exec-mode"],
-    queryFn: async () => {
-      const r = await api.get("/api/trader/me/execution-mode").catch(() => null);
-      return String(r?.data?.data?.executionMode ?? "PAPER").toUpperCase();
-    },
+    queryKey: [...TRADER_EXECUTION_MODE_QUERY_KEY],
+    queryFn: fetchTraderExecutionMode,
     staleTime: 60_000,
     enabled: queryEnabled,
   });
   const selectedMode = modeQ.data ?? "PAPER";
 
   const workstationQ = useQuery<Workstation>({
-    queryKey: ["trader-dashboard-workstation"],
+    queryKey: ["trader-dashboard-workstation", selectedMode],
     queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
     staleTime: 10_000,
     refetchInterval: 20_000,
@@ -240,18 +243,26 @@ export function TraderDashboard() {
   });
 
   const ordersQ = useQuery<{ content: OrderRow[] }>({
-    queryKey: ["trader-dashboard-orders"],
-    queryFn: async () => (await api.get("/api/oms/orders?page=0&size=8&sort=createdAt,desc")).data?.data,
+    queryKey: ["trader-dashboard-orders", selectedMode],
+    queryFn: async () =>
+      (
+        await api.get(
+          `/api/oms/orders?page=0&size=8&sort=createdAt,desc&executionMode=${encodeURIComponent(selectedMode)}`,
+        )
+      ).data?.data,
     staleTime: 10_000,
     refetchInterval: 15_000,
     enabled: queryEnabled,
   });
 
   const signalsFeedQ = useQuery<Array<Record<string, unknown>>>({
-    queryKey: ["trader-dashboard-signals-feed"],
+    queryKey: ["trader-dashboard-signals-feed", selectedMode],
     queryFn: async () => {
       const r = await api.get("/api/trader/strategy-feed?limit=10");
-      return Array.isArray(r.data?.data) ? r.data.data : [];
+      const rows = Array.isArray(r.data?.data) ? r.data.data : [];
+      return rows.filter((row: { pipeline?: string; executionMode?: string }) =>
+        signalMatchesExecutionMode(row, selectedMode),
+      );
     },
     staleTime: 10_000,
     refetchInterval: 20_000,
@@ -286,19 +297,23 @@ export function TraderDashboard() {
   const greetName = displayName ?? "Trader";
 
   const accountPnl = useMemo(() => {
+    const fromBroker = extractBrokerTruthPnl(ws?.brokerTruth);
     const fromWs = extractAccountPnl(
       ws?.accountSummary as Record<string, unknown> | undefined,
     );
     const fromRows = sumPositionsPnl(ws?.openPositions);
     const fromPortfolio = extractAccountPnl(portfolioOverviewQ.data);
     return {
-      mtm: fromWs.mtm ?? fromRows.mtm ?? fromPortfolio.mtm,
-      unrealized: fromWs.unrealized ?? fromRows.unrealized ?? fromPortfolio.unrealized,
-      realized: fromWs.realized ?? fromRows.realized ?? fromPortfolio.realized,
+      mtm: fromBroker?.mtm ?? fromWs.mtm ?? fromRows.mtm ?? fromPortfolio.mtm,
+      unrealized: fromBroker?.unrealized ?? fromWs.unrealized ?? fromRows.unrealized ?? fromPortfolio.unrealized,
+      realized: fromBroker?.realized ?? fromWs.realized ?? fromRows.realized ?? fromPortfolio.realized,
       openPositions:
-        fromWs.openPositions ?? fromRows.openPositions ?? fromPortfolio.openPositions,
+        fromBroker?.openPositions
+        ?? fromWs.openPositions
+        ?? fromRows.openPositions
+        ?? fromPortfolio.openPositions,
     };
-  }, [ws?.accountSummary, ws?.openPositions, portfolioOverviewQ.data]);
+  }, [ws?.accountSummary, ws?.openPositions, ws?.brokerTruth, portfolioOverviewQ.data]);
 
   const pnlLoading = workstationQ.isLoading && portfolioOverviewQ.isLoading;
   const pnlFailed = workstationQ.isError && portfolioOverviewQ.isError;

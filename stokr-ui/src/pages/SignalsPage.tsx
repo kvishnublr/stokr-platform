@@ -1,4 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import {
+  TRADER_EXECUTION_MODE_QUERY_KEY,
+  fetchTraderExecutionMode,
+  signalMatchesExecutionMode,
+} from "../lib/traderExecutionMode";
 import { fmtDateTime } from "../lib/dateUtils";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -109,8 +114,15 @@ export function SignalsPage() {
   const [signalType, setSignalType] = useState("ALL");
   const [selectedSignal, setSelectedSignal] = useState<SignalRow | null>(null);
 
+  const modeQ = useQuery({
+    queryKey: [...TRADER_EXECUTION_MODE_QUERY_KEY],
+    queryFn: fetchTraderExecutionMode,
+    staleTime: 30_000,
+  });
+  const executionMode = modeQ.data ?? "PAPER";
+
   const q = useQuery<SignalRow[]>({
-    queryKey: ["trader-signals-feed"],
+    queryKey: ["trader-signals-feed", executionMode],
     queryFn: async () => {
       const res = await api.get("/api/trader/strategy-feed?limit=500");
       return (Array.isArray(res.data?.data) ? res.data.data : []) as SignalRow[];
@@ -118,10 +130,10 @@ export function SignalsPage() {
     refetchInterval: 15_000,
   });
 
-  const rows = (q.data ?? []).filter(r => {
+  const rows = (q.data ?? []).filter((r) => {
     const symOk = !symbol.trim() || (r.symbol ?? "").toUpperCase().includes(symbol.toUpperCase());
     const typeOk = signalType === "ALL" || (r.signalType ?? "").toUpperCase() === signalType;
-    return symOk && typeOk;
+    return symOk && typeOk && signalMatchesExecutionMode(r, executionMode);
   });
 
   const bg = isLight ? "bg-white" : "bg-neutral-950";

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
+import { TRADER_EXECUTION_MODE_QUERY_KEY, invalidateTraderExecutionModeQueries } from "../lib/traderExecutionMode";
 import { EmptyState } from "../components/ds/EmptyState";
 import { GlassPanel } from "../components/ds/GlassPanel";
 import { SkeletonCard } from "../components/ds/SkeletonLoader";
@@ -105,8 +106,12 @@ export function StrategiesPage() {
     enabled: !!token && isAdmin,
   });
   const modeQuery = useQuery({
-    queryKey: ["trader-execution-mode-pref"],
-    queryFn: async () => String((await api.get("/api/trader/me/execution-mode")).data?.data?.executionMode ?? "PAPER").toUpperCase(),
+    queryKey: [...TRADER_EXECUTION_MODE_QUERY_KEY],
+    queryFn: async () => {
+      const res = await api.get("/api/trader/me/execution-mode");
+      const raw = String(res.data?.data?.executionMode ?? "PAPER").toUpperCase();
+      return raw === "LIVE" ? "LIVE" : "PAPER";
+    },
     enabled: !!token,
   });
   const readinessQuery = useQuery({
@@ -270,7 +275,10 @@ export function StrategiesPage() {
     }
     if (action === "PAPER" || action === "LIVE") {
       await patchInstance.mutateAsync({ id: inst.id, body: { executionMode: action } });
-      await api.put("/api/trader/me/execution-mode", { executionMode: action });
+      const res = await api.put("/api/trader/me/execution-mode", { executionMode: action });
+      const saved = String(res.data?.data?.executionMode ?? action).toUpperCase() === "LIVE" ? "LIVE" : "PAPER";
+      queryClient.setQueryData([...TRADER_EXECUTION_MODE_QUERY_KEY], saved);
+      invalidateTraderExecutionModeQueries(queryClient);
       await startInstance.mutateAsync(inst.id);
       return;
     }

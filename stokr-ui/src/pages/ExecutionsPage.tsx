@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { TRADER_EXECUTION_MODE_QUERY_KEY, fetchTraderExecutionMode } from "../lib/traderExecutionMode";
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { api } from "../api/client";
@@ -28,13 +29,21 @@ export function ExecutionsPage(props?: { embedded?: boolean }) {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const [page, setPage] = useState(0);
 
+  const modeQ = useQuery({
+    queryKey: [...TRADER_EXECUTION_MODE_QUERY_KEY],
+    queryFn: fetchTraderExecutionMode,
+    staleTime: 30_000,
+  });
+  const executionMode = modeQ.data ?? "PAPER";
+
   const q = useQuery({
-    queryKey: ["oms-execs", page],
+    queryKey: ["oms-execs", page, executionMode],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("page", String(page));
       params.set("size", "25");
       params.set("sort", "createdAt,desc");
+      params.set("executionMode", executionMode);
       const res = await api.get(`/api/oms/executions?${params.toString()}`);
       return res.data?.data as PageResponse<ExecRow>;
     },

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { TRADER_EXECUTION_MODE_QUERY_KEY, fetchTraderExecutionMode } from "../lib/traderExecutionMode";
 import { motion } from "framer-motion";
 import { Download, RefreshCw, ScrollText } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -98,13 +99,21 @@ export function OrdersPage(props?: { embedded?: boolean }) {
   const [page, setPage] = useState(0);
   const [symbol, setSymbol] = useState("");
 
+  const modeQ = useQuery({
+    queryKey: [...TRADER_EXECUTION_MODE_QUERY_KEY],
+    queryFn: fetchTraderExecutionMode,
+    staleTime: 30_000,
+  });
+  const executionMode = modeQ.data ?? "PAPER";
+
   const q = useQuery({
-    queryKey: ["oms-orders", page, symbol],
+    queryKey: ["oms-orders", page, symbol, executionMode],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("page", String(page));
       params.set("size", "25");
       params.set("sort", "createdAt,desc");
+      params.set("executionMode", executionMode);
       if (symbol.trim()) params.set("symbol", symbol.trim());
       const res = await api.get(`/api/oms/orders?${params.toString()}`);
       return res.data?.data as PageResponse<OrderRow>;

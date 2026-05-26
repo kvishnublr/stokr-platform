@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { api, parseAxiosMessage } from "../api/client";
+import { TRADER_EXECUTION_MODE_QUERY_KEY, fetchTraderExecutionMode } from "../lib/traderExecutionMode";
 import { WorkspaceTabPanel, WorkspaceTabs } from "../components/ds/WorkspaceTabs";
 import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
 import { fmtDateTime, fmtNseClock } from "../lib/dateUtils";
-import { extractAccountPnl, formatInr, sumPositionsPnl } from "../lib/moneyUtils";
+import { extractAccountPnl, extractBrokerTruthPnl, formatInr, sumPositionsPnl } from "../lib/moneyUtils";
 
 type Workstation = {
   accountSummary: {
@@ -36,6 +37,7 @@ type Workstation = {
   executionQualityMetrics?: Array<Record<string, unknown>>;
   executionTimeline?: Array<Record<string, unknown>>;
   executionQualityScore?: Record<string, unknown>;
+  brokerTruth?: Record<string, unknown>;
 };
 
 const TABS = [
@@ -120,8 +122,14 @@ export function TerminalPage() {
     impact: Record<string, unknown>;
   } | null>(null);
   const qc = useQueryClient();
+  const modeQ = useQuery({
+    queryKey: [...TRADER_EXECUTION_MODE_QUERY_KEY],
+    queryFn: fetchTraderExecutionMode,
+    staleTime: 30_000,
+  });
+  const executionMode = modeQ.data ?? "PAPER";
   const q = useQuery({
-    queryKey: ["trader-workstation"],
+    queryKey: ["trader-workstation", executionMode],
     queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
     staleTime: 2_000,
     refetchInterval: 5_000,
@@ -285,17 +293,18 @@ export function TerminalPage() {
   const sum = q.data?.accountSummary;
   const open = q.data?.openPositions ?? [];
   const accountPnl = useMemo(() => {
+    const fromBroker = extractBrokerTruthPnl(q.data?.brokerTruth);
     const fromSummary = extractAccountPnl(
       sum as Record<string, unknown> | undefined,
       typeof sum?.openPositions === "number" ? sum.openPositions : null,
     );
     const fromRows = sumPositionsPnl(open);
     return {
-      mtm: fromSummary.mtm ?? fromRows.mtm,
-      unrealized: fromSummary.unrealized ?? fromRows.unrealized,
-      realized: fromSummary.realized ?? fromRows.realized,
+      mtm: fromBroker?.mtm ?? fromSummary.mtm ?? fromRows.mtm,
+      unrealized: fromBroker?.unrealized ?? fromSummary.unrealized ?? fromRows.unrealized,
+      realized: fromBroker?.realized ?? fromSummary.realized ?? fromRows.realized,
     };
-  }, [sum, open]);
+  }, [sum, open, q.data?.brokerTruth]);
   const closed = q.data?.closedPositions ?? [];
   const orders = q.data?.orders ?? [];
   const execs = q.data?.executions ?? [];
