@@ -27,7 +27,7 @@ import java.util.Optional;
 
 /**
  * Ensures catalog strategies, runtime bindings, universe symbols, and Redis toggles are ON
- * so {@link StrategyEvaluationScheduler} can emit signals.
+ * so the catalog-driven scanner can emit signals.
  */
 @Service
 @RequiredArgsConstructor

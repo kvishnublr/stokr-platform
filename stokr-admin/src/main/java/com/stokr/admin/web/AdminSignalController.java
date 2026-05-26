@@ -25,7 +25,7 @@ import com.stokr.strategy.catalog.StrategyUniverseResolverService;
 import com.stokr.strategy.domain.StrategyRuntimeBinding;
 import com.stokr.strategy.domain.StrategyUniverseSymbol;
 import com.stokr.strategy.runtime.SignalPipelineActivationService;
-import com.stokr.strategy.runtime.StrategyEvaluationScheduler;
+// StrategyEvaluationScheduler removed — catalog scanner handles evaluation
 import com.stokr.strategy.service.SignalHistoricalReplayService;
 import com.stokr.strategy.service.SignalOutcomeTrackerService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -76,7 +76,6 @@ public class AdminSignalController {
     private final SignalPipelineActivationService signalPipelineActivationService;
     private final StrategyDefinitionRepository strategyDefinitionRepository;
     private final StrategyToggleService strategyToggleService;
-    private final ObjectProvider<StrategyEvaluationScheduler> strategyEvaluationScheduler;
     private final ObjectProvider<CatalogDrivenScanScheduler> catalogDrivenScanScheduler;
     private final ReplayEquityCandleSeedService replayEquityCandleSeedService;
     private final StrategyUniverseResolverService universeResolverService;
@@ -221,9 +220,8 @@ public class AdminSignalController {
         out.put("redisToggles", allStrategies ? "all strategies enabled" : "only " + strategyKey);
 
         if (runImmediatePoll) {
-            strategyEvaluationScheduler.ifAvailable(StrategyEvaluationScheduler::poll);
             catalogDrivenScanScheduler.ifAvailable(CatalogDrivenScanScheduler::scan);
-            out.put("immediatePoll", strategyEvaluationScheduler.getIfAvailable() != null ? "triggered" : "disabled");
+            out.put("immediatePoll", catalogDrivenScanScheduler.getIfAvailable() != null ? "triggered" : "disabled");
             out.put("catalogScan", catalogDrivenScanScheduler.getIfAvailable() != null ? "triggered" : "disabled");
         }
         return ApiResponse.ok(out, CorrelationIdHolder.get());
@@ -254,9 +252,8 @@ public class AdminSignalController {
         }
         out.put("redisTogglesSet", redisToggles);
         if (runImmediatePoll) {
-            strategyEvaluationScheduler.ifAvailable(StrategyEvaluationScheduler::poll);
             catalogDrivenScanScheduler.ifAvailable(CatalogDrivenScanScheduler::scan);
-            out.put("immediatePoll", strategyEvaluationScheduler.getIfAvailable() != null ? "triggered" : "disabled");
+            out.put("immediatePoll", catalogDrivenScanScheduler.getIfAvailable() != null ? "triggered" : "disabled");
             out.put("catalogScan", catalogDrivenScanScheduler.getIfAvailable() != null ? "triggered" : "disabled");
         }
         CompletableFuture.runAsync(() -> {
