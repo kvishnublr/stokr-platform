@@ -205,15 +205,31 @@ public class TraderTerminalViewService {
             m.put("createdAt", s.getCreatedAt() != null ? s.getCreatedAt().toString() : null);
             m.put("symbol", s.getSymbol());
             m.put("signalType", s.getSignalType() != null ? s.getSignalType().name() : null);
+            m.put("strategyKey", s.getStrategyName());
             m.put("strategyName", s.getStrategyName());
             m.put("reason", s.getReason());
             m.put("suggestedQty", s.getSuggestedQty() != null ? s.getSuggestedQty().toPlainString() : null);
             m.put("confidenceScore", s.getConfidenceScore() != null ? s.getConfidenceScore().toPlainString() : null);
+            m.put("entryReferencePrice", s.getEntryReferencePrice());
+            m.put("stopPrice", s.getStopPrice());
+            m.put("targetPrice", s.getTargetPrice());
+            m.put("riskReward", computeRiskReward(s.getEntryReferencePrice(), s.getStopPrice(), s.getTargetPrice()));
             m.put("executionMode", s.getPipeline() != null ? s.getPipeline() : null);
             m.put("pipeline", s.getPipeline());
             out.add(m);
         }
         return out;
+    }
+
+    private static BigDecimal computeRiskReward(BigDecimal entry, BigDecimal stop, BigDecimal target) {
+        if (entry == null || stop == null || target == null) {
+            return null;
+        }
+        BigDecimal risk = entry.subtract(stop).abs();
+        if (risk.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        return target.subtract(entry).abs().divide(risk, 4, java.math.RoundingMode.HALF_UP);
     }
 
     public Map<String, Object> executionSummary(UUID userId) {
