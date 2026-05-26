@@ -47,6 +47,52 @@ function isTrustedZerodhaOauthMessageOrigin(origin: string): boolean {
   }
 }
 
+function TestOrderLegBlock({
+  label,
+  leg,
+  isLight,
+}: {
+  label: string;
+  leg: { orderId: string; status: string; message: string; filledQuantity: number | null; averagePrice: number | null };
+  isLight: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "mt-2 rounded-md border px-2.5 py-2",
+        isLight ? "border-neutral-200 bg-white" : "border-neutral-800 bg-neutral-900/60",
+      )}
+    >
+      <div className={cn("text-[10px] font-semibold uppercase tracking-wide", isLight ? "text-neutral-500" : "text-neutral-500")}>
+        {label}
+      </div>
+      <div className={cn("mt-1 space-y-0.5", isLight ? "text-neutral-600" : "text-neutral-400")}>
+        <div>
+          <span className="text-neutral-500">Order id:</span>{" "}
+          <span className={cn("font-mono", isLight ? "text-neutral-900" : "text-neutral-200")}>{leg.orderId || "-"}</span>
+        </div>
+        <div>
+          <span className="text-neutral-500">Status:</span> {leg.status}
+        </div>
+        {leg.filledQuantity != null ? (
+          <div>
+            <span className="text-neutral-500">Filled:</span> {leg.filledQuantity}
+            {leg.averagePrice != null ? (
+              <>
+                {" "}
+                <span className="text-neutral-500">@</span> ₹{leg.averagePrice.toFixed(2)}
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        <div>
+          <span className="text-neutral-500">Note:</span> {leg.message}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function BrokersPage() {
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -247,9 +293,15 @@ export function BrokersPage() {
     onSuccess: (data: BrokerTestOrderDto) => {
       setLastTestOrder(data);
       void qc.invalidateQueries({ queryKey: BROKER_STATUS_QUERY_KEY });
-      if (data.dryRun) toast.message("Dry run - no order sent");
-      else if (data.orderId) toast.success(`Order placed: ${data.orderId}`);
-      else toast.error(data.message || "Order rejected");
+      if (data.dryRun) {
+        toast.message("Dry run — round-trip simulated (no live orders)");
+      } else if (data.squareOffStatus === "COMPLETED" || data.squareOffStatus === "SIMULATED") {
+        toast.success(data.message || "Sample trade round-trip complete");
+      } else if (data.orderId) {
+        toast.message(data.message || `Entry placed: ${data.orderId}`);
+      } else {
+        toast.error(data.message || "Order rejected");
+      }
     },
     onError: (e) => toast.error(parseAxiosMessage(e)),
   });
@@ -659,10 +711,10 @@ export function BrokersPage() {
           )}
 
           <p className={cn("mt-3 text-xs", isLight ? "text-neutral-600" : "text-neutral-500")}>
-            Sample trade is for tiny validation orders (qty 1-5).{" "}
+            Sample trade places a tiny entry and auto square-off (qty 1–5).{" "}
             {st?.testOrderDryRun
-              ? "Current mode is DRY RUN, so no live order is sent."
-              : "Current mode can place a real order on Zerodha."}
+              ? "Current mode is DRY RUN — round-trip is simulated only."
+              : "Current mode places real Zerodha orders and closes the position automatically."}
             {sampleTradeDisabledReason ? ` ${sampleTradeDisabledReason}.` : ""}
           </p>
 
@@ -743,11 +795,11 @@ export function BrokersPage() {
               Sample trade (MARKET)
             </h2>
             <p className={cn("mt-1 text-xs", isLight ? "text-neutral-600" : "text-neutral-500")}>
-              Server uses MARKET with Zerodha automatic market protection (required by Kite for API market orders).
-              Choose REGULAR during the session, or AMO for after-market placement per Kite rules.
-              Live orders require{" "}
+              Places a tiny MARKET entry (qty 1–5), waits briefly for fill, then auto square-off with the opposite
+              side so you do not need the Intraday Terminal to close. Server uses Zerodha market protection for API
+              MARKET orders. Live orders require{" "}
               <code className={cn(isLight ? "text-neutral-800" : "text-neutral-400")}>STOKR_ZERODHA_TEST_ORDER_ENABLED</code>{" "}
-              and respect dry-run settings. Keep quantity minimal while validating.
+              and respect dry-run settings.
             </p>
             <div className="mt-4 max-h-[min(60vh,22rem)] space-y-3 overflow-y-auto pr-1">
               <label className={cn("block text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>
@@ -862,29 +914,66 @@ export function BrokersPage() {
                   isLight ? "border-neutral-200 bg-neutral-50" : "border-neutral-700 bg-neutral-950/80",
                 )}
               >
-                <div className={cn("font-semibold", isLight ? "text-neutral-900" : "text-neutral-200")}>Result</div>
+                <div className={cn("font-semibold", isLight ? "text-neutral-900" : "text-neutral-200")}>
+                  Round-trip result
+                </div>
                 <div className={cn("mt-1 space-y-1", isLight ? "text-neutral-600" : "text-neutral-400")}>
                   <div>
-                    <span className="text-neutral-500">Dry run:</span> {String(lastTestOrder.dryRun)}
+                    <span className="text-neutral-500">Summary:</span> {lastTestOrder.message}
                   </div>
-                  <div>
-                    <span className="text-neutral-500">Order id:</span>{" "}
-                    <span className={cn("font-mono", isLight ? "text-neutral-900" : "text-neutral-200")}>
-                      {lastTestOrder.orderId || "-"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">Status:</span> {lastTestOrder.status}
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">Message:</span> {lastTestOrder.message}
-                  </div>
-                  {lastTestOrder.rawStatus ? (
+                  {lastTestOrder.squareOffStatus ? (
                     <div>
-                      <span className="text-neutral-500">Raw:</span> {lastTestOrder.rawStatus}
+                      <span className="text-neutral-500">Square-off:</span>{" "}
+                      <span
+                        className={cn(
+                          "font-medium",
+                          lastTestOrder.squareOffStatus === "COMPLETED" ||
+                            lastTestOrder.squareOffStatus === "SIMULATED"
+                            ? isLight
+                              ? "text-emerald-700"
+                              : "text-emerald-300"
+                            : isLight
+                              ? "text-amber-800"
+                              : "text-amber-200",
+                        )}
+                      >
+                        {lastTestOrder.squareOffStatus}
+                      </span>
+                    </div>
+                  ) : null}
+                  {lastTestOrder.pnl != null ? (
+                    <div>
+                      <span className="text-neutral-500">Est. PnL:</span>{" "}
+                      <span className={cn("font-mono font-medium", isLight ? "text-neutral-900" : "text-neutral-200")}>
+                        ₹ {lastTestOrder.pnl.toFixed(2)}
+                      </span>
+                    </div>
+                  ) : null}
+                  {lastTestOrder.dryRun ? (
+                    <div>
+                      <span className="text-neutral-500">Mode:</span> dry run (simulated)
                     </div>
                   ) : null}
                 </div>
+                {lastTestOrder.entry ? (
+                  <TestOrderLegBlock label="Entry" leg={lastTestOrder.entry} isLight={isLight} />
+                ) : (
+                  <div className={cn("mt-2", isLight ? "text-neutral-600" : "text-neutral-400")}>
+                    <span className="text-neutral-500">Entry id:</span>{" "}
+                    <span className={cn("font-mono", isLight ? "text-neutral-900" : "text-neutral-200")}>
+                      {lastTestOrder.orderId || "-"}
+                    </span>
+                    <span className="text-neutral-500"> · </span>
+                    <span>{lastTestOrder.status}</span>
+                  </div>
+                )}
+                {lastTestOrder.exit ? (
+                  <TestOrderLegBlock label="Exit" leg={lastTestOrder.exit} isLight={isLight} />
+                ) : lastTestOrder.squareOffStatus === "ENTRY_NOT_FILLED" ? (
+                  <p className={cn("mt-2 text-[11px]", isLight ? "text-amber-800" : "text-amber-200/90")}>
+                    Entry did not fill in time — no exit order sent.
+                  </p>
+                ) : null}
               </div>
             ) : null}
             <div
@@ -912,7 +1001,7 @@ export function BrokersPage() {
                   isLight && "shadow-sm",
                 )}
               >
-                {testOrder.isPending ? "Submitting..." : "Submit sample trade"}
+                {testOrder.isPending ? "Running round-trip…" : "Run sample trade"}
               </button>
             </div>
           </div>

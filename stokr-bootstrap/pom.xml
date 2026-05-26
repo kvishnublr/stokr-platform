@@ -51,6 +51,10 @@
         </dependency>
         <dependency>
             <groupId>com.stokr</groupId>
+            <artifactId>stokr-backtest</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.stokr</groupId>
             <artifactId>stokr-admin</artifactId>
         </dependency>
         <dependency>
