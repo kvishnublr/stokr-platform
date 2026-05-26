@@ -9,6 +9,7 @@ import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
 import { fmtDateTime, fmtNseClock } from "../lib/dateUtils";
 import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl } from "../lib/moneyUtils";
+import { assessExecutionRisk } from "../lib/executionRisk";
 import { AnimatedKpiCard, PnlCell, PnlSourceBadge, SideBadge } from "../components/trader/TraderPremium";
 
 type Workstation = {
@@ -344,10 +345,15 @@ export function TerminalPage() {
     return orders.filter((r) => classify(r.state) === orderScope);
   }, [orders, orderScope]);
 
-  const riskBlock = useMemo(() => {
-    if (!risk) return false;
-    return !risk.tokenValid || risk.parityState === "MISMATCH" || (risk.reconciliationWarnings?.length ?? 0) > 0;
-  }, [risk]);
+  const riskBlock = useMemo(
+    () =>
+      assessExecutionRisk({
+        risk,
+        executionMode: sum?.executionMode,
+        brokerConnected,
+      }),
+    [risk, sum?.executionMode, brokerConnected],
+  );
 
   return (
     <div className="space-y-5">
@@ -450,9 +456,23 @@ export function TerminalPage() {
         <AnimatedKpiCard label="Execution Mode" loading={q.isLoading} value={q.isLoading ? "…" : fmt(sum?.executionMode)} accent="bg-neutral-400" />
       </motion.div>
 
-      {riskBlock ? (
+      {riskBlock.blocked ? (
         <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
-          Execution warning: parity/token/risk blocker detected. Review Risk Controls before new entries.
+          <div className="font-semibold">Execution warning — review before new entries</div>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {riskBlock.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        </div>
+      ) : riskBlock.reasons.length > 0 ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <div className="font-semibold">Advisory</div>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {riskBlock.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
         </div>
       ) : null}
       {controlError ? (
@@ -557,6 +577,15 @@ export function TerminalPage() {
                 <Chip value={risk?.liveEligible ? "LIVE_ELIGIBLE" : "LIVE_BLOCKED"} />
               </div>
               <div className="mt-3 text-xs text-neutral-500">Broker health: {fmt(risk?.brokerHealth)}</div>
+              {(risk?.reconciliationWarnings?.length ?? 0) > 0 ? (
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-amber-700 dark:text-amber-300">
+                  {(risk?.reconciliationWarnings ?? []).map((w) => (
+                    <li key={w}>{w.replace(/_/g, " ")}</li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="mt-3 text-xs text-emerald-600 dark:text-emerald-400">No reconciliation warnings.</div>
+              )}
             </div>
             <div className={cn("rounded-xl border p-3", isLight ? "border-neutral-200" : "border-neutral-800")}>
               <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Latest Signals</div>

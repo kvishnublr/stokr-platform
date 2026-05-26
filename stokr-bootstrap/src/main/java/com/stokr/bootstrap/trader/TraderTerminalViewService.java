@@ -7,6 +7,7 @@ import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.execution.broker.BrokerPositionTruthService;
 import com.stokr.execution.broker.BrokerPositionTruthSnapshot;
+import com.stokr.execution.broker.BrokerPositionTruthSyncState;
 import com.stokr.execution.guard.ExecutionGuardTelemetryService;
 import com.stokr.execution.guard.ExecutionQualityScoringService;
 import com.stokr.execution.guard.ExecutionTimelineService;
@@ -429,6 +430,19 @@ public class TraderTerminalViewService {
         }
         BigDecimal totalPnl = totalRealized.add(totalUnrealized).setScale(8, java.math.RoundingMode.HALF_UP);
 
+        List<String> riskWarnings = new ArrayList<>(recon.warnings());
+        String riskParityState;
+        if (brokerTruth.brokerConnected() && brokerTruth.lastSyncAt() != null) {
+            riskParityState = brokerTruth.syncState() != null ? brokerTruth.syncState().name() : "PENDING_SYNC";
+            if (brokerTruth.syncState() == BrokerPositionTruthSyncState.MISMATCH) {
+                riskWarnings.add("BROKER_POSITION_DRIFT");
+            }
+        } else {
+            riskParityState = recon.warnings().isEmpty() ? "SYNCED" : "MISMATCH";
+        }
+        boolean riskBlockedBadge = !riskWarnings.isEmpty()
+                || (brokerTruth.brokerConnected() && brokerTruth.syncState() == BrokerPositionTruthSyncState.MISMATCH);
+
         Map<String, Object> out = new LinkedHashMap<>();
         Map<String, Object> accountSummary = new LinkedHashMap<>();
         accountSummary.put("totalPnl", totalPnl);
@@ -445,7 +459,7 @@ public class TraderTerminalViewService {
         out.put("badges", List.of(
                 mode.executionMode(),
                 broker.connected() ? "BROKER_CONNECTED" : "BROKER_DISCONNECTED",
-                recon.warnings().isEmpty() ? "SYNCED" : "RISK_BLOCKED"
+                riskBlockedBadge ? "RISK_BLOCKED" : "SYNCED"
         ));
         out.put("openPositions", openPositions);
         out.put("closedPositions", closedPositions);
@@ -465,13 +479,13 @@ public class TraderTerminalViewService {
             m.put("startedAt", si.getStartedAt() != null ? si.getStartedAt().toString() : null);
             return m;
         }).toList());
-        out.put("riskControls", Map.of(
-                "reconciliationWarnings", recon.warnings(),
-                "parityState", recon.warnings().isEmpty() ? "SYNCED" : "MISMATCH",
-                "tokenValid", broker.tokenValid(),
-                "brokerHealth", broker.health(),
-                "liveEligible", broker.connected() && broker.tokenValid()
-        ));
+        Map<String, Object> riskControls = new LinkedHashMap<>();
+        riskControls.put("reconciliationWarnings", riskWarnings);
+        riskControls.put("parityState", riskParityState);
+        riskControls.put("tokenValid", broker.tokenValid());
+        riskControls.put("brokerHealth", broker.health());
+        riskControls.put("liveEligible", broker.connected() && broker.tokenValid());
+        out.put("riskControls", riskControls);
         out.put("latestSignals", strategyFeed(userId));
         out.put("executionGuardEvents", executionGuardTelemetryService.recentGuardEvents(userId, 100));
         out.put("executionQualityMetrics", executionGuardTelemetryService.recentQualityMetrics(userId, 100));
