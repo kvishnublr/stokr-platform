@@ -246,7 +246,7 @@ public class BacktestHistoricalDataLoader {
     private String resolveAccessToken() {
         try {
             Optional<PlatformBrokerFeedSession> session = sessionRepository.findAll().stream()
-                    .filter(s -> "ZERODHA".equals(s.getBrokerType()))
+                    .filter(s -> "ZERODHA".equals(s.getVendorCode()))
                     .findFirst();
 
             if (session.isPresent()) {
