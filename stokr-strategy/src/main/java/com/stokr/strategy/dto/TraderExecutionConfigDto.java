@@ -14,6 +14,11 @@ public record TraderExecutionConfigDto(
         /** true = no personal override exists yet; values shown are admin global defaults */
         boolean isGlobalFallback,
 
+        /** Catalog definition id when strategy exists in strategy_definitions. */
+        UUID definitionId,
+        String displayName,
+        String riskLevel,
+
         // ── Admin-set (read-only for trader) ────────────────────────────────
         String executionMode,
         boolean liveEnabled,

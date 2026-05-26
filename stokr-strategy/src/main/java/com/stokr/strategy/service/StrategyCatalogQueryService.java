@@ -17,8 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -36,12 +38,33 @@ public class StrategyCatalogQueryService {
                 .and(StrategyDefinitionSpecifications.categoryIgnoreCase(category))
                 .and(StrategyDefinitionSpecifications.riskLevelIgnoreCase(riskLevel));
         Page<StrategyDefinition> page = definitionRepository.findAll(spec, pageable);
+        List<StrategyDefinition> definitions = mergePlatformScannerDefinitions(page.getContent());
         Map<UUID, StrategyInstance> byDef = userId == null
                 ? Map.of()
                 : loadInstances(userId);
-        List<String> keys = page.getContent().stream().map(StrategyDefinition::getStrategyKey).toList();
+        List<String> keys = definitions.stream().map(StrategyDefinition::getStrategyKey).toList();
         Map<String, List<String>> universeGroupsByKey = loadUniverseGroups(keys);
-        return page.map(def -> toDto(def, byDef.get(def.getId()), universeGroupsByKey.getOrDefault(def.getStrategyKey(), List.of())));
+        List<StrategyCatalogItemDto> items = definitions.stream()
+                .map(def -> toDto(def, byDef.get(def.getId()), universeGroupsByKey.getOrDefault(def.getStrategyKey(), List.of())))
+                .toList();
+        return new org.springframework.data.domain.PageImpl<>(items, pageable, page.getTotalElements() + Math.max(0, items.size() - page.getNumberOfElements()));
+    }
+
+    /**
+     * Include catalog-driven platform scanners even when {@code visible_to_users} was toggled off in admin.
+     */
+    private List<StrategyDefinition> mergePlatformScannerDefinitions(List<StrategyDefinition> catalogPage) {
+        Map<UUID, StrategyDefinition> merged = new LinkedHashMap<>();
+        for (StrategyDefinition def : catalogPage) {
+            merged.put(def.getId(), def);
+        }
+        for (StrategyRuntimeBinding binding : runtimeBindingRepository.findAllActiveBindings()) {
+            StrategyDefinition def = binding.getStrategyCatalog();
+            if (def != null && !def.isDeleted()) {
+                merged.putIfAbsent(def.getId(), def);
+            }
+        }
+        return List.copyOf(merged.values());
     }
 
     private Map<String, List<String>> loadUniverseGroups(List<String> strategyKeys) {

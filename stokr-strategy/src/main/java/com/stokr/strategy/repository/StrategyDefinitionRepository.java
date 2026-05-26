@@ -21,4 +21,7 @@ public interface StrategyDefinitionRepository extends JpaRepository<StrategyDefi
     Optional<StrategyDefinition> findByStrategyKeyAndDeletedFalse(String strategyKey);
 
     long countByDeletedFalse();
+
+    /** Enabled strategies visible in trader catalog, ordered for settings UI. */
+    java.util.List<StrategyDefinition> findAllByDeletedFalseAndEnabledTrueAndVisibleToUsersTrueOrderByStrategyKeyAsc();
 }

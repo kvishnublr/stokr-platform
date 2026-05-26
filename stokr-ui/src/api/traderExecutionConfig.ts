@@ -5,6 +5,9 @@ export type TraderExecutionConfigDto = {
   strategyKey: string;
   /** true = showing global admin defaults; trader has no personal override yet */
   isGlobalFallback: boolean;
+  definitionId: string | null;
+  displayName: string | null;
+  riskLevel: string | null;
   // Admin-set (read-only for trader)
   executionMode: "PAPER" | "LIVE" | "BOTH";
   liveEnabled: boolean;

@@ -3,20 +3,25 @@ package com.stokr.strategy.service;
 import com.stokr.common.exception.NotFoundException;
 import com.stokr.strategy.domain.StrategyDefinition;
 import com.stokr.strategy.domain.StrategyExecutionConfig;
+import com.stokr.strategy.domain.StrategyRuntimeBinding;
 import com.stokr.strategy.dto.StrategyExecutionConfigDto;
 import com.stokr.strategy.dto.StrategyExecutionConfigRequest;
 import com.stokr.strategy.dto.TraderExecutionConfigDto;
 import com.stokr.strategy.dto.TraderExecutionConfigPatchRequest;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.repository.StrategyExecutionConfigRepository;
+import com.stokr.strategy.repository.StrategyRuntimeBindingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +30,7 @@ public class StrategyExecutionConfigService {
 
     private final StrategyExecutionConfigRepository configRepository;
     private final StrategyDefinitionRepository strategyDefinitionRepository;
+    private final StrategyRuntimeBindingRepository runtimeBindingRepository;
 
     /** Global admin config only (user_id IS NULL). Used by admin operations and alert service. */
     public Optional<StrategyExecutionConfig> getByStrategyKey(String strategyKey) {
@@ -76,23 +82,74 @@ public class StrategyExecutionConfigService {
      * This is what the trader settings page should use — shows all strategies, not just overrides.
      */
     public List<TraderExecutionConfigDto> listAllEffectiveForUser(UUID userId) {
-        List<StrategyExecutionConfig> globals =
-                configRepository.findAllByUserIdIsNullAndDeletedFalseOrderByStrategyKeyAsc();
-        // Index user overrides by strategyKey for O(1) lookup
-        java.util.Map<String, StrategyExecutionConfig> userOverrides =
-                configRepository.findByUserIdAndDeletedFalseOrderByStrategyKeyAsc(userId)
-                        .stream()
-                        .collect(java.util.stream.Collectors.toMap(
-                                StrategyExecutionConfig::getStrategyKey,
-                                c -> c));
-        return globals.stream()
-                .map(global -> {
-                    StrategyExecutionConfig override = userOverrides.get(global.getStrategyKey());
-                    return override != null
-                            ? toTraderDto(override, false)
-                            : toTraderDto(global, true);
-                })
+        Map<String, StrategyDefinition> catalogByKey = loadCatalogDefinitionsByKey();
+        Map<String, StrategyExecutionConfig> globals = configRepository
+                .findAllByUserIdIsNullAndDeletedFalseOrderByStrategyKeyAsc()
+                .stream()
+                .collect(Collectors.toMap(StrategyExecutionConfig::getStrategyKey, c -> c, (a, b) -> a));
+        Map<String, StrategyExecutionConfig> userOverrides = configRepository
+                .findByUserIdAndDeletedFalseOrderByStrategyKeyAsc(userId)
+                .stream()
+                .collect(Collectors.toMap(StrategyExecutionConfig::getStrategyKey, c -> c, (a, b) -> a));
+
+        // Union: every enabled catalog strategy + any admin global config row
+        LinkedHashMap<String, StrategyDefinition> keys = new LinkedHashMap<>(catalogByKey);
+        for (String key : globals.keySet()) {
+            keys.putIfAbsent(key, catalogByKey.get(key));
+        }
+
+        return keys.keySet().stream()
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .map(strategyKey -> effectiveForUser(
+                        userId,
+                        strategyKey,
+                        keys.get(strategyKey),
+                        globals.get(strategyKey),
+                        userOverrides.get(strategyKey)))
                 .toList();
+    }
+
+    /** Catalog-visible strategies plus platform scanners bound at runtime (e.g. NSE_SPIKE_DETECTION). */
+    private Map<String, StrategyDefinition> loadCatalogDefinitionsByKey() {
+        LinkedHashMap<String, StrategyDefinition> merged = new LinkedHashMap<>();
+        for (StrategyDefinition def : strategyDefinitionRepository
+                .findAllByDeletedFalseAndEnabledTrueAndVisibleToUsersTrueOrderByStrategyKeyAsc()) {
+            merged.put(def.getStrategyKey(), def);
+        }
+        for (StrategyRuntimeBinding binding : runtimeBindingRepository.findAllActiveBindings()) {
+            StrategyDefinition def = binding.getStrategyCatalog();
+            if (def != null && !def.isDeleted() && def.isEnabled()) {
+                merged.putIfAbsent(def.getStrategyKey(), def);
+            }
+        }
+        return merged;
+    }
+
+    private TraderExecutionConfigDto effectiveForUser(
+            UUID userId,
+            String strategyKey,
+            StrategyDefinition definition,
+            StrategyExecutionConfig global,
+            StrategyExecutionConfig userOverride) {
+        if (userOverride != null) {
+            return toTraderDto(userOverride, false, definition);
+        }
+        if (global != null) {
+            return toTraderDto(global, true, definition);
+        }
+        StrategyExecutionConfig defaults = new StrategyExecutionConfig();
+        defaults.setStrategyKey(strategyKey);
+        defaults.setUserId(userId);
+        if (definition != null) {
+            defaults.setStrategy(definition);
+            String mode = definition.getExecutionMode();
+            if (mode != null && !mode.isBlank() && !"ALL".equalsIgnoreCase(mode)) {
+                defaults.setExecutionMode(mode);
+            }
+            defaults.setLiveEnabled(definition.isSupportsLive());
+            defaults.setPaperEnabled(definition.isSupportsPaper());
+        }
+        return toTraderDto(defaults, true, definition);
     }
 
     /**
@@ -104,19 +161,18 @@ public class StrategyExecutionConfigService {
     public TraderExecutionConfigDto getOrCreateForUserDto(UUID userId, String strategyKey) {
         Optional<StrategyExecutionConfig> userCfg =
                 configRepository.findByUserIdAndStrategyKeyAndDeletedFalse(userId, strategyKey);
+        StrategyDefinition definition = strategyDefinitionRepository
+                .findByStrategyKeyAndDeletedFalse(strategyKey)
+                .orElse(null);
         if (userCfg.isPresent()) {
-            return toTraderDto(userCfg.get(), false);
+            return toTraderDto(userCfg.get(), false, definition);
         }
         Optional<StrategyExecutionConfig> globalCfg =
                 configRepository.findByUserIdIsNullAndStrategyKeyAndDeletedFalse(strategyKey);
         if (globalCfg.isPresent()) {
-            return toTraderDto(globalCfg.get(), true);
+            return toTraderDto(globalCfg.get(), true, definition);
         }
-        // Return safe defaults — no DB row yet
-        StrategyExecutionConfig defaults = new StrategyExecutionConfig();
-        defaults.setStrategyKey(strategyKey);
-        defaults.setUserId(userId);
-        return toTraderDto(defaults, true);
+        return effectiveForUser(userId, strategyKey, definition, null, null);
     }
 
     /**
@@ -160,14 +216,36 @@ public class StrategyExecutionConfigService {
 
         cfg = configRepository.save(cfg);
         log.info("trader_config.patched userId={} strategyKey={}", userId, strategyKey);
-        return toTraderDto(cfg, false);
+        StrategyDefinition definition = strategyDefinitionRepository
+                .findByStrategyKeyAndDeletedFalse(strategyKey)
+                .orElse(null);
+        return toTraderDto(cfg, false, definition);
     }
 
     public TraderExecutionConfigDto toTraderDto(StrategyExecutionConfig cfg, boolean isGlobalFallback) {
+        StrategyDefinition definition = cfg.getStrategy();
+        if (definition == null) {
+            definition = strategyDefinitionRepository
+                    .findByStrategyKeyAndDeletedFalse(cfg.getStrategyKey())
+                    .orElse(null);
+        }
+        return toTraderDto(cfg, isGlobalFallback, definition);
+    }
+
+    public TraderExecutionConfigDto toTraderDto(
+            StrategyExecutionConfig cfg, boolean isGlobalFallback, StrategyDefinition definition) {
+        String displayName = definition != null && definition.getDisplayName() != null && !definition.getDisplayName().isBlank()
+                ? definition.getDisplayName()
+                : humanizeKey(cfg.getStrategyKey());
+        String riskLevel = definition != null ? definition.getRiskLevel() : "MEDIUM";
+        UUID definitionId = definition != null ? definition.getId() : null;
         return new TraderExecutionConfigDto(
                 cfg.getId(),
                 cfg.getStrategyKey(),
                 isGlobalFallback,
+                definitionId,
+                displayName,
+                riskLevel,
                 cfg.getExecutionMode(),
                 cfg.isLiveEnabled(),
                 cfg.isPaperEnabled(),
@@ -181,6 +259,13 @@ public class StrategyExecutionConfigService {
                 cfg.isAllowPyramiding(),
                 cfg.isEmergencyStopEnabled()
         );
+    }
+
+    private static String humanizeKey(String strategyKey) {
+        if (strategyKey == null || strategyKey.isBlank()) {
+            return "Strategy";
+        }
+        return strategyKey.replace('_', ' ');
     }
 
     public StrategyExecutionConfigDto getById(UUID id) {

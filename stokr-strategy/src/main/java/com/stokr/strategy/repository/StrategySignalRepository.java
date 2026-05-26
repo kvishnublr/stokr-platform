@@ -132,4 +132,18 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
               AND (signal_source IS NULL OR signal_source IN ('LIVE', 'PAPER'))
             """, nativeQuery = true)
     List<Object[]> computeStats(@Param("since") Instant since);
+
+    @Query("""
+            select s.strategyName, count(s), max(s.createdAt)
+            from StrategySignalEntity s
+            where s.deleted = false
+              and s.testTrade = false
+              and s.backtestRunId is null
+              and s.createdAt >= :since
+              and (s.signalSource is null
+                   or s.signalSource in (com.stokr.strategy.signals.SignalProvenance.LIVE,
+                                         com.stokr.strategy.signals.SignalProvenance.PAPER))
+            group by s.strategyName
+            """)
+    List<Object[]> countLiveSignalsSinceGroupedByStrategyName(@Param("since") Instant since);
 }

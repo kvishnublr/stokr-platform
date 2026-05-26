@@ -25,6 +25,26 @@ type RuntimeRow = {
 };
 type InstanceRow = { id: string; definitionId: string; enabled: boolean; executionMode: string; runtimeState: string; symbol: string };
 type SignalRow = { strategyName: string | null; createdAt: string | null };
+type CatalogSignalStats = { strategyKey: string; signalsToday: number; lastSignalAt: string | null };
+
+const IST_DAY_START_MS = () => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const m = parts.find((p) => p.type === "month")?.value ?? "01";
+  const d = parts.find((p) => p.type === "day")?.value ?? "01";
+  return Date.parse(`${y}-${m}-${d}T00:00:00+05:30`);
+};
+
+function isTodaySignal(createdAt: string | null | undefined): boolean {
+  if (!createdAt) return false;
+  const t = Date.parse(createdAt);
+  return Number.isFinite(t) && t >= IST_DAY_START_MS();
+}
 
 function toSinceLabel(ts: string | null | undefined): string {
   if (!ts) return "-";
@@ -50,7 +70,7 @@ export function StrategiesPage() {
 
   const catalogQuery = useQuery({
     queryKey: ["strategy-catalog"],
-    queryFn: async () => (await api.get("/api/strategies/catalog?size=48")).data?.data as PageResponse<StrategyCatalogCard>,
+    queryFn: async () => (await api.get("/api/strategies/catalog?size=100")).data?.data as PageResponse<StrategyCatalogCard>,
     refetchInterval: 20_000,
   });
   const runtimeQuery = useQuery({
@@ -95,6 +115,12 @@ export function StrategiesPage() {
     refetchInterval: 15_000,
     enabled: !!token,
   });
+  const catalogSignalStatsQuery = useQuery({
+    queryKey: ["strategy-catalog-signal-stats"],
+    queryFn: async () => (await api.get("/api/strategies/catalog/signal-stats")).data?.data as CatalogSignalStats[],
+    refetchInterval: 15_000,
+    enabled: !!token,
+  });
 
   const toggleSub = useMutation({
     mutationFn: async (definitionId: string) => api.post(`/api/strategies/catalog/${definitionId}/subscription/toggle`),
@@ -135,8 +161,8 @@ export function StrategiesPage() {
       : sigs;
     const sigByStrategy = new Map<string, { count: number; last: string | null }>();
     for (const s of sourceSignals) {
-      const k = String(s.strategyName ?? "").trim();
-      if (!k) continue;
+      const k = String(s.strategyName ?? "").trim().toUpperCase();
+      if (!k || !isTodaySignal(s.createdAt)) continue;
       const prev = sigByStrategy.get(k) ?? { count: 0, last: null };
       prev.count += 1;
       if (!prev.last || (s.createdAt && Date.parse(s.createdAt) > Date.parse(prev.last))) {
@@ -144,20 +170,39 @@ export function StrategiesPage() {
       }
       sigByStrategy.set(k, prev);
     }
+    for (const row of catalogSignalStatsQuery.data ?? []) {
+      const k = String(row.strategyKey ?? "").trim().toUpperCase();
+      if (!k) continue;
+      const prev = sigByStrategy.get(k) ?? { count: 0, last: null };
+      if (row.signalsToday > prev.count) prev.count = row.signalsToday;
+      const last = row.lastSignalAt ?? null;
+      if (last && (!prev.last || Date.parse(last) > Date.parse(prev.last))) prev.last = last;
+      sigByStrategy.set(k, prev);
+    }
 
     const activePipeline = readinessQuery.data?.executionPipelineActive !== false;
     const selectedMode = modeQuery.data === "LIVE" ? "LIVE" : "PAPER";
 
-    return (catalogQuery.data?.content ?? []).map((c) => {
+    const catalogRows = [...(catalogQuery.data?.content ?? [])].sort((a, b) => {
+      if (a.code === "NSE_SPIKE_DETECTION") return -1;
+      if (b.code === "NSE_SPIKE_DETECTION") return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return catalogRows.map((c) => {
+      const codeKey = c.code.trim().toUpperCase();
       const inst = instances.find((i) => i.definitionId === c.id);
-      const met = runtime.find((m) => m.definitionId === c.id || m.strategyKey === c.code);
-      const sig = sigByStrategy.get(c.code);
+      const met = runtime.find((m) => m.definitionId === c.id || m.strategyKey?.toUpperCase() === codeKey);
+      const sig = sigByStrategy.get(codeKey);
+      const hasPlatformBinding = (c as StrategyCatalogCard & { universeGroups?: string[] }).universeGroups?.length;
 
       let runtimeTag: StrategyCatalogCard["runtimeTag"] = "NO_DATA";
       if (!activePipeline) runtimeTag = "BLOCKED";
       else if (inst?.runtimeState?.toUpperCase() === "RUNNING") runtimeTag = "RUNNING";
+      else if (!inst && hasPlatformBinding && (sig?.count ?? 0) > 0) runtimeTag = "RUNNING";
       else if (["PAUSED", "STOPPED"].includes(inst?.runtimeState?.toUpperCase() ?? "") || c.subscriptionEnabled === false) runtimeTag = "PAUSED";
       else if (inst) runtimeTag = "PAUSED";
+      else if (!inst && hasPlatformBinding) runtimeTag = "PAUSED";
       else if (met?.health === "STALE") runtimeTag = "DEGRADED";
 
       return {
@@ -166,15 +211,19 @@ export function StrategiesPage() {
         runtimeTag,
         runtimeNote: !activePipeline
           ? "Execution pipeline inactive"
-          : c.subscribed
-            ? inst?.runtimeState?.toUpperCase() === "RUNNING"
-              ? "Running"
-              : inst?.runtimeState?.toUpperCase() === "PAUSED"
-                ? "Paused"
-                : c.subscriptionEnabled
-                  ? "Subscribed — click Paper or Live to start"
-                  : "Subscription paused"
-            : "Not subscribed",
+          : inst?.runtimeState?.toUpperCase() === "RUNNING"
+            ? "Running"
+            : inst?.runtimeState?.toUpperCase() === "PAUSED"
+              ? "Paused"
+              : !inst && hasPlatformBinding && (sig?.count ?? 0) > 0
+                ? "Platform scanner active — subscribe and choose Paper or Live to trade"
+                : c.subscribed
+                  ? c.subscriptionEnabled
+                    ? "Subscribed — click Paper or Live to start"
+                    : "Subscription paused"
+                  : hasPlatformBinding
+                    ? "Not subscribed — scanner may still emit signals"
+                    : "Not subscribed",
         signalsToday: sig?.count ?? 0,
         lastSignalAt: toSinceLabel(sig?.last ?? met?.lastSignalAt),
         lastEvaluationAt: toSinceLabel(met?.lastSignalAt),
@@ -183,7 +232,7 @@ export function StrategiesPage() {
         omsState: activePipeline ? "READY" : "BLOCKED",
       } as StrategyCatalogCard;
     });
-  }, [catalogQuery.data, runtimeQuery.data, instancesQuery.data, signalsQuery.data, adminSignalsQuery.data, isAdmin, readinessQuery.data, modeQuery.data]);
+  }, [catalogQuery.data, runtimeQuery.data, instancesQuery.data, signalsQuery.data, adminSignalsQuery.data, catalogSignalStatsQuery.data, isAdmin, readinessQuery.data, modeQuery.data]);
 
   const filtered = rows.filter((s) => {
     const t = qText.trim().toLowerCase();
