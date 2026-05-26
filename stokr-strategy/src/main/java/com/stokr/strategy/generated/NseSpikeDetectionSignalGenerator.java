@@ -203,14 +203,13 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
 
         // ─────────────────────────────────────────────────────────────────────
         // 4. PURE DATA COMPONENT 2: VOLUME SCORE
-        //    Note: broker feed volume = tick count, not shares. Use lenient gate.
+        //    Real share volume from Kite quote-mode WebSocket
         // ─────────────────────────────────────────────────────────────────────
         double avgVolume = calculateAverageVolume(bars, n);
         double volumeMultiple = avgVolume > 0 ? curVolume / avgVolume : 1.0;
         double volumeScore = calculateVolumeScore(volumeMultiple);
 
-        // Volume data is tick-count granularity — don't hard-reject on it
-        if (volumeScore < 20) {
+        if (volumeScore < 30) {
             log.debug("nse_spike.low_volume symbol={} multiple={:.2f}", symbol, volumeMultiple);
             return hold(context);
         }
@@ -340,12 +339,12 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     }
 
     private double calculateVolumeScore(double volumeMultiple) {
-        // Volume is tick-count granularity; be lenient
+        // Real share volume — ratios are meaningful
         if (volumeMultiple < minVolumeMultiple) return 0;
-        if (volumeMultiple < 0.8) return 30;
-        if (volumeMultiple < 1.2) return 50;
-        if (volumeMultiple < 1.8) return 65;
-        if (volumeMultiple < 3.0) return 80;
+        if (volumeMultiple < 1.5) return 40;
+        if (volumeMultiple < 2.0) return 55;
+        if (volumeMultiple < 3.0) return 70;
+        if (volumeMultiple < 5.0) return 85;
         return 100;
     }
 

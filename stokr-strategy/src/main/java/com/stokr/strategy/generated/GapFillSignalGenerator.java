@@ -70,7 +70,7 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
     // ═══════════════════════════════════════════════════════════════════════════
 
     /** Minimum gap % to qualify (below this is noise, not a real gap) */
-    @Value("${stokr.gapfill.min-gap-pct:0.15}")
+    @Value("${stokr.gapfill.min-gap-pct:0.30}")
     private double minGapPct;
 
     /** Maximum gap % (above this, likely news/earnings — continuation probable) */
@@ -78,15 +78,15 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
     private double maxGapPct;
 
     /** Minimum confirmation ratio: body toward fill / total bar range */
-    @Value("${stokr.gapfill.min-fill-direction-ratio:0.40}")
+    @Value("${stokr.gapfill.min-fill-direction-ratio:0.50}")
     private double minFillDirectionRatio;
 
     /** Required volume multiple vs average to confirm gap is tradeable */
-    @Value("${stokr.gapfill.min-volume-multiple:0.8}")
+    @Value("${stokr.gapfill.min-volume-multiple:1.0}")
     private double minVolumeMultiple;
 
     /** Number of confirmation bars required (min bars showing fill direction) */
-    @Value("${stokr.gapfill.confirmation-bars:2}")
+    @Value("${stokr.gapfill.confirmation-bars:3}")
     private int confirmationBars;
 
     /** Stop loss: gap extreme + this % buffer */
