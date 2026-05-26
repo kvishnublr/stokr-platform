@@ -6,6 +6,8 @@ import { api, parseAxiosMessage } from "../../api/client";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../../lib/adminQueryKeys";
 import { cn } from "../../lib/utils";
 import { badgeClassForStatus } from "../../components/admin/cockpit/opsTypes";
+import { useUiThemeStore } from "../../state/uiTheme";
+import { AdminPageShell, AdminPanel } from "../../components/admin/institutional/AdminDesignSystem";
 
 type InfraPayload = {
   collectedAt?: string;
@@ -80,6 +82,7 @@ function displayVendor(v: string): string {
 }
 
 export function AdminBrokerInfrastructurePage() {
+  const isLight = useUiThemeStore((s) => s.mode === "light");
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const focusVendor = (searchParams.get("vendor") ?? "ZERODHA").toUpperCase();
@@ -182,25 +185,31 @@ export function AdminBrokerInfrastructurePage() {
   }, [infra.data]);
 
   return (
+    <AdminPageShell
+      isLight={isLight}
+      eyebrow="Broker infrastructure"
+      title="Mission-critical broker plane"
+      subtitle="Platform-owned OAuth sessions, websocket heartbeat, order latency truth, and per-vendor health scores."
+      alert={
+        infra.isError ? (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+            {parseAxiosMessage(infra.error)}
+          </div>
+        ) : undefined
+      }
+    >
     <div className="space-y-4 text-foreground">
-      <div className="rounded-xl border-2 border-border bg-card px-4 py-3">
-        <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Plane</div>
-        <h1 className="mt-1 text-xl font-bold tracking-tight">Platform market feed  ·  broker infrastructure</h1>
-        <p className="mt-2 max-w-4xl text-sm leading-relaxed text-muted-foreground">
-          <span className="font-semibold text-foreground">PLATFORM FEED</span> - admin-owned OAuth rows in{" "}
-          <code className="font-mono text-foreground">platform_broker_feed_sessions</code> for centralized ingestion ownership. This is
-          not <span className="font-semibold text-foreground">TRADER EXECUTION</span> (
+      <AdminPanel isLight={isLight} title="Platform market feed" subtitle="Admin-owned ingestion — not trader execution accounts">
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          <span className="font-semibold text-foreground">PLATFORM FEED</span> — OAuth rows in{" "}
+          <code className="font-mono text-foreground">platform_broker_feed_sessions</code>. Trader execution lives under{" "}
           <Link to="/admin/users" className="font-medium text-primary underline-offset-2 hover:underline">
-            trader roster / broker_accounts
+            trader roster
           </Link>
-          ).
+          .
         </p>
         {infra.data?.note ? <p className="mt-2 text-xs text-muted-foreground">{infra.data.note}</p> : null}
-      </div>
-
-      {infra.isError ? (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">{parseAxiosMessage(infra.error)}</div>
-      ) : null}
+      </AdminPanel>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {vendors.map(({ key, row }) => {
@@ -364,5 +373,6 @@ export function AdminBrokerInfrastructurePage() {
         success you return to this page with <code className="font-mono">?platform_feed=ok</code>.
       </div>
     </div>
+    </AdminPageShell>
   );
 }

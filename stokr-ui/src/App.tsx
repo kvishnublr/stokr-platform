@@ -34,7 +34,6 @@ import { AdminSectionPage } from "./pages/AdminSectionPage";
 import { AdminBrokerInfrastructurePage } from "./pages/admin/AdminBrokerInfrastructurePage";
 import { AdminAuditPage } from "./pages/admin/AdminAuditPage";
 import { AdminBackfillPage } from "./pages/admin/AdminBackfillPage";
-import { AdminControlsPage } from "./pages/admin/AdminControlsPage";
 import { AdminExecutionPage } from "./pages/admin/AdminExecutionPage";
 import { AdminExecutionConfigPage } from "./pages/admin/AdminExecutionConfigPage";
 import { AdminRiskDashboardPage } from "./pages/admin/AdminRiskDashboardPage";
@@ -67,6 +66,7 @@ import { ThemeHtmlSync } from "./components/theme/ThemeHtmlSync";
 import { SyncedToaster } from "./components/theme/SyncedToaster";
 import { TraderDashboard } from "./pages/trader/TraderDashboard";
 import { AdminOverviewPage } from "./pages/AdminOverviewPage";
+import { AdminCommandCenterPage } from "./pages/admin/AdminCommandCenterPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { TraderExecutionConfigPage } from "./pages/TraderExecutionConfigPage";
 import { DemoPage } from "./pages/demo/DemoPage";
@@ -230,7 +230,8 @@ export default function App() {
           <Route path="strategy-settings" element={<TraderExecutionConfigPage />} />
           <Route path="admin" element={<AdminGate />}>
             <Route element={<AdminConsoleLayout />}>
-              <Route index element={<AdminOverviewPage />} />
+              <Route index element={<AdminCommandCenterPage />} />
+              <Route path="overview" element={<AdminOverviewPage />} />
               <Route path="broker-infrastructure" element={<AdminBrokerInfrastructurePage />} />
               <Route path="market-connectivity" element={<Navigate to="../broker-infrastructure" replace />} />
               <Route path="market" element={<AdminMarketIntelPage />} />
@@ -252,7 +253,7 @@ export default function App() {
               <Route path="infrastructure" element={<AdminInfrastructurePage />} />
               <Route path="history" element={<AdminHistoryPage />} />
               <Route path="audit" element={<AdminAuditPage />} />
-              <Route path="controls" element={<AdminControlsPage />} />
+              <Route path="controls" element={<Navigate to="../ops" replace />} />
               <Route path="users" element={<AdminUsersPage />} />
               <Route path="strategies" element={<AdminStrategiesPage />} />
               <Route path="strategy-catalog" element={<AdminStrategyCatalogPage />} />
