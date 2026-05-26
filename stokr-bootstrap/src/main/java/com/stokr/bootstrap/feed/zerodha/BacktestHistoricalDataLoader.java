@@ -206,7 +206,7 @@ public class BacktestHistoricalDataLoader {
             Instant from, Instant to) throws Exception {
 
         List<MarketdataCandle> result = new ArrayList<>();
-        JsonNode response = kiteApiClient.getHistoricalData(accessToken, token, TIMEFRAME, from, to);
+        JsonNode response = kiteApiClient.getHistoricalCandles(apiKey, accessToken, (long) token, TIMEFRAME, from, to);
 
         if (response != null && response.isArray()) {
             for (JsonNode bar : response) {
@@ -245,11 +245,12 @@ public class BacktestHistoricalDataLoader {
      */
     private String resolveAccessToken() {
         try {
-            Optional<PlatformBrokerFeedSession> session = sessionRepository
-                    .findTop1ByBrokerTypeOrderByCreatedAtDesc("ZERODHA");
+            Optional<PlatformBrokerFeedSession> session = sessionRepository.findAll().stream()
+                    .filter(s -> "ZERODHA".equals(s.getBrokerType()))
+                    .findFirst();
 
             if (session.isPresent()) {
-                return fieldCipher.decrypt(session.get().getAccessToken());
+                return fieldCipher.decrypt(session.get().getAccessTokenEnc());
             }
         } catch (Exception e) {
             log.warn("loader.token_error {}", e.getMessage());
