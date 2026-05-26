@@ -1,7 +1,7 @@
 import { Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   ActivitySquare,
@@ -43,6 +43,7 @@ import {
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
 import { connectStomp } from "../lib/realtime/stomp";
+import { invalidateBrokerPositionQueries } from "../lib/hooks/useBrokerPositionSync";
 import { useNotificationStore } from "../state/notifications";
 import { useSessionStore } from "../state/session";
 import { AppShell } from "./AppShell";
@@ -78,6 +79,7 @@ export function ShellLayout() {
   const [resendingVerify, setResendingVerify] = useState(false);
   const lastBacktestToastAt = useRef(0);
   const lastVerifyResendAt = useRef(0);
+  const queryClient = useQueryClient();
 
   /** Keep verification/onboarding flags aligned with DB (JWT does not carry them; localStorage can go stale after verify-email). */
   const onboardingSync = useQuery({
@@ -261,6 +263,7 @@ export function ShellLayout() {
     if (!accessToken || !userId || !hasTraderAccess) return;
     const off = connectStomp(accessToken, userId, {
       onOrder: (m) => {
+        invalidateBrokerPositionQueries(queryClient);
         try {
           const raw = m.body;
           const parsed = JSON.parse(raw) as Record<string, string>;
@@ -276,7 +279,11 @@ export function ShellLayout() {
         }
       },
       onPnl: () => {
+        invalidateBrokerPositionQueries(queryClient);
         useNotificationStore.getState().push({ severity: "info", title: "PnL snapshot refreshed", topic: "pnl" });
+      },
+      onPosition: () => {
+        invalidateBrokerPositionQueries(queryClient);
       },
       onStrategy: (m) => {
         try {

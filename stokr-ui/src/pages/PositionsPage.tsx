@@ -1,9 +1,14 @@
-﻿import { useMemo, useState, useEffect } from "react";
+﻿import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { api } from "../api/client";
 import { TRADER_EXECUTION_MODE_QUERY_KEY, fetchTraderExecutionMode } from "../lib/traderExecutionMode";
+import {
+  formatBrokerSyncAge,
+  useBrokerPositionSync,
+} from "../lib/hooks/useBrokerPositionSync";
+import { useSessionStore } from "../state/session";
 import {
   computePositionNotional,
   formatInr,
@@ -75,39 +80,9 @@ export function PositionsPage(props?: { embedded?: boolean }) {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const [symbolQuery, setSymbolQuery] = useState("");
   const [sideFilter, setSideFilter] = useState<"ALL" | "LONG" | "SHORT">("ALL");
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const token = localStorage.getItem("accessToken");
-    if (!token) return;
-    let buffer = "";
-    fetch("/api/admin/operations/stream", {
-      headers: { Authorization: `Bearer ${token}`, Accept: "text/event-stream" },
-      signal: controller.signal,
-    })
-      .then(async (res) => {
-        if (!res.ok || !res.body) return;
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          let sep: number;
-          while ((sep = buffer.indexOf("\n\n")) >= 0) {
-            const frame = buffer.slice(0, sep).trim();
-            buffer = buffer.slice(sep + 2);
-            if (frame && (frame.includes("tick") || frame.includes("ops_realtime"))) {
-              void queryClient.invalidateQueries({ queryKey: ["portfolio-exposure"] });
-              void queryClient.invalidateQueries({ queryKey: ["positions-workstation"] });
-            }
-          }
-        }
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [queryClient]);
+  const accessToken = useSessionStore((s) => s.accessToken);
+  const userId = useSessionStore((s) => s.userId);
+  useBrokerPositionSync(accessToken, userId, true);
 
   const modeQ = useQuery({
     queryKey: [...TRADER_EXECUTION_MODE_QUERY_KEY],
@@ -118,13 +93,13 @@ export function PositionsPage(props?: { embedded?: boolean }) {
   const exposureQ = useQuery({
     queryKey: ["portfolio-exposure"],
     queryFn: async () => (await api.get("/api/portfolio/exposure")).data?.data as Exposure,
-    refetchInterval: 8_000,
+    refetchInterval: 3_000,
   });
 
   const wsQ = useQuery<Workstation>({
     queryKey: ["positions-workstation", modeQ.data],
     queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
-    refetchInterval: 8_000,
+    refetchInterval: 3_000,
   });
 
   const accountPnl = useMemo(
@@ -140,6 +115,11 @@ export function PositionsPage(props?: { embedded?: boolean }) {
   const brokerConnected =
     accountPnl.source === "BROKER" ||
     String(wsQ.data?.accountSummary?.brokerConnectionState ?? "").includes("CONNECTED");
+
+  const brokerSyncState = wsQ.data?.brokerTruth?.syncState != null ? String(wsQ.data.brokerTruth.syncState) : null;
+  const brokerSyncAge = formatBrokerSyncAge(
+    wsQ.data?.brokerTruth?.lastSyncAt != null ? String(wsQ.data.brokerTruth.lastSyncAt) : null,
+  );
 
   const mergedRows = useMemo<PositionRow[]>(() => {
     const openRows = wsQ.data?.openPositions ?? [];
@@ -246,6 +226,22 @@ export function PositionsPage(props?: { embedded?: boolean }) {
     <>
       <div className="flex flex-wrap items-center gap-2">
         <PnlSourceBadge source={accountPnl.source} brokerConnected={brokerConnected} />
+        {brokerConnected ? (
+          <span
+            className={cn(
+              "rounded-xl border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide",
+              brokerSyncState === "VERIFIED"
+                ? isLight
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                : isLight
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-200",
+            )}
+          >
+            Zerodha {brokerSyncState ?? "SYNC"} {brokerSyncAge ? `· ${brokerSyncAge}` : ""}
+          </span>
+        ) : null}
         <button
           type="button"
           onClick={() => {
@@ -289,7 +285,11 @@ export function PositionsPage(props?: { embedded?: boolean }) {
 
       <LivePositionsCommandTable
         title={`Positions (${sortedRows.length})`}
-        subtitle="Broker-backed quantities · mark-to-market"
+        subtitle={
+          brokerConnected
+            ? "Mirrors Zerodha terminal · live sync every 3s + push on change"
+            : "Connect Zerodha to mirror broker terminal quantities and P&L"
+        }
         rows={sortedRows.map((r): CommandPositionRow => ({
           symbol: r.symbol,
           side: r.side,
@@ -362,7 +362,11 @@ export function PositionsPage(props?: { embedded?: boolean }) {
   return (
     <TraderPageShell
       title="Positions"
-      subtitle="Live broker-backed quantities and mark-to-market — synced from your workstation when Zerodha is connected."
+      subtitle={
+        brokerConnected
+          ? "Live Zerodha terminal mirror — quantities, MTM, and P&L stay aligned with your broker session."
+          : "Connect Zerodha in Settings to mirror broker terminal positions in real time."
+      }
     >
       {content}
     </TraderPageShell>

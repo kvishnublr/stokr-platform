@@ -2,6 +2,7 @@ package com.stokr.execution.broker;
 
 import com.stokr.broker.model.BrokerPositionDetail;
 import com.stokr.common.events.ExecutionAlertEvent;
+import com.stokr.common.events.realtime.RealtimeBridgeEvents;
 import com.stokr.execution.guard.ExecutionGuardMode;
 import com.stokr.execution.guard.ExecutionGuardSeverity;
 import com.stokr.execution.guard.ExecutionGuardViolation;
@@ -13,6 +14,7 @@ import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
 import com.stokr.user.broker.ZerodhaBrokerOperationsService;
+import com.stokr.user.repository.BrokerAccountRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -63,9 +65,11 @@ public class BrokerPositionTruthService {
     private final StrategyInstanceRepository strategyInstanceRepository;
     private final BrokerReconciliationService brokerReconciliationService;
     private final ApplicationEventPublisher eventPublisher;
+    private final BrokerAccountRepository brokerAccountRepository;
 
     private final ConcurrentHashMap<UUID, BrokerPositionTruthSnapshot> cache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Instant> brokerClosedAt = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, String> lastPublishedFingerprint = new ConcurrentHashMap<>();
 
     @Value("${stokr.broker-truth.stale-ms:15000}")
     private long staleMs;
@@ -214,7 +218,42 @@ public class BrokerPositionTruthService {
         if (!mismatches.isEmpty()) {
             brokerReconciliationService.triggerForUser(userId, "ZERODHA");
         }
+        publishIfChanged(userId, snap);
         return snap;
+    }
+
+    private void publishIfChanged(UUID userId, BrokerPositionTruthSnapshot snap) {
+        if (!snap.brokerConnected()) {
+            lastPublishedFingerprint.remove(userId);
+            return;
+        }
+        String fingerprint = fingerprint(snap);
+        String prev = lastPublishedFingerprint.put(userId, fingerprint);
+        if (prev != null && prev.equals(fingerprint)) {
+            return;
+        }
+        int openCount = (int) snap.positions().stream()
+                .filter(p -> p.brokerQty() != null && p.brokerQty().compareTo(BigDecimal.ZERO) != 0)
+                .count();
+        eventPublisher.publishEvent(new RealtimeBridgeEvents.PositionUpdated(
+                userId,
+                snap.syncState() != null ? snap.syncState().name() : "UNKNOWN",
+                openCount,
+                snap.lastSyncAt()
+        ));
+    }
+
+    private static String fingerprint(BrokerPositionTruthSnapshot snap) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(snap.syncState()).append('|').append(snap.pendingBrokerOrders()).append('|');
+        for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : snap.positions()) {
+            sb.append(row.symbol()).append(':')
+                    .append(row.brokerQty()).append(':')
+                    .append(row.brokerAvgPrice()).append(':')
+                    .append(row.brokerRealisedPnl()).append(':')
+                    .append(row.brokerUnrealisedPnl()).append(';');
+        }
+        return sb.toString();
     }
 
     public List<ExecutionGuardViolation> validateForExecution(
@@ -305,6 +344,7 @@ public class BrokerPositionTruthService {
                 .filter(id -> id != null)
                 .forEach(users::add);
         cache.keySet().forEach(users::add);
+        brokerAccountRepository.findDistinctUserIdsWithConnectedBroker().forEach(users::add);
         return List.copyOf(users);
     }
 

@@ -369,7 +369,7 @@ export function LivePositionsCommandTable({
                         <td className="px-3 py-3.5 font-mono tabular-nums">{r.notional != null ? formatInr(r.notional).replace(/^\+/, "") : "—"}</td>
                         <td className="px-3 py-3.5 last:pr-5">
                           <span className={cn("rounded-md px-2 py-0.5 text-[10px] font-bold uppercase", r.quantitySource === "BROKER" ? "bg-emerald-500/15 text-emerald-700" : "bg-neutral-500/10 text-neutral-600")}>
-                            {r.quantitySource ?? "OMS"}
+                            {r.quantitySource === "BROKER" ? "ZERODHA" : (r.quantitySource ?? "OMS")}
                           </span>
                         </td>
                       </>

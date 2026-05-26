@@ -108,6 +108,9 @@ stokr:
   deploy:
     git-commit: ${STOKR_GIT_COMMIT:unknown}
     branch: ${STOKR_DEPLOY_BRANCH:Release_v1}
+  broker-truth:
+    poll-ms: ${STOKR_BROKER_TRUTH_POLL_MS:3000}
+    stale-ms: ${STOKR_BROKER_TRUTH_STALE_MS:15000}
   rabbit:
     # Gates @RabbitListener registration (see stokr-execution messaging). Same env as spring.rabbitmq.listener.*.auto-startup.
     # false = no AMQP consumer reconnect loop when RabbitMQ is down (typical local IntelliJ + DB only).

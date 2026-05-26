@@ -28,4 +28,12 @@ public interface BrokerAccountRepository extends JpaRepository<BrokerAccount, UU
 
     @Query("select count(distinct b.userId) from BrokerAccount b where b.deleted = false and lower(b.status) = 'connected'")
     long countDistinctUserIdsWithConnectedBroker();
+
+    @Query("""
+            select distinct b.userId from BrokerAccount b
+            where b.deleted = false
+              and lower(b.status) = 'connected'
+              and b.accessTokenEnc is not null
+            """)
+    List<UUID> findDistinctUserIdsWithConnectedBroker();
 }

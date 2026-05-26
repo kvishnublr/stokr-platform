@@ -70,4 +70,16 @@ public class RealtimeBridgeListener {
         payload.put("at", e.at().toString());
         publisher.publishStrategyRuntime(uid, payload);
     }
+
+    @Async
+    @EventListener
+    public void onPosition(RealtimeBridgeEvents.PositionUpdated e) {
+        String uid = e.userId().toString();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "POSITION_UPDATE");
+        payload.put("syncState", e.syncState());
+        payload.put("openPositionCount", e.openPositionCount());
+        payload.put("lastSyncAt", e.lastSyncAt() != null ? e.lastSyncAt().toString() : null);
+        publisher.publishPositionUpdate(uid, payload);
+    }
 }
