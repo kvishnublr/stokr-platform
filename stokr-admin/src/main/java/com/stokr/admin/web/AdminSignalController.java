@@ -76,7 +76,7 @@ public class AdminSignalController {
     private final SignalPipelineActivationService signalPipelineActivationService;
     private final StrategyDefinitionRepository strategyDefinitionRepository;
     private final StrategyToggleService strategyToggleService;
-    private final StrategyEvaluationScheduler strategyEvaluationScheduler;
+    private final ObjectProvider<StrategyEvaluationScheduler> strategyEvaluationScheduler;
     private final ObjectProvider<CatalogDrivenScanScheduler> catalogDrivenScanScheduler;
     private final ReplayEquityCandleSeedService replayEquityCandleSeedService;
     private final StrategyUniverseResolverService universeResolverService;
@@ -221,9 +221,9 @@ public class AdminSignalController {
         out.put("redisToggles", allStrategies ? "all strategies enabled" : "only " + strategyKey);
 
         if (runImmediatePoll) {
-            strategyEvaluationScheduler.poll();
+            strategyEvaluationScheduler.ifAvailable(StrategyEvaluationScheduler::poll);
             catalogDrivenScanScheduler.ifAvailable(CatalogDrivenScanScheduler::scan);
-            out.put("immediatePoll", "triggered");
+            out.put("immediatePoll", strategyEvaluationScheduler.getIfAvailable() != null ? "triggered" : "disabled");
             out.put("catalogScan", catalogDrivenScanScheduler.getIfAvailable() != null ? "triggered" : "disabled");
         }
         return ApiResponse.ok(out, CorrelationIdHolder.get());
@@ -254,9 +254,9 @@ public class AdminSignalController {
         }
         out.put("redisTogglesSet", redisToggles);
         if (runImmediatePoll) {
-            strategyEvaluationScheduler.poll();
+            strategyEvaluationScheduler.ifAvailable(StrategyEvaluationScheduler::poll);
             catalogDrivenScanScheduler.ifAvailable(CatalogDrivenScanScheduler::scan);
-            out.put("immediatePoll", "triggered");
+            out.put("immediatePoll", strategyEvaluationScheduler.getIfAvailable() != null ? "triggered" : "disabled");
             out.put("catalogScan", catalogDrivenScanScheduler.getIfAvailable() != null ? "triggered" : "disabled");
         }
         CompletableFuture.runAsync(() -> {
