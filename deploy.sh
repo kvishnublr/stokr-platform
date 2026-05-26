@@ -17,16 +17,36 @@ cd "$PROJECT_DIR"
 
 CHANGED_API=false
 CHANGED_UI=false
+DEPLOY_STATE_FILE="$PROJECT_DIR/.deploy-last-sha"
 
 detect_changes() {
-    local diff
-    diff=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only ORIG_HEAD HEAD 2>/dev/null || echo "unknown")
+    local diff=""
+    local prev_sha=""
+    local current_sha
+    current_sha="$(git rev-parse HEAD 2>/dev/null || echo "")"
+    if [ -f "$DEPLOY_STATE_FILE" ]; then
+        prev_sha="$(tr -d '[:space:]' < "$DEPLOY_STATE_FILE")"
+    fi
+    if [ -n "$prev_sha" ] && [ -n "$current_sha" ] && [ "$prev_sha" != "$current_sha" ]; then
+        diff="$(git diff --name-only "$prev_sha" "$current_sha" 2>/dev/null || true)"
+    fi
+    if [ -z "$diff" ]; then
+        diff="$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only ORIG_HEAD HEAD 2>/dev/null || echo "unknown")"
+    fi
     if echo "$diff" | grep -qE '^stokr-ui/'; then
         CHANGED_UI=true
     fi
-    if echo "$diff" | grep -qvE '^(stokr-ui/|\.claude/|\.github/)'; then
+    if echo "$diff" | grep -qvE '^(stokr-ui/|\.claude/|\.github/|deploy/|scripts/contabo_|scripts/server_deploy)'; then
         CHANGED_API=true
     fi
+    if [ "$diff" = "unknown" ] || [ -z "$diff" ]; then
+        CHANGED_API=true
+        CHANGED_UI=true
+    fi
+}
+
+record_deploy_sha() {
+    git rev-parse HEAD > "$DEPLOY_STATE_FILE" 2>/dev/null || true
 }
 
 deploy_api_docker() {
@@ -139,6 +159,8 @@ for target in "${TARGETS[@]}"; do
             ;;
     esac
 done
+
+record_deploy_sha
 
 echo ""
 echo "==> Deploy complete."
