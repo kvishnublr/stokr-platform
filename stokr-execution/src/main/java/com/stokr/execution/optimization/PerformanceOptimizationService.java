@@ -82,7 +82,7 @@ public class PerformanceOptimizationService {
     /**
      * Warm cache for frequently accessed data.
      */
-    @Scheduled(cron = "0 9 * * *")
+    @Scheduled(cron = "0 0 9 * * *")
     public void warmFrequentlyAccessedCache() {
         try {
             // In production: pre-load universe symbols, strategy configs, etc.
