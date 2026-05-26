@@ -80,7 +80,7 @@ public class SignalOutcomeExitService {
         }
 
         StrategySignalEntity signal = signalRepository.findById(signalId).orElse(null);
-        if (signal == null || Boolean.TRUE.equals(signal.getDeleted())) {
+        if (signal == null || signal.isDeleted()) {
             return;
         }
         if (Boolean.TRUE.equals(signal.getTestTrade())) {
