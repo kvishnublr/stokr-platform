@@ -50,6 +50,23 @@ function fmtTime(iso: string | null | undefined) {
   return fmtDateTime(iso);
 }
 
+function effectiveLatencyMs(row: ExecRow): number | null {
+  return row.latencyMs;
+}
+
+function effectiveSlippageBps(row: ExecRow): number | null {
+  const stored = parseMoney(row.slippageBps);
+  if (stored != null) return stored;
+  const avg = parseMoney(row.avgPrice);
+  const ref = parseMoney(row.referencePrice);
+  if (avg == null || ref == null || ref === 0) return null;
+  return ((avg - ref) / ref) * 10_000;
+}
+
+function effectiveSpreadBps(row: ExecRow): number | null {
+  return parseMoney(row.spreadBps);
+}
+
 function latencyTone(ms: number | null) {
   if (ms == null) return "";
   if (ms > 2500) return "text-amber-600 dark:text-amber-400";
@@ -86,8 +103,8 @@ export function ExecutionsPage(props?: { embedded?: boolean }) {
   const rows = q.data?.content ?? [];
 
   const stats = useMemo(() => {
-    const latencies = rows.map((r) => r.latencyMs).filter((v): v is number => v != null);
-    const slips = rows.map((r) => parseMoney(r.slippageBps)).filter((v): v is number => v != null);
+    const latencies = rows.map((r) => effectiveLatencyMs(r)).filter((v): v is number => v != null);
+    const slips = rows.map((r) => effectiveSlippageBps(r)).filter((v): v is number => v != null);
     const avgLatency = latencies.length ? latencies.reduce((a, b) => a + b, 0) / latencies.length : null;
     const avgSlip = slips.length ? slips.reduce((a, b) => a + b, 0) / slips.length : null;
     const filledQty = rows.reduce((s, r) => s + (parseMoney(r.filledQty) ?? 0), 0);
@@ -138,8 +155,8 @@ export function ExecutionsPage(props?: { embedded?: boolean }) {
       {
         accessorKey: "latencyMs",
         header: "Latency",
-        cell: ({ getValue }) => {
-          const v = getValue() as number | null;
+        cell: ({ row }) => {
+          const v = effectiveLatencyMs(row.original);
           if (v == null) return "—";
           return <span className={cn("font-mono font-semibold tabular-nums", latencyTone(v))}>{v} ms</span>;
         },
@@ -147,8 +164,8 @@ export function ExecutionsPage(props?: { embedded?: boolean }) {
       {
         accessorKey: "slippageBps",
         header: "Slip bps",
-        cell: ({ getValue }) => {
-          const n = parseMoney(getValue());
+        cell: ({ row }) => {
+          const n = effectiveSlippageBps(row.original);
           if (n == null) return "—";
           const tone = Math.abs(n) > 15 ? "text-amber-600" : "text-neutral-600";
           return <span className={cn("font-mono tabular-nums", tone)}>{n.toFixed(2)}</span>;
@@ -157,8 +174,8 @@ export function ExecutionsPage(props?: { embedded?: boolean }) {
       {
         accessorKey: "spreadBps",
         header: "Spread bps",
-        cell: ({ getValue }) => {
-          const n = parseMoney(getValue());
+        cell: ({ row }) => {
+          const n = effectiveSpreadBps(row.original);
           return <span className="font-mono tabular-nums text-neutral-500">{n != null ? n.toFixed(2) : "—"}</span>;
         },
       },
@@ -259,8 +276,8 @@ export function ExecutionsPage(props?: { embedded?: boolean }) {
       </PremiumPanel>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <StatChip label="Best latency" value={stats.avgLatency != null && rows.length ? `${Math.min(...rows.map((r) => r.latencyMs ?? 99999))} ms` : "—"} tone="good" />
-        <StatChip label="Worst latency" value={stats.avgLatency != null && rows.length ? `${Math.max(...rows.map((r) => r.latencyMs ?? 0))} ms` : "—"} tone="warn" />
+        <StatChip label="Best latency" value={stats.avgLatency != null && rows.length ? `${Math.min(...rows.map((r) => effectiveLatencyMs(r) ?? 99999))} ms` : "—"} tone="good" />
+        <StatChip label="Worst latency" value={stats.avgLatency != null && rows.length ? `${Math.max(...rows.map((r) => effectiveLatencyMs(r) ?? 0))} ms` : "—"} tone="warn" />
         <StatChip label="Replay source" value={rows.find((r) => r.replaySource)?.replaySource ?? "Live pipeline"} tone="neutral" />
       </div>
     </>

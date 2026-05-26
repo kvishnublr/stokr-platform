@@ -11,6 +11,7 @@ import com.stokr.oms.dto.OmsOrderDetailDto;
 import com.stokr.oms.dto.OmsOrderSummaryDto;
 import com.stokr.oms.dto.OmsSummaryMetricsDto;
 import com.stokr.oms.dto.OmsTradeRowDto;
+import com.stokr.oms.metrics.ExecutionMetricsHelper;
 import com.stokr.oms.query.OmsReadParams;
 import com.stokr.oms.query.PipelineMode;
 import com.stokr.oms.repository.OmsExecutionRepository;
@@ -214,6 +215,10 @@ public class OmsQueryService {
 
     private OmsExecutionRowDto toExecutionRow(OmsExecution e) {
         OmsOrder o = e.getOrder();
+        BigDecimal referencePrice = ExecutionMetricsHelper.resolveReferencePrice(o, e);
+        Long latencyMs = ExecutionMetricsHelper.resolveLatencyMs(o, e);
+        BigDecimal slippageBps = ExecutionMetricsHelper.resolveSlippageBps(o, e);
+        BigDecimal spreadBps = ExecutionMetricsHelper.resolveSpreadBps(e, BigDecimal.valueOf(8));
         return new OmsExecutionRowDto(
                 e.getId(),
                 o.getId(),
@@ -230,10 +235,10 @@ public class OmsQueryService {
                 e.getExecutionKind(),
                 e.getFillTime(),
                 e.getExecutionTimestamp(),
-                e.getLatencyMs(),
-                e.getSlippageBps(),
-                e.getSpreadBps(),
-                e.getReferencePrice(),
+                latencyMs,
+                slippageBps,
+                spreadBps,
+                referencePrice,
                 e.getReplaySource(),
                 e.getReplayRunId(),
                 e.getCreatedAt()

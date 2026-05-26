@@ -6,11 +6,13 @@ import com.stokr.oms.domain.ExecutionEventType;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OmsTrade;
 import com.stokr.oms.domain.OrderState;
+import com.stokr.oms.metrics.ExecutionMetricsHelper;
 import com.stokr.oms.portfolio.PortfolioAccountingService;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.repository.OmsTradeRepository;
 import com.stokr.oms.service.ExecutionLedgerService;
 import com.stokr.oms.service.OrderLifecycleService;
+import com.stokr.execution.guard.ExecutionGuardTelemetryService;
 import com.stokr.oms.trace.ExecutionTraceService;
 import com.stokr.user.broker.ZerodhaBrokerOperationsService;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -47,11 +50,15 @@ public class LiveBrokerFillSyncService {
     private final OmsTradeRepository tradeRepository;
     private final PortfolioAccountingService portfolioAccountingService;
     private final ExecutionTraceService executionTraceService;
+    private final ExecutionGuardTelemetryService executionGuardTelemetryService;
     private final ApplicationEventPublisher eventPublisher;
     private final ZerodhaBrokerOperationsService zerodhaBrokerOperationsService;
 
     @Value("${stokr.execution.broker-fill-sync.enabled:true}")
     private boolean enabled;
+
+    @Value("${stokr.execution.live.default-spread-bps:8.0}")
+    private BigDecimal liveDefaultSpreadBps;
 
     @Scheduled(fixedDelayString = "${stokr.execution.broker-fill-sync.interval-ms:15000}")
     public void scheduledSync() {
@@ -140,6 +147,16 @@ public class LiveBrokerFillSyncService {
         if (kite.averagePrice() != null && kite.averagePrice() > 0) {
             price = BigDecimal.valueOf(kite.averagePrice());
         }
+        Instant fillTime = kite.orderTimestamp() != null ? kite.orderTimestamp() : Instant.now();
+        BigDecimal referencePrice = ExecutionMetricsHelper.resolveReferencePrice(order, null);
+        if (referencePrice == null || referencePrice.compareTo(BigDecimal.ZERO) <= 0) {
+            referencePrice = price;
+        }
+        Long latencyMs = ExecutionMetricsHelper.latencyMs(order.getCreatedAt(), fillTime);
+        BigDecimal slippageBps = ExecutionMetricsHelper.slippageBps(price, referencePrice, order.getSide());
+        BigDecimal spreadBps = liveDefaultSpreadBps != null
+                ? liveDefaultSpreadBps.setScale(4, RoundingMode.HALF_UP)
+                : null;
 
         var ex = executionLedgerService.appendExecution(
                 order,
@@ -147,14 +164,15 @@ public class LiveBrokerFillSyncService {
                 qty,
                 price,
                 "LIVE_BROKER",
-                Instant.now(),
-                null,
-                null,
-                null,
-                price,
+                fillTime,
+                latencyMs,
+                slippageBps,
+                spreadBps,
+                referencePrice,
                 "LIVE",
                 null
         );
+        executionGuardTelemetryService.recordFillQuality(order, ex);
 
         OmsTrade tr = new OmsTrade();
         tr.setOrder(order);
