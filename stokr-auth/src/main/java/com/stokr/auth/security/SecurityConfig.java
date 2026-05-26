@@ -46,6 +46,7 @@ public class SecurityConfig {
                                 "/ws/**"
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/strategies/catalog").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/strategies/catalog/signal-stats").permitAll()
                         .requestMatchers(HttpMethod.GET, "/").permitAll()
                         .anyRequest().authenticated()
                 )

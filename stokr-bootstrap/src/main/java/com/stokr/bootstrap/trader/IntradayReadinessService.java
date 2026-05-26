@@ -39,6 +39,7 @@ public class IntradayReadinessService {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final List<SetupDef> INTRADAY_SETUPS = List.of(
+            new SetupDef("NSE Spike Detection", "NSE_SPIKE_DETECTION"),
             new SetupDef("Gap Fills", "GAP_FILL"),
             new SetupDef("VWAP Bounces", "VWAP_BOUNCE"),
             new SetupDef("Sector Laggards", "SECTOR_LAGGARD"),
