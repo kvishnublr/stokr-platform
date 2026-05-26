@@ -71,7 +71,9 @@ public class PlatformLiveTickIngestListener {
             tick.setSymbol(e.symbol());
             tick.setTickTime(e.tickTime());
             tick.setPrice(e.price());
-            tick.setQuantity(BigDecimal.ONE);
+            // Use real last-traded-quantity from quote/full mode; fallback to 1 if LTP-only (0)
+            int ltq = e.lastTradedQty();
+            tick.setQuantity(ltq > 0 ? BigDecimal.valueOf(ltq) : BigDecimal.ONE);
             tick.setSource("PLATFORM_ZERODHA_WS");
             marketDataService.ingestTick(tick, IST);
         } catch (Exception ex) {

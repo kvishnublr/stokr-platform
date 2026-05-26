@@ -559,7 +559,9 @@ public class PlatformZerodhaLiveFeedRuntime {
             try {
                 String sub = objectMapper.writeValueAsString(Map.of("a", "subscribe", "v", tokens));
                 webSocket.sendText(sub, true);
-                String mode = objectMapper.writeValueAsString(Map.of("a", "mode", "v", List.of("ltp", tokens)));
+                // "quote" mode (44 bytes/tick) gives us LTP + lastTradedQty + volumeTraded + OHLC
+                // "ltp" mode (8 bytes) only gives price — no volume data for candles
+                String mode = objectMapper.writeValueAsString(Map.of("a", "mode", "v", List.of("quote", tokens)));
                 webSocket.sendText(mode, true);
             } catch (Exception ex) {
                 log.warn("platform.ws.subscribe_failed {}", ex.toString());
@@ -617,7 +619,9 @@ public class PlatformZerodhaLiveFeedRuntime {
                     if (sym.startsWith("TOKEN_")) {
                         windowUnresolvedTokens.incrementAndGet();
                     }
-                    eventPublisher.publishEvent(new PlatformLiveTickEvent(sym, packetArrival, t.lastPricePaise(), t.instrumentToken()));
+                    eventPublisher.publishEvent(new PlatformLiveTickEvent(
+                            sym, packetArrival, t.lastPricePaise(), t.instrumentToken(),
+                            t.lastTradedQuantity(), t.volumeTraded()));
                 }
             }
             webSocket.request(1);
