@@ -5,6 +5,7 @@ import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -171,4 +172,74 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
     long countProductionSignalsForStrategySince(
             @Param("strategyName") String strategyName,
             @Param("since") Instant since);
+
+    @Query("""
+            select count(s) from StrategySignalEntity s
+            where s.deleted = false
+              and s.backtestRunId is null
+              and s.createdAt >= :from
+              and s.createdAt < :toExclusive
+              and (:strategyName is null or upper(s.strategyName) = upper(:strategyName))
+              and (:includeReplayAndLab = true
+                   or s.signalSource is null
+                   or s.signalSource in (com.stokr.strategy.signals.SignalProvenance.LIVE,
+                                         com.stokr.strategy.signals.SignalProvenance.PAPER))
+            """)
+    long countForCleanup(
+            @Param("from") Instant from,
+            @Param("toExclusive") Instant toExclusive,
+            @Param("strategyName") String strategyName,
+            @Param("includeReplayAndLab") boolean includeReplayAndLab);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update StrategySignalEntity s
+            set s.deleted = true, s.updatedAt = current_timestamp
+            where s.deleted = false
+              and s.backtestRunId is null
+              and s.createdAt >= :from
+              and s.createdAt < :toExclusive
+              and (:strategyName is null or upper(s.strategyName) = upper(:strategyName))
+              and (:includeReplayAndLab = true
+                   or s.signalSource is null
+                   or s.signalSource in (com.stokr.strategy.signals.SignalProvenance.LIVE,
+                                         com.stokr.strategy.signals.SignalProvenance.PAPER))
+            """)
+    int softDeleteForCleanup(
+            @Param("from") Instant from,
+            @Param("toExclusive") Instant toExclusive,
+            @Param("strategyName") String strategyName,
+            @Param("includeReplayAndLab") boolean includeReplayAndLab);
+
+    @Query(value = """
+            SELECT
+                strategy_name,
+                COUNT(*)::bigint                                                         AS total,
+                COUNT(*) FILTER (WHERE signal_type = 'BUY')::bigint                      AS buy_count,
+                COUNT(*) FILTER (WHERE signal_type = 'SELL')::bigint                     AS sell_count,
+                COUNT(*) FILTER (WHERE outcome_status = 'TARGET_HIT')::bigint            AS target_hit,
+                COUNT(*) FILTER (WHERE outcome_status = 'STOPLOSS_HIT')::bigint            AS sl_hit,
+                COUNT(*) FILTER (WHERE outcome_status = 'RUNNING')::bigint                 AS running_count,
+                COUNT(*) FILTER (WHERE outcome_status = 'EXPIRED')::bigint                 AS expired_count,
+                COUNT(*) FILTER (WHERE outcome_status IS NULL OR outcome_status = 'PENDING')::bigint AS pending_count
+            FROM strategy_signals
+            WHERE deleted = FALSE
+              AND backtest_run_id IS NULL
+              AND is_test_trade = FALSE
+              AND created_at >= :from
+              AND created_at < :toExclusive
+              AND (:strategyName IS NULL OR upper(strategy_name) = upper(CAST(:strategyName AS text)))
+              AND (
+                    CAST(:includeReplayAndLab AS boolean) = TRUE
+                    OR signal_source IS NULL
+                    OR signal_source IN ('LIVE', 'PAPER')
+                  )
+            GROUP BY strategy_name
+            ORDER BY total DESC
+            """, nativeQuery = true)
+    List<Object[]> computeStatsByStrategy(
+            @Param("from") Instant from,
+            @Param("toExclusive") Instant toExclusive,
+            @Param("strategyName") String strategyName,
+            @Param("includeReplayAndLab") boolean includeReplayAndLab);
 }
