@@ -11,12 +11,14 @@ import com.stokr.strategy.meanreversion.runtime.MeanReversionReplayState;
 import com.stokr.strategy.meanreversion.runtime.MeanReversionRuntimeParams;
 import com.stokr.strategy.meanreversion.runtime.MeanReversionSessionResolver;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
 import java.time.ZoneId;
 import java.util.Objects;
 
 @Component
+@ConditionalOnBean(MeanReversionSignalGenerator.class)
 @RequiredArgsConstructor
 public class MeanReversionBacktestPlugin implements BacktestStrategyPlugin {
 

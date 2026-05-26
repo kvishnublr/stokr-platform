@@ -6,9 +6,11 @@ import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.keys.StrategyKeys;
 import com.stokr.strategy.openingrange.OpeningRangeBreakoutSignalGenerator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnBean(OpeningRangeBreakoutSignalGenerator.class)
 @RequiredArgsConstructor
 public class OrbBacktestPlugin implements BacktestStrategyPlugin {
 

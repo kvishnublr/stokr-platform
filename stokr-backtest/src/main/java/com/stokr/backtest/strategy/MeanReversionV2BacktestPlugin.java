@@ -6,9 +6,11 @@ import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.keys.StrategyKeys;
 import com.stokr.strategy.meanreversion.MeanReversionV2SignalGenerator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnBean(MeanReversionV2SignalGenerator.class)
 @RequiredArgsConstructor
 public class MeanReversionV2BacktestPlugin implements BacktestStrategyPlugin {
 
