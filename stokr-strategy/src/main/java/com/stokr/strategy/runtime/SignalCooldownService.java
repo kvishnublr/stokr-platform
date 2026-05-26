@@ -28,7 +28,7 @@ public class SignalCooldownService {
     // Key: "SYMBOL:STRATEGY_KEY", Value: last signal Instant
     private final Map<String, Instant> lastSignalBySymbolStrategy = new ConcurrentHashMap<>();
 
-    @Value("${stokr.signal.cooldown-seconds:300}")
+    @Value("${stokr.strategy.signal.cooldown-seconds:${stokr.signal.cooldown-seconds:900}}")
     private int cooldownSeconds;
 
     /**
@@ -41,26 +41,24 @@ public class SignalCooldownService {
      */
     public boolean shouldEmitSignal(String symbol, String strategyKey, Instant now) {
         if (symbol == null || strategyKey == null || now == null) {
-            return true; // safety: allow if params invalid
-        }
-
-        String key = symbol + ":" + strategyKey;
-        Instant lastSignal = lastSignalBySymbolStrategy.get(key);
-
-        if (lastSignal == null) {
-            // First signal for this pair — allow it
-            lastSignalBySymbolStrategy.put(key, now);
             return true;
         }
-
-        if (lastSignal.plusSeconds(cooldownSeconds).isAfter(now)) {
-            // Still in cooldown
-            return false;
+        String key = symbol + ":" + strategyKey;
+        Instant lastSignal = lastSignalBySymbolStrategy.get(key);
+        if (lastSignal == null) {
+            return true;
         }
+        return !lastSignal.plusSeconds(cooldownSeconds).isAfter(now);
+    }
 
-        // Cooldown elapsed — allow new signal
-        lastSignalBySymbolStrategy.put(key, now);
-        return true;
+    /**
+     * Records a successful emission after persist completes.
+     */
+    public void recordEmitted(String symbol, String strategyKey, Instant now) {
+        if (symbol == null || strategyKey == null || now == null) {
+            return;
+        }
+        lastSignalBySymbolStrategy.put(symbol + ":" + strategyKey, now);
     }
 
     /**

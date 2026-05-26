@@ -15,6 +15,7 @@ import com.stokr.strategy.service.SignalPriceEnrichmentService;
 import com.stokr.strategy.service.SignalQualityGateService;
 import com.stokr.strategy.service.SignalProvenanceResolver;
 import com.stokr.strategy.service.SignalSymbolPriceGateService;
+import com.stokr.strategy.service.StrategyDailySignalCapService;
 import com.stokr.strategy.signals.SignalProvenance;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,9 +51,13 @@ public class StrategySignalPipelineService {
     private final SignalProvenanceResolver signalProvenanceResolver;
     private final SignalSymbolPriceGateService signalSymbolPriceGateService;
     private final SignalQualityGateService signalQualityGateService;
+    private final StrategyDailySignalCapService dailySignalCapService;
 
     @Value("${stokr.strategy.signal-session-guard.enabled:true}")
     private boolean signalSessionGuardEnabled;
+
+    @Value("${stokr.strategy.replay.dispatch-to-oms:false}")
+    private boolean replayDispatchToOms;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId marketZone;
@@ -91,14 +96,16 @@ public class StrategySignalPipelineService {
                     "Execution pipeline disabled: Rabbit listeners are OFF. Signal routing and OMS execution are inactive."
             );
         }
-        if (signalSessionGuardEnabled && !Boolean.TRUE.equals(signal.getTestTrade()) && shouldDropOutsideSession(signal, Instant.now())) {
-            log.info("signal.dropped_outside_session strategy={} symbol={} mode={}",
-                    signal.getStrategyName(), signal.getSymbol(), executionMode);
-            return null;
-        }
         signalProvenanceResolver.applyForPersist(signal, executionMode, provenanceOverride);
+        boolean replaySignal = signal.getSignalSource() == SignalProvenance.REPLAY;
 
         Instant signalTime = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
+        Instant sessionCheckTime = replaySignal ? signalTime : Instant.now();
+        if (signalSessionGuardEnabled && !Boolean.TRUE.equals(signal.getTestTrade()) && shouldDropOutsideSession(signal, sessionCheckTime)) {
+            log.info("signal.dropped_outside_session strategy={} symbol={} mode={} replay={}",
+                    signal.getStrategyName(), signal.getSymbol(), executionMode, replaySignal);
+            return null;
+        }
         if (!Boolean.TRUE.equals(signal.getTestTrade()) && signal.getBacktestRunId() == null
                 && signal.getSignalSource() != null && signal.getSignalSource().isProductionAnalytics()) {
             signalPriceEnrichmentService.enrichIfMissing(signal, signalTime);
@@ -116,6 +123,11 @@ public class StrategySignalPipelineService {
             if (signal.getOutcomeStatus() == null || signal.getOutcomeStatus().isBlank()) {
                 signal.setOutcomeStatus("PENDING");
             }
+            String capKey = signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
+            if (dailySignalCapService.isOverCap(capKey, signalTime)) {
+                log.info("signal.dropped_daily_cap strategy={} symbol={}", capKey, signal.getSymbol());
+                return null;
+            }
         }
         StrategySignalEntity saved = signalRepository.save(signal);
 
@@ -125,12 +137,15 @@ public class StrategySignalPipelineService {
         // Resolve RUNNING trader instances WITHIN transaction so they're consistent with the saved signal
         List<StrategyInstance> runningInstances = strategyInstanceRepository.findAllRunningByStrategyKey(sk);
 
+        String omsExecutionMode = saved.getSignalSource() == SignalProvenance.REPLAY
+                ? "SIMULATED"
+                : executionMode;
         SignalPersistedMessage systemMsg = new SignalPersistedMessage(
                 saved.getId(),
                 saved.getUserId(),
                 cid,
                 saved.getBacktestRunId(),
-                executionMode
+                omsExecutionMode
         );
 
         long dispatchLatencyStartNanos = System.nanoTime();
@@ -142,18 +157,35 @@ public class StrategySignalPipelineService {
                 rabbitTemplate.convertAndSend(PipelineQueues.STRATEGY_SIGNAL, systemMsg);
 
                 // oms.order.queue — fan out to every RUNNING trader instance for this strategy
+                // REPLAY signals are analytics-only unless explicitly enabled (never LIVE).
+                if (saved.getSignalSource() == SignalProvenance.REPLAY && !replayDispatchToOms) {
+                    log.info("signal.replay.skip_oms signalId={} strategy={} symbol={}",
+                            saved.getId(), sk, saved.getSymbol());
+                    eventPublisher.publishEvent(new OperationalRealtimeEvent("signal_routed", java.util.Map.of(
+                            "signalId", saved.getId().toString(),
+                            "userId", saved.getUserId().toString(),
+                            "strategyKey", sk,
+                            "executionMode", "REPLAY_ANALYTICS_ONLY"
+                    )));
+                    eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
+                    signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);
+                    return;
+                }
                 if (runningInstances.isEmpty()) {
                     // No active traders — dispatch system-level message so the OMS still records the signal
                     rabbitTemplate.convertAndSend(PipelineQueues.OMS_ORDER, systemMsg);
                     log.info("signal.fanout.no_traders signalId={} strategy={} symbol={}", saved.getId(), sk, saved.getSymbol());
                 } else {
                     for (StrategyInstance inst : runningInstances) {
+                        String instMode = saved.getSignalSource() == SignalProvenance.REPLAY
+                                ? "SIMULATED"
+                                : inst.getExecutionMode();
                         SignalPersistedMessage traderMsg = new SignalPersistedMessage(
                                 saved.getId(),
                                 inst.getUserId(),
                                 cid + ":" + inst.getUserId(),
                                 saved.getBacktestRunId(),
-                                inst.getExecutionMode()
+                                instMode
                         );
                         rabbitTemplate.convertAndSend(PipelineQueues.OMS_ORDER, traderMsg);
                     }

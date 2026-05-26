@@ -41,7 +41,8 @@ public class StrategyDailySignalCapService {
         if (cap <= 0) {
             return false;
         }
-        Instant dayStart = LocalDate.now(zone).atStartOfDay(zone).toInstant();
+        Instant anchor = now != null ? now : Instant.now();
+        Instant dayStart = LocalDate.ofInstant(anchor, zone).atStartOfDay(zone).toInstant();
         long count = signalRepository.countProductionSignalsForStrategySince(strategyKey, dayStart);
         if (count >= cap) {
             log.debug("signal.daily_cap_reached strategy={} count={} cap={}", strategyKey, count, cap);
