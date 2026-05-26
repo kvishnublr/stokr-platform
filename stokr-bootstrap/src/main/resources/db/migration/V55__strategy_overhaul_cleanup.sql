@@ -1,14 +1,21 @@
 -- V55: Strategy Overhaul — Remove all old strategies, keep only NSE_SPIKE_DETECTION + add 4 new
 -- Date: 2026-05-26
 
--- 1. Delete ALL runtime bindings for strategies being removed
+-- 1. Delete strategy_instances referencing old definitions (FK constraint)
+DELETE FROM strategy_instances
+WHERE definition_id IN (
+    SELECT id FROM strategy_definitions
+    WHERE strategy_key NOT IN ('NSE_SPIKE_DETECTION')
+);
+
+-- 2. Delete ALL runtime bindings for strategies being removed
 DELETE FROM strategy_runtime_bindings
 WHERE strategy_catalog_id IN (
     SELECT id FROM strategy_definitions
     WHERE strategy_key NOT IN ('NSE_SPIKE_DETECTION')
 );
 
--- 2. Hard-delete all old strategy definitions (not just soft-delete)
+-- 3. Hard-delete all old strategy definitions (not just soft-delete)
 DELETE FROM strategy_definitions
 WHERE strategy_key NOT IN ('NSE_SPIKE_DETECTION');
 
