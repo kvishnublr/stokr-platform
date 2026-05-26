@@ -86,8 +86,8 @@ public class CatalogDrivenScanScheduler {
             TradingStrategy strategy = strategyRegistry.get(strategyKey);
 
             if (strategy == null) {
-                log.warn("catalog.scan.strategy_not_registered key={} — skipping binding. " +
-                         "Generate and deploy the template class first.", strategyKey);
+                log.debug("catalog.scan.strategy_not_registered key={} — skipping binding. " +
+                          "Generate and deploy the template class first.", strategyKey);
                 totalSkipped++;
                 continue;
             }
