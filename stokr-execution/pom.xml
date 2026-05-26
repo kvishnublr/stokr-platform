@@ -44,6 +44,10 @@
             <artifactId>stokr-user</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.stokr</groupId>
+            <artifactId>stokr-broker</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>

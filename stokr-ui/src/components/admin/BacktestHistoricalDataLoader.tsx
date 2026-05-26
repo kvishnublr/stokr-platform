@@ -41,9 +41,9 @@ export function BacktestHistoricalDataLoader() {
       );
       return response.data;
     },
-    refetchInterval: (data) => {
+    refetchInterval: (query) => {
       // Poll more frequently when loading, less when done
-      return data?.progress.running ? 5000 : 30000;
+      return query.state.data?.progress.running ? 5000 : 30000;
     },
   });
 
