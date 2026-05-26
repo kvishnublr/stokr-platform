@@ -83,9 +83,20 @@ function parseAxiosMessage(err: unknown): string {
 
 export { parseAxiosMessage };
 
+const AUTH_PATHS_WITHOUT_BEARER = [
+  "/api/auth/login",
+  "/api/auth/register",
+  "/api/auth/refresh",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
+  "/api/auth/verify-email",
+];
+
 api.interceptors.request.use((config) => {
+  const url = config.url ?? "";
+  const skipBearer = AUTH_PATHS_WITHOUT_BEARER.some((p) => url.includes(p));
   const token = localStorage.getItem("accessToken");
-  if (token) {
+  if (token && !skipBearer) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   if (!config.headers[CORRELATION_HEADER]) {
