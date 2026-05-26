@@ -220,6 +220,8 @@ stokr:
     partial-fill-count: ${STOKR_SIM_PARTIAL_FILLS:1}
     order-queue-delay-ms: ${STOKR_SIM_QUEUE_DELAY_MS:0}
   execution:
+    # Fixed lot size for signal → OMS orders (production traders). Test-lab signals use suggestedQty.
+    signal-order-quantity: ${STOKR_SIGNAL_ORDER_QTY:1}
     max-attempts: ${STOKR_EXECUTION_MAX_ATTEMPTS:5}
     live-trading-enabled: ${STOKR_LIVE_TRADING_ENABLED:false}
     broker-fill-sync:

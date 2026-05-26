@@ -72,9 +72,6 @@ public class OrderIntentProcessor {
     @Value("${stokr.risk.zone:Asia/Kolkata}")
     private String riskZone;
 
-    @Value("${stokr.strategy.default-quantity:1}")
-    private BigDecimal defaultQuantity;
-
     @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
     private UUID systemUserId;
 
@@ -311,7 +308,8 @@ public class OrderIntentProcessor {
                 signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY,
                 userId,
                 signal.getSuggestedQty(),
-                signal.getEntryReferencePrice()));
+                signal.getEntryReferencePrice(),
+                Boolean.TRUE.equals(signal.getTestTrade())));
         o.setLimitPrice(null);
         o.setStopPrice(signal.getStopPrice());
         o.setTargetPrice(signal.getTargetPrice());
