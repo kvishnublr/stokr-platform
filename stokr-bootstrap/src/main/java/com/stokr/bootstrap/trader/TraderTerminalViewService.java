@@ -359,6 +359,12 @@ public class TraderTerminalViewService {
             row.put("brokerStatus", broker.health());
             row.put("executionMode", mode.executionMode());
             row.put("parityState", parityState);
+            row.put("exposureNotional", exposureNotional);
+            row.put("quantitySource", truth != null
+                    && truth.brokerQty() != null
+                    && truth.brokerQty().compareTo(BigDecimal.ZERO) != 0
+                    ? "BROKER"
+                    : "OMS");
             if (truth != null) {
                 row.put("brokerQty", truth.brokerQty());
                 row.put("brokerSyncState", truth.rowSyncState());
@@ -742,6 +748,10 @@ public class TraderTerminalViewService {
         row.put("targetPrice", targetBySymbol.get(BrokerPositionTruthService.normalizeSymbol(symbol)));
         row.put("trailingStop", null);
         row.put("pnlSource", "BROKER");
+        row.put("quantitySource", "BROKER");
+        BigDecimal absQty = qty.abs();
+        BigDecimal exposureNotional = absQty.multiply(ltp.compareTo(BigDecimal.ZERO) > 0 ? ltp : avg);
+        row.put("exposureNotional", exposureNotional);
         return row;
     }
 

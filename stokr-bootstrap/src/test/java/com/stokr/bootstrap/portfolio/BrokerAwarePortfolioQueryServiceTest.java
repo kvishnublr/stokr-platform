@@ -116,6 +116,44 @@ class BrokerAwarePortfolioQueryServiceTest {
     }
 
     @Test
+    void exposure_omsOnlyRowUsesOmsQtyForNotionalWhenBrokerConnected() {
+        UUID userId = UUID.randomUUID();
+
+        PortfolioPosition omsOnly = new PortfolioPosition();
+        omsOnly.setUserId(userId);
+        omsOnly.setSymbol("CDSL");
+        omsOnly.setQuantity(new BigDecimal("1"));
+        omsOnly.setAvgPrice(new BigDecimal("1224.30"));
+
+        when(positionRepository.findByUserIdAndDeletedFalse(userId)).thenReturn(List.of(omsOnly));
+        when(tradeRepository.sumNotionalByBrokerVendor(userId)).thenReturn(List.of());
+
+        BrokerPositionTruthSnapshot snap = new BrokerPositionTruthSnapshot(
+                BrokerPositionTruthSyncState.VERIFIED,
+                Instant.now(),
+                5L,
+                true,
+                List.of(),
+                List.of(),
+                Set.of(),
+                Set.of(),
+                0,
+                "flat"
+        );
+        when(brokerPositionTruthService.snapshot(userId)).thenReturn(snap);
+
+        PortfolioExposureDto exposure = service.exposure(userId);
+
+        assertThat(exposure.bySymbol()).hasSize(1);
+        PortfolioExposureDto.SymbolExposure row = exposure.bySymbol().getFirst();
+        assertThat(row.quantity()).isEqualByComparingTo("0");
+        assertThat(row.omsQuantity()).isEqualByComparingTo("1");
+        assertThat(row.exposureNotional()).isEqualByComparingTo("1224.30");
+        assertThat(row.quantitySource()).isEqualTo("OMS");
+        assertThat(row.parityState()).isEqualTo("MISMATCH");
+    }
+
+    @Test
     void exposure_fallsBackToOmsWhenBrokerDisconnected() {
         UUID userId = UUID.randomUUID();
 

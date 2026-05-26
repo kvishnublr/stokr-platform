@@ -117,9 +117,12 @@ public class BrokerAwarePortfolioQueryService extends PortfolioQueryService {
         if (px == null && oms != null) {
             px = oms.getMtmPrice() != null ? oms.getMtmPrice() : oms.getAvgPrice();
         }
+        BigDecimal qtyForNotional = displayQty.abs().compareTo(BigDecimal.ZERO) > 0
+                ? displayQty.abs()
+                : omsQty.abs();
         BigDecimal notional = px != null
-                ? displayQty.abs().multiply(px)
-                : displayQty.abs();
+                ? qtyForNotional.multiply(px)
+                : qtyForNotional;
         BigDecimal parityBaseline = internalQty != null ? internalQty : omsQty;
         String parity = displayQty.compareTo(parityBaseline) == 0 ? "SYNCED" : "MISMATCH";
         String source = displayQty.compareTo(BigDecimal.ZERO) != 0 ? "BROKER" : "OMS";

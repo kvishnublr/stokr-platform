@@ -144,3 +144,66 @@ export function formatPnlDisplay(value: number | null | undefined, opts?: { comp
   if (value == null) return "—";
   return formatInr(value, opts);
 }
+
+/** Market value for an open leg: |qty| × (LTP, else avg, else 0). */
+export function computePositionNotional(
+  qty: number | null | undefined,
+  ltp: number | null | undefined,
+  avgPrice: number | null | undefined,
+): number {
+  const q = Math.abs(qty ?? 0);
+  if (q <= 0) return 0;
+  const px = (ltp != null && ltp > 0 ? ltp : avgPrice) ?? 0;
+  return q * px;
+}
+
+/** Row-level quantity source for positions tables (workstation-first). */
+export function resolvePositionQuantitySource(
+  row: Record<string, unknown> | undefined,
+  brokerConnected: boolean,
+): "BROKER" | "OMS" {
+  const explicit = row?.pnlSource ?? row?.quantitySource;
+  if (explicit != null && String(explicit).trim()) {
+    return String(explicit).toUpperCase() === "BROKER" ? "BROKER" : "OMS";
+  }
+  if (brokerConnected) {
+    const brokerQty = parseMoney(row?.brokerQty);
+    if (brokerQty != null && brokerQty !== 0) return "BROKER";
+  }
+  return "OMS";
+}
+
+export type PositionParityBadge = {
+  label: string;
+  tone: "amber" | "sky" | "rose";
+};
+
+/** Human-readable parity badge from workstation row fields (avoid exposure API drift labels). */
+export function resolvePositionParityBadge(
+  input: {
+    parityState: string | null;
+    qty: number;
+    brokerQty: number | null;
+  },
+  brokerConnected: boolean,
+): PositionParityBadge | null {
+  const state = input.parityState?.toUpperCase() ?? null;
+  if (!state || state === "SYNCED" || state === "FLAT") return null;
+
+  if (state === "PARTIAL_FILL") {
+    return { label: "PARTIAL FILL", tone: "sky" };
+  }
+  if (state === "EXIT_PENDING") {
+    return { label: "EXIT PENDING", tone: "sky" };
+  }
+  if (state === "MISMATCH") {
+    if (brokerConnected && (input.brokerQty == null || input.brokerQty === 0) && input.qty !== 0) {
+      return { label: "NOT AT BROKER", tone: "amber" };
+    }
+    if (input.brokerQty != null && input.brokerQty !== input.qty) {
+      return { label: "QTY MISMATCH", tone: "rose" };
+    }
+    return { label: "SYNC DRIFT", tone: "amber" };
+  }
+  return { label: state.replace(/_/g, " "), tone: "amber" };
+}

@@ -5,11 +5,14 @@ import { motion } from "framer-motion";
 import { api } from "../api/client";
 import { TRADER_EXECUTION_MODE_QUERY_KEY, fetchTraderExecutionMode } from "../lib/traderExecutionMode";
 import {
+  computePositionNotional,
   formatInr,
   formatPnlDisplay,
   parseMoney,
   pnlToneClass,
   resolveAccountPnl,
+  resolvePositionParityBadge,
+  resolvePositionQuantitySource,
 } from "../lib/moneyUtils";
 import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
@@ -57,6 +60,7 @@ type PositionRow = {
   exposurePct: number | null;
   quantitySource: string;
   parityState: string | null;
+  parityBadge: ReturnType<typeof resolvePositionParityBadge>;
   executionMode: string | null;
   brokerStatus: string | null;
 };
@@ -139,40 +143,36 @@ export function PositionsPage(props?: { embedded?: boolean }) {
     String(wsQ.data?.accountSummary?.brokerConnectionState ?? "").includes("CONNECTED");
 
   const mergedRows = useMemo<PositionRow[]>(() => {
-    const wsBySymbol = new Map<string, Record<string, unknown>>();
-    for (const row of wsQ.data?.openPositions ?? []) {
-      const sym = String(row.symbol ?? "").toUpperCase();
-      if (sym) wsBySymbol.set(sym, row);
-    }
-    const exposureRows = exposureQ.data?.bySymbol ?? [];
-    const symbols = new Set<string>();
-    exposureRows.forEach((r) => symbols.add(r.symbol.toUpperCase()));
-    wsBySymbol.forEach((_, sym) => symbols.add(sym));
-
-    return Array.from(symbols).map((symbol) => {
-      const exp = exposureRows.find((r) => r.symbol.toUpperCase() === symbol);
-      const ws = wsBySymbol.get(symbol);
-      const qty = parseMoney(ws?.qty ?? exp?.quantity) ?? 0;
-      const side = String(ws?.side ?? (qty >= 0 ? "LONG" : "SHORT"));
+    const openRows = wsQ.data?.openPositions ?? [];
+    return openRows.map((ws) => {
+      const symbol = String(ws.symbol ?? "").toUpperCase();
+      const qty = parseMoney(ws.qty) ?? 0;
+      const avgPrice = parseMoney(ws.avgPrice);
+      const ltp = parseMoney(ws.ltp);
+      const brokerQty = parseMoney(ws.brokerQty);
+      const side = String(ws.side ?? (qty >= 0 ? "LONG" : "SHORT"));
+      const parityState = ws.parityState != null ? String(ws.parityState).toUpperCase() : null;
+      const quantitySource = resolvePositionQuantitySource(ws, brokerConnected);
       return {
         symbol,
         side,
         qty,
-        brokerQty: parseMoney(ws?.brokerQty),
-        avgPrice: parseMoney(ws?.avgPrice),
-        ltp: parseMoney(ws?.ltp),
-        notional: Math.abs(parseMoney(exp?.exposureNotional) ?? parseMoney(ws?.exposureNotional) ?? 0),
-        mtmPnl: parseMoney(ws?.mtmPnl),
-        unrealizedPnl: parseMoney(ws?.unrealizedPnl),
-        realizedPnl: parseMoney(ws?.realizedPnl),
-        exposurePct: parseMoney(ws?.exposurePct),
-        quantitySource: String(exp?.quantitySource ?? ws?.quantitySource ?? "OMS").toUpperCase(),
-        parityState: exp?.parityState ? String(exp.parityState).toUpperCase() : null,
-        executionMode: ws?.executionMode != null ? String(ws.executionMode) : null,
-        brokerStatus: ws?.brokerStatus != null ? String(ws.brokerStatus) : null,
+        brokerQty,
+        avgPrice,
+        ltp,
+        notional: computePositionNotional(qty, ltp, avgPrice),
+        mtmPnl: parseMoney(ws.mtmPnl),
+        unrealizedPnl: parseMoney(ws.unrealizedPnl),
+        realizedPnl: parseMoney(ws.realizedPnl),
+        exposurePct: parseMoney(ws.exposurePct),
+        quantitySource,
+        parityState,
+        parityBadge: resolvePositionParityBadge({ parityState, qty, brokerQty }, brokerConnected),
+        executionMode: ws.executionMode != null ? String(ws.executionMode) : null,
+        brokerStatus: ws.brokerStatus != null ? String(ws.brokerStatus) : null,
       };
     });
-  }, [exposureQ.data, wsQ.data]);
+  }, [wsQ.data, brokerConnected]);
 
   const filteredRows = useMemo(() => {
     let rows = mergedRows;
@@ -366,8 +366,19 @@ export function PositionsPage(props?: { embedded?: boolean }) {
                   >
                     <td className="px-3 py-3">
                       <div className="font-mono font-bold">{r.symbol}</div>
-                      {r.parityState === "MISMATCH" ? (
-                        <span className="mt-1 inline-block rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">PARITY MISMATCH</span>
+                      {r.parityBadge ? (
+                        <span
+                          className={cn(
+                            "mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold",
+                            r.parityBadge.tone === "rose"
+                              ? "bg-rose-500/15 text-rose-700"
+                              : r.parityBadge.tone === "sky"
+                                ? "bg-sky-500/15 text-sky-700"
+                                : "bg-amber-500/15 text-amber-700",
+                          )}
+                        >
+                          {r.parityBadge.label}
+                        </span>
                       ) : null}
                     </td>
                     <td className="px-3 py-3"><PnlCell value={r.mtmPnl} /></td>
