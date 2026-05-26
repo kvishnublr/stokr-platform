@@ -219,9 +219,12 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
         // ─────────────────────────────────────────────────────────────────────
         // 7. VOLUME SURGE: Touch bar should have above-average volume
         // ─────────────────────────────────────────────────────────────────────
+        // Volume check is soft — broker feed provides tick counts, not actual volume
         double avgVol = totalVol / (lastIdx + 1);
-        if (avgVol > 0 && currentVolume / avgVol < minVolumeMultiple) {
-            log.debug("vwapbounce.low_volume symbol={} ratio={:.2f}", symbol, currentVolume / avgVol);
+        double volRatio = avgVol > 0 ? currentVolume / avgVol : 1.0;
+        // Only reject extremely low volume — data is tick-count granularity
+        if (volRatio < 0.3) {
+            log.debug("vwapbounce.very_low_volume symbol={} ratio={:.2f}", symbol, volRatio);
             return hold(context);
         }
 

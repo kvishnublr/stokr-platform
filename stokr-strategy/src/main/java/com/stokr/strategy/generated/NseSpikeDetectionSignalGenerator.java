@@ -76,11 +76,11 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     // ═══════════════════════════════════════════════════════════════════════════
 
     // VELOCITY: Minimum % move per minute to qualify as spike
-    @Value("${stokr.spike.min-velocity-pct:0.12}")
+    @Value("${stokr.spike.min-velocity-pct:0.08}")
     private double minVelocityPct;
 
     // VOLUME: Minimum multiplier vs 20-bar average to confirm conviction
-    @Value("${stokr.spike.min-volume-multiple:1.3}")
+    @Value("${stokr.spike.min-volume-multiple:0.5}")
     private double minVolumeMultiple;
 
     // BAR QUALITY: Close must be in upper/lower portion (not wicked)
@@ -169,7 +169,7 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         double velocityPct = Math.abs(curClose - prevClose) / prevClose * 100;
         double velocityScore = calculateVelocityScore(velocityPct);
 
-        if (velocityScore < 40) {
+        if (velocityScore < 30) {
             return hold(context);
         }
 
@@ -177,12 +177,14 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
 
         // ─────────────────────────────────────────────────────────────────────
         // 4. PURE DATA COMPONENT 2: VOLUME SCORE
+        //    Note: broker feed volume = tick count, not shares. Use lenient gate.
         // ─────────────────────────────────────────────────────────────────────
         double avgVolume = calculateAverageVolume(bars, n);
-        double volumeMultiple = avgVolume > 0 ? curVolume / avgVolume : 0.0;
+        double volumeMultiple = avgVolume > 0 ? curVolume / avgVolume : 1.0;
         double volumeScore = calculateVolumeScore(volumeMultiple);
 
-        if (volumeScore < 40) {
+        // Volume data is tick-count granularity — don't hard-reject on it
+        if (volumeScore < 20) {
             log.debug("nse_spike.low_volume symbol={} multiple={:.2f}", symbol, volumeMultiple);
             return hold(context);
         }
@@ -283,18 +285,21 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
 
     private double calculateVelocityScore(double velocityPct) {
         if (velocityPct < minVelocityPct) return 0;
-        if (velocityPct < 0.20) return 40;
-        if (velocityPct < 0.30) return 55;
-        if (velocityPct < 0.50) return 75;
+        if (velocityPct < 0.12) return 35;
+        if (velocityPct < 0.20) return 50;
+        if (velocityPct < 0.30) return 65;
+        if (velocityPct < 0.50) return 80;
         if (velocityPct < 0.80) return 90;
         return 100;
     }
 
     private double calculateVolumeScore(double volumeMultiple) {
+        // Volume is tick-count granularity; be lenient
         if (volumeMultiple < minVolumeMultiple) return 0;
-        if (volumeMultiple < 1.8) return 50;
-        if (volumeMultiple < 2.5) return 70;
-        if (volumeMultiple < 4.0) return 85;
+        if (volumeMultiple < 0.8) return 30;
+        if (volumeMultiple < 1.2) return 50;
+        if (volumeMultiple < 1.8) return 65;
+        if (volumeMultiple < 3.0) return 80;
         return 100;
     }
 
