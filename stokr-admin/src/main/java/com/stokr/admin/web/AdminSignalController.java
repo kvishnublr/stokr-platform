@@ -377,6 +377,18 @@ public class AdminSignalController {
         return ApiResponse.ok(Map.of("status", "completed", "processed", updated), CorrelationIdHolder.get());
     }
 
+    @GetMapping("/replay/preflight")
+    @Operation(summary = "Validate signal replay readiness for strategy and date range")
+    public ApiResponse<Map<String, Object>> replayPreflight(
+            @RequestParam String strategyKey,
+            @RequestParam String from,
+            @RequestParam String to
+    ) {
+        LocalDate fromDate = LocalDate.parse(from);
+        LocalDate toDate = LocalDate.parse(to);
+        return ApiResponse.ok(historicalReplayService.preflight(strategyKey, fromDate, toDate).toMap(), CorrelationIdHolder.get());
+    }
+
     @PostMapping("/replay")
     @Operation(summary = "Replay a strategy over a date range and generate live signals (async)")
     public ApiResponse<Map<String, Object>> replay(
@@ -385,24 +397,26 @@ public class AdminSignalController {
             @RequestParam String to
     ) {
         LocalDate fromDate = LocalDate.parse(from);
-        LocalDate toDate   = LocalDate.parse(to);
+        LocalDate toDate = LocalDate.parse(to);
+        var preflight = historicalReplayService.preflight(strategyKey, fromDate, toDate);
+        if (!preflight.ready()) {
+            throw new com.stokr.common.exception.BadRequestException(String.join(" ", preflight.blockers()));
+        }
         String correlationId = CorrelationIdHolder.get();
         CompletableFuture.runAsync(() -> {
             try {
                 var result = historicalReplayService.replay(strategyKey, fromDate, toDate);
-                log.info("replay.async_done strategyKey={} from={} to={} signals={}",
-                        result.strategyKey(), result.from(), result.to(), result.signalsGenerated());
+                log.info("replay.async_done strategyKey={} from={} to={} signals={} bars={} seeded={}",
+                        result.strategyKey(), result.from(), result.to(), result.signalsGenerated(),
+                        result.barsProcessed(), result.symbolsSeeded());
             } catch (Exception ex) {
                 log.error("replay.async_error strategyKey={} {}", strategyKey, ex.getMessage(), ex);
             }
         });
-        return ApiResponse.ok(Map.of(
-                "strategyKey", strategyKey,
-                "from",        from,
-                "to",          to,
-                "status",      "STARTED",
-                "message",     "Replay running in background. Check Signal Monitor in ~60s."
-        ), correlationId);
+        Map<String, Object> out = new LinkedHashMap<>(preflight.toMap());
+        out.put("status", "STARTED");
+        out.put("message", "Replay running in background. Check Signal Monitor in ~60s.");
+        return ApiResponse.ok(out, correlationId);
     }
 
     @PostMapping("/track-outcomes-async")

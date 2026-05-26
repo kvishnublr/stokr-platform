@@ -91,13 +91,14 @@ public class StrategySignalPipelineService {
             String correlationId,
             String executionMode,
             SignalProvenance provenanceOverride) {
-        if (!executionPipelineRuntimeReadinessService.canRouteExecutionMode(executionMode)) {
+        boolean replayAnalytics = provenanceOverride == SignalProvenance.REPLAY;
+        if (!replayAnalytics && !executionPipelineRuntimeReadinessService.canRouteExecutionMode(executionMode)) {
             throw new IllegalStateException(
                     "Execution pipeline disabled: Rabbit listeners are OFF. Signal routing and OMS execution are inactive."
             );
         }
         signalProvenanceResolver.applyForPersist(signal, executionMode, provenanceOverride);
-        boolean replaySignal = signal.getSignalSource() == SignalProvenance.REPLAY;
+        boolean replaySignal = signal.getSignalSource() == SignalProvenance.REPLAY || replayAnalytics;
 
         Instant signalTime = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
         Instant sessionCheckTime = replaySignal ? signalTime : Instant.now();
@@ -128,6 +129,9 @@ public class StrategySignalPipelineService {
                 log.info("signal.dropped_daily_cap strategy={} symbol={}", capKey, signal.getSymbol());
                 return null;
             }
+        }
+        if (replaySignal && (signal.getOutcomeStatus() == null || signal.getOutcomeStatus().isBlank())) {
+            signal.setOutcomeStatus("PENDING");
         }
         StrategySignalEntity saved = signalRepository.save(signal);
 

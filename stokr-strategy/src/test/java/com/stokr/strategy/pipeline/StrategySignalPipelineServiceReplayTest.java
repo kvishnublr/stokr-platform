@@ -77,6 +77,33 @@ class StrategySignalPipelineServiceReplayTest {
     }
 
     @Test
+    void replaySignalsPersistWhenRabbitPipelineDisabled() {
+        when(executionPipelineRuntimeReadinessService.canRouteExecutionMode(any())).thenReturn(false);
+
+        StrategySignalEntity signal = new StrategySignalEntity();
+        signal.setId(UUID.randomUUID());
+        signal.setUserId(UUID.randomUUID());
+        signal.setSymbol("RELIANCE");
+        signal.setStrategyName("NSE_SPIKE_DETECTION");
+        signal.setSignalType(SignalType.BUY);
+        signal.setSignalSource(SignalProvenance.REPLAY);
+
+        when(signalRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            StrategySignalEntity saved = service.persistAndDispatch(signal, "cid", "PAPER", SignalProvenance.REPLAY);
+            assertThat(saved).isNotNull();
+            TransactionSynchronizationManager.getSynchronizations().forEach(s -> s.afterCommit());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        verify(signalRepository).save(any());
+        verify(rabbitTemplate).convertAndSend(eq(PipelineQueues.STRATEGY_SIGNAL), any(SignalPersistedMessage.class));
+    }
+
+    @Test
     void replaySignalsDoNotFanOutToOmsByDefault() {
         StrategySignalEntity signal = new StrategySignalEntity();
         signal.setId(UUID.randomUUID());
