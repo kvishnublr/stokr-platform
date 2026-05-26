@@ -23,6 +23,15 @@ public interface UserTradeRepository extends JpaRepository<UserTrade, Long> {
     List<UserTrade> findByUserId(@Param("userId") Long userId);
 
     /**
+     * Get today's trades for a user
+     */
+    @Query("SELECT ut FROM UserTrade ut WHERE ut.userId = :userId " +
+            "AND ut.entryTime >= :fromTime AND ut.entryTime < :toTime " +
+            "ORDER BY ut.entryTime DESC")
+    List<UserTrade> findTodaysTrades(
+            @Param("userId") Long userId,
+            @Param("fromTime") Instant fromTime,
+            @Param("toTime") Instant toTime);
 
     /**
      * Get closed trades for a user in a date range

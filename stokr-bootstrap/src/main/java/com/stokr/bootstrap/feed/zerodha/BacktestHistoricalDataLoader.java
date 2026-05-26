@@ -206,20 +206,31 @@ public class BacktestHistoricalDataLoader {
             Instant from, Instant to) throws Exception {
 
         List<MarketdataCandle> result = new ArrayList<>();
-        JsonNode response = kiteApiClient.getHistoricalCandles(apiKey, accessToken, (long) token, TIMEFRAME, from, to);
+        JsonNode response = kiteApiClient.getHistoricalCandles(
+                apiKey,
+                accessToken,
+                token,
+                "minute",
+                from,
+                to
+        );
+        JsonNode candles = response == null ? null : response.path("data").path("candles");
 
-        if (response != null && response.isArray()) {
-            for (JsonNode bar : response) {
+        if (candles != null && candles.isArray()) {
+            for (JsonNode bar : candles) {
                 try {
+                    if (!bar.isArray() || bar.size() < 6) {
+                        continue;
+                    }
                     MarketdataCandle candle = new MarketdataCandle();
                     candle.setSymbol(symbol);
                     candle.setTimeframe(TIMEFRAME);
-                    candle.setOpenTime(Instant.parse(bar.get("time").asText()));
-                    candle.setOpenPrice(new BigDecimal(bar.get("open").asText()));
-                    candle.setHighPrice(new BigDecimal(bar.get("high").asText()));
-                    candle.setLowPrice(new BigDecimal(bar.get("low").asText()));
-                    candle.setClosePrice(new BigDecimal(bar.get("close").asText()));
-                    candle.setVolume(new BigDecimal(bar.get("volume").asText()));
+                    candle.setOpenTime(Instant.parse(bar.get(0).asText()));
+                    candle.setOpenPrice(new BigDecimal(bar.get(1).asText()));
+                    candle.setHighPrice(new BigDecimal(bar.get(2).asText()));
+                    candle.setLowPrice(new BigDecimal(bar.get(3).asText()));
+                    candle.setClosePrice(new BigDecimal(bar.get(4).asText()));
+                    candle.setVolume(new BigDecimal(bar.get(5).asText()));
                     result.add(candle);
                 } catch (Exception e) {
                     log.debug("loader.parse_error symbol={} {}", symbol, e.getMessage());
@@ -245,12 +256,14 @@ public class BacktestHistoricalDataLoader {
      */
     private String resolveAccessToken() {
         try {
-            Optional<PlatformBrokerFeedSession> session = sessionRepository.findAll().stream()
-                    .filter(s -> "ZERODHA".equals(s.getVendorCode()))
-                    .findFirst();
+            Optional<PlatformBrokerFeedSession> session = sessionRepository
+                    .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc("ZERODHA");
 
             if (session.isPresent()) {
-                return fieldCipher.decrypt(session.get().getAccessTokenEnc());
+                String enc = session.get().getAccessTokenEnc();
+                if (enc != null && !enc.isBlank()) {
+                    return fieldCipher.decrypt(enc);
+                }
             }
         } catch (Exception e) {
             log.warn("loader.token_error {}", e.getMessage());
