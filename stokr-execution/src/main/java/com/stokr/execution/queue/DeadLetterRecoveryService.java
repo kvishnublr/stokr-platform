@@ -154,6 +154,7 @@ public class DeadLetterRecoveryService {
         public void setReceivedAt(Instant time) { this.receivedAt = time; }
         public void setLastRetryAt(Instant time) { this.lastRetryAt = time; }
         public void setNextRetryAt(Instant time) { this.nextRetryAt = time; }
+        public void setRetryCount(int retryCount) { this.retryCount = retryCount; }
     }
 
     public List<DeadLetterMessage> getDLQMessages() {
