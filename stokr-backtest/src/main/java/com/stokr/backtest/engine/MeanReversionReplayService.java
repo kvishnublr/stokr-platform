@@ -264,12 +264,7 @@ public class MeanReversionReplayService {
                 .orElseGet(() -> UUID.randomUUID().toString());
         try {
             int totalBarsInt = totalBars > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) totalBars;
-            Object mrState = "MEAN_REVERSION_RANGE_FADE".equals(meta.strategyKey())
-                    ? null
-                    : null;
-            if (mrState != null && meta.strategyStateSnapshot() != null && !meta.strategyStateSnapshot().isBlank()) {
-                mrState.applySnapshotOrReset(meta.strategyStateSnapshot());
-            }
+            Object mrState = null;
             BacktestEvaluationContext evalCtx = buildEvaluationContext(run, correlationId, mrState);
             BacktestReplayOutcome outcome = executeLoop(run, evalCtx, uid, meta.start(), meta.end(), meta.seed(),
                     meta.strategyKey(), meta.timeframe(), stepTf, startIndex, totalBarsInt, correlationId, null);
@@ -482,7 +477,7 @@ public class MeanReversionReplayService {
             m.put("nextCandleIndex", nextIndex);
             m.put("totalBars", totalBars);
             if (strategyState != null) {
-                m.put("strategyState", strategyState.toSnapshotLine());
+                m.put("strategyState", strategyState.toString());
             }
             return deterministic.writeValueAsString(m);
         } catch (Exception e) {
