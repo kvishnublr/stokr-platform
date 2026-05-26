@@ -66,6 +66,25 @@ export function sumPositionsPnl(
   };
 }
 
+/** Broker truth snapshot from workstation (`brokerTruth` field). */
+export function extractBrokerTruthPnl(
+  brokerTruth: Record<string, unknown> | undefined,
+): AccountPnlSnapshot | null {
+  if (!brokerTruth || brokerTruth.brokerConnected !== true || !brokerTruth.lastSyncAt) return null;
+  const mtm = pickMoney(brokerTruth, "totalMtmPnl", "totalMtm");
+  const unrealized = pickMoney(brokerTruth, "totalUnrealizedPnl");
+  const realized = pickMoney(brokerTruth, "totalRealizedPnl");
+  const openRaw = brokerTruth.openPositionCount;
+  const openParsed = openRaw == null ? null : Number(openRaw);
+  if (mtm == null && unrealized == null && realized == null) return null;
+  return {
+    mtm: mtm ?? (realized != null && unrealized != null ? realized + unrealized : null),
+    unrealized,
+    realized,
+    openPositions: Number.isFinite(openParsed) ? openParsed : null,
+  };
+}
+
 /** Normalize workstation or portfolio overview payloads. */
 export function extractAccountPnl(
   summary: Record<string, unknown> | undefined,
