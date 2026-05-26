@@ -53,6 +53,7 @@ import { WorkspaceTopNav } from "../components/workspace/WorkspaceTopNav";
 import { TraderAccountCard } from "../components/workspace/TraderAccountCard";
 import { NotificationDrawer } from "../components/ds/NotificationDrawer";
 import { performLogout } from "../services/auth/logout";
+import { AdminInstitutionalSidebar } from "../components/admin/institutional/AdminInstitutionalSidebar";
 
 export function ShellLayout() {
   const isLightUi = useUiThemeStore((s) => s.mode === "light");
@@ -65,7 +66,6 @@ export function ShellLayout() {
   const onboardingComplete = useSessionStore((s) => s.onboardingComplete);
   const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
   const hasTraderAccess = useSessionStore((s) => s.hasTraderAccess());
-  const canKillOpsConsole = useSessionStore((s) => s.canAccessKillSwitchOperations());
   const liveTradingApproved = useSessionStore((s) => s.liveTradingApproved);
   const refreshToken = useSessionStore((s) => s.refreshToken);
   const unread = useNotificationStore((s) => s.unread);
@@ -207,73 +207,6 @@ export function ShellLayout() {
     links.push({ to: "/terminal", label: "Alerts & notifications", icon: MessageSquare });
     return links;
   }, [hasTraderAccess]);
-
-  // ── Admin nav: 5 focused groups ──────────────────────────────────────────
-
-  const adminIntelligenceLinks: SidebarLink[] = useMemo(() => [
-    { to: "/admin",         end: true, label: "Overview",       icon: LayoutDashboard },
-    { to: "/admin/signals",           label: "Signal Monitor",  icon: Zap },
-    { to: "/admin/signal-lab",        label: "Signal Lab",      icon: BarChart3 },
-    { to: "/admin/signal-replay",     label: "Signal Replay",   icon: Zap },
-    { to: "/admin/oms",               label: "OMS Monitor",     icon: BarChart3 },
-    { to: "/admin/traders-health",    label: "Trader Health",   icon: Stethoscope },
-  ], []);
-
-  const adminExecutionLinks: SidebarLink[] = useMemo(() => [
-    { to: "/admin/ops",               label: "Execution Controls", icon: Cpu, matchPrefix: "/admin/ops" },
-    { to: "/admin/pipeline-health",   label: "Pipeline Health", icon: Activity },
-    { to: "/admin/execution",         label: "Execution Guard", icon: ShieldCheck },
-    { to: "/admin/intraday",          label: "Intraday",        icon: Radar },
-    { to: "/admin/test-signal-lab",   label: "Test Signal Lab", icon: Zap },
-    { to: "/admin/test-execution-monitor", label: "Test Monitor", icon: ActivitySquare },
-    { to: "/admin/failure-analysis",  label: "Failure Analysis", icon: AlertOctagon },
-  ], []);
-
-  const adminMarketLinks: SidebarLink[] = useMemo(() => [
-    { to: "/admin/market",            label: "Market Feed",     icon: Radio },
-    { to: "/admin/backfill",          label: "Market Backfill", icon: Database },
-  ], []);
-
-  const adminSystemLinks: SidebarLink[] = useMemo(() => [
-    { to: "/admin/logs",              label: "Live Logs",       icon: Terminal },
-    { to: "/admin/infrastructure",    label: "Infrastructure",  icon: Server },
-    { to: "/admin/infra-health-center", label: "Infra Health",  icon: Gauge },
-    { to: "/admin/broker-infrastructure", label: "Broker Infra", icon: Building2 },
-    { to: "/admin/replay",            label: "Replay Infra",    icon: RotateCcw },
-  ], []);
-
-  const adminComplianceLinks: SidebarLink[] = useMemo(() => {
-    const links: SidebarLink[] = [
-      { to: "/admin/history",         label: "Incidents",       icon: AlertOctagon },
-      { to: "/admin/audit",           label: "Audit Trail",     icon: ClipboardCheck },
-      { to: "/admin/controls",        label: "Controls",        icon: SlidersHorizontal },
-    ];
-    return links;
-  }, [canKillOpsConsole]);
-
-  const adminPlatformLinks: SidebarLink[] = useMemo(
-    () => [
-      { to: "/admin/settings", label: "Settings", icon: Settings },
-      { to: "/admin/security", label: "Security", icon: Shield },
-      { to: "/admin/reports", label: "Reports", icon: FileBarChart },
-      { to: "/admin/alerts", label: "Alerts", icon: Bell },
-    ],
-    [],
-  );
-
-  const adminUserMgmtLinks: SidebarLink[] = useMemo(
-    () => [
-      { to: "/admin/users", label: "Traders", icon: Users },
-      { to: "/admin/strategy-catalog", label: "Strategy catalog", icon: Settings2 },
-      { to: "/admin/strategies", label: "Manage strategies", icon: SlidersHorizontal },
-      { to: "/admin/universe-groups", label: "Universe groups", icon: Database },
-      { to: "/admin/runtime-bindings", label: "Runtime bindings", icon: Radar },
-      { to: "/admin/execution-config", label: "Execution config", icon: SlidersHorizontal },
-      { to: "/admin/risk-dashboard", label: "Risk dashboard", icon: ShieldCheck },
-      { to: "/admin/capital", label: "Capital", icon: TrendingUp },
-    ],
-    [],
-  );
 
   async function resendVerificationEmail() {
     const now = Date.now();
@@ -422,26 +355,9 @@ export function ShellLayout() {
               </>
             ) : null}
             {isAdmin ? (
-              <>
-                <SidebarSection title="Intelligence" first={!hasTraderAccess}>
-                  <SidebarLinks links={adminIntelligenceLinks} />
-                </SidebarSection>
-                <SidebarSection title="Execution">
-                  <SidebarLinks links={adminExecutionLinks} />
-                </SidebarSection>
-                <SidebarSection title="Market Data">
-                  <SidebarLinks links={adminMarketLinks} />
-                </SidebarSection>
-                <SidebarSection title="System">
-                  <SidebarLinks links={adminSystemLinks} />
-                </SidebarSection>
-                <SidebarSection title="Compliance">
-                  <SidebarLinks links={adminComplianceLinks} />
-                </SidebarSection>
-                <SidebarSection title="User Management">
-                  <SidebarLinks links={adminUserMgmtLinks} />
-                </SidebarSection>
-              </>
+              <SidebarSection title="Institutional Console" first={!hasTraderAccess}>
+                <AdminInstitutionalSidebar isLight={isLightUi} />
+              </SidebarSection>
             ) : null}
           </div>
           <div

@@ -3,6 +3,8 @@ import { toast } from "sonner";
 import { AlertTriangle, ShieldOff, Zap, RefreshCw, Activity } from "lucide-react";
 import { fetchRiskDashboard, type StrategyRiskStateDto } from "../../api/riskDashboard";
 import { patchExecutionConfig, fetchExecutionConfigs } from "../../api/executionConfig";
+import { useUiThemeStore } from "../../state/uiTheme";
+import { AdminPageShell, AdminPanel } from "../../components/admin/institutional/AdminDesignSystem";
 import { fmtDateTime } from "../../lib/dateUtils";
 
 const QK = ["admin-risk-dashboard"] as const;
@@ -16,6 +18,7 @@ function pnlColor(pnl: number | null, limit: number | null): string {
 }
 
 export function AdminRiskDashboardPage() {
+  const isLight = useUiThemeStore((s) => s.mode === "light");
   const qc = useQueryClient();
   const { data, isLoading, dataUpdatedAt } = useQuery({
     queryKey: QK,
@@ -45,17 +48,39 @@ export function AdminRiskDashboardPage() {
     stopMutation.mutate({ id: cfg.id, stop });
   }
 
-  if (isLoading) return <div className="p-6 text-muted-foreground">Loading risk dashboard…</div>;
+  if (isLoading) {
+    return (
+      <AdminPageShell isLight={isLight} title="Risk Terminal" subtitle="Loading exposure and limits…">
+        <div className="text-muted-foreground">Loading risk dashboard…</div>
+      </AdminPageShell>
+    );
+  }
   if (!data) return null;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Risk Dashboard</h1>
+    <AdminPageShell
+      isLight={isLight}
+      eyebrow="Risk & exposure"
+      title="Risk Terminal"
+      subtitle="Live drawdown, emergency stops, strategy limits, and reconciliation alerts."
+      actions={
         <span className="text-xs text-muted-foreground">
           Updated {dataUpdatedAt ? fmtDateTime(new Date(dataUpdatedAt).toISOString()) : "—"}
         </span>
-      </div>
+      }
+      alert={
+        data.killSwitchActive || data.brokerHalt ? (
+          <div className="flex items-center gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <AlertTriangle className="h-5 w-5 shrink-0" />
+            <span>
+              {data.killSwitchActive ? "Global kill switch is ACTIVE. " : ""}
+              {data.brokerHalt ? "Broker halt engaged." : ""}
+            </span>
+          </div>
+        ) : undefined
+      }
+    >
+    <div className="space-y-6">
 
       {/* Global state row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -138,6 +163,7 @@ export function AdminRiskDashboardPage() {
         </table>
       </div>
     </div>
+    </AdminPageShell>
   );
 }
 
