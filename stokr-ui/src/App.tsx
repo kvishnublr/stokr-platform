@@ -20,7 +20,11 @@ import { StrategyResearchLayout } from "./layout/StrategyResearchLayout";
 import { ResearchLeaderboardPage } from "./pages/ResearchLeaderboardPage";
 import { PaperTradingPage } from "./pages/PaperTradingPage";
 import { DebugToolsPage } from "./pages/DebugToolsPage";
-import { BrokersPage } from "./pages/BrokersPage";
+
+const BrokersPage = lazy(async () => {
+  const m = await import("./pages/BrokersPage");
+  return { default: m.BrokersPage };
+});
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminStrategiesPage } from "./pages/AdminStrategiesPage";
 import { AdminOmsMonitorPage } from "./pages/AdminOmsMonitorPage";
@@ -146,7 +150,11 @@ function TraderBrokerRoute() {
   if (!hasTrader) {
     return <Navigate to={isAdmin ? "/admin" : "/dashboard"} replace />;
   }
-  return <BrokersPage />;
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <BrokersPage />
+    </Suspense>
+  );
 }
 
 function TraderIntradayRoute() {

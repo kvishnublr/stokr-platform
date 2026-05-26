@@ -109,19 +109,22 @@ export function IntradayCockpitPage() {
   const readinessQ = useQuery({
     queryKey: ["intraday-readiness"],
     queryFn: async () => (await api.get("/api/trader/intraday/readiness")).data?.data as Readiness,
-    refetchInterval: 5000,
+    refetchInterval: 10_000,
+    staleTime: 8_000,
   });
 
   const workstationQ = useQuery({
     queryKey: ["intraday-workstation"],
     queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
-    refetchInterval: 3000,
+    refetchInterval: 8_000,
+    staleTime: 5_000,
   });
 
   const brokerTruthQ = useQuery({
     queryKey: ["intraday-broker-truth"],
     queryFn: async () => (await api.get("/api/trader/terminal/broker-truth")).data?.data as BrokerTruth,
-    refetchInterval: 5000,
+    refetchInterval: 10_000,
+    staleTime: 8_000,
   });
 
   const readiness = readinessQ.data;

@@ -72,9 +72,10 @@ export function BrokersPage() {
     queryKey: BROKER_STATUS_QUERY_KEY,
     queryFn: fetchBrokerStatus,
     retry: 1,
-    refetchOnWindowFocus: true,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
-    refetchInterval: (q) => (q.state.error ? 5000 : false),
+    refetchInterval: (q) => (q.state.error ? 10_000 : 30_000),
   });
 
   useEffect(() => {

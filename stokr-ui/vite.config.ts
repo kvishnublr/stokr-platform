@@ -20,6 +20,22 @@ export default defineConfig({
   define: {
     global: "globalThis",
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            if (id.includes("framer-motion")) return "motion";
+            if (id.includes("@tanstack")) return "query";
+            if (id.includes("lucide-react")) return "icons";
+            if (id.includes("react-dom") || id.includes("react-router")) return "react-vendor";
+            return "vendor";
+          }
+        },
+      },
+    },
+    chunkSizeWarningLimit: 900,
+  },
   server: {
     port: 5173,
     /** Fail fast if 5173 is still taken after predev kill (no silent hop to 5174/5175). */
