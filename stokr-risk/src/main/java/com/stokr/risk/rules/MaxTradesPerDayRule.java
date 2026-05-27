@@ -31,6 +31,11 @@ public class MaxTradesPerDayRule implements RiskRule {
 
     @Override
     public RiskDecision evaluate(RiskContext context) {
+        // PAPER orders bypass max trades per day — only enforce for LIVE
+        if (context.order() != null && context.order().getExecutionMode() != null
+                && "PAPER".equalsIgnoreCase(context.order().getExecutionMode().name())) {
+            return RiskDecision.ok();
+        }
         ZoneId zone = context.zoneId();
         Instant evalInstant = Instant.ofEpochMilli(context.lastOrderEpochMs());
         LocalDate day = ZonedDateTime.ofInstant(evalInstant, zone).toLocalDate();

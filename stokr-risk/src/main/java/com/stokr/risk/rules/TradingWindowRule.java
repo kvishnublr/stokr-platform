@@ -36,6 +36,11 @@ public class TradingWindowRule implements RiskRule {
 
     @Override
     public RiskDecision evaluate(RiskContext context) {
+        // PAPER orders can trade outside market hours — only enforce window for LIVE
+        if (context.order() != null && context.order().getExecutionMode() != null
+                && "PAPER".equalsIgnoreCase(context.order().getExecutionMode().name())) {
+            return RiskDecision.ok();
+        }
         LocalTime t = context.nowLocal();
         if (t.isBefore(start) || t.isAfter(end)) {
             return RiskDecision.reject(code(), "Outside configured trading window");

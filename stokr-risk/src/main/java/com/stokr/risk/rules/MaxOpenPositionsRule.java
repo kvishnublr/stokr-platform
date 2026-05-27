@@ -30,6 +30,11 @@ public class MaxOpenPositionsRule implements RiskRule {
 
     @Override
     public RiskDecision evaluate(RiskContext context) {
+        // PAPER orders are not limited by max open positions — only LIVE orders are capped
+        if (context.order() != null && context.order().getExecutionMode() != null
+                && "PAPER".equalsIgnoreCase(context.order().getExecutionMode().name())) {
+            return RiskDecision.ok();
+        }
         List<PortfolioPosition> list = portfolioPositionRepository.findByUserIdAndDeletedFalse(context.userId());
         long open = list.stream()
                 .filter(p -> p.getQuantity() != null && p.getQuantity().abs().compareTo(BigDecimal.ZERO) > 0)

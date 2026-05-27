@@ -36,6 +36,11 @@ public class StrategyMaxPositionsRule implements RiskRule {
     @Override
     public RiskDecision evaluate(RiskContext context) {
         if (context.order().getBacktestRunId() != null) return RiskDecision.ok();
+        // PAPER orders bypass strategy max positions — only enforce for LIVE
+        if (context.order().getExecutionMode() != null
+                && "PAPER".equalsIgnoreCase(context.order().getExecutionMode().name())) {
+            return RiskDecision.ok();
+        }
         StrategyExecutionConfig cfg = context.strategyExecutionConfig();
         if (cfg == null || cfg.getMaxPositions() <= 0) return RiskDecision.ok();
         String strategyKey = context.order().getStrategyKey();

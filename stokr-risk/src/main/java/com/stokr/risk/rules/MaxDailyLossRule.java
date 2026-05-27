@@ -30,6 +30,11 @@ public class MaxDailyLossRule implements RiskRule {
         if (context.order().getBacktestRunId() != null) {
             return RiskDecision.ok();
         }
+        // PAPER orders bypass daily loss limit — only enforce for LIVE
+        if (context.order().getExecutionMode() != null
+                && "PAPER".equalsIgnoreCase(context.order().getExecutionMode().name())) {
+            return RiskDecision.ok();
+        }
         if (maxDailyLossAmount == null || maxDailyLossAmount.compareTo(BigDecimal.ZERO) <= 0) {
             return RiskDecision.ok();
         }
