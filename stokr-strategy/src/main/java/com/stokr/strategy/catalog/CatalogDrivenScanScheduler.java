@@ -5,6 +5,10 @@ import com.stokr.strategy.domain.StrategyRuntimeBinding;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.domain.StrategyUniverseSymbol;
 import com.stokr.strategy.engine.TradingStrategy;
+import com.stokr.strategy.operational.StrategyExecutionMode;
+import com.stokr.strategy.operational.StrategyExecutionModeService;
+import com.stokr.strategy.operational.StrategyRuntimeHealthService;
+import com.stokr.strategy.operational.TradingSafeStartupGateService;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.runtime.BindingScanThrottleService;
 import com.stokr.strategy.runtime.SignalCooldownService;
@@ -14,6 +18,9 @@ import com.stokr.strategy.service.StrategySignalEntityMapper;
 import com.stokr.strategy.signals.StrategySignal;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.context.StrategyContext;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.lifecycle.StrategySessionEntryGuardService;
+import com.stokr.marketdata.monitor.FeedHealthMonitorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -28,13 +35,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Catalog-driven scan scheduler.
- *
- * Reads all active strategy-universe bindings from the DB, resolves the symbol set
- * for each binding's universe group, then evaluates the bound strategy against every symbol.
- * Non-HOLD signals are persisted and dispatched via StrategySignalPipelineService.
- *
- * Enable via: {@code stokr.catalog.scan.enabled=true} (default true in application.yml).
+ * Catalog-driven scan scheduler with execution-mode controls and runtime health telemetry.
  */
 @Component
 @RequiredArgsConstructor
@@ -48,21 +49,30 @@ public class CatalogDrivenScanScheduler {
     private final BindingScanThrottleService bindingScanThrottleService;
     private final SignalCooldownService signalCooldownService;
     private final StrategyDailySignalCapService dailySignalCapService;
+    private final StrategyGeneratorIntegrityGate integrityGate;
+    private final StrategySessionEntryGuardService sessionEntryGuard;
+    private final StrategyExecutionModeService executionModeService;
+    private final StrategyRuntimeHealthService runtimeHealthService;
+    private final TradingSafeStartupGateService safeStartupGateService;
+    private final FeedHealthMonitorService feedHealthMonitorService;
     private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
 
-    // Separate from the main scanner gate — catalog strategies (e.g. MCX) manage their own session hours
     @Value("${stokr.catalog.scan.require-operational-path:false}")
     private boolean requireOperationalLivePath;
 
     @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
     private UUID systemUserId;
 
-    @Value("${stokr.strategy.poll-execution-mode:PAPER}")
-    private String executionMode;
-
     @Scheduled(fixedDelayString = "${stokr.catalog.scan.poll-ms:60000}")
     public void scan() {
         Instant tick = Instant.now();
+
+        if (!safeStartupGateService.isTradingReady(tick)) {
+            log.warn("catalog.scan.blocked_safe_startup reason={}",
+                    safeStartupGateService.snapshot(tick).get("blockReason"));
+            return;
+        }
+
         LiveMarketPathOperationalGate gate = liveMarketPathOperationalGate.getIfAvailable();
         if (requireOperationalLivePath && gate != null) {
             var assessment = gate.assess(tick);
@@ -70,6 +80,11 @@ public class CatalogDrivenScanScheduler {
                 log.debug("catalog.scan.skipped_live_path_not_operational reason={}", assessment.reason());
                 return;
             }
+        }
+
+        FeedHealthMonitorService.FeedHealthSnapshot feed = feedHealthMonitorService.snapshot(tick);
+        if (feed.equityStale() || feed.indexStale()) {
+            log.warn("catalog.scan.feed_stale equityStale={} indexStale={}", feed.equityStale(), feed.indexStale());
         }
 
         List<StrategyRuntimeBinding> activeBindings = resolverService.resolveActiveBindings();
@@ -88,22 +103,40 @@ public class CatalogDrivenScanScheduler {
                 continue;
             }
             String strategyKey = binding.getStrategyCatalog().getStrategyKey();
+            StrategyExecutionMode mode = executionModeService.modeFor(strategyKey);
+
+            runtimeHealthService.recordScanAttempt(strategyKey, tick);
+
+            if (mode.skipsScheduler()) {
+                log.debug("catalog.scan.disabled strategyKey={}", strategyKey);
+                continue;
+            }
+
+            if (feed.equityStale() || feed.indexStale()) {
+                runtimeHealthService.recordScanBlockedFeed(strategyKey, "FEED_STALE", tick);
+                continue;
+            }
+
             if (dailySignalCapService.isOverCap(strategyKey, tick)) {
                 log.debug("catalog.scan.daily_cap strategyKey={}", strategyKey);
                 continue;
             }
-            TradingStrategy strategy = strategyRegistry.get(strategyKey);
 
+            TradingStrategy strategy = strategyRegistry.get(strategyKey);
             if (strategy == null) {
-                log.debug("catalog.scan.strategy_not_registered key={} — skipping binding. " +
-                          "Generate and deploy the template class first.", strategyKey);
+                log.debug("catalog.scan.strategy_not_registered key={}", strategyKey);
                 totalSkipped++;
+                continue;
+            }
+
+            if (!integrityGate.isStrategyScanAllowed(strategyKey, tick)) {
+                runtimeHealthService.recordScanBlockedIntegrity(strategyKey, "NIFTY_OPENING_INCOMPLETE", tick);
+                log.warn("catalog.scan.integrity_blocked strategyKey={}", strategyKey);
                 continue;
             }
 
             List<StrategyUniverseSymbol> symbols =
                     resolverService.resolveSymbolEntitiesForGroup(binding.getUniverseGroup().getId());
-
             if (symbols.isEmpty()) {
                 log.info("catalog.scan.empty_universe strategyKey={} groupKey={}",
                         strategyKey, binding.getUniverseGroup().getGroupKey());
@@ -114,17 +147,30 @@ public class CatalogDrivenScanScheduler {
             for (StrategyUniverseSymbol sym : symbols) {
                 try {
                     String symbol = sym.getTradingSymbol() != null ? sym.getTradingSymbol() : sym.getSymbol();
+                    if (!sessionEntryGuard.isSessionEntryAllowed(strategyKey, symbol, tick)) {
+                        continue;
+                    }
                     StrategyContext ctx = buildContext(sym, symbol);
                     StrategySignal signal = strategy.evaluate(ctx);
 
                     if (signal != null && signal.type() != SignalType.HOLD) {
+                        runtimeHealthService.recordSignalGenerated(strategyKey, tick);
+
+                        if (mode.skipsSignalPersist()) {
+                            log.info("catalog.scan.dry_run_signal strategyKey={} symbol={} type={}",
+                                    strategyKey, symbol, signal.type());
+                            bindingSignals++;
+                            totalSymbols++;
+                            continue;
+                        }
+
                         if (!signalCooldownService.shouldEmitSignal(symbol, strategyKey, tick)) {
                             continue;
                         }
                         bindingSignals++;
-                        persistSignal(signal, strategyKey, symbol, tick);
-                        log.info("catalog.scan.signal strategyKey={} symbol={} type={} reason={}",
-                                strategyKey, symbol, signal.type(), signal.reason());
+                        persistSignal(signal, strategyKey, symbol, tick, mode);
+                        log.info("catalog.scan.signal strategyKey={} symbol={} type={} mode={}",
+                                strategyKey, symbol, signal.type(), mode.name());
                     }
                     totalSymbols++;
                 } catch (Exception ex) {
@@ -133,28 +179,36 @@ public class CatalogDrivenScanScheduler {
                 }
             }
             totalSignals += bindingSignals;
-            log.info("catalog.scan.binding_done strategyKey={} groupKey={} symbols={} signals={}",
-                    strategyKey, binding.getUniverseGroup().getGroupKey(), symbols.size(), bindingSignals);
+            log.info("catalog.scan.binding_done strategyKey={} groupKey={} symbols={} signals={} mode={}",
+                    strategyKey, binding.getUniverseGroup().getGroupKey(), symbols.size(), bindingSignals, mode.name());
         }
 
         log.info("catalog.scan.cycle_done bindings={} symbols={} signals={} skipped={}",
                 activeBindings.size(), totalSymbols, totalSignals, totalSkipped);
     }
 
-    private void persistSignal(StrategySignal signal, String strategyKey, String symbol, Instant candleTime) {
+    private void persistSignal(
+            StrategySignal signal,
+            String strategyKey,
+            String symbol,
+            Instant candleTime,
+            StrategyExecutionMode mode) {
         try {
+            String pipelineMode = mode.name();
             StrategySignalEntity entity = StrategySignalEntityMapper.baseEntity(
                     signal,
                     strategyKey,
                     symbol,
                     candleTime,
                     systemUserId,
-                    executionMode,
+                    pipelineMode,
                     "2.0.0"
             );
-            StrategySignalEntity saved = signalPipelineService.persistAndDispatch(entity, UUID.randomUUID().toString(), executionMode);
+            StrategySignalEntity saved = signalPipelineService.persistAndDispatch(
+                    entity, UUID.randomUUID().toString(), pipelineMode, mode.skipsBrokerExecution());
             if (saved != null) {
                 signalCooldownService.recordEmitted(symbol, strategyKey, candleTime);
+                runtimeHealthService.recordTradeOpened(strategyKey, candleTime);
             }
         } catch (Exception ex) {
             log.warn("catalog.scan.persist_failed strategyKey={} symbol={} {}", strategyKey, symbol, ex.toString());

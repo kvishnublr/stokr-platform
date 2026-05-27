@@ -13,4 +13,6 @@ public interface MarketdataTickRepository extends JpaRepository<MarketdataTick, 
     List<MarketdataTick> findBySymbolAndTickTimeBetweenOrderByTickTimeAsc(String symbol, Instant start, Instant end);
 
     Optional<MarketdataTick> findFirstBySymbolOrderByTickTimeDesc(String symbol);
+
+    Optional<MarketdataTick> findFirstByOrderByTickTimeDesc();
 }

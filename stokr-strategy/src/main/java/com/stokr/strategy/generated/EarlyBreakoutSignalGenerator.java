@@ -1,14 +1,14 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
-import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.marketdata.integrity.LookbackWindow;
 import com.stokr.marketdata.service.OrderBookPressureTracker;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureAnalysis;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
-import com.stokr.strategy.service.StrategyCandleLoader;
 import com.stokr.strategy.engine.TradingStrategy;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -59,8 +59,7 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
     private static final int OR_BARS = 30;        // First 30 min (30 x 1m bars)
     private static final int CONFIRM_BARS = 3;    // Bars that must hold outside OR
 
-    private final StrategyCandleLoader candleLoader;
-    private final MarketDataQueryService marketDataQueryService;
+    private final StrategyGeneratorIntegrityGate integrityGate;
     private final OrderBookPressureTracker pressureTracker;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
@@ -100,6 +99,11 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
     @Override
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
+        Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
+
+        if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) {
+            return hold(context);
+        }
 
         // 1. SESSION: 09:50-12:30 IST (breakouts happen morning)
         if (context.asOf() != null) {
@@ -109,8 +113,12 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
             }
         }
 
-        // 2. LOAD BARS
-        List<MarketdataCandle> bars = candleLoader.bars(context, TIMEFRAME, BARS_FETCH);
+        // 2. LOAD BARS (current session only)
+        var barsOpt = integrityGate.sessionBarsWithoutLookback(key(), symbol, TIMEFRAME, BARS_FETCH, context);
+        if (barsOpt.isEmpty()) {
+            return hold(context);
+        }
+        List<MarketdataCandle> bars = barsOpt.get();
         if (bars.size() < OR_BARS + CONFIRM_BARS + 1) return hold(context);
 
         // 3. IDENTIFY OPENING RANGE
@@ -157,7 +165,7 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
         if (!breakoutUp && !breakoutDown) return hold(context);
 
         // 6. NIFTY TREND ALIGNMENT — must match breakout direction
-        double niftyTrend = calculateNiftyTrend();
+        double niftyTrend = calculateNiftyTrend(context);
         if (breakoutUp && niftyTrend < 0.03) return hold(context);   // Need NIFTY green for upside breakout
         if (breakoutDown && niftyTrend > -0.03) return hold(context); // Need NIFTY red for downside breakout
 
@@ -238,14 +246,20 @@ public class EarlyBreakoutSignalGenerator extends BaseGeneratedStrategy implemen
                 BigDecimal.valueOf(entryPrice), BigDecimal.valueOf(stopLoss), BigDecimal.valueOf(target));
     }
 
-    private double calculateNiftyTrend() {
+    private double calculateNiftyTrend(StrategyContext context) {
         try {
-            List<MarketdataCandle> nifty = marketDataQueryService.lastBarsAsc(NIFTY_SYMBOL, TIMEFRAME, 15);
-            if (nifty == null || nifty.size() < 5) return 0;
-            double first = toDouble(nifty.get(0).getClosePrice());
+            var niftyOpt = integrityGate.sessionBars(
+                    key(), NIFTY_SYMBOL, TIMEFRAME, 15, 4, LookbackWindow.FIVE_MINUTE, context);
+            if (niftyOpt.isEmpty() || niftyOpt.get().size() < 5) {
+                return 0;
+            }
+            List<MarketdataCandle> nifty = niftyOpt.get();
+            double first = toDouble(nifty.get(nifty.size() - 5).getClosePrice());
             double last = toDouble(nifty.get(nifty.size() - 1).getClosePrice());
             return first > 0 ? (last - first) / first * 100 : 0;
-        } catch (Exception e) { return 0; }
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     private int findTodaySessionStart(List<MarketdataCandle> bars) {

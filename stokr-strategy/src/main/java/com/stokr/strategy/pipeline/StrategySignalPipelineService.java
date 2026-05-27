@@ -82,7 +82,16 @@ public class StrategySignalPipelineService {
 
     @Transactional
     public StrategySignalEntity persistAndDispatch(StrategySignalEntity signal, String correlationId, String executionMode) {
-        return persistAndDispatch(signal, correlationId, executionMode, null);
+        return persistAndDispatch(signal, correlationId, executionMode, false);
+    }
+
+    @Transactional
+    public StrategySignalEntity persistAndDispatch(
+            StrategySignalEntity signal,
+            String correlationId,
+            String executionMode,
+            boolean skipBrokerExecution) {
+        return persistAndDispatch(signal, correlationId, executionMode, null, skipBrokerExecution);
     }
 
     @Transactional
@@ -91,8 +100,19 @@ public class StrategySignalPipelineService {
             String correlationId,
             String executionMode,
             SignalProvenance provenanceOverride) {
+        return persistAndDispatch(signal, correlationId, executionMode, provenanceOverride, false);
+    }
+
+    @Transactional
+    public StrategySignalEntity persistAndDispatch(
+            StrategySignalEntity signal,
+            String correlationId,
+            String executionMode,
+            SignalProvenance provenanceOverride,
+            boolean skipBrokerExecution) {
         boolean replayAnalytics = provenanceOverride == SignalProvenance.REPLAY;
-        if (!replayAnalytics && !executionPipelineRuntimeReadinessService.canRouteExecutionMode(executionMode)) {
+        if (!replayAnalytics && !skipBrokerExecution
+                && !executionPipelineRuntimeReadinessService.canRouteExecutionMode(executionMode)) {
             throw new IllegalStateException(
                     "Execution pipeline disabled: Rabbit listeners are OFF. Signal routing and OMS execution are inactive."
             );
@@ -170,6 +190,19 @@ public class StrategySignalPipelineService {
                             "userId", saved.getUserId().toString(),
                             "strategyKey", sk,
                             "executionMode", "REPLAY_ANALYTICS_ONLY"
+                    )));
+                    eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
+                    signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);
+                    return;
+                }
+                if (skipBrokerExecution) {
+                    log.info("signal.skip_broker signalId={} strategy={} symbol={} mode={}",
+                            saved.getId(), sk, saved.getSymbol(), executionMode);
+                    eventPublisher.publishEvent(new OperationalRealtimeEvent("signal_routed", java.util.Map.of(
+                            "signalId", saved.getId().toString(),
+                            "userId", saved.getUserId().toString(),
+                            "strategyKey", sk,
+                            "executionMode", executionMode != null ? executionMode : "PAPER"
                     )));
                     eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
                     signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);

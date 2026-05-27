@@ -1,14 +1,14 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
-import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.marketdata.integrity.LookbackWindow;
 import com.stokr.marketdata.service.OrderBookPressureTracker;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureAnalysis;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
-import com.stokr.strategy.service.StrategyCandleLoader;
 import com.stokr.strategy.engine.TradingStrategy;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -69,9 +69,8 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     private static final int VOLUME_AVG_PERIOD = 15;       // Bars for volume average
     private static final int SWING_SL_BARS = 5;            // Bars for swing stop loss (was 3, now 5 for wider structural SL)
 
-    private final StrategyCandleLoader candleLoader;
-    private final MarketDataQueryService marketDataQueryService;
     private final OrderBookPressureTracker pressureTracker;
+    private final StrategyGeneratorIntegrityGate integrityGate;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -145,6 +144,11 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     @Override
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
+        Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
+
+        if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) {
+            return hold(context);
+        }
 
         // ─────────────────────────────────────────────────────────────────────
         // 1. SESSION GATE: 09:45-14:30 IST
@@ -159,9 +163,14 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // 2. LOAD CANDLE DATA (stock + NIFTY)
+        // 2. LOAD CANDLE DATA (stock + NIFTY) — same-session only
         // ─────────────────────────────────────────────────────────────────────
-        List<MarketdataCandle> bars = candleLoader.bars(context, TIMEFRAME, BARS_FETCH);
+        var barsOpt = integrityGate.sessionBars(
+                key(), symbol, TIMEFRAME, BARS_FETCH, BARS_FETCH - 1, LookbackWindow.THIRTY_MINUTE, context);
+        if (barsOpt.isEmpty()) {
+            return hold(context);
+        }
+        List<MarketdataCandle> bars = barsOpt.get();
         int n = bars.size();
         if (n < MOMENTUM_BARS + VOLUME_AVG_PERIOD) {
             return hold(context);
@@ -172,7 +181,7 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         //    CRITICAL: Never fight the index. Data shows 40% of SL hits are
         //    against-trend trades. Only BUY when NIFTY is trending up.
         // ─────────────────────────────────────────────────────────────────────
-        double niftyTrendScore = calculateNiftyTrendScore();
+        double niftyTrendScore = calculateNiftyTrendScore(context);
 
         // ─────────────────────────────────────────────────────────────────────
         // 4. COMPONENT ②: ORDER BOOK IMBALANCE (weight: 30%)
@@ -420,12 +429,15 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
      *   - Check how many of last 5 bars are green vs red
      *   - Combine direction + consistency
      */
-    private double calculateNiftyTrendScore() {
+    private double calculateNiftyTrendScore(StrategyContext context) {
         try {
-            List<MarketdataCandle> niftyBars = marketDataQueryService.lastBarsAsc(NIFTY_SYMBOL, TIMEFRAME, NIFTY_BARS);
-            if (niftyBars == null || niftyBars.size() < 5) {
-                return 0;  // No NIFTY data — neutral (won't pass hard gate)
+            var niftyOpt = integrityGate.sessionBars(
+                    key(), NIFTY_SYMBOL, TIMEFRAME, NIFTY_BARS, NIFTY_BARS - 1,
+                    LookbackWindow.FIVE_MINUTE, context);
+            if (niftyOpt.isEmpty() || niftyOpt.get().size() < 5) {
+                return 0;
             }
+            List<MarketdataCandle> niftyBars = niftyOpt.get();
 
             int nb = niftyBars.size();
             double firstClose = toDouble(niftyBars.get(0).getClosePrice());

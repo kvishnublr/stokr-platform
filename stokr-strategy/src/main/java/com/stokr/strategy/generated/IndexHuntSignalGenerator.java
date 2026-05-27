@@ -1,12 +1,13 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
-import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.marketdata.integrity.LookbackWindow;
 import com.stokr.marketdata.service.OrderBookPressureTracker;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -76,6 +77,7 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
 
     private static final String TIMEFRAME = "1m";
     private static final int BARS_FETCH = 35;
+    private static final int TREND_LOOKBACK_BARS = 30;
 
     // ── INDEX_RADAR_PRECISION_V2 config (exact Python values) ──
 
@@ -145,8 +147,8 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
     private static final BigDecimal INDEX_SL_PCT     = BigDecimal.valueOf(0.0020);  // 0.20%
     private static final BigDecimal INDEX_TARGET_PCT  = BigDecimal.valueOf(0.0050);  // 0.50%
 
-    private final MarketDataQueryService marketDataQueryService;
     private final OrderBookPressureTracker pressureTracker;
+    private final StrategyGeneratorIntegrityGate integrityGate;
 
     // Dedup: per symbol+direction, track last emit time
     private final ConcurrentHashMap<String, Instant> lastEmitByKey = new ConcurrentHashMap<>();
@@ -166,6 +168,11 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
     @Override
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
+        Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
+
+        if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) {
+            return hold(context);
+        }
 
         // ─── GATE: TIME WINDOW (10:15–13:45 IST) ───
         LocalTime now;
@@ -185,8 +192,13 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
             return hold(context);
         }
 
-        // ─── Load candle data ───
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, TIMEFRAME, BARS_FETCH);
+        // ─── Load candle data (same-session only) ───
+        var barsOpt = integrityGate.sessionBars(
+                key(), symbol, TIMEFRAME, BARS_FETCH, TREND_LOOKBACK_BARS, LookbackWindow.THIRTY_MINUTE, context);
+        if (barsOpt.isEmpty()) {
+            return hold(context);
+        }
+        List<MarketdataCandle> bars = barsOpt.get();
 
         // ─── GATE: WARMUP (min_hist_samples=6) ───
         if (bars.size() < MIN_HIST_SAMPLES) {

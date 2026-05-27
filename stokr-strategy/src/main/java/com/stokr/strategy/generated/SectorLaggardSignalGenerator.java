@@ -1,12 +1,13 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
-import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.marketdata.integrity.LookbackWindow;
 import com.stokr.marketdata.service.OrderBookPressureTracker;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -57,8 +58,8 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
     private static final int BARS_FETCH = 90;
     private static final int LOOKBACK_BARS = 30;  // Last 30 min for momentum calc
 
-    private final MarketDataQueryService marketDataQueryService;
     private final OrderBookPressureTracker pressureTracker;
+    private final StrategyGeneratorIntegrityGate integrityGate;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -97,7 +98,12 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
     @Override
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
+        Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
         if (INDEX_SYMBOL.equalsIgnoreCase(symbol)) return hold(context);
+
+        if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) {
+            return hold(context);
+        }
 
         // 1. SESSION: 10:00-14:00 IST (need time for divergence to develop)
         if (context.asOf() != null) {
@@ -107,13 +113,21 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
             }
         }
 
-        // 2. LOAD INDEX DATA
-        List<MarketdataCandle> indexBars = marketDataQueryService.lastBarsAsc(INDEX_SYMBOL, TIMEFRAME, BARS_FETCH);
-        if (indexBars.size() < LOOKBACK_BARS + 1) return hold(context);
+        // 2. LOAD INDEX DATA (same-session only; 30-bar lookback max 35 min)
+        var indexBarsOpt = integrityGate.sessionBars(
+                key(), INDEX_SYMBOL, TIMEFRAME, BARS_FETCH, LOOKBACK_BARS, LookbackWindow.THIRTY_MINUTE, context);
+        if (indexBarsOpt.isEmpty()) {
+            return hold(context);
+        }
+        List<MarketdataCandle> indexBars = indexBarsOpt.get();
 
         // 3. LOAD STOCK DATA
-        List<MarketdataCandle> stockBars = marketDataQueryService.lastBarsAsc(symbol, TIMEFRAME, BARS_FETCH);
-        if (stockBars.size() < LOOKBACK_BARS + 1) return hold(context);
+        var stockBarsOpt = integrityGate.sessionBars(
+                key(), symbol, TIMEFRAME, BARS_FETCH, LOOKBACK_BARS, LookbackWindow.THIRTY_MINUTE, context);
+        if (stockBarsOpt.isEmpty()) {
+            return hold(context);
+        }
+        List<MarketdataCandle> stockBars = stockBarsOpt.get();
 
         // 4. SECTOR MOMENTUM
         int idxN = indexBars.size();

@@ -1,12 +1,13 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
-import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.marketdata.integrity.LookbackWindow;
 import com.stokr.marketdata.service.OrderBookPressureTracker;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.extern.slf4j.Slf4j;
@@ -102,8 +103,8 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     private static final int KNN_MIN_TRADES = 100;
     private static final int KNN_K = 5;
 
-    private final MarketDataQueryService marketDataQueryService;
     private final OrderBookPressureTracker pressureTracker;
+    private final StrategyGeneratorIntegrityGate integrityGate;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     // OBI history per symbol for slope calculation (8-tick linear regression)
@@ -122,10 +123,10 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     @Value("${stokr.advcash.default-vix:17.5}")
     private double defaultVix;
 
-    public AdvCashEquitySignalGenerator(MarketDataQueryService marketDataQueryService,
-                                        OrderBookPressureTracker pressureTracker) {
-        this.marketDataQueryService = marketDataQueryService;
+    public AdvCashEquitySignalGenerator(OrderBookPressureTracker pressureTracker,
+                                        StrategyGeneratorIntegrityGate integrityGate) {
         this.pressureTracker = pressureTracker;
+        this.integrityGate = integrityGate;
     }
 
     @Override
@@ -134,6 +135,11 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     @Override
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
+        Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
+
+        if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) {
+            return hold(context);
+        }
 
         // ─── STEP 1: Top 25 liquid stocks only ───
         // Python: if not is_top25(sym): return None
@@ -165,8 +171,13 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
             return hold(context);
         }
 
-        // ─── Load candle data ───
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, TIMEFRAME, BARS_FETCH);
+        // ─── Load candle data (same-session only) ───
+        var barsOpt = integrityGate.sessionBars(
+                key(), symbol, TIMEFRAME, BARS_FETCH, 5, LookbackWindow.FIVE_MINUTE, context);
+        if (barsOpt.isEmpty()) {
+            return hold(context);
+        }
+        List<MarketdataCandle> bars = barsOpt.get();
         if (bars.size() < 6) {
             return hold(context);
         }

@@ -174,6 +174,24 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             @Param("since") Instant since);
 
     @Query("""
+            select count(s)
+            from StrategySignalEntity s
+            where s.deleted = false
+              and s.testTrade = false
+              and s.backtestRunId is null
+              and upper(s.strategyName) = upper(:strategyName)
+              and upper(s.symbol) = upper(:symbol)
+              and s.createdAt >= :since
+              and (s.signalSource is null
+                   or s.signalSource in (com.stokr.strategy.signals.SignalProvenance.LIVE,
+                                         com.stokr.strategy.signals.SignalProvenance.PAPER))
+            """)
+    long countProductionSignalsForStrategyAndSymbolSince(
+            @Param("strategyName") String strategyName,
+            @Param("symbol") String symbol,
+            @Param("since") Instant since);
+
+    @Query("""
             select count(s) from StrategySignalEntity s
             where s.deleted = false
               and s.backtestRunId is null

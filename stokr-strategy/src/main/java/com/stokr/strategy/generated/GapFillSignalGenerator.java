@@ -1,7 +1,10 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
+import com.stokr.marketdata.integrity.LookbackWindow;
 import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.lifecycle.StrategySessionEntryGuardService;
 import com.stokr.marketdata.service.OrderBookPressureTracker;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.catalog.GeneratedStrategy;
@@ -20,7 +23,6 @@ import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * GAP_FILL V2.0 — Gap Fill with Pressure Confirmation
@@ -59,7 +61,8 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
 
     private final MarketDataQueryService marketDataQueryService;
     private final OrderBookPressureTracker pressureTracker;
-    private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
+    private final StrategyGeneratorIntegrityGate integrityGate;
+    private final StrategySessionEntryGuardService sessionEntryGuard;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
@@ -82,14 +85,11 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
     @Value("${stokr.gapfill.sl-buffer-pct:0.30}")
     private double slBufferPct;
 
-    @Value("${stokr.gapfill.cooldown-seconds:600}")
-    private int cooldownSeconds;
+    @Value("${stokr.gapfill.target-fill-ratio:0.80}")
+    private double targetFillRatio;
 
     @Value("${stokr.gapfill.signal-window-minutes:90}")
     private int signalWindowMinutes;
-
-    @Value("${stokr.gapfill.target-fill-ratio:0.80}")
-    private double targetFillRatio;
 
     @Value("${stokr.gapfill.min-risk-reward:1.0}")
     private double minRiskReward;
@@ -100,6 +100,17 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
     @Override
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
+        Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
+
+        if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) {
+            return hold(context);
+        }
+
+        if (!sessionEntryGuard.isSessionEntryAllowed(key(), symbol, asOf)) {
+            log.debug("gapfill.session_lock symbol={} strategy={} — one entry per symbol per session",
+                    symbol, key());
+            return hold(context);
+        }
 
         // 1. SESSION: 09:20-10:45 IST (gap fill happens early)
         if (context.asOf() != null) {
@@ -137,12 +148,12 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
         }
 
         if (todayStartIdx < 0 || prevClose <= 0) {
-            int n = bars.size();
-            prevClose = toDouble(bars.get(n - SESSION_BARS - 1).getClosePrice());
-            todayOpen = toDouble(bars.get(n - SESSION_BARS).getOpenPrice());
-            todayStartIdx = n - SESSION_BARS;
+            return hold(context);
         }
-        if (prevClose <= 0 || todayOpen <= 0) return hold(context);
+        if (!integrityGate.validateGapFillSessionSlice(key(), symbol, bars, todayStartIdx, asOf)) {
+            return hold(context);
+        }
+        if (todayOpen <= 0) return hold(context);
 
         // 4. GAP CALCULATION
         double gapPct = (todayOpen - prevClose) / prevClose * 100.0;
@@ -152,7 +163,7 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
         boolean isGapUp = gapPct > 0;
 
         // 5. NIFTY ALIGNMENT — NIFTY should support fill direction
-        double niftyTrend = calculateNiftyTrend();
+        double niftyTrend = calculateNiftyTrend(context);
         // Gap up fills DOWN → NIFTY should be red or flat (not strongly green)
         if (isGapUp && niftyTrend > 0.10) return hold(context);  // NIFTY too bullish for gap-up fill
         // Gap down fills UP → NIFTY should be green or flat
@@ -203,14 +214,7 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
         }
         if (remainingGapPct < minGapPct * 0.3) return hold(context);
 
-        // 10. COOLDOWN
-        Instant now = context.asOf() != null ? context.asOf() : Instant.now();
-        Instant lastEmit = lastEmitBySymbol.get(symbol);
-        if (lastEmit != null && Duration.between(lastEmit, now).getSeconds() < cooldownSeconds) {
-            return hold(context);
-        }
-
-        // 11. SIGNAL WITH PROPER PRICES
+        // 10. SIGNAL WITH PROPER PRICES
         double entryPrice = currentPrice;
         double target, stopLoss;
         SignalType signalType;
@@ -243,8 +247,6 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
         if (rr < minRiskReward) return hold(context);
         if (risk / entryPrice > 0.025) return hold(context);
 
-        lastEmitBySymbol.put(symbol, now);
-
         String pressureInfo = snapshot != null ? String.format("imb=%.0f%%", snapshot.imbalanceRatio() * 100) : "imb=N/A";
         String reason = String.format(
             "GAP_FILL_V2 %s: gap=%+.2f%% remaining=%.2f%% fill=%.0f%% %s " +
@@ -259,14 +261,20 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
                 BigDecimal.valueOf(entryPrice), BigDecimal.valueOf(stopLoss), BigDecimal.valueOf(target));
     }
 
-    private double calculateNiftyTrend() {
+    private double calculateNiftyTrend(StrategyContext context) {
         try {
-            List<MarketdataCandle> nifty = marketDataQueryService.lastBarsAsc(NIFTY_SYMBOL, TIMEFRAME, 15);
-            if (nifty == null || nifty.size() < 5) return 0;
-            double first = toDouble(nifty.get(0).getClosePrice());
-            double last = toDouble(nifty.get(nifty.size() - 1).getClosePrice());
+            var nifty = integrityGate.sessionBars(
+                    key(), NIFTY_SYMBOL, TIMEFRAME, 15, 4, LookbackWindow.FIVE_MINUTE, context);
+            if (nifty.isEmpty() || nifty.get().size() < 5) {
+                return 0;
+            }
+            List<MarketdataCandle> bars = nifty.get();
+            double first = toDouble(bars.get(bars.size() - 5).getClosePrice());
+            double last = toDouble(bars.get(bars.size() - 1).getClosePrice());
             return first > 0 ? (last - first) / first * 100 : 0;
-        } catch (Exception e) { return 0; }
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     private static double toDouble(BigDecimal v) { return v == null ? 0.0 : v.doubleValue(); }

@@ -563,6 +563,7 @@ public class PlatformZerodhaLiveFeedRuntime {
                 telemetryService.markReconnectBump(VENDOR);
             }
             wsOpen.set(true);
+            telemetryService.markWebsocketOpen(VENDOR);
             try {
                 String sub = objectMapper.writeValueAsString(Map.of("a", "subscribe", "v", tokens));
                 webSocket.sendText(sub, true);
