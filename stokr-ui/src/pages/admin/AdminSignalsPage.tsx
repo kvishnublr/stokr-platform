@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
-import { fmtDateTime } from "../../lib/dateUtils";
+import { fmtDateTime, fmtDateRange, istInclusiveDayRange, istTodayApiRange, istTodayYmd } from "../../lib/dateUtils";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { api } from "../../api/client";
 import { useUiThemeStore } from "../../state/uiTheme";
@@ -18,7 +18,7 @@ import { resolveProvenance } from "../../components/admin/institutional/experien
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, Download, X,
   ChevronRight, AlertTriangle, Target,
-  Activity, BarChart3, Zap, Timer,
+  Activity, BarChart3, Zap, Timer, Calendar,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -396,7 +396,21 @@ export function AdminSignalsPage() {
   const [viewMode, setViewMode] = useState<"stream" | "grid">("stream");
   const [showDetailGrid, setShowDetailGrid] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dateViewMode, setDateViewMode] = useState<"today" | "range">("today");
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState("");
   const queryClient = useQueryClient();
+
+  const todayYmd = istTodayYmd();
+  const apiDateRange = useMemo(() => {
+    if (dateViewMode === "today") return istTodayApiRange();
+    if (rangeFrom && rangeTo) return istInclusiveDayRange(rangeFrom, rangeTo);
+    if (rangeFrom) {
+      const { from, to } = istInclusiveDayRange(rangeFrom, rangeFrom);
+      return { from, to };
+    }
+    return null;
+  }, [dateViewMode, rangeFrom, rangeTo, todayYmd]);
 
   const activatePipeline = useMutation({
     mutationFn: async () => {
@@ -494,7 +508,20 @@ export function AdminSignalsPage() {
   }, [strategyStatsQ.data]);
 
   const q = useQuery<PageResp>({
-    queryKey: ["admin-signals", page, symbol, strategyFilter, signalType, pipeline, outcomeStatus, includeReplayLab],
+    queryKey: [
+      "admin-signals",
+      page,
+      symbol,
+      strategyFilter,
+      signalType,
+      pipeline,
+      outcomeStatus,
+      includeReplayLab,
+      dateViewMode,
+      rangeFrom,
+      rangeTo,
+      todayYmd,
+    ],
     queryFn: async () => {
       const p = new URLSearchParams();
       p.set("page", String(page));
@@ -506,10 +533,16 @@ export function AdminSignalsPage() {
       if (signalType !== "ALL") p.set("signalType", signalType);
       if (pipeline !== "ALL") p.set("pipeline", pipeline);
       if (outcomeStatus !== "ALL") p.set("outcomeStatus", outcomeStatus);
+      const range = dateViewMode === "today" ? istTodayApiRange() : apiDateRange;
+      if (range) {
+        p.set("from", range.from);
+        p.set("to", range.to);
+      }
       const res = await api.get(`/api/admin/signals?${p.toString()}`);
       return res.data?.data as PageResp;
     },
-    refetchInterval: 10_000,
+    enabled: dateViewMode === "today" || !!apiDateRange,
+    refetchInterval: dateViewMode === "today" ? 10_000 : false,
   });
 
   const handleExport = useCallback(() => {
@@ -538,11 +571,21 @@ export function AdminSignalsPage() {
 
   const clearFilters = () => {
     setSymbol(""); setStrategyFilter(""); setSignalType("ALL");
-    setPipeline("ALL"); setOutcomeStatus("ALL"); setIncludeReplayLab(false); setPage(0);
+    setPipeline("ALL"); setOutcomeStatus("ALL"); setIncludeReplayLab(false);
+    setDateViewMode("today"); setRangeFrom(""); setRangeTo("");
+    setPage(0);
   };
 
   const hasFilters = !!(symbol || strategyFilter || signalType !== "ALL" || pipeline !== "ALL"
-    || outcomeStatus !== "ALL" || includeReplayLab);
+    || outcomeStatus !== "ALL" || includeReplayLab || dateViewMode === "range");
+
+  const streamDateLabel = dateViewMode === "today"
+    ? `Today · ${todayYmd} IST`
+    : rangeFrom && rangeTo
+      ? fmtDateRange(new Date(`${rangeFrom}T12:00:00+05:30`), new Date(`${rangeTo}T12:00:00+05:30`))
+      : rangeFrom
+        ? fmtDateRange(new Date(`${rangeFrom}T12:00:00+05:30`), new Date(`${rangeFrom}T12:00:00+05:30`))
+        : "Select a date range";
 
   const rows = q.data?.content ?? [];
   const filteredRows = useMemo(() => {
@@ -591,7 +634,7 @@ export function AdminSignalsPage() {
       isLight={isLight}
       eyebrow="Strategies & signals"
       title="Live Signal Operating System"
-      subtitle="Predictive signal intelligence — confidence engine, false breakout detection, cluster storms, and live replay trust surfaces."
+      subtitle="Live signal activity for today (IST). Use date range to browse historical signals."
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <Link
@@ -682,6 +725,61 @@ export function AdminSignalsPage() {
 
         {/* Filters */}
         <AdminPanel isLight={isLight} title="Stream filters" noPadding>
+          <div className="flex flex-wrap items-center gap-2 border-b px-5 py-3" style={{ borderColor: isLight ? "#e5e5e5" : "#404040" }}>
+            <span className={cn("text-[10px] font-bold uppercase tracking-widest", isLight ? "text-neutral-500" : "text-neutral-400")}>
+              <Calendar className="mr-1 inline h-3 w-3" /> Window
+            </span>
+            <button
+              type="button"
+              onClick={() => { setDateViewMode("today"); setRangeFrom(""); setRangeTo(""); setPage(0); }}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                dateViewMode === "today"
+                  ? "bg-rose-600 text-white"
+                  : isLight ? "bg-neutral-100 text-neutral-700" : "bg-neutral-800 text-neutral-300",
+              )}
+            >
+              Today (live)
+            </button>
+            <button
+              type="button"
+              onClick={() => { setDateViewMode("range"); setPage(0); }}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                dateViewMode === "range"
+                  ? "bg-blue-600 text-white"
+                  : isLight ? "bg-neutral-100 text-neutral-700" : "bg-neutral-800 text-neutral-300",
+              )}
+            >
+              Date range
+            </button>
+            {dateViewMode === "range" ? (
+              <>
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={rangeFrom}
+                  max={rangeTo || todayYmd}
+                  onChange={(e) => { setRangeFrom(e.target.value); setPage(0); }}
+                  aria-label="From date"
+                />
+                <span className={cn("text-xs", isLight ? "text-neutral-400" : "text-neutral-500")}>→</span>
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={rangeTo}
+                  min={rangeFrom || undefined}
+                  max={todayYmd}
+                  onChange={(e) => { setRangeTo(e.target.value); setPage(0); }}
+                  aria-label="To date"
+                />
+              </>
+            ) : (
+              <span className={cn("text-xs font-medium", isLight ? "text-rose-700" : "text-rose-300")}>
+                Showing only {todayYmd} signals
+              </span>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-2 px-5 py-4">
             <input className={inputCls} placeholder="Symbol…" value={symbol} onChange={(e) => { setSymbol(e.target.value); setPage(0); }} />
             <select className={cn(selectCls, "min-w-[180px]")} value={strategyFilter} onChange={(e) => { setStrategyFilter(e.target.value); setPage(0); }}>
@@ -713,8 +811,17 @@ export function AdminSignalsPage() {
         </AdminPanel>
 
         {/* Live signal stream */}
-        <AdminSection isLight={isLight} title="Live signal stream" subtitle={`${filteredRows.length} visible · ${total.toLocaleString()} total matched`}>
-          {q.isLoading ? (
+        <AdminSection
+          isLight={isLight}
+          title={dateViewMode === "today" ? "Today's live signals" : "Historical signals"}
+          subtitle={`${streamDateLabel} · ${filteredRows.length} visible · ${total.toLocaleString()} matched`}
+        >
+          {dateViewMode === "range" && !apiDateRange ? (
+            <div className={cn("rounded-2xl border border-dashed py-16 text-center", isLight ? "border-neutral-300" : "border-neutral-800")}>
+              <Calendar className="mx-auto mb-2 h-6 w-6 text-blue-400" />
+              <p className="text-sm font-medium">Pick a from/to date to browse historical signals</p>
+            </div>
+          ) : q.isLoading ? (
             <div className={cn("py-16 text-center text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>
               <RefreshCw className="mx-auto mb-2 h-6 w-6 animate-spin opacity-50" /> Loading signals…
             </div>

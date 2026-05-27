@@ -56,3 +56,39 @@ export function fmtNseClock(at: Date = new Date()): string {
 /** Aliases for callers that prefer explicit naming. */
 export const formatIstDateTime = fmtDateTime;
 export const formatNseTime = fmtTime;
+
+/** yyyy-MM-dd for a calendar day in IST (en-CA locale = ISO date order). */
+export function istTodayYmd(at: Date = new Date()): string {
+  return at.toLocaleDateString("en-CA", { timeZone: IST_ZONE });
+}
+
+/** Start of an IST calendar day as ISO instant (for API `from` / exclusive `to`). */
+export function istDayStartIso(yyyyMmDd: string): string {
+  return new Date(`${yyyyMmDd}T00:00:00+05:30`).toISOString();
+}
+
+/** Add calendar days to yyyy-MM-dd, interpreted in IST. */
+export function istAddDaysYmd(yyyyMmDd: string, days: number): string {
+  const d = new Date(`${yyyyMmDd}T12:00:00+05:30`);
+  d.setDate(d.getDate() + days);
+  return d.toLocaleDateString("en-CA", { timeZone: IST_ZONE });
+}
+
+/** Inclusive IST day span → API range [from, to) with `to` at start of day after end. */
+export function istInclusiveDayRange(fromYmd: string, toYmd: string): { from: string; to: string } {
+  const start = fromYmd <= toYmd ? fromYmd : toYmd;
+  const end = fromYmd <= toYmd ? toYmd : fromYmd;
+  return {
+    from: istDayStartIso(start),
+    to: istDayStartIso(istAddDaysYmd(end, 1)),
+  };
+}
+
+/** Today's IST window for live signal monitor queries. */
+export function istTodayApiRange(): { from: string; to: string } {
+  const today = istTodayYmd();
+  return {
+    from: istDayStartIso(today),
+    to: istDayStartIso(istAddDaysYmd(today, 1)),
+  };
+}
