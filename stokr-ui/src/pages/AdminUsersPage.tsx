@@ -125,7 +125,7 @@ export function AdminUsersPage() {
 
   async function toggleLiveApproval(u: UserRow, approve: boolean) {
     try {
-      await api.patch(`/api/admin/users/${u.id}`, { liveTradingApproved: approve });
+      await api.patch(`/api/admin/users/${u.id}/live-trading`, { liveTradingApproved: approve });
       toast.success(approve ? `Live trading approved for ${u.username}` : `Live trading revoked for ${u.username}`);
       void q.refetch();
     } catch (e) {
