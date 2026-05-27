@@ -482,18 +482,24 @@ public class TraderTerminalViewService {
 
         BigDecimal totalRealized = sumRealized.setScale(8, java.math.RoundingMode.HALF_UP);
         BigDecimal totalUnrealized = sumUnrealized.setScale(8, java.math.RoundingMode.HALF_UP);
-        int openCount = openPositions.size() > 0 ? openPositions.size() : overview.openPositionCount();
+        int openCount = openPositions.size();
         String pnlSource = "OMS";
         if (brokerPnlSource) {
-            BrokerPnlTotals brokerTotals = summarizeBrokerTotals(brokerTruth);
-            boolean brokerHasOpen = brokerTotals.openCount() > 0;
-            boolean brokerHasPnl = brokerTotals.mtm().compareTo(BigDecimal.ZERO) != 0;
-            if (brokerHasOpen || brokerHasPnl) {
-                totalRealized = brokerTotals.realized();
-                totalUnrealized = brokerTotals.unrealized();
-                openCount = brokerTotals.openCount();
+            BrokerPnlTotals brokerOpenTotals = summarizeBrokerOpenTotals(brokerTruth);
+            openCount = openPositions.size();
+            if (brokerOpenTotals.openCount() > 0) {
+                totalRealized = brokerOpenTotals.realized();
+                totalUnrealized = brokerOpenTotals.unrealized();
+                pnlSource = "BROKER";
+            } else {
+                // Broker session is flat — hide stale OMS portfolio ghosts from header metrics.
+                totalRealized = BigDecimal.ZERO;
+                totalUnrealized = BigDecimal.ZERO;
+                openCount = 0;
                 pnlSource = "BROKER";
             }
+        } else if (openCount <= 0) {
+            openCount = overview.openPositionCount();
         }
         BigDecimal totalPnl = totalRealized.add(totalUnrealized).setScale(8, java.math.RoundingMode.HALF_UP);
 
@@ -722,6 +728,25 @@ public class TraderTerminalViewService {
             if (bq.compareTo(BigDecimal.ZERO) != 0) {
                 openCount++;
             }
+        }
+        realized = realized.setScale(8, java.math.RoundingMode.HALF_UP);
+        unrealized = unrealized.setScale(8, java.math.RoundingMode.HALF_UP);
+        return new BrokerPnlTotals(realized, unrealized, realized.add(unrealized), openCount);
+    }
+
+    /** Header metrics: only open broker legs (qty != 0), not day-flat rows with residual P&L. */
+    private static BrokerPnlTotals summarizeBrokerOpenTotals(BrokerPositionTruthSnapshot brokerTruth) {
+        BigDecimal realized = BigDecimal.ZERO;
+        BigDecimal unrealized = BigDecimal.ZERO;
+        int openCount = 0;
+        for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : brokerTruth.positions()) {
+            BigDecimal bq = row.brokerQty() != null ? row.brokerQty() : BigDecimal.ZERO;
+            if (bq.compareTo(BigDecimal.ZERO) == 0) {
+                continue;
+            }
+            openCount++;
+            realized = realized.add(row.brokerRealizedPnl() != null ? row.brokerRealizedPnl() : BigDecimal.ZERO);
+            unrealized = unrealized.add(row.brokerUnrealizedPnl() != null ? row.brokerUnrealizedPnl() : BigDecimal.ZERO);
         }
         realized = realized.setScale(8, java.math.RoundingMode.HALF_UP);
         unrealized = unrealized.setScale(8, java.math.RoundingMode.HALF_UP);

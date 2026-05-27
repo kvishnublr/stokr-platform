@@ -461,7 +461,7 @@ export function TerminalPage() {
       />
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid gap-3 md:grid-cols-3">
-        <AnimatedKpiCard label="Open Positions" loading={q.isLoading} value={q.isLoading ? "…" : fmt(sum?.openPositions)} accent="bg-indigo-400" />
+        <AnimatedKpiCard label="Open Positions" loading={q.isLoading} value={q.isLoading ? "…" : fmt(accountPnl.openPositions ?? 0)} accent="bg-indigo-400" />
         <AnimatedKpiCard label="Active Strategies" loading={q.isLoading} value={q.isLoading ? "…" : fmt(sum?.activeStrategies)} accent="bg-amber-400" />
         <AnimatedKpiCard label="Execution Mode" loading={q.isLoading} value={q.isLoading ? "…" : fmt(sum?.executionMode)} accent="bg-neutral-400" />
       </motion.div>
