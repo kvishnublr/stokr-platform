@@ -21,7 +21,7 @@ RUN --mount=type=cache,target=/root/.m2 \
 
 COPY . .
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn -pl stokr-bootstrap -am package -DskipTests
+    mvn -pl stokr-bootstrap -am package -DskipTests -Dmaven.test.skip=true
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
