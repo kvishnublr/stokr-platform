@@ -41,6 +41,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -198,6 +199,22 @@ public class TraderTerminalViewService {
     public List<Map<String, Object>> strategyFeed(UUID userId, int limit) {
         int cap = Math.max(1, Math.min(1000, limit));
         List<StrategySignalEntity> rows = strategySignalRepository.findRecentForTrader(userId, PageRequest.of(0, cap));
+
+        // Batch-collect unique symbols for LTP lookup (avoid N+1)
+        Map<String, BigDecimal> ltpCache = new HashMap<>();
+        for (StrategySignalEntity s : rows) {
+            if (s.getSymbol() != null && !ltpCache.containsKey(s.getSymbol())) {
+                ltpCache.put(s.getSymbol(), null); // placeholder
+            }
+        }
+        for (String sym : ltpCache.keySet()) {
+            try {
+                ltpCache.put(sym, lastPrice(sym));
+            } catch (Exception ex) {
+                ltpCache.put(sym, BigDecimal.ZERO);
+            }
+        }
+
         List<Map<String, Object>> out = new ArrayList<>();
         for (StrategySignalEntity s : rows) {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -216,6 +233,40 @@ public class TraderTerminalViewService {
             m.put("riskReward", computeRiskReward(s.getEntryReferencePrice(), s.getStopPrice(), s.getTargetPrice()));
             m.put("executionMode", s.getPipeline() != null ? s.getPipeline() : null);
             m.put("pipeline", s.getPipeline());
+
+            // --- Enriched fields: outcome, PnL, LTP ---
+            m.put("outcomeStatus", s.getOutcomeStatus());
+            m.put("exitPrice", s.getExitPrice());
+            m.put("realizedPnl", s.getRealizedPnl());
+            m.put("unrealizedPnl", s.getUnrealizedPnl());
+
+            BigDecimal ltp = ltpCache.getOrDefault(s.getSymbol(), BigDecimal.ZERO);
+            m.put("ltp", ltp);
+
+            // Compute live P&L: (ltp - entry) * qty for BUY, (entry - ltp) * qty for SELL
+            BigDecimal livePnl = null;
+            if (ltp != null && ltp.compareTo(BigDecimal.ZERO) > 0
+                    && s.getEntryReferencePrice() != null
+                    && s.getEntryReferencePrice().compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal qty = s.getSuggestedQty() != null ? s.getSuggestedQty() : BigDecimal.ONE;
+                boolean isBuy = s.getSignalType() != null && "BUY".equalsIgnoreCase(s.getSignalType().name());
+                if (isBuy) {
+                    livePnl = ltp.subtract(s.getEntryReferencePrice()).multiply(qty).setScale(2, java.math.RoundingMode.HALF_UP);
+                } else {
+                    livePnl = s.getEntryReferencePrice().subtract(ltp).multiply(qty).setScale(2, java.math.RoundingMode.HALF_UP);
+                }
+            }
+            // Use realizedPnl if signal is closed, otherwise use livePnl
+            if (s.getRealizedPnl() != null && s.getOutcomeStatus() != null
+                    && ("TARGET_HIT".equalsIgnoreCase(s.getOutcomeStatus())
+                        || "SL_HIT".equalsIgnoreCase(s.getOutcomeStatus())
+                        || "PRESSURE_EXIT".equalsIgnoreCase(s.getOutcomeStatus())
+                        || "CLOSED".equalsIgnoreCase(s.getOutcomeStatus()))) {
+                m.put("pnl", s.getRealizedPnl());
+            } else {
+                m.put("pnl", livePnl);
+            }
+
             out.add(m);
         }
         return out;
