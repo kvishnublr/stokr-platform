@@ -44,4 +44,14 @@ class StrategyExecutionModeServiceTest {
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("NSE_SPIKE_DETECTION"));
     }
+
+    @Test
+    void onlyGapFillEligibleForLiveByDefaultPolicy() {
+        StrategyExecutionModeService service = new StrategyExecutionModeService(
+                "PAPER", "DISABLED", "DRY_RUN", "DRY_RUN", "DRY_RUN",
+                "DRY_RUN", "DRY_RUN", "DISABLED", "DISABLED",
+                true, "GAP_FILL");
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("GAP_FILL"));
+        assertEquals(StrategyExecutionMode.DRY_RUN, service.modeFor("NSE_SPIKE_DETECTION"));
+    }
 }

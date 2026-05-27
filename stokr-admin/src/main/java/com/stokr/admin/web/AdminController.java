@@ -6,6 +6,7 @@ import com.stokr.admin.service.AdminOperationalSnapshotService;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.common.pipeline.PipelineQueues;
+import com.stokr.execution.safety.TradingKillSwitchService;
 import com.stokr.risk.service.KillSwitchService;
 import com.stokr.risk.service.LiveTradingArmingService;
 import com.stokr.risk.service.StrategyToggleService;
@@ -33,6 +34,7 @@ import java.util.Map;
 public class AdminController {
 
     private final KillSwitchService killSwitchService;
+    private final TradingKillSwitchService tradingKillSwitchService;
     private final LiveTradingArmingService liveTradingArmingService;
     private final StrategyToggleService strategyToggleService;
     private final StrategyEmergencyStopService strategyEmergencyStopService;
@@ -45,7 +47,8 @@ public class AdminController {
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<Map<String, Object>> health() {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("killSwitch", killSwitchService.isEnabled());
+        body.put("killSwitch", tradingKillSwitchService.isActive());
+        body.put("killSwitchLegacy", killSwitchService.isEnabled());
         body.put("liveTradingArmed", liveTradingArmingService.isArmed());
         body.put("uptimeSeconds", ManagementFactory.getRuntimeMXBean().getUptime() / 1000);
         body.put("queues", Map.of(
@@ -69,8 +72,17 @@ public class AdminController {
     @PostMapping("/kill-switch")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<Map<String, Object>> killSwitch(@RequestParam("enabled") boolean enabled) {
-        killSwitchService.setEnabled(enabled);
-        return ApiResponse.ok(Map.of("enabled", enabled), CorrelationIdHolder.get());
+        if (enabled) {
+            return ApiResponse.ok(tradingKillSwitchService.activate(
+                    TradingKillSwitchService.TriggerSource.ADMIN_API,
+                    "Legacy /kill-switch endpoint",
+                    false,
+                    "admin"), CorrelationIdHolder.get());
+        }
+        return ApiResponse.ok(tradingKillSwitchService.deactivate(
+                TradingKillSwitchService.TriggerSource.ADMIN_API,
+                "Legacy /kill-switch endpoint",
+                "admin"), CorrelationIdHolder.get());
     }
 
     @PostMapping("/live-trading/arm")

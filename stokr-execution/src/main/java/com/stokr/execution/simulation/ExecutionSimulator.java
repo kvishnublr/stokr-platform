@@ -28,6 +28,8 @@ import com.stokr.oms.portfolio.PortfolioAccountingService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.execution.alert.ExecutionAlertService;
+import com.stokr.execution.safety.BrokerDisconnectProtectionService;
+import com.stokr.execution.safety.BrokerExecutionTelemetryService;
 import com.stokr.execution.guard.ExecutionGuardTelemetryService;
 import com.stokr.oms.reconciliation.ReconciliationEvent;
 import com.stokr.oms.reconciliation.ReconciliationEventRepository;
@@ -72,6 +74,8 @@ public class ExecutionSimulator {
     private final ZerodhaBrokerProperties zerodhaBrokerProperties;
     private final ExecutionAlertService executionAlertService;
     private final ReconciliationEventRepository reconciliationEventRepository;
+    private final BrokerExecutionTelemetryService brokerExecutionTelemetryService;
+    private final BrokerDisconnectProtectionService brokerDisconnectProtectionService;
 
     @Value("${stokr.simulation.candle-timeframe:1m}")
     private String candleTimeframe;
@@ -113,6 +117,7 @@ public class ExecutionSimulator {
                             liveUserId, order.getStrategyKey(), vendor != null ? vendor : "ZERODHA");
             if (!gate.allowed()) {
                 log.warn("execution.sim.live_blocked orderId={} reason={}", order.getId(), gate.reasonCode());
+                brokerExecutionTelemetryService.recordRejection(order.getId(), gate.message());
                 riskEventRecorder.record(liveUserId, order.getId(), gate.reasonCode(), "REJECT", gate.message());
                 notificationPublisher.ifAvailable(pub -> pub.publish(new NotificationEvent(
                         "IN_APP",
@@ -131,8 +136,30 @@ public class ExecutionSimulator {
                 return;
             }
             String effectiveVendor = vendor != null ? vendor : "ZERODHA";
+            if (brokerDisconnectProtectionService.blocksLiveOrders(liveUserId)) {
+                String reason = "Broker disconnected or execution degraded";
+                brokerExecutionTelemetryService.recordRejection(order.getId(), reason);
+                orderLifecycleService.transition(order.getId(), OrderState.REJECTED, reason);
+                executionTraceService.trace(order, ExecutionEventType.EXECUTION_REJECTED, Map.of(
+                        "phase", "BROKER_DISCONNECT",
+                        "reason", reason
+                ));
+                return;
+            }
             String[] creds = resolveBrokerCredentials(liveUserId, effectiveVendor);
+            brokerExecutionTelemetryService.beginSubmit(
+                    order.getId(), liveUserId, order.getStrategyKey(), order.getSymbol(),
+                    ExecutionMode.LIVE.name(), effectiveVendor);
             OmsOrder liveOrder = orderLifecycleService.submitToBroker(order, effectiveVendor, creds[0], creds[1]);
+            if (liveOrder.getState() == OrderState.SUBMITTED || liveOrder.getState() == OrderState.ACCEPTED) {
+                brokerExecutionTelemetryService.recordAck(
+                        liveOrder.getId(),
+                        liveOrder.getBrokerOrderId() != null ? liveOrder.getBrokerOrderId().toString() : null,
+                        Instant.now());
+            } else {
+                brokerExecutionTelemetryService.recordRejection(
+                        liveOrder.getId(), liveOrder.getRejectReason());
+            }
             executionTraceService.trace(liveOrder, ExecutionEventType.BROKER_SUBMITTED, Map.of(
                     "brokerVendor", effectiveVendor
             ));

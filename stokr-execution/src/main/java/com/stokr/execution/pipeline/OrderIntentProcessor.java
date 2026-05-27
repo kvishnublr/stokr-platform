@@ -4,6 +4,7 @@ import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
 import com.stokr.common.telemetry.SignalDistributionTelemetryService;
 import com.stokr.execution.broker.BrokerPositionTruthService;
+import com.stokr.execution.safety.OmsSafetyGateService;
 import com.stokr.execution.comparison.ExecutionComparisonService;
 import com.stokr.execution.guard.ExecutionGuardMode;
 import com.stokr.execution.guard.ExecutionGuardViolation;
@@ -70,6 +71,7 @@ public class OrderIntentProcessor {
     private final StrategyExecutionConfigService strategyExecutionConfigService;
     private final BrokerPositionTruthService brokerPositionTruthService;
     private final TraderExecutionModePreferenceService traderExecutionModePreferenceService;
+    private final OmsSafetyGateService omsSafetyGateService;
 
     @Value("${stokr.risk.zone:Asia/Kolkata}")
     private String riskZone;
@@ -124,6 +126,23 @@ public class OrderIntentProcessor {
         // Resolve effective execution mode: strategy config takes precedence over the poll/message mode.
         ExecutionMode mode = resolveEffectiveMode(msg.executionMode(), strategyKey, userId, signal);
         mode = applyTraderExecutionPreference(mode, userId, isSystemUser);
+
+        Instant safetyNow = Instant.now();
+        OmsSafetyGateService.OmsSafetyGateResult safety =
+                omsSafetyGateService.evaluatePreOrder(signal, userId, mode, safetyNow);
+        mode = safety.effectiveMode();
+        if (safety.blocked() && shouldRejectOrder(safety.blockCode())) {
+            log.warn("order.intent.safety_rejected signalId={} code={} message={}",
+                    signal.getId(), safety.blockCode(), safety.blockMessage());
+            riskEventRecorder.record(userId, null, safety.blockCode(), "REJECT", safety.blockMessage());
+            signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), safety.blockCode());
+            return;
+        }
+        if (!safety.reasons().isEmpty()) {
+            log.info("order.intent.safety_adjusted signalId={} mode={} reasons={}",
+                    signal.getId(), mode, safety.reasons());
+        }
+
         log.info("order.intent.mode_resolved signalId={} msgMode={} resolvedMode={} isTestTrade={}",
                 signal.getId(), msg.executionMode(), mode, Boolean.TRUE.equals(signal.getTestTrade()));
 
@@ -169,10 +188,25 @@ public class OrderIntentProcessor {
         }
 
         OmsOrder draft = buildDraftFromSignal(signal, mode, userId);
+        OmsSafetyGateService.OmsSafetyGateResult exposure =
+                omsSafetyGateService.evaluateExposure(draft, userId, safetyNow);
+        if (exposure.blocked()) {
+            log.warn("order.intent.exposure_rejected signalId={} code={}", signal.getId(), exposure.blockCode());
+            riskEventRecorder.record(userId, null, exposure.blockCode(), "REJECT", exposure.blockMessage());
+            signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), exposure.blockCode());
+            return;
+        }
+
         OmsOrder order = orderLifecycleService.createOrGetIdempotent(userId, idempotencyKey, draft);
         if (order.getState() != OrderState.CREATED) {
             log.info("order.idempotent.hit orderId={} state={}", order.getId(), order.getState());
             signalDistributionTelemetryService.recordIdempotentHit(userId);
+            return;
+        }
+
+        if (mode == ExecutionMode.LIVE && !omsSafetyGateService.acquireLiveDedupe(signal, userId, order.getId(), mode, safetyNow)) {
+            orderLifecycleService.transition(order.getId(), OrderState.REJECTED, "DUPLICATE_EXECUTION_KEY");
+            signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "DUPLICATE_EXECUTION_KEY");
             return;
         }
 
@@ -414,6 +448,17 @@ public class OrderIntentProcessor {
             }
         }
         return mode;
+    }
+
+    private static boolean shouldRejectOrder(String blockCode) {
+        if (blockCode == null) {
+            return false;
+        }
+        return switch (blockCode) {
+            case "STALE_SIGNAL", "STALE_SIGNAL_UNKNOWN", "DUPLICATE_EXECUTION_KEY",
+                 "MARKET_CLOSE_NO_NEW_ENTRIES" -> true;
+            default -> false;
+        };
     }
 
     private static ExecutionMode parseMode(String executionMode) {

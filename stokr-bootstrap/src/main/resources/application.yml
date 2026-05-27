@@ -175,7 +175,7 @@ stokr:
     # Per-strategy execution mode: LIVE, PAPER, DRY_RUN, DISABLED
     execution-modes:
       allow-live: ${STOKR_EXECUTION_MODES_ALLOW_LIVE:false}
-      live-validated: ${STOKR_EXECUTION_MODES_LIVE_VALIDATED:}
+      live-validated: ${STOKR_EXECUTION_MODES_LIVE_VALIDATED:GAP_FILL}
       GAP_FILL: ${STOKR_EXEC_MODE_GAP_FILL:PAPER}
       SECTOR_LAGGARD: ${STOKR_EXEC_MODE_SECTOR_LAGGARD:DISABLED}
       NSE_SPIKE_DETECTION: ${STOKR_EXEC_MODE_NSE_SPIKE:DRY_RUN}
@@ -298,6 +298,36 @@ stokr:
     broker-fill-sync:
       enabled: ${STOKR_BROKER_FILL_SYNC_ENABLED:true}
       interval-ms: ${STOKR_BROKER_FILL_SYNC_MS:15000}
+  oms:
+    kill-switch:
+      config-enabled: ${STOKR_OMS_KILL_SWITCH_CONFIG:false}
+      flatten-on-activate: ${STOKR_OMS_KILL_SWITCH_FLATTEN:false}
+    dedupe:
+      window-seconds: ${STOKR_OMS_DEDUPE_WINDOW_SEC:300}
+    exposure:
+      max-daily-loss: ${STOKR_OMS_MAX_DAILY_LOSS:50000}
+      max-loss-per-strategy: ${STOKR_OMS_MAX_STRATEGY_LOSS:20000}
+      max-concurrent-positions: ${STOKR_OMS_MAX_CONCURRENT_POSITIONS:10}
+      max-exposure-per-symbol: ${STOKR_OMS_MAX_EXPOSURE_SYMBOL:100000}
+      max-exposure-per-strategy: ${STOKR_OMS_MAX_EXPOSURE_STRATEGY:150000}
+      max-total-capital-deployed: ${STOKR_OMS_MAX_TOTAL_CAPITAL:500000}
+      max-orders-per-minute: ${STOKR_OMS_MAX_ORDERS_PER_MIN:20}
+      activate-kill-switch-on-breach: ${STOKR_OMS_KILL_ON_BREACH:false}
+    stale-signal:
+      scalp-max-seconds: ${STOKR_OMS_STALE_SCALP_SEC:30}
+      momentum-max-seconds: ${STOKR_OMS_STALE_MOMENTUM_SEC:120}
+      default-max-seconds: ${STOKR_OMS_STALE_DEFAULT_SEC:60}
+    market-close:
+      no-new-entries-after: ${STOKR_OMS_NO_NEW_ENTRIES_AFTER:15:00}
+      flatten-time: ${STOKR_OMS_FLATTEN_TIME:15:20}
+      flatten-cron: ${STOKR_OMS_FLATTEN_CRON:0 20 15 * * MON-FRI}
+      force-close-stale-positions: ${STOKR_OMS_FORCE_CLOSE_STALE:true}
+    broker-disconnect:
+      block-live: ${STOKR_OMS_BROKER_DISCONNECT_BLOCK:true}
+      flatten-on-disconnect: ${STOKR_OMS_BROKER_DISCONNECT_FLATTEN:false}
+      halt-ttl-hours: ${STOKR_OMS_BROKER_HALT_TTL_HOURS:4}
+    live-rollout:
+      default-live-qty: ${STOKR_OMS_LIVE_DEFAULT_QTY:1}
   reconciliation:
     interval-ms: ${STOKR_RECONCILIATION_INTERVAL_MS:30000}
   signal:

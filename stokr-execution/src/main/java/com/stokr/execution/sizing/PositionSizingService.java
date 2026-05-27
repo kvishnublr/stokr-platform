@@ -22,6 +22,9 @@ public class PositionSizingService {
     @Value("${stokr.execution.signal-order-quantity:1}")
     private BigDecimal signalOrderQuantity;
 
+    @Value("${stokr.oms.live-rollout.default-live-qty:1}")
+    private BigDecimal liveDefaultQty;
+
     /**
      * Resolves order quantity when converting a persisted strategy signal into an OMS order.
      * <p>
@@ -39,11 +42,12 @@ public class PositionSizingService {
         if (Boolean.TRUE.equals(testTrade)) {
             return resolveTestTradeQuantity(strategyKey, userId, suggestedQty, marketPrice);
         }
-        if (suggestedQty != null && suggestedQty.compareTo(signalOrderQuantity) != 0) {
+        BigDecimal qty = signalOrderQuantity.min(liveDefaultQty.max(BigDecimal.ONE));
+        if (suggestedQty != null && suggestedQty.compareTo(qty) != 0) {
             log.debug("sizing.signal_fixed strategyKey={} suggested={} applied={}",
-                    strategyKey, suggestedQty, signalOrderQuantity);
+                    strategyKey, suggestedQty, qty);
         }
-        return signalOrderQuantity;
+        return qty;
     }
 
     private BigDecimal resolveTestTradeQuantity(
