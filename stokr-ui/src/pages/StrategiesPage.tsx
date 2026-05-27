@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
 import { TRADER_EXECUTION_MODE_QUERY_KEY, invalidateTraderExecutionModeQueries } from "../lib/traderExecutionMode";
+import { AssetClassTabs, normalizeStrategyAssetClass, type AssetClassTabId } from "../components/ds/AssetClassTabs";
 import { EmptyState } from "../components/ds/EmptyState";
 import { GlassPanel } from "../components/ds/GlassPanel";
 import { SkeletonCard } from "../components/ds/SkeletonLoader";
@@ -68,6 +69,7 @@ export function StrategiesPage() {
   const isAdmin = hasRole("ROLE_ADMIN");
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const [qText, setQText] = useState("");
+  const [assetTab, setAssetTab] = useState<AssetClassTabId>("ALL");
 
   const catalogQuery = useQuery({
     queryKey: ["strategy-catalog"],
@@ -239,7 +241,17 @@ export function StrategiesPage() {
     });
   }, [catalogQuery.data, runtimeQuery.data, instancesQuery.data, signalsQuery.data, adminSignalsQuery.data, catalogSignalStatsQuery.data, isAdmin, readinessQuery.data, modeQuery.data]);
 
+  const assetCounts = useMemo(() => {
+    const counts: Partial<Record<AssetClassTabId, number>> = { ALL: rows.length };
+    for (const row of rows) {
+      const ac = normalizeStrategyAssetClass(row.assetClass);
+      counts[ac] = (counts[ac] ?? 0) + 1;
+    }
+    return counts;
+  }, [rows]);
+
   const filtered = rows.filter((s) => {
+    if (assetTab !== "ALL" && normalizeStrategyAssetClass(s.assetClass) !== assetTab) return false;
     const t = qText.trim().toLowerCase();
     if (!t) return true;
     return s.code.toLowerCase().includes(t) || s.name.toLowerCase().includes(t) || (s.description ?? "").toLowerCase().includes(t);
@@ -291,15 +303,21 @@ export function StrategiesPage() {
         <div>
           <h1 className={isLight ? "text-2xl font-semibold text-foreground" : "text-2xl font-semibold text-white"}>Strategies</h1>
           <p className={isLight ? "text-sm text-muted-foreground" : "text-sm text-neutral-400"}>
-            Unified strategy execution: Backtest, Paper, Live.
+            Unified strategy execution by asset class — Backtest, Paper, Live.
           </p>
         </div>
         <div className={isLight ? "rounded-lg border border-border bg-card px-3 py-1 text-xs text-muted-foreground" : "rounded-lg border border-neutral-700 px-3 py-1 text-xs text-neutral-300"}>
-          {filtered.length} visible
+          {filtered.length} visible{assetTab !== "ALL" ? ` · ${assetTab === "EQUITY" ? "Cash" : assetTab.charAt(0) + assetTab.slice(1).toLowerCase()}` : ""}
         </div>
       </div>
 
-      <GlassPanel variant={isLight ? "light" : "dark"} className="p-3">
+      <GlassPanel variant={isLight ? "light" : "dark"} className="space-y-3 p-3">
+        <AssetClassTabs
+          active={assetTab}
+          onChange={(id) => setAssetTab(id)}
+          counts={assetCounts}
+          variant={isLight ? "light" : "dark"}
+        />
         <div className={isLight ? "flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2" : "flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2"}>
           <Search className="h-4 w-4 text-muted-foreground" />
           <input
@@ -322,7 +340,11 @@ export function StrategiesPage() {
       ) : catalogQuery.isError ? (
         <EmptyState icon={Search} title="Could not load strategies" description="Check API and refresh." />
       ) : filtered.length === 0 ? (
-        <EmptyState icon={Search} title="No strategy matches" description="Adjust filter and retry." />
+        <EmptyState
+          icon={Search}
+          title={assetTab === "ALL" ? "No strategy matches" : `No ${assetTab === "EQUITY" ? "cash" : assetTab.toLowerCase()} strategies`}
+          description={assetTab === "ALL" ? "Adjust filter and retry." : "Try another asset class tab or clear the search filter."}
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((s, idx) => (

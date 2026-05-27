@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Clock3, Shield, Sparkles } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { ASSET_CLASS_TABS, normalizeStrategyAssetClass } from "./AssetClassTabs";
 import { RiskBadge } from "./RiskBadge";
 
 export type StrategyCatalogCard = {
@@ -11,6 +12,8 @@ export type StrategyCatalogCard = {
   riskLevel: string;
   subscribed: boolean;
   subscriptionEnabled: boolean;
+  assetClass?: string | null;
+  segment?: string | null;
   runtimeTag?: "RUNNING" | "PAUSED" | "BLOCKED" | "DEGRADED" | "NO_DATA" | "OFFLINE";
   runtimeNote?: string;
   executionMode?: "PAPER" | "LIVE";
@@ -49,6 +52,7 @@ export function StrategyCard({
 }) {
   const isLight = variant === "light";
   const busy = !!actionBusy;
+  const assetMeta = ASSET_CLASS_TABS.find((t) => t.id === normalizeStrategyAssetClass(strategy.assetClass));
   const actions: Array<{ id: ActionId; label: string }> = [
     { id: "BACKTEST", label: "Backtest" },
     { id: "PAPER", label: "Paper" },
@@ -75,6 +79,11 @@ export function StrategyCard({
           <div className="min-w-0">
             <div className={cn("truncate text-base font-semibold", isLight ? "text-foreground" : "text-white")}>{strategy.name}</div>
             <div className={cn("truncate font-mono text-[11px]", isLight ? "text-muted-foreground" : "text-neutral-400")}>{strategy.code}</div>
+            {assetMeta ? (
+              <span className={cn("mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", isLight ? "bg-muted text-muted-foreground" : "bg-neutral-800 text-neutral-400")}>
+                {assetMeta.label}{strategy.segment ? ` · ${strategy.segment}` : ""}
+              </span>
+            ) : null}
           </div>
         </div>
         <RiskBadge level={strategy.riskLevel} variant={variant} />
