@@ -1,6 +1,15 @@
 import { parseMoney } from "./moneyUtils";
+import { istTodayYmd, IST_ZONE } from "./dateUtils";
 
 export type IntradaySignalRow = Record<string, unknown>;
+
+/** True when timestamp falls on today's IST calendar day. */
+export function isTodayIst(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return false;
+  return d.toLocaleDateString("en-CA", { timeZone: IST_ZONE }) === istTodayYmd();
+}
 
 export function bareSymbol(symbol: unknown): string {
   const raw = String(symbol ?? "").trim();
