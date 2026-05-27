@@ -135,6 +135,8 @@ function ModeChip({ mode }: { mode: string | null }) {
 const OUTCOME_CFG: Record<string, { label: string; cls: string; dot: string }> = {
   TARGET_HIT:     { label: "Target Hit",     cls: "border-emerald-200 bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
   STOPLOSS_HIT:   { label: "SL Hit",         cls: "border-rose-200 bg-rose-50 text-rose-700",         dot: "bg-rose-500" },
+  SL_HIT:         { label: "SL Hit",         cls: "border-rose-200 bg-rose-50 text-rose-700",         dot: "bg-rose-500" },
+  PENDING:        { label: "Pending",        cls: "border-slate-200 bg-slate-100 text-slate-600",     dot: "bg-slate-400" },
   RUNNING:        { label: "Running",         cls: "border-sky-200 bg-sky-50 text-sky-700",            dot: "bg-sky-500" },
   PARTIAL_TARGET: { label: "Partial",         cls: "border-orange-200 bg-orange-50 text-orange-700",   dot: "bg-orange-400" },
   BREAKEVEN_EXIT: { label: "Breakeven",       cls: "border-blue-200 bg-blue-50 text-blue-700",         dot: "bg-blue-400" },
@@ -146,10 +148,9 @@ const OUTCOME_CFG: Record<string, { label: string; cls: string; dot: string }> =
 };
 
 function OutcomeChip({ status }: { status: string | null }) {
-  if (status === "PENDING") {
+  if (!status) {
     return <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">Pending</span>;
   }
-  if (!status) return <span className="text-slate-300 text-[11px]">—</span>;
   const cfg = OUTCOME_CFG[status] ?? { label: status, cls: "border-slate-200 bg-slate-50 text-slate-500", dot: "bg-slate-400" };
   return (
     <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-semibold ${cfg.cls}`}>
@@ -396,6 +397,11 @@ export function AdminSignalsPage() {
   const [provenanceTab, setProvenanceTab] = useState<"PROD" | "REPLAY_LAB">(
     provenanceFromUrl === "replay" ? "REPLAY_LAB" : "PROD",
   );
+
+  useEffect(() => {
+    setIncludeReplayLab(provenanceTab === "REPLAY_LAB");
+    setPage(0);
+  }, [provenanceTab]);
   const [viewMode, setViewMode] = useState<"stream" | "grid">("stream");
   const [showDetailGrid, setShowDetailGrid] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -619,10 +625,31 @@ export function AdminSignalsPage() {
 
   const rowOutcomeBg = (outcome: string | null) => {
     if (outcome === "TARGET_HIT") return "bg-emerald-50/50";
-    if (outcome === "STOPLOSS_HIT") return "bg-rose-50/50";
-    if (outcome === "RUNNING") return "bg-sky-50/40";
+    if (outcome === "STOPLOSS_HIT" || outcome === "SL_HIT") return "bg-rose-50/50";
+    if (outcome === "RUNNING" || outcome === "PENDING" || !outcome) return "bg-sky-50/40";
     return "";
   };
+
+  const outcomeFilterLabel = outcomeStatus === "ALL"
+    ? null
+    : outcomeStatus === "RUNNING"
+      ? "Active (pending/running)"
+      : outcomeStatus === "STOPLOSS_HIT"
+        ? "SL hit"
+        : outcomeStatus.replace(/_/g, " ").toLowerCase();
+
+  const emptyStateMessage = useMemo(() => {
+    if (q.isError) return "Failed to load signals — try Refresh";
+    if (outcomeStatus !== "ALL") {
+      return `No ${outcomeFilterLabel ?? "matching"} signals for ${streamDateLabel}. Run Track outcomes to evaluate SL/target hits.`;
+    }
+    if (symbol || strategyFilter || signalType !== "ALL") {
+      return "No signals match the current filters";
+    }
+    return provenanceTab === "REPLAY_LAB"
+      ? "No replay or lab signals in this window"
+      : "No live or paper signals in this window";
+  }, [q.isError, outcomeStatus, outcomeFilterLabel, streamDateLabel, symbol, strategyFilter, signalType, provenanceTab]);
 
   const inputCls = cn(
     "h-9 rounded-xl border px-3 text-xs outline-none transition focus:ring-2 focus:ring-blue-500/30",
@@ -660,6 +687,22 @@ export function AdminSignalsPage() {
           >
             <Zap className={cn("h-3.5 w-3.5", activatePipeline.isPending && "animate-pulse")} />
             {activatePipeline.isPending ? "Activating…" : "Start flow"}
+          </button>
+          <button
+            type="button"
+            disabled={trackOutcomes.isPending}
+            onClick={() => trackOutcomes.mutate()}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-60",
+              isLight ? "border-sky-300 bg-sky-50 text-sky-800" : "border-sky-500/40 bg-sky-500/10 text-sky-200",
+            )}
+          >
+            <Target className={cn("h-3.5 w-3.5", trackOutcomes.isPending && "animate-pulse")} />
+            {trackOutcomes.isPending
+              ? "Tracking…"
+              : trackOutcomes.isSuccess && trackOutcomes.data?.processed != null
+                ? `Tracked ${trackOutcomes.data.processed}`
+                : "Track outcomes"}
           </button>
           <button type="button" onClick={() => void q.refetch()} className={cn("rounded-xl border px-3 py-2 text-xs font-semibold", isLight ? "border-neutral-300 bg-white" : "border-neutral-700 bg-neutral-900 text-neutral-200")}>
             <RefreshCw className={cn("inline h-3.5 w-3.5", q.isFetching && "animate-spin")} /> Refresh
@@ -703,17 +746,6 @@ export function AdminSignalsPage() {
               {tab === "PROD" ? "Live + Paper" : "Replay + Lab"}
             </button>
           ))}
-          <button
-            type="button"
-            onClick={() => {
-              setIncludeReplayLab(provenanceTab === "REPLAY_LAB");
-              setPage(0);
-              void q.refetch();
-            }}
-            className={cn("ml-auto text-[11px] underline-offset-2 hover:underline", isLight ? "text-neutral-500" : "text-neutral-400")}
-          >
-            Sync API filter
-          </button>
         </div>
 
         {selectedRow ? (
@@ -800,7 +832,7 @@ export function AdminSignalsPage() {
               <option value="ALL">All outcomes</option>
               <option value="TARGET_HIT">Target hit</option>
               <option value="STOPLOSS_HIT">SL hit</option>
-              <option value="RUNNING">Running</option>
+              <option value="RUNNING">Active (pending/running)</option>
               <option value="EXPIRED">Expired</option>
             </select>
             <div className="ml-auto flex gap-2">
@@ -817,7 +849,7 @@ export function AdminSignalsPage() {
         <AdminSection
           isLight={isLight}
           title={dateViewMode === "today" ? "Today's live signals" : "Historical signals"}
-          subtitle={`${streamDateLabel} · ${filteredRows.length} visible · ${total.toLocaleString()} matched`}
+          subtitle={`${streamDateLabel}${outcomeFilterLabel ? ` · ${outcomeFilterLabel}` : ""} · ${filteredRows.length} visible · ${total.toLocaleString()} matched`}
         >
           {dateViewMode === "range" && !apiDateRange ? (
             <div className={cn("rounded-2xl border border-dashed py-16 text-center", isLight ? "border-neutral-300" : "border-neutral-800")}>
@@ -831,7 +863,17 @@ export function AdminSignalsPage() {
           ) : filteredRows.length === 0 ? (
             <div className={cn("rounded-2xl border border-dashed py-16 text-center", isLight ? "border-neutral-300" : "border-neutral-800")}>
               <AlertTriangle className="mx-auto mb-2 h-6 w-6 text-amber-400" />
-              <p className="text-sm font-medium">No signals in this provenance lane</p>
+              <p className="text-sm font-medium">{emptyStateMessage}</p>
+              {outcomeStatus !== "ALL" && (
+                <button
+                  type="button"
+                  disabled={trackOutcomes.isPending}
+                  onClick={() => trackOutcomes.mutate()}
+                  className={cn("mt-3 rounded-lg border px-3 py-1.5 text-xs font-semibold", isLight ? "border-sky-300 bg-sky-50 text-sky-800" : "border-sky-500/40 text-sky-200")}
+                >
+                  {trackOutcomes.isPending ? "Tracking outcomes…" : "Run Track outcomes"}
+                </button>
+              )}
             </div>
           ) : (
             <div className={cn(viewMode === "stream" ? "flex flex-col gap-3" : "grid gap-3 sm:grid-cols-2 xl:grid-cols-3")}>

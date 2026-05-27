@@ -79,8 +79,7 @@ public class AdminSignalQueryService {
             }
             if (p.outcomeStatus() != null && !p.outcomeStatus().isBlank()
                     && !"ALL".equalsIgnoreCase(p.outcomeStatus())) {
-                predicates.add(cb.equal(cb.upper(root.get("outcomeStatus")),
-                        p.outcomeStatus().trim().toUpperCase()));
+                addOutcomePredicate(predicates, cb, root, p.outcomeStatus().trim());
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
@@ -147,8 +146,11 @@ public class AdminSignalQueryService {
         BigDecimal pnl = null;
         boolean isClosed = s.getOutcomeStatus() != null && (
                 "TARGET_HIT".equalsIgnoreCase(s.getOutcomeStatus())
+             || "STOPLOSS_HIT".equalsIgnoreCase(s.getOutcomeStatus())
              || "SL_HIT".equalsIgnoreCase(s.getOutcomeStatus())
+             || "BREAKEVEN_EXIT".equalsIgnoreCase(s.getOutcomeStatus())
              || "PRESSURE_EXIT".equalsIgnoreCase(s.getOutcomeStatus())
+             || "EXPIRED".equalsIgnoreCase(s.getOutcomeStatus())
              || "CLOSED".equalsIgnoreCase(s.getOutcomeStatus()));
 
         if (isClosed && s.getRealizedPnl() != null) {
@@ -221,6 +223,30 @@ public class AdminSignalQueryService {
     private static Double toDouble(Object v) {
         if (v == null) return null;
         return ((Number) v).doubleValue();
+    }
+
+    /**
+     * Maps UI outcome filters to DB values. New signals start as PENDING/null; the tracker
+     * promotes them to RUNNING or terminal states (TARGET_HIT, STOPLOSS_HIT, EXPIRED, …).
+     */
+    private static void addOutcomePredicate(
+            List<Predicate> predicates,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            jakarta.persistence.criteria.Root<StrategySignalEntity> root,
+            String outcomeFilter) {
+        String normalized = outcomeFilter.toUpperCase();
+        switch (normalized) {
+            case "RUNNING", "ACTIVE", "OPEN", "PENDING" -> predicates.add(cb.or(
+                    cb.isNull(root.get("outcomeStatus")),
+                    cb.equal(cb.upper(root.get("outcomeStatus")), "PENDING"),
+                    cb.equal(cb.upper(root.get("outcomeStatus")), "RUNNING")
+            ));
+            case "STOPLOSS_HIT", "SL_HIT" -> predicates.add(cb.or(
+                    cb.equal(cb.upper(root.get("outcomeStatus")), "STOPLOSS_HIT"),
+                    cb.equal(cb.upper(root.get("outcomeStatus")), "SL_HIT")
+            ));
+            default -> predicates.add(cb.equal(cb.upper(root.get("outcomeStatus")), normalized));
+        }
     }
 
     private static Instant startOfToday() {

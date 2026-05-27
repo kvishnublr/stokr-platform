@@ -134,7 +134,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
                 AVG(confidence_score) FILTER (WHERE created_at >= :since)                                     AS avg_confidence,
                 COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'TARGET_HIT')::bigint        AS target_hit,
                 COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'STOPLOSS_HIT')::bigint      AS sl_hit,
-                COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'RUNNING')::bigint           AS running_count,
+                COUNT(*) FILTER (WHERE created_at >= :since AND (outcome_status IS NULL OR outcome_status IN ('PENDING', 'RUNNING')))::bigint AS running_count,
                 COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'EXPIRED')::bigint           AS expired_count,
                 COUNT(*)::bigint                                                                               AS total_all_time
             FROM strategy_signals

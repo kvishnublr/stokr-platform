@@ -125,7 +125,14 @@ public class SignalOutcomeTrackerService {
             try {
                 signalPriceEnrichmentService.enrichIfMissing(sig,
                         sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt());
-                if (evaluateHistorical(sig, now)) updated++;
+                String prevStatus = sig.getOutcomeStatus();
+                if (evaluateHistorical(sig, now)) {
+                    updated++;
+                    if (isTerminalOutcome(sig.getOutcomeStatus())
+                            && !java.util.Objects.equals(prevStatus, sig.getOutcomeStatus())) {
+                        broadcastOutcomeChange(sig);
+                    }
+                }
             } catch (Exception ex) {
                 log.debug("signal.outcome.eval_error signalId={} {}", sig.getId(), ex.getMessage());
             }
@@ -448,6 +455,16 @@ public class SignalOutcomeTrackerService {
             sig.setRealizedPnl(sig.getUnrealizedPnl());
             sig.setUnrealizedPnl(null);
         }
+    }
+
+    private static boolean isTerminalOutcome(String status) {
+        if (status == null || status.isBlank()) {
+            return false;
+        }
+        return switch (status.toUpperCase()) {
+            case "TARGET_HIT", "STOPLOSS_HIT", "SL_HIT", "BREAKEVEN_EXIT", "EXPIRED", "PRESSURE_EXIT" -> true;
+            default -> false;
+        };
     }
 
     private void broadcastOutcomeChange(StrategySignalEntity sig) {
