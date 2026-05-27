@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { api } from "../api/client";
 import { DataGrid } from "../components/data/DataGrid";
 import { useUiThemeStore } from "../state/uiTheme";
-import { fmtDateTime } from "../lib/dateUtils";
+import { fmtDateTime, istTodayApiRange, istTodayYmd } from "../lib/dateUtils";
 import { formatInr, parseMoney } from "../lib/moneyUtils";
 import { cn } from "../lib/utils";
 import {
@@ -85,15 +85,19 @@ export function ExecutionsPage(props?: { embedded?: boolean }) {
     staleTime: 30_000,
   });
   const executionMode = modeQ.data ?? "PAPER";
+  const todayYmd = istTodayYmd();
+  const todayRange = useMemo(() => istTodayApiRange(), [todayYmd]);
 
   const q = useQuery({
-    queryKey: ["oms-execs", page, executionMode],
+    queryKey: ["oms-execs", page, executionMode, todayYmd],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("page", String(page));
       params.set("size", "25");
       params.set("sort", "createdAt,desc");
       params.set("executionMode", executionMode);
+      params.set("from", todayRange.from);
+      params.set("to", todayRange.to);
       const res = await api.get(`/api/oms/executions?${params.toString()}`);
       return res.data?.data as PageResponse<ExecRow>;
     },
@@ -227,18 +231,18 @@ export function ExecutionsPage(props?: { embedded?: boolean }) {
   const grid = (
     <>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <AnimatedKpiCard label="Fills (page)" loading={q.isLoading} value={String(stats.count)} sublabel={`Mode · ${executionMode}`} icon={Activity} accent="bg-sky-500" />
+        <AnimatedKpiCard label="Fills (today)" loading={q.isLoading} value={String(stats.count)} sublabel={`${todayYmd} IST · ${executionMode}`} icon={Activity} accent="bg-sky-500" />
         <AnimatedKpiCard label="Filled qty" loading={q.isLoading} value={String(stats.filledQty)} accent="bg-indigo-400" />
         <AnimatedKpiCard label="Avg latency" loading={q.isLoading} value={stats.avgLatency != null ? `${Math.round(stats.avgLatency)} ms` : "—"} icon={Timer} accent="bg-violet-400" />
         <AnimatedKpiCard label="Avg slippage" loading={q.isLoading} value={stats.avgSlip != null ? `${stats.avgSlip.toFixed(2)} bps` : "—"} icon={TrendingDown} accent="bg-amber-400" />
       </div>
 
       <PremiumPanel
-        title={`Execution fills · ${executionMode}`}
+        title={`Execution fills · ${executionMode} · today`}
         action={
           <div className="flex items-center gap-2 text-[11px] text-neutral-500">
             <Gauge className="h-3.5 w-3.5" />
-            {q.data?.totalElements != null ? `${q.data.totalElements} total fills` : `Page ${page + 1}`}
+            {q.data?.totalElements != null ? `${q.data.totalElements} fills today` : `${todayYmd} IST`}
           </div>
         }
       >
@@ -288,7 +292,7 @@ export function ExecutionsPage(props?: { embedded?: boolean }) {
   return (
     <TraderPageShell
       title="Executions"
-      subtitle="Fill-level diagnostics with latency, slippage, spread, and broker execution IDs for your selected mode."
+      subtitle={`Fill-level diagnostics for today (${todayYmd} IST) — latency, slippage, spread, and broker execution IDs.`}
     >
       {grid}
     </TraderPageShell>
