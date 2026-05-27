@@ -27,7 +27,6 @@ declare -A SERVICES=(
 
 check_service() {
     local service=$1
-    local cmd=$2
 
     # Check if container exists and is running
     if ! docker ps --filter name="$service" --format "{{.Names}}" | grep -q "$service"; then

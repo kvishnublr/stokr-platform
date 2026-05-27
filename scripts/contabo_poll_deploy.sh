@@ -26,5 +26,5 @@ log "New commits on origin/$BRANCH ($LOCAL -> $REMOTE)"
 git checkout "$BRANCH"
 git pull origin "$BRANCH" >>"$LOG" 2>&1
 chmod +x ./deploy.sh ./health-check.sh 2>/dev/null || true
-./deploy.sh >>"$LOG" 2>&1
+./deploy.sh api ui >>"$LOG" 2>&1
 log "Deploy finished at $(git rev-parse --short HEAD)"

@@ -24,9 +24,11 @@ echo "==> Deploy API + UI"
 ./deploy.sh api ui
 
 echo "==> Health"
-./health-check.sh status || true
+./health-check.sh check || true
 curl -sf http://127.0.0.1:8080/actuator/health && echo
 curl -sf -o /dev/null -w "UI HTTP %{http_code}\n" http://127.0.0.1:3000/ || true
+UI_BUNDLE="$(curl -sf http://127.0.0.1:3000/ | grep -oE 'assets/index-[^"]+\.js' | head -1 || true)"
+echo "==> UI bundle: ${UI_BUNDLE:-unknown}"
 
 echo "==> Verify release (local)"
 chmod +x ./scripts/verify_release_deploy.sh
