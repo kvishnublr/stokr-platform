@@ -134,6 +134,7 @@ public class ZerodhaConnectionService {
             }
             JsonNode data = root.path("data");
             String accessToken = data.path("access_token").asText(null);
+            String refreshToken = data.path("refresh_token").asText(null);
             String kiteUserId = data.path("user_id").asText(null);
             if (accessToken == null || accessToken.isBlank()) {
                 throw new BadRequestException("Missing access_token from Zerodha");
@@ -153,7 +154,10 @@ public class ZerodhaConnectionService {
             account.setHealthStatus("HEALTHY");
             account.setBrokerUserId(kiteUserId);
             account.setAccessTokenEnc(encryptedToken);
-            account.setTokenExpiresAt(Instant.now().plus(12, ChronoUnit.HOURS));
+            if (refreshToken != null && !refreshToken.isBlank()) {
+                account.setRefreshTokenEnc(fieldCipher.encrypt(refreshToken));
+            }
+            account.setTokenExpiresAt(Instant.now().plus(20, ChronoUnit.HOURS));
             account.setLastSyncAt(Instant.now());
             BrokerAccount saved = brokerAccountRepository.save(account);
 
