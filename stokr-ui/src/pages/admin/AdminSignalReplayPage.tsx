@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle, Clock, Database, Play, RefreshCw } from "lucide-react";
 import { api, parseAxiosMessage } from "../../api/client";
+import { fetchStrategyCatalogKeys } from "../../api/strategyCatalog";
 import { cn } from "../../lib/utils";
 import { toneBannerClasses, toneButtonClasses, toneChipClasses } from "../../lib/statusTone";
 import { useUiThemeStore } from "../../state/uiTheme";
@@ -39,15 +40,9 @@ export function AdminSignalReplayPage() {
   const [replayStarted, setReplayStarted] = useState<ReplayStartResponse | null>(null);
   const [trackStarted, setTrackStarted] = useState(false);
 
-  const catalogQ = useQuery<StrategyCatalogItem[]>({
+  const catalogQ = useQuery({
     queryKey: ["strategy-catalog-keys"],
-    queryFn: async () => {
-      const r = await api.get("/api/admin/strategy-catalog");
-      return (r.data?.data ?? []).map((c: { strategyKey: string; displayName?: string }) => ({
-        strategyKey: c.strategyKey,
-        displayName: c.displayName ?? c.strategyKey,
-      }));
-    },
+    queryFn: fetchStrategyCatalogKeys,
     staleTime: 60_000,
   });
 
