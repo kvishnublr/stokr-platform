@@ -5,6 +5,7 @@ import com.stokr.intraday.domain.FuturesSignal;
 import com.stokr.intraday.service.FuturesSignalService;
 import com.stokr.intraday.service.FuturesTradingExecutor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -16,12 +17,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Futures Trading Scheduler (S3 & S7)
- *
- * Runs detection and paper trading monitoring automatically during market hours
+ * LEGACY — disabled by default. Replaced by catalog-driven S3VwapRetestSignalGenerator + S7RangeFadeSignalGenerator.
+ * Set stokr.legacy.futures.scheduler.enabled=true to re-enable.
  */
 @Service
 @Slf4j
+@ConditionalOnProperty(name = "stokr.legacy.futures.scheduler.enabled", havingValue = "true", matchIfMissing = false)
 public class FuturesScheduler {
 
     private final FuturesSignalService futuresSignalService;
