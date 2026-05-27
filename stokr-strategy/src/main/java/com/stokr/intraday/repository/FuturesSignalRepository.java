@@ -1,6 +1,7 @@
 package com.stokr.intraday.repository;
 
 import com.stokr.intraday.domain.FuturesSignal;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -32,11 +33,9 @@ public interface FuturesSignalRepository extends JpaRepository<FuturesSignal, Lo
     @Query("SELECT f FROM FuturesSignal f WHERE f.timeDetected >= :since ORDER BY f.timeDetected DESC")
     List<FuturesSignal> findRecentSignals(@Param("since") Instant since);
 
-    // Get today's stats
-    @Query("SELECT f FROM FuturesSignal f WHERE DATE(f.createdAt) = CURDATE() ORDER BY f.createdAt DESC")
-    List<FuturesSignal> findTodaysSignals();
+    @Query("SELECT f FROM FuturesSignal f WHERE f.createdAt >= :start AND f.createdAt < :end ORDER BY f.createdAt DESC")
+    List<FuturesSignal> findSignalsCreatedBetween(@Param("start") Instant start, @Param("end") Instant end);
 
-    // Get closed signals (wins/losses)
-    @Query("SELECT f FROM FuturesSignal f WHERE f.outcomeType IN ('WIN', 'LOSS') AND f.strategyName = :strategy ORDER BY f.timeClosedAt DESC LIMIT :limit")
-    List<FuturesSignal> findRecentOutcomes(@Param("strategy") String strategy, @Param("limit") int limit);
+    @Query("SELECT f FROM FuturesSignal f WHERE f.outcomeType IN ('WIN', 'LOSS') AND f.strategyName = :strategy ORDER BY f.timeClosedAt DESC")
+    List<FuturesSignal> findRecentOutcomes(@Param("strategy") String strategy, Pageable pageable);
 }

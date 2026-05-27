@@ -1,6 +1,7 @@
 package com.stokr.intraday.repository;
 
 import com.stokr.intraday.domain.EquitySignal;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -40,13 +41,11 @@ public interface EquitySignalRepository extends JpaRepository<EquitySignal, Long
     @Query("SELECT e FROM EquitySignal e WHERE e.timeDetected >= :since ORDER BY e.timeDetected DESC")
     List<EquitySignal> findRecentSignals(@Param("since") Instant since);
 
-    // Get today's signals
-    @Query("SELECT e FROM EquitySignal e WHERE DATE(e.createdAt) = CURDATE() ORDER BY e.createdAt DESC")
-    List<EquitySignal> findTodaysSignals();
+    @Query("SELECT e FROM EquitySignal e WHERE e.createdAt >= :start AND e.createdAt < :end ORDER BY e.createdAt DESC")
+    List<EquitySignal> findSignalsCreatedBetween(@Param("start") Instant start, @Param("end") Instant end);
 
-    // Get closed signals (wins/losses)
-    @Query("SELECT e FROM EquitySignal e WHERE e.outcomeType IN ('WIN', 'LOSS') ORDER BY e.timeClosedAt DESC LIMIT :limit")
-    List<EquitySignal> findRecentOutcomes(@Param("limit") int limit);
+    @Query("SELECT e FROM EquitySignal e WHERE e.outcomeType IN ('WIN', 'LOSS') ORDER BY e.timeClosedAt DESC")
+    List<EquitySignal> findRecentOutcomes(Pageable pageable);
 
     // Get signals by tier
     @Query("SELECT e FROM EquitySignal e WHERE e.tier = :tier AND e.executionStatus = 'PENDING' ORDER BY e.qualityScore DESC")

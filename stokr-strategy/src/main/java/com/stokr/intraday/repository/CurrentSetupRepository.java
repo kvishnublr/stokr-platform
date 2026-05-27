@@ -1,6 +1,7 @@
 package com.stokr.intraday.repository;
 
 import com.stokr.intraday.domain.CurrentSetup;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -22,8 +23,8 @@ public interface CurrentSetupRepository extends JpaRepository<CurrentSetup, Long
      * Used for ranking board display (top 12)
      */
     @Query("SELECT cs FROM CurrentSetup cs WHERE cs.isActive = true AND cs.expiresAt > CURRENT_TIMESTAMP " +
-            "ORDER BY cs.qualityScore DESC LIMIT :limit")
-    List<CurrentSetup> findTopActiveSetups(@Param("limit") int limit);
+            "ORDER BY cs.qualityScore DESC")
+    List<CurrentSetup> findTopActiveSetups(Pageable pageable);
 
     /**
      * Get all active setups for a specific stock

@@ -9,12 +9,16 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 public class FuturesSignalService {
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final FuturesSignalRepository futuresSignalRepository;
     private final S3VWAPDetector s3Detector;
@@ -186,7 +190,9 @@ public class FuturesSignalService {
      * Get daily statistics
      */
     public FuturesDailyStats getDailyStats() {
-        List<FuturesSignal> todaysSignals = futuresSignalRepository.findTodaysSignals();
+        Instant startOfDay = Instant.now().atZone(IST).truncatedTo(ChronoUnit.DAYS).toInstant();
+        Instant endOfDay = startOfDay.plus(1, ChronoUnit.DAYS);
+        List<FuturesSignal> todaysSignals = futuresSignalRepository.findSignalsCreatedBetween(startOfDay, endOfDay);
 
         long totalTrades = todaysSignals.stream()
                 .filter(s -> s.getOutcomeType() != null)

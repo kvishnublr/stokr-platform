@@ -8,12 +8,16 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 public class ADVCashService {
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final EquitySignalRepository equitySignalRepository;
     private final ADVCashDetector advCashDetector;
@@ -213,7 +217,9 @@ public class ADVCashService {
      * Get daily statistics
      */
     public ADVCashDailyStats getDailyStats() {
-        List<EquitySignal> todaysSignals = equitySignalRepository.findTodaysSignals();
+        Instant startOfDay = Instant.now().atZone(IST).truncatedTo(ChronoUnit.DAYS).toInstant();
+        Instant endOfDay = startOfDay.plus(1, ChronoUnit.DAYS);
+        List<EquitySignal> todaysSignals = equitySignalRepository.findSignalsCreatedBetween(startOfDay, endOfDay);
 
         long totalTrades = todaysSignals.stream()
                 .filter(s -> s.getOutcomeType() != null)

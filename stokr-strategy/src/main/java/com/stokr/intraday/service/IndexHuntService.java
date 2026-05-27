@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -26,6 +27,8 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class IndexHuntService {
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final IndexHuntDetector indexHuntDetector;
     private final IndexSignalRepository indexSignalRepository;
@@ -224,7 +227,9 @@ public class IndexHuntService {
      * Get daily statistics for today
      */
     public IndexHuntDailyStats getDailyStats() {
-        List<IndexSignal> closedToday = indexSignalRepository.findTodaysClosedSignals();
+        Instant startOfDay = Instant.now().atZone(IST).truncatedTo(ChronoUnit.DAYS).toInstant();
+        Instant endOfDay = startOfDay.plus(1, ChronoUnit.DAYS);
+        List<IndexSignal> closedToday = indexSignalRepository.findClosedSignalsBetween(startOfDay, endOfDay);
 
         long wins = closedToday.stream()
                 .filter(s -> "WIN".equals(s.getOutcomeType()))

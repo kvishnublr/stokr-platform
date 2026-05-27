@@ -9,10 +9,6 @@ import org.springframework.stereotype.Repository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-
-/**
- * Repository for INDEX HUNT signals (NIFTY/BANKNIFTY options)
- */
 @Repository
 public interface IndexSignalRepository extends JpaRepository<IndexSignal, Long> {
 
@@ -62,12 +58,12 @@ public interface IndexSignalRepository extends JpaRepository<IndexSignal, Long> 
                                          @Param("withinMinutes") Instant withinMinutes);
 
     /**
-     * Get signal statistics for a day (P&L, win rate, etc.)
+     * Closed signals within an IST day window (caller supplies [start, end) bounds).
      */
     @Query("SELECT s FROM IndexSignal s WHERE s.closedAt IS NOT NULL " +
-            "AND DATE(s.closedAt) = CURRENT_DATE " +
+            "AND s.closedAt >= :start AND s.closedAt < :end " +
             "ORDER BY s.closedAt DESC")
-    List<IndexSignal> findTodaysClosedSignals();
+    List<IndexSignal> findClosedSignalsBetween(@Param("start") Instant start, @Param("end") Instant end);
 
     /**
      * Find signals by outcome type (WIN/LOSS/EXPIRED)
