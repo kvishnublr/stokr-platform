@@ -103,9 +103,13 @@ const stagger = {
 };
 
 const rowIn = {
-  hidden: { opacity: 0, y: 8 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] } },
+  hidden: { opacity: 0, x: -12 },
+  show: { opacity: 1, x: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
 };
+
+function liveLtpKey(ltp: number | null): string {
+  return ltp != null ? ltp.toFixed(2) : "na";
+}
 
 function syncTone(state: string) {
   const s = (state || "").toUpperCase();
@@ -505,14 +509,13 @@ export function IntradayCockpitPage() {
         </div>
       </motion.header>
 
-      {/* Main workspace */}
-      <div className="relative mx-auto grid max-w-[1680px] grid-cols-12 gap-5 p-4 lg:gap-6 lg:p-8">
-        {/* Zone 01 — Strategy scanner */}
-        <aside className="col-span-12 space-y-3 xl:col-span-3">
-          <ZoneHeader index="01" title="Strategy scanner" subtitle="Tap to filter the signal board" icon={Zap} isLight={isLight} />
+      {/* Main workspace — strategy rail + full-width matrix */}
+      <div className="relative mx-auto grid max-w-[1760px] grid-cols-12 gap-5 p-4 lg:gap-6 lg:p-8">
+        <aside className="col-span-12 space-y-3 xl:col-span-2">
+          <ZoneHeader index="01" title="Strategies" subtitle="Filter matrix" icon={Zap} isLight={isLight} />
           <GlassPanel isLight={isLight}>
             <QueryShell loading={readinessQ.isLoading} error={readinessErr} onRetry={() => void readinessQ.refetch()} empty={!readinessQ.isLoading && !readinessErr && (readiness?.strategies?.length ?? 0) === 0} isLight={isLight}>
-              <motion.div variants={stagger} initial="hidden" animate="show" className="max-h-[min(72vh,720px)] space-y-2 overflow-y-auto p-3">
+              <motion.div variants={stagger} initial="hidden" animate="show" className="max-h-[min(68vh,680px)] space-y-2 overflow-y-auto p-2.5">
                 <button
                   type="button"
                   onClick={() => setSelectedStrategy(null)}
@@ -570,116 +573,204 @@ export function IntradayCockpitPage() {
           </GlassPanel>
         </aside>
 
-        {/* Zone 02 — Opportunity matrix (wide) */}
-        <section className="col-span-12 space-y-3 xl:col-span-6">
-          <ZoneHeader
-            index="02"
-            title="Opportunity matrix"
-            subtitle={
-              selectedStrategy
-                ? `${filteredSignals.length} today · ${selectedStrategy}`
-                : `${filteredSignals.length} today · ${todayYmd} IST`
-            }
-            icon={Activity}
-            isLight={isLight}
-            action={
-              selectedStrategy ? (
-                <button type="button" onClick={() => setSelectedStrategy(null)} className={cn("rounded-full border px-3 py-1 text-[11px] font-medium", isLight ? "border-slate-200 bg-white text-slate-700" : "border-neutral-700 bg-neutral-900 text-neutral-200")}>
-                  Clear filter
-                </button>
-              ) : null
-            }
-          />
-          <GlassPanel className="overflow-hidden p-0" isLight={isLight}>
-            <QueryShell loading={workstationQ.isLoading} error={wsErr} onRetry={() => void workstationQ.refetch()} empty={!workstationQ.isLoading && !wsErr && filteredSignals.length === 0} emptyMessage="No signals today yet — strategies scan during market hours." isLight={isLight}>
-              <div className="max-h-[min(72vh,720px)] overflow-auto">
-                <table className="w-full min-w-[760px] border-collapse text-xs">
-                  <thead className={cn("sticky top-0 z-10 border-b text-[10px] font-semibold uppercase tracking-wider", isLight ? "border-slate-200 bg-slate-50/95 text-slate-500" : "border-neutral-800 bg-neutral-900/95 text-neutral-400")}>
-                    <tr>
-                      <th className="w-[12%] px-3 py-2.5 text-left">Symbol</th>
-                      <th className="w-[7%] px-2 py-2.5 text-left">Side</th>
-                      <th className="w-[18%] px-2 py-2.5 text-left">Strategy</th>
-                      <th className="w-[10%] px-2 py-2.5 text-right">Time</th>
-                      <th className="w-[11%] px-2 py-2.5 text-right">LTP</th>
-                      <th className="w-[10%] px-2 py-2.5 text-right">Entry</th>
-                      <th className="w-[9%] px-2 py-2.5 text-right">SL</th>
-                      <th className="w-[9%] px-2 py-2.5 text-right">Target</th>
-                      <th className="w-[7%] px-2 py-2.5 text-right">RR</th>
-                      <th className="w-[7%] px-3 py-2.5 text-right">Conf</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredSignals.map((row, i) => {
-                      const dir = signalDirection(row);
-                      const ltp = resolveLtp(row.symbol);
-                      const entry = parseMoney(row.entryReferencePrice);
-                      const ltpVsEntry =
-                        ltp != null && entry != null && entry !== 0 ? ((ltp - entry) / entry) * 100 : null;
-                      return (
-                        <motion.tr
-                          key={String(row.id ?? row.signalId ?? i)}
-                          variants={rowIn}
-                          initial="hidden"
-                          animate="show"
-                          className={cn("border-b transition-colors", isLight ? "border-slate-100 hover:bg-indigo-50/40" : "border-neutral-800 hover:bg-indigo-500/10")}
-                        >
-                          <td className="px-3 py-2.5 font-mono font-semibold text-indigo-600 dark:text-indigo-300">
-                            {bareSymbol(row.symbol)}
-                          </td>
-                          <td className={cn("px-2 py-2.5 font-bold", dir === "BUY" ? "text-emerald-600" : dir === "SELL" ? "text-rose-600" : "text-slate-400")}>{dir}</td>
-                          <td className="truncate px-2 py-2.5 text-slate-500 dark:text-neutral-400" title={signalStrategyKey(row)}>
-                            {signalStrategyKey(row)}
-                          </td>
-                          <td className="px-2 py-2.5 text-right font-mono tabular-nums text-slate-500">{fmtTime(String(row.createdAt ?? ""))}</td>
-                          <td className="px-2 py-2.5 text-right">
-                            <div className="font-mono font-semibold tabular-nums">{formatInr(ltp)}</div>
-                            {ltpVsEntry != null ? (
-                              <div className={cn("text-[10px] tabular-nums", ltpVsEntry >= 0 ? "text-emerald-600" : "text-rose-600")}>
-                                {ltpVsEntry >= 0 ? "+" : ""}
-                                {ltpVsEntry.toFixed(2)}%
-                              </div>
-                            ) : null}
-                          </td>
-                          <td className="px-2 py-2.5 text-right font-mono tabular-nums">{fmtNum(row.entryReferencePrice)}</td>
-                          <td className="px-2 py-2.5 text-right font-mono tabular-nums text-rose-600">{fmtNum(row.stopPrice)}</td>
-                          <td className="px-2 py-2.5 text-right font-mono tabular-nums text-emerald-600">{fmtNum(row.targetPrice)}</td>
-                          <td className="px-2 py-2.5 text-right font-mono tabular-nums">{fmtNum(row.riskReward)}</td>
-                          <td className="px-3 py-2.5 text-right">
-                            <span className={cn("inline-block rounded-md px-1.5 py-0.5 font-medium", isLight ? "bg-slate-100 text-slate-700" : "bg-neutral-800 text-neutral-200")}>
-                              {formatConfidencePct(row.confidenceScore ?? row.confidence)}
-                            </span>
-                          </td>
-                        </motion.tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </QueryShell>
-          </GlassPanel>
-        </section>
+        {/* Opportunity matrix — maximum width */}
+        <motion.section
+          layout
+          className="col-span-12 space-y-3 xl:col-span-10"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <ZoneHeader
+              index="02"
+              title="Opportunity matrix"
+              subtitle={
+                selectedStrategy
+                  ? `${filteredSignals.length} today · ${selectedStrategy}`
+                  : `${filteredSignals.length} setups · ${todayYmd} IST`
+              }
+              icon={Activity}
+              isLight={isLight}
+              action={
+                selectedStrategy ? (
+                  <button type="button" onClick={() => setSelectedStrategy(null)} className={cn("rounded-full border px-3 py-1 text-[11px] font-medium", isLight ? "border-slate-200 bg-white text-slate-700" : "border-neutral-700 bg-neutral-900 text-neutral-200")}>
+                    Clear filter
+                  </button>
+                ) : null
+              }
+            />
+            <motion.span
+              animate={{ opacity: [0.45, 1, 0.45] }}
+              transition={{ duration: 2.2, repeat: Infinity }}
+              className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider", isLight ? "bg-indigo-100 text-indigo-800" : "bg-indigo-500/20 text-indigo-200")}
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-indigo-500" />
+              </span>
+              Live
+            </motion.span>
+          </div>
 
-        {/* Zone 03 — Live book */}
-        <section className="col-span-12 space-y-3 xl:col-span-3">
-          <ZoneHeader index="03" title="Live book" subtitle="Open positions · LTP refreshed every 2s" icon={TrendingUp} isLight={isLight} />
+          <div className="relative">
+            <motion.div
+              aria-hidden
+              className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-r from-indigo-500/20 via-sky-400/20 to-violet-500/20 opacity-70 blur-sm"
+              animate={{ opacity: [0.35, 0.65, 0.35] }}
+              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+            />
+            <GlassPanel className="relative overflow-hidden p-0 ring-1 ring-indigo-200/50 dark:ring-indigo-500/20" isLight={isLight}>
+              <motion.div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-400/60 to-transparent"
+                animate={{ x: ["-100%", "100%"] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+              />
+              <QueryShell loading={workstationQ.isLoading} error={wsErr} onRetry={() => void workstationQ.refetch()} empty={!workstationQ.isLoading && !wsErr && filteredSignals.length === 0} emptyMessage="No signals today yet — strategies scan during market hours." isLight={isLight}>
+                <div className="max-h-[min(68vh,720px)] overflow-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead className={cn("sticky top-0 z-10 border-b text-[10px] font-semibold uppercase tracking-wider backdrop-blur-md", isLight ? "border-slate-200/80 bg-white/90 text-slate-500" : "border-neutral-800 bg-neutral-950/90 text-neutral-400")}>
+                      <tr>
+                        <th className="px-4 py-3 text-left">Symbol</th>
+                        <th className="px-3 py-3 text-left">Side</th>
+                        <th className="px-3 py-3 text-left">Strategy</th>
+                        <th className="px-3 py-3 text-right">Time</th>
+                        <th className="px-3 py-3 text-right">LTP</th>
+                        <th className="px-3 py-3 text-right">Entry</th>
+                        <th className="px-3 py-3 text-right">SL</th>
+                        <th className="px-3 py-3 text-right">Target</th>
+                        <th className="px-3 py-3 text-right">RR</th>
+                        <th className="px-4 py-3 text-right">Conf</th>
+                      </tr>
+                    </thead>
+                    <motion.tbody variants={stagger} initial="hidden" animate="show">
+                      <AnimatePresence mode="popLayout">
+                        {filteredSignals.map((row, i) => {
+                          const dir = signalDirection(row);
+                          const ltp = resolveLtp(row.symbol);
+                          const entry = parseMoney(row.entryReferencePrice);
+                          const ltpVsEntry =
+                            ltp != null && entry != null && entry !== 0 ? ((ltp - entry) / entry) * 100 : null;
+                          const isBuy = dir === "BUY";
+                          const isSell = dir === "SELL";
+                          return (
+                            <motion.tr
+                              key={String(row.id ?? row.signalId ?? i)}
+                              layout
+                              variants={rowIn}
+                              initial="hidden"
+                              animate="show"
+                              exit={{ opacity: 0, x: 20, transition: { duration: 0.2 } }}
+                              className={cn(
+                                "border-b transition-colors hover:bg-indigo-50/50 dark:hover:bg-indigo-500/10",
+                                isLight ? "border-slate-100" : "border-neutral-800/80",
+                                i % 2 === 0 ? (isLight ? "bg-white/40" : "bg-neutral-900/20") : "",
+                              )}
+                            >
+                              <td className="px-4 py-3">
+                                <motion.span
+                                  className="font-mono text-base font-bold text-indigo-600 dark:text-indigo-300"
+                                  whileHover={{ scale: 1.03 }}
+                                >
+                                  {bareSymbol(row.symbol)}
+                                </motion.span>
+                              </td>
+                              <td className="px-3 py-3">
+                                <motion.span
+                                  layout
+                                  className={cn(
+                                    "inline-flex min-w-[52px] justify-center rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase",
+                                    isBuy
+                                      ? "bg-emerald-500 text-white shadow-sm shadow-emerald-500/30"
+                                      : isSell
+                                        ? "bg-rose-500 text-white shadow-sm shadow-rose-500/30"
+                                        : isLight
+                                          ? "bg-slate-200 text-slate-600"
+                                          : "bg-neutral-800 text-neutral-300",
+                                  )}
+                                >
+                                  {dir}
+                                </motion.span>
+                              </td>
+                              <td className="max-w-[180px] truncate px-3 py-3 font-medium text-slate-600 dark:text-neutral-300" title={signalStrategyKey(row)}>
+                                {signalStrategyKey(row)}
+                              </td>
+                              <td className="px-3 py-3 text-right font-mono text-xs tabular-nums text-slate-500">{fmtTime(String(row.createdAt ?? ""))}</td>
+                              <td className="px-3 py-3 text-right">
+                                <motion.div
+                                  key={liveLtpKey(ltp)}
+                                  initial={{ opacity: 0.5, y: 2 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="font-mono text-sm font-semibold tabular-nums text-sky-700 dark:text-sky-300"
+                                >
+                                  {formatInr(ltp)}
+                                </motion.div>
+                                {ltpVsEntry != null ? (
+                                  <div className={cn("text-[10px] font-semibold tabular-nums", ltpVsEntry >= 0 ? "text-emerald-600" : "text-rose-600")}>
+                                    {ltpVsEntry >= 0 ? "+" : ""}
+                                    {ltpVsEntry.toFixed(2)}%
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-3 text-right font-mono tabular-nums">{fmtNum(row.entryReferencePrice)}</td>
+                              <td className="px-3 py-3 text-right font-mono tabular-nums text-rose-600">{fmtNum(row.stopPrice)}</td>
+                              <td className="px-3 py-3 text-right font-mono tabular-nums text-emerald-600">{fmtNum(row.targetPrice)}</td>
+                              <td className="px-3 py-3 text-right font-mono tabular-nums font-semibold text-violet-700 dark:text-violet-300">{fmtNum(row.riskReward)}</td>
+                              <td className="px-4 py-3 text-right">
+                                <motion.span
+                                  whileHover={{ scale: 1.05 }}
+                                  className={cn("inline-block rounded-lg px-2 py-1 text-xs font-bold", isLight ? "bg-indigo-50 text-indigo-800 ring-1 ring-indigo-100" : "bg-indigo-500/15 text-indigo-200 ring-1 ring-indigo-500/30")}
+                                >
+                                  {formatConfidencePct(row.confidenceScore ?? row.confidence)}
+                                </motion.span>
+                              </td>
+                            </motion.tr>
+                          );
+                        })}
+                      </AnimatePresence>
+                    </motion.tbody>
+                  </table>
+                </div>
+              </QueryShell>
+            </GlassPanel>
+          </div>
+        </motion.section>
+      </div>
+
+      {/* Live book — below matrix, compact strip */}
+      <div className="relative mx-auto max-w-[1760px] px-4 pb-4 lg:px-8">
+        <motion.section
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15, duration: 0.4 }}
+          className="space-y-3"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <ZoneHeader index="03" title="Live book" subtitle="Open positions · LTP 2s" icon={TrendingUp} isLight={isLight} />
+            <Link to="/positions" className={cn("inline-flex items-center gap-2 text-xs font-semibold transition hover:underline", isLight ? "text-indigo-700" : "text-indigo-300")}>
+              Positions & exit
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
           <GlassPanel className="overflow-hidden p-0" isLight={isLight}>
             <QueryShell
               loading={workstationQ.isLoading}
               error={wsErr}
               onRetry={() => void workstationQ.refetch()}
               empty={!workstationQ.isLoading && !wsErr && openPositions.length === 0}
-              emptyMessage="No open positions — signals and fills will appear here."
+              emptyMessage="No open positions."
               isLight={isLight}
             >
-              <div className="max-h-[min(72vh,720px)] overflow-auto">
-                <table className="w-full min-w-[420px] border-collapse text-xs">
-                  <thead className={cn("sticky top-0 z-10 border-b text-[10px] font-semibold uppercase tracking-wider", isLight ? "border-slate-200 bg-slate-50/95 text-slate-500" : "border-neutral-800 bg-neutral-900/95 text-neutral-400")}>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] border-collapse text-xs">
+                  <thead className={cn("border-b text-[10px] font-semibold uppercase tracking-wider", isLight ? "border-slate-200 bg-slate-50/80 text-slate-500" : "border-neutral-800 bg-neutral-900/80 text-neutral-400")}>
                     <tr>
-                      <th className="px-3 py-2.5 text-left">Symbol</th>
-                      <th className="px-2 py-2.5 text-right">Qty</th>
-                      <th className="px-2 py-2.5 text-right">Avg</th>
-                      <th className="px-2 py-2.5 text-right">LTP</th>
-                      <th className="px-3 py-2.5 text-right">MTM</th>
+                      <th className="px-4 py-2 text-left">Symbol</th>
+                      <th className="px-3 py-2 text-right">Qty</th>
+                      <th className="px-3 py-2 text-right">Avg</th>
+                      <th className="px-3 py-2 text-right">LTP</th>
+                      <th className="px-4 py-2 text-right">MTM</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -687,32 +778,19 @@ export function IntradayCockpitPage() {
                       const sym = String(p.symbol ?? "");
                       const ltp = resolveLtp(sym) ?? parseMoney(p.ltp);
                       const mtm = parseMoney(p.mtmPnl ?? p.unrealizedPnl);
-                      const sync = String(p.brokerSyncState ?? syncState);
                       return (
                         <motion.tr
                           key={sym || i}
-                          variants={rowIn}
-                          initial="hidden"
-                          animate="show"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: i * 0.03 }}
                           className={cn("border-b", isLight ? "border-slate-100 hover:bg-emerald-50/30" : "border-neutral-800 hover:bg-emerald-500/10")}
                         >
-                          <td className="px-3 py-2.5">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-semibold">{bareSymbol(sym)}</span>
-                              <SyncBadge state={sync} isLight={isLight} />
-                            </div>
-                            <div className={cn("text-[10px] uppercase", isLight ? "text-slate-400" : "text-neutral-500")}>{String(p.side ?? "")}</div>
-                          </td>
-                          <td className="px-2 py-2.5 text-right font-mono tabular-nums">
-                            {fmtNum(p.qty, 0)}
-                            <div className={cn("text-[10px]", isLight ? "text-slate-400" : "text-neutral-500")}>brk {fmtNum(p.brokerQty ?? p.qty, 0)}</div>
-                          </td>
-                          <td className="px-2 py-2.5 text-right font-mono tabular-nums">{formatInr(parseMoney(p.avgPrice))}</td>
-                          <td className="px-2 py-2.5 text-right">
-                            <div className="font-mono font-semibold tabular-nums text-sky-700 dark:text-sky-300">{formatInr(ltp)}</div>
-                            {watchQ.isFetching ? <div className="text-[9px] text-emerald-600">updating…</div> : null}
-                          </td>
-                          <td className={cn("px-3 py-2.5 text-right font-mono font-semibold tabular-nums", pnlClass(mtm, isLight))}>{formatPnlDisplay(mtm)}</td>
+                          <td className="px-4 py-2.5 font-mono font-semibold">{bareSymbol(sym)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono tabular-nums">{fmtNum(p.qty, 0)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono tabular-nums">{formatInr(parseMoney(p.avgPrice))}</td>
+                          <td className="px-3 py-2.5 text-right font-mono font-semibold tabular-nums text-sky-700">{formatInr(ltp)}</td>
+                          <td className={cn("px-4 py-2.5 text-right font-mono font-semibold tabular-nums", pnlClass(mtm, isLight))}>{formatPnlDisplay(mtm)}</td>
                         </motion.tr>
                       );
                     })}
@@ -721,17 +799,7 @@ export function IntradayCockpitPage() {
               </div>
             </QueryShell>
           </GlassPanel>
-          <Link
-            to="/positions"
-            className={cn(
-              "inline-flex items-center gap-2 text-xs font-semibold transition hover:underline",
-              isLight ? "text-indigo-700" : "text-indigo-300",
-            )}
-          >
-            Full positions & exit controls
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </section>
+        </motion.section>
       </div>
 
       {/* Integrity — page footer (scroll down, does not overlay workspace) */}
