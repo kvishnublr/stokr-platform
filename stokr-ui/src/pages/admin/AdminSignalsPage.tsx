@@ -50,6 +50,9 @@ type SignalRow = {
   executionLatencyMs: number | null;
   entryPrice: number | null;
   exitPrice: number | null;
+  // Live enrichment
+  ltp: number | null;
+  pnl: number | null;
 };
 
 type OrderSummary = {

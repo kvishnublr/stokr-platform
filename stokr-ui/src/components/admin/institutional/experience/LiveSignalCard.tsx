@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ChevronRight, TrendingDown, TrendingUp } from "lucide-react";
+import { ChevronRight, TrendingDown, TrendingUp, Activity } from "lucide-react";
 import { cn } from "../../../../lib/utils";
 import { fmtDateTime } from "../../../../lib/dateUtils";
 import { provenanceBadge, provenanceShell, resolveProvenance } from "./provenanceTheme";
@@ -22,6 +22,9 @@ export type LiveSignalCardData = {
   marketRegime: string | null;
   createdAt: string | null;
   executionLatencyMs: number | null;
+  // Enriched fields
+  ltp?: number | null;
+  pnl?: number | null;
 };
 
 function fmt(v: number | null | undefined, d = 2) {
@@ -38,7 +41,8 @@ function confidencePct(score: number | null): number {
 function lifecycleProgress(outcome: string | null): number {
   const o = String(outcome ?? "").toUpperCase();
   if (o === "TARGET_HIT") return 100;
-  if (o === "STOPLOSS_HIT") return 100;
+  if (o === "STOPLOSS_HIT" || o === "SL_HIT") return 100;
+  if (o === "PRESSURE_EXIT") return 100;
   if (o === "PARTIAL_TARGET" || o === "BREAKEVEN_EXIT") return 75;
   if (o === "RUNNING") return 45;
   if (o === "EXPIRED" || o === "MISSED" || o === "REJECTED") return 100;
@@ -48,7 +52,19 @@ function lifecycleProgress(outcome: string | null): number {
 function lifecycleLabel(outcome: string | null): string {
   const o = String(outcome ?? "").toUpperCase();
   if (!o || o === "PENDING") return "Emitted";
+  if (o === "PRESSURE_EXIT") return "pressure exit";
+  if (o === "SL_HIT") return "SL hit";
+  if (o === "TARGET_HIT") return "target hit";
   return o.replace(/_/g, " ").toLowerCase();
+}
+
+function lifecycleBarColor(outcome: string | null): string {
+  const o = String(outcome ?? "").toUpperCase();
+  if (o === "TARGET_HIT") return "bg-emerald-400";
+  if (o === "STOPLOSS_HIT" || o === "SL_HIT") return "bg-rose-400";
+  if (o === "PRESSURE_EXIT") return "bg-amber-400";
+  if (o === "EXPIRED" || o === "MISSED" || o === "REJECTED") return "bg-neutral-400";
+  return "bg-blue-500";
 }
 
 function computeRR(entry: number | null, stop: number | null, target: number | null): string {
@@ -56,6 +72,15 @@ function computeRR(entry: number | null, stop: number | null, target: number | n
   const risk = Math.abs(entry - stop);
   if (risk <= 0) return "—";
   return (Math.abs(target - entry) / risk).toFixed(1);
+}
+
+/** How far LTP has moved toward target vs SL, as a percentage */
+function targetProgress(entry: number | null, stop: number | null, target: number | null, ltp: number | null, isBuy: boolean): number | null {
+  if (entry == null || stop == null || target == null || ltp == null || ltp <= 0) return null;
+  const totalRange = Math.abs(target - stop);
+  if (totalRange <= 0) return null;
+  const fromSl = isBuy ? (ltp - stop) : (stop - ltp);
+  return Math.max(0, Math.min(100, (fromSl / totalRange) * 100));
 }
 
 export function LiveSignalCard({
@@ -75,9 +100,33 @@ export function LiveSignalCard({
   const isBuy = side === "BUY";
   const provenance = resolveProvenance(signal.pipeline, signal.signalSource);
   const conf = confidencePct(signal.confidenceScore);
-  const pnl = signal.realizedPnl ?? signal.unrealizedPnl;
-  const pnlNum = pnl != null ? Number(pnl) : null;
+
+  // Use enriched pnl field (computed on backend), fallback to stored pnl
+  const pnlNum = signal.pnl != null ? Number(signal.pnl)
+    : signal.realizedPnl != null ? Number(signal.realizedPnl)
+    : signal.unrealizedPnl != null ? Number(signal.unrealizedPnl)
+    : null;
+
   const progress = lifecycleProgress(signal.outcomeStatus);
+  const ltp = signal.ltp != null ? Number(signal.ltp) : null;
+  const entry = signal.entryReferencePrice != null ? Number(signal.entryReferencePrice) : null;
+  const ltpValid = ltp != null && ltp > 0;
+
+  // LTP change from entry
+  const ltpChangePct = ltpValid && entry != null && entry > 0
+    ? ((isBuy ? (ltp - entry) : (entry - ltp)) / entry) * 100
+    : null;
+
+  // Target progress bar
+  const tgtProg = targetProgress(
+    entry,
+    signal.stopPrice != null ? Number(signal.stopPrice) : null,
+    signal.targetPrice != null ? Number(signal.targetPrice) : null,
+    ltp,
+    isBuy
+  );
+
+  const isClosed = signal.outcomeStatus != null && ["TARGET_HIT", "SL_HIT", "STOPLOSS_HIT", "PRESSURE_EXIT", "CLOSED", "EXPIRED"].includes(signal.outcomeStatus.toUpperCase());
 
   return (
     <motion.button
@@ -102,6 +151,7 @@ export function LiveSignalCard({
         />
       ) : null}
 
+      {/* Header: Symbol, Side, Provenance */}
       <div className="relative flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="relative h-12 w-12 shrink-0">
@@ -147,11 +197,67 @@ export function LiveSignalCard({
         </span>
       </div>
 
-      <div className="relative mt-4 grid grid-cols-4 gap-2 text-center">
+      {/* LTP Hero Section */}
+      {ltpValid && (
+        <div className={cn("relative mt-3 rounded-xl px-3 py-2.5 text-center",
+          isLight ? "bg-neutral-50 border border-neutral-200" : "bg-white/[0.04] border border-white/[0.07]")}>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className={cn("text-[9px] uppercase tracking-wide font-semibold",
+                isLight ? "text-neutral-400" : "text-neutral-500")}>LTP</div>
+              <div className={cn("font-mono text-lg font-bold",
+                isLight ? "text-neutral-900" : "text-white")}>
+                {fmt(ltp)}
+              </div>
+            </div>
+            {ltpChangePct != null && (
+              <div className={cn("text-right")}>
+                <div className={cn("text-[9px] uppercase tracking-wide font-semibold",
+                  isLight ? "text-neutral-400" : "text-neutral-500")}>
+                  {isClosed ? "Final" : "Live"} P&L
+                </div>
+                <div className={cn("font-mono text-lg font-bold",
+                  pnlNum != null && pnlNum > 0 ? (isLight ? "text-emerald-600" : "text-emerald-400") :
+                  pnlNum != null && pnlNum < 0 ? (isLight ? "text-rose-600" : "text-rose-400") :
+                  (isLight ? "text-neutral-600" : "text-neutral-300"))}>
+                  {pnlNum != null ? `${pnlNum >= 0 ? "+" : ""}${pnlNum.toFixed(2)}` : "—"}
+                </div>
+                <div className={cn("text-[10px] font-mono",
+                  ltpChangePct >= 0 ? (isLight ? "text-emerald-500" : "text-emerald-400/80") :
+                  (isLight ? "text-rose-500" : "text-rose-400/80"))}>
+                  {ltpChangePct >= 0 ? "+" : ""}{ltpChangePct.toFixed(2)}%
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Target progress mini-bar */}
+          {tgtProg != null && !isClosed && (
+            <div className="mt-2">
+              <div className="flex justify-between text-[8px] font-mono mb-0.5">
+                <span className={isLight ? "text-rose-500" : "text-rose-400"}>SL</span>
+                <span className={isLight ? "text-neutral-400" : "text-neutral-500"}>{tgtProg.toFixed(0)}%</span>
+                <span className={isLight ? "text-emerald-500" : "text-emerald-400"}>TGT</span>
+              </div>
+              <div className={cn("h-1 overflow-hidden rounded-full", isLight ? "bg-neutral-200" : "bg-neutral-700")}>
+                <motion.div
+                  className={cn("h-full rounded-full",
+                    tgtProg > 60 ? "bg-emerald-400" : tgtProg > 30 ? "bg-amber-400" : "bg-rose-400")}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${tgtProg}%` }}
+                  transition={{ duration: 0.6 }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Price Grid: Entry, SL, Target, RR */}
+      <div className="relative mt-3 grid grid-cols-4 gap-2 text-center">
         {[
           { label: "Entry", value: fmt(signal.entryReferencePrice) },
-          { label: "SL", value: fmt(signal.stopPrice), tone: "text-rose-400" },
-          { label: "Target", value: fmt(signal.targetPrice), tone: "text-emerald-400" },
+          { label: "SL", value: fmt(signal.stopPrice), tone: isLight ? "text-rose-600" : "text-rose-400" },
+          { label: "Target", value: fmt(signal.targetPrice), tone: isLight ? "text-emerald-600" : "text-emerald-400" },
           { label: "RR", value: signal.riskRewardAchieved != null ? fmt(signal.riskRewardAchieved, 1) : computeRR(signal.entryReferencePrice, signal.stopPrice, signal.targetPrice) },
         ].map((cell) => (
           <div key={cell.label}>
@@ -161,9 +267,14 @@ export function LiveSignalCard({
         ))}
       </div>
 
-      <div className="relative mt-4">
+      {/* Lifecycle Progress Bar */}
+      <div className="relative mt-3">
         <div className="mb-1 flex items-center justify-between text-[10px]">
-          <span className={isLight ? "text-neutral-500" : "text-neutral-400"}>{lifecycleLabel(signal.outcomeStatus)}</span>
+          <span className={cn("flex items-center gap-1",
+            isLight ? "text-neutral-500" : "text-neutral-400")}>
+            {!isClosed && <Activity className="h-2.5 w-2.5 animate-pulse text-blue-400" />}
+            {lifecycleLabel(signal.outcomeStatus)}
+          </span>
           {signal.marketRegime ? (
             <span className={cn("rounded px-1.5 py-0.5 font-medium", isLight ? "bg-neutral-100 text-neutral-600" : "bg-neutral-800 text-neutral-300")}>
               {signal.marketRegime}
@@ -172,7 +283,7 @@ export function LiveSignalCard({
         </div>
         <div className={cn("h-1.5 overflow-hidden rounded-full", isLight ? "bg-neutral-200" : "bg-neutral-800")}>
           <motion.div
-            className={cn("h-full rounded-full", progress >= 100 ? "bg-emerald-400" : "bg-blue-500")}
+            className={cn("h-full rounded-full", lifecycleBarColor(signal.outcomeStatus))}
             initial={{ width: 0 }}
             animate={{ width: `${progress}%` }}
             transition={{ duration: 0.6 }}
@@ -180,16 +291,17 @@ export function LiveSignalCard({
         </div>
       </div>
 
+      {/* Footer: Time, P&L, Arrow */}
       <div className="relative mt-3 flex items-center justify-between text-[11px]">
         <span className={isLight ? "text-neutral-400" : "text-neutral-500"}>{fmtDateTime(signal.createdAt)}</span>
         <span
           className={cn(
             "font-mono font-semibold",
             pnlNum == null ? "text-neutral-500" : pnlNum >= 0 ? "text-emerald-400" : "text-rose-400",
-            pnlNum != null && pnlNum !== 0 && "drop-shadow-[0_0_8px_rgba(52,211,153,0.35)]",
+            pnlNum != null && pnlNum !== 0 && (pnlNum > 0 ? "drop-shadow-[0_0_8px_rgba(52,211,153,0.35)]" : "drop-shadow-[0_0_8px_rgba(244,63,94,0.35)]"),
           )}
         >
-          {pnlNum == null ? "—" : `${pnlNum >= 0 ? "+" : ""}${pnlNum.toFixed(0)}`}
+          {pnlNum == null ? "—" : `${pnlNum >= 0 ? "+" : ""}${pnlNum.toFixed(2)}`}
         </span>
         <ChevronRight className="h-4 w-4 opacity-40 transition group-hover:opacity-100" />
       </div>

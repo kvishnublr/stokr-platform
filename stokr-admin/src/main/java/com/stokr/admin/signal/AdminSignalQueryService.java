@@ -1,5 +1,7 @@
 package com.stokr.admin.signal;
 
+import com.stokr.marketdata.domain.MarketdataCandle;
+import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.oms.dto.OmsOrderSummaryDto;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.repository.OmsOrderRepository;
@@ -15,10 +17,14 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -28,6 +34,7 @@ public class AdminSignalQueryService {
     private final StrategySignalRepository signalRepo;
     private final OmsOrderRepository orderRepo;
     private final ExecutionTimelineProjection timelineProjection;
+    private final MarketDataQueryService marketDataQueryService;
 
     public Page<AdminSignalDto> pageSignals(AdminSignalParams p, Pageable pageable) {
         Specification<StrategySignalEntity> spec = (root, query, cb) -> {
@@ -77,7 +84,22 @@ public class AdminSignalQueryService {
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
-        return signalRepo.findAll(spec, pageable).map(this::toDto);
+        Page<StrategySignalEntity> page = signalRepo.findAll(spec, pageable);
+
+        // Batch LTP lookup for all unique symbols
+        Map<String, BigDecimal> ltpCache = new HashMap<>();
+        for (StrategySignalEntity s : page.getContent()) {
+            if (s.getSymbol() != null) ltpCache.putIfAbsent(s.getSymbol(), null);
+        }
+        for (String sym : ltpCache.keySet()) {
+            try {
+                ltpCache.put(sym, lastPrice(sym));
+            } catch (Exception e) {
+                ltpCache.put(sym, BigDecimal.ZERO);
+            }
+        }
+
+        return page.map(s -> toDtoWithLtp(s, ltpCache.getOrDefault(s.getSymbol(), BigDecimal.ZERO)));
     }
 
     public AdminSignalDetailDto detail(UUID id) {
@@ -117,6 +139,30 @@ public class AdminSignalQueryService {
     }
 
     private AdminSignalDto toDto(StrategySignalEntity s) {
+        return toDtoWithLtp(s, null);
+    }
+
+    private AdminSignalDto toDtoWithLtp(StrategySignalEntity s, BigDecimal ltp) {
+        // Compute live P&L
+        BigDecimal pnl = null;
+        boolean isClosed = s.getOutcomeStatus() != null && (
+                "TARGET_HIT".equalsIgnoreCase(s.getOutcomeStatus())
+             || "SL_HIT".equalsIgnoreCase(s.getOutcomeStatus())
+             || "PRESSURE_EXIT".equalsIgnoreCase(s.getOutcomeStatus())
+             || "CLOSED".equalsIgnoreCase(s.getOutcomeStatus()));
+
+        if (isClosed && s.getRealizedPnl() != null) {
+            pnl = s.getRealizedPnl();
+        } else if (ltp != null && ltp.compareTo(BigDecimal.ZERO) > 0
+                && s.getEntryReferencePrice() != null
+                && s.getEntryReferencePrice().compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal qty = s.getSuggestedQty() != null ? s.getSuggestedQty() : BigDecimal.ONE;
+            boolean isBuy = s.getSignalType() != null && "BUY".equalsIgnoreCase(s.getSignalType().name());
+            pnl = isBuy
+                    ? ltp.subtract(s.getEntryReferencePrice()).multiply(qty).setScale(2, RoundingMode.HALF_UP)
+                    : s.getEntryReferencePrice().subtract(ltp).multiply(qty).setScale(2, RoundingMode.HALF_UP);
+        }
+
         return new AdminSignalDto(
                 s.getId(),
                 s.getStrategyName(),
@@ -143,7 +189,9 @@ public class AdminSignalQueryService {
                 s.getRiskRewardAchieved(),
                 s.getExecutionLatencyMs(),
                 s.getEntryPrice(),
-                s.getExitPrice()
+                s.getExitPrice(),
+                ltp,
+                pnl
         );
     }
 
@@ -155,6 +203,14 @@ public class AdminSignalQueryService {
                 o.getBacktestRunId(), o.getState() != null ? o.getState().name() : null,
                 o.getBrokerVendor(), o.getRejectReason(), o.getCreatedAt()
         );
+    }
+
+    private BigDecimal lastPrice(String symbol) {
+        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, "1m", 1);
+        if (bars.isEmpty() || bars.getFirst().getClosePrice() == null) {
+            return BigDecimal.ZERO;
+        }
+        return bars.getFirst().getClosePrice();
     }
 
     private static long toLong(Object v) {

@@ -31,5 +31,8 @@ public record AdminSignalDto(
         BigDecimal riskRewardAchieved,
         Long executionLatencyMs,
         BigDecimal entryPrice,
-        BigDecimal exitPrice
+        BigDecimal exitPrice,
+        // Live enrichment
+        BigDecimal ltp,
+        BigDecimal pnl
 ) {}
