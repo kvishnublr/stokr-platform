@@ -31,7 +31,7 @@ import java.util.Map;
 /**
  * PRESSURE SMART EXIT SERVICE — V3.5 Smart Exit Engine
  *
- * Monitors RUNNING signals for NSE_SPIKE_DETECTION and exits EARLY when
+ * Monitors RUNNING signals for all pressure-based strategies and exits EARLY when
  * order book pressure reverses, before the stop loss gets hit.
  *
  * WHY THIS EXISTS:
@@ -56,7 +56,10 @@ import java.util.Map;
 @Slf4j
 public class PressureSmartExitService {
 
-    private static final String STRATEGY_NAME = "NSE_SPIKE_DETECTION";
+    /** All pressure-based strategies eligible for smart exit */
+    private static final java.util.Set<String> ELIGIBLE_STRATEGIES = java.util.Set.of(
+            "NSE_SPIKE_DETECTION", "EARLY_BREAKOUT", "VWAP_BOUNCE", "GAP_FILL", "SECTOR_LAGGARD"
+    );
     private static final String STATUS_PRESSURE_EXIT = "PRESSURE_EXIT";
     private static final String STATUS_RUNNING = "RUNNING";
     private static final int MAX_SIGNALS_PER_SCAN = 100;
@@ -122,9 +125,9 @@ public class PressureSmartExitService {
 
         if (running.isEmpty()) return;
 
-        // Filter to only NSE_SPIKE_DETECTION signals
+        // Filter to pressure-based strategies with proper entry/SL/target
         List<StrategySignalEntity> spikeSignals = running.stream()
-                .filter(s -> STRATEGY_NAME.equalsIgnoreCase(s.getStrategyName()))
+                .filter(s -> s.getStrategyName() != null && ELIGIBLE_STRATEGIES.contains(s.getStrategyName().toUpperCase()))
                 .filter(s -> s.getEntryReferencePrice() != null && s.getEntryReferencePrice().signum() > 0)
                 .filter(s -> s.getStopPrice() != null && s.getTargetPrice() != null)
                 .toList();

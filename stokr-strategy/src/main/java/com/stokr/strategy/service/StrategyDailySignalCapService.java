@@ -30,14 +30,14 @@ public class StrategyDailySignalCapService {
     @Value("${stokr.strategy.daily-cap.default:120}")
     private int defaultCap;
 
-    @Value("#{${stokr.strategy.daily-cap.per-strategy:{}}}")
+    @Value("#{${stokr.strategy.daily-cap.per-strategy:{:}}}")
     private Map<String, Integer> perStrategy;
 
     public boolean isOverCap(String strategyKey, Instant now) {
         if (!enabled || strategyKey == null || strategyKey.isBlank()) {
             return false;
         }
-        int cap = perStrategy.getOrDefault(strategyKey, defaultCap);
+        int cap = (perStrategy != null) ? perStrategy.getOrDefault(strategyKey, defaultCap) : defaultCap;
         if (cap <= 0) {
             return false;
         }
