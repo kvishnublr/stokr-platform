@@ -166,6 +166,11 @@ stokr:
     # Keep lookback short to avoid hours-long runs on t2/t3.micro
     lookback-days: ${STOKR_BACKFILL_LOOKBACK_DAYS:30}
   strategy:
+    lifecycle:
+      emergency:
+        spread-pct: ${STOKR_LIFECYCLE_EMERGENCY_SPREAD_PCT:0.50}
+        candle-stale-seconds: ${STOKR_LIFECYCLE_EMERGENCY_CANDLE_STALE_SEC:120}
+        volume-vacuum-ratio: ${STOKR_LIFECYCLE_EMERGENCY_VOLUME_VACUUM:0.10}
     # Drop new signals when reference price exceeds ceiling (INR). 0 or negative = disabled.
     max-entry-price: ${STOKR_STRATEGY_MAX_ENTRY_PRICE:5000}
     quality-gate:

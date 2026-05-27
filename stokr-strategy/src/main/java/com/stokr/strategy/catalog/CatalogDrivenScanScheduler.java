@@ -15,6 +15,7 @@ import com.stokr.strategy.signals.StrategySignal;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.lifecycle.StrategySessionEntryGuardService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -50,6 +51,7 @@ public class CatalogDrivenScanScheduler {
     private final SignalCooldownService signalCooldownService;
     private final StrategyDailySignalCapService dailySignalCapService;
     private final StrategyGeneratorIntegrityGate integrityGate;
+    private final StrategySessionEntryGuardService sessionEntryGuard;
     private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
 
     // Separate from the main scanner gate — catalog strategies (e.g. MCX) manage their own session hours
@@ -121,6 +123,9 @@ public class CatalogDrivenScanScheduler {
             for (StrategyUniverseSymbol sym : symbols) {
                 try {
                     String symbol = sym.getTradingSymbol() != null ? sym.getTradingSymbol() : sym.getSymbol();
+                    if (!sessionEntryGuard.isSessionEntryAllowed(strategyKey, symbol, tick)) {
+                        continue;
+                    }
                     StrategyContext ctx = buildContext(sym, symbol);
                     StrategySignal signal = strategy.evaluate(ctx);
 

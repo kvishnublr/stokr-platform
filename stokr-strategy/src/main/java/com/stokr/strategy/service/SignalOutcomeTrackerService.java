@@ -5,6 +5,9 @@ import com.stokr.common.events.SignalPublishedEvent;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.lifecycle.ExitCategory;
+import com.stokr.strategy.lifecycle.PressureExitTrigger;
+import com.stokr.strategy.lifecycle.StrategyExitTelemetryService;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +41,7 @@ public class SignalOutcomeTrackerService {
     private static final String STATUS_TARGET_HIT  = "TARGET_HIT";
     private static final String STATUS_SL_HIT      = "STOPLOSS_HIT";
     private static final String STATUS_RUNNING     = "RUNNING";
-    private static final String STATUS_EXPIRED     = "EXPIRED";
+    private static final String STATUS_TIME_EXIT   = "TIME_EXIT";
     private static final String STATUS_BREAKEVEN   = "BREAKEVEN_EXIT";
 
     private static final int EXPIRY_HOURS     = 8;
@@ -49,6 +52,7 @@ public class SignalOutcomeTrackerService {
     private final MarketDataQueryService marketDataQueryService;
     private final ApplicationEventPublisher eventPublisher;
     private final SignalPriceEnrichmentService signalPriceEnrichmentService;
+    private final StrategyExitTelemetryService exitTelemetryService;
 
     @Value("${stokr.strategy.exit.breakeven-mfe-ratio:0.5}")
     private double breakevenMfeRatio;
@@ -228,16 +232,12 @@ public class SignalOutcomeTrackerService {
         }
 
         if (hitTgt) {
-            applyHitOutcome(sig, STATUS_TARGET_HIT, true, false, entry, target, qty, isBuy, now);
+            applyHitOutcome(sig, STATUS_TARGET_HIT, ExitCategory.TARGET, true, false, entry, target, qty, isBuy, now, null);
         } else if (hitSl) {
-            applyHitOutcome(sig, STATUS_SL_HIT, false, true, entry, sl, qty, isBuy, now);
+            applyHitOutcome(sig, STATUS_SL_HIT, ExitCategory.HARD_STOP, false, true, entry, sl, qty, isBuy, now, null);
         } else {
-            sig.setOutcomeStatus(STATUS_EXPIRED);
-            sig.setOutcomeTime(now);
-            if (sig.getUnrealizedPnl() != null) {
-                sig.setRealizedPnl(sig.getUnrealizedPnl());
-            }
-            sig.setUnrealizedPnl(null);
+            closeWithCategory(sig, ExitCategory.TIME_EXIT,
+                    "TIME_EXIT: historical_scan_no_target_or_sl_within_window", now, null, false);
         }
 
         return true;
@@ -299,9 +299,9 @@ public class SignalOutcomeTrackerService {
         }
 
         if (hitTgt) {
-            applyHitOutcome(sig, STATUS_TARGET_HIT, true, false, entry, target, qty, isBuy, now);
+            applyHitOutcome(sig, STATUS_TARGET_HIT, ExitCategory.TARGET, true, false, entry, target, qty, isBuy, now, null);
         } else if (hitSl) {
-            applyHitOutcome(sig, STATUS_SL_HIT, false, true, entry, sl, qty, isBuy, now);
+            applyHitOutcome(sig, STATUS_SL_HIT, ExitCategory.HARD_STOP, false, true, entry, sl, qty, isBuy, now, null);
         } else if (tryBreakevenExit(sig, postSignal, entry, target, isBuy, qty, now)) {
             // closed at entry after partial favorable move
         } else {
@@ -347,7 +347,8 @@ public class SignalOutcomeTrackerService {
         if (!crossedEntry) {
             return false;
         }
-        applyHitOutcome(sig, STATUS_BREAKEVEN, false, false, entry, entry, qty, isBuy, now);
+        applyHitOutcome(sig, STATUS_BREAKEVEN, ExitCategory.PRESSURE_EXIT, false, false, entry, entry, qty, isBuy, now,
+                PressureExitTrigger.TRAILING_BREAKEVEN);
         return true;
     }
 
@@ -381,13 +382,15 @@ public class SignalOutcomeTrackerService {
     private void applyHitOutcome(
             StrategySignalEntity sig,
             String status,
+            ExitCategory category,
             boolean hitTarget,
             boolean hitSl,
             BigDecimal entry,
             BigDecimal exitLevel,
             BigDecimal qty,
             boolean isBuy,
-            Instant now) {
+            Instant now,
+            PressureExitTrigger trigger) {
         sig.setOutcomeStatus(status);
         sig.setHitTarget(hitTarget);
         sig.setHitStoploss(hitSl);
@@ -401,6 +404,10 @@ public class SignalOutcomeTrackerService {
                 : entry.subtract(exitLevel).multiply(qty);
         sig.setRealizedPnl(pnl.setScale(2, RoundingMode.HALF_UP));
         sig.setUnrealizedPnl(null);
+        sig.setExpiryReason(category.name() + ": " + status);
+
+        exitTelemetryService.recordExit(
+                sig, category, sig.getExpiryReason(), now, null, trigger, false);
     }
 
     private void applyExcursionAndMarkToMarket(
@@ -448,23 +455,30 @@ public class SignalOutcomeTrackerService {
                 refreshMarkToMarket(sig, bars, bars, sig.getEntryReferencePrice(), isBuy, qty);
             }
         }
-        sig.setOutcomeStatus(STATUS_EXPIRED);
-        sig.setOutcomeTime(now);
+        closeWithCategory(sig, ExitCategory.TIME_EXIT,
+                "TIME_EXIT: signal_expired_after_" + EXPIRY_HOURS + "h", now, null, false);
+    }
+
+    private void closeWithCategory(
+            StrategySignalEntity sig,
+            ExitCategory category,
+            String reason,
+            Instant now,
+            PressureExitTrigger trigger,
+            boolean minHoldBypassed) {
         ensureUnrealizedPresent(sig);
         if (sig.getRealizedPnl() == null && sig.getUnrealizedPnl() != null) {
             sig.setRealizedPnl(sig.getUnrealizedPnl());
-            sig.setUnrealizedPnl(null);
         }
+        sig.setUnrealizedPnl(null);
+        sig.setOutcomeStatus(category.outcomeStatus());
+        sig.setOutcomeTime(now);
+        sig.setExpiryReason(category.name() + ": " + reason);
+        exitTelemetryService.recordExit(sig, category, reason, now, null, trigger, minHoldBypassed);
     }
 
     private static boolean isTerminalOutcome(String status) {
-        if (status == null || status.isBlank()) {
-            return false;
-        }
-        return switch (status.toUpperCase()) {
-            case "TARGET_HIT", "STOPLOSS_HIT", "SL_HIT", "BREAKEVEN_EXIT", "EXPIRED", "PRESSURE_EXIT" -> true;
-            default -> false;
-        };
+        return ExitCategory.isTerminalOutcome(status);
     }
 
     private void broadcastOutcomeChange(StrategySignalEntity sig) {

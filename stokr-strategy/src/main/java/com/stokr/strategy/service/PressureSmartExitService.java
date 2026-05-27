@@ -8,6 +8,11 @@ import com.stokr.marketdata.service.OrderBookPressureTracker;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureAnalysis;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.lifecycle.ExitCategory;
+import com.stokr.strategy.lifecycle.ExitDecision;
+import com.stokr.strategy.lifecycle.PressureExitTrigger;
+import com.stokr.strategy.lifecycle.StrategyExitTelemetryService;
+import com.stokr.strategy.lifecycle.StrategyLifecycleProfile;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
@@ -23,44 +28,21 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
 /**
- * PRESSURE SMART EXIT SERVICE — V3.5 Smart Exit Engine
- *
- * Monitors RUNNING signals for all pressure-based strategies and exits EARLY when
- * order book pressure reverses, before the stop loss gets hit.
- *
- * WHY THIS EXISTS:
- *   Data from May 26 shows 25% of SL hits had MFE > 0.5% (price went
- *   favorable first, then reversed to SL). Smart exit catches these
- *   reversals and exits at breakeven or small profit instead of full SL loss.
- *
- * EXIT RULES (checked every 15 seconds):
- *   ① PRESSURE REVERSAL — Buy pressure flipped to sell (or vice versa)
- *   ② PRESSURE EXHAUSTION — Pressure consistency dropped below 35%
- *   ③ TRAILING BREAKEVEN — MFE > 40% of target distance → trail SL to entry
- *   ④ COUNTER CANDLE — Strong counter-direction bar appeared
- *   ⑤ TIME DECAY — Signal > 20 min old with < 20% progress toward target
- *
- * OUTCOME: Marks signal as "PRESSURE_EXIT" with exit price = current close.
- *   This converts ~50% of would-be SL hits into breakevens/small wins.
- *
- * EXPECTED IMPACT: Pushes win rate from 65-75% → 75-85%
+ * Lifecycle-aware pressure exit engine with strategy-specific minimum hold times.
+ * PRESSURE_EXIT is blocked until min hold unless an emergency condition fires.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class PressureSmartExitService {
 
-    /** All pressure-based strategies eligible for smart exit */
-    private static final java.util.Set<String> ELIGIBLE_STRATEGIES = java.util.Set.of(
-            "NSE_SPIKE_DETECTION", "EARLY_BREAKOUT", "VWAP_BOUNCE", "GAP_FILL", "SECTOR_LAGGARD"
-    );
-    private static final String STATUS_PRESSURE_EXIT = "PRESSURE_EXIT";
     private static final String STATUS_RUNNING = "RUNNING";
     private static final int MAX_SIGNALS_PER_SCAN = 100;
     private static final int LOOKBACK_HOURS = 8;
@@ -69,81 +51,68 @@ public class PressureSmartExitService {
     private final OrderBookPressureTracker pressureTracker;
     private final MarketDataQueryService marketDataQueryService;
     private final ApplicationEventPublisher eventPublisher;
+    private final StrategyExitTelemetryService exitTelemetryService;
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // CONFIGURABLE THRESHOLDS
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    /** Pressure ratio at which a buy signal is considered reversed (sell pressure dominant) */
     @Value("${stokr.strategy.smart-exit.pressure-reversal-buy:0.43}")
     private double pressureReversalBuyThreshold;
 
-    /** Pressure ratio at which a sell signal is considered reversed (buy pressure dominant) */
     @Value("${stokr.strategy.smart-exit.pressure-reversal-sell:0.57}")
     private double pressureReversalSellThreshold;
 
-    /** Minimum consistency below which pressure is considered exhausted */
     @Value("${stokr.strategy.smart-exit.exhaustion-consistency:0.35}")
     private double exhaustionConsistency;
 
-    /** Lookback ticks for pressure analysis during exit monitoring */
     @Value("${stokr.strategy.smart-exit.pressure-lookback:60}")
     private int pressureLookback;
 
-    /** MFE ratio of target distance to activate trailing breakeven */
     @Value("${stokr.strategy.smart-exit.trailing-mfe-ratio:0.40}")
     private double trailingMfeRatio;
 
-    /** Minutes after which time decay exit kicks in */
-    @Value("${stokr.strategy.smart-exit.time-decay-minutes:20}")
-    private int timeDecayMinutes;
-
-    /** Minimum progress toward target (%) to stay alive after time decay */
     @Value("${stokr.strategy.smart-exit.min-progress-pct:20}")
     private double minProgressPct;
 
-    /** Counter candle minimum body ratio (body/range) to trigger exit */
     @Value("${stokr.strategy.smart-exit.counter-candle-body-ratio:0.55}")
     private double counterCandleBodyRatio;
 
-    /** Enable/disable the smart exit service */
     @Value("${stokr.strategy.smart-exit.enabled:true}")
     private boolean enabled;
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // MAIN SCHEDULED SCAN — every 15 seconds
-    // ═══════════════════════════════════════════════════════════════════════════
+    @Value("${stokr.strategy.lifecycle.emergency.spread-pct:0.50}")
+    private double emergencySpreadPct;
+
+    @Value("${stokr.strategy.lifecycle.emergency.candle-stale-seconds:120}")
+    private long emergencyCandleStaleSeconds;
+
+    @Value("${stokr.strategy.lifecycle.emergency.volume-vacuum-ratio:0.10}")
+    private double emergencyVolumeVacuumRatio;
 
     @Scheduled(fixedDelayString = "${stokr.strategy.smart-exit.interval-ms:15000}")
     @Transactional
     public void monitorAndExit() {
-        if (!enabled) return;
+        if (!enabled) {
+            return;
+        }
 
         Instant since = Instant.now().minus(LOOKBACK_HOURS, ChronoUnit.HOURS);
         List<StrategySignalEntity> running = signalRepository.findRunningSignalsSince(
                 since, PageRequest.of(0, MAX_SIGNALS_PER_SCAN));
-
-        if (running.isEmpty()) return;
-
-        // Filter to pressure-based strategies with proper entry/SL/target
-        List<StrategySignalEntity> spikeSignals = running.stream()
-                .filter(s -> s.getStrategyName() != null && ELIGIBLE_STRATEGIES.contains(s.getStrategyName().toUpperCase()))
-                .filter(s -> s.getEntryReferencePrice() != null && s.getEntryReferencePrice().signum() > 0)
-                .filter(s -> s.getStopPrice() != null && s.getTargetPrice() != null)
-                .toList();
-
-        if (spikeSignals.isEmpty()) return;
+        if (running.isEmpty()) {
+            return;
+        }
 
         Instant now = Instant.now();
         int exited = 0;
 
-        for (StrategySignalEntity sig : spikeSignals) {
+        for (StrategySignalEntity sig : running) {
+            if (!isEligible(sig)) {
+                continue;
+            }
             try {
-                String exitReason = evaluateSmartExit(sig, now);
-                if (exitReason != null) {
-                    applyPressureExit(sig, exitReason, now);
+                ExitDecision decision = evaluateExit(sig, now);
+                if (decision != null) {
+                    applyExit(sig, decision, now);
                     exited++;
-                    broadcastOutcomeChange(sig);
+                    broadcastOutcomeChange(sig, decision);
                 }
             } catch (Exception ex) {
                 log.debug("smart_exit.eval_error signalId={} {}", sig.getId(), ex.getMessage());
@@ -151,156 +120,310 @@ public class PressureSmartExitService {
         }
 
         if (exited > 0) {
-            log.info("smart_exit.scan scanned={} exited={}", spikeSignals.size(), exited);
+            log.info("smart_exit.scan exited={}", exited);
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SMART EXIT EVALUATION — returns exit reason or null (stay in trade)
-    // ═══════════════════════════════════════════════════════════════════════════
+    private boolean isEligible(StrategySignalEntity sig) {
+        if (sig.getStrategyName() == null || sig.getEntryReferencePrice() == null
+                || sig.getEntryReferencePrice().signum() <= 0
+                || sig.getStopPrice() == null || sig.getTargetPrice() == null) {
+            return false;
+        }
+        StrategyLifecycleProfile profile = StrategyLifecycleProfile.forStrategy(sig.getStrategyName());
+        return profile.pressureExitEnabled();
+    }
 
-    private String evaluateSmartExit(StrategySignalEntity sig, Instant now) {
+    private ExitDecision evaluateExit(StrategySignalEntity sig, Instant now) {
+        StrategyLifecycleProfile profile = StrategyLifecycleProfile.forStrategy(sig.getStrategyName());
+        long holdSeconds = StrategyExitTelemetryService.holdSeconds(sig, now);
+        boolean minHoldSatisfied = holdSeconds >= profile.minHoldSeconds();
+
+        ExitContext ctx = buildContext(sig, now, profile);
+        if (ctx == null) {
+            return null;
+        }
+
+        ExitDecision emergency = evaluateEmergencyExit(ctx);
+        if (emergency != null) {
+            return emergency;
+        }
+
+        if (!minHoldSatisfied) {
+            log.debug("smart_exit.min_hold_blocked strategy={} symbol={} holdSec={} minHoldSec={}",
+                    sig.getStrategyName(), sig.getSymbol(), holdSeconds, profile.minHoldSeconds());
+            return null;
+        }
+
+        return evaluatePressureAndTimeExit(ctx);
+    }
+
+    private ExitDecision evaluateEmergencyExit(ExitContext ctx) {
+        if (ctx.hardSlBreached()) {
+            return ExitDecision.emergency(
+                    ExitCategory.HARD_STOP,
+                    String.format("HARD_SL_BREACH: price=%.4f sl=%.4f direction=%s",
+                            ctx.currentPrice(), ctx.slPrice(), ctx.isBuy() ? "BUY" : "SELL"));
+        }
+
+        if (ctx.candleStaleSeconds() > emergencyCandleStaleSeconds) {
+            return ExitDecision.emergency(
+                    ExitCategory.FEED_PROTECTION,
+                    String.format("FEED_STALE: latestBarAgeSec=%d thresholdSec=%d",
+                            ctx.candleStaleSeconds(), emergencyCandleStaleSeconds));
+        }
+
+        if (ctx.spreadPct() >= emergencySpreadPct) {
+            return ExitDecision.emergency(
+                    ExitCategory.LIQUIDITY_PROTECTION,
+                    String.format("SPREAD_EXPLOSION: spreadPct=%.3f thresholdPct=%.3f barRange=%.4f",
+                            ctx.spreadPct(), emergencySpreadPct, ctx.barRange()));
+        }
+
+        if (ctx.volumeVacuum()) {
+            return ExitDecision.emergency(
+                    ExitCategory.LIQUIDITY_PROTECTION,
+                    String.format("VOLUME_VACUUM: currentVol=%.0f avgVol=%.0f ratioThreshold=%.2f",
+                            ctx.currentVolume(), ctx.avgVolume(), emergencyVolumeVacuumRatio));
+        }
+
+        return null;
+    }
+
+    private ExitDecision evaluatePressureAndTimeExit(ExitContext ctx) {
+        StrategySignalEntity sig = ctx.signal();
+        PressureSnapshot snapshot = ctx.snapshot();
+        PressureAnalysis analysis = ctx.analysis();
+
+        if (snapshot != null && analysis != null) {
+            double ratio = snapshot.imbalanceRatio();
+
+            if (ctx.isBuy() && ratio < pressureReversalBuyThreshold && ctx.currentProgress() < 70) {
+                String reason = String.format(
+                        "IMBALANCE_COLLAPSE: buy→sell ratio=%.2f threshold=%.2f progress=%.1f%%",
+                        ratio, pressureReversalBuyThreshold, ctx.currentProgress());
+                logPressureExit(sig, PressureExitTrigger.IMBALANCE_COLLAPSE, reason);
+                return ExitDecision.pressure(PressureExitTrigger.IMBALANCE_COLLAPSE, reason, false);
+            }
+            if (!ctx.isBuy() && ratio > pressureReversalSellThreshold && ctx.currentProgress() < 70) {
+                String reason = String.format(
+                        "IMBALANCE_COLLAPSE: sell→buy ratio=%.2f threshold=%.2f progress=%.1f%%",
+                        ratio, pressureReversalSellThreshold, ctx.currentProgress());
+                logPressureExit(sig, PressureExitTrigger.IMBALANCE_COLLAPSE, reason);
+                return ExitDecision.pressure(PressureExitTrigger.IMBALANCE_COLLAPSE, reason, false);
+            }
+        }
+
+        if (analysis != null) {
+            double consistency = analysis.pressureConsistency();
+            if (consistency < exhaustionConsistency && ctx.currentProgress() < 50) {
+                String reason = String.format(
+                        "VOLUME_VACUUM: consistency=%.2f threshold=%.2f progress=%.1f%%",
+                        consistency, exhaustionConsistency, ctx.currentProgress());
+                logPressureExit(sig, PressureExitTrigger.VOLUME_VACUUM, reason);
+                return ExitDecision.pressure(PressureExitTrigger.VOLUME_VACUUM, reason, false);
+            }
+        }
+
+        if (ctx.mfePctOfTarget() >= trailingMfeRatio * 100 && ctx.backAtEntry()) {
+            String reason = String.format(
+                    "TRAILING_BREAKEVEN: mfePctOfTarget=%.1f threshold=%.1f priceReturnedToEntry=true",
+                    ctx.mfePctOfTarget(), trailingMfeRatio * 100);
+            logPressureExit(sig, PressureExitTrigger.TRAILING_BREAKEVEN, reason);
+            return ExitDecision.pressure(PressureExitTrigger.TRAILING_BREAKEVEN, reason, false);
+        }
+
+        if (ctx.ageMinutes() >= 3 && ctx.recentBars().size() >= 2) {
+            MarketdataCandle lastBar = ctx.lastBar();
+            MarketdataCandle prevBar = ctx.recentBars().get(ctx.recentBars().size() - 2);
+            if (isCounterCandle(lastBar, ctx.isBuy())) {
+                if (isCounterCandle(prevBar, ctx.isBuy())) {
+                    String reason = String.format(
+                            "MOMENTUM_REVERSAL: consecutiveCounterBars=2 pnlPct=%.3f bodyRatioThreshold=%.2f",
+                            ctx.pnlPct(), counterCandleBodyRatio);
+                    logPressureExit(sig, PressureExitTrigger.MOMENTUM_REVERSAL, reason);
+                    return ExitDecision.pressure(PressureExitTrigger.MOMENTUM_REVERSAL, reason, false);
+                }
+                if (ctx.pnlPct() <= 0.05) {
+                    String reason = String.format(
+                            "ADVERSE_VELOCITY: counterBar pnlPct=%.3f bodyRatioThreshold=%.2f",
+                            ctx.pnlPct(), counterCandleBodyRatio);
+                    logPressureExit(sig, PressureExitTrigger.ADVERSE_VELOCITY, reason);
+                    return ExitDecision.pressure(PressureExitTrigger.ADVERSE_VELOCITY, reason, false);
+                }
+            }
+        }
+
+        if (ctx.spreadPct() >= emergencySpreadPct * 0.6 && ctx.pnlPct() < 0) {
+            String reason = String.format(
+                    "SPREAD_WIDENING: spreadPct=%.3f warnThreshold=%.3f pnlPct=%.3f",
+                    ctx.spreadPct(), emergencySpreadPct * 0.6, ctx.pnlPct());
+            logPressureExit(sig, PressureExitTrigger.SPREAD_WIDENING, reason);
+            return ExitDecision.pressure(PressureExitTrigger.SPREAD_WIDENING, reason, false);
+        }
+
+        int timeStopMinutes = ctx.profile().timeStopMinutes();
+        if (ctx.ageMinutes() >= timeStopMinutes && ctx.currentProgress() < minProgressPct) {
+            String reason = String.format(
+                    "TIME_EXIT: ageMin=%d timeStopMin=%d progress=%.1f minProgressPct=%.1f",
+                    ctx.ageMinutes(), timeStopMinutes, ctx.currentProgress(), minProgressPct);
+            log.info("smart_exit.time_exit strategy={} symbol={} {}", sig.getStrategyName(), sig.getSymbol(), reason);
+            return ExitDecision.timeExit(reason);
+        }
+
+        return null;
+    }
+
+    private void logPressureExit(StrategySignalEntity sig, PressureExitTrigger trigger, String reason) {
+        log.warn("smart_exit.pressure strategy={} symbol={} trigger={} reason={}",
+                sig.getStrategyName(), sig.getSymbol(), trigger.name(), reason);
+    }
+
+    private ExitContext buildContext(StrategySignalEntity sig, Instant now, StrategyLifecycleProfile profile) {
         String symbol = sig.getSymbol();
         boolean isBuy = sig.getSignalType() == SignalType.BUY;
         BigDecimal entry = sig.getEntryReferencePrice();
         BigDecimal target = sig.getTargetPrice();
         BigDecimal sl = sig.getStopPrice();
 
-        // Get current pressure state
         PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
         PressureAnalysis analysis = pressureTracker.analyze(symbol, pressureLookback);
 
-        // Get latest candle for price
-        List<MarketdataCandle> recentBars = marketDataQueryService.lastBarsAsc(symbol, "1m", 3);
-        if (recentBars.isEmpty()) return null;
+        List<MarketdataCandle> recentBars = marketDataQueryService.lastBarsAsc(symbol, "1m", 12);
+        if (recentBars.isEmpty()) {
+            return null;
+        }
 
         MarketdataCandle lastBar = recentBars.get(recentBars.size() - 1);
-        if (lastBar.getClosePrice() == null) return null;
+        if (lastBar.getClosePrice() == null) {
+            return null;
+        }
 
         double currentPrice = lastBar.getClosePrice().doubleValue();
         double entryPrice = entry.doubleValue();
         double targetPrice = target.doubleValue();
         double slPrice = sl.doubleValue();
 
-        // Calculate current P&L direction
-        double pnlPct;
-        if (isBuy) {
-            pnlPct = (currentPrice - entryPrice) / entryPrice * 100;
-        } else {
-            pnlPct = (entryPrice - currentPrice) / entryPrice * 100;
-        }
+        double pnlPct = isBuy
+                ? (currentPrice - entryPrice) / entryPrice * 100
+                : (entryPrice - currentPrice) / entryPrice * 100;
 
-        // Calculate progress toward target (0% = at entry, 100% = at target)
         double targetDistance = Math.abs(targetPrice - entryPrice);
         double currentProgress = targetDistance > 0
                 ? Math.abs(currentPrice - entryPrice) / targetDistance * 100
                 : 0;
-        // Negative progress if price moved AGAINST us
-        if (pnlPct < 0) currentProgress = -currentProgress;
+        if (pnlPct < 0) {
+            currentProgress = -currentProgress;
+        }
 
-        // MFE from entity (set by outcome tracker)
         double mfe = sig.getMaxFavorableExcursion() != null
                 ? sig.getMaxFavorableExcursion().doubleValue()
                 : 0;
         double mfePctOfTarget = targetDistance > 0 ? mfe / targetDistance * 100 : 0;
 
-        // Signal age in minutes
-        Instant signalTime = sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt();
+        Instant signalTime = StrategyExitTelemetryService.resolveEntryTime(sig);
         long ageMinutes = ChronoUnit.MINUTES.between(signalTime, now);
 
-        // ─────────────────────────────────────────────────────────────────────
-        // RULE ①: PRESSURE REVERSAL
-        // Buy signal but sell pressure now dominant (or vice versa)
-        // Only exit if we're not already significantly in profit
-        // ─────────────────────────────────────────────────────────────────────
-        if (snapshot != null && analysis != null) {
-            double ratio = snapshot.imbalanceRatio();
+        double high = lastBar.getHighPrice() != null ? lastBar.getHighPrice().doubleValue() : currentPrice;
+        double low = lastBar.getLowPrice() != null ? lastBar.getLowPrice().doubleValue() : currentPrice;
+        double barRange = high - low;
+        double mid = (high + low) / 2.0;
+        double spreadPct = mid > 0 ? barRange / mid * 100 : 0;
 
-            if (isBuy && ratio < pressureReversalBuyThreshold) {
-                // Buy pressure GONE — sell side dominant
-                if (currentProgress < 70) {  // Don't exit if almost at target
-                    return String.format("PRESSURE_REVERSAL: buy→sell ratio=%.0f%% price_progress=%.0f%%",
-                            ratio * 100, currentProgress);
-                }
-            }
-            if (!isBuy && ratio > pressureReversalSellThreshold) {
-                // Sell pressure GONE — buy side dominant
-                if (currentProgress < 70) {
-                    return String.format("PRESSURE_REVERSAL: sell→buy ratio=%.0f%% price_progress=%.0f%%",
-                            ratio * 100, currentProgress);
-                }
-            }
+        long candleStaleSeconds = 0;
+        if (lastBar.getOpenTime() != null) {
+            candleStaleSeconds = Duration.between(lastBar.getOpenTime(), now).getSeconds();
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // RULE ②: PRESSURE EXHAUSTION
-        // Pressure consistency dropped to noise level — institutions done
-        // Only trigger if position is not in strong profit
-        // ─────────────────────────────────────────────────────────────────────
-        if (analysis != null) {
-            double consistency = analysis.pressureConsistency();
-            if (consistency < exhaustionConsistency && currentProgress < 50) {
-                return String.format("PRESSURE_EXHAUSTION: consistency=%.0f%% (<%d%%) progress=%.0f%%",
-                        consistency * 100, (int)(exhaustionConsistency * 100), currentProgress);
+        double currentVolume = lastBar.getVolume() != null ? lastBar.getVolume().doubleValue() : 0;
+        double avgVolume = 0;
+        int volCount = 0;
+        for (int i = Math.max(0, recentBars.size() - 11); i < recentBars.size() - 1; i++) {
+            if (recentBars.get(i).getVolume() != null && recentBars.get(i).getVolume().doubleValue() > 0) {
+                avgVolume += recentBars.get(i).getVolume().doubleValue();
+                volCount++;
             }
         }
+        avgVolume = volCount > 0 ? avgVolume / volCount : 0;
 
-        // ─────────────────────────────────────────────────────────────────────
-        // RULE ③: TRAILING BREAKEVEN
-        // If MFE reached 40%+ of target distance but price came back to entry
-        // → exit at breakeven (don't let a winning trade become a loser)
-        // ─────────────────────────────────────────────────────────────────────
-        if (mfePctOfTarget >= trailingMfeRatio * 100) {
-            // We HAD a good move — check if it's reversing
-            boolean backAtEntry;
-            if (isBuy) {
-                backAtEntry = currentPrice <= entryPrice * 1.001;  // Within 0.1% of entry
-            } else {
-                backAtEntry = currentPrice >= entryPrice * 0.999;
-            }
+        boolean hardSlBreached = isBuy
+                ? low <= slPrice
+                : high >= slPrice;
 
-            if (backAtEntry) {
-                return String.format("TRAILING_BREAKEVEN: mfe_pct=%.0f%% of target, price returned to entry",
-                        mfePctOfTarget);
-            }
-        }
+        boolean backAtEntry = isBuy
+                ? currentPrice <= entryPrice * 1.001
+                : currentPrice >= entryPrice * 0.999;
 
-        // ─────────────────────────────────────────────────────────────────────
-        // RULE ④: COUNTER CANDLE
-        // A strong candle appeared in the opposite direction — momentum reversed
-        // Only trigger if we've been in the trade > 3 minutes (avoid noise)
-        // ─────────────────────────────────────────────────────────────────────
-        if (ageMinutes >= 3 && recentBars.size() >= 2) {
-            MarketdataCandle prevBar = recentBars.get(recentBars.size() - 2);
-            if (isCounterCandle(lastBar, isBuy)) {
-                // Also check: is previous bar also counter? (2 counter bars = strong reversal)
-                if (isCounterCandle(prevBar, isBuy)) {
-                    return String.format("COUNTER_CANDLE: 2 consecutive counter bars, pnl=%.2f%%", pnlPct);
-                }
-                // Single counter candle: only exit if we're losing or flat
-                if (pnlPct <= 0.05) {
-                    return String.format("COUNTER_CANDLE: strong reversal bar + flat/losing pnl=%.2f%%", pnlPct);
-                }
-            }
-        }
+        boolean volumeVacuum = avgVolume > 0 && currentVolume / avgVolume < emergencyVolumeVacuumRatio;
 
-        // ─────────────────────────────────────────────────────────────────────
-        // RULE ⑤: TIME DECAY
-        // Signal is old with no meaningful progress — opportunity cost
-        // After 20 min, if < 20% progress toward target, exit
-        // ─────────────────────────────────────────────────────────────────────
-        if (ageMinutes >= timeDecayMinutes && currentProgress < minProgressPct) {
-            return String.format("TIME_DECAY: age=%dmin progress=%.0f%% (min=%d%%)",
-                    ageMinutes, currentProgress, (int) minProgressPct);
-        }
-
-        // All rules passed — stay in trade
-        return null;
+        return new ExitContext(
+                sig, profile, isBuy, snapshot, analysis, recentBars, lastBar,
+                currentPrice, slPrice, pnlPct, currentProgress, mfePctOfTarget,
+                ageMinutes, spreadPct, barRange, candleStaleSeconds,
+                currentVolume, avgVolume, hardSlBreached, backAtEntry, volumeVacuum);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // HELPER: Check if a candle is a counter-direction candle
-    // ═══════════════════════════════════════════════════════════════════════════
+    private void applyExit(StrategySignalEntity sig, ExitDecision decision, Instant now) {
+        String symbol = sig.getSymbol();
+        boolean isBuy = sig.getSignalType() == SignalType.BUY;
+        BigDecimal entry = sig.getEntryReferencePrice();
+        BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
+
+        BigDecimal exitPrice = resolveExitPrice(sig, decision, now, entry);
+        BigDecimal pnl = isBuy
+                ? exitPrice.subtract(entry).multiply(qty)
+                : entry.subtract(exitPrice).multiply(qty);
+
+        sig.setOutcomeStatus(decision.category().outcomeStatus());
+        sig.setOutcomeTime(now);
+        sig.setExitPrice(exitPrice);
+        sig.setRealizedPnl(pnl.setScale(2, RoundingMode.HALF_UP));
+        sig.setUnrealizedPnl(null);
+        sig.setExpiryReason(decision.category().name() + ": " + decision.reason());
+
+        if (decision.category() == ExitCategory.HARD_STOP) {
+            sig.setHitStoploss(true);
+        }
+
+        if (sig.getEntryPrice() == null) {
+            sig.setEntryPrice(entry);
+        }
+
+        BigDecimal pressureScore = null;
+        PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
+        if (snapshot != null) {
+            pressureScore = BigDecimal.valueOf(snapshot.imbalanceRatio()).setScale(4, RoundingMode.HALF_UP);
+        }
+
+        exitTelemetryService.recordExit(
+                sig,
+                decision.category(),
+                decision.reason(),
+                now,
+                pressureScore,
+                decision.pressureTrigger(),
+                decision.minHoldBypassed());
+
+        log.info("smart_exit.closed strategy={} symbol={} category={} entry={} exit={} pnl={} reason={}",
+                sig.getStrategyName(), symbol, decision.category().name(),
+                entry, exitPrice, pnl.setScale(2, RoundingMode.HALF_UP), decision.reason());
+    }
+
+    private BigDecimal resolveExitPrice(
+            StrategySignalEntity sig,
+            ExitDecision decision,
+            Instant now,
+            BigDecimal entry) {
+        if (decision.category() == ExitCategory.HARD_STOP && sig.getStopPrice() != null) {
+            return sig.getStopPrice();
+        }
+
+        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(sig.getSymbol(), "1m", 1);
+        if (!bars.isEmpty() && bars.get(bars.size() - 1).getClosePrice() != null) {
+            return bars.get(bars.size() - 1).getClosePrice();
+        }
+        return entry;
+    }
 
     private boolean isCounterCandle(MarketdataCandle bar, boolean isBuy) {
         if (bar.getHighPrice() == null || bar.getLowPrice() == null
@@ -313,67 +436,19 @@ public class PressureSmartExitService {
         double close = bar.getClosePrice().doubleValue();
         double open = bar.getOpenPrice().doubleValue();
         double range = high - low;
-
-        if (range <= 0) return false;
-
-        double bodySize = Math.abs(close - open);
-        double bodyRatio = bodySize / range;
-
-        if (bodyRatio < counterCandleBodyRatio) return false;  // Not strong enough
-
-        if (isBuy) {
-            return close < open;  // Red bar = counter for buy
-        } else {
-            return close > open;  // Green bar = counter for sell
+        if (range <= 0) {
+            return false;
         }
+
+        double bodyRatio = Math.abs(close - open) / range;
+        if (bodyRatio < counterCandleBodyRatio) {
+            return false;
+        }
+
+        return isBuy ? close < open : close > open;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // APPLY EXIT: Update signal entity with PRESSURE_EXIT outcome
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    private void applyPressureExit(StrategySignalEntity sig, String exitReason, Instant now) {
-        String symbol = sig.getSymbol();
-        boolean isBuy = sig.getSignalType() == SignalType.BUY;
-        BigDecimal entry = sig.getEntryReferencePrice();
-        BigDecimal qty = sig.getSuggestedQty() != null ? sig.getSuggestedQty() : BigDecimal.ONE;
-
-        // Get current price for exit
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, "1m", 1);
-        BigDecimal exitPrice = entry;  // Default to breakeven if no candle
-        if (!bars.isEmpty() && bars.get(0).getClosePrice() != null) {
-            exitPrice = bars.get(0).getClosePrice();
-        }
-
-        // Calculate realized PnL
-        BigDecimal pnl;
-        if (isBuy) {
-            pnl = exitPrice.subtract(entry).multiply(qty);
-        } else {
-            pnl = entry.subtract(exitPrice).multiply(qty);
-        }
-
-        // Update signal
-        sig.setOutcomeStatus(STATUS_PRESSURE_EXIT);
-        sig.setOutcomeTime(now);
-        sig.setExitPrice(exitPrice);
-        sig.setRealizedPnl(pnl.setScale(2, RoundingMode.HALF_UP));
-        sig.setUnrealizedPnl(null);
-        sig.setExpiryReason("SMART_EXIT: " + exitReason);
-
-        if (sig.getEntryPrice() == null) {
-            sig.setEntryPrice(entry);
-        }
-
-        log.info("smart_exit.closed symbol={} type={} entry={} exit={} pnl={} reason={}",
-                symbol, sig.getSignalType(), entry, exitPrice, pnl.setScale(2, RoundingMode.HALF_UP), exitReason);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // BROADCAST: Notify UI of outcome change
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    private void broadcastOutcomeChange(StrategySignalEntity sig) {
+    private void broadcastOutcomeChange(StrategySignalEntity sig, ExitDecision decision) {
         try {
             String userId = sig.getUserId() != null ? sig.getUserId().toString() : "system";
             SignalPublishedEvent signalEvt = new SignalPublishedEvent(
@@ -385,6 +460,7 @@ public class PressureSmartExitService {
                             "symbol", sig.getSymbol() != null ? sig.getSymbol() : "",
                             "strategyKey", sig.getStrategyName() != null ? sig.getStrategyName() : "",
                             "outcomeStatus", sig.getOutcomeStatus(),
+                            "exitCategory", decision.category().name(),
                             "realizedPnl", sig.getRealizedPnl() != null ? sig.getRealizedPnl().toPlainString() : "0",
                             "exitReason", sig.getExpiryReason() != null ? sig.getExpiryReason() : "",
                             "userId", userId
@@ -405,5 +481,29 @@ public class PressureSmartExitService {
         } catch (Exception ex) {
             log.debug("smart_exit.broadcast_error signalId={}", sig.getId(), ex);
         }
+    }
+
+    private record ExitContext(
+            StrategySignalEntity signal,
+            StrategyLifecycleProfile profile,
+            boolean isBuy,
+            PressureSnapshot snapshot,
+            PressureAnalysis analysis,
+            List<MarketdataCandle> recentBars,
+            MarketdataCandle lastBar,
+            double currentPrice,
+            double slPrice,
+            double pnlPct,
+            double currentProgress,
+            double mfePctOfTarget,
+            long ageMinutes,
+            double spreadPct,
+            double barRange,
+            long candleStaleSeconds,
+            double currentVolume,
+            double avgVolume,
+            boolean hardSlBreached,
+            boolean backAtEntry,
+            boolean volumeVacuum) {
     }
 }
