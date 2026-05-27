@@ -2,6 +2,7 @@ package com.stokr.user.broker.historical;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.stokr.common.crypto.FieldCipher;
+import com.stokr.user.broker.PlatformMarketFeedService;
 import com.stokr.user.broker.ZerodhaKiteApiClient;
 import com.stokr.user.config.ZerodhaBrokerProperties;
 import com.stokr.user.domain.BrokerAccount;
@@ -38,6 +39,7 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
     private final ZerodhaBrokerProperties zerodhaBrokerProperties;
     private final PlatformBrokerFeedSessionRepository platformSessionRepository;
     private final BrokerAccountRepository brokerAccountRepository;
+    private final PlatformMarketFeedService platformMarketFeedService;
     private final FieldCipher fieldCipher;
     private final ZerodhaKiteApiClient kiteApiClient;
     private final Map<String, InstrumentCacheRow> instrumentCacheByExchange = new ConcurrentHashMap<>();
@@ -426,6 +428,9 @@ public class ZerodhaHistoricalAdapter implements BrokerHistoricalDataAdapter {
     }
 
     private AccessTokenResolution resolveAccessToken() {
+        platformMarketFeedService.ensureSessionFromTraderFallback("ZERODHA");
+        platformMarketFeedService.refreshAllZerodhaTokens(Duration.ofHours(2));
+
         // Trader OAuth first: platform market-feed tokens often cannot read Kite historical candles.
         BrokerAccount trader = brokerAccountRepository
                 .findFirstByVendorCodeIgnoreCaseAndDeletedFalseAndStatusIgnoreCaseAndAccessTokenEncIsNotNullOrderByUpdatedAtDesc("ZERODHA", "CONNECTED")

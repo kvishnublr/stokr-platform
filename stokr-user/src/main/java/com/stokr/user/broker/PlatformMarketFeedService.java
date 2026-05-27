@@ -124,7 +124,7 @@ public class PlatformMarketFeedService {
             if (refreshToken != null && !refreshToken.isBlank()) {
                 s.setRefreshTokenEnc(fieldCipher.encrypt(refreshToken));
             }
-            s.setTokenExpiresAt(Instant.now().plus(12, ChronoUnit.HOURS));
+            s.setTokenExpiresAt(Instant.now().plus(20, ChronoUnit.HOURS));
             s.setLastSyncAt(Instant.now());
             s.setInstrumentSyncState("UNKNOWN");
             sessionRepository.save(s);
@@ -232,11 +232,12 @@ public class PlatformMarketFeedService {
         if (!"ZERODHA".equals(v)) {
             throw new BadRequestException("Live refresh implemented for ZERODHA only in this build");
         }
+        Map<String, Object> refreshSummary = refreshAllZerodhaTokens(Duration.ofHours(2));
         PlatformBrokerFeedSession s = sessionRepository
                 .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(v)
                 .orElseThrow(() -> new BadRequestException("No platform session for vendor"));
         if (s.getAccessTokenEnc() == null || s.getAccessTokenEnc().isBlank()) {
-            throw new BadRequestException("No access token on platform session");
+            throw new BadRequestException("No access token on platform session after refresh attempt");
         }
         String accessToken = fieldCipher.decrypt(s.getAccessTokenEnc());
         JsonNode profile = kiteApiClient.getProfile(zerodhaBrokerProperties.getApiKey(), accessToken);
@@ -252,7 +253,12 @@ public class PlatformMarketFeedService {
             s.setConnectionState("CONNECTED");
         }
         sessionRepository.save(s);
-        return Map.of("vendor", v, "ok", true, "lastSyncAt", s.getLastSyncAt().toString());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("vendor", v);
+        out.put("ok", true);
+        out.put("lastSyncAt", s.getLastSyncAt().toString());
+        out.put("tokenRefresh", refreshSummary);
+        return out;
     }
 
     public Map<String, Object> notImplemented(String action) {
@@ -334,6 +340,172 @@ public class PlatformMarketFeedService {
             sessionRepository.save(s);
             return false;
         }
+    }
+
+    /**
+     * Renews platform and all connected trader Zerodha sessions when tokens are missing or near expiry.
+     * Works without the live WebSocket runtime — intended for schedulers and admin refresh actions.
+     */
+    @Transactional
+    public Map<String, Object> refreshAllZerodhaTokens(Duration refreshBefore) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("at", Instant.now().toString());
+
+        ensureSessionFromTraderFallback("ZERODHA");
+        boolean platformOk = ensureValidPlatformZerodhaToken(refreshBefore);
+        summary.put("platformRefreshed", platformOk);
+
+        int traderAttempted = 0;
+        int traderRefreshed = 0;
+        int traderFailed = 0;
+        for (BrokerAccount account : brokerAccountRepository.findAllByVendorCodeIgnoreCaseAndDeletedFalse("ZERODHA")) {
+            if (account.getAccessTokenEnc() == null || account.getAccessTokenEnc().isBlank()) {
+                continue;
+            }
+            if (!"CONNECTED".equalsIgnoreCase(Optional.ofNullable(account.getStatus()).orElse(""))) {
+                continue;
+            }
+            traderAttempted++;
+            if (ensureValidTraderZerodhaToken(account, refreshBefore)) {
+                traderRefreshed++;
+            } else {
+                traderFailed++;
+            }
+        }
+        summary.put("traderAttempted", traderAttempted);
+        summary.put("traderRefreshed", traderRefreshed);
+        summary.put("traderFailed", traderFailed);
+
+        syncPlatformTokensToTraders();
+        summary.put("platformSyncedToTraders", true);
+        return summary;
+    }
+
+    /**
+     * Refreshes a single trader Zerodha session using stored refresh token (bootstrapped from platform when missing).
+     */
+    @Transactional
+    public boolean ensureValidTraderZerodhaToken(BrokerAccount account, Duration refreshBefore) {
+        if (account == null) {
+            return false;
+        }
+        Instant now = Instant.now();
+        Instant expiresAt = account.getTokenExpiresAt();
+        boolean hasToken = account.getAccessTokenEnc() != null && !account.getAccessTokenEnc().isBlank();
+        boolean tokenStillValid = hasToken && expiresAt != null && expiresAt.isAfter(now.plus(refreshBefore));
+        if (tokenStillValid) {
+            return true;
+        }
+        bootstrapTraderRefreshFromPlatform(account);
+        if (account.getRefreshTokenEnc() == null || account.getRefreshTokenEnc().isBlank()) {
+            log.warn("trader.zerodha.token_refresh_skipped userId={} reason=no_refresh_token", account.getUserId());
+            if (!hasToken || (expiresAt != null && !expiresAt.isAfter(now))) {
+                account.setHealthStatus("DEGRADED");
+                brokerAccountRepository.save(account);
+            }
+            return false;
+        }
+        try {
+            String refreshToken = fieldCipher.decrypt(account.getRefreshTokenEnc());
+            if (refreshToken == null || refreshToken.isBlank()) {
+                account.setHealthStatus("DEGRADED");
+                brokerAccountRepository.save(account);
+                return false;
+            }
+            JsonNode renewed = kiteApiClient.renewAccessToken(
+                    zerodhaBrokerProperties.getApiKey(),
+                    zerodhaBrokerProperties.getApiSecret(),
+                    refreshToken
+            );
+            if (!"success".equalsIgnoreCase(renewed.path("status").asText())) {
+                log.warn("trader.zerodha.token_refresh_failed userId={} msg={}",
+                        account.getUserId(), renewed.path("message").asText("unknown"));
+                account.setHealthStatus("DEGRADED");
+                brokerAccountRepository.save(account);
+                return false;
+            }
+            JsonNode data = renewed.path("data");
+            String newAccessToken = data.path("access_token").asText(null);
+            String newRefreshToken = data.path("refresh_token").asText(null);
+            if (newAccessToken == null || newAccessToken.isBlank()) {
+                account.setHealthStatus("DEGRADED");
+                brokerAccountRepository.save(account);
+                return false;
+            }
+            account.setAccessTokenEnc(fieldCipher.encrypt(newAccessToken));
+            if (newRefreshToken != null && !newRefreshToken.isBlank()) {
+                account.setRefreshTokenEnc(fieldCipher.encrypt(newRefreshToken));
+            }
+            account.setTokenExpiresAt(now.plus(20, ChronoUnit.HOURS));
+            account.setStatus("CONNECTED");
+            account.setHealthStatus("HEALTHY");
+            account.setLastSyncAt(now);
+            brokerAccountRepository.save(account);
+            log.info("trader.zerodha.token_refreshed userId={} expiresAt={}", account.getUserId(), account.getTokenExpiresAt());
+            return true;
+        } catch (Exception ex) {
+            log.warn("trader.zerodha.token_refresh_error userId={} {}", account.getUserId(), ex.toString());
+            account.setHealthStatus("DEGRADED");
+            brokerAccountRepository.save(account);
+            return false;
+        }
+    }
+
+    /**
+     * After platform renewal, keep trader execution rows aligned so broker rails stay authenticated.
+     */
+    @Transactional
+    public void syncPlatformTokensToTraders() {
+        PlatformBrokerFeedSession platform = sessionRepository
+                .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc("ZERODHA")
+                .orElse(null);
+        if (platform == null || platform.getAccessTokenEnc() == null || platform.getAccessTokenEnc().isBlank()) {
+            return;
+        }
+        Instant exp = platform.getTokenExpiresAt();
+        if (exp != null && exp.isBefore(Instant.now())) {
+            return;
+        }
+        for (BrokerAccount account : brokerAccountRepository.findAllByVendorCodeIgnoreCaseAndDeletedFalse("ZERODHA")) {
+            if (!"CONNECTED".equalsIgnoreCase(Optional.ofNullable(account.getStatus()).orElse(""))) {
+                continue;
+            }
+            boolean needsSync = account.getAccessTokenEnc() == null
+                    || account.getAccessTokenEnc().isBlank()
+                    || account.getTokenExpiresAt() == null
+                    || account.getTokenExpiresAt().isBefore(Instant.now().plus(Duration.ofHours(1)));
+            if (!needsSync) {
+                continue;
+            }
+            account.setAccessTokenEnc(platform.getAccessTokenEnc());
+            if (platform.getRefreshTokenEnc() != null && !platform.getRefreshTokenEnc().isBlank()) {
+                account.setRefreshTokenEnc(platform.getRefreshTokenEnc());
+            }
+            account.setTokenExpiresAt(platform.getTokenExpiresAt());
+            account.setLastSyncAt(Instant.now());
+            account.setHealthStatus("HEALTHY");
+            brokerAccountRepository.save(account);
+            log.info("trader.zerodha.token_synced_from_platform userId={}", account.getUserId());
+        }
+    }
+
+    private void bootstrapTraderRefreshFromPlatform(BrokerAccount account) {
+        if (account.getRefreshTokenEnc() != null && !account.getRefreshTokenEnc().isBlank()) {
+            return;
+        }
+        PlatformBrokerFeedSession platform = sessionRepository
+                .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc("ZERODHA")
+                .orElse(null);
+        if (platform == null || platform.getRefreshTokenEnc() == null || platform.getRefreshTokenEnc().isBlank()) {
+            return;
+        }
+        account.setRefreshTokenEnc(platform.getRefreshTokenEnc());
+        if (account.getAccessTokenEnc() == null || account.getAccessTokenEnc().isBlank()) {
+            account.setAccessTokenEnc(platform.getAccessTokenEnc());
+            account.setTokenExpiresAt(platform.getTokenExpiresAt());
+        }
+        brokerAccountRepository.save(account);
+        log.info("trader.zerodha.refresh_bootstrapped_from_platform userId={}", account.getUserId());
     }
 
     private Map<String, Object> vendorPayload(String vendor) {

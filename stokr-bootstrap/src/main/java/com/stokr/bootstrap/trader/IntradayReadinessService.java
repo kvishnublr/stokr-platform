@@ -216,10 +216,22 @@ public class IntradayReadinessService {
                 yield new ReadinessActionResult(true, "Feed reconnect requested", r, null);
             }
             case "RENEW_BROKER_SESSION" -> {
+                Map<String, Object> refresh = platformMarketFeedService.refreshAllZerodhaTokens(Duration.ofHours(2));
+                boolean platformOk = Boolean.TRUE.equals(refresh.get("platformRefreshed"));
+                int traderRefreshed = refresh.get("traderRefreshed") instanceof Number n ? n.intValue() : 0;
+                if (platformOk || traderRefreshed > 0) {
+                    yield new ReadinessActionResult(
+                            true,
+                            "Broker session renewed automatically",
+                            refresh,
+                            null
+                    );
+                }
                 var auth = zerodhaConnectionService.beginAuthorization(userId);
                 Map<String, Object> payload = Map.of(
                         "authorizeUrl", auth.authorizeUrl(),
-                        "expiresAt", auth.stateExpiresAt()
+                        "expiresAt", auth.stateExpiresAt(),
+                        "autoRefreshAttempt", refresh
                 );
                 yield new ReadinessActionResult(true, "Broker re-auth required", payload, "Open authorizeUrl and complete login.");
             }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.stokr.common.crypto.FieldCipher;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
+import com.stokr.user.broker.PlatformMarketFeedService;
 import com.stokr.user.broker.ZerodhaKiteApiClient;
 import com.stokr.user.config.ZerodhaBrokerProperties;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -55,6 +57,7 @@ public class HistoricalBackfillService {
     private final ZerodhaBrokerProperties       zerodhaBrokerProperties;
     private final FieldCipher                   fieldCipher;
     private final PlatformBrokerFeedSessionRepository sessionRepository;
+    private final PlatformMarketFeedService       platformMarketFeedService;
     private final MarketdataCandleRepository    candleRepository;
 
     @Value("${stokr.backfill.lookback-days:365}")
@@ -289,10 +292,11 @@ public class HistoricalBackfillService {
 
     private String resolveAccessToken() {
         try {
+            platformMarketFeedService.ensureSessionFromTraderFallback(VENDOR);
+            platformMarketFeedService.ensureValidPlatformZerodhaToken(Duration.ofHours(2));
             PlatformBrokerFeedSession session = sessionRepository
                     .findByVendorCodeIgnoreCaseAndDeletedFalse(VENDOR).orElse(null);
             if (session == null || session.getAccessTokenEnc() == null) return null;
-            if (session.getTokenExpiresAt() != null && session.getTokenExpiresAt().isBefore(Instant.now())) return null;
             String token = fieldCipher.decrypt(session.getAccessTokenEnc());
             return (token == null || token.isBlank()) ? null : token;
         } catch (Exception ex) {

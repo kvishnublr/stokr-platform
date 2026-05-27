@@ -292,6 +292,10 @@ stokr:
       redirect-url: ${STOKR_ZERODHA_REDIRECT_URL:http://localhost:8080/api/broker/zerodha/callback}
       sync-enabled: ${STOKR_ZERODHA_SYNC_ENABLED:true}
       sync-ms: ${STOKR_ZERODHA_SYNC_MS:300000}
+      token-refresh-enabled: ${STOKR_ZERODHA_TOKEN_REFRESH_ENABLED:true}
+      token-refresh-before-hours: ${STOKR_ZERODHA_TOKEN_REFRESH_BEFORE_HOURS:4}
+      token-refresh-interval-ms: ${STOKR_ZERODHA_TOKEN_REFRESH_INTERVAL_MS:1800000}
+      token-refresh-daily-cron: ${STOKR_ZERODHA_TOKEN_REFRESH_DAILY_CRON:0 45 5 * * *}
       test-order-enabled: ${STOKR_ZERODHA_TEST_ORDER_ENABLED:false}
       test-order-dry-run: ${STOKR_ZERODHA_TEST_ORDER_DRY_RUN:true}
   ui:
