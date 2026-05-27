@@ -26,8 +26,6 @@ import java.util.Map;
 @Slf4j
 public class IndexHuntTelegramService {
 
-    private final RestTemplate restTemplate;
-
     @Value("${telegram.bot.token:}")
     private String botToken;
 
@@ -42,9 +40,7 @@ public class IndexHuntTelegramService {
             .ofPattern("HH:mm:ss")
             .withZone(ZoneId.of("Asia/Kolkata"));
 
-    public IndexHuntTelegramService(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
-    }
+    private final RestTemplate restTemplate = new RestTemplate();
 
     /**
      * Send new signal alert
