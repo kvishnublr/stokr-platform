@@ -108,7 +108,8 @@ public class AdminUserService {
                 u.getCreatedAt(),
                 u.getLastLoginAt(),
                 strat,
-                broker
+                broker,
+                u.isLiveTradingApproved()
         );
     }
 

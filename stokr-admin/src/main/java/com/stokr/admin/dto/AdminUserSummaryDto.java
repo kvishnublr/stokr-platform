@@ -14,6 +14,7 @@ public record AdminUserSummaryDto(
         Instant createdAt,
         Instant lastLoginAt,
         long activeStrategies,
-        boolean brokerLinked
+        boolean brokerLinked,
+        boolean liveTradingApproved
 ) {
 }
