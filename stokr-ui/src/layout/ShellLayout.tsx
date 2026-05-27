@@ -1,6 +1,6 @@
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -57,10 +57,12 @@ import { WorkspaceTopNav } from "../components/workspace/WorkspaceTopNav";
 import { TraderAccountCard } from "../components/workspace/TraderAccountCard";
 import { NotificationDrawer } from "../components/ds/NotificationDrawer";
 import { MessagesDrawer } from "../components/ds/MessagesDrawer";
+import { AnimatedPage } from "../components/ds/AnimatedPage";
 import { performLogout } from "../services/auth/logout";
 import { AdminInstitutionalSidebar } from "../components/admin/institutional/AdminInstitutionalSidebar";
 
 export function ShellLayout() {
+  const location = useLocation();
   const isLightUi = useUiThemeStore((s) => s.mode === "light");
   const navigate = useNavigate();
   const username = useSessionStore((s) => s.username);
@@ -509,7 +511,11 @@ export function ShellLayout() {
         }
         banners={banners}
       >
-        <Outlet />
+        <AnimatePresence mode="wait">
+          <AnimatedPage pageKey={location.pathname}>
+            <Outlet />
+          </AnimatedPage>
+        </AnimatePresence>
       </AppShell>
       <NotificationDrawer
         open={drawerOpen}

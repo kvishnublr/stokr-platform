@@ -79,7 +79,7 @@ export function SidebarLinks({ links }: { links: SidebarLink[] }) {
 
   function linkClass(active: boolean) {
     return cn(
-      "group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium tracking-tight transition duration-200",
+      "group relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium tracking-tight transition duration-200",
       "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500",
       isLight &&
         cn(
@@ -100,6 +100,10 @@ export function SidebarLinks({ links }: { links: SidebarLink[] }) {
     <nav className="flex flex-col gap-0.5" aria-label="Primary">
       {links.map((item) => {
         const Icon = item.icon;
+        const active =
+          location.pathname === item.to ||
+          Boolean(item.matchPrefix && location.pathname.startsWith(item.matchPrefix)) ||
+          (!item.end && location.pathname.startsWith(`${item.to}/`));
         return (
           <NavLink
             key={item.to}
@@ -109,14 +113,24 @@ export function SidebarLinks({ links }: { links: SidebarLink[] }) {
               linkClass(isActive || Boolean(item.matchPrefix && location.pathname.startsWith(item.matchPrefix)))
             }
           >
+            {active ? (
+              <motion.span
+                layoutId="trader-sidebar-active"
+                className={cn(
+                  "absolute inset-0 rounded-xl",
+                  isLight ? "bg-gradient-to-r from-blue-50 to-white ring-1 ring-blue-100/90" : "bg-gradient-to-r from-blue-500/[0.12] via-neutral-900/90 to-neutral-900 ring-1 ring-blue-500/20",
+                )}
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+              />
+            ) : null}
             <Icon
               className={cn(
-                "h-4 w-4 shrink-0 opacity-80 transition group-hover:opacity-100",
+                "relative z-[1] h-4 w-4 shrink-0 opacity-80 transition group-hover:opacity-100",
                 isLight ? "text-neutral-400 group-hover:text-neutral-700" : "",
               )}
               aria-hidden
             />
-            {item.label}
+            <span className="relative z-[1]">{item.label}</span>
           </NavLink>
         );
       })}

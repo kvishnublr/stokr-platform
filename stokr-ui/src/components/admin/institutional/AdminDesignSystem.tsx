@@ -2,17 +2,11 @@ import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import { cn } from "../../../lib/utils";
 import { toneChipClasses, type StatusTone } from "../../../lib/statusTone";
+import { fadeUp, staggerContainer } from "../../../lib/motionPresets";
 import { GlassPanel } from "../../ds/GlassPanel";
 
-export const adminFadeUp = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
-};
-
-export const adminStagger = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.05 } },
-};
+export const adminFadeUp = fadeUp;
+export const adminStagger = staggerContainer;
 
 export function AdminPageShell({
   title,

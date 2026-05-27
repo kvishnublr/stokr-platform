@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ChevronLeft, ChevronRight, Pin } from "lucide-react";
 import { ADMIN_NAV_GROUPS } from "../../../admin/navigation";
 import { useAdminWorkspaceStore } from "../../../admin/adminWorkspaceStore";
@@ -156,40 +157,56 @@ export function AdminInstitutionalSidebar({ isLight }: { isLight: boolean }) {
                     {group.subtitle}
                   </div>
                 </div>
-                <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition", isOpen ? "rotate-0" : "-rotate-90")} />
+                <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-300", isOpen ? "rotate-0" : "-rotate-90")} />
               </button>
-              {isOpen ? (
-                <div className="mt-0.5 space-y-0.5 border-l border-neutral-800/80 pl-2 ml-2">
-                  {group.items.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.end}
-                        className={({ isActive }) =>
-                          cn(
-                            "flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] font-medium transition",
-                            isActive
-                              ? isLight
-                                ? "bg-blue-50 text-blue-800"
-                                : "bg-blue-500/12 text-blue-200"
-                              : isLight
-                                ? "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
-                                : "text-neutral-500 hover:bg-neutral-900/50 hover:text-neutral-200",
-                          )
-                        }
-                      >
-                        <Icon className="h-3.5 w-3.5 shrink-0 opacity-75" />
-                        <span className="truncate">{item.label}</span>
-                        {item.tier === "critical" ? (
-                          <span className="ml-auto h-1.5 w-1.5 rounded-full bg-rose-500" title="Critical" />
-                        ) : null}
-                      </NavLink>
-                    );
-                  })}
-                </div>
-              ) : null}
+              <AnimatePresence initial={false}>
+                {isOpen ? (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-0.5 space-y-0.5 border-l border-neutral-800/80 pl-2 ml-2">
+                      {group.items.map((item, idx) => {
+                        const Icon = item.icon;
+                        return (
+                          <motion.div
+                            key={item.to}
+                            initial={{ opacity: 0, x: -6 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: idx * 0.03, duration: 0.2 }}
+                          >
+                            <NavLink
+                              to={item.to}
+                              end={item.end}
+                              className={({ isActive }) =>
+                                cn(
+                                  "flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] font-medium transition",
+                                  isActive
+                                    ? isLight
+                                      ? "bg-blue-50 text-blue-800"
+                                      : "bg-blue-500/12 text-blue-200"
+                                    : isLight
+                                      ? "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+                                      : "text-neutral-500 hover:bg-neutral-900/50 hover:text-neutral-200",
+                                )
+                              }
+                            >
+                              <Icon className="h-3.5 w-3.5 shrink-0 opacity-75" />
+                              <span className="truncate">{item.label}</span>
+                              {item.tier === "critical" ? (
+                                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-rose-500" title="Critical" />
+                              ) : null}
+                            </NavLink>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
             </div>
           );
         })}

@@ -22,9 +22,30 @@ export function AppShell({
   return (
     <div className={cn("relative h-full w-full overflow-hidden", isLight ? "bg-neutral-50" : "bg-neutral-950")}>
       {!isLight ? (
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(ellipse_at_top,_rgba(59,130,246,0.11),transparent_58%),radial-gradient(ellipse_at_20%_0%,rgba(168,85,247,0.08),transparent_45%)]" />
+        <>
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(ellipse_at_top,_rgba(59,130,246,0.11),transparent_58%),radial-gradient(ellipse_at_20%_0%,rgba(168,85,247,0.08),transparent_45%)]"
+            animate={{ opacity: [0.85, 1, 0.85] }}
+            transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute -left-24 top-32 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl"
+            animate={{ x: [0, 24, 0], y: [0, -12, 0] }}
+            transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+          />
+        </>
       ) : (
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[320px] bg-[radial-gradient(ellipse_at_50%_-20%,rgba(59,130,246,0.08),transparent_55%),radial-gradient(ellipse_at_10%_0%,rgba(99,102,241,0.05),transparent_40%)]" />
+        <>
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-[320px] bg-[radial-gradient(ellipse_at_50%_-20%,rgba(59,130,246,0.08),transparent_55%),radial-gradient(ellipse_at_10%_0%,rgba(99,102,241,0.05),transparent_40%)]" />
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute right-0 top-20 h-48 w-48 rounded-full bg-indigo-400/10 blur-3xl"
+            animate={{ x: [0, -16, 0], opacity: [0.5, 0.85, 0.5] }}
+            transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+          />
+        </>
       )}
 
       {/* Mobile rails */}

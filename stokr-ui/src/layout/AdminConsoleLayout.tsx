@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { Outlet, useLocation } from "react-router-dom";
+import { AnimatedPage } from "../components/ds/AnimatedPage";
 import { AdminGlobalOpsHeader } from "../components/admin/AdminGlobalOpsHeader";
 import { AdminBreadcrumbs, AdminQuickActions } from "../components/admin/institutional/AdminNavigationChrome";
 import { adminBreadcrumbs } from "../admin/navigation";
@@ -98,7 +100,11 @@ export function AdminConsoleLayout() {
         <AdminQuickActions isLight={isLight} />
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
-        <Outlet />
+        <AnimatePresence mode="wait">
+          <AnimatedPage pageKey={location.pathname}>
+            <Outlet />
+          </AnimatedPage>
+        </AnimatePresence>
       </div>
       <OperatorConsole isLight={isLight} />
     </div>

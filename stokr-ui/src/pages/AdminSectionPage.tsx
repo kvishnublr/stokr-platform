@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api, parseAxiosMessage } from "../api/client";
+import { AdminPageShell, AdminPanel } from "../components/admin/institutional/AdminDesignSystem";
+import { EmptyState } from "../components/ds/EmptyState";
+import { PageSkeleton } from "../components/ds/SkeletonLoader";
+import { useUiThemeStore } from "../state/uiTheme";
+import { cn } from "../lib/utils";
 
 type AdminSectionKind = "settings" | "security" | "reports" | "alerts";
 
@@ -28,6 +33,7 @@ const SECTION_META: Record<AdminSectionKind, { title: string; endpoint: string; 
 };
 
 export function AdminSectionPage({ section }: { section: AdminSectionKind }) {
+  const isLight = useUiThemeStore((s) => s.mode === "light");
   const meta = SECTION_META[section];
   const query = useQuery({
     queryKey: ["admin-section", section],
@@ -52,43 +58,54 @@ export function AdminSectionPage({ section }: { section: AdminSectionKind }) {
   }, [query.data]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{meta.title}</h1>
-        <p className="mt-1 text-sm text-neutral-600">{meta.description}</p>
-      </div>
-
+    <AdminPageShell
+      isLight={isLight}
+      eyebrow="Institutional console"
+      title={meta.title}
+      subtitle={meta.description}
+    >
       {query.isError ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Failed to load section data: {parseAxiosMessage(query.error)}
-          <button type="button" className="ml-2 underline" onClick={() => void query.refetch()}>
+        <AdminPanel isLight={isLight} title="Load failed">
+          <p className={cn("text-sm", isLight ? "text-rose-700" : "text-rose-300")}>
+            Failed to load section data: {parseAxiosMessage(query.error)}
+          </p>
+          <button
+            type="button"
+            className={cn("mt-3 text-sm font-semibold underline", isLight ? "text-blue-700" : "text-blue-300")}
+            onClick={() => void query.refetch()}
+          >
             Retry
           </button>
-        </div>
+        </AdminPanel>
       ) : null}
 
-      {query.isLoading ? (
-        <div className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">Loading...</div>
-      ) : null}
+      {query.isLoading ? <PageSkeleton cards={3} /> : null}
 
       {!query.isLoading && !query.isError && rows.length === 0 ? (
-        <div className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">No data available.</div>
+        <EmptyState variant={isLight ? "light" : "dark"} title="No data available" description="This section has no rows to display yet." />
       ) : null}
 
       {rows.length > 0 ? (
-        <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-          <table className="w-full text-left text-sm">
-            <tbody>
-              {rows.map((row) => (
-                <tr key={String(row.key)} className="border-b border-neutral-100 last:border-b-0">
-                  <td className="w-56 px-4 py-2.5 font-medium text-neutral-700">{String(row.key)}</td>
-                  <td className="px-4 py-2.5 text-neutral-900">{String(row.value)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <AdminPanel isLight={isLight} title="Summary">
+          <div className={cn("overflow-hidden rounded-xl border", isLight ? "border-neutral-200 bg-white" : "border-neutral-800 bg-neutral-950/50")}>
+            <table className="w-full text-left text-sm">
+              <tbody>
+                {rows.map((row) => (
+                  <tr
+                    key={String(row.key)}
+                    className={cn("border-b last:border-b-0", isLight ? "border-neutral-100" : "border-neutral-800/80")}
+                  >
+                    <td className={cn("w-56 px-4 py-2.5 font-medium", isLight ? "text-neutral-700" : "text-neutral-300")}>
+                      {String(row.key)}
+                    </td>
+                    <td className={cn("px-4 py-2.5", isLight ? "text-neutral-900" : "text-neutral-100")}>{String(row.value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </AdminPanel>
       ) : null}
-    </div>
+    </AdminPageShell>
   );
 }

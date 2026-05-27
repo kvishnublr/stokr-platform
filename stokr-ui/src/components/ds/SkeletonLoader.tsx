@@ -1,22 +1,29 @@
 import { cn } from "../../lib/utils";
+import { useUiThemeStore } from "../../state/uiTheme";
+
+function useSkeletonTone() {
+  const isLight = useUiThemeStore((s) => s.mode === "light");
+  return {
+    line: isLight
+      ? "animate-pulse bg-neutral-200/80"
+      : "animate-pulse bg-gradient-to-r from-neutral-900 via-neutral-800 to-neutral-900",
+    card: isLight
+      ? "border-neutral-200/90 bg-white/80"
+      : "border-neutral-900 bg-neutral-950/70",
+  };
+}
 
 export function SkeletonLine({ className }: { className?: string }) {
-  return (
-    <div
-      aria-hidden
-      className={cn("animate-pulse rounded-md bg-gradient-to-r from-neutral-900 via-neutral-800 to-neutral-900", className)}
-    />
-  );
+  const tone = useSkeletonTone();
+  return <div aria-hidden className={cn("rounded-md", tone.line, className)} />;
 }
 
 export function SkeletonCard({ dense }: { dense?: boolean }) {
+  const tone = useSkeletonTone();
   return (
     <div
       aria-hidden
-      className={cn(
-        "animate-pulse rounded-2xl border border-neutral-900 bg-neutral-950/70",
-        dense ? "h-28" : "h-44",
-      )}
+      className={cn("animate-pulse rounded-2xl border", tone.card, dense ? "h-28" : "h-44")}
     />
   );
 }

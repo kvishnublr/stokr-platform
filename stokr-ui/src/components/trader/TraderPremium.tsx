@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "../../lib/utils";
+import { fadeUp, staggerContainer } from "../../lib/motionPresets";
 import { formatInr, formatPnlDisplay, pnlToneClass, type PnlDataSource } from "../../lib/moneyUtils";
 import { useUiThemeStore } from "../../state/uiTheme";
 import {
@@ -15,15 +16,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 
-const stagger = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
-};
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 14 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
-};
+const stagger = staggerContainer;
 
 export type CommandPositionRow = {
   symbol: string;
