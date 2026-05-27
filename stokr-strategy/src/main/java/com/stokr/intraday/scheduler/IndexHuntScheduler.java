@@ -4,6 +4,7 @@ import com.stokr.intraday.detector.MarketDataProvider;
 import com.stokr.intraday.domain.IndexSignal;
 import com.stokr.intraday.service.*;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -15,16 +16,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * INDEX HUNT Scheduler
- * Runs detection and paper trading monitoring automatically during market hours
- *
- * Schedules:
- * - Detection: Every 10 seconds during 10:15-13:45 IST
- * - Monitoring: Every 5 seconds for active trades
- * - Daily Summary: At 3:35 PM IST (market close + 5 min)
+ * LEGACY — disabled by default. Replaced by catalog-driven IndexHuntSignalGenerator.
+ * Set stokr.legacy.indexhunt.scheduler.enabled=true to re-enable.
  */
 @Service
 @Slf4j
+@ConditionalOnProperty(name = "stokr.legacy.indexhunt.scheduler.enabled", havingValue = "true", matchIfMissing = false)
 public class IndexHuntScheduler {
 
     private final IndexHuntService indexHuntService;
