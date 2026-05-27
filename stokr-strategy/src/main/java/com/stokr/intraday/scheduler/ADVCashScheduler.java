@@ -3,6 +3,7 @@ package com.stokr.intraday.scheduler;
 import com.stokr.intraday.service.ADVCashService;
 import com.stokr.intraday.service.EquityCashTradingExecutor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -12,8 +13,13 @@ import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * LEGACY — disabled by default. Replaced by catalog-driven AdvCashEquitySignalGenerator.
+ * Set stokr.legacy.advcash.scheduler.enabled=true to re-enable.
+ */
 @Component
 @Slf4j
+@ConditionalOnProperty(name = "stokr.legacy.advcash.scheduler.enabled", havingValue = "true", matchIfMissing = false)
 public class ADVCashScheduler {
 
     private final ADVCashService advCashService;
