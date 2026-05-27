@@ -44,7 +44,9 @@ import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
 import { connectStomp } from "../lib/realtime/stomp";
 import { invalidateBrokerPositionQueries } from "../lib/hooks/useBrokerPositionSync";
+import { useOperationalInbox } from "../hooks/useOperationalInbox";
 import { useNotificationStore } from "../state/notifications";
+import { useMessagesStore } from "../state/messages";
 import { useSessionStore } from "../state/session";
 import { AppShell } from "./AppShell";
 import type { SidebarLink } from "./Sidebar";
@@ -54,6 +56,7 @@ import { useUiThemeStore } from "../state/uiTheme";
 import { WorkspaceTopNav } from "../components/workspace/WorkspaceTopNav";
 import { TraderAccountCard } from "../components/workspace/TraderAccountCard";
 import { NotificationDrawer } from "../components/ds/NotificationDrawer";
+import { MessagesDrawer } from "../components/ds/MessagesDrawer";
 import { performLogout } from "../services/auth/logout";
 import { AdminInstitutionalSidebar } from "../components/admin/institutional/AdminInstitutionalSidebar";
 
@@ -74,8 +77,13 @@ export function ShellLayout() {
   const feed = useNotificationStore((s) => s.items);
   const markRead = useNotificationStore((s) => s.markRead);
   const clearFeed = useNotificationStore((s) => s.clear);
+  const messageUnread = useMessagesStore((s) => s.unread);
+  const messages = useMessagesStore((s) => s.items);
+  const markMessagesRead = useMessagesStore((s) => s.markRead);
+  const clearMessages = useMessagesStore((s) => s.clear);
   const patchProfileFlags = useSessionStore((s) => s.patchProfileFlags);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [messagesOpen, setMessagesOpen] = useState(false);
   const [resendingVerify, setResendingVerify] = useState(false);
   const lastBacktestToastAt = useRef(0);
   const lastVerifyResendAt = useRef(0);
@@ -105,6 +113,12 @@ export function ShellLayout() {
       liveTradingApproved: Boolean(d.liveTradingApproved),
     });
   }, [onboardingSync.isSuccess, onboardingSync.data, patchProfileFlags]);
+
+  useOperationalInbox({
+    enabled: Boolean(accessToken),
+    isAdmin,
+    hasTraderAccess,
+  });
 
   const portfolioSnapshot = useQuery({
     queryKey: ["sidebar-portfolio-snapshot"],
@@ -207,7 +221,7 @@ export function ShellLayout() {
       links.push({ to: "/profile", label: "Profile", icon: UserRound });
       links.push({ to: "/signals", label: "Signals", icon: MessageSquare });
     }
-    links.push({ to: "/terminal", label: "Alerts & notifications", icon: MessageSquare });
+    links.push({ to: "/intraday", label: "Ops readiness", icon: Bell });
     return links;
   }, [hasTraderAccess]);
 
@@ -464,10 +478,15 @@ export function ShellLayout() {
             displayName={displayName}
             username={username ?? undefined}
             unread={unread}
+            messageUnread={messageUnread}
             liveApproved={liveTradingApproved}
             onNotificationClick={() => {
               setDrawerOpen(true);
               markRead();
+            }}
+            onMessageClick={() => {
+              setMessagesOpen(true);
+              markMessagesRead();
             }}
             rightExtra={
               <motion.button
@@ -498,7 +517,16 @@ export function ShellLayout() {
         items={feed}
         onClear={() => {
           clearFeed();
-          toast.message("Operational feed cleared");
+          toast.message("Notifications cleared");
+        }}
+      />
+      <MessagesDrawer
+        open={messagesOpen}
+        onOpenChange={setMessagesOpen}
+        items={messages}
+        onClear={() => {
+          clearMessages();
+          toast.message("Messages cleared");
         }}
       />
     </>

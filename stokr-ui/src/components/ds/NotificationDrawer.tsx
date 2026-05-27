@@ -51,7 +51,7 @@ export function NotificationDrawer({
                 <h2 id="notification-drawer-title" className="text-sm font-semibold text-white">
                   Alert center
                 </h2>
-                <p className="mt-1 text-[11px] text-neutral-500">WebSocket + execution feed  ·  persists for session</p>
+                <p className="mt-1 text-[11px] text-neutral-500">Orders, PnL, strategy runtime, and execution guard events</p>
               </div>
               <button
                 type="button"
@@ -93,7 +93,7 @@ export function NotificationDrawer({
             </div>
 
             <div className="border-t border-neutral-900 px-4 py-2 text-[10px] text-neutral-600">
-              Telegram/WhatsApp adapters surface here when delivery hooks are subscribed.
+              Real-time events arrive over WebSocket while you are connected.
             </div>
           </motion.aside>
         </>

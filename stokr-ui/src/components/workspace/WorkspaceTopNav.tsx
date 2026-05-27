@@ -232,14 +232,18 @@ export function WorkspaceTopNav({
   displayName,
   username,
   unread,
+  messageUnread,
   onNotificationClick,
+  onMessageClick,
   liveApproved,
   rightExtra,
 }: {
   displayName?: string | null;
   username?: string | null;
   unread: number;
+  messageUnread: number;
   onNotificationClick: () => void;
+  onMessageClick: () => void;
   liveApproved: boolean;
   rightExtra?: ReactNode;
 }) {
@@ -480,11 +484,21 @@ export function WorkspaceTopNav({
               </AnimatePresence>
             </NavIconButton>
 
-            <NavIconButton label="Messages" onClick={() => navigate("/terminal")} isLight={isLight} badge={2}>
+            <NavIconButton
+              label="Messages"
+              onClick={onMessageClick}
+              isLight={isLight}
+              badge={messageUnread > 0 ? messageUnread : undefined}
+            >
               <MessageSquare className="h-4 w-4" />
             </NavIconButton>
 
-            <NavIconButton label="Notifications" onClick={onNotificationClick} isLight={isLight} badge={unread > 0 ? unread : 3}>
+            <NavIconButton
+              label="Notifications"
+              onClick={onNotificationClick}
+              isLight={isLight}
+              badge={unread > 0 ? unread : undefined}
+            >
               <Bell className="h-4 w-4" />
             </NavIconButton>
 
