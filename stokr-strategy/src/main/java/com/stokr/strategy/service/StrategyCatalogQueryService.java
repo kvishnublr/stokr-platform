@@ -101,6 +101,8 @@ public class StrategyCatalogQueryService {
                 subscribed,
                 subscriptionEnabled,
                 def.getCategory(),
+                def.getAssetClass() != null && !def.getAssetClass().isBlank() ? def.getAssetClass() : "EQUITY",
+                def.getSegment() != null && !def.getSegment().isBlank() ? def.getSegment() : "NSE",
                 def.getTagsJson(),
                 def.getIconKey(),
                 def.getMinCapital(),

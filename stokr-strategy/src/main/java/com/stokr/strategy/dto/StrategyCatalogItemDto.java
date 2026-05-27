@@ -13,6 +13,8 @@ public record StrategyCatalogItemDto(
         boolean subscribed,
         boolean subscriptionEnabled,
         String category,
+        String assetClass,
+        String segment,
         String tagsJson,
         String iconKey,
         BigDecimal minCapital,
