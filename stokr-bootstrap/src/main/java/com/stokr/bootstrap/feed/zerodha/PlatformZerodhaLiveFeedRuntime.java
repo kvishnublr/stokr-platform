@@ -361,6 +361,13 @@ public class PlatformZerodhaLiveFeedRuntime {
                 }
             }
 
+            // Fallback: use DB instrument_token for INDEX/non-EQ instruments (e.g. NIFTY 50)
+            if (token == null && row.getInstrumentToken() != null && row.getInstrumentToken() > 0) {
+                token = row.getInstrumentToken().intValue();
+                resolvedSymbol = !canonical.isBlank() ? canonical : preferredTrading;
+                log.debug("platform.ws.universe_subscribe_db_fallback symbol={} token={}", resolvedSymbol, token);
+            }
+
             if (token == null || token <= 0) {
                 unresolved++;
                 continue;
