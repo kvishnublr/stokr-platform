@@ -6,10 +6,14 @@ import com.stokr.marketdata.service.OrderBookPressureTracker;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
+import com.stokr.strategy.domain.KnnPatternEntry;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.repository.KnnPatternEntryRepository;
+import com.stokr.strategy.service.StrategyMarketIndicatorService;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -105,12 +109,14 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
 
     private final OrderBookPressureTracker pressureTracker;
     private final StrategyGeneratorIntegrityGate integrityGate;
+    private final StrategyMarketIndicatorService marketIndicatorService;
+    private final KnnPatternEntryRepository knnPatternRepository;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     // OBI history per symbol for slope calculation (8-tick linear regression)
     private final ConcurrentHashMap<String, Deque<Double>> obiHistory = new ConcurrentHashMap<>();
 
-    // KNN pattern memory
+    // KNN pattern memory — NOW PERSISTED across deploys via knn_pattern_entries table
     private final List<double[]> knnVectors = Collections.synchronizedList(new ArrayList<>());
     private final List<Integer> knnLabels = Collections.synchronizedList(new ArrayList<>());
 
@@ -120,13 +126,32 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     @Value("${stokr.advcash.cooldown-seconds:900}")
     private int cooldownSeconds;
 
-    @Value("${stokr.advcash.default-vix:17.5}")
-    private double defaultVix;
-
     public AdvCashEquitySignalGenerator(OrderBookPressureTracker pressureTracker,
-                                        StrategyGeneratorIntegrityGate integrityGate) {
+                                        StrategyGeneratorIntegrityGate integrityGate,
+                                        StrategyMarketIndicatorService marketIndicatorService,
+                                        KnnPatternEntryRepository knnPatternRepository) {
         this.pressureTracker = pressureTracker;
         this.integrityGate = integrityGate;
+        this.marketIndicatorService = marketIndicatorService;
+        this.knnPatternRepository = knnPatternRepository;
+    }
+
+    /** Load persisted KNN patterns on startup — memory survives deploys. */
+    @PostConstruct
+    void loadKnnPatterns() {
+        try {
+            List<KnnPatternEntry> entries = knnPatternRepository.findByStrategyKeyOrderByTradeTimeAsc("ADV_CASH");
+            for (KnnPatternEntry entry : entries) {
+                knnVectors.add(new double[]{
+                    entry.getFeatObi(), entry.getFeatSlope(), entry.getFeatVol(),
+                    entry.getFeatVix(), entry.getFeatTime(), entry.getFeatDirection()
+                });
+                knnLabels.add(entry.getOutcome());
+            }
+            log.info("adv_cash.knn_loaded patterns={}", entries.size());
+        } catch (Exception e) {
+            log.warn("adv_cash.knn_load_failed reason={}", e.getMessage());
+        }
     }
 
     @Override
@@ -245,8 +270,8 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
             volMult = volume5m.doubleValue() > 1000 ? 1.5 : 0.5;
         }
 
-        // ─── VIX (default, no feed yet) ───
-        double vix = defaultVix;
+        // ─── VIX — NOW REAL from StrategyMarketIndicatorService ───
+        double vix = marketIndicatorService.getVix(asOf);
 
         // ─── STEP 6: Min 4-signal consensus (EXACT Python logic) ───
         // Python: signals = {obi_slope, obi_strength, time_window, vix_regime}
@@ -463,11 +488,34 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     }
 
     /**
-     * Add outcome to KNN memory (called externally when trade resolves).
+     * Add outcome to KNN memory — NOW PERSISTED to DB.
      */
-    public void addKnnOutcome(double obi, double slope, double vol, double vix,
+    public void addKnnOutcome(String symbol, double obi, double slope, double vol, double vix,
                               int timeMin, int direction, boolean win) {
-        knnVectors.add(knnFeature(obi, slope, vol, vix, timeMin, direction));
+        double[] features = knnFeature(obi, slope, vol, vix, timeMin, direction);
+        knnVectors.add(features);
         knnLabels.add(win ? 1 : 0);
+        try {
+            KnnPatternEntry entry = new KnnPatternEntry();
+            entry.setStrategyKey("ADV_CASH");
+            entry.setSymbol(symbol != null ? symbol : "UNKNOWN");
+            entry.setFeatObi(features[0]);
+            entry.setFeatSlope(features[1]);
+            entry.setFeatVol(features[2]);
+            entry.setFeatVix(features[3]);
+            entry.setFeatTime(features[4]);
+            entry.setFeatDirection(features[5]);
+            entry.setOutcome(win ? 1 : 0);
+            entry.setTradeTime(Instant.now());
+            entry.setRawObi(obi);
+            entry.setRawSlope(slope);
+            entry.setRawVol(vol);
+            entry.setRawVix(vix);
+            entry.setRawTimeMin(timeMin);
+            entry.setRawDirection(direction == 1 ? "BUY" : "SHORT");
+            knnPatternRepository.save(entry);
+        } catch (Exception e) {
+            log.warn("adv_cash.knn_persist_failed reason={}", e.getMessage());
+        }
     }
 }

@@ -7,6 +7,8 @@ import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.service.BankLeadLagService;
+import com.stokr.strategy.service.StrategyMarketIndicatorService;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -102,6 +104,7 @@ public class S3VwapRetestSignalGenerator extends BaseGeneratedStrategy implement
 
     private final StrategyGeneratorIntegrityGate integrityGate;
     private final OrderBookPressureTracker pressureTracker;
+    private final StrategyMarketIndicatorService marketIndicatorService;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -193,12 +196,14 @@ public class S3VwapRetestSignalGenerator extends BaseGeneratedStrategy implement
 
         // ─── Compute weighted composite score components ───
 
-        // 1. Lead-lag score (from pressure tracker as proxy)
-        double leadLagScore = 0.0;
+        // 1. Lead-lag — NOW REAL from BankLeadLagService (matches Python LeadLagDetector)
+        BankLeadLagService.LeadLagResult leadLagResult = marketIndicatorService.getLeadLag(asOf);
+        double leadLagScore = leadLagResult.score();
+        String llDirection = leadLagResult.direction();
+
+        // Fallback to PressureTracker if bank data unavailable
         PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
-        if (snapshot != null) {
-            // Map imbalance (0-1) to lead-lag score (0-1)
-            // High imbalance in one direction = strong lead signal
+        if (leadLagScore == 0.0 && snapshot != null) {
             leadLagScore = Math.abs(snapshot.imbalanceRatio() - 0.5) * 2.0;
         }
 
@@ -228,26 +233,18 @@ public class S3VwapRetestSignalGenerator extends BaseGeneratedStrategy implement
         }
 
         // ─── Determine direction (Python: side="BOTH") ───
-        // BULL if lead-lag suggests buying, BEAR if selling
+        // Python: direction from LeadLagDetector.score() → "BULL" or "BEAR"
         String direction;
         SignalType signalType;
-        if (snapshot != null) {
-            if (snapshot.imbalanceRatio() > 0.5) {
-                direction = "BULL";
-                signalType = SignalType.BUY;
-            } else {
-                direction = "BEAR";
-                signalType = SignalType.SELL;
-            }
+        if (leadLagResult.score() > 0) {
+            direction = llDirection;
+            signalType = "BULL".equals(direction) ? SignalType.BUY : SignalType.SELL;
+        } else if (snapshot != null) {
+            direction = snapshot.imbalanceRatio() > 0.5 ? "BULL" : "BEAR";
+            signalType = "BULL".equals(direction) ? SignalType.BUY : SignalType.SELL;
         } else {
-            // Fallback: use price vs VWAP
-            if (currentPrice.compareTo(vwap) > 0) {
-                direction = "BULL";
-                signalType = SignalType.BUY;
-            } else {
-                direction = "BEAR";
-                signalType = SignalType.SELL;
-            }
+            direction = currentPrice.compareTo(vwap) > 0 ? "BULL" : "BEAR";
+            signalType = "BULL".equals(direction) ? SignalType.BUY : SignalType.SELL;
         }
 
         // ─── Lot multiplier (Python: >= 0.80 → 1.0, >= 0.70 → 0.75) ───

@@ -7,6 +7,8 @@ import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.service.BankLeadLagService;
+import com.stokr.strategy.service.StrategyMarketIndicatorService;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -91,6 +93,7 @@ public class S7RangeFadeSignalGenerator extends BaseGeneratedStrategy implements
 
     private final StrategyGeneratorIntegrityGate integrityGate;
     private final OrderBookPressureTracker pressureTracker;
+    private final StrategyMarketIndicatorService marketIndicatorService;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -184,9 +187,13 @@ public class S7RangeFadeSignalGenerator extends BaseGeneratedStrategy implements
         // No need to check direction from lead-lag; S7 always buys
 
         // ─── Compute weighted composite score ───
-        double leadLagScore = 0.0;
+        // Lead-lag: NOW REAL from BankLeadLagService (matches Python LeadLagDetector)
+        BankLeadLagService.LeadLagResult leadLagResult = marketIndicatorService.getLeadLag(asOf);
+        double leadLagScore = leadLagResult.score();
+
+        // Fallback to PressureTracker if bank data unavailable
         PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
-        if (snapshot != null) {
+        if (leadLagScore == 0.0 && snapshot != null) {
             leadLagScore = Math.abs(snapshot.imbalanceRatio() - 0.5) * 2.0;
         }
 

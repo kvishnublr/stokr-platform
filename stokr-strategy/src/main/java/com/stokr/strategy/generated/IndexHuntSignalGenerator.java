@@ -8,6 +8,7 @@ import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.service.StrategyMarketIndicatorService;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -149,18 +150,13 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
 
     private final OrderBookPressureTracker pressureTracker;
     private final StrategyGeneratorIntegrityGate integrityGate;
+    private final StrategyMarketIndicatorService marketIndicatorService;
 
     // Dedup: per symbol+direction, track last emit time
     private final ConcurrentHashMap<String, Instant> lastEmitByKey = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
-
-    @Value("${stokr.indexhunt.default-vix:17.5}")
-    private double defaultVix;
-
-    @Value("${stokr.indexhunt.default-pcr:1.15}")
-    private double defaultPcr;
 
     @Override
     public String key() { return "INDEX_HUNT"; }
@@ -186,8 +182,8 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
             return hold(context);
         }
 
-        // ─── GATE: VIX BLOCK ───
-        double vix = defaultVix;
+        // ─── GATE: VIX BLOCK — NOW REAL from StrategyMarketIndicatorService ───
+        double vix = marketIndicatorService.getVix(asOf);
         if (vix >= VIX_BLOCK_ABOVE) {
             return hold(context);
         }
@@ -311,22 +307,20 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
             }
         }
 
-        // ─── GATE: PCR ───
-        double pcr = defaultPcr;
-        PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
-        if (snapshot != null) {
-            // Map imbalance ratio to PCR-like value
-            pcr = 0.5 + snapshot.imbalanceRatio();
-        }
+        // ─── GATE: PCR — NOW REAL from StrategyMarketIndicatorService ───
+        double pcr = marketIndicatorService.getPcr(asOf);
 
         if (isCe) {
             if (pcr < PCR_CE_MIN) return hold(context);
         } else {
             // PE: pcr >= pcr_pe_min AND nifty_day_pct <= pe_max_nifty_chg
             if (pcr < PCR_PE_MIN) return hold(context);
-            // nifty_day_pct approximation: use 30m trend as proxy
-            // If trend is strongly up (> PE_MAX_NIFTY_CHG), PE is invalid
-            if (!Double.isNaN(trendChg) && trendChg > PE_MAX_NIFTY_CHG) {
+            // NOW REAL: nifty_day_pct from StrategyMarketIndicatorService
+            Double niftyDayPct = marketIndicatorService.getNiftyDayPct(asOf);
+            if (niftyDayPct == null) {
+                return hold(context);  // Python: return False, "nifty_align"
+            }
+            if (niftyDayPct > PE_MAX_NIFTY_CHG) {
                 return hold(context);
             }
         }
@@ -343,9 +337,17 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
             return hold(context);
         }
 
-        // ─── GATE: CROSS-INDEX (skip if other index moves strongly against) ───
-        // No direct cross-index data available; skip this gate if no data
-        // In live system, this would check NIFTY vs BANKNIFTY alignment
+        // ─── GATE: CROSS-INDEX — NOW REAL from StrategyMarketIndicatorService ───
+        if (CROSS_INDEX_AGAINST_PCT > 0) {
+            String forIndex = symbol.toUpperCase().contains("BANK") ? "BANKNIFTY" : "NIFTY";
+            StrategyMarketIndicatorService.CrossIndexResult crossResult =
+                marketIndicatorService.getCrossIndex(forIndex, asOf);
+            if (crossResult.available()) {
+                double crossOther5m = crossResult.changePct();
+                if (isCe && crossOther5m < -CROSS_INDEX_AGAINST_PCT) return hold(context);
+                if (!isCe && crossOther5m > CROSS_INDEX_AGAINST_PCT) return hold(context);
+            }
+        }
 
         // ─── GATE: SESSION OPEN LOCK ───
         // Python: CE only when price > first bar close; PE only below
@@ -435,6 +437,7 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
 
         lastEmitByKey.put(dedupKey, evalTime);
 
+        PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
         String pressureInfo = snapshot != null ? String.format("imb=%.0f%%", snapshot.imbalanceRatio() * 100) : "";
         String trendInfo = !Double.isNaN(trendChg) ? String.format("trend30m=%.3f%%", trendChg) : "trend30m=N/A";
         String reason = String.format(
