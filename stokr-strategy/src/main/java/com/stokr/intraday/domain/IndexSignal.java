@@ -21,8 +21,7 @@ import java.time.Instant;
 @Table(name = "index_signals", indexes = {
         @Index(name = "idx_index_signals_active", columnList = "is_active, time_detected"),
         @Index(name = "idx_index_signals_quality", columnList = "quality_score, time_detected"),
-        @Index(name = "idx_index_signals_index", columnList = "index_name, direction, is_active"),
-        @Index(name = "idx_index_signals_expiry", columnList = "expires_at")
+        @Index(name = "idx_index_signals_index", columnList = "index_name, direction, is_active")
 })
 @Data
 @NoArgsConstructor
