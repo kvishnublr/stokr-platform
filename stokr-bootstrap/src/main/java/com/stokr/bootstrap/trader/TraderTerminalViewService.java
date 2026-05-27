@@ -718,7 +718,10 @@ public class TraderTerminalViewService {
 
         openPositions.clear();
         openPositions.addAll(brokerOpen);
-        openPositions.addAll(omsOnlyOpen);
+        // Live terminal mirrors Zerodha only — hide internal OMS ghosts when broker session is active.
+        if (!brokerTruth.brokerConnected() || brokerTruth.lastSyncAt() == null) {
+            openPositions.addAll(omsOnlyOpen);
+        }
 
         Set<String> flatBrokerSymbols = brokerTruth.positions().stream()
                 .filter(t -> t.brokerQty() == null || t.brokerQty().compareTo(BigDecimal.ZERO) == 0)

@@ -66,9 +66,7 @@ public class TraderTerminalControlService {
         List<StrategyInstance> runningStrategies = strategyInstanceRepository.findAllForUserWithDefinition(userId).stream()
                 .filter(si -> "RUNNING".equalsIgnoreCase(si.getRuntimeState()))
                 .toList();
-        long openPositions = portfolioPositionRepository.findByUserIdAndDeletedFalse(userId).stream()
-                .filter(p -> p.getQuantity() != null && p.getQuantity().signum() != 0)
-                .count();
+        long openPositions = countOpenPositions(userId, action);
 
         List<String> impactedOrderIds = pendingOrders.stream().map(o -> o.getId().toString()).toList();
         List<String> impactedStrategyIds = runningStrategies.stream().map(s -> s.getId().toString()).toList();
@@ -141,7 +139,14 @@ public class TraderTerminalControlService {
                     notes.add("strategy runtime paused and new entries disabled");
                 }
             }
-            default -> throw new BadRequestException("Unsupported action: " + plan.action());
+            default -> {
+                if (plan.action().startsWith("EXIT_SYMBOL:")) {
+                    String symbol = plan.action().substring("EXIT_SYMBOL:".length()).trim();
+                    changedOrders += flattenSymbol(userId, symbol, notes, flattenResults);
+                } else {
+                    throw new BadRequestException("Unsupported action: " + plan.action());
+                }
+            }
         }
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -218,6 +223,106 @@ public class TraderTerminalControlService {
             }
         }
         return n;
+    }
+
+    private long countOpenPositions(UUID userId, String action) {
+        if (action.startsWith("EXIT_SYMBOL:")) {
+            return 1L;
+        }
+        brokerPositionTruthService.syncUser(userId);
+        BrokerPositionTruthSnapshot snap = brokerPositionTruthService.snapshot(userId);
+        if (snap.brokerConnected() && snap.lastSyncAt() != null) {
+            long brokerOpen = snap.positions().stream()
+                    .filter(row -> row.brokerQty() != null && row.brokerQty().signum() != 0)
+                    .count();
+            if (brokerOpen > 0) {
+                return brokerOpen;
+            }
+        }
+        return portfolioPositionRepository.findByUserIdAndDeletedFalse(userId).stream()
+                .filter(p -> p.getQuantity() != null && p.getQuantity().signum() != 0)
+                .count();
+    }
+
+    private int flattenSymbol(UUID userId, String rawSymbol, List<String> notes, List<Map<String, Object>> flattenResults) {
+        if (rawSymbol == null || rawSymbol.isBlank()) {
+            throw new BadRequestException("symbol is required for EXIT_SYMBOL");
+        }
+        String symbol = BrokerPositionTruthService.normalizeSymbol(rawSymbol);
+        ExecutionMode mode = resolveExecutionMode(userId);
+        brokerPositionTruthService.syncUser(userId);
+        BrokerPositionTruthSnapshot snap = brokerPositionTruthService.snapshot(userId);
+
+        BigDecimal qty = null;
+        String product = null;
+        if (snap.brokerConnected() && snap.lastSyncAt() != null) {
+            for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : snap.positions()) {
+                if (symbol.equalsIgnoreCase(BrokerPositionTruthService.normalizeSymbol(row.symbol()))
+                        && row.brokerQty() != null
+                        && row.brokerQty().signum() != 0) {
+                    qty = row.brokerQty();
+                    product = row.product();
+                    break;
+                }
+            }
+        }
+        if (qty == null) {
+            for (PortfolioPosition p : portfolioPositionRepository.findByUserIdAndDeletedFalse(userId)) {
+                if (symbol.equalsIgnoreCase(BrokerPositionTruthService.normalizeSymbol(p.getSymbol()))
+                        && p.getQuantity() != null
+                        && p.getQuantity().signum() != 0) {
+                    qty = p.getQuantity();
+                    break;
+                }
+            }
+        }
+        if (qty == null || qty.signum() == 0) {
+            throw new BadRequestException("No open position for symbol: " + symbol);
+        }
+
+        BigDecimal exitQty = qty.abs();
+        String side = qty.signum() > 0 ? "SELL" : "BUY";
+        try {
+            OmsOrder o = orderPlacementService.place(userId, new CreateOrderRequest(
+                    symbol,
+                    side,
+                    "MARKET",
+                    exitQty,
+                    null,
+                    mode,
+                    mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM",
+                    "TERMINAL_EXIT_SYMBOL",
+                    "terminal:exit:" + userId + ":" + symbol + ":" + Instant.now().toEpochMilli(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    true,
+                    "EXIT_SAFE",
+                    false,
+                    null
+            ));
+            flattenResults.add(Map.of(
+                    "symbol", symbol,
+                    "side", side,
+                    "qty", exitQty.toPlainString(),
+                    "orderId", o.getId().toString(),
+                    "state", o.getState().name(),
+                    "mode", mode.name(),
+                    "product", product != null ? product : ""
+            ));
+            return 1;
+        } catch (Exception ex) {
+            notes.add("exit failed " + symbol + ": " + ex.getClass().getSimpleName());
+            flattenResults.add(Map.of(
+                    "symbol", symbol,
+                    "side", side,
+                    "qty", exitQty.toPlainString(),
+                    "state", "FAILED",
+                    "error", ex.getClass().getSimpleName()
+            ));
+            return 0;
+        }
     }
 
     private int flattenOpenPositions(UUID userId, List<String> notes, List<Map<String, Object>> flattenResults) {

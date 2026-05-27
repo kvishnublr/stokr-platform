@@ -243,6 +243,9 @@ export function LivePositionsCommandTable({
   action,
   footerMtm,
   showExtendedColumns = false,
+  syncPulseLive = false,
+  onExit,
+  exitingSymbol,
 }: {
   title?: string;
   subtitle?: string;
@@ -251,6 +254,9 @@ export function LivePositionsCommandTable({
   action?: ReactNode;
   footerMtm?: number | null;
   showExtendedColumns?: boolean;
+  syncPulseLive?: boolean;
+  onExit?: (symbol: string) => void;
+  exitingSymbol?: string | null;
 }) {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const reduceMotion = useReducedMotion();
@@ -267,8 +273,14 @@ export function LivePositionsCommandTable({
       <div className={cn("flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3.5 sm:px-5", isLight ? "border-neutral-100 bg-gradient-to-r from-neutral-50/90 to-white" : "border-white/[0.06] bg-gradient-to-r from-neutral-900/80 to-neutral-950/40")}>
         <div className="flex items-center gap-3">
           <span className="relative flex h-2.5 w-2.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-35" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+            {syncPulseLive ? (
+              <>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-35" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              </>
+            ) : (
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-neutral-400/70" />
+            )}
           </span>
           <div>
             <h3 className={cn("text-sm font-bold tracking-tight", isLight ? "text-neutral-900" : "text-white")}>{title}</h3>
@@ -298,16 +310,17 @@ export function LivePositionsCommandTable({
               ).map((h) => (
                 <th key={h} className="px-3 py-3 font-bold first:pl-5 last:pr-5">{h}</th>
               ))}
+              {onExit ? <th className="px-3 py-3 pr-5 font-bold">Exit</th> : null}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={showExtendedColumns ? 10 : 6} className="px-5 py-10 text-center text-neutral-500">Syncing positions…</td>
+                <td colSpan={(showExtendedColumns ? 10 : 6) + (onExit ? 1 : 0)} className="px-5 py-10 text-center text-neutral-500">Syncing positions…</td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={showExtendedColumns ? 10 : 6}>
+                <td colSpan={(showExtendedColumns ? 10 : 6) + (onExit ? 1 : 0)}>
                   <EmptyState message="No open positions in this lane" />
                 </td>
               </tr>
@@ -360,7 +373,7 @@ export function LivePositionsCommandTable({
                         <td className="px-3 py-3.5"><PnlCell value={r.unrealizedPnl} /></td>
                         <td className="px-3 py-3.5"><PnlCell value={r.realizedPnl} /></td>
                         <td className="px-3 py-3.5 font-mono tabular-nums">{r.notional != null ? formatInr(r.notional).replace(/^\+/, "") : "—"}</td>
-                        <td className="px-3 py-3.5 last:pr-5">
+                        <td className={cn("px-3 py-3.5", onExit ? "" : "last:pr-5")}>
                           <span className={cn("rounded-md px-2 py-0.5 text-[10px] font-bold uppercase", r.quantitySource === "BROKER" ? "bg-emerald-500/15 text-emerald-700" : "bg-neutral-500/10 text-neutral-600")}>
                             {r.quantitySource === "BROKER" ? "ZERODHA" : (r.quantitySource ?? "OMS")}
                           </span>
@@ -377,9 +390,26 @@ export function LivePositionsCommandTable({
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-3.5 last:pr-5"><PnlCell value={r.unrealizedPnl} /></td>
+                        <td className={cn("px-3 py-3.5", onExit ? "" : "last:pr-5")}><PnlCell value={r.unrealizedPnl} /></td>
                       </>
                     )}
+                    {onExit ? (
+                      <td className="px-3 py-3.5 pr-5">
+                        <button
+                          type="button"
+                          disabled={exitingSymbol === r.symbol}
+                          onClick={() => onExit(String(r.symbol))}
+                          className={cn(
+                            "rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide transition",
+                            isLight
+                              ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                              : "border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 disabled:opacity-50",
+                          )}
+                        >
+                          {exitingSymbol === r.symbol ? "…" : "Exit"}
+                        </button>
+                      </td>
+                    ) : null}
                   </motion.tr>
                 );
               })

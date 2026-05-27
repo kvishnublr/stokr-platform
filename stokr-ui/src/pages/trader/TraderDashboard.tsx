@@ -11,8 +11,9 @@ import {
   signalMatchesExecutionMode,
 } from "../../lib/traderExecutionMode";
 import { cn } from "../../lib/utils";
-import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl } from "../../lib/moneyUtils";
-import { useBrokerPositionSync } from "../../lib/hooks/useBrokerPositionSync";
+import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl, filterBrokerMirrorPositions, isBrokerSessionLive } from "../../lib/moneyUtils";
+import { brokerPositionPollMs, isBrokerSyncPulseLive, useBrokerPositionSync } from "../../lib/hooks/useBrokerPositionSync";
+import { usePositionExit } from "../../lib/hooks/usePositionExit";
 import { AnimatedKpiCard, PnlCommandRail, PnlSourceBadge, LivePositionsCommandTable, TerminalLinkAction, type CommandPositionRow } from "../../components/trader/TraderPremium";
 import { NiftyCandleChart } from "../../components/charts/NiftyCandleChart";
 import { useEffect, useMemo, useState } from "react";
@@ -134,12 +135,13 @@ export function TraderDashboard() {
     enabled: queryEnabled,
   });
   const selectedMode = modeQ.data ?? "PAPER";
+  const exitMutation = usePositionExit();
 
   const workstationQ = useQuery<Workstation>({
     queryKey: ["trader-dashboard-workstation", selectedMode],
     queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
-    staleTime: 2_000,
-    refetchInterval: 3_000,
+    staleTime: 1_500,
+    refetchInterval: 2_000,
     enabled: queryEnabled,
     retry: 2,
   });
@@ -245,7 +247,23 @@ export function TraderDashboard() {
     return resolved;
   }, [ws?.accountSummary, ws?.openPositions, ws?.brokerTruth, portfolioOverviewQ.data]);
 
-  const openPositionRows = useMemo(() => (ws?.openPositions ?? []).slice(0, 6), [ws?.openPositions]);
+  const brokerSessionLive = isBrokerSessionLive(ws?.brokerTruth);
+  const brokerConnected = brokerSessionLive;
+  const syncPulseLive = isBrokerSyncPulseLive(ws?.brokerTruth?.lastSyncAt != null ? String(ws.brokerTruth.lastSyncAt) : null);
+
+  const openPositionRows = useMemo(() => {
+    const rows = (ws?.openPositions ?? []).map((r) => ({
+      symbol: String(r.symbol ?? "—"),
+      side: String(r.side ?? "LONG"),
+      qty: r.qty != null ? Number(r.qty) : null,
+      ltp: parseMoney(r.ltp),
+      mtmPnl: parseMoney(r.mtmPnl),
+      unrealizedPnl: parseMoney(r.unrealizedPnl),
+      quantitySource: String(r.quantitySource ?? r.pnlSource ?? "OMS").toUpperCase(),
+      brokerQty: parseMoney(r.brokerQty),
+    }));
+    return filterBrokerMirrorPositions(rows, brokerSessionLive).slice(0, 6);
+  }, [ws?.openPositions, brokerSessionLive]);
 
   const pnlLoading = workstationQ.isLoading && portfolioOverviewQ.isLoading;
   const pnlFailed = workstationQ.isError && portfolioOverviewQ.isError;
@@ -260,10 +278,11 @@ export function TraderDashboard() {
     return formatPnlDisplay(n, { compact: true });
   };
 
-  const brokerConnected =
+  const brokerConnectedLegacy =
     accountPnl.source === "BROKER" ||
     String(ws?.accountSummary?.brokerConnectionState ?? "").includes("CONNECTED") ||
     (brokerFundsQ.data?.length ?? 0) > 0;
+  const brokerConnectedForMargin = brokerConnected || brokerConnectedLegacy;
 
   const availableMargin = useMemo(() => {
     const row = brokerFundsQ.data?.[0];
@@ -473,18 +492,24 @@ export function TraderDashboard() {
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-        <AnimatedKpiCard label="Available Margin" loading={marginLoading} value={!brokerConnected ? "—" : marginFailed ? "—" : marginReady ? formatInr(availableMargin) : "—"} sublabel={!brokerConnected ? "Connect broker for live margin" : marginFailed ? marginErrorMsg ?? "Load failed" : undefined} accent="bg-amber-400" icon={Layers} index={3} />
+        <AnimatedKpiCard label="Available Margin" loading={marginLoading} value={!brokerConnectedForMargin ? "—" : marginFailed ? "—" : marginReady ? formatInr(availableMargin) : "—"} sublabel={!brokerConnectedForMargin ? "Connect broker for live margin" : marginFailed ? marginErrorMsg ?? "Load failed" : undefined} accent="bg-amber-400" icon={Layers} index={3} />
       </div>
 
       {openPositionRows.length > 0 ? (
         <LivePositionsCommandTable
+          title="Live positions"
+          subtitle="Zerodha mirror · sync every 2s"
+          syncPulseLive={brokerConnected && (syncPulseLive || workstationQ.isFetching)}
+          onExit={(symbol) => exitMutation.mutate(symbol)}
+          exitingSymbol={exitMutation.isPending ? (exitMutation.variables ?? null) : null}
           rows={openPositionRows.map((r): CommandPositionRow => ({
-            symbol: String(r.symbol ?? "—"),
-            side: String(r.side ?? "LONG"),
-            qty: r.qty != null ? Number(r.qty) : null,
-            ltp: parseMoney(r.ltp),
-            mtmPnl: parseMoney(r.mtmPnl),
-            unrealizedPnl: parseMoney(r.unrealizedPnl),
+            symbol: r.symbol,
+            side: r.side,
+            qty: r.qty,
+            ltp: r.ltp,
+            mtmPnl: r.mtmPnl,
+            unrealizedPnl: r.unrealizedPnl,
+            quantitySource: r.quantitySource,
           }))}
           loading={workstationQ.isLoading}
           footerMtm={mtmPnl}

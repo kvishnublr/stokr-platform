@@ -155,7 +155,7 @@ export function TerminalPage() {
     queryKey: ["trader-workstation", executionMode],
     queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
     staleTime: 2_000,
-    refetchInterval: 3_000,
+    refetchInterval: 2_000,
     retry: 2,
   });
 

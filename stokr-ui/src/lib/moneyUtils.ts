@@ -58,16 +58,24 @@ export function sumPositionsPnl(
   }
   let realized = 0;
   let unrealized = 0;
+  let mtm = 0;
   for (const row of rows) {
     realized += parseMoney(row.realizedPnl) ?? 0;
-    unrealized += parseMoney(row.unrealizedPnl) ?? 0;
+    const rowUnreal = parseMoney(row.unrealizedPnl) ?? 0;
+    unrealized += rowUnreal;
+    mtm += parseMoney(row.mtmPnl) ?? rowUnreal;
   }
   return {
-    mtm: realized + unrealized,
+    mtm,
     unrealized,
     realized,
     openPositions: rows.length,
   };
+}
+
+/** True when Zerodha session is live and broker truth has synced at least once. */
+export function isBrokerSessionLive(brokerTruth: Record<string, unknown> | undefined): boolean {
+  return brokerTruth?.brokerConnected === true && brokerTruth?.lastSyncAt != null;
 }
 
 /** Broker truth snapshot from workstation (`brokerTruth` field). */
@@ -124,10 +132,24 @@ export function resolveAccountPnl(input: {
   openPositions?: Array<Record<string, unknown>>;
   portfolioOverview?: Record<string, unknown>;
 }): ResolvedAccountPnl {
+  const brokerSessionLive = isBrokerSessionLive(input.brokerTruth);
+  const brokerRows = brokerSessionLive
+    ? (input.openPositions ?? []).filter((row) => {
+        const src = String(row.quantitySource ?? row.pnlSource ?? "").toUpperCase();
+        if (src === "BROKER") return true;
+        const bq = parseMoney(row.brokerQty);
+        return bq != null && bq !== 0;
+      })
+    : input.openPositions;
+
   const fromBroker = extractBrokerTruthPnl(input.brokerTruth);
-  const fromRows = sumPositionsPnl(input.openPositions);
+  const fromRows = sumPositionsPnl(brokerRows);
   const fromWs = extractAccountPnl(input.accountSummary, fromRows.openPositions);
   const fromOms = extractAccountPnl(input.portfolioOverview);
+
+  if (brokerSessionLive && fromBroker) {
+    return { ...fromBroker, source: "BROKER" };
+  }
 
   const brokerHasOpen = (fromBroker?.openPositions ?? 0) > 0;
   const brokerHasPnl = fromBroker != null && !isZeroPnlSnapshot(fromBroker);
@@ -204,6 +226,20 @@ export function resolvePositionQuantitySource(
   return "OMS";
 }
 
+/** Keep only broker-backed legs when Zerodha session is live (hide OMS ghosts). */
+export function filterBrokerMirrorPositions<T extends { quantitySource?: string; brokerQty?: number | null; qty?: number | null }>(
+  rows: T[],
+  brokerSessionLive: boolean,
+): T[] {
+  if (!brokerSessionLive) return rows;
+  return rows.filter((row) => {
+    const src = String(row.quantitySource ?? "").toUpperCase();
+    if (src === "BROKER") return true;
+    const bq = row.brokerQty;
+    return bq != null && bq !== 0;
+  });
+}
+
 export type PositionParityBadge = {
   label: string;
   tone: "amber" | "sky" | "rose";
@@ -229,7 +265,7 @@ export function resolvePositionParityBadge(
   }
   if (state === "MISMATCH") {
     if (brokerConnected && (input.brokerQty == null || input.brokerQty === 0) && input.qty !== 0) {
-      return { label: "NOT AT BROKER", tone: "amber" };
+      return null;
     }
     if (input.brokerQty != null && input.brokerQty !== input.qty) {
       return { label: "QTY MISMATCH", tone: "rose" };

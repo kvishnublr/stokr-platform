@@ -6,8 +6,11 @@ import { api } from "../api/client";
 import { TRADER_EXECUTION_MODE_QUERY_KEY, fetchTraderExecutionMode } from "../lib/traderExecutionMode";
 import {
   formatBrokerSyncAge,
+  brokerPositionPollMs,
+  isBrokerSyncPulseLive,
   useBrokerPositionSync,
 } from "../lib/hooks/useBrokerPositionSync";
+import { usePositionExit } from "../lib/hooks/usePositionExit";
 import { useSessionStore } from "../state/session";
 import {
   computePositionNotional,
@@ -15,6 +18,8 @@ import {
   formatPnlDisplay,
   parseMoney,
   pnlToneClass,
+  filterBrokerMirrorPositions,
+  isBrokerSessionLive,
   resolveAccountPnl,
   resolvePositionParityBadge,
   resolvePositionQuantitySource,
@@ -84,22 +89,27 @@ export function PositionsPage(props?: { embedded?: boolean }) {
   const userId = useSessionStore((s) => s.userId);
   useBrokerPositionSync(accessToken, userId, true);
 
+  const exitMutation = usePositionExit();
+
   const modeQ = useQuery({
     queryKey: [...TRADER_EXECUTION_MODE_QUERY_KEY],
     queryFn: fetchTraderExecutionMode,
     staleTime: 30_000,
   });
 
-  const exposureQ = useQuery({
-    queryKey: ["portfolio-exposure"],
-    queryFn: async () => (await api.get("/api/portfolio/exposure")).data?.data as Exposure,
-    refetchInterval: 3_000,
-  });
-
   const wsQ = useQuery<Workstation>({
     queryKey: ["positions-workstation", modeQ.data],
     queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
-    refetchInterval: 3_000,
+    refetchInterval: 2_000,
+  });
+
+  const brokerSessionLive = isBrokerSessionLive(wsQ.data?.brokerTruth);
+  const pollMs = brokerPositionPollMs(brokerSessionLive);
+
+  const exposureQ = useQuery({
+    queryKey: ["portfolio-exposure"],
+    queryFn: async () => (await api.get("/api/portfolio/exposure")).data?.data as Exposure,
+    refetchInterval: pollMs,
   });
 
   const accountPnl = useMemo(
@@ -112,9 +122,10 @@ export function PositionsPage(props?: { embedded?: boolean }) {
     [wsQ.data],
   );
 
-  const brokerConnected =
-    accountPnl.source === "BROKER" ||
-    String(wsQ.data?.accountSummary?.brokerConnectionState ?? "").includes("CONNECTED");
+  const brokerConnected = brokerSessionLive;
+  const syncPulseLive = isBrokerSyncPulseLive(
+    wsQ.data?.brokerTruth?.lastSyncAt != null ? String(wsQ.data.brokerTruth.lastSyncAt) : null,
+  );
 
   const brokerSyncState = wsQ.data?.brokerTruth?.syncState != null ? String(wsQ.data.brokerTruth.syncState) : null;
   const brokerSyncAge = formatBrokerSyncAge(
@@ -123,7 +134,7 @@ export function PositionsPage(props?: { embedded?: boolean }) {
 
   const mergedRows = useMemo<PositionRow[]>(() => {
     const openRows = wsQ.data?.openPositions ?? [];
-    return openRows.map((ws) => {
+    const mapped = openRows.map((ws) => {
       const symbol = String(ws.symbol ?? "").toUpperCase();
       const qty = parseMoney(ws.qty) ?? 0;
       const avgPrice = parseMoney(ws.avgPrice);
@@ -151,7 +162,8 @@ export function PositionsPage(props?: { embedded?: boolean }) {
         brokerStatus: ws.brokerStatus != null ? String(ws.brokerStatus) : null,
       };
     });
-  }, [wsQ.data, brokerConnected]);
+    return filterBrokerMirrorPositions(mapped, brokerSessionLive);
+  }, [wsQ.data, brokerConnected, brokerSessionLive]);
 
   const filteredRows = useMemo(() => {
     let rows = mergedRows;
@@ -284,12 +296,15 @@ export function PositionsPage(props?: { embedded?: boolean }) {
       </div>
 
       <LivePositionsCommandTable
-        title={`Positions (${sortedRows.length})`}
+        title={`Live positions (${sortedRows.length})`}
         subtitle={
           brokerConnected
-            ? "Mirrors Zerodha terminal · live sync every 3s + push on change"
+            ? "Zerodha terminal mirror · sync every 2s + push on change"
             : "Connect Zerodha to mirror broker terminal quantities and P&L"
         }
+        syncPulseLive={brokerConnected && (syncPulseLive || wsQ.isFetching)}
+        onExit={(symbol) => exitMutation.mutate(symbol)}
+        exitingSymbol={exitMutation.isPending ? (exitMutation.variables ?? null) : null}
         rows={sortedRows.map((r): CommandPositionRow => ({
           symbol: r.symbol,
           side: r.side,

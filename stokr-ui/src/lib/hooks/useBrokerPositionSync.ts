@@ -39,7 +39,14 @@ export function useBrokerPositionSync(accessToken: string | null, userId: string
 
 /** Poll interval: faster when broker is expected to be connected. */
 export function brokerPositionPollMs(brokerConnected: boolean): number {
-  return brokerConnected ? 3_000 : 8_000;
+  return brokerConnected ? 2_000 : 8_000;
+}
+
+/** Pulse is live when last broker sync was within this window. */
+export function isBrokerSyncPulseLive(lastSyncAt: string | null | undefined, windowMs = 4_000): boolean {
+  if (!lastSyncAt) return false;
+  const ms = Date.now() - new Date(lastSyncAt).getTime();
+  return Number.isFinite(ms) && ms >= 0 && ms <= windowMs;
 }
 
 export function formatBrokerSyncAge(lastSyncAt: string | null | undefined): string | null {
