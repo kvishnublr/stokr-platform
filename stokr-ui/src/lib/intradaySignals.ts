@@ -54,8 +54,17 @@ export function normalizeSignalRow(row: IntradaySignalRow): IntradaySignalRow {
 
 export function mismatchLabel(kind: string): string {
   const k = kind.toUpperCase();
-  if (k.includes("GHOST")) return "Not at broker";
-  if (k.includes("QTY")) return "Qty mismatch";
-  if (k.includes("DRIFT")) return "Sync drift";
+  if (k.includes("GHOST")) return "Ghost — not at broker";
+  if (k.includes("QTY")) return "Quantity mismatch";
+  if (k.includes("DRIFT") || k.includes("CONFLICT")) return "Sync drift";
+  if (k.includes("ORPHAN")) return "Orphan at broker";
   return kind.replace(/_/g, " ").toLowerCase();
+}
+
+export function mismatchHint(kind: string): string {
+  const k = kind.toUpperCase();
+  if (k.includes("GHOST")) return "Platform shows an open position the broker does not hold.";
+  if (k.includes("QTY")) return "Broker quantity differs from the platform ledger.";
+  if (k.includes("ORPHAN")) return "Broker holds a position not tracked on the platform.";
+  return "Reconcile before increasing live size.";
 }

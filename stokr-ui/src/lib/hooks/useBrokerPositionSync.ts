@@ -7,6 +7,8 @@ export const BROKER_POSITION_QUERY_KEYS = [
   "positions-workstation",
   "trader-workstation",
   "trader-dashboard-workstation",
+  "intraday-workstation",
+  "intraday-broker-truth",
   "portfolio-exposure",
   "trader-dashboard-portfolio-overview",
 ] as const;
