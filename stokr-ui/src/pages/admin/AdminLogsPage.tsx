@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { IST_LOCALE, IST_ZONE } from "../../lib/dateUtils";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronRight,
-  Info, Search, XCircle, Wifi, WifiOff, Trash2,
+  Info, Search, XCircle, WifiOff, Trash2,
   Bug, Activity, Clock, Filter, X, Terminal, Zap,
 } from "lucide-react";
+import { AdminPageShell, AdminPanel } from "../../components/admin/institutional/AdminDesignSystem";
+import { useUiThemeStore } from "../../state/uiTheme";
 
 type LogLevel = "ALL" | "ERROR" | "WARN" | "INFO" | "DEBUG";
 type LogEntry = { ts: string; level: string; logger: string; msg: string; ex?: string };
@@ -220,6 +222,7 @@ function LogRow({ entry, idx, search }: { entry: LogEntry; idx: number; search: 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function AdminLogsPage() {
+  const isLight = useUiThemeStore((s) => s.mode === "light");
   const [entries,      setEntries]      = useState<LogEntry[]>([]);
   const [level,        setLevel]        = useState<LogLevel>("ALL");
   const [search,       setSearch]       = useState("");
@@ -307,55 +310,50 @@ export function AdminLogsPage() {
   const hasAnyFilter  = !!(search || hasDateFilter || level !== "ALL");
 
   return (
-    <div className="flex h-full flex-col bg-zinc-950 overflow-hidden">
-
-      {/* ── Header ── */}
-      <div className="shrink-0 border-b border-white/5 bg-zinc-900/80 backdrop-blur px-6 py-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/20 ring-1 ring-violet-500/30">
-              <Terminal className="h-4 w-4 text-violet-400" />
-            </div>
-            <div>
-              <h1 className="text-sm font-bold tracking-tight text-white">Live Logs</h1>
-              <p className="text-[10px] text-slate-500 font-mono">
-                real-time stream · {MAX_DISPLAYED} entry buffer
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-mono text-slate-400 tabular-nums">
-              {filtered.length}<span className="text-slate-600"> / </span>{entries.length}
-            </span>
-
-            <div className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
+    <AdminPageShell
+      isLight={isLight}
+      dense
+      eyebrow="Operations"
+      title="Live logs"
+      subtitle={`Real-time stream · ${MAX_DISPLAYED} entry buffer`}
+      actions={
+        <>
+          <span className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-mono text-slate-400 tabular-nums dark:border-white/10">
+            {filtered.length}<span className="text-slate-600"> / </span>{entries.length}
+          </span>
+          <div
+            className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
               connected
                 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
                 : "border-white/10 bg-white/5 text-slate-500"
-            }`}>
-              {connected ? (
-                <>
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                  </span>
-                  LIVE
-                </>
-              ) : (
-                <><WifiOff className="h-3 w-3" /> OFFLINE</>
-              )}
-            </div>
-
-            <button type="button" onClick={() => setEntries([])}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-semibold text-slate-400 hover:bg-white/10 hover:text-slate-300 transition-colors">
-              <Trash2 className="h-3 w-3" /> Clear
-            </button>
+            }`}
+          >
+            {connected ? (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                </span>
+                LIVE
+              </>
+            ) : (
+              <>
+                <WifiOff className="h-3 w-3" /> OFFLINE
+              </>
+            )}
           </div>
-        </div>
-      </div>
-
-      {/* ── Level filter bar ── */}
+          <button
+            type="button"
+            onClick={() => setEntries([])}
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-semibold text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-300"
+          >
+            <Trash2 className="h-3 w-3" /> Clear
+          </button>
+        </>
+      }
+    >
+      <AdminPanel isLight={isLight} noPadding className="flex min-h-[520px] flex-1 flex-col overflow-hidden p-0">
+        <div className="flex h-full min-h-[520px] flex-col overflow-hidden bg-zinc-950 text-foreground">
       <div className="shrink-0 border-b border-white/5 bg-zinc-900/60 px-6 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
           {LEVELS.map(l => (
@@ -468,6 +466,8 @@ export function AdminLogsPage() {
           </button>
         )}
       </div>
-    </div>
+        </div>
+      </AdminPanel>
+    </AdminPageShell>
   );
 }

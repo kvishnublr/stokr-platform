@@ -6,6 +6,7 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
+import { motion, useReducedMotion } from "framer-motion";
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "../../lib/utils";
@@ -17,10 +18,12 @@ type Props<T> = {
   isLoading?: boolean;
   emptyLabel?: string;
   variant?: "auto" | "light" | "dark";
+  onRowClick?: (row: T) => void;
 };
 
-export function DataGrid<T>({ columns, data, isLoading, emptyLabel, variant = "auto" }: Props<T>) {
+export function DataGrid<T>({ columns, data, isLoading, emptyLabel, variant = "auto", onRowClick }: Props<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const reduceMotion = useReducedMotion();
   const isLightTheme = useUiThemeStore((s) => s.mode === "light");
   const isLight = variant === "light" || (variant === "auto" && isLightTheme);
   const cols = useMemo(() => columns, [columns]);
@@ -32,6 +35,10 @@ export function DataGrid<T>({ columns, data, isLoading, emptyLabel, variant = "a
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
+
+  const rowHoverCls = isLight
+    ? "border-neutral-100 hover:bg-neutral-50 hover:shadow-[inset_3px_0_0_0] hover:shadow-blue-500/45"
+    : "border-neutral-900/80 hover:bg-neutral-900/40 hover:shadow-[inset_3px_0_0_0] hover:shadow-blue-400/55";
 
   return (
     <div
@@ -82,13 +89,24 @@ export function DataGrid<T>({ columns, data, isLoading, emptyLabel, variant = "a
             </tr>
           ) : (
             table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className={cn("border-b", isLight ? "border-neutral-100 hover:bg-neutral-50" : "border-neutral-900/80 hover:bg-neutral-900/40")}>
+              <motion.tr
+                key={row.id}
+                initial={false}
+                whileHover={reduceMotion ? undefined : { x: 2 }}
+                transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                className={cn(
+                  "border-b transition-colors duration-200",
+                  rowHoverCls,
+                  onRowClick && "cursor-pointer",
+                )}
+              >
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id} className={cn("whitespace-nowrap px-3 py-2", isLight ? "text-neutral-700" : "text-neutral-200")}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}
-              </tr>
+              </motion.tr>
             ))
           )}
         </tbody>

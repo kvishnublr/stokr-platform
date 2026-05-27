@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { ActivitySquare, Wallet } from "lucide-react";
+import { motion } from "framer-motion";
+import { ActivitySquare, AlertTriangle, Wallet } from "lucide-react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { parseMoney } from "../lib/moneyUtils";
+import { cn } from "../lib/utils";
+import { useUiThemeStore } from "../state/uiTheme";
+import { AnimatedKpiCard, PremiumPanel, TraderPageShell } from "../components/trader/TraderPremium";
 
 type Dash = {
   overview: {
@@ -12,6 +18,7 @@ type Dash = {
 
 /** Paper / simulated exposure uses the same portfolio APIs - isolate accounts via broker configuration in production. */
 export function PaperTradingPage() {
+  const isLight = useUiThemeStore((s) => s.mode === "light");
   const q = useQuery({
     queryKey: ["paper-portfolio"],
     queryFn: async () => {
@@ -21,45 +28,59 @@ export function PaperTradingPage() {
   });
 
   const o = q.data?.overview;
+  const realized = parseMoney(o?.realizedPnl);
+  const unrealized = parseMoney(o?.unrealizedPnl);
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-white">Paper trading</h1>
-        <p className="mt-2 max-w-2xl text-sm text-neutral-400">
-          Simulated fills and latency-aware execution share portfolio endpoints with live - verify execution mode on orders
-          before promoting strategies.
-        </p>
-      </div>
+    <TraderPageShell
+      title="Paper trading"
+      subtitle="Simulated fills and latency-aware execution share portfolio endpoints with live — verify execution mode on orders before promoting strategies."
+    >
+      <motion.div initial="hidden" animate="show" className="grid gap-3 md:grid-cols-3">
+        <AnimatedKpiCard
+          label="Realized PnL"
+          loading={q.isLoading}
+          value={o?.realizedPnl ?? "—"}
+          pnlValue={realized}
+          icon={Wallet}
+          accent="bg-emerald-400"
+          index={0}
+        />
+        <AnimatedKpiCard
+          label="Unrealized PnL"
+          loading={q.isLoading}
+          value={o?.unrealizedPnl ?? "—"}
+          pnlValue={unrealized}
+          accent="bg-sky-500"
+          index={1}
+        />
+        <AnimatedKpiCard
+          label="Open positions"
+          loading={q.isLoading}
+          value={o?.openPositionCount != null ? String(o.openPositionCount) : "—"}
+          icon={ActivitySquare}
+          accent="bg-amber-400"
+          index={2}
+        />
+      </motion.div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-5">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-            <Wallet className="h-4 w-4" />
-            Realized PnL
-          </div>
-          <div className="mt-3 font-mono text-2xl text-white">{o?.realizedPnl ?? "-"}</div>
+      <PremiumPanel title="Simulation guardrails">
+        <div
+          className={cn(
+            "flex items-start gap-3 rounded-xl border px-4 py-3 text-sm",
+            isLight ? "border-amber-200 bg-amber-50 text-amber-900" : "border-amber-900/40 bg-amber-950/20 text-amber-100",
+          )}
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 opacity-80" />
+          <p>
+            For emergency controls (pause strategies, kill switch) use{" "}
+            <Link className="font-semibold underline underline-offset-2" to="/admin/ops">
+              Admin → Operations
+            </Link>{" "}
+            or runtime APIs.
+          </p>
         </div>
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-5">
-          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Unrealized</div>
-          <div className="mt-3 font-mono text-2xl text-white">{o?.unrealizedPnl ?? "-"}</div>
-        </div>
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-5">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-            <ActivitySquare className="h-4 w-4" />
-            Open positions
-          </div>
-          <div className="mt-3 font-mono text-2xl text-white">{o?.openPositionCount ?? "-"}</div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
-        For emergency controls (pause strategies, kill switch) use{" "}
-        <a className="underline" href="/admin/ops">
-          Admin to Operations
-        </a>{" "}
-        or runtime APIs.
-      </div>
-    </div>
+      </PremiumPanel>
+    </TraderPageShell>
   );
 }

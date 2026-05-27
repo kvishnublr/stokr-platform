@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   TRADER_EXECUTION_MODE_QUERY_KEY,
   fetchTraderExecutionMode,
@@ -63,47 +64,76 @@ function SignalDetailDrawer({ signal, onClose, light }: { signal: SignalRow; onC
   const valueCls = "mt-1 font-mono text-sm " + (light ? "text-neutral-900" : "text-white");
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className={cn("relative z-10 flex h-full w-full max-w-xl flex-col shadow-2xl overflow-hidden", bg, "ring-1", border)}>
-        <div className={cn("flex items-center justify-between border-b px-5 py-3.5", border, light ? "bg-neutral-50" : "bg-neutral-900/80")}>
-          <div className="flex items-center gap-2">
-            <span className={cn("font-bold text-sm", light ? "text-neutral-900" : "text-white")}>
-              {signal.strategyName ?? "Signal"}
-            </span>
-            <SideChip type={signal.signalType} light={light} />
-          </div>
-          <button type="button" onClick={onClose} className={cn("rounded-lg p-1.5", light ? "text-neutral-400 hover:bg-neutral-100" : "text-neutral-400 hover:bg-white/[0.07]")}>
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { label: "Symbol", value: signal.symbol ?? "—" },
-              { label: "Time", value: fmtTime(signal.createdAt) },
-              { label: "Entry Price", value: fmt(signal.entryReferencePrice) },
-              { label: "Stop Loss", value: <span className={light ? "text-rose-600" : "text-rose-400"}>{fmt(signal.stopPrice)}</span> },
-              { label: "Target", value: <span className={light ? "text-emerald-600" : "text-emerald-400"}>{fmt(signal.targetPrice)}</span> },
-              { label: "Qty", value: fmt(signal.suggestedQty) },
-              { label: "Confidence", value: signal.confidenceScore != null ? `${(Number(signal.confidenceScore) * 100).toFixed(1)}%` : "—" },
-              { label: "Regime", value: signal.marketRegime ?? "—" },
-            ].map(({ label, value }) => (
-              <div key={label} className={cn("rounded-xl px-3 py-2.5", cardBg)}>
-                <div className={labelCls}>{label}</div>
-                <div className={valueCls}>{value}</div>
-              </div>
-            ))}
-          </div>
-          {signal.reason && (
-            <div className={cn("rounded-xl border px-4 py-3", border, cardBg)}>
-              <div className={cn("mb-1", labelCls)}>Rationale</div>
-              <div className={cn("text-xs leading-relaxed", light ? "text-neutral-700" : "text-neutral-300")}>{signal.reason}</div>
+    <>
+      <motion.button
+        type="button"
+        aria-label="Close signal details"
+        className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+      />
+      <motion.aside
+        role="dialog"
+        aria-labelledby="signal-drawer-title"
+        initial={{ x: "100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "100%" }}
+        transition={{ type: "spring", damping: 28, stiffness: 320 }}
+        className={cn(
+          "fixed right-0 top-0 z-50 flex h-full w-full max-w-xl flex-col overflow-hidden shadow-2xl ring-1",
+          bg,
+          border,
+        )}
+      >
+          <div className={cn("flex items-center justify-between border-b px-5 py-3.5", border, light ? "bg-neutral-50" : "bg-neutral-900/80")}>
+            <div className="flex items-center gap-2">
+              <span id="signal-drawer-title" className={cn("text-sm font-bold", light ? "text-neutral-900" : "text-white")}>
+                {signal.strategyName ?? "Signal"}
+              </span>
+              <SideChip type={signal.signalType} light={light} />
             </div>
-          )}
-        </div>
-      </div>
-    </div>
+            <button type="button" onClick={onClose} className={cn("rounded-lg p-1.5", light ? "text-neutral-400 hover:bg-neutral-100" : "text-neutral-400 hover:bg-white/[0.07]")}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.06 }}
+            className="flex-1 space-y-4 overflow-y-auto p-5"
+          >
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "Symbol", value: signal.symbol ?? "—" },
+                { label: "Time", value: fmtTime(signal.createdAt) },
+                { label: "Entry Price", value: fmt(signal.entryReferencePrice) },
+                { label: "Stop Loss", value: <span className={light ? "text-rose-600" : "text-rose-400"}>{fmt(signal.stopPrice)}</span> },
+                { label: "Target", value: <span className={light ? "text-emerald-600" : "text-emerald-400"}>{fmt(signal.targetPrice)}</span> },
+                { label: "Qty", value: fmt(signal.suggestedQty) },
+                { label: "Confidence", value: signal.confidenceScore != null ? `${(Number(signal.confidenceScore) * 100).toFixed(1)}%` : "—" },
+                { label: "Regime", value: signal.marketRegime ?? "—" },
+              ].map(({ label, value }) => (
+                <motion.div
+                  key={label}
+                  whileHover={{ y: -1 }}
+                  className={cn("rounded-xl px-3 py-2.5 transition-shadow hover:shadow-sm", cardBg)}
+                >
+                  <div className={labelCls}>{label}</div>
+                  <div className={valueCls}>{value}</div>
+                </motion.div>
+              ))}
+            </div>
+            {signal.reason && (
+              <div className={cn("rounded-xl border px-4 py-3", border, cardBg)}>
+                <div className={cn("mb-1", labelCls)}>Rationale</div>
+                <div className={cn("text-xs leading-relaxed", light ? "text-neutral-700" : "text-neutral-300")}>{signal.reason}</div>
+              </div>
+            )}
+          </motion.div>
+        </motion.aside>
+    </>
   );
 }
 
@@ -265,9 +295,11 @@ export function SignalsPage() {
         </div>
       )}
 
-      {selectedSignal && (
-        <SignalDetailDrawer signal={selectedSignal} onClose={() => setSelectedSignal(null)} light={isLight} />
-      )}
+      <AnimatePresence>
+        {selectedSignal ? (
+          <SignalDetailDrawer signal={selectedSignal} onClose={() => setSelectedSignal(null)} light={isLight} />
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

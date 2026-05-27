@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
+import { AdminPageShell, AdminPanel } from "../components/admin/institutional/AdminDesignSystem";
 import { cn } from "../lib/utils";
 import { useUiThemeStore } from "../state/uiTheme";
 
@@ -135,7 +136,6 @@ export function AdminUsersPage() {
   const chrome = isLight
     ? "border-neutral-200 bg-neutral-100 text-neutral-900"
     : "border-neutral-800 bg-neutral-900/80 text-neutral-200";
-  const surface = isLight ? "border-neutral-200 bg-white" : "border-neutral-800 bg-neutral-950/50";
   const inputCls = isLight
     ? "border-neutral-200 bg-white text-neutral-900 placeholder:text-neutral-400 focus:border-blue-500/50"
     : "border-neutral-800 bg-neutral-950 text-white placeholder:text-neutral-500 focus:border-blue-500/40";
@@ -143,47 +143,41 @@ export function AdminUsersPage() {
     ? "border-neutral-200 bg-white text-neutral-900"
     : "border-neutral-800 bg-neutral-950 text-white";
   const thCls = isLight ? "text-neutral-500" : "text-neutral-500";
-  const rowCls = isLight ? "bg-white hover:bg-neutral-50/90" : "bg-neutral-950/40 hover:bg-neutral-900/40";
+  const rowCls = isLight
+    ? "bg-white hover:bg-neutral-50/90 hover:shadow-[inset_3px_0_0_0] hover:shadow-blue-500/40"
+    : "bg-neutral-950/40 hover:bg-neutral-900/40 hover:shadow-[inset_3px_0_0_0] hover:shadow-blue-400/50";
   const divideCls = isLight ? "divide-neutral-200" : "divide-neutral-800";
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1
-          className={cn(
-            "text-2xl font-semibold tracking-tight",
-            isLight ? "text-neutral-900" : "text-white",
-          )}
-        >
-          User management
-        </h1>
-        <p className={cn("mt-2 text-sm", isLight ? "text-neutral-600" : "text-neutral-400")}>
-          Search accounts, change status, or issue a temporary password.
-        </p>
-      </div>
-
-      {q.isError ? (
-        <div
-          className={cn(
-            "flex flex-col gap-3 rounded-xl border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between",
-            isLight ? "border-red-200 bg-red-50 text-red-900" : "border-red-900/40 bg-red-950/30 text-red-200",
-          )}
-        >
-          <span>Could not load users. {parseAxiosMessage(q.error)}</span>
-          <button
-            type="button"
-            onClick={() => void q.refetch()}
+    <AdminPageShell
+      isLight={isLight}
+      eyebrow="Access control"
+      title="User management"
+      subtitle="Search accounts, change status, approve live trading, or issue a temporary password."
+      alert={
+        q.isError ? (
+          <div
             className={cn(
-              "shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition",
-              isLight ? "border-red-300 bg-white text-red-900 hover:bg-red-100" : "border-red-800/60 text-red-100 hover:bg-red-950/50",
+              "flex flex-col gap-3 rounded-xl border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between",
+              isLight ? "border-red-200 bg-red-50 text-red-900" : "border-red-900/40 bg-red-950/30 text-red-200",
             )}
           >
-            Retry
-          </button>
-        </div>
-      ) : null}
-
-      <div className={cn("overflow-hidden rounded-xl border shadow-sm", surface)}>
+            <span>Could not load users. {parseAxiosMessage(q.error)}</span>
+            <button
+              type="button"
+              onClick={() => void q.refetch()}
+              className={cn(
+                "shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition",
+                isLight ? "border-red-300 bg-white text-red-900 hover:bg-red-100" : "border-red-800/60 text-red-100 hover:bg-red-950/50",
+              )}
+            >
+              Retry
+            </button>
+          </div>
+        ) : null
+      }
+    >
+      <AdminPanel isLight={isLight} noPadding className="overflow-hidden shadow-sm">
         <div className={cn("flex flex-wrap items-end gap-3 border-b p-4", chrome)}>
           <div className="min-w-[200px] flex-1">
             <label className={cn("text-xs font-medium uppercase tracking-wide", isLight ? "text-neutral-500" : "text-neutral-500")}>
@@ -368,7 +362,7 @@ export function AdminUsersPage() {
             </tbody>
           </table>
         </div>
-      </div>
+      </AdminPanel>
 
       <div className={cn("flex flex-wrap items-center justify-between gap-3 text-sm", isLight ? "text-neutral-600" : "text-neutral-500")}>
         <span>
@@ -403,6 +397,6 @@ export function AdminUsersPage() {
           </button>
         </div>
       </div>
-    </div>
+    </AdminPageShell>
   );
 }

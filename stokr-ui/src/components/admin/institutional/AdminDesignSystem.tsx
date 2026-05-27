@@ -19,7 +19,7 @@ export function AdminPageShell({
   dense,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   eyebrow?: string;
   actions?: ReactNode;
   alert?: ReactNode;
