@@ -78,11 +78,31 @@ export function isBrokerSessionLive(brokerTruth: Record<string, unknown> | undef
   return brokerTruth?.brokerConnected === true && brokerTruth?.lastSyncAt != null;
 }
 
+/** Sum P&L from broker truth rows with non-zero broker quantity only. */
+function sumBrokerOpenLegsFromTruth(brokerTruth: Record<string, unknown>): AccountPnlSnapshot | null {
+  const positions = brokerTruth.positions;
+  if (!Array.isArray(positions)) return null;
+  let realized = 0;
+  let unrealized = 0;
+  let openCount = 0;
+  for (const raw of positions) {
+    const row = raw as Record<string, unknown>;
+    const bq = parseMoney(row.brokerQty) ?? 0;
+    if (bq === 0) continue;
+    openCount++;
+    realized += parseMoney(row.brokerRealizedPnl) ?? 0;
+    unrealized += parseMoney(row.brokerUnrealizedPnl) ?? 0;
+  }
+  return { mtm: realized + unrealized, unrealized, realized, openPositions: openCount };
+}
+
 /** Broker truth snapshot from workstation (`brokerTruth` field). */
 export function extractBrokerTruthPnl(
   brokerTruth: Record<string, unknown> | undefined,
 ): AccountPnlSnapshot | null {
   if (!brokerTruth || brokerTruth.brokerConnected !== true || !brokerTruth.lastSyncAt) return null;
+  const fromOpenLegs = sumBrokerOpenLegsFromTruth(brokerTruth);
+  if (fromOpenLegs) return fromOpenLegs;
   const mtm = pickMoney(brokerTruth, "totalMtmPnl", "totalMtm");
   const unrealized = pickMoney(brokerTruth, "totalUnrealizedPnl");
   const realized = pickMoney(brokerTruth, "totalRealizedPnl");
@@ -146,8 +166,14 @@ export function resolveAccountPnl(input: {
   const fromRows = sumPositionsPnl(brokerRows);
   const fromWs = extractAccountPnl(input.accountSummary, fromRows.openPositions);
   const fromOms = extractAccountPnl(input.portfolioOverview);
+  const visibleOpenRows = input.openPositions ?? [];
 
-  if (brokerSessionLive && fromBroker) {
+  // Zerodha mirror is flat — zero header metrics; ignore stale OMS portfolio ghosts.
+  if (brokerSessionLive && (fromBroker?.openPositions ?? 0) === 0 && visibleOpenRows.length === 0) {
+    return { mtm: 0, unrealized: 0, realized: 0, openPositions: 0, source: "BROKER" };
+  }
+
+  if (brokerSessionLive && fromBroker && (fromBroker.openPositions ?? 0) > 0) {
     return { ...fromBroker, source: "BROKER" };
   }
 
