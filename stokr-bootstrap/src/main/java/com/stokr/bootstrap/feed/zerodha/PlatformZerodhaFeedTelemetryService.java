@@ -2,9 +2,11 @@ package com.stokr.bootstrap.feed.zerodha;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stokr.marketdata.monitor.FeedHealthWebSocketState;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
 import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,10 +16,12 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PlatformZerodhaFeedTelemetryService {
 
     private final PlatformBrokerFeedSessionRepository sessionRepository;
     private final ObjectMapper objectMapper;
+    private final FeedHealthWebSocketState feedHealthWebSocketState;
 
     @Transactional
     public void saveWindow(String vendor, PlatformFeedWindowMetrics m) {
@@ -47,6 +51,11 @@ public class PlatformZerodhaFeedTelemetryService {
         }
         s.setTelemetryJson(encodeTelemetryJson(m));
         sessionRepository.save(s);
+        if ("OPEN".equalsIgnoreCase(m.websocketState())) {
+            feedHealthWebSocketState.markConnected();
+        } else if ("CLOSED".equalsIgnoreCase(m.websocketState())) {
+            feedHealthWebSocketState.markDisconnected("WINDOW_CLOSED");
+        }
     }
 
     private String encodeTelemetryJson(PlatformFeedWindowMetrics m) {
@@ -76,6 +85,7 @@ public class PlatformZerodhaFeedTelemetryService {
         s.setReconnecting(false);
         s.setDisconnectReason(truncate(reason, 512));
         sessionRepository.save(s);
+        feedHealthWebSocketState.markDisconnected(reason);
     }
 
     @Transactional
@@ -86,6 +96,22 @@ public class PlatformZerodhaFeedTelemetryService {
         }
         s.setReconnectCount(s.getReconnectCount() + 1);
         sessionRepository.save(s);
+        feedHealthWebSocketState.incrementReconnectAttempt();
+    }
+
+    @Transactional
+    public void markWebsocketOpen(String vendor) {
+        PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor).orElse(null);
+        if (s != null) {
+            s.setWebsocketState("OPEN");
+            s.setReconnecting(false);
+            sessionRepository.save(s);
+        }
+        int attempts = feedHealthWebSocketState.reconnectAttempts();
+        feedHealthWebSocketState.markConnected();
+        if (attempts > 0) {
+            log.info("feed.health.websocket_reconnected vendor={} reconnectAttempts={}", vendor, attempts);
+        }
     }
 
     @Transactional
@@ -97,6 +123,7 @@ public class PlatformZerodhaFeedTelemetryService {
         s.setReconnecting(true);
         s.setWebsocketState("CONNECTING");
         sessionRepository.save(s);
+        feedHealthWebSocketState.markDisconnected("CONNECTING");
     }
 
     private static String truncate(String s, int max) {

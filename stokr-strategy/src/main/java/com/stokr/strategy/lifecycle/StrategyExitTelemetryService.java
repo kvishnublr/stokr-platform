@@ -1,6 +1,7 @@
 package com.stokr.strategy.lifecycle;
 
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.operational.StrategyRuntimeHealthService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,7 @@ import java.time.temporal.ChronoUnit;
 public class StrategyExitTelemetryService {
 
     private final StrategyExitTelemetryRepository repository;
+    private final StrategyRuntimeHealthService runtimeHealthService;
 
     @Transactional
     public void recordExit(
@@ -50,6 +52,11 @@ public class StrategyExitTelemetryService {
         row.setCreatedAt(Instant.now());
 
         repository.save(row);
+
+        runtimeHealthService.recordTradeClosed(
+                signal.getStrategyName() != null ? signal.getStrategyName() : "UNKNOWN",
+                holdSeconds,
+                exitTime);
 
         log.info(
                 "strategy.exit.telemetry strategy={} symbol={} category={} holdSec={} minHoldBypassed={} trigger={} reason={}",

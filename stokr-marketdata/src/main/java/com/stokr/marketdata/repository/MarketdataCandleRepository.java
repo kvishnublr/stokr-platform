@@ -117,4 +117,12 @@ public interface MarketdataCandleRepository extends JpaRepository<MarketdataCand
             Instant endInclusive,
             Pageable pageable
     );
+
+    @Query(value = """
+            select max(open_time) from marketdata_candles
+            where deleted = false and timeframe = '1m'
+              and upper(symbol) not like '%NIFTY%'
+              and upper(symbol) not like '%_FUT'
+            """, nativeQuery = true)
+    Instant findLatestEquityCandleOpenTime();
 }
