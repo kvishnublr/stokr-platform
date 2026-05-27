@@ -45,12 +45,13 @@ public class EquitySignal {
     @Column(nullable = false)
     private BigDecimal entryLevel;
 
-    @Column(nullable = false)
+    @Column(name = "stop_loss_level", nullable = false)
     private BigDecimal stopLossLevel;
 
-    @Column(nullable = false)
+    @Column(name = "target_level1", nullable = false)
     private BigDecimal targetLevel1;    // 0.7% target
 
+    @Column(name = "target_level2")
     private BigDecimal targetLevel2;    // 1.4% target
 
     // ADV CASH Signal Analysis (10-step)

@@ -49,20 +49,20 @@ public class IndexSignal {
     @Column(precision = 10, scale = 2)
     private BigDecimal optionEntryPremium;  // Option LTP at signal time (filled at execution)
 
-    @Column(precision = 10, scale = 2)
+    @Column(name = "option_sl", precision = 10, scale = 2)
     private BigDecimal optionSL;  // SL level = entry × 0.80
 
-    @Column(precision = 10, scale = 2)
+    @Column(name = "option_t1", precision = 10, scale = 2)
     private BigDecimal optionT1;  // T1 level = entry × 1.28 (target to hit 70%)
 
-    @Column(precision = 10, scale = 2)
+    @Column(name = "option_t2", precision = 10, scale = 2)
     private BigDecimal optionT2;  // T2 level = entry × 1.65 (rarely hit)
 
     // Gate Analysis (5 Gates)
-    @Column(nullable = false, precision = 5, scale = 4)
+    @Column(name = "momentum5m", nullable = false, precision = 5, scale = 4)
     private BigDecimal momentum5m;  // 5-min price change %
 
-    @Column(precision = 5, scale = 4)
+    @Column(name = "trend30m", precision = 5, scale = 4)
     private BigDecimal trend30m;  // 30-min trend direction (positive = up, negative = down)
 
     @Column(precision = 5, scale = 2)
@@ -74,10 +74,10 @@ public class IndexSignal {
     @Column(precision = 5, scale = 4)
     private BigDecimal sessionOpenPrice;  // Day open for session-lock gate
 
-    @Column(precision = 5, scale = 4)
+    @Column(name = "recent3min_low", precision = 5, scale = 4)
     private BigDecimal recent3minLow;  // Anti-chase: recent low
 
-    @Column(precision = 5, scale = 4)
+    @Column(name = "recent3min_high", precision = 5, scale = 4)
     private BigDecimal recent3minHigh;  // Anti-chase: recent high
 
     // Quality Metrics
@@ -119,7 +119,7 @@ public class IndexSignal {
     @Column(precision = 10, scale = 2)
     private BigDecimal pnlPerContract;  // Exit - Entry per contract
 
-    @Column(precision = 10, scale = 2)
+    @Column(name = "total_pnl", precision = 10, scale = 2)
     private BigDecimal totalPnL;  // P&L × lot size
 
     @Column(length = 20)

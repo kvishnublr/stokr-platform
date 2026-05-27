@@ -42,12 +42,13 @@ public class FuturesSignal {
     @Column(nullable = false)
     private BigDecimal entryLevel;
 
-    @Column(nullable = false)
+    @Column(name = "stop_loss_level", nullable = false)
     private BigDecimal stopLossLevel;
 
-    @Column(nullable = false)
+    @Column(name = "target_level1", nullable = false)
     private BigDecimal targetLevel1;
 
+    @Column(name = "target_level2")
     private BigDecimal targetLevel2;
 
     // Gate Analysis (for S3: VWAP, trend, volume; for S7: range, momentum)
