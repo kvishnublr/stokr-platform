@@ -1,0 +1,547 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Power, RefreshCw, Shield, ShieldOff } from "lucide-react";
+import { toast } from "sonner";
+import {
+  activateKillSwitch,
+  deactivateKillSwitch,
+  fetchKillSwitchStatus,
+  fetchOmsDiagnostics,
+  fetchOperationalDiagnostics,
+  type KillSwitchStatus,
+  type OmsDiagnostics,
+  type OperationalDiagnostics,
+  type StrategyRuntimeHealthRow,
+} from "../../api/safetyDiagnostics";
+import {
+  AdminPageShell,
+  AdminPanel,
+  AdminSection,
+} from "../../components/admin/institutional/AdminDesignSystem";
+import { fmtDateTime } from "../../lib/dateUtils";
+import { cn } from "../../lib/utils";
+import { toneChipClasses } from "../../lib/statusTone";
+import { useSessionStore } from "../../state/session";
+import { useUiThemeStore } from "../../state/uiTheme";
+
+const OPS_QK = ["admin-operational-diagnostics"] as const;
+const OMS_QK = ["admin-oms-diagnostics"] as const;
+const KS_QK = ["admin-kill-switch-status"] as const;
+
+function fmtVal(v: unknown): string {
+  if (v == null) return "—";
+  if (typeof v === "boolean") return v ? "YES" : "NO";
+  if (typeof v === "number") return Number.isFinite(v) ? String(v) : "—";
+  if (typeof v === "string") return v;
+  return JSON.stringify(v);
+}
+
+function MetricGrid({
+  items,
+  isLight,
+}: {
+  items: Array<{ label: string; value: unknown; warn?: boolean }>;
+  isLight: boolean;
+}) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className={cn(
+            "rounded-lg border px-3 py-2",
+            item.warn
+              ? isLight
+                ? "border-rose-300 bg-rose-50"
+                : "border-rose-500/40 bg-rose-500/10"
+              : isLight
+                ? "border-neutral-200 bg-neutral-50"
+                : "border-neutral-800 bg-neutral-900/50",
+          )}
+        >
+          <p className={cn("text-[10px] font-semibold uppercase tracking-wide", isLight ? "text-neutral-500" : "text-neutral-400")}>
+            {item.label}
+          </p>
+          <p className={cn("mt-1 font-mono text-xs font-semibold", item.warn ? "text-rose-500" : isLight ? "text-neutral-900" : "text-neutral-100")}>
+            {fmtVal(item.value)}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function KillSwitchPanel({
+  status,
+  isLight,
+  canControl,
+  onActivate,
+  onDeactivate,
+  busy,
+}: {
+  status: KillSwitchStatus | undefined;
+  isLight: boolean;
+  canControl: boolean;
+  onActivate: (reason: string, flatten: boolean) => void;
+  onDeactivate: (reason: string) => void;
+  busy: boolean;
+}) {
+  const [reason, setReason] = useState("");
+  const [flatten, setFlatten] = useState(false);
+  const [confirmActivate, setConfirmActivate] = useState(false);
+  const active = Boolean(status?.active);
+
+  return (
+    <AdminPanel
+      isLight={isLight}
+      accent={active}
+      title="Trading kill switch"
+      subtitle="P3 OMS safety — forces PAPER mode and blocks LIVE order submission"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          {active ? (
+            <ShieldOff className="h-8 w-8 text-rose-500" />
+          ) : (
+            <Shield className="h-8 w-8 text-emerald-500" />
+          )}
+          <div>
+            <p className={cn("text-lg font-bold", active ? "text-rose-500" : "text-emerald-500")}>
+              {active ? "ACTIVE — LIVE blocked" : "OFF — normal operations"}
+            </p>
+            {status?.lastEventAt ? (
+              <p className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-400")}>
+                Last event {fmtDateTime(String(status.lastEventAt))}
+                {status.lastEventSource ? ` · ${status.lastEventSource}` : ""}
+              </p>
+            ) : null}
+            {status?.lastEventReason ? (
+              <p className={cn("mt-1 text-xs", isLight ? "text-neutral-600" : "text-neutral-300")}>
+                {status.lastEventReason}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase", toneChipClasses(isLight, active ? "critical" : "success"))}>
+            Redis {status?.redisKillSwitch ? "ON" : "OFF"}
+          </span>
+          <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase", toneChipClasses(isLight, status?.configFlagEnabled ? "warn" : "neutral"))}>
+            Config flag {status?.configFlagEnabled ? "ON" : "OFF"}
+          </span>
+          <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase", toneChipClasses(isLight, status?.forcesPaperMode ? "warn" : "neutral"))}>
+            Forces PAPER {status?.forcesPaperMode ? "YES" : "NO"}
+          </span>
+        </div>
+      </div>
+
+      {canControl ? (
+        <div className="mt-5 space-y-3 border-t pt-4 dark:border-neutral-800">
+          <label className="block text-xs font-medium">
+            Reason
+            <input
+              value={reason}
+              onChange={(e) => { setReason(e.target.value); }}
+              placeholder={active ? "Reason for deactivation" : "Reason for activation"}
+              className={cn(
+                "mt-1 w-full rounded-lg border px-3 py-2 text-sm",
+                isLight ? "border-neutral-300 bg-white" : "border-neutral-700 bg-neutral-900",
+              )}
+            />
+          </label>
+          {!active ? (
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={flatten} onChange={(e) => { setFlatten(e.target.checked); }} />
+              Flatten running strategies on activate
+            </label>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {!active ? (
+              <>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => { setConfirmActivate(true); }}
+                  className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                >
+                  <Power className="h-4 w-4" /> Activate kill switch
+                </button>
+                {confirmActivate ? (
+                  <div className={cn("w-full rounded-lg border p-3", isLight ? "border-rose-300 bg-rose-50" : "border-rose-500/40 bg-rose-500/10")}>
+                    <p className="mb-2 text-sm font-semibold text-rose-600">Confirm activation</p>
+                    <p className="mb-3 text-xs text-rose-500">
+                      This immediately blocks LIVE orders and forces PAPER mode platform-wide.
+                      {flatten ? " Running strategy instances will be stopped." : ""}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          onActivate(reason.trim() || "Admin manual activation", flatten);
+                          setConfirmActivate(false);
+                        }}
+                        className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                      >
+                        {busy ? "Activating…" : "Confirm activate"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => { setConfirmActivate(false); }}
+                        className={cn("rounded-lg border px-3 py-1.5 text-xs", isLight ? "border-rose-300" : "border-rose-500/40")}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (!confirm("Deactivate the global kill switch? LIVE orders may resume if other gates allow.")) return;
+                  onDeactivate(reason.trim() || "Admin manual deactivation");
+                }}
+                className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-600 hover:bg-emerald-500/20 disabled:opacity-50 dark:text-emerald-300"
+              >
+                <Shield className="h-4 w-4" /> Deactivate kill switch
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p className={cn("mt-4 text-xs", isLight ? "text-neutral-500" : "text-neutral-400")}>
+          Kill switch controls require admin-only access (no trader role).
+        </p>
+      )}
+    </AdminPanel>
+  );
+}
+
+function StrategyHealthTable({
+  rows,
+  isLight,
+}: {
+  rows: StrategyRuntimeHealthRow[];
+  isLight: boolean;
+}) {
+  if (!rows.length) {
+    return <p className={cn("text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>No runtime health rows for today.</p>;
+  }
+  return (
+    <div className="overflow-x-auto rounded-lg border dark:border-neutral-800">
+      <table className="w-full text-xs">
+        <thead className={isLight ? "bg-neutral-100" : "bg-neutral-900/80"}>
+          <tr>
+            {["Strategy", "Mode", "Scans", "Blocked", "Signals", "Trades", "Rejection", "Last scan"].map((h) => (
+              <th key={h} className="px-2 py-2 text-left font-semibold text-muted-foreground">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.strategyName} className="border-t dark:border-neutral-800">
+              <td className="px-2 py-2 font-medium">{r.strategyName}</td>
+              <td className="px-2 py-2">{r.executionMode}</td>
+              <td className="px-2 py-2 font-mono">{r.scansAttempted}</td>
+              <td className="px-2 py-2 font-mono text-amber-500">
+                {r.scansBlockedIntegrity + r.scansBlockedFeed}
+              </td>
+              <td className="px-2 py-2 font-mono">{r.signalsGenerated}</td>
+              <td className="px-2 py-2 font-mono">{r.tradesOpened}/{r.tradesClosed}</td>
+              <td className="px-2 py-2 font-mono">{r.rejectionRate ?? "—"}</td>
+              <td className="px-2 py-2">{r.lastScanTime ? fmtDateTime(r.lastScanTime) : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function OperationalPanel({ data, isLight }: { data: OperationalDiagnostics; isLight: boolean }) {
+  const feed = data.feedHealth ?? {};
+  const startup = data.safeStartup ?? {};
+  const feedLevel = String(feed.level ?? "UNKNOWN");
+  const feedWarn = feedLevel !== "OK" && feedLevel !== "IDLE";
+
+  return (
+    <AdminSection isLight={isLight} title="P2 operational diagnostics" subtitle="Feed health, safe startup gate, strategy runtime health">
+      <div className="space-y-4">
+        <AdminPanel isLight={isLight} title="Feed health" subtitle={`Level: ${feedLevel}`}>
+          <MetricGrid
+            isLight={isLight}
+            items={[
+              { label: "WebSocket", value: feed.websocketConnected },
+              { label: "Equity gap (s)", value: feed.equityGapSeconds, warn: Boolean(feed.equityStale) },
+              { label: "Index gap (s)", value: feed.indexGapSeconds, warn: Boolean(feed.indexStale) },
+              { label: "Tick gap (s)", value: feed.tickGapSeconds, warn: Boolean(feed.tickStale) },
+              { label: "Stale incidents", value: feed.staleFeedIncidents, warn: Number(feed.staleFeedIncidents) > 0 },
+              { label: "Outage seconds", value: feed.totalOutageSeconds },
+              { label: "Reconnect attempts", value: feed.reconnectAttempts },
+              { label: "Level", value: feedLevel, warn: feedWarn },
+            ]}
+          />
+        </AdminPanel>
+
+        <AdminPanel isLight={isLight} title="Safe startup gate">
+          <MetricGrid
+            isLight={isLight}
+            items={[
+              { label: "Ready", value: startup.ready, warn: startup.ready === false },
+              { label: "Block reason", value: startup.blockReason, warn: Boolean(startup.blockReason) },
+              { label: "Min warmup (s)", value: startup.minWarmupSeconds },
+              { label: "Started at", value: startup.startedAt ? fmtDateTime(String(startup.startedAt)) : "—" },
+            ]}
+          />
+        </AdminPanel>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <AdminPanel isLight={isLight} title="Session counters">
+            <MetricGrid
+              isLight={isLight}
+              items={[
+                { label: "Active trades", value: data.activeTrades },
+                { label: "Integrity failures", value: data.integrityFailuresToday, warn: data.integrityFailuresToday > 0 },
+                { label: "Blocked strategies", value: data.blockedStrategies.length, warn: data.blockedStrategies.length > 0 },
+              ]}
+            />
+          </AdminPanel>
+          <AdminPanel isLight={isLight} title="Blocked strategies" className="md:col-span-2">
+            {data.blockedStrategies.length ? (
+              <ul className="space-y-1 text-xs">
+                {data.blockedStrategies.map((b) => (
+                  <li key={`${b.strategyName}-${b.reason}`} className="rounded border px-2 py-1 dark:border-neutral-800">
+                    <span className="font-semibold">{b.strategyName}</span>
+                    <span className="text-muted-foreground"> — {b.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No blocked strategies.</p>
+            )}
+          </AdminPanel>
+        </div>
+
+        {data.staleSymbols.length > 0 ? (
+          <AdminPanel isLight={isLight} title="Stale symbols (sample)">
+            <MetricGrid
+              isLight={isLight}
+              items={data.staleSymbols.map((s) => ({
+                label: String(s.symbol),
+                value: `${s.lagSeconds ?? "?"}s lag`,
+                warn: true,
+              }))}
+            />
+          </AdminPanel>
+        ) : null}
+
+        <AdminPanel isLight={isLight} title="Strategy runtime health (today)">
+          <StrategyHealthTable rows={data.strategyRuntimeHealth ?? []} isLight={isLight} />
+        </AdminPanel>
+      </div>
+    </AdminSection>
+  );
+}
+
+function OmsPanel({ data, isLight }: { data: OmsDiagnostics; isLight: boolean }) {
+  const broker = data.brokerConnection ?? {};
+  const limits = data.activeLimits ?? {};
+  const mcp = data.marketCloseProtection ?? {};
+  const dedupe = data.duplicatePrevention ?? { dedupeWindowSeconds: 0, activeKeysTracked: 0 };
+  const latency = data.executionLatency ?? { avgAckLatencyMsLast24h: 0, telemetryEventsLast24h: 0 };
+
+  return (
+    <AdminSection isLight={isLight} title="P3 OMS safety diagnostics" subtitle="Broker protection, exposure limits, dedupe, execution telemetry">
+      <div className="space-y-4">
+        <AdminPanel isLight={isLight} title="Broker connection">
+          <MetricGrid
+            isLight={isLight}
+            items={[
+              { label: "Global halt", value: broker.globalHalt, warn: Boolean(broker.globalHalt) },
+              { label: "Platform feed degraded", value: broker.platformFeedDegraded, warn: Boolean(broker.platformFeedDegraded) },
+              { label: "Trader broker degraded", value: broker.traderBrokerDegraded, warn: Boolean(broker.traderBrokerDegraded) },
+              { label: "Block LIVE", value: broker.blockLive, warn: Boolean(broker.blockLive) },
+              { label: "Flatten on disconnect", value: broker.flattenOnDisconnect },
+              { label: "WebSocket state", value: broker.websocketState },
+              { label: "Last tick", value: broker.lastTickAt ? fmtDateTime(String(broker.lastTickAt)) : "—" },
+            ]}
+          />
+        </AdminPanel>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <AdminPanel isLight={isLight} title="Exposure limits (configured)">
+            <MetricGrid
+              isLight={isLight}
+              items={Object.entries(limits).map(([label, value]) => ({
+                label: label.replace(/([A-Z])/g, " $1").trim(),
+                value,
+                warn: label === "activateKillSwitchOnBreach" && Boolean(value),
+              }))}
+            />
+          </AdminPanel>
+          <AdminPanel isLight={isLight} title="Market close protection">
+            <MetricGrid
+              isLight={isLight}
+              items={[
+                { label: "No new entries after", value: mcp.noNewEntriesAfter },
+                { label: "Flatten time", value: mcp.flattenTime },
+                { label: "Blocks LIVE now", value: mcp.blocksNewLiveEntriesNow, warn: Boolean(mcp.blocksNewLiveEntriesNow) },
+              ]}
+            />
+          </AdminPanel>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <AdminPanel isLight={isLight} title="Order safety (24h)">
+            <MetricGrid
+              isLight={isLight}
+              items={[
+                { label: "Blocked orders", value: data.blockedOrdersLast24h, warn: data.blockedOrdersLast24h > 0 },
+                { label: "Dedupe window (s)", value: dedupe.dedupeWindowSeconds },
+                { label: "Active dedupe keys", value: dedupe.activeKeysTracked },
+              ]}
+            />
+          </AdminPanel>
+          <AdminPanel isLight={isLight} title="Execution latency (24h)">
+            <MetricGrid
+              isLight={isLight}
+              items={[
+                { label: "Avg ACK latency (ms)", value: latency.avgAckLatencyMsLast24h },
+                { label: "Telemetry events", value: latency.telemetryEventsLast24h },
+              ]}
+            />
+          </AdminPanel>
+          {data.dailyPnl ? (
+            <AdminPanel isLight={isLight} title="Daily PnL snapshot">
+              <MetricGrid
+                isLight={isLight}
+                items={[
+                  { label: "Today MTM", value: data.dailyPnl.todayMtm },
+                  { label: "Open positions", value: data.dailyPnl.openPositionCount },
+                ]}
+              />
+            </AdminPanel>
+          ) : null}
+        </div>
+      </div>
+    </AdminSection>
+  );
+}
+
+export function AdminSafetyDiagnosticsPage() {
+  const isLight = useUiThemeStore((s) => s.mode === "light");
+  const qc = useQueryClient();
+  const userId = useSessionStore((s) => s.userId);
+  const canControlKillSwitch = useSessionStore((s) => s.canAccessKillSwitchOperations());
+
+  const opsQ = useQuery({
+    queryKey: OPS_QK,
+    queryFn: fetchOperationalDiagnostics,
+    refetchInterval: 20_000,
+  });
+
+  const omsQ = useQuery({
+    queryKey: [...OMS_QK, userId],
+    queryFn: () => fetchOmsDiagnostics(userId || undefined),
+    refetchInterval: 20_000,
+  });
+
+  const ksQ = useQuery({
+    queryKey: KS_QK,
+    queryFn: fetchKillSwitchStatus,
+    refetchInterval: 15_000,
+  });
+
+  const activateMut = useMutation({
+    mutationFn: ({ reason, flatten }: { reason: string; flatten: boolean }) => activateKillSwitch(reason, flatten),
+    onSuccess: (data) => {
+      toast.success(data.active ? "Kill switch activated" : "Kill switch updated");
+      void qc.invalidateQueries({ queryKey: KS_QK });
+      void qc.invalidateQueries({ queryKey: OMS_QK });
+      void qc.invalidateQueries({ queryKey: OPS_QK });
+    },
+    onError: () => { toast.error("Failed to activate kill switch"); },
+  });
+
+  const deactivateMut = useMutation({
+    mutationFn: (reason: string) => deactivateKillSwitch(reason),
+    onSuccess: () => {
+      toast.success("Kill switch deactivated");
+      void qc.invalidateQueries({ queryKey: KS_QK });
+      void qc.invalidateQueries({ queryKey: OMS_QK });
+      void qc.invalidateQueries({ queryKey: OPS_QK });
+    },
+    onError: () => { toast.error("Failed to deactivate kill switch"); },
+  });
+
+  const killActive = Boolean(ksQ.data?.active ?? omsQ.data?.killSwitch?.active);
+  const loading = opsQ.isLoading || omsQ.isLoading;
+  const updatedAt = Math.max(opsQ.dataUpdatedAt, omsQ.dataUpdatedAt, ksQ.dataUpdatedAt);
+
+  if (loading && !opsQ.data && !omsQ.data) {
+    return (
+      <AdminPageShell isLight={isLight} title="Safety & Diagnostics" subtitle="Loading operational and OMS safety telemetry…">
+        <div className="text-muted-foreground">Loading diagnostics…</div>
+      </AdminPageShell>
+    );
+  }
+
+  return (
+    <AdminPageShell
+      isLight={isLight}
+      eyebrow="Safety & observability"
+      title="Safety & Diagnostics"
+      subtitle="P2 operational health (feed, startup gate, strategy runtime) and P3 OMS safety layer (kill switch, exposure, broker protection)."
+      actions={
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            Updated {updatedAt ? fmtDateTime(new Date(updatedAt).toISOString()) : "—"}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              void opsQ.refetch();
+              void omsQ.refetch();
+              void ksQ.refetch();
+            }}
+            className={cn("rounded-lg border px-2 py-1 text-xs", isLight ? "border-neutral-300" : "border-neutral-700")}
+          >
+            <RefreshCw className="inline h-3.5 w-3.5" /> Refresh
+          </button>
+        </div>
+      }
+      alert={
+        killActive ? (
+          <div className="flex items-center gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <AlertTriangle className="h-5 w-5 shrink-0" />
+            <span>Global kill switch is ACTIVE — LIVE orders are blocked and execution is forced to PAPER mode.</span>
+          </div>
+        ) : undefined
+      }
+    >
+      <div className="space-y-8">
+        <KillSwitchPanel
+          status={ksQ.data ?? omsQ.data?.killSwitch}
+          isLight={isLight}
+          canControl={canControlKillSwitch}
+          busy={activateMut.isPending || deactivateMut.isPending}
+          onActivate={(reason, flatten) => { activateMut.mutate({ reason, flatten }); }}
+          onDeactivate={(reason) => { deactivateMut.mutate(reason); }}
+        />
+
+        {opsQ.data ? <OperationalPanel data={opsQ.data} isLight={isLight} /> : null}
+        {omsQ.data ? <OmsPanel data={omsQ.data} isLight={isLight} /> : null}
+
+        {(opsQ.isError || omsQ.isError) ? (
+          <p className="text-sm text-rose-500">
+            Some diagnostics failed to load. Check API connectivity and admin permissions.
+          </p>
+        ) : null}
+      </div>
+    </AdminPageShell>
+  );
+}

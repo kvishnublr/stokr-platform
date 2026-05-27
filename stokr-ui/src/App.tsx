@@ -56,6 +56,7 @@ import { AdminTestSignalLabPage } from "./pages/admin/AdminTestSignalLabPage";
 import { AdminTestExecutionMonitorPage } from "./pages/admin/AdminTestExecutionMonitorPage";
 import { AdminInfrastructureHealthCenterPage } from "./pages/admin/AdminInfrastructureHealthCenterPage";
 import { AdminFailureAnalysisConsolePage } from "./pages/admin/AdminFailureAnalysisConsolePage";
+import { AdminSafetyDiagnosticsPage } from "./pages/admin/AdminSafetyDiagnosticsPage";
 import { useSessionStore } from "./state/session";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { OnboardingWizardPage } from "./pages/OnboardingWizardPage";
@@ -263,6 +264,7 @@ export default function App() {
               <Route path="runtime-bindings" element={<AdminRuntimeBindingsPage />} />
               <Route path="execution-config" element={<AdminExecutionConfigPage />} />
               <Route path="risk-dashboard" element={<AdminRiskDashboardPage />} />
+              <Route path="safety-diagnostics" element={<AdminSafetyDiagnosticsPage />} />
               <Route path="capital" element={<AdminCapitalPage />} />
               <Route path="oms" element={<AdminOmsMonitorPage />} />
               <Route path="settings" element={<AdminSectionPage section="settings" />} />
