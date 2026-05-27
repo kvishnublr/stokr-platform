@@ -1,5 +1,6 @@
-import { motion } from "framer-motion";
-import { ChevronRight, TrendingDown, TrendingUp, Activity } from "lucide-react";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ChevronRight, ChevronDown, TrendingDown, TrendingUp, Activity } from "lucide-react";
 import { cn } from "../../../../lib/utils";
 import { fmtDateTime } from "../../../../lib/dateUtils";
 import { provenanceBadge, provenanceShell, resolveProvenance } from "./provenanceTheme";
@@ -22,7 +23,6 @@ export type LiveSignalCardData = {
   marketRegime: string | null;
   createdAt: string | null;
   executionLatencyMs: number | null;
-  // Enriched fields
   ltp?: number | null;
   pnl?: number | null;
 };
@@ -74,7 +74,6 @@ function computeRR(entry: number | null, stop: number | null, target: number | n
   return (Math.abs(target - entry) / risk).toFixed(1);
 }
 
-/** How far LTP has moved toward target vs SL, as a percentage */
 function targetProgress(entry: number | null, stop: number | null, target: number | null, ltp: number | null, isBuy: boolean): number | null {
   if (entry == null || stop == null || target == null || ltp == null || ltp <= 0) return null;
   const totalRange = Math.abs(target - stop);
@@ -96,12 +95,13 @@ export function LiveSignalCard({
   onSelect: () => void;
   index: number;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   const side = String(signal.signalType ?? "").toUpperCase();
   const isBuy = side === "BUY";
   const provenance = resolveProvenance(signal.pipeline, signal.signalSource);
   const conf = confidencePct(signal.confidenceScore);
 
-  // Use enriched pnl field (computed on backend), fallback to stored pnl
   const pnlNum = signal.pnl != null ? Number(signal.pnl)
     : signal.realizedPnl != null ? Number(signal.realizedPnl)
     : signal.unrealizedPnl != null ? Number(signal.unrealizedPnl)
@@ -112,12 +112,10 @@ export function LiveSignalCard({
   const entry = signal.entryReferencePrice != null ? Number(signal.entryReferencePrice) : null;
   const ltpValid = ltp != null && ltp > 0;
 
-  // LTP change from entry
   const ltpChangePct = ltpValid && entry != null && entry > 0
     ? ((isBuy ? (ltp - entry) : (entry - ltp)) / entry) * 100
     : null;
 
-  // Target progress bar
   const tgtProg = targetProgress(
     entry,
     signal.stopPrice != null ? Number(signal.stopPrice) : null,
@@ -129,15 +127,12 @@ export function LiveSignalCard({
   const isClosed = signal.outcomeStatus != null && ["TARGET_HIT", "SL_HIT", "STOPLOSS_HIT", "PRESSURE_EXIT", "CLOSED", "EXPIRED"].includes(signal.outcomeStatus.toUpperCase());
 
   return (
-    <motion.button
-      type="button"
+    <motion.div
       initial={{ opacity: 0, y: 14, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ delay: Math.min(index * 0.04, 0.4), duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      whileHover={{ y: -3 }}
-      onClick={onSelect}
       className={cn(
-        "group relative w-full overflow-hidden rounded-2xl border p-4 text-left transition-shadow",
+        "group relative w-full overflow-hidden rounded-2xl border text-left transition-shadow",
         provenanceShell(isLight, provenance),
         selected && "ring-2 ring-blue-500/50",
       )}
@@ -151,160 +146,195 @@ export function LiveSignalCard({
         />
       ) : null}
 
-      {/* Header: Symbol, Side, Provenance */}
-      <div className="relative flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="relative h-12 w-12 shrink-0">
-            <svg viewBox="0 0 36 36" className="h-12 w-12 -rotate-90">
-              <circle cx="18" cy="18" r="15" fill="none" stroke={isLight ? "#e5e7eb" : "#404040"} strokeWidth="3" />
-              <circle
-                cx="18"
-                cy="18"
-                r="15"
-                fill="none"
-                stroke={conf >= 75 ? "#34d399" : conf >= 55 ? "#fbbf24" : "#f87171"}
-                strokeWidth="3"
-                strokeDasharray={`${(conf / 100) * 94} 94`}
-                strokeLinecap="round"
-              />
-            </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tabular-nums">
-              {conf}%
-            </span>
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={cn("font-mono text-sm font-bold", isLight ? "text-neutral-900" : "text-white")}>
-                {String(signal.symbol ?? "—").replace(/^NSE:/, "")}
+      {/* Main card area — clickable for detail drawer */}
+      <button type="button" onClick={onSelect} className="relative w-full p-4 text-left">
+        {/* Header: Symbol, Side, Provenance */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="relative h-12 w-12 shrink-0">
+              <svg viewBox="0 0 36 36" className="h-12 w-12 -rotate-90">
+                <circle cx="18" cy="18" r="15" fill="none" stroke={isLight ? "#e5e7eb" : "#404040"} strokeWidth="3" />
+                <circle
+                  cx="18" cy="18" r="15" fill="none"
+                  stroke={conf >= 75 ? "#34d399" : conf >= 55 ? "#fbbf24" : "#f87171"}
+                  strokeWidth="3"
+                  strokeDasharray={`${(conf / 100) * 94} 94`}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tabular-nums">
+                {conf}%
               </span>
-              <span
-                className={cn(
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={cn("font-mono text-sm font-bold", isLight ? "text-neutral-900" : "text-white")}>
+                  {String(signal.symbol ?? "—").replace(/^NSE:/, "")}
+                </span>
+                <span className={cn(
                   "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase",
                   isBuy ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300",
+                )}>
+                  {isBuy ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                  {side || "—"}
+                </span>
+                {/* Compact LTP + P&L inline */}
+                {ltpValid && (
+                  <span className={cn("ml-1 font-mono text-[11px] font-semibold", isLight ? "text-sky-600" : "text-sky-400")}>
+                    {fmt(ltp)}
+                  </span>
                 )}
-              >
-                {isBuy ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {side || "—"}
-              </span>
+                {pnlNum != null && (
+                  <span className={cn("font-mono text-[11px] font-bold",
+                    pnlNum > 0 ? (isLight ? "text-emerald-600" : "text-emerald-400") :
+                    pnlNum < 0 ? (isLight ? "text-rose-600" : "text-rose-400") :
+                    (isLight ? "text-neutral-500" : "text-neutral-400"))}>
+                    {pnlNum >= 0 ? "+" : ""}{pnlNum.toFixed(2)}
+                  </span>
+                )}
+              </div>
+              <p className={cn("mt-0.5 truncate text-[11px]", isLight ? "text-neutral-500" : "text-neutral-400")}>
+                {signal.strategyName ?? "Unknown strategy"}
+              </p>
             </div>
-            <p className={cn("mt-0.5 truncate text-[11px]", isLight ? "text-neutral-500" : "text-neutral-400")}>
-              {signal.strategyName ?? "Unknown strategy"}
-            </p>
           </div>
-        </div>
-        <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider", provenanceBadge(provenance, isLight))}>
-          {provenance}
-        </span>
-      </div>
-
-      {/* LTP Hero Section */}
-      {ltpValid && (
-        <div className={cn("relative mt-3 rounded-xl px-3 py-2.5 text-center",
-          isLight ? "bg-neutral-50 border border-neutral-200" : "bg-white/[0.04] border border-white/[0.07]")}>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className={cn("text-[9px] uppercase tracking-wide font-semibold",
-                isLight ? "text-neutral-400" : "text-neutral-500")}>LTP</div>
-              <div className={cn("font-mono text-lg font-bold",
-                isLight ? "text-neutral-900" : "text-white")}>
-                {fmt(ltp)}
-              </div>
-            </div>
-            {ltpChangePct != null && (
-              <div className={cn("text-right")}>
-                <div className={cn("text-[9px] uppercase tracking-wide font-semibold",
-                  isLight ? "text-neutral-400" : "text-neutral-500")}>
-                  {isClosed ? "Final" : "Live"} P&L
-                </div>
-                <div className={cn("font-mono text-lg font-bold",
-                  pnlNum != null && pnlNum > 0 ? (isLight ? "text-emerald-600" : "text-emerald-400") :
-                  pnlNum != null && pnlNum < 0 ? (isLight ? "text-rose-600" : "text-rose-400") :
-                  (isLight ? "text-neutral-600" : "text-neutral-300"))}>
-                  {pnlNum != null ? `${pnlNum >= 0 ? "+" : ""}${pnlNum.toFixed(2)}` : "—"}
-                </div>
-                <div className={cn("text-[10px] font-mono",
-                  ltpChangePct >= 0 ? (isLight ? "text-emerald-500" : "text-emerald-400/80") :
-                  (isLight ? "text-rose-500" : "text-rose-400/80"))}>
-                  {ltpChangePct >= 0 ? "+" : ""}{ltpChangePct.toFixed(2)}%
-                </div>
-              </div>
-            )}
-          </div>
-          {/* Target progress mini-bar */}
-          {tgtProg != null && !isClosed && (
-            <div className="mt-2">
-              <div className="flex justify-between text-[8px] font-mono mb-0.5">
-                <span className={isLight ? "text-rose-500" : "text-rose-400"}>SL</span>
-                <span className={isLight ? "text-neutral-400" : "text-neutral-500"}>{tgtProg.toFixed(0)}%</span>
-                <span className={isLight ? "text-emerald-500" : "text-emerald-400"}>TGT</span>
-              </div>
-              <div className={cn("h-1 overflow-hidden rounded-full", isLight ? "bg-neutral-200" : "bg-neutral-700")}>
-                <motion.div
-                  className={cn("h-full rounded-full",
-                    tgtProg > 60 ? "bg-emerald-400" : tgtProg > 30 ? "bg-amber-400" : "bg-rose-400")}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${tgtProg}%` }}
-                  transition={{ duration: 0.6 }}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Price Grid: Entry, SL, Target, RR */}
-      <div className="relative mt-3 grid grid-cols-4 gap-2 text-center">
-        {[
-          { label: "Entry", value: fmt(signal.entryReferencePrice) },
-          { label: "SL", value: fmt(signal.stopPrice), tone: isLight ? "text-rose-600" : "text-rose-400" },
-          { label: "Target", value: fmt(signal.targetPrice), tone: isLight ? "text-emerald-600" : "text-emerald-400" },
-          { label: "RR", value: signal.riskRewardAchieved != null ? fmt(signal.riskRewardAchieved, 1) : computeRR(signal.entryReferencePrice, signal.stopPrice, signal.targetPrice) },
-        ].map((cell) => (
-          <div key={cell.label}>
-            <div className={cn("text-[9px] uppercase tracking-wide opacity-60")}>{cell.label}</div>
-            <div className={cn("font-mono text-xs font-semibold", cell.tone)}>{cell.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Lifecycle Progress Bar */}
-      <div className="relative mt-3">
-        <div className="mb-1 flex items-center justify-between text-[10px]">
-          <span className={cn("flex items-center gap-1",
-            isLight ? "text-neutral-500" : "text-neutral-400")}>
-            {!isClosed && <Activity className="h-2.5 w-2.5 animate-pulse text-blue-400" />}
-            {lifecycleLabel(signal.outcomeStatus)}
+          <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider", provenanceBadge(provenance, isLight))}>
+            {provenance}
           </span>
-          {signal.marketRegime ? (
-            <span className={cn("rounded px-1.5 py-0.5 font-medium", isLight ? "bg-neutral-100 text-neutral-600" : "bg-neutral-800 text-neutral-300")}>
-              {signal.marketRegime}
-            </span>
-          ) : null}
         </div>
-        <div className={cn("h-1.5 overflow-hidden rounded-full", isLight ? "bg-neutral-200" : "bg-neutral-800")}>
-          <motion.div
-            className={cn("h-full rounded-full", lifecycleBarColor(signal.outcomeStatus))}
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            transition={{ duration: 0.6 }}
-          />
-        </div>
-      </div>
 
-      {/* Footer: Time, P&L, Arrow */}
-      <div className="relative mt-3 flex items-center justify-between text-[11px]">
-        <span className={isLight ? "text-neutral-400" : "text-neutral-500"}>{fmtDateTime(signal.createdAt)}</span>
-        <span
-          className={cn(
-            "font-mono font-semibold",
+        {/* Price Grid: Entry, SL, Target, RR */}
+        <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+          {[
+            { label: "Entry", value: fmt(signal.entryReferencePrice) },
+            { label: "SL", value: fmt(signal.stopPrice), tone: isLight ? "text-rose-600" : "text-rose-400" },
+            { label: "Target", value: fmt(signal.targetPrice), tone: isLight ? "text-emerald-600" : "text-emerald-400" },
+            { label: "RR", value: signal.riskRewardAchieved != null ? fmt(signal.riskRewardAchieved, 1) : computeRR(signal.entryReferencePrice, signal.stopPrice, signal.targetPrice) },
+          ].map((cell) => (
+            <div key={cell.label}>
+              <div className="text-[9px] uppercase tracking-wide opacity-60">{cell.label}</div>
+              <div className={cn("font-mono text-xs font-semibold", cell.tone)}>{cell.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Lifecycle Progress Bar */}
+        <div className="mt-3">
+          <div className="mb-1 flex items-center justify-between text-[10px]">
+            <span className={cn("flex items-center gap-1", isLight ? "text-neutral-500" : "text-neutral-400")}>
+              {!isClosed && <Activity className="h-2.5 w-2.5 animate-pulse text-blue-400" />}
+              {lifecycleLabel(signal.outcomeStatus)}
+            </span>
+            {signal.marketRegime ? (
+              <span className={cn("rounded px-1.5 py-0.5 font-medium", isLight ? "bg-neutral-100 text-neutral-600" : "bg-neutral-800 text-neutral-300")}>
+                {signal.marketRegime}
+              </span>
+            ) : null}
+          </div>
+          <div className={cn("h-1.5 overflow-hidden rounded-full", isLight ? "bg-neutral-200" : "bg-neutral-800")}>
+            <motion.div
+              className={cn("h-full rounded-full", lifecycleBarColor(signal.outcomeStatus))}
+              initial={{ width: 0 }}
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.6 }}
+            />
+          </div>
+        </div>
+
+        {/* Footer: Time, P&L, Arrow */}
+        <div className="mt-3 flex items-center justify-between text-[11px]">
+          <span className={isLight ? "text-neutral-400" : "text-neutral-500"}>{fmtDateTime(signal.createdAt)}</span>
+          <span className={cn("font-mono font-semibold",
             pnlNum == null ? "text-neutral-500" : pnlNum >= 0 ? "text-emerald-400" : "text-rose-400",
             pnlNum != null && pnlNum !== 0 && (pnlNum > 0 ? "drop-shadow-[0_0_8px_rgba(52,211,153,0.35)]" : "drop-shadow-[0_0_8px_rgba(244,63,94,0.35)]"),
-          )}
-        >
-          {pnlNum == null ? "—" : `${pnlNum >= 0 ? "+" : ""}${pnlNum.toFixed(2)}`}
-        </span>
-        <ChevronRight className="h-4 w-4 opacity-40 transition group-hover:opacity-100" />
-      </div>
-    </motion.button>
+          )}>
+            {pnlNum == null ? "—" : `${pnlNum >= 0 ? "+" : ""}${pnlNum.toFixed(2)}`}
+          </span>
+          <ChevronRight className="h-4 w-4 opacity-40 transition group-hover:opacity-100" />
+        </div>
+      </button>
+
+      {/* Expandable LTP Detail Section */}
+      {ltpValid && (
+        <>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+            className={cn(
+              "relative flex w-full items-center justify-center gap-1 border-t py-1.5 text-[10px] font-semibold transition-colors",
+              isLight
+                ? "border-neutral-200 text-neutral-400 hover:bg-neutral-50 hover:text-neutral-600"
+                : "border-white/[0.06] text-neutral-500 hover:bg-white/[0.03] hover:text-neutral-300",
+            )}
+          >
+            <ChevronDown className={cn("h-3 w-3 transition-transform", expanded && "rotate-180")} />
+            {expanded ? "Hide detail" : "LTP & P&L detail"}
+          </button>
+          <AnimatePresence>
+            {expanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="overflow-hidden"
+              >
+                <div className={cn("relative px-4 pb-3 pt-2",
+                  isLight ? "bg-neutral-50" : "bg-white/[0.02]")}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className={cn("text-[9px] uppercase tracking-wide font-semibold",
+                        isLight ? "text-neutral-400" : "text-neutral-500")}>LTP</div>
+                      <div className={cn("font-mono text-lg font-bold",
+                        isLight ? "text-neutral-900" : "text-white")}>
+                        {fmt(ltp)}
+                      </div>
+                    </div>
+                    {ltpChangePct != null && (
+                      <div className="text-right">
+                        <div className={cn("text-[9px] uppercase tracking-wide font-semibold",
+                          isLight ? "text-neutral-400" : "text-neutral-500")}>
+                          {isClosed ? "Final" : "Live"} P&L
+                        </div>
+                        <div className={cn("font-mono text-lg font-bold",
+                          pnlNum != null && pnlNum > 0 ? (isLight ? "text-emerald-600" : "text-emerald-400") :
+                          pnlNum != null && pnlNum < 0 ? (isLight ? "text-rose-600" : "text-rose-400") :
+                          (isLight ? "text-neutral-600" : "text-neutral-300"))}>
+                          {pnlNum != null ? `${pnlNum >= 0 ? "+" : ""}${pnlNum.toFixed(2)}` : "—"}
+                        </div>
+                        <div className={cn("text-[10px] font-mono",
+                          ltpChangePct >= 0 ? (isLight ? "text-emerald-500" : "text-emerald-400/80") :
+                          (isLight ? "text-rose-500" : "text-rose-400/80"))}>
+                          {ltpChangePct >= 0 ? "+" : ""}{ltpChangePct.toFixed(2)}%
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {/* Target progress mini-bar */}
+                  {tgtProg != null && !isClosed && (
+                    <div className="mt-2">
+                      <div className="flex justify-between text-[8px] font-mono mb-0.5">
+                        <span className={isLight ? "text-rose-500" : "text-rose-400"}>SL</span>
+                        <span className={isLight ? "text-neutral-400" : "text-neutral-500"}>{tgtProg.toFixed(0)}%</span>
+                        <span className={isLight ? "text-emerald-500" : "text-emerald-400"}>TGT</span>
+                      </div>
+                      <div className={cn("h-1 overflow-hidden rounded-full", isLight ? "bg-neutral-200" : "bg-neutral-700")}>
+                        <motion.div
+                          className={cn("h-full rounded-full",
+                            tgtProg > 60 ? "bg-emerald-400" : tgtProg > 30 ? "bg-amber-400" : "bg-rose-400")}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${tgtProg}%` }}
+                          transition={{ duration: 0.6 }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
+    </motion.div>
   );
 }
