@@ -294,6 +294,14 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         keywords: ["risk", "exposure", "drawdown"],
       },
       {
+        to: "/admin/safety-diagnostics",
+        label: "Safety & Diagnostics",
+        description: "P2/P3 operational health, OMS safety layer, kill switch controls",
+        icon: Shield,
+        tier: "critical",
+        keywords: ["safety", "diagnostics", "kill switch", "oms", "feed"],
+      },
+      {
         to: "/admin/capital",
         label: "Capital Allocation",
         description: "Global and per-strategy capital utilization",
