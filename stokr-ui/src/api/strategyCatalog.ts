@@ -102,6 +102,23 @@ export async function fetchStrategyCatalog(page = 0, size = 50): Promise<PageWra
   return res.data?.data as PageWrap<AdminStrategyDto>;
 }
 
+export type StrategyCatalogKeyItem = {
+  strategyKey: string;
+  displayName: string;
+};
+
+/** Flat strategy list for admin dropdowns (Signal Lab, Replay, etc.). */
+export async function fetchStrategyCatalogKeys(): Promise<StrategyCatalogKeyItem[]> {
+  const page = await fetchStrategyCatalog(0, 100);
+  return (page.content ?? [])
+    .filter((s) => s.enabled !== false)
+    .map((s) => ({
+      strategyKey: s.code,
+      displayName: s.displayName?.trim() ? s.displayName : s.code,
+    }))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
 export async function createStrategy(body: {
   strategyKey: string;
   displayName: string;

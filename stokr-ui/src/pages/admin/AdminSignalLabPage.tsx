@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
+import { fetchStrategyCatalogKeys } from "../../api/strategyCatalog";
 import {
   AlertTriangle, BarChart3, CheckCircle, Clock, Eraser, Play, RefreshCw, Target, Trash2,
 } from "lucide-react";
@@ -62,15 +63,9 @@ export function AdminSignalLabPage() {
   const [cleanupDone, setCleanupDone] = useState<CleanupResult | null>(null);
   const [benchmarkResult, setBenchmarkResult] = useState<BenchmarkResult | AsyncStart | null>(null);
 
-  const catalogQ = useQuery<StrategyCatalogItem[]>({
+  const catalogQ = useQuery({
     queryKey: ["strategy-catalog-keys"],
-    queryFn: async () => {
-      const r = await api.get("/api/admin/strategy-catalog");
-      return (r.data?.data ?? []).map((c: { strategyKey: string; displayName?: string }) => ({
-        strategyKey: c.strategyKey,
-        displayName: c.displayName ?? c.strategyKey,
-      }));
-    },
+    queryFn: fetchStrategyCatalogKeys,
     staleTime: 60_000,
   });
 
@@ -97,6 +92,8 @@ export function AdminSignalLabPage() {
     const rows = catalogQ.data ?? [];
     return [{ strategyKey: "ALL", displayName: "All strategies" }, ...rows];
   }, [catalogQ.data]);
+
+  const catalogError = catalogQ.isError ? String((catalogQ.error as Error)?.message ?? "Failed to load strategies") : null;
 
   const totals = useMemo(() => {
     const rows = statsQ.data ?? [];
@@ -206,11 +203,21 @@ export function AdminSignalLabPage() {
               value={strategyKey}
               onChange={(e) => setStrategyKey(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              disabled={catalogQ.isLoading && strategies.length <= 1}
             >
               {strategies.map((s) => (
                 <option key={s.strategyKey} value={s.strategyKey}>{s.displayName}</option>
               ))}
             </select>
+            {catalogQ.isLoading ? (
+              <p className="mt-1 text-xs text-slate-500">Loading strategies…</p>
+            ) : null}
+            {catalogError ? (
+              <p className="mt-1 text-xs text-rose-600">{catalogError}</p>
+            ) : null}
+            {!catalogQ.isLoading && !catalogError && strategies.length <= 1 ? (
+              <p className="mt-1 text-xs text-amber-700">No strategies in catalog — add them under Admin → Strategy Catalog.</p>
+            ) : null}
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">From</label>
