@@ -21,14 +21,14 @@ public class StrategyExecutionModeService {
 
     public StrategyExecutionModeService(
             @Value("${stokr.strategy.execution-modes.GAP_FILL:PAPER}") String gapFill,
-            @Value("${stokr.strategy.execution-modes.SECTOR_LAGGARD:DISABLED}") String sectorLaggard,
+            @Value("${stokr.strategy.execution-modes.SECTOR_LAGGARD:DRY_RUN}") String sectorLaggard,
             @Value("${stokr.strategy.execution-modes.NSE_SPIKE_DETECTION:DRY_RUN}") String spike,
             @Value("${stokr.strategy.execution-modes.EARLY_BREAKOUT:DRY_RUN}") String earlyBreakout,
             @Value("${stokr.strategy.execution-modes.VWAP_BOUNCE:DRY_RUN}") String vwapBounce,
             @Value("${stokr.strategy.execution-modes.INDEX_HUNT:DRY_RUN}") String indexHunt,
             @Value("${stokr.strategy.execution-modes.ADV_CASH:DRY_RUN}") String advCash,
-            @Value("${stokr.strategy.execution-modes.S3_VWAP_RETEST:DISABLED}") String s3,
-            @Value("${stokr.strategy.execution-modes.S7_RANGE_FADE:DISABLED}") String s7,
+            @Value("${stokr.strategy.execution-modes.S3_VWAP_RETEST:DRY_RUN}") String s3,
+            @Value("${stokr.strategy.execution-modes.S7_RANGE_FADE:DRY_RUN}") String s7,
             @Value("${stokr.strategy.execution-modes.allow-live:false}") boolean allowLive,
             @Value("${stokr.strategy.execution-modes.live-validated:GAP_FILL}") String liveValidatedCsv) {
         modes = new LinkedHashMap<>();
