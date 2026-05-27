@@ -30,7 +30,7 @@ public class StrategyExecutionModeService {
             @Value("${stokr.strategy.execution-modes.S3_VWAP_RETEST:DISABLED}") String s3,
             @Value("${stokr.strategy.execution-modes.S7_RANGE_FADE:DISABLED}") String s7,
             @Value("${stokr.strategy.execution-modes.allow-live:false}") boolean allowLive,
-            @Value("${stokr.strategy.execution-modes.live-validated:}") String liveValidatedCsv) {
+            @Value("${stokr.strategy.execution-modes.live-validated:GAP_FILL}") String liveValidatedCsv) {
         modes = new LinkedHashMap<>();
         modes.put("GAP_FILL", StrategyExecutionMode.parse(gapFill));
         modes.put("SECTOR_LAGGARD", StrategyExecutionMode.parse(sectorLaggard));

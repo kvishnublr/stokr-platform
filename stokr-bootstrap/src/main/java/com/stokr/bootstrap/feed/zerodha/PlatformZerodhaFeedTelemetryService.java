@@ -2,11 +2,13 @@ package com.stokr.bootstrap.feed.zerodha;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stokr.execution.safety.BrokerDisconnectProtectionService;
 import com.stokr.marketdata.monitor.FeedHealthWebSocketState;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
 import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,7 @@ public class PlatformZerodhaFeedTelemetryService {
     private final PlatformBrokerFeedSessionRepository sessionRepository;
     private final ObjectMapper objectMapper;
     private final FeedHealthWebSocketState feedHealthWebSocketState;
+    private final ObjectProvider<BrokerDisconnectProtectionService> brokerDisconnectProtectionService;
 
     @Transactional
     public void saveWindow(String vendor, PlatformFeedWindowMetrics m) {
@@ -86,6 +89,7 @@ public class PlatformZerodhaFeedTelemetryService {
         s.setDisconnectReason(truncate(reason, 512));
         sessionRepository.save(s);
         feedHealthWebSocketState.markDisconnected(reason);
+        brokerDisconnectProtectionService.ifAvailable(svc -> svc.onBrokerDisconnected(reason));
     }
 
     @Transactional
@@ -111,6 +115,7 @@ public class PlatformZerodhaFeedTelemetryService {
         feedHealthWebSocketState.markConnected();
         if (attempts > 0) {
             log.info("feed.health.websocket_reconnected vendor={} reconnectAttempts={}", vendor, attempts);
+            brokerDisconnectProtectionService.ifAvailable(BrokerDisconnectProtectionService::onBrokerRecovered);
         }
     }
 
