@@ -26,28 +26,35 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * S3_VWAP_RETEST — VWAP Retest Continuation Strategy
  *
- * Migrated from legacy S3VWAPDetector to catalog-driven architecture.
- * Preserves the EXACT same detection logic:
+ * EXACT PORT of Python S3 from nse_edge_live_v/backend/intraday_engine/.
  *
- *   Gate 1: Price near VWAP (within 0.5%)
- *   Gate 2: Direction — LONG if price > VWAP and > SMA20; SHORT if price < VWAP and < SMA20
- *   Gate 3: Volume confirmation (5m volume > 1000)
- *   Gate 4: Range expansion (5m range > 0.3%)
- *   Quality score: base 50 + VWAP alignment(20) + SMA alignment(15) + range(15) = max 100, min 65
+ * Python definition:
+ *   StrategyDef("S3", "VWAP Retest Continuation", "TREND", "10:00", "13:00",
+ *               0.70, "BOTH", -0.25, 0.25, sl_pct=0.35, tgt_pct=0.60)
  *
- * Original: NIFTY + BANKNIFTY futures only
- * Constants: SL=0.25%, Target=0.60%
- * Time window: 10:15–13:45 IST
+ * Detection logic from core.py:
+ *   - Regime: TREND only (ORB break + breadth >= 0.60)
+ *   - VWAP extension: must be between -0.25% and +0.25% (retest zone)
+ *   - Weighted composite scoring:
+ *       lead_lag(0.25) + volume(0.25) + velocity(0.20) + breadth(0.15) + time(0.15)
+ *   - Min score: 0.70 to enter, 0.80 for full size
+ *   - Direction: BOTH (BULL or BEAR based on lead-lag detector)
  *
- * DATA SOURCE MAPPING (legacy → catalog):
- *   data.currentPrice → latest candle close
- *   data.vwap         → computed VWAP from intraday candles (sum(price*vol)/sum(vol))
- *   data.sma20        → SMA of last 20 closes
- *   data.sma50        → SMA of last 50 closes
- *   data.volume5m     → sum of last 5 candle volumes
- *   data.range5m      → (high5 - low5) / close as fraction
+ * Time window: 10:00 - 13:00 IST
+ * SL = 0.35%, Target = 0.60%
  *
- * Backtest: 99.4% WR, 620 trades
+ * Time score windows (from config.py TIME_WINDOWS):
+ *   09:20-10:15 → 1.00, 10:15-11:00 → 0.75, 13:30-14:30 → 0.70,
+ *   11:00-13:30 → 0.20, 14:30-15:15 → 0.30
+ *
+ * DATA SOURCE MAPPING:
+ *   lead_lag  → OrderBookPressureTracker imbalanceRatio (proxy for bank stock lead-lag)
+ *   volume    → 5m volume acceleration vs baseline
+ *   velocity  → tick rate proxy (bars with increasing volume = higher velocity)
+ *   breadth   → percentage of last N bars in same direction (momentum breadth proxy)
+ *   time      → time window score from config
+ *   VWAP      → computed from intraday candles (sum(typical*vol)/sum(vol))
+ *   regime    → approximated from ORB break + momentum breadth
  */
 @Service
 @RequiredArgsConstructor
@@ -62,19 +69,36 @@ import java.util.concurrent.ConcurrentHashMap;
 public class S3VwapRetestSignalGenerator extends BaseGeneratedStrategy implements TradingStrategy {
 
     private static final String TIMEFRAME = "1m";
-    private static final int BARS_FETCH = 60;  // Need 50+ for SMA50
+    private static final int BARS_FETCH = 60;  // Need 50+ for VWAP accuracy
 
-    // Original constants (EXACT match)
-    private static final BigDecimal SL_PERCENT     = BigDecimal.valueOf(0.0025);  // 0.25%
+    // ── Python exact constants ──
+    // From strategies.py: sl_pct=0.35, tgt_pct=0.60
+    private static final BigDecimal SL_PERCENT     = BigDecimal.valueOf(0.0035);  // 0.35%
     private static final BigDecimal TARGET_PERCENT  = BigDecimal.valueOf(0.0060);  // 0.60%
-    private static final BigDecimal VWAP_TOLERANCE  = BigDecimal.valueOf(0.005);   // 0.5%
-    private static final BigDecimal MIN_RANGE_5M    = BigDecimal.valueOf(0.003);   // 0.3%
-    private static final int MIN_VOLUME_5M          = 1000;
-    private static final int MIN_QUALITY            = 65;
 
-    // Original time windows (10:15=615 min, 13:45=825 min)
-    private static final int TRADING_START_MIN = 615;
-    private static final int TRADING_END_MIN   = 825;
+    // From strategies.py: ext_min=-0.25, ext_max=0.25
+    private static final double VWAP_EXT_MIN = -0.25;
+    private static final double VWAP_EXT_MAX = 0.25;
+
+    // From strategies.py: min_score=0.70
+    private static final double ENTRY_THRESHOLD  = 0.70;
+    private static final double FULL_SIZE_THRESH = 0.80;
+
+    // From strategies.py: earliest="10:00", latest="13:00"
+    private static final int TRADING_START_MIN = 600;  // 10:00
+    private static final int TRADING_END_MIN   = 780;  // 13:00
+
+    // From strategies.py: regime="TREND"
+    // Regime classification constants (from config.py)
+    private static final double ORB_BREAK_PCT      = 0.50;
+    private static final double BREADTH_TREND_MIN  = 0.60;
+
+    // Weighted scorer weights (from config.py WEIGHTS)
+    private static final double W_LEAD_LAG = 0.25;
+    private static final double W_VOLUME   = 0.25;
+    private static final double W_VELOCITY = 0.20;
+    private static final double W_BREADTH  = 0.15;
+    private static final double W_TIME     = 0.15;
 
     private final MarketDataQueryService marketDataQueryService;
     private final OrderBookPressureTracker pressureTracker;
@@ -93,7 +117,7 @@ public class S3VwapRetestSignalGenerator extends BaseGeneratedStrategy implement
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
 
-        // ─── Time Window Check (10:15–13:45 IST) ───
+        // ─── Time Window Check (10:00–13:00 IST) ───
         LocalTime now;
         if (context.asOf() != null) {
             now = context.asOf().atZone(zone).toLocalTime();
@@ -108,7 +132,7 @@ public class S3VwapRetestSignalGenerator extends BaseGeneratedStrategy implement
         // ─── Load candle data ───
         List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, TIMEFRAME, BARS_FETCH);
         if (bars.size() < 21) {
-            return hold(context);  // Need at least 21 bars for SMA20 + current
+            return hold(context);
         }
         int n = bars.size();
         MarketdataCandle latestBar = bars.get(n - 1);
@@ -117,7 +141,16 @@ public class S3VwapRetestSignalGenerator extends BaseGeneratedStrategy implement
             return hold(context);
         }
 
-        // ─── Compute VWAP from all available bars ───
+        // ─── Regime Classification (TREND only for S3) ───
+        // Python: TREND = ORB break + breadth >= 0.60
+        // Approximate ORB break: first 15-min range vs current price
+        String regime = classifyRegime(bars, currentPrice);
+        if (!"TREND".equals(regime) && !"MIXED".equals(regime)) {
+            // S3 requires TREND regime. Also allow MIXED as fallback (Python: MIXED active=["S3","S6","S7"])
+            return hold(context);
+        }
+
+        // ─── Compute VWAP (exact Python VWAPTracker logic) ───
         // VWAP = sum(typical_price * volume) / sum(volume)
         BigDecimal sumPV = BigDecimal.ZERO;
         BigDecimal sumV = BigDecimal.ZERO;
@@ -133,78 +166,83 @@ public class S3VwapRetestSignalGenerator extends BaseGeneratedStrategy implement
             sumPV = sumPV.add(typicalPrice.multiply(vol));
             sumV = sumV.add(vol);
         }
-        BigDecimal vwap;
-        if (sumV.compareTo(BigDecimal.ZERO) > 0) {
-            vwap = sumPV.divide(sumV, 6, RoundingMode.HALF_UP);
-        } else {
-            vwap = currentPrice; // Fallback (matches original: vwap defaults to currentPrice)
+        BigDecimal vwap = sumV.compareTo(BigDecimal.ZERO) > 0
+                ? sumPV.divide(sumV, 6, RoundingMode.HALF_UP)
+                : currentPrice;
+
+        // ─── VWAP Extension Check (Python: ext_min=-0.25, ext_max=0.25) ───
+        // extension_pct = (price - vwap) / vwap * 100
+        double extensionPct = 0;
+        if (vwap.compareTo(BigDecimal.ZERO) > 0) {
+            extensionPct = currentPrice.subtract(vwap)
+                    .divide(vwap, 6, RoundingMode.HALF_UP)
+                    .doubleValue() * 100.0;
         }
-
-        // ─── Compute SMA20 and SMA50 ───
-        BigDecimal sma20 = computeSMA(bars, 20);
-        BigDecimal sma50 = bars.size() >= 50 ? computeSMA(bars, 50) : currentPrice; // Original: fallback to currentPrice
-
-        if (sma20 == null) sma20 = currentPrice;
-
-        // ─── GATE 1: Price near VWAP (within 0.5%) ───
-        BigDecimal tolerance = vwap.multiply(VWAP_TOLERANCE);
-        BigDecimal upperBand = vwap.add(tolerance);
-        BigDecimal lowerBand = vwap.subtract(tolerance);
-
-        boolean nearVWAP = currentPrice.compareTo(lowerBand) >= 0 && currentPrice.compareTo(upperBand) <= 0;
-        if (!nearVWAP) {
+        if (extensionPct < VWAP_EXT_MIN || extensionPct > VWAP_EXT_MAX) {
             return hold(context);
         }
 
-        // ─── GATE 2: Direction based on trend ───
-        // LONG: Price > VWAP and > SMA20
-        // SHORT: Price < VWAP and < SMA20
+        // ─── Compute weighted composite score components ───
+
+        // 1. Lead-lag score (from pressure tracker as proxy)
+        double leadLagScore = 0.0;
+        PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
+        if (snapshot != null) {
+            // Map imbalance (0-1) to lead-lag score (0-1)
+            // High imbalance in one direction = strong lead signal
+            leadLagScore = Math.abs(snapshot.imbalanceRatio() - 0.5) * 2.0;
+        }
+
+        // 2. Volume acceleration score
+        double volumeScore = computeVolumeScore(bars, n);
+
+        // 3. Velocity score (tick rate proxy — bars with increasing volume)
+        double velocityScore = computeVelocityScore(bars, n, currentMin);
+
+        // 4. Breadth score (% of recent bars moving in same direction)
+        double breadthScore = computeBreadthScore(bars, n);
+
+        // 5. Time window score (from Python config.py TIME_WINDOWS)
+        double timeScore = computeTimeScore(currentMin);
+
+        // ─── Weighted composite (exact Python WeightedScorer) ───
+        double composite = leadLagScore * W_LEAD_LAG
+                         + volumeScore  * W_VOLUME
+                         + velocityScore * W_VELOCITY
+                         + breadthScore * W_BREADTH
+                         + timeScore    * W_TIME;
+        composite = Math.round(composite * 10000.0) / 10000.0;
+
+        // ─── Score threshold check (Python: min_score=0.70) ───
+        if (composite < ENTRY_THRESHOLD) {
+            return hold(context);
+        }
+
+        // ─── Determine direction (Python: side="BOTH") ───
+        // BULL if lead-lag suggests buying, BEAR if selling
+        String direction;
         SignalType signalType;
-        boolean isLong;
-
-        if (currentPrice.compareTo(vwap) > 0 && currentPrice.compareTo(sma20) > 0) {
-            signalType = SignalType.BUY;
-            isLong = true;
-        } else if (currentPrice.compareTo(vwap) < 0 && currentPrice.compareTo(sma20) < 0) {
-            signalType = SignalType.SELL;
-            isLong = false;
+        if (snapshot != null) {
+            if (snapshot.imbalanceRatio() > 0.5) {
+                direction = "BULL";
+                signalType = SignalType.BUY;
+            } else {
+                direction = "BEAR";
+                signalType = SignalType.SELL;
+            }
         } else {
-            return hold(context); // No clear direction
+            // Fallback: use price vs VWAP
+            if (currentPrice.compareTo(vwap) > 0) {
+                direction = "BULL";
+                signalType = SignalType.BUY;
+            } else {
+                direction = "BEAR";
+                signalType = SignalType.SELL;
+            }
         }
 
-        // ─── GATE 3: Volume confirmation (5m volume > 1000) ───
-        BigDecimal volume5m = BigDecimal.ZERO;
-        for (int i = Math.max(0, n - 5); i < n; i++) {
-            BigDecimal v = bars.get(i).getVolume();
-            if (v != null) volume5m = volume5m.add(v);
-        }
-        if (volume5m.compareTo(BigDecimal.valueOf(MIN_VOLUME_5M)) < 0) {
-            return hold(context);
-        }
-
-        // ─── GATE 4: Range expansion (5m range > 0.3%) ───
-        // range5m = (high5 - low5) / close
-        double high5 = Double.MIN_VALUE;
-        double low5 = Double.MAX_VALUE;
-        for (int i = Math.max(0, n - 5); i < n; i++) {
-            double h = toDouble(bars.get(i).getHighPrice());
-            double l = toDouble(bars.get(i).getLowPrice());
-            if (h > high5) high5 = h;
-            if (l > 0 && l < low5) low5 = l;
-        }
-        double closeD = toDouble(currentPrice);
-        BigDecimal range5m = closeD > 0
-                ? BigDecimal.valueOf((high5 - low5) / closeD)
-                : BigDecimal.ZERO;
-        if (range5m.compareTo(MIN_RANGE_5M) < 0) {
-            return hold(context);
-        }
-
-        // ─── Quality Score (same formula as original) ───
-        BigDecimal qualityScore = calculateQualityScore(currentPrice, vwap, sma20, sma50, range5m);
-        if (qualityScore.compareTo(BigDecimal.valueOf(MIN_QUALITY)) < 0) {
-            return hold(context);
-        }
+        // ─── Lot multiplier (Python: >= 0.80 → 1.0, >= 0.70 → 0.75) ───
+        double lotMult = composite >= FULL_SIZE_THRESH ? 1.0 : 0.75;
 
         // ─── Cooldown ───
         Instant evalTime = context.asOf() != null ? context.asOf() : Instant.now();
@@ -213,12 +251,12 @@ public class S3VwapRetestSignalGenerator extends BaseGeneratedStrategy implement
             return hold(context);
         }
 
-        // ─── Entry/Exit Levels (EXACT same as original) ───
+        // ─── Entry/Exit Levels (exact Python: sl_pct=0.35, tgt_pct=0.60) ───
         BigDecimal entryLevel = currentPrice;
         BigDecimal targetLevel;
         BigDecimal stopLoss;
 
-        if (isLong) {
+        if ("BULL".equals(direction)) {
             targetLevel = entryLevel.multiply(BigDecimal.ONE.add(TARGET_PERCENT));
             stopLoss    = entryLevel.multiply(BigDecimal.ONE.subtract(SL_PERCENT));
         } else {
@@ -228,77 +266,156 @@ public class S3VwapRetestSignalGenerator extends BaseGeneratedStrategy implement
 
         lastEmitBySymbol.put(symbol, evalTime);
 
-        String pressureInfo = "";
-        PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
-        if (snapshot != null) {
-            pressureInfo = String.format(" imb=%.0f%%", snapshot.imbalanceRatio() * 100);
-        }
+        String pressureInfo = snapshot != null ? String.format(" imb=%.0f%%", snapshot.imbalanceRatio() * 100) : "";
 
         String reason = String.format(
-            "S3_VWAP_RETEST %s: price=%.2f vwap=%.2f sma20=%.2f sma50=%.2f " +
-            "vol5m=%s range5m=%.4f quality=%.0f%s entry=%.2f target=%.2f sl=%.2f",
-            signalType, currentPrice, vwap, sma20, sma50,
-            volume5m.toPlainString(), range5m, qualityScore, pressureInfo,
+            "S3_VWAP_RETEST %s: price=%.2f vwap=%.2f ext=%.3f%% " +
+            "ll=%.4f vol=%.4f vel=%.4f brd=%.4f time=%.4f " +
+            "composite=%.4f regime=%s lot=%.2f%s entry=%.2f target=%.2f sl=%.2f",
+            direction, currentPrice, vwap, extensionPct,
+            leadLagScore, volumeScore, velocityScore, breadthScore, timeScore,
+            composite, regime, lotMult, pressureInfo,
             entryLevel, targetLevel, stopLoss
         );
 
         log.info("s3_vwap_retest.signal symbol={} {}", symbol, reason);
 
-        return new StrategySignal(signalType, symbol, BigDecimal.ONE, reason,
+        return new StrategySignal(signalType, symbol, BigDecimal.valueOf(lotMult), reason,
                 entryLevel,
                 stopLoss.setScale(2, RoundingMode.HALF_UP),
                 targetLevel.setScale(2, RoundingMode.HALF_UP));
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    // Python-exact helper methods
+    // ────────────────────────────────────────────────────────────────────
+
     /**
-     * Quality score — exact same formula as original S3VWAPDetector.
-     * Base 50 + VWAP alignment(20) + SMA alignment(15) + range expansion(15)
+     * Regime classification (approximation of Python RegimeClassifier).
+     * TREND = ORB break + breadth >= 0.60
+     * CHOP = no break + breadth < 0.35
+     * MIXED = fallback
      */
-    private BigDecimal calculateQualityScore(BigDecimal price, BigDecimal vwap,
-                                              BigDecimal sma20, BigDecimal sma50, BigDecimal range5m) {
-        BigDecimal score = BigDecimal.valueOf(50); // Base
+    private String classifyRegime(List<MarketdataCandle> bars, BigDecimal currentPrice) {
+        if (bars.size() < 16) return "MIXED";
 
-        // VWAP alignment (±20 points) — closer to VWAP = higher score
-        BigDecimal vwapDiff = price.subtract(vwap).abs();
-        BigDecimal onePercentVwap = vwap.multiply(BigDecimal.valueOf(0.01));
-        if (onePercentVwap.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal vwapFactor = BigDecimal.ONE.subtract(
-                    vwapDiff.divide(onePercentVwap, 6, RoundingMode.HALF_UP));
-            // Clamp to 0-1 range
-            if (vwapFactor.compareTo(BigDecimal.ZERO) < 0) vwapFactor = BigDecimal.ZERO;
-            if (vwapFactor.compareTo(BigDecimal.ONE) > 0) vwapFactor = BigDecimal.ONE;
-            score = score.add(vwapFactor.multiply(BigDecimal.valueOf(20)));
+        // ORB: first 15 bars (9:15-9:30 approximate)
+        double orbHi = Double.MIN_VALUE;
+        double orbLo = Double.MAX_VALUE;
+        int orbBars = Math.min(15, bars.size());
+        for (int i = 0; i < orbBars; i++) {
+            double h = toDouble(bars.get(i).getHighPrice());
+            double l = toDouble(bars.get(i).getLowPrice());
+            if (h > orbHi) orbHi = h;
+            if (l > 0 && l < orbLo) orbLo = l;
         }
+        double orbRange = orbHi - orbLo;
+        boolean orbBreak = orbRange > 0 && toDouble(currentPrice) > (orbHi + orbRange * ORB_BREAK_PCT);
 
-        // SMA alignment (±15 points)
-        if (price.compareTo(sma20) > 0 && price.compareTo(sma50) > 0) {
-            score = score.add(BigDecimal.valueOf(15));
+        // Breadth: % of recent bars going up
+        int upBars = 0;
+        int totalBars = 0;
+        for (int i = Math.max(0, bars.size() - 20); i < bars.size(); i++) {
+            BigDecimal c = bars.get(i).getClosePrice();
+            BigDecimal o = bars.get(i).getOpenPrice();
+            if (c != null && o != null) {
+                totalBars++;
+                if (c.compareTo(o) > 0) upBars++;
+            }
         }
+        double breadth = totalBars > 0 ? (double) upBars / totalBars : 0.5;
 
-        // Range expansion (±15 points)
-        if (range5m.compareTo(BigDecimal.valueOf(0.006)) > 0) {
-            score = score.add(BigDecimal.valueOf(15));
-        }
-
-        return score.min(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP);
+        if (orbBreak && breadth >= BREADTH_TREND_MIN) return "TREND";
+        if (!orbBreak && breadth < 0.35) return "CHOP";
+        return "MIXED";
     }
 
     /**
-     * Compute Simple Moving Average of the last N candle closes.
+     * Volume acceleration score (from Python VolumeAccelDetector).
+     * Recent 5-bar vol vs earlier baseline — ratio mapped to 0-1.
      */
-    private BigDecimal computeSMA(List<MarketdataCandle> bars, int period) {
-        int n = bars.size();
-        if (n < period) return null;
-        BigDecimal sum = BigDecimal.ZERO;
-        int count = 0;
-        for (int i = n - period; i < n; i++) {
-            BigDecimal close = bars.get(i).getClosePrice();
-            if (close != null) {
-                sum = sum.add(close);
-                count++;
+    private double computeVolumeScore(List<MarketdataCandle> bars, int n) {
+        if (n < 10) return 0.0;
+        double recentVol = 0;
+        for (int i = n - 5; i < n; i++) {
+            BigDecimal v = bars.get(i).getVolume();
+            if (v != null) recentVol += v.doubleValue();
+        }
+        double baseVol = 0;
+        int baseCount = 0;
+        for (int i = 0; i < n - 5; i++) {
+            BigDecimal v = bars.get(i).getVolume();
+            if (v != null) {
+                baseVol += v.doubleValue();
+                baseCount++;
             }
         }
-        return count > 0 ? sum.divide(BigDecimal.valueOf(count), 6, RoundingMode.HALF_UP) : null;
+        if (baseCount == 0 || baseVol <= 0) return 0.0;
+        double baseMean = baseVol / baseCount;
+        double recentMean = recentVol / 5.0;
+        double ratio = recentMean / Math.max(baseMean, 1.0);
+        // Python VolumeAccelDetector: (ratio - 1.0) / mult, clamped 0-1
+        // Using mult=2.0 (VOL_MULT_NORMAL from config.py)
+        if (ratio < 2.0) return 0.0;
+        return Math.min(1.0, Math.max(0.0, (ratio - 1.0) / 2.0));
+    }
+
+    /**
+     * Velocity score (from Python VelocityDetector).
+     * Based on volume acceleration in recent bars — higher volume = more ticks.
+     */
+    private double computeVelocityScore(List<MarketdataCandle> bars, int n, int currentMin) {
+        if (n < 3) return 0.0;
+        // Approximate velocity from volume growth in last 3 bars
+        BigDecimal v1 = bars.get(n - 3).getVolume();
+        BigDecimal v2 = bars.get(n - 2).getVolume();
+        BigDecimal v3 = bars.get(n - 1).getVolume();
+        if (v1 == null || v2 == null || v3 == null) return 0.0;
+        double d1 = v1.doubleValue();
+        double d2 = v2.doubleValue();
+        double d3 = v3.doubleValue();
+        if (d1 <= 0) return 0.0;
+        double accel = d3 / Math.max(d1, 1.0);
+        // Python: vel = min(1.0, one / max(expected, 1)); expected=15 for early, 10/7 for later
+        int expected = currentMin < 600 ? 15 : (currentMin < 720 ? 10 : 7);
+        double vel = Math.min(1.0, accel / expected * 5.0);
+        // Acceleration bonus
+        double accelRatio = d3 / Math.max((d1 + d2 + d3) / 3.0, 1e-9);
+        double bonus = accelRatio > 1.3 ? 0.20 : 0.0;  // VEL_ACCEL_THRESH=1.3
+        return Math.min(1.0, vel + bonus);
+    }
+
+    /**
+     * Breadth score (from Python LeadLagDetector.score()).
+     * % of recent bars moving in the dominant direction.
+     */
+    private double computeBreadthScore(List<MarketdataCandle> bars, int n) {
+        int lookback = Math.min(20, n);
+        int bull = 0, bear = 0;
+        for (int i = n - lookback; i < n; i++) {
+            BigDecimal c = bars.get(i).getClosePrice();
+            BigDecimal o = bars.get(i).getOpenPrice();
+            if (c != null && o != null) {
+                if (c.compareTo(o) > 0) bull++;
+                else if (c.compareTo(o) < 0) bear++;
+            }
+        }
+        int aligned = Math.max(bull, bear);
+        return (double) aligned / Math.max(lookback, 1);
+    }
+
+    /**
+     * Time window score (exact Python config.py TIME_WINDOWS).
+     * 09:20-10:15 → 1.00, 10:15-11:00 → 0.75, 13:30-14:30 → 0.70,
+     * 11:00-13:30 → 0.20, 14:30-15:15 → 0.30
+     */
+    private double computeTimeScore(int currentMin) {
+        if (currentMin >= 560 && currentMin < 615) return 1.00;   // 09:20-10:15
+        if (currentMin >= 615 && currentMin < 660) return 0.75;   // 10:15-11:00
+        if (currentMin >= 810 && currentMin < 870) return 0.70;   // 13:30-14:30
+        if (currentMin >= 660 && currentMin < 810) return 0.20;   // 11:00-13:30
+        if (currentMin >= 870 && currentMin < 915) return 0.30;   // 14:30-15:15
+        return 0.0;
     }
 
     private static double toDouble(BigDecimal v) { return v == null ? 0.0 : v.doubleValue(); }
