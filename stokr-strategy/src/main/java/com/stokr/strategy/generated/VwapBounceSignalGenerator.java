@@ -1,13 +1,13 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
-import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.marketdata.integrity.LookbackWindow;
 import com.stokr.marketdata.service.OrderBookPressureTracker;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
-import com.stokr.strategy.service.StrategyCandleLoader;
 import com.stokr.strategy.engine.TradingStrategy;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -58,8 +58,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     private static final int BARS_FETCH = 180;
     private static final int MIN_BARS_FOR_VWAP = 30;
 
-    private final StrategyCandleLoader candleLoader;
-    private final MarketDataQueryService marketDataQueryService;
+    private final StrategyGeneratorIntegrityGate integrityGate;
     private final OrderBookPressureTracker pressureTracker;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
@@ -96,6 +95,11 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     @Override
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
+        Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
+
+        if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) {
+            return hold(context);
+        }
 
         // 1. SESSION: 10:00-14:30 IST (need VWAP to establish + avoid open/close noise)
         if (context.asOf() != null) {
@@ -106,7 +110,11 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
         }
 
         // 2. LOAD SESSION BARS
-        List<MarketdataCandle> bars = candleLoader.bars(context, TIMEFRAME, BARS_FETCH);
+        var barsOpt = integrityGate.sessionBarsWithoutLookback(key(), symbol, TIMEFRAME, BARS_FETCH, context);
+        if (barsOpt.isEmpty()) {
+            return hold(context);
+        }
+        List<MarketdataCandle> bars = barsOpt.get();
         if (bars.size() < MIN_BARS_FOR_VWAP) return hold(context);
 
         int sessionStart = findSessionStart(bars);
@@ -160,7 +168,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
         boolean isUptrend = slopePct > 0;
 
         // 6. NIFTY ALIGNMENT — bounce direction must match NIFTY
-        double niftyTrend = calculateNiftyTrend();
+        double niftyTrend = calculateNiftyTrend(context);
         if (isUptrend && niftyTrend < 0.02) return hold(context);
         if (!isUptrend && niftyTrend > -0.02) return hold(context);
 
@@ -249,14 +257,20 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
                 BigDecimal.valueOf(entryPrice), BigDecimal.valueOf(stopLoss), BigDecimal.valueOf(target));
     }
 
-    private double calculateNiftyTrend() {
+    private double calculateNiftyTrend(StrategyContext context) {
         try {
-            List<MarketdataCandle> nifty = marketDataQueryService.lastBarsAsc(NIFTY_SYMBOL, TIMEFRAME, 15);
-            if (nifty == null || nifty.size() < 5) return 0;
-            double first = toDouble(nifty.get(0).getClosePrice());
+            var niftyOpt = integrityGate.sessionBars(
+                    key(), NIFTY_SYMBOL, TIMEFRAME, 15, 4, LookbackWindow.FIVE_MINUTE, context);
+            if (niftyOpt.isEmpty() || niftyOpt.get().size() < 5) {
+                return 0;
+            }
+            List<MarketdataCandle> nifty = niftyOpt.get();
+            double first = toDouble(nifty.get(nifty.size() - 5).getClosePrice());
             double last = toDouble(nifty.get(nifty.size() - 1).getClosePrice());
             return first > 0 ? (last - first) / first * 100 : 0;
-        } catch (Exception e) { return 0; }
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     private int findSessionStart(List<MarketdataCandle> bars) {
@@ -265,7 +279,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
             LocalTime lt = bars.get(i).getOpenTime().atZone(zone).toLocalTime();
             if (lt.isBefore(LocalTime.of(9, 16)) && lt.isAfter(LocalTime.of(9, 14))) return i;
         }
-        return Math.max(0, bars.size() - BARS_FETCH);
+        return -1;
     }
 
     private static double toDouble(BigDecimal v) { return v == null ? 0.0 : v.doubleValue(); }

@@ -108,6 +108,9 @@ stokr:
   deploy:
     git-commit: ${STOKR_GIT_COMMIT:unknown}
     branch: ${STOKR_DEPLOY_BRANCH:Release_v1}
+  marketdata:
+    integrity:
+      enabled: ${STOKR_MARKETDATA_INTEGRITY_ENABLED:true}
   broker-truth:
     poll-ms: ${STOKR_BROKER_TRUTH_POLL_MS:3000}
     stale-ms: ${STOKR_BROKER_TRUTH_STALE_MS:15000}

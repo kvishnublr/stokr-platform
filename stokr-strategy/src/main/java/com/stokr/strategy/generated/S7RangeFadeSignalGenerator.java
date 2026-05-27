@@ -1,12 +1,12 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
-import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.marketdata.service.OrderBookPressureTracker;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -89,7 +89,7 @@ public class S7RangeFadeSignalGenerator extends BaseGeneratedStrategy implements
     private static final double W_BREADTH  = 0.15;
     private static final double W_TIME     = 0.15;
 
-    private final MarketDataQueryService marketDataQueryService;
+    private final StrategyGeneratorIntegrityGate integrityGate;
     private final OrderBookPressureTracker pressureTracker;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
@@ -105,6 +105,11 @@ public class S7RangeFadeSignalGenerator extends BaseGeneratedStrategy implements
     @Override
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
+        Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
+
+        if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) {
+            return hold(context);
+        }
 
         // ─── Time Window Check (10:00–14:00 IST) ───
         LocalTime now;
@@ -118,8 +123,12 @@ public class S7RangeFadeSignalGenerator extends BaseGeneratedStrategy implements
             return hold(context);
         }
 
-        // ─── Load candle data ───
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, TIMEFRAME, BARS_FETCH);
+        // ─── Load candle data (same-session only) ───
+        var barsOpt = integrityGate.sessionBarsWithoutLookback(key(), symbol, TIMEFRAME, BARS_FETCH, context);
+        if (barsOpt.isEmpty()) {
+            return hold(context);
+        }
+        List<MarketdataCandle> bars = barsOpt.get();
         if (bars.size() < 21) {
             return hold(context);
         }

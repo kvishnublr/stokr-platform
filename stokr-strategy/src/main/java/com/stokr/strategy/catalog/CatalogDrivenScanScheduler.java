@@ -14,6 +14,7 @@ import com.stokr.strategy.service.StrategySignalEntityMapper;
 import com.stokr.strategy.signals.StrategySignal;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.context.StrategyContext;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -48,6 +49,7 @@ public class CatalogDrivenScanScheduler {
     private final BindingScanThrottleService bindingScanThrottleService;
     private final SignalCooldownService signalCooldownService;
     private final StrategyDailySignalCapService dailySignalCapService;
+    private final StrategyGeneratorIntegrityGate integrityGate;
     private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
 
     // Separate from the main scanner gate — catalog strategies (e.g. MCX) manage their own session hours
@@ -98,6 +100,11 @@ public class CatalogDrivenScanScheduler {
                 log.debug("catalog.scan.strategy_not_registered key={} — skipping binding. " +
                           "Generate and deploy the template class first.", strategyKey);
                 totalSkipped++;
+                continue;
+            }
+
+            if (!integrityGate.isStrategyScanAllowed(strategyKey, tick)) {
+                log.warn("catalog.scan.integrity_blocked strategyKey={}", strategyKey);
                 continue;
             }
 

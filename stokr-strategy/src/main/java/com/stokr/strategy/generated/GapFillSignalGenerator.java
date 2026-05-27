@@ -1,7 +1,9 @@
 package com.stokr.strategy.generated;
 
 import com.stokr.marketdata.domain.MarketdataCandle;
+import com.stokr.marketdata.integrity.LookbackWindow;
 import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
 import com.stokr.marketdata.service.OrderBookPressureTracker;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.catalog.GeneratedStrategy;
@@ -59,6 +61,7 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
 
     private final MarketDataQueryService marketDataQueryService;
     private final OrderBookPressureTracker pressureTracker;
+    private final StrategyGeneratorIntegrityGate integrityGate;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -100,6 +103,11 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
     @Override
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
+        Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
+
+        if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) {
+            return hold(context);
+        }
 
         // 1. SESSION: 09:20-10:45 IST (gap fill happens early)
         if (context.asOf() != null) {
@@ -137,12 +145,12 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
         }
 
         if (todayStartIdx < 0 || prevClose <= 0) {
-            int n = bars.size();
-            prevClose = toDouble(bars.get(n - SESSION_BARS - 1).getClosePrice());
-            todayOpen = toDouble(bars.get(n - SESSION_BARS).getOpenPrice());
-            todayStartIdx = n - SESSION_BARS;
+            return hold(context);
         }
-        if (prevClose <= 0 || todayOpen <= 0) return hold(context);
+        if (!integrityGate.validateGapFillSessionSlice(key(), symbol, bars, todayStartIdx, asOf)) {
+            return hold(context);
+        }
+        if (todayOpen <= 0) return hold(context);
 
         // 4. GAP CALCULATION
         double gapPct = (todayOpen - prevClose) / prevClose * 100.0;
@@ -152,7 +160,7 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
         boolean isGapUp = gapPct > 0;
 
         // 5. NIFTY ALIGNMENT — NIFTY should support fill direction
-        double niftyTrend = calculateNiftyTrend();
+        double niftyTrend = calculateNiftyTrend(context);
         // Gap up fills DOWN → NIFTY should be red or flat (not strongly green)
         if (isGapUp && niftyTrend > 0.10) return hold(context);  // NIFTY too bullish for gap-up fill
         // Gap down fills UP → NIFTY should be green or flat
@@ -259,14 +267,20 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
                 BigDecimal.valueOf(entryPrice), BigDecimal.valueOf(stopLoss), BigDecimal.valueOf(target));
     }
 
-    private double calculateNiftyTrend() {
+    private double calculateNiftyTrend(StrategyContext context) {
         try {
-            List<MarketdataCandle> nifty = marketDataQueryService.lastBarsAsc(NIFTY_SYMBOL, TIMEFRAME, 15);
-            if (nifty == null || nifty.size() < 5) return 0;
-            double first = toDouble(nifty.get(0).getClosePrice());
-            double last = toDouble(nifty.get(nifty.size() - 1).getClosePrice());
+            var nifty = integrityGate.sessionBars(
+                    key(), NIFTY_SYMBOL, TIMEFRAME, 15, 4, LookbackWindow.FIVE_MINUTE, context);
+            if (nifty.isEmpty() || nifty.get().size() < 5) {
+                return 0;
+            }
+            List<MarketdataCandle> bars = nifty.get();
+            double first = toDouble(bars.get(bars.size() - 5).getClosePrice());
+            double last = toDouble(bars.get(bars.size() - 1).getClosePrice());
             return first > 0 ? (last - first) / first * 100 : 0;
-        } catch (Exception e) { return 0; }
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     private static double toDouble(BigDecimal v) { return v == null ? 0.0 : v.doubleValue(); }
