@@ -379,6 +379,9 @@ stokr:
     initial-delay-ms: ${STOKR_INTRADAY_GAP_FILL_INITIAL_DELAY_MS:120000}
     poll-ms: ${STOKR_INTRADAY_GAP_FILL_POLL_MS:120000}
     min-interval-seconds: ${STOKR_INTRADAY_GAP_FILL_MIN_INTERVAL_SECONDS:180}
+    universe:
+      enabled: ${STOKR_INTRADAY_GAP_FILL_UNIVERSE_ENABLED:true}
+      max-symbols-per-run: ${STOKR_INTRADAY_GAP_FILL_UNIVERSE_MAX_SYMBOLS:30}
 
 logging:
   level:

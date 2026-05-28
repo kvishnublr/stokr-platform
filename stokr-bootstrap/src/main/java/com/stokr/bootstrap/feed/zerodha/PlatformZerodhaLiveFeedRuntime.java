@@ -182,6 +182,7 @@ public class PlatformZerodhaLiveFeedRuntime {
             log.warn("platform.ws.stale_ticks_reconnect tickAgeSec={} lastPacketAt={}", tickAgeSec, lastPacketAt);
             closeActive("stale_ticks");
             intradaySessionGapFillService.fillNiftySessionGapsIfNeeded("ws_stale_reconnect");
+            intradaySessionGapFillService.fillUniverseSessionGapsIfNeeded("ws_stale_reconnect");
         }
         if (wsOpen.get() && activeSocket.get() != null) {
             return;

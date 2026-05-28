@@ -1,10 +1,13 @@
 package com.stokr.bootstrap.feed.zerodha;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.stokr.bootstrap.config.PlatformZerodhaFeedProperties;
 import com.stokr.common.crypto.FieldCipher;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.integrity.MarketDataIntegrityService;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
+import com.stokr.strategy.domain.StrategyUniverseSymbol;
+import com.stokr.strategy.repository.StrategyUniverseSymbolRepository;
 import com.stokr.user.broker.PlatformMarketFeedService;
 import com.stokr.user.broker.ZerodhaKiteApiClient;
 import com.stokr.user.config.ZerodhaBrokerProperties;
@@ -20,11 +23,16 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -41,10 +49,13 @@ public class IntradaySessionGapFillService {
     private static final String VENDOR = "ZERODHA";
     private static final String NIFTY_50 = MarketDataIntegrityService.NIFTY_50_SYMBOL;
     private static final int NIFTY_50_TOKEN = 256265;
+    private static final long RATE_MS = 350;
 
     private final MarketDataIntegrityService integrityService;
     private final MarketdataCandleRepository candleRepository;
     private final InstrumentRegistryService instrumentRegistry;
+    private final StrategyUniverseSymbolRepository strategyUniverseSymbolRepository;
+    private final PlatformZerodhaFeedProperties feedProperties;
     private final ZerodhaKiteApiClient kiteApiClient;
     private final ZerodhaBrokerProperties zerodhaBrokerProperties;
     private final FieldCipher fieldCipher;
@@ -58,8 +69,15 @@ public class IntradaySessionGapFillService {
     @Value("${stokr.intraday-gap-fill.min-interval-seconds:180}")
     private long minIntervalSeconds;
 
+    @Value("${stokr.intraday-gap-fill.universe.enabled:true}")
+    private boolean universeEnabled;
+
+    @Value("${stokr.intraday-gap-fill.universe.max-symbols-per-run:30}")
+    private int universeMaxSymbolsPerRun;
+
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private volatile Instant lastAttemptAt;
+    private volatile Instant lastNiftyAttemptAt;
+    private volatile Instant lastUniverseAttemptAt;
 
     @Scheduled(initialDelayString = "${stokr.intraday-gap-fill.initial-delay-ms:120000}", fixedDelayString = "${stokr.intraday-gap-fill.poll-ms:120000}")
     public void scheduledGapFill() {
@@ -67,6 +85,7 @@ public class IntradaySessionGapFillService {
             return;
         }
         fillNiftySessionGapsIfNeeded("scheduled");
+        fillUniverseSessionGapsIfNeeded("scheduled");
     }
 
     public void fillNiftySessionGapsIfNeeded(String trigger) {
@@ -78,8 +97,163 @@ public class IntradaySessionGapFillService {
             return;
         }
         if (!integrityService.isNiftyOpeningSessionReady(now) || isNiftyIndexCandleStale(now)) {
-            attemptFill(trigger, now);
+            attemptFill(trigger, now, NIFTY_50, resolveNiftyToken(), true);
         }
+    }
+
+    public void fillUniverseSessionGapsIfNeeded(String trigger) {
+        if (!enabled || !universeEnabled) {
+            return;
+        }
+        Instant now = Instant.now();
+        if (!isMarketHours(now)) {
+            return;
+        }
+        if (lastUniverseAttemptAt != null
+                && Duration.between(lastUniverseAttemptAt, now).getSeconds() < minIntervalSeconds) {
+            return;
+        }
+        if (!running.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            String accessToken = resolveAccessToken();
+            if (accessToken == null) {
+                log.warn("intraday_gap_fill.universe_skip reason=no_access_token trigger={}", trigger);
+                return;
+            }
+
+            List<GapFillTarget> targets = selectUniverseTargets(now);
+            if (targets.isEmpty()) {
+                return;
+            }
+
+            lastUniverseAttemptAt = now;
+            int filled = 0;
+            int failed = 0;
+            for (GapFillTarget target : targets) {
+                try {
+                    if (fillSymbolSession(accessToken, target.symbol(), target.token(), now)) {
+                        filled++;
+                    }
+                } catch (Exception ex) {
+                    failed++;
+                    log.warn("intraday_gap_fill.universe_failed symbol={} {}", target.symbol(), ex.toString());
+                }
+                Thread.sleep(RATE_MS);
+            }
+            log.info("intraday_gap_fill.universe_done trigger={} candidates={} filled={} failed={}",
+                    trigger, targets.size(), filled, failed);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        } finally {
+            running.set(false);
+        }
+    }
+
+    private List<GapFillTarget> selectUniverseTargets(Instant now) {
+        List<String> groupKeys = feedProperties.parsedSubscriptionUniverseGroupKeys();
+        if (groupKeys.isEmpty()) {
+            return List.of();
+        }
+
+        List<StrategyUniverseSymbol> rows =
+                strategyUniverseSymbolRepository.findAllEnabledByGroupKeys(groupKeys);
+        Map<String, GapFillTarget> targets = new LinkedHashMap<>();
+        for (StrategyUniverseSymbol row : rows) {
+            if (!isGapFillCandidate(row)) {
+                continue;
+            }
+            String symbol = canonicalSymbol(row);
+            if (symbol.isBlank() || NIFTY_50.equalsIgnoreCase(symbol)) {
+                continue;
+            }
+            Integer token = resolveToken(row, symbol);
+            if (token == null || token <= 0) {
+                continue;
+            }
+            targets.putIfAbsent(symbol, new GapFillTarget(symbol, token));
+        }
+
+        return targets.values().stream()
+                .filter(target -> needsSessionGapFill(target.symbol(), now))
+                .sorted(Comparator.comparingInt((GapFillTarget t) -> gapPriority(t.symbol(), now)).reversed())
+                .limit(Math.max(1, universeMaxSymbolsPerRun))
+                .toList();
+    }
+
+    private static boolean isGapFillCandidate(StrategyUniverseSymbol row) {
+        if (row == null || !row.isEnabled()) {
+            return false;
+        }
+        String exchange = normalize(row.getExchange());
+        String instrumentType = normalize(row.getInstrumentType());
+        return "NSE".equals(exchange) && ("EQ".equals(instrumentType) || instrumentType.isBlank());
+    }
+
+    private static String canonicalSymbol(StrategyUniverseSymbol row) {
+        if (row.getSymbol() != null && !row.getSymbol().isBlank()) {
+            return row.getSymbol().trim();
+        }
+        return row.getTradingSymbol() != null ? row.getTradingSymbol().trim() : "";
+    }
+
+    private Integer resolveToken(StrategyUniverseSymbol row, String symbol) {
+        if (row.getInstrumentToken() != null && row.getInstrumentToken() > 0) {
+            return row.getInstrumentToken().intValue();
+        }
+        Integer token = instrumentRegistry.getToken(symbol);
+        if (token != null) {
+            return token;
+        }
+        if (row.getTradingSymbol() != null && !row.getTradingSymbol().isBlank()) {
+            return instrumentRegistry.getToken(row.getTradingSymbol().trim());
+        }
+        return null;
+    }
+
+    private int gapPriority(String symbol, Instant now) {
+        LocalDate sessionDate = now.atZone(IST).toLocalDate();
+        Instant sessionStart = sessionStart(sessionDate);
+        List<MarketdataCandle> bars = candleRepository
+                .findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
+                        symbol, TIMEFRAME, sessionStart, now);
+        if (bars.isEmpty()) {
+            return 1000;
+        }
+        long minutesOpen = Duration.between(sessionStart, now).toMinutes();
+        long expectedBars = Math.max(10, minutesOpen - 2);
+        return (int) Math.max(0, expectedBars - bars.size());
+    }
+
+    private boolean needsSessionGapFill(String symbol, Instant now) {
+        LocalDate sessionDate = now.atZone(IST).toLocalDate();
+        Instant sessionStart = sessionStart(sessionDate);
+        List<MarketdataCandle> bars = candleRepository
+                .findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
+                        symbol, TIMEFRAME, sessionStart, now);
+        if (bars.isEmpty()) {
+            return true;
+        }
+
+        Instant latest = bars.get(bars.size() - 1).getOpenTime();
+        if (latest != null && Duration.between(latest, now).getSeconds() > 180) {
+            return true;
+        }
+
+        long minutesOpen = Duration.between(sessionStart, now).toMinutes();
+        long expectedBars = Math.max(10, minutesOpen - 2);
+        if (bars.size() < (expectedBars * 3 / 4)) {
+            return true;
+        }
+
+        for (int i = 1; i < bars.size(); i++) {
+            Duration gap = Duration.between(bars.get(i - 1).getOpenTime(), bars.get(i).getOpenTime());
+            if (gap.toMinutes() > 3) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isNiftyIndexCandleStale(Instant now) {
@@ -89,10 +263,12 @@ public class IntradaySessionGapFillService {
                 .orElse(true);
     }
 
-    private void attemptFill(String trigger, Instant now) {
-        if (lastAttemptAt != null
-                && Duration.between(lastAttemptAt, now).getSeconds() < minIntervalSeconds) {
-            return;
+    private void attemptFill(String trigger, Instant now, String symbol, int token, boolean niftyAttempt) {
+        if (niftyAttempt) {
+            if (lastNiftyAttemptAt != null
+                    && Duration.between(lastNiftyAttemptAt, now).getSeconds() < minIntervalSeconds) {
+                return;
+            }
         }
         if (!running.compareAndSet(false, true)) {
             return;
@@ -100,60 +276,65 @@ public class IntradaySessionGapFillService {
         try {
             String accessToken = resolveAccessToken();
             if (accessToken == null) {
-                log.warn("intraday_gap_fill.skip reason=no_access_token trigger={}", trigger);
+                log.warn("intraday_gap_fill.skip reason=no_access_token trigger={} symbol={}", trigger, symbol);
                 return;
             }
-            int token = resolveNiftyToken();
-            ZonedDateTime sessionStart = now.atZone(IST).toLocalDate().atTime(9, 15).atZone(IST);
-            Instant from = sessionStart.toInstant();
-            // Zerodha may return an empty array when `to` includes the in-progress minute.
-            Instant to = now.atZone(IST).withSecond(0).withNano(0).minusMinutes(1).toInstant();
-
-            JsonNode response = kiteApiClient.getHistoricalCandles(
-                    zerodhaBrokerProperties.getApiKey(),
-                    accessToken,
-                    token,
-                    "minute",
-                    from,
-                    to);
-            JsonNode candlesNode = response.path("data").path("candles");
-            if (!candlesNode.isArray() || candlesNode.isEmpty()) {
-                String status = response.path("status").asText("unknown");
-                String message = response.path("message").asText("");
-                log.warn("intraday_gap_fill.empty trigger={} symbol={} token={} status={} message={} from={} to={} body={}",
-                        trigger, NIFTY_50, token, status, message, from, to,
-                        response.toString().length() > 400 ? response.toString().substring(0, 400) + "..." : response.toString());
-                return;
+            if (fillSymbolSession(accessToken, symbol, token, now)) {
+                if (niftyAttempt) {
+                    lastNiftyAttemptAt = now;
+                }
+                log.info("intraday_gap_fill.done trigger={} symbol={} sessionReady={}",
+                        trigger, symbol, integrityService.isNiftyOpeningSessionReady(now));
             }
-
-            lastAttemptAt = now;
-            List<ParsedCandle> parsed = parseRows(candlesNode);
-            int upserted = upsertCandles(parsed);
-            log.info("intraday_gap_fill.done trigger={} symbol={} fetched={} upserted={} sessionReady={}",
-                    trigger, NIFTY_50, parsed.size(), upserted,
-                    integrityService.isNiftyOpeningSessionReady(now));
         } catch (Exception ex) {
-            log.warn("intraday_gap_fill.failed trigger={} {}", trigger, ex.toString());
+            log.warn("intraday_gap_fill.failed trigger={} symbol={} {}", trigger, symbol, ex.toString());
         } finally {
             running.set(false);
         }
     }
 
-    private int upsertCandles(List<ParsedCandle> candles) {
+    private boolean fillSymbolSession(String accessToken, String symbol, int token, Instant now)
+            throws InterruptedException {
+        Instant from = sessionStart(now.atZone(IST).toLocalDate());
+        Instant to = now.atZone(IST).withSecond(0).withNano(0).minusMinutes(1).toInstant();
+
+        JsonNode response = kiteApiClient.getHistoricalCandles(
+                zerodhaBrokerProperties.getApiKey(),
+                accessToken,
+                token,
+                "minute",
+                from,
+                to);
+        JsonNode candlesNode = response.path("data").path("candles");
+        if (!candlesNode.isArray() || candlesNode.isEmpty()) {
+            String status = response.path("status").asText("unknown");
+            String message = response.path("message").asText("");
+            log.warn("intraday_gap_fill.empty trigger=live symbol={} token={} status={} message={} from={} to={}",
+                    symbol, token, status, message, from, to);
+            return false;
+        }
+
+        List<ParsedCandle> parsed = parseRows(candlesNode);
+        upsertCandles(symbol, parsed);
+        log.info("intraday_gap_fill.symbol_done symbol={} token={} fetched={} upserted={}",
+                symbol, token, parsed.size(), parsed.size());
+        return true;
+    }
+
+    private void upsertCandles(String symbol, List<ParsedCandle> candles) {
         txTemplate.executeWithoutResult(status -> {
             for (ParsedCandle c : candles) {
                 candleRepository.upsertCandle(
-                        NIFTY_50, TIMEFRAME, c.openTime(),
+                        symbol, TIMEFRAME, c.openTime(),
                         c.open(), c.high(), c.low(), c.close(), c.volume());
             }
         });
-        return candles.size();
     }
 
     private int resolveNiftyToken() {
         return instrumentRegistry.getSymbolToToken().entrySet().stream()
                 .filter(e -> NIFTY_50.equalsIgnoreCase(e.getKey()))
-                .mapToInt(e -> e.getValue())
+                .mapToInt(Map.Entry::getValue)
                 .findFirst()
                 .orElse(NIFTY_50_TOKEN);
     }
@@ -202,6 +383,14 @@ public class IntradaySessionGapFillService {
         return kiteTs.replaceAll("\\+0530$", "+05:30");
     }
 
+    private static Instant sessionStart(LocalDate sessionDate) {
+        return sessionDate.atTime(9, 15).atZone(IST).toInstant();
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+    }
+
     private static boolean isMarketHours(Instant now) {
         ZonedDateTime zdt = now.atZone(IST);
         if (zdt.getDayOfWeek().getValue() >= 6) {
@@ -209,6 +398,9 @@ public class IntradaySessionGapFillService {
         }
         LocalTime t = zdt.toLocalTime();
         return !t.isBefore(LocalTime.of(9, 15)) && !t.isAfter(LocalTime.of(15, 30));
+    }
+
+    private record GapFillTarget(String symbol, int token) {
     }
 
     private record ParsedCandle(

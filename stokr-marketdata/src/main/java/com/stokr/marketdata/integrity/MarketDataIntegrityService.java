@@ -224,6 +224,16 @@ public class MarketDataIntegrityService {
         MarketdataCandle current = sessionBars.get(sessionBars.size() - 1);
         MarketdataCandle lookback = sessionBars.get(sessionBars.size() - 1 - lookbackBars);
 
+        if (isMidSessionBarRecoveryAllowed(anchor)) {
+            List<MarketdataCandle> contiguousTail = contiguousSessionTail(
+                    sessionBars, NIFTY_BAR_GAP_TOLERANCE, lookbackBars + 1);
+            if (contiguousTail.size() >= lookbackBars + 1) {
+                current = contiguousTail.get(contiguousTail.size() - 1);
+                lookback = contiguousTail.get(contiguousTail.size() - 1 - lookbackBars);
+                sessionBars = contiguousTail;
+            }
+        }
+
         if (!sessionDate.equals(sessionDate(lookback.getOpenTime()))) {
             recordRejection(strategyName, symbol, IntegrityRejectionReason.CROSS_SESSION_LOOKBACK,
                     current.getOpenTime(), lookback.getOpenTime(), sessionDate);
@@ -403,6 +413,42 @@ public class MarketDataIntegrityService {
         }
         LocalTime t = zdt.toLocalTime();
         return !t.isBefore(SESSION_OPEN) && !t.isAfter(LocalTime.of(15, 30));
+    }
+
+    /**
+     * Allows lookback validation on the contiguous tail of session bars after a feed outage.
+     */
+    public boolean isMidSessionBarRecoveryAllowed(Instant asOf) {
+        if (!enabled || !midSessionRecoveryEnabled) {
+            return false;
+        }
+        Instant anchor = asOf != null ? asOf : Instant.now();
+        if (!isWithinMarketHours(anchor)) {
+            return false;
+        }
+        return !anchor.atZone(zone).toLocalTime().isBefore(LocalTime.of(9, 30));
+    }
+
+    private List<MarketdataCandle> contiguousSessionTail(
+            List<MarketdataCandle> sessionBars, Duration maxGap, int minBars) {
+        if (sessionBars == null || sessionBars.isEmpty()) {
+            return List.of();
+        }
+        int end = sessionBars.size() - 1;
+        int start = end;
+        while (start > 0) {
+            Duration gap = Duration.between(
+                    sessionBars.get(start - 1).getOpenTime(),
+                    sessionBars.get(start).getOpenTime());
+            if (gap.compareTo(maxGap) > 0) {
+                break;
+            }
+            start--;
+        }
+        if (end - start + 1 < minBars) {
+            return List.of();
+        }
+        return new ArrayList<>(sessionBars.subList(start, end + 1));
     }
 
     private Instant resolveAnchor(List<MarketdataCandle> bars, Instant asOf) {
