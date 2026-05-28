@@ -342,6 +342,8 @@ public class PlatformZerodhaLiveFeedRuntime {
 
         Map<Integer, String> out = new LinkedHashMap<>();
         int unresolved = 0;
+        int liveResolved = 0;
+        int dbFallback = 0;
         for (StrategyUniverseSymbol row : universeRows) {
             String exchange = normalize(row.getExchange());
             Map<String, Integer> source = "MCX".equals(exchange) ? mcxSymbolToToken : nseSymbolToToken;
@@ -350,14 +352,17 @@ public class PlatformZerodhaLiveFeedRuntime {
 
             Integer token = null;
             String resolvedSymbol = null;
+            String resolveMethod = "unresolved";
             if (!preferredTrading.isBlank()) {
                 token = source.get(preferredTrading);
                 resolvedSymbol = preferredTrading;
+                if (token != null) resolveMethod = "exact_trading";
             }
             if (token == null && !canonical.isBlank()) {
                 resolvedSymbol = chooseBestTradingSymbol(canonical, source);
                 if (resolvedSymbol != null) {
                     token = source.get(resolvedSymbol);
+                    if (token != null) resolveMethod = "prefix_match";
                 }
             }
 
@@ -365,14 +370,29 @@ public class PlatformZerodhaLiveFeedRuntime {
             if (token == null && row.getInstrumentToken() != null && row.getInstrumentToken() > 0) {
                 token = row.getInstrumentToken().intValue();
                 resolvedSymbol = !canonical.isBlank() ? canonical : preferredTrading;
-                log.debug("platform.ws.universe_subscribe_db_fallback symbol={} token={}", resolvedSymbol, token);
+                resolveMethod = "db_fallback";
+                log.info("platform.ws.universe_db_fallback symbol={} exchange={} token={}", resolvedSymbol, exchange, token);
             }
 
             if (token == null || token <= 0) {
                 unresolved++;
+                log.info("platform.ws.universe_unresolved symbol={} exchange={} tradingSymbol={}", canonical, exchange, preferredTrading);
                 continue;
             }
+            if ("db_fallback".equals(resolveMethod)) dbFallback++;
+            else liveResolved++;
+            log.info("platform.ws.universe_resolved symbol={} exchange={} token={} method={} resolvedAs={}",
+                    canonical, exchange, token, resolveMethod, resolvedSymbol);
             out.put(token, resolvedSymbol != null ? resolvedSymbol : canonical);
+        }
+
+        log.info("platform.ws.universe_resolution_summary total={} liveResolved={} dbFallback={} unresolved={}",
+                universeRows.size(), liveResolved, dbFallback, unresolved);
+
+        // Always include NIFTY 50 (256265) as a test token to verify streaming
+        if (!out.containsKey(256265)) {
+            out.put(256265, "NIFTY 50");
+            log.info("platform.ws.test_token_added token=256265 symbol=NIFTY_50");
         }
 
         if (unresolved > 0) {
@@ -640,6 +660,15 @@ public class PlatformZerodhaLiveFeedRuntime {
                 lastPacketAt = packetArrival;
                 windowPackets.incrementAndGet();
                 List<KiteTickerBinaryParser.ParsedLtpTick> ticks = KiteTickerBinaryParser.parseBinaryMessage(full);
+                if (full.length > 2) {
+                    log.info("platform.ws.binary_parsed bytes={} ticks_extracted={}", full.length, ticks.size());
+                    if (!ticks.isEmpty()) {
+                        KiteTickerBinaryParser.ParsedLtpTick first = ticks.get(0);
+                        log.info("platform.ws.first_tick token={} price={} symbol={}",
+                                first.instrumentToken(), first.lastPricePaise(),
+                                tokenSymbols.getOrDefault(first.instrumentToken(), "UNKNOWN"));
+                    }
+                }
                 for (KiteTickerBinaryParser.ParsedLtpTick t : ticks) {
                     windowTicks.incrementAndGet();
                     lastTickAt = packetArrival;
