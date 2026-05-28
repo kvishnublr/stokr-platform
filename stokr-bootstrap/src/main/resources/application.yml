@@ -374,6 +374,7 @@ stokr:
       instrument-tokens: ${STOKR_PLATFORM_ZERODHA_INSTRUMENT_TOKENS:256265}
   intraday-gap-fill:
     enabled: ${STOKR_INTRADAY_GAP_FILL_ENABLED:true}
+    initial-delay-ms: ${STOKR_INTRADAY_GAP_FILL_INITIAL_DELAY_MS:120000}
     poll-ms: ${STOKR_INTRADAY_GAP_FILL_POLL_MS:120000}
     min-interval-seconds: ${STOKR_INTRADAY_GAP_FILL_MIN_INTERVAL_SECONDS:180}
 

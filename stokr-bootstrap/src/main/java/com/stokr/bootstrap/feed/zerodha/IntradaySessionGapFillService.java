@@ -60,7 +60,7 @@ public class IntradaySessionGapFillService {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile Instant lastAttemptAt;
 
-    @Scheduled(fixedDelayString = "${stokr.intraday-gap-fill.poll-ms:120000}")
+    @Scheduled(initialDelayString = "${stokr.intraday-gap-fill.initial-delay-ms:120000}", fixedDelayString = "${stokr.intraday-gap-fill.poll-ms:120000}")
     public void scheduledGapFill() {
         if (!enabled || !isMarketHours(Instant.now())) {
             return;
@@ -89,7 +89,6 @@ public class IntradaySessionGapFillService {
         if (!running.compareAndSet(false, true)) {
             return;
         }
-        lastAttemptAt = now;
         try {
             String accessToken = resolveAccessToken();
             if (accessToken == null) {
@@ -110,10 +109,14 @@ public class IntradaySessionGapFillService {
                     to);
             JsonNode candlesNode = response.path("data").path("candles");
             if (!candlesNode.isArray() || candlesNode.isEmpty()) {
-                log.warn("intraday_gap_fill.empty trigger={} symbol={}", trigger, NIFTY_50);
+                String status = response.path("status").asText("unknown");
+                String message = response.path("message").asText("");
+                log.warn("intraday_gap_fill.empty trigger={} symbol={} token={} status={} message={} from={} to={}",
+                        trigger, NIFTY_50, token, status, message, from, to);
                 return;
             }
 
+            lastAttemptAt = now;
             List<ParsedCandle> parsed = parseRows(candlesNode);
             int upserted = upsertCandles(parsed);
             log.info("intraday_gap_fill.done trigger={} symbol={} fetched={} upserted={} sessionReady={}",
