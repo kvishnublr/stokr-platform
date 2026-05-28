@@ -75,7 +75,8 @@ public class ZerodhaOAuthCallbackController {
     }
 
     private RedirectView redirectAdmin(String query) {
-        String url = uiPublicBaseUrl.replaceAll("/+$", "") + "/admin/broker-infrastructure" + query;
+        // Lightweight SPA route (no auth shell) so OAuth popup can postMessage opener and close.
+        String url = uiPublicBaseUrl.replaceAll("/+$", "") + "/brokers/zerodha-complete" + query;
         return new RedirectView(url);
     }
 

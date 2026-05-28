@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../../api/client";
@@ -8,6 +8,8 @@ import { cn } from "../../lib/utils";
 import { badgeClassForStatus } from "../../components/admin/cockpit/opsTypes";
 import { useUiThemeStore } from "../../state/uiTheme";
 import { AdminPageShell, AdminPanel } from "../../components/admin/institutional/AdminDesignSystem";
+import { openZerodhaOAuthPopup } from "../../lib/zerodhaOAuthPopup";
+import { ZERODHA_PLATFORM_FEED_OAUTH_MESSAGE } from "../../lib/zerodhaOAuthMessages";
 
 type InfraPayload = {
   collectedAt?: string;
@@ -86,6 +88,8 @@ export function AdminBrokerInfrastructurePage() {
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const focusVendor = (searchParams.get("vendor") ?? "ZERODHA").toUpperCase();
+  const [connectingOAuth, setConnectingOAuth] = useState(false);
+  const oauthCancelRef = useRef<(() => void) | null>(null);
 
   const infra = useQuery({
     queryKey: ["admin-broker-infrastructure"],
@@ -95,6 +99,36 @@ export function AdminBrokerInfrastructurePage() {
     },
     refetchInterval: 15_000,
   });
+
+  useEffect(() => {
+    return () => {
+      oauthCancelRef.current?.();
+      oauthCancelRef.current = null;
+    };
+  }, []);
+
+  function finishPlatformFeedOAuth(status: "ok" | "error", reason?: string | null) {
+    oauthCancelRef.current?.();
+    oauthCancelRef.current = null;
+    setConnectingOAuth(false);
+    if (status === "ok") {
+      toast.success("Platform Zerodha feed session established.");
+      void qc.invalidateQueries({ queryKey: ADMIN_OPS_SNAPSHOT_KEY });
+      void qc.invalidateQueries({ queryKey: ["admin-broker-infrastructure"] });
+      void infra.refetch();
+      return;
+    }
+    if (reason && looksLikeZerodhaTokenAuthError(reason)) {
+      showReconnectPrompt(() => startPlatformFeedOAuth());
+      return;
+    }
+    toast.error(reason ? `Platform feed OAuth failed (${reason})` : "Platform feed OAuth failed");
+  }
+
+  function startPlatformFeedOAuth() {
+    if (connectingOAuth) return;
+    connectZerodha.mutate();
+  }
 
   useEffect(() => {
     const pf = searchParams.get("platform_feed");
@@ -108,7 +142,7 @@ export function AdminBrokerInfrastructurePage() {
     } else if (pf === "error") {
       const reason = String(searchParams.get("reason") ?? "unknown");
       if (looksLikeZerodhaTokenAuthError(reason)) {
-        showReconnectPrompt(() => connectZerodha.mutate());
+        showReconnectPrompt(() => startPlatformFeedOAuth());
       } else {
         toast.error(`Platform feed OAuth failed (${reason})`);
       }
@@ -124,15 +158,38 @@ export function AdminBrokerInfrastructurePage() {
       const res = await api.post<{ data?: { authorizeUrl?: string } }>("/api/admin/broker-infrastructure/ZERODHA/connect");
       return res.data?.data;
     },
+    onMutate: () => {
+      setConnectingOAuth(true);
+    },
     onSuccess: (d) => {
       const url = d?.authorizeUrl;
-      if (url && typeof url === "string") {
-        window.location.href = url;
-      } else {
+      if (!url || typeof url !== "string") {
+        setConnectingOAuth(false);
         toast.error("No authorizeUrl returned");
+        return;
+      }
+      oauthCancelRef.current?.();
+      const session = openZerodhaOAuthPopup({
+        authorizeUrl: url,
+        messageType: ZERODHA_PLATFORM_FEED_OAUTH_MESSAGE,
+        popupName: "stokr_platform_feed_oauth",
+        onComplete: (result) => finishPlatformFeedOAuth(result.status, result.reason),
+        onEarlyClose: () => {
+          setConnectingOAuth(false);
+          toast.message("OAuth window closed before platform feed linking finished.");
+        },
+      });
+      oauthCancelRef.current = session.cancel;
+      if (session.blocked) {
+        oauthCancelRef.current = null;
+        setConnectingOAuth(false);
+        toast.error("Pop-up was blocked. Allow pop-ups for this site, then try Connect again.");
       }
     },
-    onError: (e) => toast.error(parseAxiosMessage(e)),
+    onError: (e) => {
+      setConnectingOAuth(false);
+      toast.error(parseAxiosMessage(e));
+    },
   });
 
   const refresh = useMutation({
@@ -321,11 +378,11 @@ export function AdminBrokerInfrastructurePage() {
                 {key === "ZERODHA" ? (
                   <button
                     type="button"
-                    disabled={connectZerodha.isPending}
+                    disabled={connectingOAuth || connectZerodha.isPending}
                     className="rounded-lg border border-border bg-background px-3 py-1.5 text-[11px] font-bold text-foreground hover:bg-muted disabled:opacity-50"
-                    onClick={() => connectZerodha.mutate()}
+                    onClick={() => startPlatformFeedOAuth()}
                   >
-                    Connect platform feed (OAuth)
+                    {connectingOAuth ? "Opening popup…" : "Connect platform feed (OAuth)"}
                   </button>
                 ) : (
                   <span className="text-[11px] text-muted-foreground">Platform OAuth connect: Zerodha only in this build.</span>
@@ -370,7 +427,7 @@ export function AdminBrokerInfrastructurePage() {
 
       <div className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
         OAuth uses the same Kite-registered redirect URL as traders; completion is routed by OAuth state (platform vs trader). After
-        success you return to this page with <code className="font-mono">?platform_feed=ok</code>.
+        success the popup closes automatically and this page refreshes.
       </div>
     </div>
     </AdminPageShell>
