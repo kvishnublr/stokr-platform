@@ -250,28 +250,24 @@ public class PlatformZerodhaLiveFeedRuntime {
     private Map<Integer, String> buildSymbolMap(String apiKey, String accessToken) {
         Map<Integer, String> map = new LinkedHashMap<>();
 
-        if (feedProperties.isAutoSubscribeUniverseGroups()) {
+        if (feedProperties.isAutoSubscribeAllNse()) {
+            try {
+                String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "NSE");
+                parseInstrumentsCsvInto(csv, "EQ", "NSE", map);
+                log.info("platform.ws.auto_subscribe exchange=NSE eq_count={}", map.size());
+            } catch (Exception ex) {
+                log.warn("platform.ws.auto_subscribe_failed exchange=NSE {}", ex.toString());
+            }
+        } else if (feedProperties.isAutoSubscribeUniverseGroups()) {
             try {
                 Map<Integer, String> targeted = buildUniverseDrivenMap(apiKey, accessToken);
                 map.putAll(targeted);
                 if (!map.isEmpty()) {
                     log.info("platform.ws.universe_subscribe groups={} tokens={}",
                             feedProperties.parsedSubscriptionUniverseGroupKeys(), map.size());
-                    return map;
                 }
             } catch (Exception ex) {
                 log.warn("platform.ws.universe_subscribe_failed {}", ex.toString());
-            }
-        }
-
-        if (feedProperties.isAutoSubscribeAllNse()) {
-            try {
-                String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "NSE");
-                // segment=NSE filters main-board equities only (excludes NSE_SME, ETFs, bonds)
-                parseInstrumentsCsvInto(csv, "EQ", "NSE", map);
-                log.info("platform.ws.auto_subscribe exchange=NSE eq_count={}", map.size());
-            } catch (Exception ex) {
-                log.warn("platform.ws.auto_subscribe_failed exchange=NSE {}", ex.toString());
             }
         }
 
@@ -312,6 +308,9 @@ public class PlatformZerodhaLiveFeedRuntime {
         }
 
         // Hard cap — Zerodha WebSocket limit is 3000 tokens per connection
+        if (!map.containsKey(256265)) {
+            map.put(256265, "NIFTY 50");
+        }
         if (map.size() > 3000) {
             Map<Integer, String> capped = new LinkedHashMap<>();
             map.entrySet().stream().limit(3000).forEach(e -> capped.put(e.getKey(), e.getValue()));

@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -181,7 +182,34 @@ public class HistoricalBackfillService {
                 missing.add(day);
             }
         }
+
+        LocalDate today = LocalDate.now(IST);
+        if (tradingDays.contains(today) && latestDay.equals(today) && isPartialSessionDay(symbol, today)) {
+            if (!missing.contains(today)) {
+                missing.add(today);
+            }
+        }
         return missing;
+    }
+
+    private boolean isPartialSessionDay(String symbol, LocalDate sessionDate) {
+        Instant sessionStart = sessionDate.atTime(9, 15).atZone(IST).toInstant();
+        Instant sessionEnd = sessionDate.atTime(15, 30).atZone(IST).toInstant();
+        long bars = candleRepository.countBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalse(
+                symbol, TIMEFRAME, sessionStart, sessionEnd);
+        if (bars == 0) {
+            return false;
+        }
+        ZonedDateTime now = ZonedDateTime.now(IST);
+        if (!sessionDate.equals(now.toLocalDate())) {
+            return bars < 300;
+        }
+        if (now.toLocalTime().isBefore(java.time.LocalTime.of(9, 20))) {
+            return false;
+        }
+        long minutesOpen = java.time.Duration.between(sessionStart, now.toInstant()).toMinutes();
+        long expectedBars = Math.max(10, minutesOpen - 2);
+        return bars < (expectedBars * 3 / 4);
     }
 
     /**
@@ -252,20 +280,29 @@ public class HistoricalBackfillService {
 
     @Transactional
     public void saveNewCandles(String symbol, List<MarketdataCandle> candles, List<LocalDate> expectedDays) {
-        // Only insert candles for days where we have no data (skip if day already exists)
         for (LocalDate day : expectedDays) {
             Instant dayStart = day.atTime(9, 15).atZone(IST).toInstant();
             Instant dayEnd   = day.atTime(15, 30).atZone(IST).toInstant();
 
-            long existing = candleRepository.countBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalse(
-                    symbol, TIMEFRAME, dayStart, dayEnd);
-            if (existing > 0) continue;
-
             List<MarketdataCandle> dayCandles = candles.stream()
                     .filter(c -> !c.getOpenTime().isBefore(dayStart) && !c.getOpenTime().isAfter(dayEnd))
                     .toList();
-            if (!dayCandles.isEmpty()) {
+            if (dayCandles.isEmpty()) {
+                continue;
+            }
+
+            long existing = candleRepository.countBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalse(
+                    symbol, TIMEFRAME, dayStart, dayEnd);
+            if (existing == 0) {
                 candleRepository.saveAll(dayCandles);
+                continue;
+            }
+
+            for (MarketdataCandle c : dayCandles) {
+                candleRepository.upsertCandle(
+                        c.getSymbol(), c.getTimeframe(), c.getOpenTime(),
+                        c.getOpenPrice(), c.getHighPrice(), c.getLowPrice(),
+                        c.getClosePrice(), c.getVolume() != null ? c.getVolume() : java.math.BigDecimal.ZERO);
             }
         }
     }

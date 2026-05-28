@@ -3,6 +3,7 @@ package com.stokr.marketdata.integrity;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
 import com.stokr.marketdata.repository.MarketdataTickRepository;
+import com.stokr.marketdata.service.OrderBookPressureTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,20 +34,25 @@ public class MarketDataIntegrityService {
     public static final String NIFTY_50_SYMBOL = "NIFTY 50";
     private static final String TIMEFRAME_1M = "1m";
     private static final LocalTime SESSION_OPEN = LocalTime.of(9, 15);
-    private static final Duration EQUITY_CANDLE_MAX_AGE = Duration.ofMinutes(2);
-    private static final Duration INDEX_CANDLE_MAX_AGE = Duration.ofMinutes(2);
-    private static final Duration TICK_MAX_AGE = Duration.ofSeconds(30);
+    private static final Duration EQUITY_CANDLE_MAX_AGE = Duration.ofMinutes(3);
+    private static final Duration INDEX_CANDLE_MAX_AGE = Duration.ofMinutes(3);
+    private static final Duration TICK_MAX_AGE = Duration.ofSeconds(90);
     private static final Duration NIFTY_BAR_GAP_TOLERANCE = Duration.ofMinutes(2);
+    private static final int MIN_NIFTY_MID_SESSION_BARS = 30;
 
     private final MarketdataCandleRepository candleRepository;
     private final MarketDataIntegrityRejectionRepository rejectionRepository;
     private final MarketdataTickRepository tickRepository;
+    private final OrderBookPressureTracker pressureTracker;
 
     @Value("${stokr.marketdata.integrity.enabled:true}")
     private boolean enabled;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
+
+    @Value("${stokr.marketdata.integrity.mid-session-recovery.enabled:true}")
+    private boolean midSessionRecoveryEnabled;
 
     public boolean isEnabled() {
         return enabled;
@@ -69,7 +75,8 @@ public class MarketDataIntegrityService {
         Instant anchor = asOf != null ? asOf : Instant.now();
         LocalDate sessionDate = sessionDate(anchor);
 
-        if (requiresNiftyOpeningSession && !isNiftyOpeningSessionReady(anchor)) {
+        if (requiresNiftyOpeningSession && !isNiftyOpeningSessionReady(anchor)
+                && !isNiftyMidSessionRecoveryAllowed(anchor)) {
             recordRejection(strategyName, symbol, IntegrityRejectionReason.NIFTY_OPENING_INCOMPLETE,
                     null, sessionStartInstant(sessionDate), sessionDate);
             return false;
@@ -145,6 +152,28 @@ public class MarketDataIntegrityService {
             prev = bar;
         }
         return true;
+    }
+
+    /**
+     * Allows NIFTY-dependent strategies after 09:30 IST when opening continuity was lost
+     * during a feed outage but enough session bars and a fresh index candle exist.
+     */
+    public boolean isNiftyMidSessionRecoveryAllowed(Instant asOf) {
+        if (!enabled || !midSessionRecoveryEnabled) {
+            return false;
+        }
+        Instant anchor = asOf != null ? asOf : Instant.now();
+        if (!isWithinMarketHours(anchor)) {
+            return false;
+        }
+        if (anchor.atZone(zone).toLocalTime().isBefore(LocalTime.of(9, 30))) {
+            return false;
+        }
+        if (countSessionNiftyBars(anchor) < MIN_NIFTY_MID_SESSION_BARS) {
+            return false;
+        }
+        return isCandleFreshInternal(
+                NIFTY_50_SYMBOL, anchor, INDEX_CANDLE_MAX_AGE, sessionDate(anchor), true);
     }
 
     /**
@@ -296,30 +325,54 @@ public class MarketDataIntegrityService {
             IntegrityRejectionReason reason,
             LocalDate sessionDate,
             boolean indexFeed) {
-        Optional<MarketdataCandle> latest = candleRepository
-                .findTopBySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbol, TIMEFRAME_1M);
-        if (latest.isEmpty() || latest.get().getOpenTime() == null) {
-            recordRejection(strategyName, symbol, reason, null, anchor.minus(maxAge), sessionDate);
-            return false;
-        }
-        Instant latestTime = latest.get().getOpenTime();
-        if (Duration.between(latestTime, anchor).compareTo(maxAge) > 0) {
+        if (!isCandleFreshInternal(symbol, anchor, maxAge, sessionDate, indexFeed)) {
+            Optional<MarketdataCandle> latest = latestSessionCandle(symbol, sessionDate, indexFeed);
+            Instant latestTime = latest.map(MarketdataCandle::getOpenTime).orElse(null);
             recordRejection(strategyName, symbol, reason, latestTime, anchor.minus(maxAge), sessionDate);
-            return false;
-        }
-        if (indexFeed && !sessionDate.equals(sessionDate(latestTime))) {
-            recordRejection(strategyName, symbol, reason, latestTime, sessionStartInstant(sessionDate), sessionDate);
             return false;
         }
         return true;
     }
 
+    private boolean isCandleFreshInternal(
+            String symbol,
+            Instant anchor,
+            Duration maxAge,
+            LocalDate sessionDate,
+            boolean indexFeed) {
+        Optional<MarketdataCandle> latest = latestSessionCandle(symbol, sessionDate, indexFeed);
+        if (latest.isEmpty() || latest.get().getOpenTime() == null) {
+            return false;
+        }
+        Instant latestTime = latest.get().getOpenTime();
+        if (Duration.between(latestTime, anchor).compareTo(maxAge) > 0) {
+            return false;
+        }
+        return sessionDate.equals(sessionDate(latestTime));
+    }
+
+    private Optional<MarketdataCandle> latestSessionCandle(
+            String symbol, LocalDate sessionDate, boolean indexFeed) {
+        if (indexFeed) {
+            return candleRepository
+                    .findTopBySymbolAndTimeframeAndOpenTimeGreaterThanEqualAndDeletedFalseOrderByOpenTimeDesc(
+                            symbol, TIMEFRAME_1M, sessionStartInstant(sessionDate));
+        }
+        return candleRepository
+                .findTopBySymbolAndTimeframeAndOpenTimeGreaterThanEqualAndDeletedFalseOrderByOpenTimeDesc(
+                        symbol, TIMEFRAME_1M, sessionStartInstant(sessionDate));
+    }
+
     private boolean isTickFresh(String strategyName, String symbol, Instant anchor, LocalDate sessionDate) {
+        Instant liveTick = pressureTracker.getLastUpdate(symbol);
+        if (liveTick != null && Duration.between(liveTick, anchor).compareTo(TICK_MAX_AGE) <= 0) {
+            return true;
+        }
         Optional<com.stokr.marketdata.domain.MarketdataTick> latest =
                 tickRepository.findFirstBySymbolOrderByTickTimeDesc(symbol);
         if (latest.isEmpty() || latest.get().getTickTime() == null) {
             recordRejection(strategyName, symbol, IntegrityRejectionReason.TICK_FEED_STALE,
-                    null, anchor.minus(TICK_MAX_AGE), sessionDate);
+                    liveTick, anchor.minus(TICK_MAX_AGE), sessionDate);
             return false;
         }
         Instant tickTime = latest.get().getTickTime();
@@ -329,6 +382,22 @@ public class MarketDataIntegrityService {
             return false;
         }
         return true;
+    }
+
+    private int countSessionNiftyBars(Instant anchor) {
+        LocalDate sessionDate = sessionDate(anchor);
+        Instant sessionStart = sessionStartInstant(sessionDate);
+        return candleRepository.findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
+                NIFTY_50_SYMBOL, TIMEFRAME_1M, sessionStart, anchor).size();
+    }
+
+    private boolean isWithinMarketHours(Instant instant) {
+        var zdt = instant.atZone(zone);
+        if (zdt.getDayOfWeek().getValue() >= 6) {
+            return false;
+        }
+        LocalTime t = zdt.toLocalTime();
+        return !t.isBefore(SESSION_OPEN) && !t.isAfter(LocalTime.of(15, 30));
     }
 
     private Instant resolveAnchor(List<MarketdataCandle> bars, Instant asOf) {

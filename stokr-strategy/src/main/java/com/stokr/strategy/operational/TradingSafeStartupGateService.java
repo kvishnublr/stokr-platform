@@ -127,18 +127,13 @@ public class TradingSafeStartupGateService {
      * Allow scans when the live feed is fresh and enough session bars exist for strategy warmup.
      */
     private boolean allowsMidSessionRecovery(Instant now, FeedHealthMonitorService.FeedHealthSnapshot feed) {
-        var zdt = now.atZone(zone);
-        if (zdt.toLocalTime().isBefore(java.time.LocalTime.of(9, 30))) {
-            return false;
-        }
         if (feed.indexStale() || feed.equityStale()) {
             return false;
         }
-        int bars = countSessionNiftyBars(now);
-        if (bars < MIN_WARMUP_BARS) {
+        if (feed.indexGapSeconds() > 180) {
             return false;
         }
-        return feed.indexGapSeconds() <= 180;
+        return integrityService.isNiftyMidSessionRecoveryAllowed(now);
     }
 
     private int countSessionNiftyBars(Instant now) {

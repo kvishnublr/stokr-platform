@@ -97,6 +97,10 @@ public class FeedHealthMonitorService {
         Instant tick = tickRepository.findFirstByOrderByTickTimeDesc()
                 .map(t -> t.getTickTime())
                 .orElse(null);
+        if (tick == null) {
+            // Ticks are in-memory by default (persist-ticks=false); use latest equity candle as proxy.
+            tick = equity;
+        }
 
         lastEquityCandle.set(equity);
         lastIndexCandle.set(index);

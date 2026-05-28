@@ -32,6 +32,9 @@ public class StrategyGeneratorIntegrityGate {
         if (integrityService.isNiftyOpeningSessionReady(anchor)) {
             return true;
         }
+        if (integrityService.isNiftyMidSessionRecoveryAllowed(anchor)) {
+            return true;
+        }
         integrityService.recordRejection(
                 strategyKey,
                 MarketDataIntegrityService.NIFTY_50_SYMBOL,

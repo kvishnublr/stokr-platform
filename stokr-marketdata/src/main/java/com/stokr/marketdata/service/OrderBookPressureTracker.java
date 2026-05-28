@@ -57,6 +57,18 @@ public class OrderBookPressureTracker {
         return sp.analyze(lookbackTicks);
     }
 
+    /** Latest live tick time for a symbol (from in-memory OBI feed). */
+    public Instant getLastUpdate(String symbol) {
+        if (symbol == null) {
+            return null;
+        }
+        SymbolPressure sp = pressureMap.get(symbol);
+        if (sp == null || sp.lastUpdate == null || Instant.EPOCH.equals(sp.lastUpdate)) {
+            return null;
+        }
+        return sp.lastUpdate;
+    }
+
     /** Clears stale data for symbols not updated recently */
     public void evictOlderThan(Instant cutoff) {
         pressureMap.entrySet().removeIf(e -> e.getValue().lastUpdate.isBefore(cutoff));

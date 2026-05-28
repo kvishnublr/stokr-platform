@@ -111,6 +111,8 @@ stokr:
   marketdata:
     integrity:
       enabled: ${STOKR_MARKETDATA_INTEGRITY_ENABLED:true}
+      mid-session-recovery:
+        enabled: ${STOKR_MARKETDATA_INTEGRITY_MID_SESSION_RECOVERY:true}
     feed-health:
       poll-ms: ${STOKR_FEED_HEALTH_POLL_MS:30000}
       equity-stale-seconds: ${STOKR_FEED_HEALTH_EQUITY_STALE_SEC:120}
