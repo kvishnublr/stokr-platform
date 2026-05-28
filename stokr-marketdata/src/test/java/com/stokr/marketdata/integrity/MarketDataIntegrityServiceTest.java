@@ -3,6 +3,7 @@ package com.stokr.marketdata.integrity;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
 import com.stokr.marketdata.repository.MarketdataTickRepository;
+import com.stokr.marketdata.service.OrderBookPressureTracker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,11 +43,15 @@ class MarketDataIntegrityServiceTest {
     @Mock
     private MarketdataTickRepository tickRepository;
 
+    @Mock
+    private OrderBookPressureTracker pressureTracker;
+
     private MarketDataIntegrityService service;
 
     @BeforeEach
     void setUp() {
-        service = new MarketDataIntegrityService(candleRepository, rejectionRepository, tickRepository);
+        service = new MarketDataIntegrityService(
+                candleRepository, rejectionRepository, tickRepository, pressureTracker);
         ReflectionTestUtils.setField(service, "enabled", true);
         ReflectionTestUtils.setField(service, "zone", ZONE);
     }

@@ -70,6 +70,7 @@ class TradingSafeStartupGateServiceTest {
         Instant now = ZonedDateTime.of(2026, 5, 28, 11, 0, 0, 0, ZoneId.of("Asia/Kolkata")).toInstant();
         when(feedHealthMonitorService.snapshot(now)).thenReturn(freshFeedSnapshot());
         when(integrityService.isNiftyOpeningSessionReady(now)).thenReturn(false);
+        when(integrityService.isNiftyMidSessionRecoveryAllowed(now)).thenReturn(true);
         when(candleRepository.findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
                 eq("NIFTY 50"), eq("1m"), any(), eq(now)))
                 .thenReturn(warmupBars(35));
@@ -84,6 +85,27 @@ class TradingSafeStartupGateServiceTest {
         when(integrityService.isNiftyOpeningSessionReady(now)).thenReturn(false);
 
         assertFalse(gate.isTradingReady(now));
+    }
+
+    @Test
+    void midSessionRecoveryWhenIndexStaleButEquityFresh() {
+        Instant now = ZonedDateTime.of(2026, 5, 28, 12, 30, 0, 0, ZoneId.of("Asia/Kolkata")).toInstant();
+        when(feedHealthMonitorService.snapshot(now)).thenReturn(indexStaleEquityFreshSnapshot());
+        when(integrityService.isNiftyOpeningSessionReady(now)).thenReturn(false);
+        when(integrityService.isNiftyMidSessionRecoveryAllowed(now)).thenReturn(true);
+        when(candleRepository.findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
+                eq("NIFTY 50"), eq("1m"), any(), eq(now)))
+                .thenReturn(warmupBars(35));
+
+        assertTrue(gate.isTradingReady(now));
+    }
+
+    private static FeedHealthMonitorService.FeedHealthSnapshot indexStaleEquityFreshSnapshot() {
+        Instant now = Instant.now();
+        return new FeedHealthMonitorService.FeedHealthSnapshot(
+                now, now.minusSeconds(300), now, now,
+                true, 0, 30, 300, 30, 30,
+                false, true, false, 0, 0, FeedHealthMonitorService.FeedHealthLevel.WARN);
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.stokr.marketdata.monitor;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
 import com.stokr.marketdata.repository.MarketdataTickRepository;
+import com.stokr.marketdata.service.OrderBookPressureTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,8 +12,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -30,6 +33,7 @@ public class FeedHealthMonitorService {
 
     private final MarketdataCandleRepository candleRepository;
     private final MarketdataTickRepository tickRepository;
+    private final OrderBookPressureTracker pressureTracker;
     private final FeedHealthWebSocketState webSocketState;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -115,6 +119,9 @@ public class FeedHealthMonitorService {
         boolean marketHours = isMarketHours(now);
         boolean equityStale = marketHours && equityGap > equityStaleSeconds;
         boolean indexStale = marketHours && indexGap > indexStaleSeconds;
+        if (indexStale && !equityStale && equityGap <= equityStaleSeconds && indexGap <= 600) {
+            indexStale = false;
+        }
         boolean tickStale = marketHours && tickGap > tickStaleSeconds;
 
         FeedHealthLevel level = FeedHealthLevel.OK;
@@ -209,9 +216,34 @@ public class FeedHealthMonitorService {
         if (symbol == null) {
             return candleRepository.findLatestEquityCandleOpenTime();
         }
-        return candleRepository.findTopBySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(symbol, TIMEFRAME_1M)
-                .map(MarketdataCandle::getOpenTime)
-                .orElse(null);
+        Instant sessionStart = sessionStartInstant(sessionDate(Instant.now()));
+        Optional<MarketdataCandle> sessionLatest = candleRepository
+                .findTopBySymbolAndTimeframeAndOpenTimeGreaterThanEqualAndDeletedFalseOrderByOpenTimeDesc(
+                        symbol, TIMEFRAME_1M, sessionStart);
+        Instant candleTime = sessionLatest.map(MarketdataCandle::getOpenTime).orElse(null);
+        if (NIFTY_50.equals(symbol)) {
+            Instant pressureTick = pressureTracker.getLastUpdate(NIFTY_50);
+            return maxInstant(candleTime, pressureTick);
+        }
+        return candleTime;
+    }
+
+    private static Instant maxInstant(Instant a, Instant b) {
+        if (a == null) {
+            return b;
+        }
+        if (b == null) {
+            return a;
+        }
+        return a.isAfter(b) ? a : b;
+    }
+
+    private LocalDate sessionDate(Instant instant) {
+        return instant.atZone(zone).toLocalDate();
+    }
+
+    private Instant sessionStartInstant(LocalDate sessionDate) {
+        return ZonedDateTime.of(sessionDate, LocalTime.of(9, 15), zone).toInstant();
     }
 
     private static long gapSeconds(Instant timestamp, Instant now) {

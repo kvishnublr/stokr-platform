@@ -368,6 +368,11 @@ public class MarketDataIntegrityService {
         if (liveTick != null && Duration.between(liveTick, anchor).compareTo(TICK_MAX_AGE) <= 0) {
             return true;
         }
+        // OBI ticks are in-memory only (persist-ticks=false). A fresh session equity candle
+        // means the symbol is on the live websocket feed even without order-book quantities.
+        if (isCandleFreshInternal(symbol, anchor, TICK_MAX_AGE, sessionDate, false)) {
+            return true;
+        }
         Optional<com.stokr.marketdata.domain.MarketdataTick> latest =
                 tickRepository.findFirstBySymbolOrderByTickTimeDesc(symbol);
         if (latest.isEmpty() || latest.get().getTickTime() == null) {

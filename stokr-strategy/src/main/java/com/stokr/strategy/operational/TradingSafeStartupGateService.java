@@ -92,7 +92,11 @@ public class TradingSafeStartupGateService {
         }
 
         FeedHealthMonitorService.FeedHealthSnapshot feed = feedHealthMonitorService.snapshot(now);
-        if (feed.equityStale() || feed.indexStale()) {
+        if (feed.equityStale()) {
+            blockReason = "FEED_NOT_FRESH";
+            return;
+        }
+        if (feed.indexStale() && !allowsMidSessionRecovery(now, feed)) {
             blockReason = "FEED_NOT_FRESH";
             return;
         }
@@ -127,10 +131,10 @@ public class TradingSafeStartupGateService {
      * Allow scans when the live feed is fresh and enough session bars exist for strategy warmup.
      */
     private boolean allowsMidSessionRecovery(Instant now, FeedHealthMonitorService.FeedHealthSnapshot feed) {
-        if (feed.indexStale() || feed.equityStale()) {
+        if (feed.equityStale()) {
             return false;
         }
-        if (feed.indexGapSeconds() > 180) {
+        if (feed.indexGapSeconds() > 600) {
             return false;
         }
         return integrityService.isNiftyMidSessionRecoveryAllowed(now);

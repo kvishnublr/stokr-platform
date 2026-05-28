@@ -2,6 +2,7 @@ package com.stokr.bootstrap.feed.zerodha;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.stokr.common.crypto.FieldCipher;
+import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.integrity.MarketDataIntegrityService;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
 import com.stokr.user.broker.PlatformMarketFeedService;
@@ -76,9 +77,16 @@ public class IntradaySessionGapFillService {
         if (!isMarketHours(now)) {
             return;
         }
-        if (!integrityService.isNiftyOpeningSessionReady(now)) {
+        if (!integrityService.isNiftyOpeningSessionReady(now) || isNiftyIndexCandleStale(now)) {
             attemptFill(trigger, now);
         }
+    }
+
+    private boolean isNiftyIndexCandleStale(Instant now) {
+        return candleRepository.findTopBySymbolAndTimeframeAndDeletedFalseOrderByOpenTimeDesc(NIFTY_50, TIMEFRAME)
+                .map(MarketdataCandle::getOpenTime)
+                .map(openTime -> Duration.between(openTime, now).getSeconds() > 180)
+                .orElse(true);
     }
 
     private void attemptFill(String trigger, Instant now) {

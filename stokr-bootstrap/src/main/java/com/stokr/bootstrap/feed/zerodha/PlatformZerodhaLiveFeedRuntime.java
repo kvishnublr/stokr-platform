@@ -55,6 +55,9 @@ import java.util.concurrent.atomic.AtomicReference;
 public class PlatformZerodhaLiveFeedRuntime {
 
     private static final String VENDOR = "ZERODHA";
+    private static final int NIFTY_50_TOKEN = 256265;
+    private static final String NIFTY_50_SYMBOL = "NIFTY 50";
+    private static final int MAX_WS_TOKENS = 3000;
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(20))
             .build();
@@ -307,15 +310,15 @@ public class PlatformZerodhaLiveFeedRuntime {
             log.info("platform.ws.static_subscribe count={}", map.size());
         }
 
-        // Hard cap — Zerodha WebSocket limit is 3000 tokens per connection
-        if (!map.containsKey(256265)) {
-            map.put(256265, "NIFTY 50");
+        // Hard cap — Zerodha WebSocket limit is 3000 tokens per connection.
+        // Pin NIFTY 50 first; it is appended after thousands of EQ rows and was previously dropped by limit(3000).
+        if (!map.containsKey(NIFTY_50_TOKEN)) {
+            map.put(NIFTY_50_TOKEN, NIFTY_50_SYMBOL);
         }
-        if (map.size() > 3000) {
-            Map<Integer, String> capped = new LinkedHashMap<>();
-            map.entrySet().stream().limit(3000).forEach(e -> capped.put(e.getKey(), e.getValue()));
-            log.warn("platform.ws.token_cap original={} capped=3000", map.size());
-            return capped;
+        if (map.size() > MAX_WS_TOKENS) {
+            log.warn("platform.ws.token_cap original={} capped={} pinned={}",
+                    map.size(), MAX_WS_TOKENS, NIFTY_50_SYMBOL);
+            return capWithPinnedTokens(map, MAX_WS_TOKENS, List.of(NIFTY_50_TOKEN));
         }
 
         long unresolved = map.values().stream().filter(v -> v.startsWith("TOKEN_")).count();
@@ -401,10 +404,10 @@ public class PlatformZerodhaLiveFeedRuntime {
         log.info("platform.ws.universe_resolution_summary total={} liveResolved={} dbFallback={} unresolved={}",
                 universeRows.size(), liveResolved, dbFallback, unresolved);
 
-        // Always include NIFTY 50 (256265) as a test token to verify streaming
-        if (!out.containsKey(256265)) {
-            out.put(256265, "NIFTY 50");
-            log.info("platform.ws.test_token_added token=256265 symbol=NIFTY_50");
+        // Always include NIFTY 50 as a test token to verify streaming
+        if (!out.containsKey(NIFTY_50_TOKEN)) {
+            out.put(NIFTY_50_TOKEN, NIFTY_50_SYMBOL);
+            log.info("platform.ws.test_token_added token={} symbol={}", NIFTY_50_TOKEN, NIFTY_50_SYMBOL);
         }
 
         if (unresolved > 0) {
@@ -433,6 +436,24 @@ public class PlatformZerodhaLiveFeedRuntime {
 
     private static String normalize(String value) {
         return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static Map<Integer, String> capWithPinnedTokens(
+            Map<Integer, String> source, int maxTokens, List<Integer> pinnedTokens) {
+        Map<Integer, String> capped = new LinkedHashMap<>();
+        for (int token : pinnedTokens) {
+            String symbol = source.get(token);
+            if (symbol != null) {
+                capped.put(token, symbol);
+            }
+        }
+        for (Map.Entry<Integer, String> entry : source.entrySet()) {
+            if (capped.size() >= maxTokens) {
+                break;
+            }
+            capped.putIfAbsent(entry.getKey(), entry.getValue());
+        }
+        return capped;
     }
 
     private void parseInstrumentsCsvInto(String csv, String typeFilter, Map<Integer, String> out) throws Exception {
