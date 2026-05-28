@@ -166,12 +166,12 @@ export function KillSwitchCenterPanel({
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {[
-          { label: "Global kill", active: risk.killSwitchActive, to: "/admin/ops" },
+          { label: "Global kill", active: risk.killSwitchActive, to: "/admin/safety-diagnostics" },
           { label: "Broker halt", active: risk.brokerHalt, to: "/admin/broker-infrastructure" },
           { label: "Live armed", active: risk.liveTradingArmed, to: "/admin/execution-config" },
           { label: "Signal halt", active: risk.emergencyStoppedStrategies > 0, to: "/admin/strategies" },
           { label: "Execution halt", active: risk.todayRejects > 5, to: "/admin/oms" },
-          { label: "Emergency flatten", active: false, to: "/admin/ops" },
+          { label: "Emergency flatten", active: false, to: "/admin/safety-diagnostics" },
         ].map((item) => (
           <Link
             key={item.label}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Pin, PinOff, Search, Star } from "lucide-react";
+import { SafetyDiagnosticsLaunchLink } from "./SafetyDiagnosticsLaunchLink";
 import { ADMIN_FLAT_NAV, type AdminNavItem } from "../../../admin/navigation";
 import { useAdminWorkspaceStore } from "../../../admin/adminWorkspaceStore";
 import { cn } from "../../../lib/utils";
@@ -220,9 +221,10 @@ export function AdminBreadcrumbs({ crumbs }: { crumbs: Array<{ label: string; to
   );
 }
 
-export function AdminQuickActions({ isLight }: { isLight: boolean }) {
+export function AdminQuickActions({ isLight, killActive }: { isLight: boolean; killActive?: boolean }) {
   return (
     <div className="flex items-center gap-2">
+      <SafetyDiagnosticsLaunchLink variant="pill" isLight={isLight} killActive={killActive} />
       <AdminCommandPalette />
       <Link
         to="/admin/alerts"

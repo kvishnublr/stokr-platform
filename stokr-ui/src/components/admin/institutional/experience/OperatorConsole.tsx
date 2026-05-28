@@ -4,6 +4,7 @@ import { Command, Keyboard, X, Zap } from "lucide-react";
 import { cn } from "../../../../lib/utils";
 
 const QUICK_ACTIONS = [
+  { keys: "G then D", label: "Safety & diagnostics", to: "/admin/safety-diagnostics" },
   { keys: "G then S", label: "Signal war room", to: "/admin/signals" },
   { keys: "G then R", label: "Risk terminal", to: "/admin/risk-dashboard" },
   { keys: "G then O", label: "OMS monitor", to: "/admin/oms" },
@@ -42,6 +43,7 @@ export function OperatorConsole({ isLight }: { isLight: boolean }) {
 
       if (pendingG) {
         const map: Record<string, string> = {
+          d: "/admin/safety-diagnostics",
           s: "/admin/signals",
           r: "/admin/risk-dashboard",
           o: "/admin/oms",
