@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -38,7 +39,7 @@ public class OmsExecutionDedupeService {
     /**
      * @return true if dedupe slot acquired; false if duplicate within active window
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW, noRollbackFor = DataIntegrityViolationException.class)
     public boolean tryAcquire(
             String strategy,
             String symbol,

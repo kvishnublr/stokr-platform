@@ -26,7 +26,7 @@ public class OmsSafetyGateService {
     private final OmsExposureControlService exposureControlService;
     private final MarketCloseProtectionService marketCloseProtectionService;
     private final BrokerDisconnectProtectionService brokerDisconnectProtectionService;
-    private final OmsSafetyBlockedOrderRepository blockedOrderRepository;
+    private final OmsSafetyBlockedOrderPersistence blockedOrderPersistence;
 
     public OmsSafetyGateResult evaluatePreOrder(
             StrategySignalEntity signal,
@@ -125,19 +125,7 @@ public class OmsSafetyGateService {
             String effective,
             String code,
             String message) {
-        OmsSafetyBlockedOrder row = new OmsSafetyBlockedOrder();
-        row.setUserId(userId);
-        if (signal != null) {
-            row.setSignalId(signal.getId());
-            row.setStrategyName(signal.getStrategyName());
-            row.setSymbol(signal.getSymbol());
-        }
-        row.setRequestedMode(requested);
-        row.setEffectiveMode(effective);
-        row.setBlockCode(code);
-        row.setBlockMessage(message);
-        row.setCreatedAt(Instant.now());
-        blockedOrderRepository.save(row);
+        blockedOrderPersistence.persist(signal, userId, requested, effective, code, message);
     }
 
     private static boolean isEntrySignal(StrategySignalEntity signal) {

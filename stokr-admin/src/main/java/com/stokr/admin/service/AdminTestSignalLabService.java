@@ -109,8 +109,10 @@ public class AdminTestSignalLabService {
         run.setSymbol(normalizedSymbol);
         run.setSide(request.side().trim().toUpperCase());
         run.setQuantity(resolveQuantity(request.quantity(), request.forceQuantityOne()));
-        run.setProductType(resolveProductType(request.productType(), resolveDispatchMode(
-                request.executionMode(), request.dryRunOnly(), request.skipActualBrokerExecution())));
+        run.setProductType(resolveProductType(
+                request.productType(),
+                resolveDispatchMode(request.executionMode(), request.dryRunOnly(), request.skipActualBrokerExecution()),
+                normalizedSymbol));
         run.setOrderType(request.orderType() == null || request.orderType().isBlank() ? "MARKET" : request.orderType().trim().toUpperCase());
         run.setExchange(request.exchange());
         run.setRequestedPrice(request.price());
@@ -194,13 +196,18 @@ public class AdminTestSignalLabService {
         }
 
         entityManager.flush();
-        Optional<OmsOrder> order = waitForOrder(
-                run.getSignalId(),
-                run.getTraderUserId(),
-                resolveOrderWaitTimeout(run),
-                run.getExecutionMode()
-        );
-        order = reconcileResolvedOrder(run, order);
+        Optional<OmsOrder> order = reconcileResolvedOrder(
+                run,
+                resolveOrderForRun(run.getSignalId(), run.getTraderUserId(), run.getExecutionMode()));
+        if (order.isEmpty()) {
+            order = waitForOrder(
+                    run.getSignalId(),
+                    run.getTraderUserId(),
+                    resolveOrderWaitTimeout(run),
+                    run.getExecutionMode()
+            );
+            order = reconcileResolvedOrder(run, order);
+        }
         if (order.isPresent()) {
             order = omsOrderRepository.findById(order.get().getId());
         }
@@ -640,15 +647,27 @@ public class AdminTestSignalLabService {
             return Duration.ofSeconds(2);
         }
         if ("LIVE".equalsIgnoreCase(run.getExecutionMode())) {
-            return Duration.ofSeconds(8);
+            return Duration.ofSeconds(3);
         }
         if ("BOTH".equalsIgnoreCase(run.getExecutionMode())) {
             return Duration.ofSeconds(15);
         }
-        return Duration.ofSeconds(5);
+        return Duration.ofMillis(500);
     }
 
-    private static String resolveProductType(String requested, String executionMode) {
+    private static String resolveProductType(String requested, String executionMode, String symbol) {
+        if (requested != null && !requested.isBlank()) {
+            String normalized = requested.trim().toUpperCase();
+            if ("NRML".equals(normalized) || "CNC".equals(normalized)) {
+                return normalized;
+            }
+        }
+        if (symbol != null) {
+            String upper = symbol.toUpperCase();
+            if (upper.startsWith("MCX:") || upper.contains("CRUDEOIL") || upper.contains("NATURALGAS")) {
+                return "NRML";
+            }
+        }
         if ("LIVE".equalsIgnoreCase(executionMode) || "BOTH".equalsIgnoreCase(executionMode)) {
             return TEST_LAB_PRODUCT_MIS;
         }

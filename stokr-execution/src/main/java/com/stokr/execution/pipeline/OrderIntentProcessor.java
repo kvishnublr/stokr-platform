@@ -226,7 +226,9 @@ public class OrderIntentProcessor {
                 strategyKey, userId, signal.getId(), order.getId(), signal.getSymbol(), sizing);
         recordSizingTelemetry(signal, userId, mode, sizing, order.getId());
 
-        if (mode == ExecutionMode.LIVE && !omsSafetyGateService.acquireLiveDedupe(signal, userId, order.getId(), mode, safetyNow)) {
+        if (mode == ExecutionMode.LIVE
+                && !Boolean.TRUE.equals(signal.getTestTrade())
+                && !omsSafetyGateService.acquireLiveDedupe(signal, userId, order.getId(), mode, safetyNow)) {
             capitalReservationService.releaseByOrder(order.getId(), "DUPLICATE_EXECUTION_KEY");
             orderLifecycleService.transition(order.getId(), OrderState.REJECTED, "DUPLICATE_EXECUTION_KEY");
             signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "DUPLICATE_EXECUTION_KEY");

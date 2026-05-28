@@ -81,7 +81,7 @@ public class ZerodhaKiteInstrumentResolver {
 
         InstrumentRow match = rows.stream()
                 .filter(r -> matchesFutureRoot(r, base, mini))
-                .filter(r -> r.expiry != null && !r.expiry.isBefore(today))
+                .filter(r -> r.expiry != null && r.expiry.isAfter(today))
                 .min(Comparator.comparing((InstrumentRow r) -> r.expiry, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(r -> r.tradingsymbol.length()))
                 .orElseThrow(() -> new IllegalStateException(

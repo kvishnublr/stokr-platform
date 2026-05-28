@@ -21,6 +21,17 @@ class ZerodhaKiteInstrumentResolverTest {
     }
 
     @Test
+    void skipsContractExpiringToday() {
+        LocalDate today = LocalDate.of(2026, 5, 28);
+        ZerodhaKiteInstrumentResolver.InstrumentRow expiringToday =
+                row("CRUDEOIL28MAYFUT", "FUTCOM", today);
+        ZerodhaKiteInstrumentResolver.InstrumentRow nextMonth =
+                row("CRUDEOIL26JUNFUT", "FUTCOM", today.plusDays(29));
+        assertFalse(expiringToday.expiry.isAfter(today));
+        assertTrue(nextMonth.expiry.isAfter(today));
+    }
+
+    @Test
     void parseSymbolExchangeHandlesMcxPrefix() {
         String[] parsed = ZerodhaKiteInstrumentResolver.parseSymbolExchange("MCX:CRUDEOIL", null);
         assertEquals("MCX", parsed[0]);
