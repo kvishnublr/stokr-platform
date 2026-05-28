@@ -564,13 +564,30 @@ public class PlatformZerodhaLiveFeedRuntime {
             }
             wsOpen.set(true);
             telemetryService.markWebsocketOpen(VENDOR);
+            log.info("platform.ws.onOpen tokens_to_subscribe={}", tokens.size());
             try {
                 String sub = objectMapper.writeValueAsString(Map.of("a", "subscribe", "v", tokens));
-                webSocket.sendText(sub, true);
+                log.info("platform.ws.subscribe_msg length={} first_100_chars={}", sub.length(),
+                        sub.length() > 100 ? sub.substring(0, 100) + "..." : sub);
+                webSocket.sendText(sub, true).whenComplete((ws, err) -> {
+                    if (err != null) {
+                        log.error("platform.ws.subscribe_send_failed {}", err.toString());
+                    } else {
+                        log.info("platform.ws.subscribe_sent_ok");
+                    }
+                });
                 // "quote" mode (44 bytes/tick) gives us LTP + lastTradedQty + volumeTraded + OHLC
                 // "ltp" mode (8 bytes) only gives price — no volume data for candles
                 String mode = objectMapper.writeValueAsString(Map.of("a", "mode", "v", List.of("quote", tokens)));
-                webSocket.sendText(mode, true);
+                log.info("platform.ws.mode_msg length={} first_100_chars={}", mode.length(),
+                        mode.length() > 100 ? mode.substring(0, 100) + "..." : mode);
+                webSocket.sendText(mode, true).whenComplete((ws, err) -> {
+                    if (err != null) {
+                        log.error("platform.ws.mode_send_failed {}", err.toString());
+                    } else {
+                        log.info("platform.ws.mode_sent_ok");
+                    }
+                });
             } catch (Exception ex) {
                 log.warn("platform.ws.subscribe_failed {}", ex.toString());
             }
@@ -586,6 +603,8 @@ public class PlatformZerodhaLiveFeedRuntime {
                     lastPacketAt = lastHeartbeatAt;
                     windowPackets.incrementAndGet();
                 } else {
+                    log.info("platform.ws.text_received length={} content={}", s.length(),
+                            s.length() > 300 ? s.substring(0, 300) + "..." : s);
                     JsonNode n = objectMapper.readTree(s);
                     if (n.has("type") && "error".equalsIgnoreCase(n.path("type").asText())) {
                         log.warn("platform.ws.kite_error {}", n.path("data").asText());
@@ -602,6 +621,7 @@ public class PlatformZerodhaLiveFeedRuntime {
 
         @Override
         public CompletionStage<?> onBinary(WebSocket webSocket, ByteBuffer message, boolean last) {
+            log.info("platform.ws.binary_received bytes={} last={}", message.remaining(), last);
             byte[] chunk = new byte[message.remaining()];
             message.get(chunk);
             synchronized (binaryAcc) {
