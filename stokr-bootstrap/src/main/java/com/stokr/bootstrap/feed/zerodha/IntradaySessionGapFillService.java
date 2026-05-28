@@ -98,7 +98,8 @@ public class IntradaySessionGapFillService {
             int token = resolveNiftyToken();
             ZonedDateTime sessionStart = now.atZone(IST).toLocalDate().atTime(9, 15).atZone(IST);
             Instant from = sessionStart.toInstant();
-            Instant to = now;
+            // Zerodha may return an empty array when `to` includes the in-progress minute.
+            Instant to = now.atZone(IST).withSecond(0).withNano(0).minusMinutes(1).toInstant();
 
             JsonNode response = kiteApiClient.getHistoricalCandles(
                     zerodhaBrokerProperties.getApiKey(),
@@ -111,8 +112,9 @@ public class IntradaySessionGapFillService {
             if (!candlesNode.isArray() || candlesNode.isEmpty()) {
                 String status = response.path("status").asText("unknown");
                 String message = response.path("message").asText("");
-                log.warn("intraday_gap_fill.empty trigger={} symbol={} token={} status={} message={} from={} to={}",
-                        trigger, NIFTY_50, token, status, message, from, to);
+                log.warn("intraday_gap_fill.empty trigger={} symbol={} token={} status={} message={} from={} to={} body={}",
+                        trigger, NIFTY_50, token, status, message, from, to,
+                        response.toString().length() > 400 ? response.toString().substring(0, 400) + "..." : response.toString());
                 return;
             }
 

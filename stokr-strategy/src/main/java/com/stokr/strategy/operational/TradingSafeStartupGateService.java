@@ -98,8 +98,12 @@ public class TradingSafeStartupGateService {
         }
 
         if (!integrityService.isNiftyOpeningSessionReady(now)) {
-            blockReason = "NIFTY_OPENING_INCOMPLETE";
-            return;
+            if (!allowsMidSessionRecovery(now, feed)) {
+                blockReason = "NIFTY_OPENING_INCOMPLETE";
+                return;
+            }
+            log.warn("safe_startup.mid_session_recovery niftyBars={} indexGapSec={}",
+                    countSessionNiftyBars(now), feed.indexGapSeconds());
         }
 
         if (!hasMinimumWarmupBars(now)) {
@@ -115,11 +119,33 @@ public class TradingSafeStartupGateService {
     }
 
     private boolean hasMinimumWarmupBars(Instant now) {
+        return countSessionNiftyBars(now) >= MIN_WARMUP_BARS;
+    }
+
+    /**
+     * After a feed outage, opening-session continuity may be unrecoverable via REST same-day.
+     * Allow scans when the live feed is fresh and enough session bars exist for strategy warmup.
+     */
+    private boolean allowsMidSessionRecovery(Instant now, FeedHealthMonitorService.FeedHealthSnapshot feed) {
+        var zdt = now.atZone(zone);
+        if (zdt.toLocalTime().isBefore(java.time.LocalTime.of(9, 30))) {
+            return false;
+        }
+        if (feed.indexStale() || feed.equityStale()) {
+            return false;
+        }
+        int bars = countSessionNiftyBars(now);
+        if (bars < MIN_WARMUP_BARS) {
+            return false;
+        }
+        return feed.indexGapSeconds() <= 180;
+    }
+
+    private int countSessionNiftyBars(Instant now) {
         LocalDate sessionDate = now.atZone(zone).toLocalDate();
         Instant sessionStart = ZonedDateTime.of(sessionDate, java.time.LocalTime.of(9, 15), zone).toInstant();
-        var bars = candleRepository.findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
-                NIFTY, TIMEFRAME, sessionStart, now);
-        return bars.size() >= MIN_WARMUP_BARS;
+        return candleRepository.findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
+                NIFTY, TIMEFRAME, sessionStart, now).size();
     }
 
     private boolean isWithinMarketHours(Instant now) {

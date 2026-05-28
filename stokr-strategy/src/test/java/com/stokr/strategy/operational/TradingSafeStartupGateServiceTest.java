@@ -66,6 +66,27 @@ class TradingSafeStartupGateServiceTest {
     }
 
     @Test
+    void midSessionRecoveryWhenOpeningGapsButFeedFreshAndEnoughBars() {
+        Instant now = ZonedDateTime.of(2026, 5, 28, 11, 0, 0, 0, ZoneId.of("Asia/Kolkata")).toInstant();
+        when(feedHealthMonitorService.snapshot(now)).thenReturn(freshFeedSnapshot());
+        when(integrityService.isNiftyOpeningSessionReady(now)).thenReturn(false);
+        when(candleRepository.findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
+                eq("NIFTY 50"), eq("1m"), any(), eq(now)))
+                .thenReturn(warmupBars(35));
+
+        assertTrue(gate.isTradingReady(now));
+    }
+
+    @Test
+    void blocksWhenOpeningIncompleteBefore930() {
+        Instant now = ZonedDateTime.of(2026, 5, 28, 9, 20, 0, 0, ZoneId.of("Asia/Kolkata")).toInstant();
+        when(feedHealthMonitorService.snapshot(now)).thenReturn(freshFeedSnapshot());
+        when(integrityService.isNiftyOpeningSessionReady(now)).thenReturn(false);
+
+        assertFalse(gate.isTradingReady(now));
+    }
+
+    @Test
     void disabledGateAlwaysReady() {
         ReflectionTestUtils.setField(gate, "enabled", false);
         assertTrue(gate.isTradingReady(Instant.now()));
