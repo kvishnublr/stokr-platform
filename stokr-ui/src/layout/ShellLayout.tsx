@@ -39,6 +39,7 @@ import {
   GitBranch,
   Zap,
   Cpu,
+  BrainCircuit,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../api/client";
