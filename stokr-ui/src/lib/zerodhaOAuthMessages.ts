@@ -6,16 +6,27 @@ export const ZERODHA_PLATFORM_FEED_OAUTH_MESSAGE = "stokr-platform-feed-oauth";
 
 export const ZERODHA_OAUTH_STORAGE_KEY = "stokr_zerodha_oauth_result";
 
-/** www vs apex (or port) mismatch breaks strict origin checks; still require same host+protocol as this tab. */
+/** Hostnames allowed to postMessage OAuth completion (IP vs domain vs localhost dev). */
+const TRUSTED_OAUTH_COMPLETION_HOSTS = new Set([
+  "stokr.in",
+  "173.249.55.84",
+  "localhost",
+  "127.0.0.1",
+]);
+
+function normalizeHost(hostname: string): string {
+  return hostname.toLowerCase().replace(/^www\./, "");
+}
+
+/** Accept same tab origin, or known Stokr deployment hosts (IP access + https domain share one server). */
 export function isTrustedZerodhaOauthMessageOrigin(origin: string): boolean {
   if (origin === window.location.origin) return true;
   try {
-    const here = new URL(window.location.origin);
     const there = new URL(origin);
-    if (here.protocol !== there.protocol) return false;
-    if (here.port !== there.port) return false;
-    const stripWww = (h: string) => h.toLowerCase().replace(/^www\./, "");
-    return stripWww(here.hostname) === stripWww(there.hostname);
+    const host = normalizeHost(there.hostname);
+    if (TRUSTED_OAUTH_COMPLETION_HOSTS.has(host)) return true;
+    const here = new URL(window.location.origin);
+    return normalizeHost(here.hostname) === host;
   } catch {
     return false;
   }
