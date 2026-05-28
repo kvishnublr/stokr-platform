@@ -126,6 +126,10 @@ stokr:
     # Gates @RabbitListener registration (see stokr-execution messaging). Same env as spring.rabbitmq.listener.*.auto-startup.
     # false = no AMQP consumer reconnect loop when RabbitMQ is down (typical local IntelliJ + DB only).
     listeners-enabled: ${STOKR_RABBIT_LISTENERS_ENABLED:true}
+  adv-dashboard:
+    universe-group: ${STOKR_ADV_UNIVERSE_GROUP:NIFTY_50}
+    max-symbols: ${STOKR_ADV_MAX_SYMBOLS:50}
+    feed-interval-ms: ${STOKR_ADV_FEED_INTERVAL_MS:45000}
   admin:
     ops:
       sse-tick-ms: ${STOKR_ADMIN_OPS_SSE_TICK_MS:3000}

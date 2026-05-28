@@ -122,6 +122,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ApiResponse<Void>> handleIllegalState(IllegalStateException ex) {
+        String cid = CorrelationIdHolder.get();
+        String msg = ex.getMessage() != null ? ex.getMessage() : "Request rejected";
+        HttpStatus status = msg.contains("preflight") || msg.contains("blocked") || msg.contains("Test signal")
+                ? HttpStatus.BAD_REQUEST
+                : HttpStatus.CONFLICT;
+        return ResponseEntity.status(status)
+                .body(ApiResponse.fail(msg, cid, new ApiError("REJECTED", msg)));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneric(Exception ex) {
         if (shouldSuppressMonitoring(ex)) {

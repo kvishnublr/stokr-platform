@@ -1,10 +1,18 @@
 package com.stokr.intraday.controller;
 
-import com.stokr.intraday.domain.CurrentSetup;
-import com.stokr.intraday.engine.MarketRegimeDetector;
+import com.stokr.common.api.ApiResponse;
+import com.stokr.common.correlation.CorrelationIdHolder;
+import com.stokr.intraday.service.AdvIntelligenceFeedService;
+import com.stokr.intraday.service.AdvIntelligenceTerminalService;
 import com.stokr.intraday.stream.RealTimeSetupStream;
+import com.stokr.intraday.engine.MarketRegimeDetector;
+import com.stokr.intraday.domain.CurrentSetup;
+import com.stokr.auth.security.StokrUserDetails;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -15,30 +23,31 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Data-first intelligence snapshot for the ADV Dashboard (confidence-driven, not indicator noise).
- */
 @RestController
 @RequestMapping("/api/v1/adv-dashboard")
 @RequiredArgsConstructor
 public class AdvIntelligenceDashboardController {
 
     private final RealTimeSetupStream realTimeStream;
+    private final AdvIntelligenceFeedService feedService;
+    private final AdvIntelligenceTerminalService terminalService;
 
     @GetMapping("/snapshot")
+    @PreAuthorize("isAuthenticated()")
     public AdvDashboardSnapshot snapshot() {
+        if (realTimeStream.getStatistics().tickCount == 0) {
+            feedService.refreshNow();
+        }
         MarketRegimeDetector.MarketRegime regime = realTimeStream.getCurrentRegime();
         List<CurrentSetup> board = realTimeStream.getRankingBoard();
         RealTimeSetupStream.StreamStatistics stats = realTimeStream.getStatistics();
 
-        List<SetupCardDto> setups = board.stream()
-                .map(this::toSetupCard)
-                .toList();
-
+        List<SetupCardDto> setups = board.stream().map(this::toSetupCard).toList();
         Map<String, Object> metrics = new LinkedHashMap<>();
-        metrics.put("stocksTracked", stats.tickCount);
-        metrics.put("activeSetups", stats.rankingBoardSize);
-        metrics.put("topScore", stats.topSetupScore);
+        metrics.put("stocksTracked", Math.max(stats.tickCount, setups.size()));
+        metrics.put("activeSetups", Math.max(stats.rankingBoardSize, setups.size()));
+        metrics.put("topScore", stats.topSetupScore != null && stats.topSetupScore.signum() > 0
+                ? stats.topSetupScore.intValue() : topFromSetups(setups));
         metrics.put("regime", regime.name());
 
         return new AdvDashboardSnapshot(
@@ -54,6 +63,29 @@ public class AdvIntelligenceDashboardController {
         );
     }
 
+    @GetMapping("/terminal")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<Map<String, Object>> terminal(@AuthenticationPrincipal StokrUserDetails user) {
+        var uid = user != null ? user.getId() : null;
+        return ApiResponse.ok(terminalService.buildTerminal(uid), CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/refresh")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<Map<String, Object>> refresh() {
+        feedService.refreshNow();
+        RealTimeSetupStream.StreamStatistics stats = realTimeStream.getStatistics();
+        return ApiResponse.ok(Map.of(
+                "refreshed", true,
+                "tickCount", stats.tickCount,
+                "setupCount", stats.rankingBoardSize
+        ), CorrelationIdHolder.get());
+    }
+
+    private int topFromSetups(List<SetupCardDto> setups) {
+        return setups.stream().mapToInt(SetupCardDto::confidenceScore).max().orElse(0);
+    }
+
     private SetupCardDto toSetupCard(CurrentSetup setup) {
         BigDecimal score = setup.getQualityScore() != null ? setup.getQualityScore() : BigDecimal.ZERO;
         int confidence = score.setScale(0, RoundingMode.HALF_UP).intValue();
@@ -65,13 +97,6 @@ public class AdvIntelligenceDashboardController {
         if (setup.getConfidenceLevel() != null) {
             badges.add(setup.getConfidenceLevel());
         }
-        if (setup.getMarketRegime() != null) {
-            badges.add("REGIME " + setup.getMarketRegime());
-        }
-
-        String why = buildWhyText(setup, tier);
-        String risk = buildRiskText(setup);
-
         return new SetupCardDto(
                 setup.getStockId(),
                 setup.getSetupType(),
@@ -82,8 +107,8 @@ public class AdvIntelligenceDashboardController {
                 setup.getTargetPrice(),
                 setup.getStopLoss(),
                 setup.getRiskRewardRatio(),
-                why,
-                risk
+                buildWhyText(setup, tier),
+                buildRiskText(setup)
         );
     }
 
@@ -101,25 +126,14 @@ public class AdvIntelligenceDashboardController {
         StringBuilder sb = new StringBuilder();
         sb.append(tier).append(" — ");
         if (setup.getSetupType() != null) {
-            sb.append(setup.getSetupType().replace('_', ' ')).append(" structure detected. ");
-        }
-        if (setup.getAdjustedProbability() != null) {
-            sb.append("Adjusted probability ")
-                    .append(setup.getAdjustedProbability().multiply(BigDecimal.valueOf(100)).setScale(0, RoundingMode.HALF_UP))
-                    .append("%. ");
-        }
-        if (setup.getRegimeAdjustment() != null && setup.getRegimeAdjustment().signum() != 0) {
-            sb.append("Regime adjustment ").append(setup.getRegimeAdjustment()).append("%. ");
-        }
-        if (setup.getRiskRewardRatio() != null) {
-            sb.append("R:R ").append(setup.getRiskRewardRatio()).append(".");
+            sb.append(setup.getSetupType().replace('_', ' ')).append(" structure detected.");
         }
         return sb.toString().trim();
     }
 
     private static String buildRiskText(CurrentSetup setup) {
         if (setup.getStopLoss() != null) {
-            return "Invalidation below " + setup.getStopLoss() + "; respect VWAP/structure loss if momentum fades.";
+            return "Invalidation below " + setup.getStopLoss();
         }
         return "Reduce size if volume/OI confirmation weakens vs entry.";
     }
