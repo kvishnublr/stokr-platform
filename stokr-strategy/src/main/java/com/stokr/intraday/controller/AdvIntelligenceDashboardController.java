@@ -35,25 +35,20 @@ public class AdvIntelligenceDashboardController {
     @GetMapping("/snapshot")
     @PreAuthorize("isAuthenticated()")
     public AdvDashboardSnapshot snapshot() {
-        if (realTimeStream.getStatistics().tickCount == 0) {
-            feedService.refreshNow();
-        }
-        MarketRegimeDetector.MarketRegime regime = realTimeStream.getCurrentRegime();
-        List<CurrentSetup> board = realTimeStream.getRankingBoard();
-        RealTimeSetupStream.StreamStatistics stats = realTimeStream.getStatistics();
+        Map<String, Object> terminal = terminalService.buildTerminal(null);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> metrics = (Map<String, Object>) terminal.getOrDefault("metrics", Map.of());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> scannerRows = (List<Map<String, Object>>) terminal.getOrDefault("scannerRows", List.of());
 
-        List<SetupCardDto> setups = board.stream().map(this::toSetupCard).toList();
-        Map<String, Object> metrics = new LinkedHashMap<>();
-        metrics.put("stocksTracked", Math.max(stats.tickCount, setups.size()));
-        metrics.put("activeSetups", Math.max(stats.rankingBoardSize, setups.size()));
-        metrics.put("topScore", stats.topSetupScore != null && stats.topSetupScore.signum() > 0
-                ? stats.topSetupScore.intValue() : topFromSetups(setups));
-        metrics.put("regime", regime.name());
+        List<SetupCardDto> setups = scannerRows.stream().map(this::toSetupCardFromRow).limit(23).toList();
+        Map<String, Object> snapshotMetrics = new LinkedHashMap<>(metrics);
+        snapshotMetrics.put("regime", terminal.getOrDefault("marketRegime", "CHOPPY"));
 
         return new AdvDashboardSnapshot(
-                regime.name(),
-                regimeDescription(regime),
-                metrics,
+                String.valueOf(terminal.getOrDefault("marketRegime", "CHOPPY")),
+                String.valueOf(terminal.getOrDefault("regimeNarrative", "")),
+                snapshotMetrics,
                 setups,
                 List.of(
                         "Price structure and volume expansion drive ranking — not raw indicators.",
@@ -84,6 +79,41 @@ public class AdvIntelligenceDashboardController {
 
     private int topFromSetups(List<SetupCardDto> setups) {
         return setups.stream().mapToInt(SetupCardDto::confidenceScore).max().orElse(0);
+    }
+
+    private SetupCardDto toSetupCardFromRow(Map<String, Object> row) {
+        int confidence = row.get("aiScore") instanceof Number n ? n.intValue() : 60;
+        BigDecimal score = BigDecimal.valueOf(confidence);
+        String tier = classifyTier(score);
+        List<String> badges = new ArrayList<>();
+        Object badgeList = row.get("badges");
+        if (badgeList instanceof List<?> bl) {
+            for (Object b : bl) {
+                if (b != null) badges.add(String.valueOf(b));
+            }
+        }
+        if (badges.isEmpty() && row.get("setupType") != null) {
+            badges.add(String.valueOf(row.get("setupType")));
+        }
+        return new SetupCardDto(
+                String.valueOf(row.get("symbol")),
+                row.get("setupType") != null ? String.valueOf(row.get("setupType")) : "Setup",
+                confidence,
+                tier,
+                badges,
+                toBigDecimal(row.get("ltp")),
+                toBigDecimal(row.get("targetPrice")),
+                toBigDecimal(row.get("stopLoss")),
+                null,
+                tier + " — " + String.valueOf(row.getOrDefault("status", "WATCHING")),
+                "Invalidation if volume/OI confirmation weakens vs entry."
+        );
+    }
+
+    private static BigDecimal toBigDecimal(Object value) {
+        if (value instanceof BigDecimal bd) return bd;
+        if (value instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        return null;
     }
 
     private SetupCardDto toSetupCard(CurrentSetup setup) {
