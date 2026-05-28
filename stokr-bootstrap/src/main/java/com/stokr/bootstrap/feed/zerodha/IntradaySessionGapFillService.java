@@ -26,7 +26,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
-import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -241,6 +241,11 @@ public class IntradaySessionGapFillService {
             return true;
         }
 
+        List<MarketdataCandle> recentTail = contiguousTail(bars, Duration.ofMinutes(3), 31);
+        if (recentTail.size() >= 31 && latest != null && Duration.between(latest, now).getSeconds() <= 180) {
+            return false;
+        }
+
         long minutesOpen = Duration.between(sessionStart, now).toMinutes();
         long expectedBars = Math.max(10, minutesOpen - 2);
         if (bars.size() < (expectedBars * 3 / 4)) {
@@ -254,6 +259,26 @@ public class IntradaySessionGapFillService {
             }
         }
         return false;
+    }
+
+    private static List<MarketdataCandle> contiguousTail(
+            List<MarketdataCandle> bars, Duration maxGap, int minBars) {
+        if (bars == null || bars.isEmpty()) {
+            return List.of();
+        }
+        int end = bars.size() - 1;
+        int start = end;
+        while (start > 0) {
+            Duration gap = Duration.between(bars.get(start - 1).getOpenTime(), bars.get(start).getOpenTime());
+            if (gap.compareTo(maxGap) > 0) {
+                break;
+            }
+            start--;
+        }
+        if (end - start + 1 < minBars) {
+            return List.of();
+        }
+        return bars.subList(start, end + 1);
     }
 
     private boolean isNiftyIndexCandleStale(Instant now) {
@@ -298,27 +323,46 @@ public class IntradaySessionGapFillService {
         Instant from = sessionStart(now.atZone(IST).toLocalDate());
         Instant to = now.atZone(IST).withSecond(0).withNano(0).minusMinutes(1).toInstant();
 
-        JsonNode response = kiteApiClient.getHistoricalCandles(
-                zerodhaBrokerProperties.getApiKey(),
-                accessToken,
-                token,
-                "minute",
-                from,
-                to);
-        JsonNode candlesNode = response.path("data").path("candles");
-        if (!candlesNode.isArray() || candlesNode.isEmpty()) {
-            String status = response.path("status").asText("unknown");
-            String message = response.path("message").asText("");
-            log.warn("intraday_gap_fill.empty trigger=live symbol={} token={} status={} message={} from={} to={}",
-                    symbol, token, status, message, from, to);
+        List<ParsedCandle> parsed = fetchSessionCandles(accessToken, symbol, token, from, to);
+        if (parsed.isEmpty()) {
+            log.warn("intraday_gap_fill.empty trigger=live symbol={} token={} from={} to={}",
+                    symbol, token, from, to);
             return false;
         }
 
-        List<ParsedCandle> parsed = parseRows(candlesNode);
         upsertCandles(symbol, parsed);
         log.info("intraday_gap_fill.symbol_done symbol={} token={} fetched={} upserted={}",
                 symbol, token, parsed.size(), parsed.size());
         return true;
+    }
+
+    private List<ParsedCandle> fetchSessionCandles(
+            String accessToken, String symbol, int token, Instant from, Instant to)
+            throws InterruptedException {
+        List<ParsedCandle> parsed = new ArrayList<>();
+        Instant chunkStart = from;
+        while (chunkStart.isBefore(to)) {
+            Instant chunkEnd = chunkStart.plus(1, ChronoUnit.HOURS);
+            if (chunkEnd.isAfter(to)) {
+                chunkEnd = to;
+            }
+            JsonNode response = kiteApiClient.getHistoricalCandles(
+                    zerodhaBrokerProperties.getApiKey(),
+                    accessToken,
+                    token,
+                    "minute",
+                    chunkStart,
+                    chunkEnd);
+            JsonNode candlesNode = response.path("data").path("candles");
+            if (candlesNode.isArray() && !candlesNode.isEmpty()) {
+                parsed.addAll(parseRows(candlesNode));
+            }
+            chunkStart = chunkEnd.plus(1, ChronoUnit.MINUTES);
+            if (chunkStart.isBefore(to)) {
+                Thread.sleep(RATE_MS);
+            }
+        }
+        return parsed;
     }
 
     private void upsertCandles(String symbol, List<ParsedCandle> candles) {

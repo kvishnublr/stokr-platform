@@ -103,6 +103,21 @@ class MarketDataIntegrityServiceTest {
     }
 
     @Test
+    void allowsRelaxedSpanForFiveMinuteLookbackAfterMidSessionGap() {
+        ReflectionTestUtils.setField(service, "midSessionRecoveryEnabled", true);
+        Instant asOf = ist(SESSION, 12, 30);
+        List<MarketdataCandle> sessionBars = new ArrayList<>();
+        for (int minute = 15; minute <= 25; minute++) {
+            sessionBars.add(candle(ist(SESSION, 12, minute)));
+        }
+
+        Optional<List<MarketdataCandle>> result = service.validateSessionBarSeries(
+                "EARLY_BREAKOUT", "RELIANCE", sessionBars, 10, LookbackWindow.FIVE_MINUTE, asOf);
+
+        assertFalse(result.isEmpty());
+    }
+
+    @Test
     void allowsContiguousTailLookbackAfterMidSessionFeedGap() {
         ReflectionTestUtils.setField(service, "midSessionRecoveryEnabled", true);
         Instant asOf = ist(SESSION, 12, 30);

@@ -214,25 +214,24 @@ public class MarketDataIntegrityService {
         }
         sessionBars.sort(Comparator.comparing(MarketdataCandle::getOpenTime));
 
-        if (sessionBars.size() < lookbackBars + 1) {
-            Instant latest = sessionBars.isEmpty() ? null : sessionBars.get(sessionBars.size() - 1).getOpenTime();
+        List<MarketdataCandle> barsForEval = sessionBars;
+        if (isMidSessionBarRecoveryAllowed(anchor)) {
+            List<MarketdataCandle> contiguousTail = contiguousSessionTail(
+                    sessionBars, NIFTY_BAR_GAP_TOLERANCE, lookbackBars + 1);
+            if (contiguousTail.size() >= lookbackBars + 1) {
+                barsForEval = contiguousTail;
+            }
+        }
+
+        if (barsForEval.size() < lookbackBars + 1) {
+            Instant latest = barsForEval.isEmpty() ? null : barsForEval.get(barsForEval.size() - 1).getOpenTime();
             recordRejection(strategyName, symbol, IntegrityRejectionReason.INSUFFICIENT_SESSION_BARS,
                     latest, sessionStart, sessionDate);
             return Optional.empty();
         }
 
-        MarketdataCandle current = sessionBars.get(sessionBars.size() - 1);
-        MarketdataCandle lookback = sessionBars.get(sessionBars.size() - 1 - lookbackBars);
-
-        if (isMidSessionBarRecoveryAllowed(anchor)) {
-            List<MarketdataCandle> contiguousTail = contiguousSessionTail(
-                    sessionBars, NIFTY_BAR_GAP_TOLERANCE, lookbackBars + 1);
-            if (contiguousTail.size() >= lookbackBars + 1) {
-                current = contiguousTail.get(contiguousTail.size() - 1);
-                lookback = contiguousTail.get(contiguousTail.size() - 1 - lookbackBars);
-                sessionBars = contiguousTail;
-            }
-        }
+        MarketdataCandle current = barsForEval.get(barsForEval.size() - 1);
+        MarketdataCandle lookback = barsForEval.get(barsForEval.size() - 1 - lookbackBars);
 
         if (!sessionDate.equals(sessionDate(lookback.getOpenTime()))) {
             recordRejection(strategyName, symbol, IntegrityRejectionReason.CROSS_SESSION_LOOKBACK,
@@ -241,13 +240,17 @@ public class MarketDataIntegrityService {
         }
 
         Duration span = Duration.between(lookback.getOpenTime(), current.getOpenTime());
-        if (span.compareTo(window.maxSpan()) > 0) {
+        Duration maxSpan = window.maxSpan();
+        if (span.compareTo(maxSpan) > 0 && isMidSessionBarRecoveryAllowed(anchor)) {
+            maxSpan = Duration.ofMinutes(Math.max(maxSpan.toMinutes() * 4, lookbackBars + 10L));
+        }
+        if (span.compareTo(maxSpan) > 0) {
             recordRejection(strategyName, symbol, IntegrityRejectionReason.TIMESTAMP_GAP_EXCEEDED,
                     current.getOpenTime(), lookback.getOpenTime(), sessionDate);
             return Optional.empty();
         }
 
-        return Optional.of(sessionBars);
+        return Optional.of(barsForEval);
     }
 
     /**
