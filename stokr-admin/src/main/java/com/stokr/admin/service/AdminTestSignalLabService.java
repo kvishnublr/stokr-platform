@@ -26,6 +26,8 @@ import com.stokr.execution.pipeline.OrderIntentProcessor;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.strategy.service.SignalPriceEnrichmentService;
+import com.stokr.strategy.service.StrategyExecutionConfigService;
 import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.user.domain.BrokerAccount;
@@ -73,6 +75,8 @@ public class AdminTestSignalLabService {
     private final EntityManager entityManager;
     private final ObjectMapper objectMapper;
     private final AdminTestSignalLabSquareOffService squareOffService;
+    private final StrategyExecutionConfigService strategyExecutionConfigService;
+    private final SignalPriceEnrichmentService signalPriceEnrichmentService;
 
     private static final String TEST_LAB_PRODUCT_MIS = "MIS";
 
@@ -134,6 +138,8 @@ public class AdminTestSignalLabService {
         run.setStartedAt(Instant.now());
         run = runRepository.save(run);
 
+        strategyExecutionConfigService.ensureGlobalExecutionConfig(run.getStrategyKey());
+
         StrategySignalEntity signal = new StrategySignalEntity();
         signal.setSignalType("SELL".equals(run.getSide()) ? SignalType.SELL : SignalType.BUY);
         signal.setStrategyName(run.getStrategyKey());
@@ -150,6 +156,8 @@ public class AdminTestSignalLabService {
         signal.setTestRunId(run.getId());
         signal.setTestScenario(resolveScenario(run));
         signal.setSignalSource(SignalProvenance.LAB);
+
+        signalPriceEnrichmentService.enrichIfMissing(signal, Instant.now());
 
         String correlationId = "test-lab:" + run.getId();
         Instant start = Instant.now();
@@ -298,6 +306,19 @@ public class AdminTestSignalLabService {
         if (!strategyReady) {
             blockers.add("Strategy is not enabled in catalog");
         }
+
+        boolean executionConfigReady = strategyReady
+                && strategyExecutionConfigService.getByStrategyKey(strategyKey).isPresent();
+        checks.add(new TestSignalCheckResult(
+                "execution_config",
+                "Execution Config",
+                executionConfigReady ? "SUCCESS" : "WARNING",
+                executionConfigReady
+                        ? "Strategy execution config present"
+                        : "No execution config — will auto-provision on run",
+                executionConfigReady ? null : "Config is created automatically before synchronous execution",
+                executionConfigReady ? null : "OPEN_STRATEGY_EXECUTION_CONFIG"
+        ));
 
         BrokerAccount broker = resolveBrokerOptional(request, request.traderUserId());
         boolean brokerRequired = livePath;

@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +58,51 @@ public class StrategyExecutionConfigService {
                     cfg.setStrategyKey(strategyKey);
                     return cfg;
                 });
+    }
+
+    /**
+     * Ensures a persisted global execution config exists for the strategy key.
+     * Used when catalog strategies were registered without sizing config rows (blocks OMS execution).
+     */
+    @Transactional
+    public StrategyExecutionConfig ensureGlobalExecutionConfig(String strategyKey) {
+        if (strategyKey == null || strategyKey.isBlank()) {
+            throw new IllegalArgumentException("strategyKey is required");
+        }
+        String key = strategyKey.trim();
+        return configRepository.findByUserIdIsNullAndStrategyKeyAndDeletedFalse(key)
+                .orElseGet(() -> {
+                    StrategyExecutionConfig cfg = new StrategyExecutionConfig();
+                    cfg.setStrategyKey(key);
+                    applyCatalogDefaults(cfg, strategyDefinitionRepository.findByStrategyKeyAndDeletedFalse(key).orElse(null));
+                    cfg = configRepository.save(cfg);
+                    log.warn("execution_config.auto_provisioned strategyKey={} id={}", key, cfg.getId());
+                    return cfg;
+                });
+    }
+
+    private static void applyCatalogDefaults(StrategyExecutionConfig cfg, StrategyDefinition definition) {
+        cfg.setEnabled(true);
+        cfg.setSizingMode("FIXED_QUANTITY");
+        cfg.setForceFixedQty(true);
+        cfg.setFixedQty(BigDecimal.ONE);
+        cfg.setMaxPositions(3);
+        cfg.setCapitalUtilizationMode("FULLY_ALLOCATED");
+        if (definition != null) {
+            cfg.setStrategy(definition);
+            String mode = definition.getExecutionMode();
+            if (mode != null && !mode.isBlank() && !"ALL".equalsIgnoreCase(mode)) {
+                cfg.setExecutionMode(mode);
+            } else {
+                cfg.setExecutionMode("BOTH");
+            }
+            cfg.setLiveEnabled(definition.isSupportsLive());
+            cfg.setPaperEnabled(definition.isSupportsPaper());
+        } else {
+            cfg.setExecutionMode("BOTH");
+            cfg.setLiveEnabled(true);
+            cfg.setPaperEnabled(true);
+        }
     }
 
     public List<StrategyExecutionConfigDto> listAll() {

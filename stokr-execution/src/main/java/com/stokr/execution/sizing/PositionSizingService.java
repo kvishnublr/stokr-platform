@@ -47,12 +47,12 @@ public class PositionSizingService {
     }
 
     public PositionSizingResult resolve(PositionSizingRequest request) {
-        Optional<StrategyExecutionConfig> cfgOpt = request.userId() != null
-                ? strategyExecutionConfigService.getByStrategyKeyForUser(request.userId(), request.strategyKey())
-                : strategyExecutionConfigService.getByStrategyKey(request.strategyKey());
+        Optional<StrategyExecutionConfig> cfgOpt = resolveConfig(request);
 
         if (cfgOpt.isEmpty()) {
-            return reject("NO_EXECUTION_CONFIG", SizingMode.FIXED_QUANTITY, request, null);
+            StrategyExecutionConfig provisioned =
+                    strategyExecutionConfigService.ensureGlobalExecutionConfig(request.strategyKey());
+            cfgOpt = Optional.of(provisioned);
         }
 
         StrategyExecutionConfig cfg = cfgOpt.get();
@@ -60,8 +60,13 @@ public class PositionSizingService {
         Map<String, Object> snapshot = buildSnapshot(cfg, request);
         String hash = hashSnapshot(snapshot);
 
-        if (request.marketPrice() == null || request.marketPrice().compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal marketPrice = effectiveMarketPrice(request, cfg, mode);
+        if (marketPrice == null) {
             return reject("STALE_OR_MISSING_PRICE", mode, request, snapshot, hash);
+        }
+
+        if (request.testTrade() && (cfg.isForceFixedQty() || mode == SizingMode.FIXED_QUANTITY)) {
+            return resolveTestTradeFixedQuantity(request, cfg, mode, snapshot, hash, marketPrice);
         }
 
         StrategyCapitalStateService.StrategyCapitalSnapshot capital =
@@ -74,7 +79,7 @@ public class PositionSizingService {
             return reject("MAX_POSITIONS_EXCEEDED", mode, request, snapshot, hash);
         }
 
-        BigDecimal rawQty = computeRawQuantity(cfg, mode, capital, request.marketPrice());
+        BigDecimal rawQty = computeRawQuantity(cfg, mode, capital, marketPrice);
         if (rawQty == null || rawQty.compareTo(BigDecimal.ZERO) <= 0) {
             return reject("INVALID_COMPUTED_QUANTITY", mode, request, snapshot, hash);
         }
@@ -83,7 +88,7 @@ public class PositionSizingService {
             rawQty = cfg.getMaxTradeQuantity();
         }
 
-        BigDecimal exposure = rawQty.multiply(request.marketPrice());
+        BigDecimal exposure = rawQty.multiply(marketPrice);
 
         boolean capitalEnforced = cfg.getAllocatedCapital() != null
                 && cfg.getAllocatedCapital().compareTo(BigDecimal.ZERO) > 0
@@ -91,8 +96,8 @@ public class PositionSizingService {
 
         if (capitalEnforced && cfg.getMaxCapitalPerTrade() != null && exposure.compareTo(cfg.getMaxCapitalPerTrade()) > 0) {
             rawQty = cfg.getMaxCapitalPerTrade()
-                    .divide(request.marketPrice(), 0, RoundingMode.FLOOR);
-            exposure = rawQty.multiply(request.marketPrice());
+                    .divide(marketPrice, 0, RoundingMode.FLOOR);
+            exposure = rawQty.multiply(marketPrice);
         }
 
         if (capitalEnforced && capital.availableCapital().compareTo(exposure) < 0) {
@@ -128,6 +133,57 @@ public class PositionSizingService {
                 capital.availableCapital(),
                 availAfter.max(BigDecimal.ZERO),
                 utilization,
+                mode,
+                snapshot,
+                hash,
+                norm.note());
+    }
+
+    private Optional<StrategyExecutionConfig> resolveConfig(PositionSizingRequest request) {
+        if (request.userId() != null) {
+            return strategyExecutionConfigService.getByStrategyKeyForUser(request.userId(), request.strategyKey());
+        }
+        return strategyExecutionConfigService.getByStrategyKey(request.strategyKey());
+    }
+
+    private BigDecimal effectiveMarketPrice(PositionSizingRequest request, StrategyExecutionConfig cfg, SizingMode mode) {
+        if (request.marketPrice() != null && request.marketPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return request.marketPrice();
+        }
+        if (request.testTrade() && (cfg.isForceFixedQty() || mode == SizingMode.FIXED_QUANTITY)) {
+            return BigDecimal.ONE;
+        }
+        return null;
+    }
+
+    private PositionSizingResult resolveTestTradeFixedQuantity(
+            PositionSizingRequest request,
+            StrategyExecutionConfig cfg,
+            SizingMode mode,
+            Map<String, Object> snapshot,
+            String hash,
+            BigDecimal marketPrice) {
+        BigDecimal rawQty = request.suggestedQty() != null && request.suggestedQty().signum() > 0
+                ? request.suggestedQty()
+                : (cfg.getFixedQty() != null ? cfg.getFixedQty() : BigDecimal.ONE);
+        if (cfg.getMaxTradeQuantity() != null && rawQty.compareTo(cfg.getMaxTradeQuantity()) > 0) {
+            rawQty = cfg.getMaxTradeQuantity();
+        }
+        BrokerNormalizationService.NormalizationResult norm =
+                brokerNormalizationService.normalize(request.symbol(), rawQty);
+        if (!norm.accepted()) {
+            return reject("BROKER_NORMALIZATION:" + norm.note(), mode, request, snapshot, hash);
+        }
+        BigDecimal exposure = norm.normalizedQuantity().multiply(marketPrice);
+        snapshot.put("testTradeFastPath", true);
+        return PositionSizingResult.accepted(
+                rawQty,
+                norm.normalizedQuantity(),
+                exposure,
+                exposure,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
                 mode,
                 snapshot,
                 hash,
