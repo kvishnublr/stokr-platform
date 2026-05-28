@@ -101,10 +101,10 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
             return hold(context);
         }
 
-        // 1. SESSION: 10:00-14:30 IST (need VWAP to establish + avoid open/close noise)
+        // 1. SESSION: 10:00-15:15 IST (need VWAP to establish + avoid open/close noise)
         if (context.asOf() != null) {
             LocalTime lt = context.asOf().atZone(zone).toLocalTime();
-            if (lt.isBefore(LocalTime.of(10, 0)) || lt.isAfter(LocalTime.of(14, 30))) {
+            if (lt.isBefore(LocalTime.of(10, 0)) || lt.isAfter(LocalTime.of(15, 15))) {
                 return hold(context);
             }
         }

@@ -105,10 +105,10 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
             return hold(context);
         }
 
-        // 1. SESSION: 10:00-14:00 IST (need time for divergence to develop)
+        // 1. SESSION: 10:00-14:45 IST (need time for divergence to develop)
         if (context.asOf() != null) {
             LocalTime lt = context.asOf().atZone(zone).toLocalTime();
-            if (lt.isBefore(LocalTime.of(10, 0)) || lt.isAfter(LocalTime.of(14, 0))) {
+            if (lt.isBefore(LocalTime.of(10, 0)) || lt.isAfter(LocalTime.of(14, 45))) {
                 return hold(context);
             }
         }

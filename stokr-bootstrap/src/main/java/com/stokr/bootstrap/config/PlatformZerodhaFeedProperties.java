@@ -51,6 +51,12 @@ public class PlatformZerodhaFeedProperties {
      */
     private String subscriptionUniverseGroupKeys = "NIFTY_500,MCX_BULLION,MCX_ENERGY,MCX_METALS,MCX_AGRI";
 
+    /**
+     * Universe groups whose instrument tokens are always pinned inside the 3000-token WS cap
+     * (after NIFTY 50 index). Ensures scan universe symbols stay on the live feed.
+     */
+    private String pinnedUniverseGroupKeys = "NIFTY_50,NIFTY_100";
+
     public boolean isLiveFeedEnabled() { return liveFeedEnabled; }
     public void setLiveFeedEnabled(boolean liveFeedEnabled) { this.liveFeedEnabled = liveFeedEnabled; }
 
@@ -106,6 +112,23 @@ public class PlatformZerodhaFeedProperties {
             return out;
         }
         for (String part : subscriptionUniverseGroupKeys.split(",")) {
+            String s = part.trim();
+            if (!s.isEmpty()) out.add(s.toUpperCase());
+        }
+        return out;
+    }
+
+    public String getPinnedUniverseGroupKeys() { return pinnedUniverseGroupKeys; }
+    public void setPinnedUniverseGroupKeys(String pinnedUniverseGroupKeys) {
+        this.pinnedUniverseGroupKeys = pinnedUniverseGroupKeys;
+    }
+
+    public List<String> parsedPinnedUniverseGroupKeys() {
+        List<String> out = new ArrayList<>();
+        if (pinnedUniverseGroupKeys == null || pinnedUniverseGroupKeys.isBlank()) {
+            return out;
+        }
+        for (String part : pinnedUniverseGroupKeys.split(",")) {
             String s = part.trim();
             if (!s.isEmpty()) out.add(s.toUpperCase());
         }

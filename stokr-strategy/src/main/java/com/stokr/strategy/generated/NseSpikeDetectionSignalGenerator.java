@@ -34,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *     (Data shows trading against index causes 40% of SL hits)
  *   ② STRICTER PRESSURE — Require 70%+ consistency (was 55%), imbalance gate raised to 55 (was 40)
  *   ③ HIGHER COMPOSITE — 82 threshold (was 72). Only top-quality setups.
- *   ④ TIGHTER SESSION — 09:45-14:30 IST. Data shows 9:15-9:45 is noisy, 14:30+ is chop.
+ *   ④ SESSION — 09:45-15:15 IST. Data shows 9:15-9:45 is noisy; after 15:15 is close chop.
  *   ⑤ SMARTER TARGET — 1.5× R:R (was 2.0×). Easier to hit = higher win rate.
  *     At 70% win rate + 1.5 R:R: expectancy = 0.70×1.5 - 0.30×1.0 = +0.75R per trade
  *
@@ -151,13 +151,11 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // 1. SESSION GATE: 09:45-14:30 IST
-        //    Data shows: 9:15-9:45 = 60% SL rate (noise), 14:30+ = chop
-        //    Sweet spot is mid-morning to early afternoon
-        // ─────────────────────────────────────────────────────────────────────
+        // 1. SESSION GATE: 09:45-15:15 IST
+        //    Data shows: 9:15-9:45 = 60% SL rate (noise), after 15:15 = close auction chop
         if (context.asOf() != null) {
             LocalTime lt = context.asOf().atZone(zone).toLocalTime();
-            if (lt.isBefore(LocalTime.of(9, 45)) || lt.isAfter(LocalTime.of(14, 30))) {
+            if (lt.isBefore(LocalTime.of(9, 45)) || lt.isAfter(LocalTime.of(15, 15))) {
                 return hold(context);
             }
         }

@@ -374,6 +374,7 @@ stokr:
       # In-process Kite WebSocket for admin platform feed — persists telemetry to platform_broker_feed_sessions and ingests LTP ticks.
       live-feed-enabled: ${STOKR_PLATFORM_ZERODHA_LIVE_FEED_ENABLED:true}
       instrument-tokens: ${STOKR_PLATFORM_ZERODHA_INSTRUMENT_TOKENS:256265}
+      pinned-universe-group-keys: ${STOKR_PLATFORM_ZERODHA_PINNED_GROUPS:NIFTY_50,NIFTY_100}
   intraday-gap-fill:
     enabled: ${STOKR_INTRADAY_GAP_FILL_ENABLED:true}
     initial-delay-ms: ${STOKR_INTRADAY_GAP_FILL_INITIAL_DELAY_MS:120000}

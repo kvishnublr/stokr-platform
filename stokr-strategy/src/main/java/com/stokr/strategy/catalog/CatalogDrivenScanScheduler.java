@@ -144,13 +144,22 @@ public class CatalogDrivenScanScheduler {
             }
 
             int bindingSignals = 0;
+            int bindingEvaluated = 0;
+            int bindingIntegrityBlocked = 0;
+            int bindingHold = 0;
             for (StrategyUniverseSymbol sym : symbols) {
                 try {
                     String symbol = sym.getTradingSymbol() != null ? sym.getTradingSymbol() : sym.getSymbol();
                     if (!sessionEntryGuard.isSessionEntryAllowed(strategyKey, symbol, tick)) {
                         continue;
                     }
+                    if (!integrityGate.passPreEvaluate(strategyKey, symbol, tick)) {
+                        bindingIntegrityBlocked++;
+                        totalSymbols++;
+                        continue;
+                    }
                     StrategyContext ctx = buildContext(sym, symbol);
+                    bindingEvaluated++;
                     StrategySignal signal = strategy.evaluate(ctx);
 
                     if (signal != null && signal.type() != SignalType.HOLD) {
@@ -165,12 +174,16 @@ public class CatalogDrivenScanScheduler {
                         }
 
                         if (!signalCooldownService.shouldEmitSignal(symbol, strategyKey, tick)) {
+                            bindingHold++;
+                            totalSymbols++;
                             continue;
                         }
                         bindingSignals++;
                         persistSignal(signal, strategyKey, symbol, tick, mode);
                         log.info("catalog.scan.signal strategyKey={} symbol={} type={} mode={}",
                                 strategyKey, symbol, signal.type(), mode.name());
+                    } else {
+                        bindingHold++;
                     }
                     totalSymbols++;
                 } catch (Exception ex) {
@@ -179,8 +192,9 @@ public class CatalogDrivenScanScheduler {
                 }
             }
             totalSignals += bindingSignals;
-            log.info("catalog.scan.binding_done strategyKey={} groupKey={} symbols={} signals={} mode={}",
-                    strategyKey, binding.getUniverseGroup().getGroupKey(), symbols.size(), bindingSignals, mode.name());
+            log.info("catalog.scan.binding_done strategyKey={} groupKey={} symbols={} evaluated={} integrityBlocked={} hold={} signals={} mode={}",
+                    strategyKey, binding.getUniverseGroup().getGroupKey(), symbols.size(),
+                    bindingEvaluated, bindingIntegrityBlocked, bindingHold, bindingSignals, mode.name());
         }
 
         log.info("catalog.scan.cycle_done bindings={} symbols={} signals={} skipped={}",

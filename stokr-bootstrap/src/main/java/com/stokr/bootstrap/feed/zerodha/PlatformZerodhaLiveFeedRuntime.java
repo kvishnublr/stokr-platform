@@ -317,9 +317,10 @@ public class PlatformZerodhaLiveFeedRuntime {
             map.put(NIFTY_50_TOKEN, NIFTY_50_SYMBOL);
         }
         if (map.size() > MAX_WS_TOKENS) {
-            log.warn("platform.ws.token_cap original={} capped={} pinned={}",
-                    map.size(), MAX_WS_TOKENS, NIFTY_50_SYMBOL);
-            return capWithPinnedTokens(map, MAX_WS_TOKENS, List.of(NIFTY_50_TOKEN));
+            List<Integer> pinned = resolvePinnedSubscriptionTokens(map, apiKey, accessToken);
+            log.warn("platform.ws.token_cap original={} capped={} pinned_count={}",
+                    map.size(), MAX_WS_TOKENS, pinned.size());
+            return capWithPinnedTokens(map, MAX_WS_TOKENS, pinned);
         }
 
         long unresolved = map.values().stream().filter(v -> v.startsWith("TOKEN_")).count();
@@ -455,6 +456,53 @@ public class PlatformZerodhaLiveFeedRuntime {
             capped.putIfAbsent(entry.getKey(), entry.getValue());
         }
         return capped;
+    }
+
+    /**
+     * Tokens that must survive the 3000-cap: NIFTY 50 index plus scan-universe EQ symbols.
+     */
+    private List<Integer> resolvePinnedSubscriptionTokens(
+            Map<Integer, String> fullMap, String apiKey, String accessToken) {
+        List<Integer> pinned = new ArrayList<>();
+        pinned.add(NIFTY_50_TOKEN);
+
+        List<String> groupKeys = feedProperties.parsedPinnedUniverseGroupKeys();
+        if (groupKeys.isEmpty()) {
+            return pinned.stream().distinct().toList();
+        }
+
+        List<StrategyUniverseSymbol> rows =
+                strategyUniverseSymbolRepository.findAllEnabledByGroupKeys(groupKeys);
+        if (rows.isEmpty()) {
+            return pinned.stream().distinct().toList();
+        }
+
+        Map<String, Integer> symbolToToken = new LinkedHashMap<>();
+        fullMap.forEach((token, symbol) -> symbolToToken.putIfAbsent(normalize(symbol), token));
+
+        for (StrategyUniverseSymbol row : rows) {
+            if (row == null || !row.isEnabled()) {
+                continue;
+            }
+            String exchange = normalize(row.getExchange());
+            if (!"NSE".equals(exchange)) {
+                continue;
+            }
+            Integer token = null;
+            if (row.getInstrumentToken() != null && row.getInstrumentToken() > 0) {
+                token = row.getInstrumentToken().intValue();
+            }
+            if (token == null && row.getTradingSymbol() != null && !row.getTradingSymbol().isBlank()) {
+                token = symbolToToken.get(normalize(row.getTradingSymbol()));
+            }
+            if (token == null && row.getSymbol() != null && !row.getSymbol().isBlank()) {
+                token = symbolToToken.get(normalize(row.getSymbol()));
+            }
+            if (token != null && token > 0 && fullMap.containsKey(token)) {
+                pinned.add(token);
+            }
+        }
+        return pinned.stream().distinct().toList();
     }
 
     private void parseInstrumentsCsvInto(String csv, String typeFilter, Map<Integer, String> out) throws Exception {
