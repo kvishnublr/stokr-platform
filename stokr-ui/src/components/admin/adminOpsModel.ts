@@ -1,4 +1,4 @@
-import { hasActiveBrokerMarketFeed, hasPlatformMarketFeedConnected } from "./adminReadinessModel";
+import { hasActiveBrokerMarketFeed, hasPlatformMarketFeedConnected, hasPlatformMarketFeedOperational } from "./adminReadinessModel";
 import { asRecord, type OpsSnapshot } from "./cockpit/opsTypes";
 
 export type AdminOpsPill = {
@@ -90,6 +90,8 @@ export function buildAdminOpsPills(
   const brokersRoot = asRecord(s?.brokerSessions);
   const vendors = asRecord(brokersRoot?.vendors);
   const brokerLive = hasActiveBrokerMarketFeed(s);
+  const platformFed = hasPlatformMarketFeedConnected(s);
+  const platformOp = hasPlatformMarketFeedOperational(s);
 
   const redisStRaw = String(redis?.status ?? "").toUpperCase();
   const dbSt = String(db?.status ?? "UNKNOWN").toUpperCase();
@@ -100,15 +102,22 @@ export function buildAdminOpsPills(
   const dbMs = db?.pingMs != null ? `${db.pingMs}ms` : undefined;
 
   const marketStRaw = String(fresh?.status ?? "UNKNOWN").toUpperCase();
+  const lagSec = typeof fresh?.latest1mLagSeconds === "number" ? fresh.latest1mLagSeconds : Number(fresh?.latest1mLagSeconds ?? NaN);
+  const lagStale = Number.isFinite(lagSec) && lagSec > 120;
   let marketSt: string;
   let lag = fresh?.latest1mLagSeconds != null ? `lag ${fmtSec(fresh.latest1mLagSeconds)}` : undefined;
   if (!brokerLive) {
     marketSt = "OFFLINE";
     lag = [lag, "no CONNECTED broker sessions"].filter(Boolean).join("  ·  ");
+  } else if (!platformOp || marketStRaw === "STALE" || lagStale) {
+    marketSt = "STALE";
+    const z = asRecord(asRecord(asRecord(s?.platformMarketFeed)?.vendors)?.ZERODHA);
+    const detail =
+      (typeof z?.operationalLivePathDetail === "string" ? z.operationalLivePathDetail : undefined) ??
+      (platformFed ? "Platform session connected — ticks or candles lagging" : "Market data lagging wall clock");
+    lag = [lag, detail].filter(Boolean).join("  ·  ");
   } else if (marketStRaw === "OK") {
     marketSt = "CONNECTED";
-  } else if (marketStRaw === "STALE") {
-    marketSt = "STALE";
   } else {
     marketSt = "DEGRADED";
   }
@@ -130,6 +139,9 @@ export function buildAdminOpsPills(
   if (!brokerLive) {
     signalSt = "PAUSED";
     signalHint = "no broker feed";
+  } else if (!platformOp) {
+    signalSt = "DEGRADED";
+    signalHint = "platform feed connected — ticks/candles not live yet";
   } else if (running > 0) {
     signalSt = "RUNNING";
     signalHint = `${running} RUNNING inst.`;
@@ -146,13 +158,16 @@ export function buildAdminOpsPills(
   let replaySt: string;
   if (jq > 80) replaySt = "BACKFILLING";
   else if (jq > 20) replaySt = "DEGRADED";
+  else if (!platformOp) replaySt = "WAITING_FOR_MARKET_DATA";
   else if (!brokerLive) replaySt = "WAITING_FOR_MARKET_DATA";
   else replaySt = "READY";
   const replayHint = `queued ${jq}  ·  running ${jr}`;
 
-  const br = hasPlatformMarketFeedConnected(s)
-    ? { status: "CONNECTED", hint: "platform market feed session (admin OAuth)" }
-    : brokerRailAggregate(vendors);
+  const br = platformOp
+    ? { status: "CONNECTED", hint: "platform market feed operational (admin OAuth)" }
+    : platformFed
+      ? { status: "DEGRADED", hint: "platform session connected — ticks/candles not fully live" }
+      : brokerRailAggregate(vendors);
 
   const armed = Boolean(sys?.liveTradingArmed);
   const kill = Boolean(sys?.killSwitch);

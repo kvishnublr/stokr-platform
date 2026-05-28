@@ -168,6 +168,16 @@ public class PlatformZerodhaLiveFeedRuntime {
             return;
         }
         if (wsOpen.get() && activeSocket.get() != null) {
+            long tickAgeSec = lastTickAt == null
+                    ? Long.MAX_VALUE
+                    : Duration.between(lastTickAt, Instant.now()).getSeconds();
+            if (tickAgeSec <= 120) {
+                return;
+            }
+            log.warn("platform.ws.stale_ticks_reconnect tickAgeSec={} lastPacketAt={}", tickAgeSec, lastPacketAt);
+            closeActive("stale_ticks");
+        }
+        if (wsOpen.get() && activeSocket.get() != null) {
             return;
         }
         String accessToken;
