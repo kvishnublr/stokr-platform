@@ -181,4 +181,14 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             @Param("startTime") Instant startTime,
             @Param("endTime") Instant endTime
     );
+
+    @Query("""
+            select coalesce(sum(o.quantity * coalesce(o.entryReferencePrice, o.limitPrice, 0)), 0)
+            from OmsOrder o
+            where o.strategyKey = :strategyKey and o.deleted = false and o.backtestRunId is null
+            and o.state in :states
+            """)
+    BigDecimal sumPendingNotionalByStrategy(
+            @Param("strategyKey") String strategyKey,
+            @Param("states") Collection<OrderState> states);
 }

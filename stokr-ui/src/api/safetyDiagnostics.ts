@@ -84,3 +84,24 @@ export async function deactivateKillSwitch(reason: string): Promise<KillSwitchSt
   });
   return res.data?.data as KillSwitchStatus;
 }
+
+export type StrategyValidationRow = {
+  strategyKey: string;
+  validationStatus: string;
+  liveShadowEnabled: boolean;
+  enabled: boolean;
+  executionConfig?: Record<string, unknown>;
+  capitalState?: Record<string, unknown>;
+  activeReservations?: number;
+};
+
+export type StrategyValidationDiagnostics = {
+  strategies: StrategyValidationRow[];
+  promotionPath: string[];
+  policy: Record<string, unknown>;
+};
+
+export async function fetchStrategyValidationDiagnostics(): Promise<StrategyValidationDiagnostics> {
+  const res = await api.get("/api/admin/strategy-validation/diagnostics");
+  return res.data?.data as StrategyValidationDiagnostics;
+}

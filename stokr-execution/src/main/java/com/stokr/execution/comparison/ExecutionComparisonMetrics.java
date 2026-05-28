@@ -78,6 +78,30 @@ public class ExecutionComparisonMetrics {
     @Column(name = "pnl_divergence", precision = 24, scale = 8)
     private BigDecimal pnlDivergence;
 
+    @Column(name = "live_quantity", precision = 24, scale = 8)
+    private BigDecimal liveQuantity;
+
+    @Column(name = "paper_quantity", precision = 24, scale = 8)
+    private BigDecimal paperQuantity;
+
+    @Column(name = "quantity_drift", precision = 24, scale = 8)
+    private BigDecimal quantityDrift;
+
+    @Column(name = "paper_entry_price", precision = 24, scale = 8)
+    private BigDecimal paperEntryPrice;
+
+    @Column(name = "live_entry_price", precision = 24, scale = 8)
+    private BigDecimal liveEntryPrice;
+
+    @Column(name = "paper_pnl", precision = 24, scale = 8)
+    private BigDecimal paperPnl;
+
+    @Column(name = "live_pnl", precision = 24, scale = 8)
+    private BigDecimal livePnl;
+
+    @Column(name = "broker_ack_latency_ms")
+    private Long brokerAckLatencyMs;
+
     @PrePersist
     void prePersist() {
         createdAt = Instant.now();

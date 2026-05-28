@@ -8,6 +8,7 @@ import {
   fetchKillSwitchStatus,
   fetchOmsDiagnostics,
   fetchOperationalDiagnostics,
+  fetchStrategyValidationDiagnostics,
   type KillSwitchStatus,
   type OmsDiagnostics,
   type OperationalDiagnostics,
@@ -456,6 +457,12 @@ export function AdminSafetyDiagnosticsPage() {
     refetchInterval: 15_000,
   });
 
+  const validationQ = useQuery({
+    queryKey: ["admin-strategy-validation-diagnostics"],
+    queryFn: fetchStrategyValidationDiagnostics,
+    refetchInterval: 30_000,
+  });
+
   const activateMut = useMutation({
     mutationFn: ({ reason, flatten }: { reason: string; flatten: boolean }) => activateKillSwitch(reason, flatten),
     onSuccess: (data) => {
@@ -535,6 +542,40 @@ export function AdminSafetyDiagnosticsPage() {
 
         {opsQ.data ? <OperationalPanel data={opsQ.data} isLight={isLight} /> : null}
         {omsQ.data ? <OmsPanel data={omsQ.data} isLight={isLight} /> : null}
+
+        {validationQ.data ? (
+          <AdminSection isLight={isLight} title="Strategy validation & capital" subtitle="Promotion status, sizing config, capital buckets, reservations">
+            <div className="overflow-x-auto rounded-lg border dark:border-neutral-800">
+              <table className="w-full text-xs">
+                <thead className={isLight ? "bg-neutral-100" : "bg-neutral-900/80"}>
+                  <tr>
+                    {["Strategy", "Validation", "Mode", "Sizing", "Allocated", "Available", "Util %", "Reservations"].map((h) => (
+                      <th key={h} className="px-2 py-2 text-left font-semibold text-muted-foreground">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {validationQ.data.strategies.map((s) => {
+                    const cfg = s.executionConfig ?? {};
+                    const cap = s.capitalState ?? {};
+                    return (
+                      <tr key={s.strategyKey} className="border-t dark:border-neutral-800">
+                        <td className="px-2 py-2 font-medium">{s.strategyKey}</td>
+                        <td className="px-2 py-2">{s.validationStatus}</td>
+                        <td className="px-2 py-2">{String(cfg.executionMode ?? "—")}</td>
+                        <td className="px-2 py-2">{String(cfg.sizingMode ?? "—")}</td>
+                        <td className="px-2 py-2 font-mono">{String(cap.allocatedCapital ?? "—")}</td>
+                        <td className="px-2 py-2 font-mono">{String(cap.availableCapital ?? "—")}</td>
+                        <td className="px-2 py-2 font-mono">{String(cap.utilizationPct ?? "—")}</td>
+                        <td className="px-2 py-2 font-mono">{s.activeReservations ?? 0}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </AdminSection>
+        ) : null}
 
         {(opsQ.isError || omsQ.isError) ? (
           <p className="text-sm text-rose-500">

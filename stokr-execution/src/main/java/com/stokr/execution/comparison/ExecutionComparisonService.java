@@ -19,14 +19,27 @@ public class ExecutionComparisonService {
     @Transactional
     public void recordPairDispatched(UUID signalId, UUID liveOrderId, UUID paperOrderId,
                                       String strategyKey, String symbol) {
+        recordPairDispatched(signalId, liveOrderId, paperOrderId, strategyKey, symbol, null, null);
+    }
+
+    @Transactional
+    public void recordPairDispatched(UUID signalId, UUID liveOrderId, UUID paperOrderId,
+                                      String strategyKey, String symbol,
+                                      BigDecimal liveQty, BigDecimal paperQty) {
         ExecutionComparisonMetrics m = new ExecutionComparisonMetrics();
         m.setSignalId(signalId);
         m.setLiveOrderId(liveOrderId);
         m.setPaperOrderId(paperOrderId);
         m.setStrategyKey(strategyKey);
         m.setSymbol(symbol);
+        m.setLiveQuantity(liveQty);
+        m.setPaperQuantity(paperQty);
+        if (liveQty != null && paperQty != null) {
+            m.setQuantityDrift(liveQty.subtract(paperQty).abs());
+        }
         metricsRepository.save(m);
-        log.debug("comparison.pair_dispatched signalId={} live={} paper={}", signalId, liveOrderId, paperOrderId);
+        log.debug("comparison.pair_dispatched signalId={} live={} paper={} qty={}/{}",
+                signalId, liveOrderId, paperOrderId, liveQty, paperQty);
     }
 
     @Transactional
