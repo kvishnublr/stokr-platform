@@ -63,4 +63,17 @@ public interface StrategyRuntimeBindingRepository extends JpaRepository<Strategy
              AND s.enabled = true
            """)
     List<String> findAllowedSymbolsForStrategyKey(@Param("strategyKey") String strategyKey);
+
+    @Query(value = """
+            SELECT COUNT(*) FROM (
+                SELECT sc.strategy_key, ug.group_key, COUNT(*) AS cnt
+                FROM strategy_runtime_bindings b
+                JOIN strategy_definitions sc ON sc.id = b.strategy_catalog_id
+                JOIN strategy_universe_groups ug ON ug.id = b.universe_group_id
+                WHERE b.runtime_enabled = TRUE AND sc.deleted = FALSE
+                GROUP BY sc.strategy_key, ug.group_key
+                HAVING COUNT(*) > 1
+            ) dup
+            """, nativeQuery = true)
+    long countDuplicateActiveBindings();
 }

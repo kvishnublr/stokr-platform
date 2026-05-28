@@ -9,7 +9,12 @@ import com.stokr.execution.comparison.ExecutionComparisonService;
 import com.stokr.execution.guard.ExecutionGuardMode;
 import com.stokr.execution.guard.ExecutionGuardViolation;
 import com.stokr.execution.risk.RiskContextFactory;
+import com.stokr.execution.capital.StrategyCapitalReservationService;
+import com.stokr.execution.sizing.PositionSizingRejectedException;
+import com.stokr.execution.sizing.PositionSizingRequest;
+import com.stokr.execution.sizing.PositionSizingResult;
 import com.stokr.execution.sizing.PositionSizingService;
+import com.stokr.execution.sizing.PositionSizingTelemetryService;
 import com.stokr.execution.service.ExecutionService;
 import com.stokr.oms.domain.ExecutionEventType;
 import com.stokr.oms.domain.ExecutionMode;
@@ -67,6 +72,8 @@ public class OrderIntentProcessor {
     private final RiskContextFactory riskContextFactory;
     private final SignalDistributionTelemetryService signalDistributionTelemetryService;
     private final PositionSizingService positionSizingService;
+    private final PositionSizingTelemetryService positionSizingTelemetryService;
+    private final StrategyCapitalReservationService capitalReservationService;
     private final ExecutionComparisonService executionComparisonService;
     private final StrategyExecutionConfigService strategyExecutionConfigService;
     private final BrokerPositionTruthService brokerPositionTruthService;
@@ -183,15 +190,26 @@ public class OrderIntentProcessor {
         }
 
         if (mode == ExecutionMode.BOTH) {
-            dispatchBothMode(signal, userId, idempotencyKey, strategyKey, synchronousExecution);
+            dispatchBothMode(signal, userId, idempotencyKey, strategyKey, synchronousExecution, safetyNow);
             return;
         }
 
-        OmsOrder draft = buildDraftFromSignal(signal, mode, userId);
+        PositionSizingResult sizing;
+        try {
+            sizing = resolveSizing(signal, userId, mode);
+        } catch (PositionSizingRejectedException ex) {
+            log.warn("order.intent.sizing_rejected signalId={} reason={}", signal.getId(), ex.getMessage());
+            riskEventRecorder.record(userId, null, "SIZING_REJECTED", "REJECT", ex.getMessage());
+            signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "SIZING_REJECTED");
+            return;
+        }
+
+        OmsOrder draft = buildDraftFromSignal(signal, mode, userId, sizing);
         OmsSafetyGateService.OmsSafetyGateResult exposure =
                 omsSafetyGateService.evaluateExposure(draft, userId, safetyNow);
         if (exposure.blocked()) {
             log.warn("order.intent.exposure_rejected signalId={} code={}", signal.getId(), exposure.blockCode());
+            recordSizingTelemetry(signal, userId, mode, sizing, null);
             riskEventRecorder.record(userId, null, exposure.blockCode(), "REJECT", exposure.blockMessage());
             signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), exposure.blockCode());
             return;
@@ -204,7 +222,12 @@ public class OrderIntentProcessor {
             return;
         }
 
+        capitalReservationService.reserve(
+                strategyKey, userId, signal.getId(), order.getId(), signal.getSymbol(), sizing);
+        recordSizingTelemetry(signal, userId, mode, sizing, order.getId());
+
         if (mode == ExecutionMode.LIVE && !omsSafetyGateService.acquireLiveDedupe(signal, userId, order.getId(), mode, safetyNow)) {
+            capitalReservationService.releaseByOrder(order.getId(), "DUPLICATE_EXECUTION_KEY");
             orderLifecycleService.transition(order.getId(), OrderState.REJECTED, "DUPLICATE_EXECUTION_KEY");
             signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "DUPLICATE_EXECUTION_KEY");
             return;
@@ -248,6 +271,7 @@ public class OrderIntentProcessor {
         RiskDecision decision = riskEngineService.evaluate(ctx);
         riskEvaluationTraceService.record(ctx, decision, order.getId());
         if (!decision.allowed()) {
+            capitalReservationService.releaseByOrder(order.getId(), "RISK_REJECT");
             riskEventRecorder.record(
                     userId,
                     order.getId(),
@@ -332,21 +356,18 @@ public class OrderIntentProcessor {
         return k;
     }
 
-    private OmsOrder buildDraftFromSignal(StrategySignalEntity signal, ExecutionMode mode, UUID userId) {
+    private OmsOrder buildDraftFromSignal(
+            StrategySignalEntity signal, ExecutionMode mode, UUID userId, PositionSizingResult sizing) {
         OmsOrder o = new OmsOrder();
         o.setSignalId(signal.getId());
         o.setStrategyKey(signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY);
         o.setExecutionMode(mode);
-        log.info("order.draft.created symbol={} mode={} side={}", signal.getSymbol(), mode, mapSide(signal));
+        log.info("order.draft.created symbol={} mode={} side={} qty={}",
+                signal.getSymbol(), mode, mapSide(signal), sizing.normalizedQuantity());
         o.setSymbol(normalizeTestLabSymbol(signal));
         o.setSide(mapSide(signal));
         o.setOrderType("MARKET");
-        o.setQuantity(positionSizingService.resolveQuantity(
-                signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY,
-                userId,
-                signal.getSuggestedQty(),
-                signal.getEntryReferencePrice(),
-                Boolean.TRUE.equals(signal.getTestTrade())));
+        o.setQuantity(sizing.normalizedQuantity());
         o.setLimitPrice(null);
         o.setStopPrice(signal.getStopPrice());
         o.setTargetPrice(signal.getTargetPrice());
@@ -501,10 +522,51 @@ public class OrderIntentProcessor {
         )));
     }
 
+    private PositionSizingResult resolveSizing(StrategySignalEntity signal, UUID userId, ExecutionMode mode) {
+        String strategyKey = signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
+        PositionSizingRequest req = new PositionSizingRequest(
+                strategyKey,
+                userId,
+                signal.getId(),
+                signal.getSymbol(),
+                signal.getSuggestedQty(),
+                signal.getEntryReferencePrice(),
+                mode,
+                Boolean.TRUE.equals(signal.getTestTrade()));
+        PositionSizingResult result = positionSizingService.resolve(req);
+        if (!result.accepted()) {
+            throw new PositionSizingRejectedException(
+                    result.rejectedReason() != null ? result.rejectedReason() : "SIZING_REJECTED");
+        }
+        return result;
+    }
+
+    private void recordSizingTelemetry(
+            StrategySignalEntity signal, UUID userId, ExecutionMode mode,
+            PositionSizingResult sizing, UUID orderId) {
+        String strategyKey = signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
+        positionSizingTelemetryService.record(
+                new PositionSizingRequest(
+                        strategyKey, userId, signal.getId(), signal.getSymbol(),
+                        signal.getSuggestedQty(), signal.getEntryReferencePrice(), mode,
+                        Boolean.TRUE.equals(signal.getTestTrade())),
+                sizing,
+                orderId);
+    }
+
     private void dispatchBothMode(StrategySignalEntity signal, UUID userId, String baseIdempotencyKey,
-                                   String strategyKey, boolean synchronousExecution) {
-        // PAPER leg — no live gate needed
-        OmsOrder paperDraft = buildDraftFromSignal(signal, ExecutionMode.PAPER, userId);
+                                   String strategyKey, boolean synchronousExecution, Instant safetyNow) {
+        PositionSizingResult sizing;
+        try {
+            sizing = resolveSizing(signal, userId, ExecutionMode.BOTH);
+        } catch (PositionSizingRejectedException ex) {
+            log.warn("both_mode.sizing_rejected signalId={} reason={}", signal.getId(), ex.getMessage());
+            riskEventRecorder.record(userId, null, "SIZING_REJECTED", "REJECT", ex.getMessage());
+            signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "SIZING_REJECTED");
+            return;
+        }
+
+        OmsOrder paperDraft = buildDraftFromSignal(signal, ExecutionMode.PAPER, userId, sizing);
         OmsOrder paperOrder = orderLifecycleService.createOrGetIdempotent(
                 userId, baseIdempotencyKey + ":PAPER", paperDraft);
 
@@ -513,7 +575,7 @@ public class OrderIntentProcessor {
                 .evaluateForLiveOrder(userId, strategyKey, "ZERODHA");
         OmsOrder liveOrder = null;
         if (gate.allowed()) {
-            OmsOrder liveDraft = buildDraftFromSignal(signal, ExecutionMode.LIVE, userId);
+            OmsOrder liveDraft = buildDraftFromSignal(signal, ExecutionMode.LIVE, userId, sizing);
             liveOrder = orderLifecycleService.createOrGetIdempotent(
                     userId, baseIdempotencyKey + ":LIVE", liveDraft);
         } else {
@@ -526,9 +588,15 @@ public class OrderIntentProcessor {
             paperOrder.setPairedOrderId(liveOrder.getId());
             liveOrder.setPairedOrderId(paperOrder.getId());
             executionComparisonService.recordPairDispatched(
-                    signal.getId(), liveOrder.getId(), paperOrder.getId(), strategyKey, signal.getSymbol());
+                    signal.getId(), liveOrder.getId(), paperOrder.getId(), strategyKey, signal.getSymbol(),
+                    sizing.normalizedQuantity(), sizing.normalizedQuantity());
         }
 
+        if (paperOrder.getState() == OrderState.CREATED) {
+            capitalReservationService.reserve(
+                    strategyKey, userId, signal.getId(), paperOrder.getId(), signal.getSymbol(), sizing);
+        }
+        recordSizingTelemetry(signal, userId, ExecutionMode.BOTH, sizing, paperOrder.getId());
         long fillKey = fillDeterminismKey(signal);
         Instant anchor = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
 

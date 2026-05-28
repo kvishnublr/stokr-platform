@@ -143,4 +143,11 @@ public class StrategyDefinition extends BaseEntity {
     /** Comma-separated canonical symbols this strategy is scoped to, e.g. RELIANCE,TCS,INFY. Null = all symbols in bound universe. */
     @Column(name = "default_symbols", columnDefinition = "text")
     private String defaultSymbols;
+
+    /** RESEARCH | DRY_RUN | PAPER_VALIDATING | LIVE_SHADOW | LIVE_CANDIDATE | LIVE_VALIDATED | RETIRED */
+    @Column(name = "validation_status", nullable = false, length = 32)
+    private String validationStatus = "DRY_RUN";
+
+    @Column(name = "live_shadow_enabled", nullable = false)
+    private boolean liveShadowEnabled = false;
 }

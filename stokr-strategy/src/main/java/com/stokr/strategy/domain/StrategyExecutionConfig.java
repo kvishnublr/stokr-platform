@@ -129,6 +129,26 @@ public class StrategyExecutionConfig {
     @Column(name = "live_confirmation_required", nullable = false)
     private boolean liveConfirmationRequired = false;
 
+    /** FIXED_QUANTITY | FIXED_CAPITAL_PER_TRADE | CAPITAL_BUCKET | RISK_BASED */
+    @Column(name = "sizing_mode", nullable = false, length = 32)
+    private String sizingMode = "FIXED_QUANTITY";
+
+    @Column(name = "max_capital_per_trade", precision = 24, scale = 8)
+    private BigDecimal maxCapitalPerTrade;
+
+    @Column(name = "max_risk_per_trade_pct", precision = 8, scale = 4)
+    private BigDecimal maxRiskPerTradePct;
+
+    @Column(name = "max_total_exposure", precision = 24, scale = 8)
+    private BigDecimal maxTotalExposure;
+
+    @Column(name = "allow_fractional_capital_usage", nullable = false)
+    private boolean allowFractionalCapitalUsage = false;
+
+    /** FULLY_ALLOCATED | DYNAMIC_UTILIZATION | RESERVED_BUFFER */
+    @Column(name = "capital_utilization_mode", nullable = false, length = 32)
+    private String capitalUtilizationMode = "FULLY_ALLOCATED";
+
     // ── Lifecycle ──────────────────────────────────────────────────────────
 
     @PrePersist
