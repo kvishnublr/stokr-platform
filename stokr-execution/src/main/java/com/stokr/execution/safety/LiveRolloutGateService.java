@@ -39,6 +39,22 @@ public class LiveRolloutGateService {
 
         List<String> blockers = new ArrayList<>();
 
+        // Test Signal Lab explicit LIVE broker E2E — bypass feed/startup/strategy-mode downgrades.
+        // Kill switch and broker connectivity still apply.
+        if (Boolean.TRUE.equals(signal.getTestTrade())) {
+            if (killSwitchService.isActive()) {
+                blockers.add("KILL_SWITCH_ACTIVE");
+            }
+            if (brokerDisconnectProtectionService.blocksLiveOrders(userId)) {
+                blockers.add("BROKER_DISCONNECTED_OR_DEGRADED");
+            }
+            if (!blockers.isEmpty()) {
+                log.warn("oms.live_rollout.test_lab_blocked strategy={} blockers={}", strategyKey, blockers);
+                return LiveRolloutDecision.downgrade(ExecutionMode.PAPER, blockers);
+            }
+            return LiveRolloutDecision.allow(ExecutionMode.LIVE, List.of("TEST_LAB_LIVE_E2E"));
+        }
+
         StrategyExecutionMode configured = executionModeService.modeFor(strategyKey);
         if (configured != StrategyExecutionMode.LIVE) {
             blockers.add("EXECUTION_MODE_NOT_LIVE:" + configured.name());

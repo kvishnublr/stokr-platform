@@ -120,10 +120,13 @@ public class AdminTestSignalLabSquareOffService {
         );
 
         exit = omsOrderRepository.findById(exit.getId()).orElse(exit);
-        boolean brokerOk = exit.getState() == OrderState.SUBMITTED
-                || exit.getState() == OrderState.ACCEPTED
-                || exit.getState() == OrderState.FILLED
-                || exit.getState() == OrderState.PARTIALLY_FILLED;
+        boolean brokerOk = exit.getExecutionMode() == ExecutionMode.PAPER
+                ? (exit.getState() == OrderState.FILLED || exit.getState() == OrderState.ACCEPTED)
+                : (exit.getBrokerExternalOrderId() != null && !exit.getBrokerExternalOrderId().isBlank())
+                        && (exit.getState() == OrderState.SUBMITTED
+                        || exit.getState() == OrderState.ACCEPTED
+                        || exit.getState() == OrderState.FILLED
+                        || exit.getState() == OrderState.PARTIALLY_FILLED);
         run.setSquareOffOrderId(exit.getId());
         run.setSquareOffStatus(brokerOk ? "COMPLETED" : "FAILED");
         run.setSquareOffCompletedAt(Instant.now());

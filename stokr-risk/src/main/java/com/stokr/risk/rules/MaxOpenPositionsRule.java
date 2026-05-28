@@ -30,6 +30,9 @@ public class MaxOpenPositionsRule implements RiskRule {
 
     @Override
     public RiskDecision evaluate(RiskContext context) {
+        if (context.order() != null && context.order().isTestTrade()) {
+            return RiskDecision.ok();
+        }
         // PAPER orders are not limited by max open positions — only LIVE orders are capped
         if (context.order() != null && context.order().getExecutionMode() != null
                 && "PAPER".equalsIgnoreCase(context.order().getExecutionMode().name())) {

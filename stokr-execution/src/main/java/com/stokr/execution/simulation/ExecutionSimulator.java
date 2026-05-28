@@ -180,20 +180,6 @@ public class ExecutionSimulator {
                         OrderState.ACCEPTED.name(),
                         ts
                 ));
-                if (order.isTestTrade()) {
-                    liveOrder = orderLifecycleService.transition(liveOrder.getId(), OrderState.FILLED, null);
-                    executionTraceService.trace(liveOrder, ExecutionEventType.ORDER_FILLED, Map.of(
-                            "channel", "LIVE",
-                            "reason", "TEST_LAB_ACCEPTED_AS_FILLED"
-                    ));
-                    eventPublisher.publishEvent(new RealtimeBridgeEvents.OrderUpdate(
-                            liveUserId,
-                            liveOrder.getId(),
-                            liveOrder.getSymbol(),
-                            OrderState.FILLED.name(),
-                            ts
-                    ));
-                }
             } else {
                 // Kite rejected — submitToBroker already set state=FAILED with rejectReason
                 executionTraceService.trace(liveOrder, ExecutionEventType.EXECUTION_REJECTED, Map.of(

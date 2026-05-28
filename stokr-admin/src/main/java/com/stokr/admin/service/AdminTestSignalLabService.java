@@ -12,6 +12,7 @@ import com.stokr.admin.dto.TestSignalLabDtos.TestSignalTimelineEvent;
 import com.stokr.admin.repository.AdminTestSignalRunRepository;
 import com.stokr.auth.domain.AuthUser;
 import com.stokr.auth.repository.AuthUserRepository;
+import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.PortfolioPosition;
 import com.stokr.oms.repository.OmsOrderRepository;
@@ -23,12 +24,15 @@ import com.stokr.risk.service.LiveTradingTraderEligibilityService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
 import com.stokr.execution.pipeline.OrderIntentProcessor;
+import com.stokr.execution.safety.MarketCloseProtectionService;
+import com.stokr.execution.safety.OmsSafetyGateService;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.service.SignalPriceEnrichmentService;
 import com.stokr.strategy.service.StrategyExecutionConfigService;
 import com.stokr.strategy.signals.SignalProvenance;
+import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.user.domain.BrokerAccount;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
@@ -77,6 +81,8 @@ public class AdminTestSignalLabService {
     private final AdminTestSignalLabSquareOffService squareOffService;
     private final StrategyExecutionConfigService strategyExecutionConfigService;
     private final SignalPriceEnrichmentService signalPriceEnrichmentService;
+    private final OmsSafetyGateService omsSafetyGateService;
+    private final MarketCloseProtectionService marketCloseProtectionService;
 
     private static final String TEST_LAB_PRODUCT_MIS = "MIS";
 
@@ -191,7 +197,8 @@ public class AdminTestSignalLabService {
         Optional<OmsOrder> order = waitForOrder(
                 run.getSignalId(),
                 run.getTraderUserId(),
-                resolveOrderWaitTimeout(run)
+                resolveOrderWaitTimeout(run),
+                run.getExecutionMode()
         );
         order = reconcileResolvedOrder(run, order);
         if (order.isPresent()) {
@@ -200,7 +207,7 @@ public class AdminTestSignalLabService {
 
         if ("LIVE".equalsIgnoreCase(run.getExecutionMode()) && order.isPresent()) {
             OmsOrder entry = order.get();
-            if (isBrokerAcceptedState(entry.getState().name(), true)) {
+            if (isBrokerAcceptedState(entry.getState().name(), true, entry)) {
                 try {
                     squareOffService.squareOffImmediately(run, entry, true);
                     entityManager.flush();
@@ -357,6 +364,44 @@ public class AdminTestSignalLabService {
             ));
             if (!eligible) {
                 blockers.add("LIVE gate failed: " + message);
+            }
+
+            StrategySignalEntity preview = previewSignal(request, trader.getId(), strategyKey);
+            OmsSafetyGateService.OmsSafetyGateResult routing =
+                    omsSafetyGateService.evaluatePreOrder(preview, trader.getId(), ExecutionMode.LIVE, Instant.now());
+            boolean routesLive = routing.effectiveMode() == ExecutionMode.LIVE;
+            String routingMsg = routesLive
+                    ? "LIVE routing confirmed — order will be sent to broker"
+                    : "LIVE will downgrade to " + routing.effectiveMode().name()
+                            + (routing.reasons().isEmpty() ? "" : " (" + String.join(", ", routing.reasons()) + ")");
+            checks.add(new TestSignalCheckResult(
+                    "live_routing_preview",
+                    "Live Broker Routing",
+                    routesLive ? "SUCCESS" : "FAILED",
+                    routingMsg,
+                    routesLive ? null : "Resolve routing blockers or use PAPER mode for simulated fill only",
+                    routesLive ? null : "OPEN_SAFETY_DIAGNOSTICS"
+            ));
+            if (!routesLive) {
+                blockers.add("LIVE broker routing blocked: " + routingMsg);
+            }
+
+            boolean sessionOpen = !marketCloseProtectionService.blocksNewLiveEntries(
+                    Instant.now(),
+                    AdminTestSignalLabSymbol.normalize(request.symbol(), request.exchange()),
+                    strategyKey);
+            checks.add(new TestSignalCheckResult(
+                    "market_session",
+                    "Market Session",
+                    sessionOpen ? "SUCCESS" : "WARNING",
+                    sessionOpen
+                            ? "Within platform trading window for this segment"
+                            : "Outside platform trading window — Kite may reject LIVE orders",
+                    sessionOpen ? null : "Wait for exchange session or verify holiday calendar on Kite",
+                    sessionOpen ? null : "OPEN_MARKET_FEED"
+            ));
+            if (!sessionOpen) {
+                blockers.add("Market session closed for segment — LIVE orders will not reach Kite");
             }
         } else {
             checks.add(new TestSignalCheckResult(
@@ -529,12 +574,12 @@ public class AdminTestSignalLabService {
         return "TEST_SIGNAL_LAB|mode=" + run.getExecutionMode() + "|scenario=" + (resolveScenario(run) == null ? "NONE" : resolveScenario(run));
     }
 
-    private Optional<OmsOrder> waitForOrder(UUID signalId, UUID traderUserId, Duration timeout) {
+    private Optional<OmsOrder> waitForOrder(UUID signalId, UUID traderUserId, Duration timeout, String requestedMode) {
         if (signalId == null) return Optional.empty();
         Instant until = Instant.now().plus(timeout);
         Optional<OmsOrder> order;
         do {
-            order = omsOrderRepository.findFirstBySignalIdAndUserIdAndDeletedFalseOrderByCreatedAtDesc(signalId, traderUserId);
+            order = resolveOrderForRun(signalId, traderUserId, requestedMode);
             if (order.isPresent()) return order;
             try {
                 Thread.sleep(50);
@@ -544,6 +589,27 @@ public class AdminTestSignalLabService {
             }
         } while (Instant.now().isBefore(until));
         return Optional.empty();
+    }
+
+    private Optional<OmsOrder> resolveOrderForRun(UUID signalId, UUID traderUserId, String requestedMode) {
+        List<OmsOrder> candidates = omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(signalId);
+        if (candidates.isEmpty()) {
+            return Optional.empty();
+        }
+        if ("LIVE".equalsIgnoreCase(requestedMode)) {
+            Optional<OmsOrder> live = candidates.stream()
+                    .filter(o -> o.getExecutionMode() == ExecutionMode.LIVE)
+                    .findFirst();
+            if (live.isPresent()) {
+                return live;
+            }
+        }
+        if (traderUserId != null) {
+            return candidates.stream()
+                    .filter(o -> traderUserId.equals(o.getUserId()))
+                    .findFirst();
+        }
+        return Optional.of(candidates.get(0));
     }
 
     private Optional<OmsOrder> reconcileResolvedOrder(AdminTestSignalRun run, Optional<OmsOrder> current) {
@@ -558,7 +624,8 @@ public class AdminTestSignalLabService {
         // Fallback: resolve by signal only (covers async insert races / user-id mismatches in upstream paths).
         List<OmsOrder> candidates = omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(run.getSignalId());
         if (!candidates.isEmpty()) {
-            OmsOrder resolved = candidates.get(0);
+            OmsOrder resolved = resolveOrderForRun(run.getSignalId(), run.getTraderUserId(), run.getExecutionMode())
+                    .orElse(candidates.get(0));
             run.setOrderId(resolved.getId());
             return Optional.of(resolved);
         }
@@ -662,7 +729,31 @@ public class AdminTestSignalLabService {
         }
 
         boolean liveMode = "LIVE".equalsIgnoreCase(run.getExecutionMode());
-        boolean brokerAccepted = order.map(o -> isBrokerAcceptedState(o.getState().name(), liveMode)).orElse(false);
+        boolean orderIsLive = order.map(o -> o.getExecutionMode() == ExecutionMode.LIVE).orElse(false);
+        boolean hasKiteOrderId = order.map(o -> o.getBrokerExternalOrderId() != null && !o.getBrokerExternalOrderId().isBlank())
+                .orElse(false);
+        if (liveMode) {
+            String routingMsg = order.isEmpty()
+                    ? "No OMS order found for LIVE run"
+                    : orderIsLive
+                            ? (hasKiteOrderId
+                                    ? "LIVE order submitted to Kite (order_id=" + order.get().getBrokerExternalOrderId() + ")"
+                                    : "LIVE order created but no Kite order_id — broker did not accept")
+                            : "LIVE requested but order executed as "
+                                    + order.get().getExecutionMode().name()
+                                    + " (simulated — nothing appears on Kite)";
+            checks.add(check(
+                    "live_routing",
+                    "Live Broker Routing",
+                    orderIsLive && hasKiteOrderId,
+                    routingMsg,
+                    routingMsg,
+                    "Verify broker session and exchange is open on Kite",
+                    "OPEN_BROKER_INFRA"
+            ));
+        }
+
+        boolean brokerAccepted = order.map(o -> isBrokerAcceptedState(o.getState().name(), liveMode, o)).orElse(false);
         String brokerFailMsg = "Broker did not accept";
         if (order.isPresent() && order.get().getRejectReason() != null && !order.get().getRejectReason().isBlank()) {
             brokerFailMsg = order.get().getRejectReason();
@@ -671,20 +762,33 @@ public class AdminTestSignalLabService {
         }
         checks.add(check("broker_accepted", "Broker Accepted", !expectsOrder || brokerAccepted, "Broker accepted execution", brokerFailMsg, "Review broker auth/session in Broker Infra", "RECONNECT_BROKER"));
 
-        boolean filled = order.map(o -> "FILLED".equals(o.getState().name()) || "PARTIALLY_FILLED".equals(o.getState().name())).orElse(false);
-        boolean fillRequired = !expectsOrder || !liveMode;
-        checks.add(fillRequired
-                ? check("order_filled", "Order Filled", filled, "Order filled", "Order not filled yet", "Inspect execution timeline for pending state", "OPEN_EXECUTION_TIMELINE")
-                : optionalCheck("order_filled", "Order Filled", filled, "Order filled at broker", "Live submit accepted; fill may arrive asynchronously", "Inspect execution timeline for pending state", "OPEN_EXECUTION_TIMELINE"));
+        boolean filled = order.map(o -> isLiveBrokerFill(o, liveMode)).orElse(false);
+        checks.add(check(
+                "order_filled",
+                "Order Filled",
+                !expectsOrder || filled,
+                liveMode ? "Order filled at Kite" : "Order filled",
+                liveMode ? "No Kite fill recorded — check Orders tab on Kite" : "Order not filled yet",
+                "Inspect execution timeline for pending state",
+                "OPEN_EXECUTION_TIMELINE"
+        ));
 
-        boolean positionVisible = portfolioPositionRepository.findByUserIdAndSymbolAndDeletedFalse(run.getTraderUserId(), run.getSymbol())
-                .map(PortfolioPosition::getQuantity)
-                .map(q -> q.signum() != 0)
-                .orElse(false);
-        boolean positionRequired = !expectsOrder || !liveMode;
-        checks.add(positionRequired
-                ? check("position_visible", "Position Visible", positionVisible, "Position visible in terminal", "No position entry yet", "Open trader positions and verify sync", "OPEN_TRADER_POSITIONS")
-                : optionalCheck("position_visible", "Position Visible", positionVisible, "Position visible in terminal", "Live order submitted; position may sync after broker fill", "Open trader positions and verify sync", "OPEN_TRADER_POSITIONS"));
+        boolean positionVisible = liveMode
+                ? order.map(o -> hasKiteOrderId && ("FILLED".equals(o.getState().name()) || "PARTIALLY_FILLED".equals(o.getState().name())))
+                .orElse(false)
+                : portfolioPositionRepository.findByUserIdAndSymbolAndDeletedFalse(run.getTraderUserId(), run.getSymbol())
+                        .map(PortfolioPosition::getQuantity)
+                        .map(q -> q.signum() != 0)
+                        .orElse(false);
+        checks.add(check(
+                "position_visible",
+                "Position Visible",
+                !expectsOrder || positionVisible,
+                liveMode ? "Kite fill confirmed" : "Position visible in terminal",
+                liveMode ? "No confirmed Kite position" : "No position entry yet",
+                "Open trader positions and verify sync",
+                "OPEN_TRADER_POSITIONS"
+        ));
 
         boolean websocketOpen = platformBrokerFeedSessionRepository
                 .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(run.getBrokerVendor() == null ? "ZERODHA" : run.getBrokerVendor())
@@ -820,15 +924,47 @@ public class AdminTestSignalLabService {
         );
     }
 
-    private static boolean isBrokerAcceptedState(String state, boolean liveMode) {
+    private static boolean isBrokerAcceptedState(String state, boolean liveMode, OmsOrder order) {
         if (state == null) {
             return false;
+        }
+        if (liveMode && order != null) {
+            if (order.getExecutionMode() != ExecutionMode.LIVE) {
+                return false;
+            }
+            if (order.getBrokerExternalOrderId() == null || order.getBrokerExternalOrderId().isBlank()) {
+                return false;
+            }
         }
         return switch (state) {
             case "ACCEPTED", "FILLED", "PARTIALLY_FILLED" -> true;
             case "SUBMITTED" -> liveMode;
             default -> false;
         };
+    }
+
+    private static boolean isLiveBrokerFill(OmsOrder order, boolean liveMode) {
+        if (order == null) {
+            return false;
+        }
+        if (liveMode) {
+            return order.getExecutionMode() == ExecutionMode.LIVE
+                    && order.getBrokerExternalOrderId() != null
+                    && !order.getBrokerExternalOrderId().isBlank()
+                    && ("FILLED".equals(order.getState().name()) || "PARTIALLY_FILLED".equals(order.getState().name()));
+        }
+        return "FILLED".equals(order.getState().name()) || "PARTIALLY_FILLED".equals(order.getState().name());
+    }
+
+    private static StrategySignalEntity previewSignal(TestSignalLabRequest request, UUID traderUserId, String strategyKey) {
+        StrategySignalEntity preview = new StrategySignalEntity();
+        preview.setUserId(traderUserId);
+        preview.setStrategyName(strategyKey);
+        preview.setSymbol(AdminTestSignalLabSymbol.normalize(request.symbol(), request.exchange()));
+        preview.setSignalType("SELL".equalsIgnoreCase(request.side()) ? SignalType.SELL : SignalType.BUY);
+        preview.setTestTrade(true);
+        preview.setCandleTimestamp(Instant.now());
+        return preview;
     }
 
     private Map<String, Object> buildDiagnostics(List<TestSignalCheckResult> checks, AdminTestSignalRun run, OmsOrder order, Map<String, Object> healthSnapshot) {
@@ -841,6 +977,8 @@ public class AdminTestSignalLabService {
                 .toList());
         diagnostics.put("testScenario", resolveScenario(run));
         diagnostics.put("orderState", order != null && order.getState() != null ? order.getState().name() : null);
+        diagnostics.put("effectiveExecutionMode", order != null && order.getExecutionMode() != null ? order.getExecutionMode().name() : null);
+        diagnostics.put("kiteOrderId", order != null ? order.getBrokerExternalOrderId() : null);
         diagnostics.put("health", healthSnapshot);
         return diagnostics;
     }
@@ -882,10 +1020,9 @@ public class AdminTestSignalLabService {
     private static boolean isOptionalLabCheck(String key) {
         return "telegram_alert".equals(key)
                 || "reconciliation".equals(key)
-                || "order_filled".equals(key)
-                || "position_visible".equals(key)
                 || "stale_state".equals(key)
-                || "latency".equals(key);
+                || "latency".equals(key)
+                || "market_session".equals(key);
     }
 
     private static Map<String, Object> mapOf(Object... kv) {
