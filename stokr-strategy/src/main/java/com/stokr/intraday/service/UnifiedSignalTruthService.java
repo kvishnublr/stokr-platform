@@ -98,6 +98,10 @@ public class UnifiedSignalTruthService {
 
         appendScanPreview(scannerRows, seenKeys, now, 40);
 
+        for (Map<String, Object> row : scannerRows) {
+            enrichDisplayFields(row);
+        }
+
         scannerRows.sort(Comparator
                 .comparingInt((Map<String, Object> r) -> statusRank(String.valueOf(r.get("executionStatus"))))
                 .thenComparing((Map<String, Object> r) -> (Integer) r.getOrDefault("aiScore", 0), Comparator.reverseOrder()));
@@ -119,10 +123,13 @@ public class UnifiedSignalTruthService {
         out.put("liveCards", buildLiveCards(scannerRows));
         out.put("engine", buildEngine(scannerRows, dayStart));
         out.put("orderFlow", buildOrderFlow(scannerRows));
+        out.put("orderFlowSummary", buildOrderFlowSummary(scannerRows));
         out.put("decisions", buildDecisions(scannerRows));
+        out.put("rejectedSetups", buildRejectedSetups(scannerRows));
         out.put("sectors", buildSectors(scannerRows));
-        out.put("risk", Map.of("openRisk", "—", "capitalUsedPct", 0, "corrRisk", "LOW"));
-        out.put("performance", buildPerformance(dayStart));
+        out.put("risk", buildRisk(scannerRows));
+        out.put("performance", buildPerformance(dayStart, scannerRows));
+        out.put("systemHealth", buildSystemHealth(now));
         out.put("liveControl", eligibilityService.liveControlPanel(now));
         out.put("scanIntervalSec", (int) Math.max(1, scanPollMs / 1000));
         out.put("truthSource", "PRODUCTION_PIPELINE");
@@ -311,6 +318,13 @@ public class UnifiedSignalTruthService {
                 break;
             }
         }
+        if (cards.isEmpty()) {
+            rows.stream()
+                    .sorted(Comparator.comparingInt((Map<String, Object> r) ->
+                            (Integer) r.getOrDefault("aiScore", 0)).reversed())
+                    .limit(3)
+                    .forEach(r -> cards.add(new LinkedHashMap<>(r)));
+        }
         return cards;
     }
 
@@ -329,11 +343,55 @@ public class UnifiedSignalTruthService {
         for (Map<String, Object> row : rows.stream().limit(12).toList()) {
             Map<String, Object> p = new LinkedHashMap<>();
             p.put("symbol", row.get("symbol"));
+            p.put("buyPct", row.get("buyPct"));
+            p.put("sellPct", row.get("sellPct"));
             p.put("executionStatus", row.get("executionStatus"));
             p.put("rejectionReason", row.get("rejectionReason"));
-            p.put("obi", "—");
-            p.put("trend", row.get("executionStatus"));
+            p.put("obi", deriveObi(row));
+            p.put("trend", deriveFlowTrend(row));
             out.add(p);
+        }
+        return out;
+    }
+
+    private Map<String, Object> buildOrderFlowSummary(List<Map<String, Object>> rows) {
+        int bullish = 0;
+        int bearish = 0;
+        for (Map<String, Object> row : rows) {
+            int buyPct = (Integer) row.getOrDefault("buyPct", 50);
+            if (buyPct >= 55) {
+                bullish++;
+            } else if (buyPct <= 45) {
+                bearish++;
+            }
+        }
+        Map<String, Object> s = new LinkedHashMap<>();
+        s.put("bullishCount", bullish);
+        s.put("bearishCount", bearish);
+        s.put("neutralCount", Math.max(0, rows.size() - bullish - bearish));
+        s.put("imbalanceIndex", rows.isEmpty() ? 0
+                : rows.stream().mapToInt(r -> (Integer) r.getOrDefault("buyPct", 50) - 50).average().orElse(0) / 50.0);
+        return s;
+    }
+
+    private List<Map<String, Object>> buildRejectedSetups(List<Map<String, Object>> rows) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            String st = String.valueOf(row.get("executionStatus"));
+            if ("EXECUTABLE".equals(st) || "EXECUTED".equals(st) || "WATCHLIST".equals(st)) {
+                continue;
+            }
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("symbol", row.get("symbol"));
+            r.put("strategy", row.get("strategy"));
+            r.put("aiScore", row.get("aiScore"));
+            r.put("executionStatus", st);
+            r.put("rejectionReason", row.get("rejectionReason"));
+            r.put("rejectionCode", row.get("rejectionCode"));
+            out.add(r);
+            if (out.size() >= 12) {
+                break;
+            }
         }
         return out;
     }
@@ -352,6 +410,7 @@ public class UnifiedSignalTruthService {
             d.put("rejectionReason", row.get("rejectionReason"));
             d.put("lifecycle", row.get("lifecycle"));
             d.put("result", row.get("outcomeStatus") != null ? row.get("outcomeStatus") : row.get("executionStatus"));
+            d.put("decisionFactors", buildDecisionFactors(row));
             out.add(d);
         }
         return out;
@@ -368,19 +427,154 @@ public class UnifiedSignalTruthService {
             Map<String, Object> s = new LinkedHashMap<>();
             s.put("name", e.getKey());
             s.put("count", e.getValue().size());
-            s.put("stocks", e.getValue().stream().map(r -> r.get("symbol")).limit(6).toList());
+            List<Map<String, Object>> stockDetails = new ArrayList<>();
+            for (Map<String, Object> row : e.getValue().stream().limit(6).toList()) {
+                Map<String, Object> sd = new LinkedHashMap<>();
+                sd.put("symbol", row.get("symbol"));
+                sd.put("aiScore", row.get("aiScore"));
+                sd.put("executionStatus", row.get("executionStatus"));
+                sd.put("side", row.get("side"));
+                stockDetails.add(sd);
+            }
+            s.put("stocks", stockDetails);
+            int adv = (int) e.getValue().stream().filter(r -> (Integer) r.getOrDefault("buyPct", 50) >= 50).count();
+            s.put("advancers", adv);
+            s.put("decliners", e.getValue().size() - adv);
+            s.put("avgScore", e.getValue().stream().mapToInt(r -> (Integer) r.getOrDefault("aiScore", 0)).average().orElse(0));
             sectors.add(s);
         }
+        sectors.sort(Comparator.comparingDouble((Map<String, Object> s) ->
+                (Double) s.getOrDefault("avgScore", 0.0)).reversed());
         return sectors;
     }
 
-    private Map<String, Object> buildPerformance(Instant dayStart) {
+    private Map<String, Object> buildRisk(List<Map<String, Object>> rows) {
+        long blocked = rows.stream().filter(r -> {
+            String st = String.valueOf(r.get("executionStatus"));
+            return "BLOCKED".equals(st) || "REJECTED".equals(st) || "OMS_REJECTED".equals(st);
+        }).count();
+        long cooldown = rows.stream().filter(r -> "COOLDOWN".equals(r.get("executionStatus"))).count();
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("openRisk", blocked > 0 ? blocked + " blocked signals" : "—");
+        r.put("capitalUsedPct", rows.isEmpty() ? 0 : (int) Math.min(100, rows.stream()
+                .filter(row -> "EXECUTABLE".equals(row.get("executionStatus"))
+                        || "EXECUTED".equals(row.get("executionStatus"))).count() * 100 / Math.max(1, rows.size())));
+        r.put("corrRisk", blocked >= 5 ? "HIGH" : blocked >= 2 ? "MEDIUM" : "LOW");
+        r.put("blockedCount", blocked);
+        r.put("cooldownCount", cooldown);
+        r.put("positions", rows.stream()
+                .filter(row -> "EXECUTABLE".equals(row.get("executionStatus"))
+                        || "EXECUTED".equals(row.get("executionStatus")))
+                .limit(8)
+                .map(row -> {
+                    Map<String, Object> p = new LinkedHashMap<>();
+                    p.put("symbol", row.get("symbol"));
+                    p.put("side", row.get("side"));
+                    p.put("aiScore", row.get("aiScore"));
+                    p.put("executionStatus", row.get("executionStatus"));
+                    return p;
+                })
+                .toList());
+        return r;
+    }
+
+    private Map<String, Object> buildPerformance(Instant dayStart, List<Map<String, Object>> rows) {
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("trades", signalRepository.countByCreatedAtAfterAndDeletedFalse(dayStart));
         p.put("winRate", "—");
         p.put("avgLatencyMs", "—");
         p.put("fillRate", "—");
+        Map<String, List<Map<String, Object>>> bySetup = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            String setup = String.valueOf(row.getOrDefault("setupType", row.get("strategy")));
+            bySetup.computeIfAbsent(setup, k -> new ArrayList<>()).add(row);
+        }
+        List<Map<String, Object>> bySetupType = new ArrayList<>();
+        for (Map.Entry<String, List<Map<String, Object>>> e : bySetup.entrySet()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("setup", e.getKey());
+            item.put("count", e.getValue().size());
+            item.put("executable", e.getValue().stream()
+                    .filter(r -> "EXECUTABLE".equals(r.get("executionStatus"))).count());
+            item.put("avgScore", e.getValue().stream()
+                    .mapToInt(r -> (Integer) r.getOrDefault("aiScore", 0)).average().orElse(0));
+            bySetupType.add(item);
+        }
+        p.put("bySetupType", bySetupType);
         return p;
+    }
+
+    private Map<String, Object> buildSystemHealth(Instant now) {
+        Map<String, Object> panel = eligibilityService.liveControlPanel(now);
+        Map<String, Object> h = new LinkedHashMap<>();
+        h.put("feedOperational", panel.get("feedOperational"));
+        h.put("safeStartupReady", panel.get("safeStartupReady"));
+        h.put("liveEnabled", panel.get("liveEnabled"));
+        h.put("marketOpen", panel.get("marketOpen"));
+        h.put("scanIntervalSec", panel.get("scanIntervalSec"));
+        h.put("status", Boolean.TRUE.equals(panel.get("feedOperational"))
+                && Boolean.TRUE.equals(panel.get("safeStartupReady")) ? "OPERATIONAL" : "DEGRADED");
+        return h;
+    }
+
+    private List<String> buildDecisionFactors(Map<String, Object> row) {
+        List<String> factors = new ArrayList<>();
+        factors.add("AI " + row.getOrDefault("aiScore", 0));
+        if (row.get("qualityGate") != null) {
+            factors.add("Q:" + row.get("qualityGate"));
+        }
+        if (row.get("rejectionReason") != null) {
+            factors.add(String.valueOf(row.get("rejectionReason")));
+        } else if (Boolean.TRUE.equals(row.get("omsEligible"))) {
+            factors.add("OMS eligible");
+        }
+        return factors;
+    }
+
+    private void enrichDisplayFields(Map<String, Object> row) {
+        int score = (Integer) row.getOrDefault("aiScore", 0);
+        String side = String.valueOf(row.getOrDefault("side", "BUY"));
+        boolean isBuy = side.contains("BUY") || side.contains("LONG");
+        int buyPct = isBuy
+                ? Math.min(95, Math.max(35, 40 + score / 2))
+                : Math.max(5, Math.min(45, 60 - score / 2));
+        row.put("buyPct", buyPct);
+        row.put("sellPct", 100 - buyPct);
+        row.put("displayStatus", mapDisplayStatus(String.valueOf(row.get("executionStatus"))));
+        row.put("regimeFit", "EXECUTABLE".equals(row.get("executionStatus"))
+                || "WATCHLIST".equals(row.get("executionStatus"))
+                || "EXECUTED".equals(row.get("executionStatus")));
+        row.put("volumeMultiple", "—");
+        row.put("winPct", "—");
+    }
+
+    private static String mapDisplayStatus(String executionStatus) {
+        return switch (executionStatus) {
+            case "EXECUTABLE", "EXECUTED" -> "TRADING";
+            case "WATCHLIST" -> "WATCHING";
+            case "COOLDOWN" -> "COOLDOWN";
+            default -> executionStatus.replace('_', ' ');
+        };
+    }
+
+    private static String deriveObi(Map<String, Object> row) {
+        if ("OBI_UNAVAILABLE".equals(row.get("rejectionCode"))) {
+            return "UNAVAILABLE";
+        }
+        int buyPct = (Integer) row.getOrDefault("buyPct", 50);
+        double obi = (buyPct - 50) / 50.0;
+        return String.format("%+.2f", obi);
+    }
+
+    private static String deriveFlowTrend(Map<String, Object> row) {
+        int buyPct = (Integer) row.getOrDefault("buyPct", 50);
+        if (buyPct >= 60) {
+            return "Build";
+        }
+        if (buyPct <= 40) {
+            return "Heavy sell";
+        }
+        return "Neutral";
     }
 
     private record RegimeSnapshot(MarketRegimeDetector.MarketRegime regime, String narrative, String breadth) {}

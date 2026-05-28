@@ -1,29 +1,711 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../api/client";
 import {
   AdvScannerRow,
   AdvTerminalSnapshot,
-  ExecutionStatus,
+  fetchAdvExecutionSummary,
   fetchAdvTerminal,
+  fetchAdvWatch,
+  fetchAdvWorkstation,
 } from "../api/advDashboard";
-import { useUiThemeStore } from "../state/uiTheme";
-import { cn } from "../lib/utils";
-import { NiftyCandleChart } from "../components/charts/NiftyCandleChart";
-import { formatConfidencePct } from "../lib/intradaySignals";
+import "./adv/adv-terminal.css";
 
-type TabKey = "intelligence" | "orderflow" | "system" | "sectors" | "risk" | "performance";
+type TabId = "intelligence" | "orderflow" | "decisions" | "sectors" | "risk" | "performance";
 
-type WatchRow = { symbol: string; price?: string; changePct?: string; volume?: number | string };
-type CandleRow = { time?: number; ts?: number; open?: number; high?: number; low?: number; close?: number; volume?: number };
-type StrategyAlloc = { strategyKey?: string; strategyName?: string; runtimeState?: string };
-type Workstation = { strategyAllocations?: StrategyAlloc[] };
+const TABS: { id: TabId; label: string }[] = [
+  { id: "intelligence", label: "Intelligence" },
+  { id: "orderflow", label: "Order Flow" },
+  { id: "decisions", label: "System Decisions" },
+  { id: "sectors", label: "Sectors" },
+  { id: "risk", label: "Risk Matrix" },
+  { id: "performance", label: "Performance" },
+];
 
-type DisplayRow = AdvScannerRow & {
-  id: string;
-  ltpDisplay: string;
-  changePct: number;
-};
+type EnrichedRow = AdvScannerRow & { ltpDisplay: string; changePct: number };
+
+export function AdvDashboardPage() {
+  const [tab, setTab] = useState<TabId>("intelligence");
+  const [selected, setSelected] = useState<EnrichedRow | null>(null);
+
+  const terminalQ = useQuery({
+    queryKey: ["adv-terminal"],
+    queryFn: fetchAdvTerminal,
+    refetchInterval: 10_000,
+    retry: 2,
+  });
+
+  const watchQ = useQuery({ queryKey: ["adv-watch"], queryFn: fetchAdvWatch, refetchInterval: 10_000 });
+  const execQ = useQuery({ queryKey: ["adv-exec"], queryFn: fetchAdvExecutionSummary, refetchInterval: 15_000 });
+  const wsQ = useQuery({ queryKey: ["adv-ws"], queryFn: fetchAdvWorkstation, refetchInterval: 15_000 });
+
+  const data = terminalQ.data;
+  const rows = useEnrichedRows(data, watchQ.data);
+
+  const refresh = () => {
+    void terminalQ.refetch();
+    void watchQ.refetch();
+    void execQ.refetch();
+    void wsQ.refetch();
+  };
+
+  return (
+    <div className="adv-terminal">
+      <header className="adv-header">
+        <div>
+          <div className="adv-title">
+            <span className="adv-logo">◎</span>
+            Intraday Intelligence
+          </div>
+          <p className="adv-sub">
+            AI-powered scanner · Production pipeline · scan every {data?.scanIntervalSec ?? data?.liveControl?.scanIntervalSec ?? 10}s
+          </p>
+        </div>
+        <div className="adv-pills">
+          <div className="adv-pill">
+            <strong>{data?.marketOpen ? "MARKET OPEN" : "MARKET CLOSED"}</strong>
+            <div>{data?.istTime ?? "—"} IST</div>
+          </div>
+          <div className="adv-pill">
+            Regime: <strong>{data?.marketRegime?.replace(/_/g, " ") ?? "—"}</strong>
+          </div>
+          <div className="adv-pill adv-pill-truth">{data?.truthSource ?? "PRODUCTION_PIPELINE"}</div>
+          <button type="button" className="adv-pill adv-pill-btn" onClick={refresh} disabled={terminalQ.isFetching}>
+            {terminalQ.isFetching ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
+      </header>
+
+      <div className="adv-tabs">
+        {TABS.map((t) => (
+          <button key={t.id} type="button" className={`adv-tab${tab === t.id ? " on" : ""}`} onClick={() => setTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+        <span className="adv-live-badge"><span className="adv-live-dot" /> LIVE</span>
+      </div>
+
+      {terminalQ.isLoading && <div className="adv-empty">Loading production intelligence terminal…</div>}
+      {terminalQ.error && (
+        <div className="adv-error">
+          Failed to load terminal — log in and ensure API is running. {(terminalQ.error as Error).message}
+        </div>
+      )}
+
+      {data && (
+        <div className="adv-main">
+          {tab === "intelligence" && (
+            <IntelligenceTab data={data} rows={rows} exec={execQ.data} ws={wsQ.data} selected={selected} onSelect={setSelected} />
+          )}
+          {tab === "orderflow" && <OrderFlowTab data={data} rows={rows} />}
+          {tab === "decisions" && <DecisionsTab data={data} rows={rows} />}
+          {tab === "sectors" && <SectorsTab data={data} />}
+          {tab === "risk" && <RiskTab data={data} rows={rows} />}
+          {tab === "performance" && <PerformanceTab data={data} exec={execQ.data} />}
+        </div>
+      )}
+
+      {data && (
+        <aside className="adv-side-panels">
+          <LiveControlPanel live={data.liveControl} scanSec={data.scanIntervalSec ?? 10} />
+          <EnginePanel engine={data.engine} metrics={data.metrics} exec={execQ.data} />
+          <StrategiesPanel ws={wsQ.data} />
+        </aside>
+      )}
+    </div>
+  );
+}
+
+function useEnrichedRows(
+  data: AdvTerminalSnapshot | undefined,
+  watch: { symbol: string; price?: string; changePct?: string }[] | undefined,
+): EnrichedRow[] {
+  return useMemo(() => {
+    const watchMap = new Map((watch ?? []).map((w) => [String(w.symbol), w]));
+    return (data?.scannerRows ?? []).map((r) => {
+      const w = watchMap.get(String(r.symbol));
+      return {
+        ...r,
+        aiScore: Number(r.aiScore ?? 0),
+        ltpDisplay: w?.price ?? fmtNum(r.ltp),
+        changePct: toNum(w?.changePct) ?? 0,
+      };
+    });
+  }, [data?.scannerRows, watch]);
+}
+
+function IntelligenceTab({
+  data,
+  rows,
+  exec,
+  ws,
+  selected,
+  onSelect,
+}: {
+  data: AdvTerminalSnapshot;
+  rows: EnrichedRow[];
+  exec?: Record<string, unknown>;
+  ws?: Record<string, unknown>;
+  selected: EnrichedRow | null;
+  onSelect: (r: EnrichedRow | null) => void;
+}) {
+  const m = data.metrics ?? {};
+  const cards = (data.liveCards?.length ? data.liveCards : rows.slice(0, 3)) as AdvScannerRow[];
+
+  return (
+    <>
+      <div className="adv-metrics">
+        <Metric label="Stocks Tracked" value={String(m.stocksTracked ?? 0)} hint="Live universe" />
+        <Metric label="Active Setups" value={String(m.activeSetups ?? rows.length)} hint="Pipeline rows" />
+        <Metric label="Executable" value={String(m.executableCount ?? 0)} hint="OMS eligible" accent />
+        <Metric label="Market Breadth" value={String(m.marketBreadth ?? "—")} hint="Adv : Decl" />
+        <Metric label="Top AI Score" value={String(m.topScore ?? 0)} hint="Best setup" />
+        <Metric label="Orders Today" value={String(exec?.ordersTotal ?? data.engine?.trades ?? 0)} hint="Execution client" />
+      </div>
+
+      <div className="adv-live-cards">
+        {cards.length === 0 ? (
+          <div className="adv-empty adv-span-all">No pipeline rows yet — scanner runs during NSE session.</div>
+        ) : (
+          cards.map((c) => (
+            <div key={`${c.symbol}-${c.strategy}`} className={`adv-live-card${String(c.side).includes("SELL") ? " short" : ""}`}>
+              <div className="adv-live-card-head">
+                <strong>{c.symbol}</strong>
+                <ExecBadge status={String(c.executionStatus ?? c.status ?? "—")} />
+              </div>
+              <div className="adv-live-card-body">
+                <div>
+                  <div className="adv-metric-value">{c.aiScore ?? 0}</div>
+                  <div className="adv-live-setup">{shortSetup(c.setupType ?? c.strategy)}</div>
+                  <div className="adv-live-meta">{c.effectiveMode ?? "—"} · {c.tradeQuality ?? "—"}</div>
+                </div>
+                <div className="adv-score-ring">{c.aiScore ?? 0}</div>
+              </div>
+              {c.rejectionReason ? <div className="adv-reject-line">{c.rejectionReason}</div> : null}
+            </div>
+          ))
+        )}
+        <EngineMini engine={data.engine} ws={ws} />
+      </div>
+
+      <div className="adv-card">
+        <div className="adv-card-head">
+          <span className="adv-card-title">Live Scanner</span>
+          <span className="adv-badge adv-badge-green">{rows.length} setups · {String(m.executableCount ?? 0)} executable</span>
+        </div>
+        <div className="adv-scroll">
+          <ScannerTable rows={rows} onSelect={onSelect} />
+        </div>
+      </div>
+
+      {selected ? <DiagnosticsPanel row={selected} onClose={() => onSelect(null)} /> : null}
+      {data.regimeNarrative ? <p className="adv-footnote">{data.regimeNarrative}</p> : null}
+    </>
+  );
+}
+
+function OrderFlowTab({ data, rows }: { data: AdvTerminalSnapshot; rows: EnrichedRow[] }) {
+  const summary = data.orderFlowSummary ?? {};
+  const flow = data.orderFlow ?? [];
+
+  return (
+    <>
+      <div className="adv-metrics adv-metrics-5">
+        <Metric label="Bullish Flow" value={String(summary.bullishCount ?? 0)} hint="Buy pressure ≥55%" accent />
+        <Metric label="Bearish Flow" value={String(summary.bearishCount ?? 0)} hint="Sell pressure ≥55%" />
+        <Metric label="Neutral" value={String(summary.neutralCount ?? 0)} hint="Balanced book" />
+        <Metric label="Imbalance" value={fmtImbalance(summary.imbalanceIndex)} hint="Skew index" />
+        <Metric label="Symbols" value={String(flow.length)} hint="Tracked in scanner" />
+      </div>
+
+      <div className="adv-layout-2">
+        <div className="adv-card">
+          <div className="adv-card-head"><span className="adv-card-title">Order Book Pressure</span></div>
+          {flow.length === 0 ? (
+            <div className="adv-empty">Order flow populates when scanner has active symbols.</div>
+          ) : (
+            <table className="adv-table">
+              <thead>
+                <tr><th>Symbol</th><th>Buy%</th><th>Sell%</th><th>OBI</th><th>Trend</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+                {flow.map((r) => (
+                  <tr key={r.symbol}>
+                    <td><strong>{r.symbol}</strong></td>
+                    <td><span className="adv-badge adv-badge-green">{r.buyPct ?? 50}%</span></td>
+                    <td><span className="adv-badge adv-badge-red">{r.sellPct ?? 50}%</span></td>
+                    <td>{r.obi ?? "—"}</td>
+                    <td>{r.trend ?? "—"}</td>
+                    <td><ExecBadge status={String(r.executionStatus ?? "—")} small /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="adv-card">
+          <div className="adv-card-head"><span className="adv-card-title">Flow by Scanner Row</span></div>
+          <div className="adv-scroll adv-scroll-sm">
+            <table className="adv-table">
+              <thead><tr><th>Symbol</th><th>Pressure</th><th>AI</th><th>Reason</th></tr></thead>
+              <tbody>
+                {rows.slice(0, 15).map((r) => (
+                  <tr key={`${r.rank}-${r.symbol}`}>
+                    <td><strong>{r.symbol}</strong></td>
+                    <td><PressureBar buyPct={r.buyPct ?? 50} /></td>
+                    <td><strong>{r.aiScore}</strong></td>
+                    <td className="adv-truncate">{r.rejectionReason ?? (r.omsEligible ? "OMS eligible" : "—")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function DecisionsTab({ data, rows }: { data: AdvTerminalSnapshot; rows: EnrichedRow[] }) {
+  const decisions = data.decisions ?? [];
+  const rejected = data.rejectedSetups ?? [];
+  const health = data.systemHealth ?? {};
+
+  return (
+    <>
+      <div className="adv-metrics adv-metrics-4">
+        <Metric label="Pipeline Rows" value={String(rows.length)} hint="Today" />
+        <Metric label="Executable" value={String(data.metrics?.executableCount ?? 0)} hint="OMS eligible" accent />
+        <Metric label="Rejected" value={String(rejected.length)} hint="With reasons" />
+        <Metric label="System" value={String(health.status ?? "—")} hint="Feed + startup" />
+      </div>
+
+      <div className="adv-layout-2">
+        <div className="adv-card">
+          <div className="adv-card-head"><span className="adv-card-title">Decision Log</span></div>
+          {decisions.length === 0 ? (
+            <div className="adv-empty">No decisions logged today.</div>
+          ) : (
+            <table className="adv-table">
+              <thead><tr><th>Time</th><th>Symbol</th><th>Action</th><th>Strategy</th><th>AI</th><th>Status</th><th>Result</th></tr></thead>
+              <tbody>
+                {decisions.map((r, i) => (
+                  <tr key={`${r.time}-${r.symbol}-${i}`}>
+                    <td>{r.time}</td>
+                    <td><strong>{r.symbol}</strong></td>
+                    <td><span className="adv-badge adv-badge-blue">{r.action}</span></td>
+                    <td>{shortSetup(r.strategy)}</td>
+                    <td><strong>{r.aiScore}</strong></td>
+                    <td><ExecBadge status={String(r.executionStatus ?? r.result)} small /></td>
+                    <td className="adv-truncate">{r.rejectionReason ?? r.result}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="adv-stack">
+          <div className="adv-card">
+            <div className="adv-card-head"><span className="adv-card-title">Rejected Setups</span></div>
+            {rejected.length === 0 ? (
+              <div className="adv-empty">No rejections in pipeline audit.</div>
+            ) : (
+              <ul className="adv-reject-list">
+                {rejected.map((r) => (
+                  <li key={`${r.symbol}-${r.rejectionCode}`}>
+                    <strong>{r.symbol}</strong> · {shortSetup(r.strategy)} · AI {r.aiScore ?? 0}
+                    <div className="adv-reject-reason">{r.rejectionReason ?? r.executionStatus}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="adv-card">
+            <div className="adv-card-head"><span className="adv-card-title">System Health</span></div>
+            <SystemHealthList health={health} live={data.liveControl} />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SectorsTab({ data }: { data: AdvTerminalSnapshot }) {
+  const sectors = data.sectors ?? [];
+  if (sectors.length === 0) {
+    return <div className="adv-empty">Sector rotation appears when scanner rows are grouped by sector.</div>;
+  }
+
+  const strongest = sectors[0];
+  const weakest = sectors[sectors.length - 1];
+
+  return (
+    <>
+      <div className="adv-metrics adv-metrics-4">
+        <Metric label="Strongest" value={strongest?.name ?? "—"} hint={`Avg AI ${Math.round(Number(strongest?.avgScore ?? 0))}`} accent />
+        <Metric label="Weakest" value={weakest?.name ?? "—"} hint={`Avg AI ${Math.round(Number(weakest?.avgScore ?? 0))}`} />
+        <Metric label="Sectors" value={String(sectors.length)} hint="Tracked groups" />
+        <Metric label="Breadth" value={String(data.metrics?.marketBreadth ?? "—")} hint="Market adv:dec" />
+      </div>
+
+      <div className="adv-grid-3">
+        {sectors.map((s) => (
+          <div key={s.name} className="adv-card adv-sector-card">
+            <div className="adv-sector-head">
+              <span className="adv-card-title">{s.name}</span>
+              <span className="adv-badge adv-badge-blue">{s.count} symbols</span>
+            </div>
+            <div className="adv-sector-meta">
+              Adv {s.advancers ?? 0} · Dec {s.decliners ?? 0} · Avg {Math.round(Number(s.avgScore ?? 0))}
+            </div>
+            <ul className="adv-sector-stocks">
+              {(Array.isArray(s.stocks) ? s.stocks : []).map((st) => {
+                const stock = typeof st === "string" ? { symbol: st } : st;
+                return (
+                  <li key={stock.symbol}>
+                    <span>{stock.symbol}</span>
+                    <span className="adv-sector-score">{stock.aiScore ?? "—"}</span>
+                    {stock.executionStatus ? <ExecBadge status={String(stock.executionStatus)} small /> : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function RiskTab({ data, rows }: { data: AdvTerminalSnapshot; rows: EnrichedRow[] }) {
+  const r = data.risk ?? {};
+  const positions = (r.positions as { symbol: string; side?: string; aiScore?: number; executionStatus?: string }[] | undefined) ?? [];
+  const risky = rows.filter((row) =>
+    ["BLOCKED", "REJECTED", "OMS_REJECTED", "QUALITY_REJECTED", "COOLDOWN"].includes(String(row.executionStatus)),
+  );
+
+  return (
+    <>
+      <div className="adv-metrics adv-metrics-4">
+        <Metric label="Open Risk" value={String(r.openRisk ?? "—")} hint="Blocked exposure" />
+        <Metric label="Capital Used" value={`${r.capitalUsedPct ?? 0}%`} hint="Executable share" />
+        <Metric label="Corr Risk" value={String(r.corrRisk ?? "—")} hint="Pipeline stress" />
+        <Metric label="Cooldown" value={String(r.cooldownCount ?? 0)} hint="Re-entry blocks" />
+      </div>
+
+      <div className="adv-layout-2">
+        <div className="adv-card">
+          <div className="adv-card-head"><span className="adv-card-title">Executable Positions</span></div>
+          {positions.length === 0 ? (
+            <div className="adv-empty">No OMS-eligible positions in pipeline right now.</div>
+          ) : (
+            <table className="adv-table">
+              <thead><tr><th>Symbol</th><th>Side</th><th>AI</th><th>Status</th></tr></thead>
+              <tbody>
+                {positions.map((p) => (
+                  <tr key={p.symbol}>
+                    <td><strong>{p.symbol}</strong></td>
+                    <td>{p.side ?? "—"}</td>
+                    <td><strong>{p.aiScore ?? "—"}</strong></td>
+                    <td><ExecBadge status={String(p.executionStatus ?? "—")} small /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="adv-card">
+          <div className="adv-card-head"><span className="adv-card-title">Risk Blocks & Cooldowns</span></div>
+          {risky.length === 0 ? (
+            <div className="adv-empty">No blocked or cooldown signals.</div>
+          ) : (
+            <table className="adv-table">
+              <thead><tr><th>Symbol</th><th>Status</th><th>Reason</th></tr></thead>
+              <tbody>
+                {risky.slice(0, 12).map((row) => (
+                  <tr key={`${row.rank}-${row.symbol}`}>
+                    <td><strong>{row.symbol}</strong></td>
+                    <td><ExecBadge status={String(row.executionStatus)} small /></td>
+                    <td className="adv-truncate">{row.rejectionReason ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function PerformanceTab({ data, exec }: { data: AdvTerminalSnapshot; exec?: Record<string, unknown> }) {
+  const p = data.performance ?? {};
+  const bySetup = p.bySetupType ?? [];
+
+  return (
+    <>
+      <div className="adv-metrics adv-metrics-4">
+        <Metric label="Signals Today" value={String(p.trades ?? 0)} hint="All pipelines" />
+        <Metric label="Orders" value={String(exec?.ordersTotal ?? 0)} hint="OMS total" />
+        <Metric label="Rejected Orders" value={String(exec?.rejectedOrders ?? 0)} hint="Broker/OMS" />
+        <Metric label="Open Pipeline" value={String(exec?.openPipelineOrdersApprox ?? 0)} hint="In flight" accent />
+      </div>
+
+      <div className="adv-layout-2">
+        <div className="adv-card">
+          <div className="adv-card-head"><span className="adv-card-title">By Setup Type</span></div>
+          {bySetup.length === 0 ? (
+            <div className="adv-empty">Setup breakdown appears when scanner has strategy rows.</div>
+          ) : (
+            <table className="adv-table">
+              <thead><tr><th>Setup</th><th>Count</th><th>Executable</th><th>Avg AI</th></tr></thead>
+              <tbody>
+                {bySetup.map((s) => (
+                  <tr key={s.setup}>
+                    <td>{shortSetup(s.setup)}</td>
+                    <td>{s.count}</td>
+                    <td>{s.executable}</td>
+                    <td><strong>{Math.round(s.avgScore)}</strong></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="adv-card">
+          <div className="adv-card-head"><span className="adv-card-title">Execution Quality</span></div>
+          <div className="adv-kv-list">
+            <div><span>Win rate</span><strong>{String(p.winRate ?? "—")}</strong></div>
+            <div><span>Avg latency</span><strong>{p.avgLatencyMs != null ? `${p.avgLatencyMs}ms` : "—"}</strong></div>
+            <div><span>Fill rate</span><strong>{String(p.fillRate ?? "—")}</strong></div>
+            <div><span>Executable now</span><strong>{String(data.metrics?.executableCount ?? 0)}</strong></div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ScannerTable({ rows, onSelect }: { rows: EnrichedRow[]; onSelect?: (r: EnrichedRow) => void }) {
+  if (!rows.length) {
+    return <div className="adv-empty">No scanner data — feed refreshes during NSE session (9:15–15:30 IST).</div>;
+  }
+  return (
+    <table className="adv-table">
+      <thead>
+        <tr>
+          <th>#</th><th>Symbol</th><th>LTP</th><th>AI</th><th>Execution</th><th>Buy:Sell</th><th>Quality</th><th>Mode</th><th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={`${r.rank}-${r.symbol}`} onClick={() => onSelect?.(r)} className={onSelect ? "adv-clickable" : ""}>
+            <td><strong>{r.rank}</strong></td>
+            <td>
+              <strong>{r.symbol}</strong>
+              <div className="adv-cell-sub">{r.side} · {shortSetup(r.setupType ?? r.strategy)}</div>
+            </td>
+            <td>{r.ltpDisplay}</td>
+            <td><strong className={r.aiScore >= 75 ? "adv-score-high" : "adv-score-mid"}>{r.aiScore}</strong></td>
+            <td><ExecBadge status={String(r.executionStatus ?? r.status ?? "—")} /></td>
+            <td><PressureBar buyPct={r.buyPct ?? 50} /></td>
+            <td className="adv-cell-sub">{r.qualityGate ?? "—"}/{r.riskGate ?? "—"}</td>
+            <td className="adv-cell-sub">{r.requestedMode ?? "—"}→{r.effectiveMode ?? "—"}</td>
+            <td className="adv-truncate">{r.rejectionReason ?? (r.omsEligible ? "OMS eligible" : "—")}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function LiveControlPanel({ live, scanSec }: { live?: AdvTerminalSnapshot["liveControl"]; scanSec: number }) {
+  const items = [
+    ["LIVE enabled", live?.liveEnabled],
+    ["Feed operational", live?.feedOperational],
+    ["Safe startup", live?.safeStartupReady],
+    ["Market open", live?.marketOpen],
+    ["Live gate", live?.liveGateOpen],
+  ] as const;
+
+  return (
+    <div className="adv-card adv-side-card">
+      <div className="adv-card-title">Live Control</div>
+      <div className="adv-kv-list">
+        {items.map(([label, ok]) => (
+          <div key={label}>
+            <span>{label}</span>
+            <strong className={ok ? "adv-ok" : "adv-bad"}>{ok ? "OK" : "BLOCKED"}</strong>
+          </div>
+        ))}
+        <div><span>Scan interval</span><strong>{scanSec}s</strong></div>
+      </div>
+    </div>
+  );
+}
+
+function EnginePanel({
+  engine,
+  metrics,
+  exec,
+}: {
+  engine?: Record<string, unknown>;
+  metrics: Record<string, unknown>;
+  exec?: Record<string, unknown>;
+}) {
+  return (
+    <div className="adv-card adv-side-card">
+      <div className="adv-card-title">Today&apos;s Engine</div>
+      <div className="adv-kv-list">
+        <div><span>Signals</span><strong>{String(engine?.trades ?? metrics.executedCount ?? 0)}</strong></div>
+        <div><span>Active</span><strong>{String(engine?.active ?? metrics.activeSetups ?? 0)}</strong></div>
+        <div><span>Executable</span><strong className="adv-ok">{String(engine?.executable ?? metrics.executableCount ?? 0)}</strong></div>
+        <div><span>Orders</span><strong>{String(exec?.ordersTotal ?? 0)}</strong></div>
+      </div>
+    </div>
+  );
+}
+
+function EngineMini({ engine, ws }: { engine?: Record<string, unknown>; ws?: Record<string, unknown> }) {
+  const strategies = (ws?.strategyAllocations as { strategyName?: string; runtimeState?: string }[] | undefined) ?? [];
+  const running = strategies.filter((s) => String(s.runtimeState ?? "").toUpperCase().includes("RUN")).length;
+  return (
+    <div className="adv-card adv-engine-mini">
+      <div className="adv-card-title">Today&apos;s Engine</div>
+      <div className="adv-kv-list">
+        <div><span>Trades</span><strong>{String(engine?.trades ?? 0)}</strong></div>
+        <div><span>Active</span><strong>{String(engine?.active ?? 0)}</strong></div>
+        <div><span>Strategies</span><strong>{running} running</strong></div>
+      </div>
+    </div>
+  );
+}
+
+function StrategiesPanel({ ws }: { ws?: Record<string, unknown> }) {
+  const strategies = ((ws?.strategyAllocations as { strategyKey?: string; strategyName?: string; runtimeState?: string }[] | undefined) ?? [])
+    .filter((s) => String(s.runtimeState ?? "").toUpperCase().includes("RUN"))
+    .slice(0, 5);
+
+  return (
+    <div className="adv-card adv-side-card">
+      <div className="adv-card-title">Active Strategies</div>
+      {strategies.length === 0 ? (
+        <div className="adv-empty-sm">No running strategies</div>
+      ) : (
+        <ul className="adv-strategy-list">
+          {strategies.map((s) => (
+            <li key={s.strategyKey ?? s.strategyName}>
+              <strong>{s.strategyName ?? s.strategyKey}</strong>
+              <span>{s.runtimeState}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function SystemHealthList({ health, live }: { health: Record<string, unknown>; live?: AdvTerminalSnapshot["liveControl"] }) {
+  const items = [
+    ["Pipeline", String(health.status ?? "—")],
+    ["Feed", live?.feedOperational ? "Operational" : "Stale/blocked"],
+    ["Startup gate", live?.safeStartupReady ? "Ready" : "Warmup"],
+    ["LIVE route", live?.liveEnabled ? "Enabled" : "Paper/disabled"],
+    ["Scan", `${live?.scanIntervalSec ?? health.scanIntervalSec ?? 10}s`],
+  ];
+  return (
+    <div className="adv-kv-list">
+      {items.map(([k, v]) => (
+        <div key={k}><span>{k}</span><strong>{v}</strong></div>
+      ))}
+    </div>
+  );
+}
+
+function DiagnosticsPanel({ row, onClose }: { row: EnrichedRow; onClose: () => void }) {
+  return (
+    <div className="adv-card adv-diagnostics">
+      <div className="adv-card-head">
+        <span className="adv-card-title">Signal Diagnostics — {row.symbol}</span>
+        <button type="button" className="adv-pill-btn" onClick={onClose}>Close</button>
+      </div>
+      <div className="adv-diag-grid">
+        <Diag label="Execution" value={String(row.executionStatus)} />
+        <Diag label="Stage" value={row.pipelineStage ?? "—"} />
+        <Diag label="Quality" value={row.qualityGate ?? "—"} />
+        <Diag label="Risk" value={row.riskGate ?? "—"} />
+        <Diag label="Requested" value={row.requestedMode ?? "—"} />
+        <Diag label="Effective" value={row.effectiveMode ?? "—"} />
+        <Diag label="OMS" value={row.omsEligible ? "YES" : "NO"} />
+        <Diag label="Code" value={row.rejectionCode ?? "—"} />
+      </div>
+      {row.rejectionReason ? <div className="adv-reject-line">{row.rejectionReason}</div> : null}
+      {row.lifecycle?.length ? (
+        <div className="adv-lifecycle">
+          {row.lifecycle.map((s, i) => (
+            <span key={`${s}-${i}`} className="adv-badge">{i + 1}. {s}</span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ExecBadge({ status, small }: { status: string; small?: boolean }) {
+  const cls = statusClass(status);
+  return <span className={`adv-badge ${cls}${small ? " adv-badge-sm" : ""}`}>{status.replace(/_/g, " ")}</span>;
+}
+
+function PressureBar({ buyPct }: { buyPct: number }) {
+  return (
+    <div className="adv-pressure" title={`${buyPct}:${100 - buyPct}`}>
+      <div className="adv-pressure-buy" style={{ width: `${buyPct}%` }} />
+      <div className="adv-pressure-sell" style={{ width: `${100 - buyPct}%` }} />
+    </div>
+  );
+}
+
+function Metric({ label, value, hint, accent }: { label: string; value: string; hint: string; accent?: boolean }) {
+  return (
+    <div className={`adv-metric${accent ? " adv-metric-accent" : ""}`}>
+      <div className="adv-metric-label">{label}</div>
+      <div className="adv-metric-value">{value}</div>
+      <div className="adv-metric-hint">{hint}</div>
+    </div>
+  );
+}
+
+function Diag({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="adv-metric-label">{label}</div>
+      <div className="adv-diag-val">{value}</div>
+    </div>
+  );
+}
+
+function statusClass(status: string): string {
+  if (status === "EXECUTABLE" || status === "EXECUTED" || status === "TRADING") return "adv-badge-green";
+  if (status === "WATCHLIST" || status === "WATCHING") return "adv-badge-blue";
+  if (status === "COOLDOWN") return "adv-badge-amber";
+  if (["BLOCKED", "REJECTED", "OMS_REJECTED", "QUALITY_REJECTED"].includes(status)) return "adv-badge-red";
+  return "adv-badge-gray";
+}
+
+function shortSetup(v?: string): string {
+  if (!v) return "—";
+  return v.replace(/_/g, " ").replace(/V\d+(\.\d+)?/gi, "").trim().slice(0, 24) || v;
+}
+
+function fmtNum(v: unknown): string {
+  if (v == null) return "—";
+  if (typeof v === "number") return v.toFixed(2);
+  return String(v);
+}
 
 function toNum(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -34,540 +716,8 @@ function toNum(v: unknown): number | null {
   return null;
 }
 
-function fmtPct(v: unknown, digits = 1): string {
-  const n = toNum(v);
-  return n == null ? "—" : `${n.toFixed(digits)}%`;
-}
-
-function fmtCompact(v: unknown): string {
+function fmtImbalance(v: unknown): string {
   const n = toNum(v);
   if (n == null) return "—";
-  return new Intl.NumberFormat("en-IN", { notation: "compact", maximumFractionDigits: 1 }).format(n);
-}
-
-function fmtPrice(v: unknown): string {
-  const n = toNum(v);
-  if (n == null) return "—";
-  return n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function executionBadgeClass(status: string, isLight: boolean): string {
-  const base = "rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide";
-  switch (status) {
-    case "EXECUTABLE":
-      return cn(base, isLight ? "bg-emerald-100 text-emerald-800" : "bg-emerald-500/20 text-emerald-300");
-    case "EXECUTED":
-      return cn(base, isLight ? "bg-emerald-200 text-emerald-900" : "bg-emerald-500/30 text-emerald-200");
-    case "WATCHLIST":
-      return cn(base, isLight ? "bg-blue-100 text-blue-800" : "bg-blue-500/20 text-blue-300");
-    case "COOLDOWN":
-      return cn(base, isLight ? "bg-amber-100 text-amber-800" : "bg-amber-500/20 text-amber-300");
-    case "BLOCKED":
-    case "OMS_REJECTED":
-    case "QUALITY_REJECTED":
-    case "REJECTED":
-      return cn(base, isLight ? "bg-rose-100 text-rose-800" : "bg-rose-500/20 text-rose-300");
-    case "INTELLIGENCE_ONLY":
-      return cn(base, isLight ? "bg-neutral-200 text-neutral-600" : "bg-white/10 text-neutral-400");
-    default:
-      return cn(base, isLight ? "bg-neutral-100 text-neutral-700" : "bg-white/10 text-neutral-300");
-  }
-}
-
-function executionLabel(status: string): string {
-  return status.replace(/_/g, " ");
-}
-
-export function AdvDashboardPage() {
-  const isLight = useUiThemeStore((s) => s.mode === "light");
-  const [tab, setTab] = useState<TabKey>("intelligence");
-  const [tf, setTf] = useState("15m");
-  const [selectedRow, setSelectedRow] = useState<DisplayRow | null>(null);
-
-  const terminalQ = useQuery<AdvTerminalSnapshot>({
-    queryKey: ["adv-terminal-v8"],
-    queryFn: fetchAdvTerminal,
-    staleTime: 2000,
-    refetchInterval: 10000,
-  });
-
-  const watchQ = useQuery<WatchRow[]>({
-    queryKey: ["adv-watch-live"],
-    queryFn: async () => {
-      const r = await api.get("/api/trader/terminal/market/watch");
-      return Array.isArray(r.data?.data) ? r.data.data : [];
-    },
-    staleTime: 2000,
-    refetchInterval: 10000,
-  });
-
-  const wsQ = useQuery<Workstation>({
-    queryKey: ["adv-workstation-live"],
-    queryFn: async () => {
-      const r = await api.get("/api/trader/terminal/workstation");
-      return (r.data?.data ?? {}) as Workstation;
-    },
-    staleTime: 5000,
-    refetchInterval: 15000,
-  });
-
-  const candlesQ = useQuery<CandleRow[]>({
-    queryKey: ["adv-candles-live", tf],
-    queryFn: async () => {
-      const r = await api.get(`/api/trader/terminal/market/chart?symbol=NIFTY_FUT&interval=${encodeURIComponent(tf)}&limit=140`);
-      return Array.isArray(r.data?.data) ? r.data.data : [];
-    },
-    staleTime: 5000,
-    refetchInterval: 15000,
-  });
-
-  const refreshAll = () => {
-    void terminalQ.refetch();
-    void watchQ.refetch();
-    void wsQ.refetch();
-    void candlesQ.refetch();
-  };
-
-  const terminal = terminalQ.data;
-  const scanIntervalSec = terminal?.scanIntervalSec ?? terminal?.liveControl?.scanIntervalSec ?? 10;
-
-  const watchBySymbol = useMemo(() => {
-    const m = new Map<string, WatchRow>();
-    for (const w of watchQ.data ?? []) m.set(String(w.symbol ?? ""), w);
-    return m;
-  }, [watchQ.data]);
-
-  const displayRows = useMemo<DisplayRow[]>(() => {
-    const rows = terminal?.scannerRows ?? [];
-    return rows.map((row, i) => {
-      const symbol = String(row.symbol ?? "—");
-      const watch = watchBySymbol.get(symbol);
-      const ltp = watch?.price ?? fmtPrice(row.ltp);
-      return {
-        ...row,
-        rank: row.rank ?? i + 1,
-        id: row.signalId ?? `${symbol}-${row.strategy ?? i}`,
-        aiScore: toNum(row.aiScore) ?? 0,
-        executionStatus: (row.executionStatus ?? row.status ?? "INTELLIGENCE_ONLY") as ExecutionStatus,
-        ltpDisplay: ltp,
-        changePct: toNum(watch?.changePct) ?? 0,
-      };
-    });
-  }, [terminal?.scannerRows, watchBySymbol]);
-
-  const tabRows = useMemo(() => {
-    const rows = [...displayRows];
-    switch (tab) {
-      case "orderflow":
-        return rows.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
-      case "system":
-        return rows.sort((a, b) => {
-          const rank = (s: string) => {
-            if (s === "EXECUTABLE") return 0;
-            if (s === "EXECUTED") return 1;
-            if (s === "WATCHLIST") return 2;
-            return 3;
-          };
-          return rank(String(a.executionStatus)) - rank(String(b.executionStatus)) || b.aiScore - a.aiScore;
-        });
-      case "sectors":
-        return rows.sort((a, b) => a.symbol.localeCompare(b.symbol));
-      case "risk":
-        return rows.filter((r) => ["BLOCKED", "REJECTED", "OMS_REJECTED", "QUALITY_REJECTED", "COOLDOWN"].includes(String(r.executionStatus)));
-      case "performance":
-        return rows.filter((r) => r.outcomeStatus || r.executionStatus === "EXECUTED");
-      default:
-        return rows;
-    }
-  }, [displayRows, tab]);
-
-  const metrics = terminal?.metrics ?? {};
-  const liveControl = terminal?.liveControl;
-  const topCards = (terminal?.liveCards?.length ? terminal.liveCards : displayRows.filter((r) =>
-    ["EXECUTABLE", "WATCHLIST", "EXECUTED"].includes(String(r.executionStatus)),
-  )).slice(0, 3);
-
-  const activeStrategies = useMemo(
-    () => (wsQ.data?.strategyAllocations ?? []).filter((s) => String(s.runtimeState ?? "").toUpperCase().includes("RUN")).slice(0, 6),
-    [wsQ.data?.strategyAllocations],
-  );
-
-  const candles = (candlesQ.data ?? [])
-    .map((r) => ({
-      time: Number(r.time ?? r.ts ?? 0),
-      open: Number(r.open ?? 0),
-      high: Number(r.high ?? 0),
-      low: Number(r.low ?? 0),
-      close: Number(r.close ?? 0),
-    }))
-    .filter((c) => c.time > 0);
-  const volumes = (candlesQ.data ?? [])
-    .map((r) => ({
-      time: Number(r.time ?? r.ts ?? 0),
-      value: Number(r.volume ?? 0),
-      up: Number(r.close ?? 0) >= Number(r.open ?? 0),
-    }))
-    .filter((v) => v.time > 0);
-
-  const executableCount = toNum(metrics.executableCount) ?? displayRows.filter((r) => r.executionStatus === "EXECUTABLE").length;
-  const engine = terminal?.engine ?? {};
-
-  return (
-    <div className="space-y-4 pb-10">
-      <div className={cn("rounded-2xl border px-5 py-4", isLight ? "border-neutral-200 bg-white" : "border-white/10 bg-neutral-900/80")}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className={cn("text-3xl font-bold tracking-tight", isLight ? "text-neutral-900" : "text-white")}>Intraday Intelligence</h1>
-            <p className={cn("text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>
-              Production pipeline terminal — scan every {scanIntervalSec}s · {terminal?.truthSource ?? "PRODUCTION_PIPELINE"}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className={cn("rounded-xl border px-3 py-2 text-xs", isLight ? "border-neutral-200 bg-neutral-50 text-neutral-700" : "border-white/10 bg-white/5 text-neutral-300")}>
-              <div className="font-semibold">{terminal?.marketOpen ? "MARKET OPEN" : "MARKET CLOSED"}</div>
-              <div>{terminal?.istTime ?? "—"} IST</div>
-            </div>
-            <div className={cn("rounded-xl border px-3 py-2 text-xs font-semibold", isLight ? "border-neutral-200 bg-neutral-50 text-neutral-700" : "border-white/10 bg-white/5 text-neutral-300")}>
-              Regime: {terminal?.marketRegime ?? "—"}
-            </div>
-            <button onClick={refreshAll} className={cn("rounded-xl border px-3 py-2 text-xs", isLight ? "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100" : "border-white/10 bg-white/5 text-neutral-300 hover:bg-white/10")}>
-              Refresh
-            </button>
-          </div>
-        </div>
-        {terminal?.regimeNarrative ? (
-          <p className={cn("mt-2 text-xs", isLight ? "text-neutral-600" : "text-neutral-400")}>{terminal.regimeNarrative}</p>
-        ) : null}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {[
-          ["intelligence", "Intelligence"],
-          ["orderflow", "Order Flow"],
-          ["system", "System Decisions"],
-          ["sectors", "Sectors"],
-          ["risk", "Risk Matrix"],
-          ["performance", "Performance"],
-        ].map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTab(key as TabKey)}
-            className={cn(
-              "rounded-lg px-3 py-1.5 text-sm font-semibold transition",
-              tab === key
-                ? isLight ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/20 text-emerald-300"
-                : isLight ? "bg-neutral-100 text-neutral-600 hover:bg-neutral-200" : "bg-white/5 text-neutral-400 hover:bg-white/10",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <MetricCard title="Stocks Tracked" value={String(metrics.stocksTracked ?? "—")} note="Live universe" isLight={isLight} />
-        <MetricCard title="Active Setups" value={String(metrics.activeSetups ?? displayRows.length)} note="Pipeline rows" isLight={isLight} />
-        <MetricCard title="Executable" value={String(executableCount)} note="OMS eligible now" isLight={isLight} accent />
-        <MetricCard title="Market Breadth" value={String(metrics.marketBreadth ?? "—")} note="Adv : Decl" isLight={isLight} />
-        <MetricCard title="Top AI Score" value={String(metrics.topScore ?? 0)} note="Best setup" isLight={isLight} />
-        <MetricCard title="Scan Cadence" value={`${scanIntervalSec}s`} note="Honest interval" isLight={isLight} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
-        <div className="space-y-3 xl:col-span-9">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            {topCards.length === 0 ? (
-              <div className={cn("col-span-3 rounded-2xl border p-6 text-center text-sm", isLight ? "border-neutral-200 bg-neutral-50 text-neutral-500" : "border-white/10 bg-white/5 text-neutral-400")}>
-                No executable or watchlist setups in production pipeline
-              </div>
-            ) : (
-              topCards.map((c) => {
-                const status = String(c.executionStatus ?? c.status ?? "WATCHLIST");
-                return (
-                  <div key={String(c.signalId ?? c.symbol)} className={cn("rounded-2xl border p-4", isLight ? "border-emerald-200 bg-emerald-50/40" : "border-emerald-500/20 bg-emerald-500/5")}>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className={cn("text-2xl font-black", isLight ? "text-neutral-800" : "text-white")}>{c.symbol}</div>
-                      <span className={executionBadgeClass(status, isLight)}>{executionLabel(status)}</span>
-                    </div>
-                    <div className={cn("mt-2 text-4xl font-black", isLight ? "text-neutral-800" : "text-white")}>{c.aiScore ?? 0}</div>
-                    <div className={cn("text-xs uppercase tracking-wide", isLight ? "text-neutral-500" : "text-neutral-400")}>{c.setupType ?? c.strategy ?? "—"}</div>
-                    <div className={cn("mt-2 text-[11px]", isLight ? "text-neutral-600" : "text-neutral-400")}>
-                      {c.effectiveMode ?? "—"} route · {c.tradeQuality ?? "—"}
-                    </div>
-                    {c.rejectionReason ? (
-                      <div className={cn("mt-1 text-[11px] font-medium", isLight ? "text-rose-700" : "text-rose-300")}>{c.rejectionReason}</div>
-                    ) : null}
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <div className={cn("rounded-2xl border p-3", isLight ? "border-neutral-200 bg-white" : "border-white/10 bg-neutral-900/80")}>
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className={cn("text-lg font-bold", isLight ? "text-neutral-900" : "text-white")}>NIFTY_FUT</h3>
-              <div className={cn("flex gap-1 rounded-xl border p-1 text-xs font-semibold", isLight ? "border-neutral-200" : "border-white/10")}>
-                {["1m", "5m", "15m", "1H"].map((f) => (
-                  <button key={f} type="button" onClick={() => setTf(f)} className={cn("rounded-lg px-2 py-1", f === tf ? "bg-neutral-800 text-white" : isLight ? "text-neutral-600 hover:bg-neutral-100" : "text-neutral-400 hover:bg-white/10")}>
-                    {f}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className={cn("h-64 rounded-xl border p-1", isLight ? "border-neutral-200 bg-neutral-50" : "border-white/10 bg-black/30")}>
-              {candles.length > 0 ? (
-                <NiftyCandleChart variant={isLight ? "light" : "dark"} height={248} candles={candles} volumes={volumes} />
-              ) : (
-                <div className={cn("flex h-full items-center justify-center text-sm", isLight ? "text-neutral-500" : "text-neutral-400")}>No live candle data</div>
-              )}
-            </div>
-          </div>
-
-          <div className={cn("overflow-hidden rounded-2xl border", isLight ? "border-neutral-200 bg-white" : "border-white/10 bg-neutral-900/80")}>
-            <div className={cn("flex items-center justify-between border-b px-4 py-3", isLight ? "border-neutral-200" : "border-white/10")}>
-              <h3 className={cn("font-bold", isLight ? "text-neutral-900" : "text-white")}>Production Scanner</h3>
-              <span className={cn("rounded-full px-2 py-1 text-xs font-bold", isLight ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/20 text-emerald-300")}>
-                {executableCount} executable · {displayRows.length} total
-              </span>
-            </div>
-            <div className="max-h-[480px] overflow-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead className={cn("sticky top-0 text-[10px] uppercase", isLight ? "bg-white text-neutral-500" : "bg-neutral-900 text-neutral-400")}>
-                  <tr>
-                    <th className="px-2 py-2 text-left">#</th>
-                    <th className="px-2 py-2 text-left">Symbol</th>
-                    <th className="px-2 py-2 text-left">AI</th>
-                    <th className="px-2 py-2 text-left">Execution</th>
-                    <th className="px-2 py-2 text-left">Quality</th>
-                    <th className="px-2 py-2 text-left">Mode</th>
-                    <th className="px-2 py-2 text-left">Rejection / Reason</th>
-                    <th className="px-2 py-2 text-left">Age</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {terminalQ.isLoading ? (
-                    <tr>
-                      <td colSpan={8} className={cn("px-3 py-8 text-center", isLight ? "text-neutral-500" : "text-neutral-400")}>Loading production pipeline…</td>
-                    </tr>
-                  ) : tabRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className={cn("px-3 py-8 text-center", isLight ? "text-neutral-500" : "text-neutral-400")}>No pipeline signals for this view</td>
-                    </tr>
-                  ) : (
-                    tabRows.map((r, idx) => (
-                      <tr
-                        key={r.id}
-                        onClick={() => setSelectedRow(r)}
-                        className={cn(
-                          "cursor-pointer transition hover:opacity-90",
-                          idx % 2 === 0 ? (isLight ? "bg-neutral-50/60" : "bg-white/5") : "",
-                          selectedRow?.id === r.id ? (isLight ? "ring-1 ring-inset ring-emerald-300" : "ring-1 ring-inset ring-emerald-500/40") : "",
-                        )}
-                      >
-                        <td className="px-2 py-2 font-semibold">{r.rank}</td>
-                        <td className="px-2 py-2">
-                          <div className="font-semibold">{r.symbol}</div>
-                          <div className={cn("text-[10px]", isLight ? "text-neutral-500" : "text-neutral-400")}>{r.side ?? "—"} · {r.strategy ?? r.setupType ?? "—"}</div>
-                        </td>
-                        <td className="px-2 py-2 font-bold text-blue-600">{formatConfidencePct(r.aiScore)}</td>
-                        <td className="px-2 py-2">
-                          <span className={executionBadgeClass(String(r.executionStatus), isLight)}>{executionLabel(String(r.executionStatus))}</span>
-                          {r.cooldownSecRemaining ? (
-                            <div className={cn("mt-1 text-[10px]", isLight ? "text-amber-700" : "text-amber-300")}>{r.cooldownSecRemaining}s cooldown</div>
-                          ) : null}
-                        </td>
-                        <td className="px-2 py-2 text-xs">{r.qualityGate ?? "—"} / {r.riskGate ?? "—"}</td>
-                        <td className="px-2 py-2 text-xs">
-                          <div>{r.requestedMode ?? "—"}</div>
-                          <div className={cn(isLight ? "text-neutral-500" : "text-neutral-400")}>→ {r.effectiveMode ?? "—"}</div>
-                        </td>
-                        <td className={cn("px-2 py-2 text-xs max-w-[220px]", isLight ? "text-neutral-700" : "text-neutral-300")}>
-                          {r.rejectionReason ?? r.reason ?? (r.omsEligible ? "OMS eligible" : "—")}
-                        </td>
-                        <td className="px-2 py-2 text-xs">{r.signalAgeSec != null ? `${r.signalAgeSec}s` : "—"}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {selectedRow ? (
-            <SignalDiagnosticsPanel row={selectedRow} isLight={isLight} onClose={() => setSelectedRow(null)} />
-          ) : null}
-        </div>
-
-        <div className="space-y-3 xl:col-span-3">
-          <LiveControlPanel liveControl={liveControl} isLight={isLight} scanIntervalSec={scanIntervalSec} />
-
-          <div className={cn("rounded-2xl border p-4", isLight ? "border-neutral-200 bg-white" : "border-white/10 bg-neutral-900/80")}>
-            <h4 className={cn("text-xl font-bold", isLight ? "text-neutral-900" : "text-white")}>Today&apos;s Engine</h4>
-            <div className={cn("mt-3 space-y-1 text-sm", isLight ? "text-neutral-700" : "text-neutral-300")}>
-              <div>Signals: <span className="font-bold">{String(engine.trades ?? metrics.executedCount ?? 0)}</span></div>
-              <div>Active: <span className="font-bold">{String(engine.active ?? displayRows.length)}</span></div>
-              <div>Executable: <span className="font-bold text-emerald-600">{String(engine.executable ?? executableCount)}</span></div>
-            </div>
-          </div>
-
-          <div className={cn("rounded-2xl border p-4", isLight ? "border-neutral-200 bg-white" : "border-white/10 bg-neutral-900/80")}>
-            <h4 className={cn("text-sm font-bold", isLight ? "text-neutral-900" : "text-white")}>Active Strategies</h4>
-            <div className="mt-2 space-y-2">
-              {activeStrategies.length === 0 ? (
-                <div className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-400")}>No running strategies</div>
-              ) : (
-                activeStrategies.map((s, i) => (
-                  <div key={`${s.strategyKey ?? s.strategyName ?? i}`} className={cn("rounded-lg border p-2", isLight ? "border-neutral-200 bg-neutral-50" : "border-white/10 bg-white/5")}>
-                    <div className="text-sm font-semibold">{s.strategyName ?? s.strategyKey ?? "—"}</div>
-                    <div className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-400")}>{s.runtimeState ?? "—"}</div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {tab === "system" && terminal?.decisions?.length ? (
-            <div className={cn("rounded-2xl border p-4", isLight ? "border-neutral-200 bg-white" : "border-white/10 bg-neutral-900/80")}>
-              <h4 className={cn("text-sm font-bold", isLight ? "text-neutral-900" : "text-white")}>Recent Decisions</h4>
-              <div className="mt-2 max-h-64 space-y-2 overflow-auto">
-                {terminal.decisions.slice(0, 8).map((d, i) => (
-                  <div key={`${d.symbol}-${d.time}-${i}`} className={cn("rounded-lg border p-2 text-xs", isLight ? "border-neutral-200" : "border-white/10")}>
-                    <div className="font-semibold">{d.time} · {d.symbol}</div>
-                    <div className={cn(isLight ? "text-neutral-600" : "text-neutral-400")}>{d.strategy} · AI {d.aiScore}</div>
-                    <div className="mt-1">{d.rejectionReason ?? d.result}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LiveControlPanel({
-  liveControl,
-  isLight,
-  scanIntervalSec,
-}: {
-  liveControl?: AdvTerminalSnapshot["liveControl"];
-  isLight: boolean;
-  scanIntervalSec: number;
-}) {
-  const items = [
-    { label: "LIVE enabled", ok: liveControl?.liveEnabled },
-    { label: "Platform LIVE flag", ok: liveControl?.platformLiveFlag },
-    { label: "Live gate open", ok: liveControl?.liveGateOpen },
-    { label: "Feed operational", ok: liveControl?.feedOperational },
-    { label: "Safe startup ready", ok: liveControl?.safeStartupReady },
-    { label: "Market open", ok: liveControl?.marketOpen },
-  ];
-
-  return (
-    <div className={cn("rounded-2xl border p-4", isLight ? "border-neutral-200 bg-white" : "border-white/10 bg-neutral-900/80")}>
-      <h4 className={cn("text-sm font-bold", isLight ? "text-neutral-900" : "text-white")}>Live Control</h4>
-      <div className="mt-2 space-y-1.5">
-        {items.map((item) => (
-          <div key={item.label} className="flex items-center justify-between text-xs">
-            <span className={isLight ? "text-neutral-600" : "text-neutral-400"}>{item.label}</span>
-            <span className={cn("font-bold", item.ok ? "text-emerald-600" : "text-rose-600")}>{item.ok ? "OK" : "BLOCKED"}</span>
-          </div>
-        ))}
-        <div className="flex items-center justify-between text-xs pt-1 border-t border-dashed border-neutral-200 dark:border-white/10">
-          <span className={isLight ? "text-neutral-600" : "text-neutral-400"}>Scan interval</span>
-          <span className="font-bold">{scanIntervalSec}s</span>
-        </div>
-        {liveControl?.feedEquityStale || liveControl?.feedIndexStale ? (
-          <div className={cn("mt-2 rounded-lg p-2 text-[11px] font-medium", isLight ? "bg-rose-50 text-rose-800" : "bg-rose-500/10 text-rose-300")}>
-            Feed stale — equity={String(liveControl.feedEquityStale)} index={String(liveControl.feedIndexStale)}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function SignalDiagnosticsPanel({
-  row,
-  isLight,
-  onClose,
-}: {
-  row: DisplayRow;
-  isLight: boolean;
-  onClose: () => void;
-}) {
-  const lifecycle = row.lifecycle ?? [];
-  return (
-    <div className={cn("rounded-2xl border p-4", isLight ? "border-neutral-200 bg-white" : "border-white/10 bg-neutral-900/80")}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h4 className={cn("text-lg font-bold", isLight ? "text-neutral-900" : "text-white")}>Signal Diagnostics — {row.symbol}</h4>
-          <p className={cn("text-xs mt-1", isLight ? "text-neutral-500" : "text-neutral-400")}>{row.strategy ?? row.setupType} · {row.signalId ?? "preview"}</p>
-        </div>
-        <button type="button" onClick={onClose} className={cn("rounded-lg border px-2 py-1 text-xs", isLight ? "border-neutral-200" : "border-white/10")}>Close</button>
-      </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 text-xs">
-        <DiagField label="Execution Status" value={String(row.executionStatus)} isLight={isLight} />
-        <DiagField label="Pipeline Stage" value={row.pipelineStage ?? "—"} isLight={isLight} />
-        <DiagField label="Quality Gate" value={row.qualityGate ?? "—"} isLight={isLight} />
-        <DiagField label="Risk Gate" value={row.riskGate ?? "—"} isLight={isLight} />
-        <DiagField label="Requested Mode" value={row.requestedMode ?? "—"} isLight={isLight} />
-        <DiagField label="Effective Mode" value={row.effectiveMode ?? "—"} isLight={isLight} />
-        <DiagField label="OMS Eligible" value={row.omsEligible ? "YES" : "NO"} isLight={isLight} />
-        <DiagField label="Rejection Code" value={row.rejectionCode ?? "—"} isLight={isLight} />
-      </div>
-      {row.rejectionReason ? (
-        <div className={cn("mt-3 rounded-lg p-3 text-sm font-medium", isLight ? "bg-rose-50 text-rose-800" : "bg-rose-500/10 text-rose-300")}>
-          {row.rejectionReason}
-        </div>
-      ) : null}
-      <div className="mt-4">
-        <div className={cn("text-xs font-bold uppercase mb-2", isLight ? "text-neutral-500" : "text-neutral-400")}>Lifecycle</div>
-        <div className="flex flex-wrap gap-2">
-          {lifecycle.length === 0 ? (
-            <span className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-400")}>No lifecycle data</span>
-          ) : (
-            lifecycle.map((stage, i) => (
-              <span key={`${stage}-${i}`} className={cn("rounded-full px-2 py-1 text-[10px] font-bold", isLight ? "bg-neutral-100 text-neutral-700" : "bg-white/10 text-neutral-300")}>
-                {i + 1}. {stage}
-              </span>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DiagField({ label, value, isLight }: { label: string; value: string; isLight: boolean }) {
-  return (
-    <div>
-      <div className={cn("text-[10px] uppercase", isLight ? "text-neutral-500" : "text-neutral-400")}>{label}</div>
-      <div className={cn("font-semibold mt-0.5", isLight ? "text-neutral-800" : "text-white")}>{value}</div>
-    </div>
-  );
-}
-
-function MetricCard({
-  title,
-  value,
-  note,
-  isLight,
-  accent,
-}: {
-  title: string;
-  value: string;
-  note: string;
-  isLight: boolean;
-  accent?: boolean;
-}) {
-  return (
-    <div className={cn("rounded-2xl border p-4", isLight ? "border-neutral-200 bg-white" : "border-white/10 bg-neutral-900/80")}>
-      <div className={cn("text-[11px] font-semibold uppercase", isLight ? "text-neutral-500" : "text-neutral-400")}>{title}</div>
-      <div className={cn("mt-1 text-4xl font-black leading-none", accent ? "text-emerald-600" : isLight ? "text-neutral-900" : "text-white")}>{value}</div>
-      <div className={cn("mt-2 text-xs", isLight ? "text-emerald-700" : "text-emerald-300")}>{note}</div>
-    </div>
-  );
+  return n >= 0 ? `+${n.toFixed(2)}` : n.toFixed(2);
 }

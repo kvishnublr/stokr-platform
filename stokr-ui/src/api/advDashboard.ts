@@ -11,20 +11,6 @@ export type ExecutionStatus =
   | "QUALITY_REJECTED"
   | "EXECUTED";
 
-export type AdvSetupCard = {
-  symbol: string;
-  setupType: string;
-  confidenceScore: number;
-  qualityTier: string;
-  badges: string[];
-  entryPrice: number | null;
-  targetPrice: number | null;
-  stopLoss: number | null;
-  riskRewardRatio: number | null;
-  whyThisTrade: string;
-  riskNote: string;
-};
-
 export type AdvScannerRow = {
   rank: number;
   signalId?: string | null;
@@ -46,12 +32,34 @@ export type AdvScannerRow = {
   lifecycle?: string[];
   setupType?: string;
   status?: string;
+  displayStatus?: string;
   signalAgeSec?: number;
   tradeQuality?: string;
   omsEligible?: boolean;
   outcomeStatus?: string;
   reason?: string;
   createdAt?: string;
+  buyPct?: number;
+  sellPct?: number;
+  volumeMultiple?: string;
+  winPct?: string | number;
+  regimeFit?: boolean;
+};
+
+export type AdvSectorStock = {
+  symbol: string;
+  aiScore?: number;
+  executionStatus?: string;
+  side?: string;
+};
+
+export type AdvSector = {
+  name: string;
+  count: number;
+  stocks: AdvSectorStock[] | string[];
+  advancers?: number;
+  decliners?: number;
+  avgScore?: number;
 };
 
 export type AdvLiveControl = {
@@ -77,7 +85,16 @@ export type AdvTerminalSnapshot = {
   scannerRows: AdvScannerRow[];
   liveCards: AdvScannerRow[];
   engine?: Record<string, unknown>;
-  orderFlow?: { symbol: string; executionStatus?: string; rejectionReason?: string; obi?: string; trend?: string }[];
+  orderFlow?: {
+    symbol: string;
+    buyPct?: number;
+    sellPct?: number;
+    executionStatus?: string;
+    rejectionReason?: string;
+    obi?: string;
+    trend?: string;
+  }[];
+  orderFlowSummary?: Record<string, unknown>;
   decisions?: {
     time: string;
     symbol: string;
@@ -87,28 +104,42 @@ export type AdvTerminalSnapshot = {
     executionStatus?: string;
     rejectionReason?: string;
     lifecycle?: string[];
+    decisionFactors?: string[];
     result: string;
   }[];
-  sectors?: { name: string; count: number; stocks: string[] }[];
+  rejectedSetups?: {
+    symbol: string;
+    strategy?: string;
+    aiScore?: number;
+    executionStatus?: string;
+    rejectionReason?: string;
+    rejectionCode?: string;
+  }[];
+  sectors?: AdvSector[];
   risk?: Record<string, unknown>;
-  performance?: Record<string, unknown>;
+  performance?: Record<string, unknown> & {
+    bySetupType?: { setup: string; count: number; executable: number; avgScore: number }[];
+  };
+  systemHealth?: Record<string, unknown>;
   liveControl?: AdvLiveControl;
 };
-
-export type AdvDashboardSnapshot = {
-  marketRegime: string;
-  regimeNarrative: string;
-  metrics: Record<string, unknown>;
-  setups: AdvSetupCard[];
-  principles: string[];
-};
-
-export async function fetchAdvDashboardSnapshot(): Promise<AdvDashboardSnapshot> {
-  const res = await api.get("/api/v1/adv-dashboard/snapshot");
-  return res.data as AdvDashboardSnapshot;
-}
 
 export async function fetchAdvTerminal(): Promise<AdvTerminalSnapshot> {
   const res = await api.get("/api/v1/adv-dashboard/terminal");
   return (res.data?.data ?? res.data) as AdvTerminalSnapshot;
+}
+
+export async function fetchAdvWatch(): Promise<{ symbol: string; price?: string; changePct?: string; volume?: number | string }[]> {
+  const res = await api.get("/api/trader/terminal/market/watch");
+  return Array.isArray(res.data?.data) ? res.data.data : [];
+}
+
+export async function fetchAdvExecutionSummary(): Promise<Record<string, unknown>> {
+  const res = await api.get("/api/trader/execution-summary");
+  return (res.data?.data ?? {}) as Record<string, unknown>;
+}
+
+export async function fetchAdvWorkstation(): Promise<Record<string, unknown>> {
+  const res = await api.get("/api/trader/terminal/workstation");
+  return (res.data?.data ?? {}) as Record<string, unknown>;
 }
