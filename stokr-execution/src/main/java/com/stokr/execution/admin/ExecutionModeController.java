@@ -1,14 +1,15 @@
 package com.stokr.execution.admin;
 
 import com.stokr.oms.domain.ExecutionMode;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * Admin API for execution mode control.
@@ -18,6 +19,7 @@ import java.util.UUID;
 @RequestMapping("/api/admin/execution")
 @RequiredArgsConstructor
 @Slf4j
+@PreAuthorize("hasRole('ADMIN')")
 public class ExecutionModeController {
 
     private final ExecutionModeService executionModeService;
@@ -40,16 +42,31 @@ public class ExecutionModeController {
     public ExecutionModeResponse switchMode(
             @PathVariable String newMode,
             @RequestParam(required = false) String reason,
-            @RequestParam(required = false) String requestedBy) {
+            @RequestParam(required = false) String requestedBy,
+            @RequestBody(required = false) ModeSwitchRequest body) {
 
         ExecutionMode targetMode = ExecutionMode.valueOf(newMode.toUpperCase());
+        String effectiveReason = firstNonBlank(reason, body != null ? body.getReason() : null);
+        String effectiveRequestedBy = firstNonBlank(requestedBy, body != null ? body.getRequestedBy() : null);
 
-        executionModeService.switchMode(targetMode, reason, requestedBy);
+        executionModeService.switchMode(targetMode, effectiveReason, effectiveRequestedBy);
 
         log.info("execution.mode.switched target={} reason={} by={}",
-                targetMode, reason, requestedBy);
+                targetMode, effectiveReason, effectiveRequestedBy);
 
         return getCurrentMode();
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     @GetMapping("/health")
@@ -106,6 +123,12 @@ public class ExecutionModeController {
     /**
      * Responses.
      */
+    @Data
+    public static class ModeSwitchRequest {
+        private String reason;
+        private String requestedBy;
+    }
+
     @lombok.Data
     @lombok.Builder
     public static class ExecutionModeResponse {

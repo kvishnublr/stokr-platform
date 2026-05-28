@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { api, parseAxiosMessage } from '../../api/client';
 import { cn } from '../../lib/utils';
+import { useSessionStore } from '../../state/session';
 
 interface ExecutionModeOption {
   value: string;
@@ -9,11 +12,19 @@ interface ExecutionModeOption {
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
+type ExecutionModePayload = {
+  mode?: string;
+  lastSwitchTime?: string;
+  lastSwitchedBy?: string;
+};
+
 export function ExecutionModeSelector() {
+  const username = useSessionStore((s) => s.username);
   const [currentMode, setCurrentMode] = useState('PAPER');
   const [targetMode, setTargetMode] = useState('PAPER');
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [lastSwitchTime, setLastSwitchTime] = useState<string | null>(null);
   const [lastSwitchedBy, setLastSwitchedBy] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState(false);
@@ -48,33 +59,59 @@ export function ExecutionModeSelector() {
     HIGH: 'text-red-700 bg-red-50',
   };
 
+  const applyModePayload = useCallback((data: ExecutionModePayload | undefined) => {
+    if (!data?.mode) return;
+    setCurrentMode(String(data.mode));
+    setTargetMode(String(data.mode));
+    if (data.lastSwitchTime) {
+      setLastSwitchTime(new Date(data.lastSwitchTime).toLocaleString());
+    }
+    if (data.lastSwitchedBy) {
+      setLastSwitchedBy(String(data.lastSwitchedBy));
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<ExecutionModePayload>('/api/admin/execution/mode');
+        if (!cancelled) applyModePayload(res.data);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load execution mode:', error);
+        }
+      } finally {
+        if (!cancelled) setInitialLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyModePayload]);
+
   const handleSwitchMode = async () => {
     if (!reason.trim()) {
-      alert('Please provide a reason for mode switch');
+      toast.error('Please provide a reason for the mode switch');
       return;
     }
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/admin/execution/mode/${targetMode}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason, requestedBy: 'ADMIN' }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setCurrentMode(data.mode);
-        setLastSwitchTime(new Date(data.lastSwitchTime).toLocaleString());
-        setLastSwitchedBy(data.lastSwitchedBy);
-        setConfirmDialog(false);
-        setReason('');
-      } else {
-        alert('Failed to switch mode');
-      }
+      const res = await api.post<ExecutionModePayload>(
+        `/api/admin/execution/mode/${targetMode}`,
+        {
+          reason: reason.trim(),
+          requestedBy: username || 'ADMIN',
+        },
+      );
+      applyModePayload(res.data);
+      setConfirmDialog(false);
+      setReason('');
+      toast.success(`Execution mode switched to ${res.data?.mode ?? targetMode}`);
     } catch (error) {
       console.error('Mode switch error:', error);
-      alert('Error switching mode');
+      toast.error(parseAxiosMessage(error));
     } finally {
       setLoading(false);
     }
@@ -100,7 +137,7 @@ export function ExecutionModeSelector() {
             <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl blur opacity-0 group-hover:opacity-20 transition duration-300"></div>
             <div className="relative rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
               <span className="text-2xl font-bold text-blue-900">
-                {currentMode}
+                {initialLoading ? '…' : currentMode}
               </span>
             </div>
           </div>
@@ -117,7 +154,8 @@ export function ExecutionModeSelector() {
           <select
             value={targetMode}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTargetMode(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-slate-900 font-medium hover:border-blue-300 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            disabled={loading || initialLoading}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-slate-900 font-medium hover:border-blue-300 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-60"
           >
             {modes.map((mode) => (
               <option key={mode.value} value={mode.value}>
@@ -147,7 +185,8 @@ export function ExecutionModeSelector() {
           placeholder="Why are you switching modes?"
           value={reason}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReason(e.target.value)}
-          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 hover:border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-colors"
+          disabled={loading}
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 hover:border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-colors disabled:opacity-60"
         />
       </div>
 
@@ -160,7 +199,7 @@ export function ExecutionModeSelector() {
               handleSwitchMode();
             }
           }}
-          disabled={loading || currentMode === targetMode}
+          disabled={loading || initialLoading || currentMode === targetMode}
           className={cn(
             'flex-1 rounded-lg px-4 py-2 font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed',
             isLiveModeSelected ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
@@ -170,7 +209,8 @@ export function ExecutionModeSelector() {
         </button>
         <button
           onClick={() => setReason('')}
-          className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+          disabled={loading}
+          className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-60"
         >
           Clear
         </button>
