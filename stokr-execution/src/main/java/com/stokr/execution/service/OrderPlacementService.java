@@ -106,6 +106,8 @@ public class OrderPlacementService {
                     10L
             );
             if (!executionAttemptTracker.markIfFirst(attemptKey, now)) {
+                order = orderLifecycleService.transition(order.getId(), OrderState.VALIDATED, null);
+                order = orderLifecycleService.transition(order.getId(), OrderState.RISK_CHECK, null);
                 OmsOrder rejected = orderLifecycleService.transition(order.getId(), OrderState.REJECTED, "Duplicate execution attempt blocked");
                 ExecutionGuardResult duplicateResult = new ExecutionGuardResult(
                         ExecutionGuardOutcome.HARD_FAIL,
@@ -135,6 +137,8 @@ public class OrderPlacementService {
             if (guard.outcome() == ExecutionGuardOutcome.HARD_FAIL
                     || (guard.outcome() == ExecutionGuardOutcome.SOFT_FAIL && !guard.policy().allowSoftFailExecution())) {
                 String msg = guard.violations().isEmpty() ? "Execution blocked by guard policy" : guard.violations().getFirst().message();
+                order = orderLifecycleService.transition(order.getId(), OrderState.VALIDATED, null);
+                order = orderLifecycleService.transition(order.getId(), OrderState.RISK_CHECK, null);
                 OmsOrder rejected = orderLifecycleService.transition(order.getId(), OrderState.REJECTED, msg);
                 executionGuardTelemetryService.recordGuardEvent(userId, rejected.getId(), ctx, guard);
                 return rejected;

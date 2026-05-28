@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.broker.api.BrokerAdapter;
 import com.stokr.broker.kite.ZerodhaKitePositionsParser;
+import com.stokr.broker.kite.ZerodhaKiteInstrumentResolver;
 import com.stokr.broker.model.BrokerCredentials;
 import com.stokr.broker.model.BrokerOrderRequest;
 import com.stokr.broker.model.BrokerOrderResponse;
@@ -34,6 +35,7 @@ public class ZerodhaAdapter implements BrokerAdapter {
 
     private final ObjectMapper objectMapper;
     private final OutboundIpRestClientFactory ipClientFactory;
+    private final ZerodhaKiteInstrumentResolver instrumentResolver;
 
     @Override
     public String vendorCode() {
@@ -61,12 +63,35 @@ public class ZerodhaAdapter implements BrokerAdapter {
                     "Zerodha credentials not available — broker session may have expired. Re-connect Zerodha.");
         }
 
-        String[] parsed = parseSymbolExchange(request.symbol(), request.exchange());
+        String[] parsed = ZerodhaKiteInstrumentResolver.parseSymbolExchange(request.symbol(), request.exchange());
         String exchange = parsed[0];
         String tradingsymbol = parsed[1];
+        String product = request.product() != null && !request.product().isBlank()
+                ? request.product().trim().toUpperCase()
+                : "MIS";
+
+        if ("MCX".equals(exchange) || "NFO".equals(exchange)) {
+            try {
+                ZerodhaKiteInstrumentResolver.ResolvedInstrument resolved = instrumentResolver.resolve(
+                        request.symbol(),
+                        request.exchange(),
+                        apiKey,
+                        accessToken,
+                        request.outboundIp());
+                exchange = resolved.exchange();
+                tradingsymbol = resolved.tradingsymbol();
+                if (request.product() == null || request.product().isBlank()) {
+                    product = resolved.product();
+                }
+            } catch (Exception ex) {
+                log.error("zerodha.place_order.resolve_failed symbol={} exchange={} reason={}",
+                        request.symbol(), exchange, ex.getMessage());
+                throw new IllegalStateException("Could not resolve Kite instrument for "
+                        + request.symbol() + ": " + ex.getMessage(), ex);
+            }
+        }
         String side = request.side() != null ? request.side().trim().toUpperCase() : "BUY";
         String orderType = request.orderType() != null ? request.orderType().trim().toUpperCase() : "MARKET";
-        String product = request.product() != null ? request.product().trim().toUpperCase() : "MIS";
         int qty = request.quantity() != null ? request.quantity().intValue() : 1;
         if (qty < 1) qty = 1;
 
@@ -182,14 +207,7 @@ public class ZerodhaAdapter implements BrokerAdapter {
 
     /** Parses "NSE:ITC" or "ITC" into [exchange, tradingsymbol]. Defaults to NSE. */
     private static String[] parseSymbolExchange(String symbol, String exchangeHint) {
-        if (symbol != null && symbol.contains(":")) {
-            String[] parts = symbol.split(":", 2);
-            return new String[]{parts[0].trim().toUpperCase(), parts[1].trim().toUpperCase()};
-        }
-        String exchange = (exchangeHint != null && !exchangeHint.isBlank())
-                ? exchangeHint.trim().toUpperCase()
-                : "NSE";
-        return new String[]{exchange, symbol != null ? symbol.trim().toUpperCase() : ""};
+        return ZerodhaKiteInstrumentResolver.parseSymbolExchange(symbol, exchangeHint);
     }
 
     private static String encodeForm(Map<String, String> fields) {

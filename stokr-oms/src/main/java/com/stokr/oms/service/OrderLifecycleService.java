@@ -122,7 +122,7 @@ public class OrderLifecycleService {
                 apiKey,
                 accessToken,
                 null,   // exchange — ZerodhaAdapter parses from symbol
-                "MIS"   // product — default to intraday for live orders
+                null    // product — resolved per exchange in ZerodhaAdapter (MCX=NRML, NSE=MIS)
         );
         try {
             BrokerOrderResponse res = adapter.placeOrder(req);

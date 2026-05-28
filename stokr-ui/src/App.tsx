@@ -66,6 +66,7 @@ import { PageSkeleton } from "./components/ds/SkeletonLoader";
 import { ErrorBoundary } from "./components/ds/ErrorBoundary";
 import { ThemeHtmlSync } from "./components/theme/ThemeHtmlSync";
 import { SyncedToaster } from "./components/theme/SyncedToaster";
+import { AdvDashboardPage } from "./pages/AdvDashboardPage";
 import { TraderDashboard } from "./pages/trader/TraderDashboard";
 import { AdminOverviewPage } from "./pages/AdminOverviewPage";
 import { AdminCommandCenterPage } from "./pages/admin/AdminCommandCenterPage";
@@ -197,6 +198,7 @@ export default function App() {
         >
           <Route index element={<RootEntryRedirect />} />
           <Route path="dashboard" element={<TraderDashboardRoute />} />
+          <Route path="adv-dashboard" element={<AdvDashboardPage />} />
           <Route path="watchlist" element={<Navigate to="/strategies" replace />} />
           <Route path="terminal" element={<TerminalPage />} />
           <Route path="signals" element={<SignalsPage />} />
