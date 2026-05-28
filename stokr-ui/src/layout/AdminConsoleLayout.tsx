@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "../api/client";
 import { useEffect, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { Outlet, useLocation } from "react-router-dom";
@@ -33,6 +34,13 @@ export function AdminConsoleLayout() {
     refetchInterval: opsStreamLive ? false : 8000,
     retry: 2,
     staleTime: 1500,
+  });
+
+  const health = useQuery({
+    queryKey: ["admin-health"],
+    queryFn: async () => (await api.get("/api/admin/health")).data?.data as Record<string, unknown>,
+    refetchInterval: 15_000,
+    retry: 2,
   });
 
   useEffect(() => {
@@ -97,7 +105,7 @@ export function AdminConsoleLayout() {
         )}
       >
         <AdminBreadcrumbs crumbs={crumbs} />
-        <AdminQuickActions isLight={isLight} />
+        <AdminQuickActions isLight={isLight} killActive={Boolean(health.data?.killSwitch)} />
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
         <AnimatePresence mode="wait">

@@ -9,6 +9,8 @@ import {
   Cpu,
   Radio,
   Shield,
+  ShieldCheck,
+  Sparkles,
   TrendingUp,
   Zap,
 } from "lucide-react";
@@ -31,6 +33,7 @@ import {
   AdminSection,
   adminStagger,
 } from "../../components/admin/institutional/AdminDesignSystem";
+import { SafetyDiagnosticsLaunchLink } from "../../components/admin/institutional/SafetyDiagnosticsLaunchLink";
 import { LivePlatformTopology } from "../../components/admin/institutional/experience/LivePlatformTopology";
 import { OperationalInsightsStrip } from "../../components/admin/institutional/experience/RiskTerminalPanels";
 import { extractOmsLatencyMs, buildOperationalInsights } from "../../lib/adminOperationalIntelligence";
@@ -138,13 +141,13 @@ export function AdminCommandCenterPage() {
             <div className="flex flex-wrap gap-2">
               {showRiskConsole ? (
                 <Link
-                  to="/admin/ops"
+                  to="/admin/safety-diagnostics"
                   className={cn(
                     "inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide",
                     isLight ? "bg-rose-800 text-white hover:bg-rose-900" : "bg-rose-600 text-white hover:bg-rose-500",
                   )}
                 >
-                  Emergency rail <ArrowRight className="h-3.5 w-3.5" />
+                  Safety rail <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               ) : null}
               <Link
@@ -171,6 +174,7 @@ export function AdminCommandCenterPage() {
       }
     >
       <motion.div variants={adminStagger} initial="hidden" animate="show" className="space-y-8">
+        <SafetyDiagnosticsLaunchLink variant="hero" isLight={isLight} killActive={killOn} />
         <OperationalInsightsStrip insights={insights} isLight={isLight} />
         <LivePlatformTopology snapshot={snapshot} isLight={isLight} />
 
@@ -262,7 +266,8 @@ export function AdminCommandCenterPage() {
 
             <AdminPanel isLight={isLight} title="Capital & strategy posture" subtitle="Quick lanes to control surfaces">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <QuickLane isLight={isLight} to="/admin/risk-dashboard" icon={Shield} label="Risk terminal" />
+                <QuickLane isLight={isLight} to="/admin/safety-diagnostics" icon={Sparkles} label="Safety & diagnostics" />
+                <QuickLane isLight={isLight} to="/admin/risk-dashboard" icon={ShieldCheck} label="Risk terminal" />
                 <QuickLane isLight={isLight} to="/admin/capital" icon={TrendingUp} label="Capital allocation" />
                 <QuickLane isLight={isLight} to="/admin/strategies" icon={Activity} label="Strategy control" />
                 <QuickLane isLight={isLight} to="/admin/users" icon={Building2} label="Traders" />

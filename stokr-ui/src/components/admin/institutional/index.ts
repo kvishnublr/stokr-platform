@@ -1,5 +1,6 @@
 export * from "./AdminDesignSystem";
 export * from "./AdminNavigationChrome";
+export * from "./SafetyDiagnosticsLaunchLink";
 export * from "./AdminInstitutionalSidebar";
 export * from "./experience/LiveSignalCard";
 export * from "./experience/SignalQualityEngine";

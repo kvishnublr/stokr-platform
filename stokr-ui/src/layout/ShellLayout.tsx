@@ -194,6 +194,14 @@ export function ShellLayout() {
     refetchInterval: 30000,
   });
 
+  const adminHealth = useQuery({
+    queryKey: ["admin-health"],
+    queryFn: async () => (await api.get("/api/admin/health")).data?.data as Record<string, unknown>,
+    enabled: isAdmin,
+    refetchInterval: 15_000,
+    retry: 2,
+  });
+
   const mainLinks: SidebarLink[] = useMemo(
     () => [
       { to: "/dashboard", end: true, label: "Dashboard", icon: LayoutDashboard },
@@ -380,7 +388,7 @@ export function ShellLayout() {
             ) : null}
             {isAdmin ? (
               <SidebarSection title="Institutional Console" first={!hasTraderAccess}>
-                <AdminInstitutionalSidebar isLight={isLightUi} />
+                <AdminInstitutionalSidebar isLight={isLightUi} killActive={Boolean(adminHealth.data?.killSwitch)} />
               </SidebarSection>
             ) : null}
           </div>

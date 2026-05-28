@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, ChevronLeft, ChevronRight, Pin } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Pin, Shield } from "lucide-react";
+import { SafetyDiagnosticsLaunchLink } from "./SafetyDiagnosticsLaunchLink";
 import { ADMIN_NAV_GROUPS } from "../../../admin/navigation";
 import { useAdminWorkspaceStore } from "../../../admin/adminWorkspaceStore";
 import { cn } from "../../../lib/utils";
 
-export function AdminInstitutionalSidebar({ isLight }: { isLight: boolean }) {
+export function AdminInstitutionalSidebar({ isLight, killActive }: { isLight: boolean; killActive?: boolean }) {
   const location = useLocation();
   const collapsed = useAdminWorkspaceStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useAdminWorkspaceStore((s) => s.toggleSidebar);
@@ -63,6 +64,28 @@ export function AdminInstitutionalSidebar({ isLight }: { isLight: boolean }) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-2 [scrollbar-width:thin]">
+        {collapsed ? (
+          <NavLink
+            to="/admin/safety-diagnostics"
+            title="Safety & Diagnostics"
+            className={({ isActive }) =>
+              cn(
+                "mx-1 mb-2 flex justify-center rounded-xl border p-2 transition hover:scale-105",
+                killActive
+                  ? "border-rose-500/50 bg-gradient-to-br from-rose-500/20 to-amber-500/10 text-rose-400 shadow-[0_0_16px_rgba(244,63,94,0.35)]"
+                  : isLight
+                    ? "border-cyan-300 bg-gradient-to-br from-cyan-100 to-violet-100 text-indigo-700 shadow-[0_4px_16px_rgba(59,130,246,0.2)]"
+                    : "border-cyan-500/40 bg-gradient-to-br from-cyan-500/15 to-violet-500/15 text-cyan-300 shadow-[0_0_20px_rgba(56,189,248,0.25)]",
+                isActive && "ring-2 ring-cyan-400/50",
+              )
+            }
+          >
+            <Shield className="h-4 w-4" />
+          </NavLink>
+        ) : (
+          <SafetyDiagnosticsLaunchLink variant="sidebar" isLight={isLight} killActive={killActive} />
+        )}
+
         {!collapsed && pinnedItems.length > 0 ? (
           <div className="mb-3 px-2">
             <p className={cn("px-2 py-1 text-[10px] font-bold uppercase tracking-widest", isLight ? "text-neutral-400" : "text-neutral-600")}>
