@@ -52,9 +52,11 @@ public class AdminStrategyValidationDiagnosticsService {
         out.put("promotionPath", List.of(
                 "RESEARCH", "DRY_RUN", "PAPER_VALIDATING", "LIVE_SHADOW", "LIVE_CANDIDATE", "LIVE_VALIDATED"));
         out.put("policy", Map.of(
-                "paperAndLiveEligible", List.of("GAP_FILL"),
-                "paperValidatingOnly", List.of("NSE_SPIKE_DETECTION", "VWAP_BOUNCE"),
-                "dryRunOrDisabled", "all others"));
+                "paperAndLiveGoLive", List.of(
+                        "GAP_FILL", "NSE_SPIKE_DETECTION", "VWAP_BOUNCE", "SECTOR_LAGGARD"),
+                "paperTradeOnly", List.of(
+                        "EARLY_BREAKOUT", "INDEX_HUNT", "ADV_CASH", "S3_VWAP_RETEST", "S7_RANGE_FADE"),
+                "sizing", "Go-live cohort: BOTH mode, fixed qty=1"));
         out.put("reconciliationEndpoint", "/api/admin/trade-reconciliation/diagnostics");
         return out;
     }

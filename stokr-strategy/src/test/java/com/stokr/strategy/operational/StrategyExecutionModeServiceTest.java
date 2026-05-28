@@ -6,52 +6,57 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class StrategyExecutionModeServiceTest {
 
-    @Test
-    void defaultsMatchTomorrowOperationalPlan() {
-        StrategyExecutionModeService service = new StrategyExecutionModeService(
-                "PAPER", "DISABLED", "DRY_RUN", "DRY_RUN", "DRY_RUN",
-                "DRY_RUN", "DRY_RUN", "DISABLED", "DISABLED",
-                false, "");
+    private static final String LIVE_COHORT =
+            "GAP_FILL,NSE_SPIKE_DETECTION,VWAP_BOUNCE,SECTOR_LAGGARD";
 
-        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("GAP_FILL"));
-        assertEquals(StrategyExecutionMode.DISABLED, service.modeFor("SECTOR_LAGGARD"));
-        assertEquals(StrategyExecutionMode.DRY_RUN, service.modeFor("NSE_SPIKE_DETECTION"));
-        assertEquals(StrategyExecutionMode.DRY_RUN, service.modeFor("EARLY_BREAKOUT"));
-        assertEquals(StrategyExecutionMode.DRY_RUN, service.modeFor("VWAP_BOUNCE"));
-        assertEquals(StrategyExecutionMode.DRY_RUN, service.modeFor("INDEX_HUNT"));
-        assertEquals(StrategyExecutionMode.DRY_RUN, service.modeFor("ADV_CASH"));
-        assertEquals(StrategyExecutionMode.DISABLED, service.modeFor("S3_VWAP_RETEST"));
-        assertEquals(StrategyExecutionMode.DISABLED, service.modeFor("S7_RANGE_FADE"));
+    @Test
+    void defaultsMatchGoLiveOperationalPlan() {
+        StrategyExecutionModeService service = new StrategyExecutionModeService(
+                "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
+                "PAPER", "PAPER", "PAPER", "PAPER",
+                true, LIVE_COHORT);
+
+        assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
+        assertEquals(StrategyExecutionMode.LIVE, service.modeFor("SECTOR_LAGGARD"));
+        assertEquals(StrategyExecutionMode.LIVE, service.modeFor("NSE_SPIKE_DETECTION"));
+        assertEquals(StrategyExecutionMode.LIVE, service.modeFor("VWAP_BOUNCE"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("EARLY_BREAKOUT"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("INDEX_HUNT"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("ADV_CASH"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("S3_VWAP_RETEST"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("S7_RANGE_FADE"));
     }
 
     @Test
     void liveModeDowngradedWhenNotValidated() {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
-                "LIVE", "DISABLED", "DRY_RUN", "DRY_RUN", "DRY_RUN",
-                "DRY_RUN", "DRY_RUN", "DISABLED", "DISABLED",
-                false, "GAP_FILL");
+                "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
+                "PAPER", "PAPER", "PAPER", "PAPER",
+                false, LIVE_COHORT);
 
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("GAP_FILL"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("NSE_SPIKE_DETECTION"));
     }
 
     @Test
     void liveModeAllowedOnlyWhenExplicitlyValidated() {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
-                "LIVE", "DISABLED", "DRY_RUN", "DRY_RUN", "DRY_RUN",
-                "DRY_RUN", "DRY_RUN", "DISABLED", "DISABLED",
-                true, "GAP_FILL");
+                "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
+                "PAPER", "PAPER", "PAPER", "PAPER",
+                true, LIVE_COHORT);
 
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
-        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("NSE_SPIKE_DETECTION"));
+        assertEquals(StrategyExecutionMode.LIVE, service.modeFor("SECTOR_LAGGARD"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("EARLY_BREAKOUT"));
     }
 
     @Test
-    void onlyGapFillEligibleForLiveByDefaultPolicy() {
+    void liveCohortRequiresAllowLiveFlag() {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
-                "PAPER", "DISABLED", "DRY_RUN", "DRY_RUN", "DRY_RUN",
-                "DRY_RUN", "DRY_RUN", "DISABLED", "DISABLED",
+                "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
+                "PAPER", "PAPER", "PAPER", "PAPER",
                 true, "GAP_FILL");
-        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("GAP_FILL"));
-        assertEquals(StrategyExecutionMode.DRY_RUN, service.modeFor("NSE_SPIKE_DETECTION"));
+        assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("NSE_SPIKE_DETECTION"));
     }
 }
