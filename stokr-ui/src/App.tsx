@@ -68,7 +68,6 @@ import { ThemeHtmlSync } from "./components/theme/ThemeHtmlSync";
 import { SyncedToaster } from "./components/theme/SyncedToaster";
 import { AdvDashboardPage } from "./pages/AdvDashboardPage";
 import { TraderDashboard } from "./pages/trader/TraderDashboard";
-import { AdvDashboardPage } from "./pages/AdvDashboardPage";
 import { AdminOverviewPage } from "./pages/AdminOverviewPage";
 import { AdminCommandCenterPage } from "./pages/admin/AdminCommandCenterPage";
 import { ProfilePage } from "./pages/ProfilePage";
