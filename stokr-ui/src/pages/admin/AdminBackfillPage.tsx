@@ -2,6 +2,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, parseAxiosMessage } from "../../api/client";
+import { ADMIN_OPS_SNAPSHOT_KEY } from "../../lib/adminQueryKeys";
+import { openZerodhaOAuthPopup } from "../../lib/zerodhaOAuthPopup";
+import { ZERODHA_PLATFORM_FEED_OAUTH_MESSAGE } from "../../lib/zerodhaOAuthMessages";
 
 type BackfillJob = {
   id: string;
@@ -190,11 +193,30 @@ export function AdminBackfillPage() {
     try {
       const res = await api.post<{ data?: { authorizeUrl?: string } }>("/api/admin/broker-infrastructure/ZERODHA/connect");
       const url = res.data?.data?.authorizeUrl;
-      if (url && typeof url === "string") {
-        window.location.href = url;
+      if (!url || typeof url !== "string") {
+        toast.error("Could not start Zerodha OAuth. Open Broker Infrastructure and reconnect.");
         return;
       }
-      toast.error("Could not start Zerodha OAuth. Open Broker Infrastructure and reconnect.");
+      const session = openZerodhaOAuthPopup({
+        authorizeUrl: url,
+        messageType: ZERODHA_PLATFORM_FEED_OAUTH_MESSAGE,
+        popupName: "stokr_platform_feed_oauth",
+        onComplete: (result) => {
+          if (result.status === "ok") {
+            toast.success("Platform Zerodha feed session established.");
+            void qc.invalidateQueries({ queryKey: ADMIN_OPS_SNAPSHOT_KEY });
+            void qc.invalidateQueries({ queryKey: ["admin-broker-infrastructure"] });
+            return;
+          }
+          toast.error(result.reason ? `Platform feed OAuth failed (${result.reason})` : "Platform feed OAuth failed");
+        },
+        onEarlyClose: () => {
+          toast.message("OAuth window closed before platform feed linking finished.");
+        },
+      });
+      if (session.blocked) {
+        toast.error("Pop-up was blocked. Allow pop-ups for this site, then try again.");
+      }
     } catch (e) {
       toast.error(parseAxiosMessage(e));
     }
