@@ -40,15 +40,21 @@ public class SignalCooldownService {
      * @return true if cooldown elapsed or first signal; false if in cooldown
      */
     public boolean shouldEmitSignal(String symbol, String strategyKey, Instant now) {
+        return cooldownRemainingSeconds(symbol, strategyKey, now) <= 0;
+    }
+
+    public int cooldownRemainingSeconds(String symbol, String strategyKey, Instant now) {
         if (symbol == null || strategyKey == null || now == null) {
-            return true;
+            return 0;
         }
         String key = symbol + ":" + strategyKey;
         Instant lastSignal = lastSignalBySymbolStrategy.get(key);
         if (lastSignal == null) {
-            return true;
+            return 0;
         }
-        return !lastSignal.plusSeconds(cooldownSeconds).isAfter(now);
+        long elapsed = now.getEpochSecond() - lastSignal.getEpochSecond();
+        long remaining = cooldownSeconds - elapsed;
+        return (int) Math.max(0, remaining);
     }
 
     /**

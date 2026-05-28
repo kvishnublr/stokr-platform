@@ -105,7 +105,8 @@ public class AdvIntelligenceDashboardController {
                 toBigDecimal(row.get("targetPrice")),
                 toBigDecimal(row.get("stopLoss")),
                 null,
-                tier + " — " + String.valueOf(row.getOrDefault("status", "WATCHING")),
+                String.valueOf(row.getOrDefault("executionStatus", row.getOrDefault("status", "WATCHLIST")))
+                        + (row.get("rejectionReason") != null ? " — " + row.get("rejectionReason") : ""),
                 "Invalidation if volume/OI confirmation weakens vs entry."
         );
     }

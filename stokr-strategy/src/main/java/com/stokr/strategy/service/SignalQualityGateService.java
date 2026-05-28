@@ -26,29 +26,33 @@ public class SignalQualityGateService {
     private double minRiskReward;
 
     public boolean shouldDrop(StrategySignalEntity signal) {
+        return dropReason(signal) != null;
+    }
+
+    /** Returns human-readable rejection reason, or null if signal passes. */
+    public String dropReason(StrategySignalEntity signal) {
         if (!enabled || signal == null || Boolean.TRUE.equals(signal.getTestTrade())) {
-            return false;
+            return null;
         }
         if (signal.getBacktestRunId() != null) {
-            return false;
+            return null;
         }
         if (signal.getSignalSource() != null && !signal.getSignalSource().isProductionAnalytics()) {
-            return false;
+            return null;
         }
         BigDecimal confidence = signal.getConfidenceScore();
-        if (confidence != null
-                && confidence.doubleValue() < minConfidence) {
+        if (confidence != null && confidence.doubleValue() < minConfidence) {
             log.info("signal.dropped_low_confidence strategy={} symbol={} confidence={} min={}",
                     signal.getStrategyName(), signal.getSymbol(), confidence, minConfidence);
-            return true;
+            return "Confidence " + confidence + " below minimum " + minConfidence;
         }
         BigDecimal rr = estimateRiskReward(signal);
         if (rr != null && rr.doubleValue() < minRiskReward) {
             log.info("signal.dropped_low_rr strategy={} symbol={} rr={} min={}",
                     signal.getStrategyName(), signal.getSymbol(), rr, minRiskReward);
-            return true;
+            return "Risk/reward " + rr + " below minimum " + minRiskReward;
         }
-        return false;
+        return null;
     }
 
     private BigDecimal estimateRiskReward(StrategySignalEntity signal) {

@@ -9,6 +9,7 @@ import com.stokr.strategy.operational.StrategyExecutionMode;
 import com.stokr.strategy.operational.StrategyExecutionModeService;
 import com.stokr.strategy.operational.StrategyRuntimeHealthService;
 import com.stokr.strategy.operational.TradingSafeStartupGateService;
+import com.stokr.strategy.pipeline.SignalPipelineAuditService;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.runtime.BindingScanThrottleService;
 import com.stokr.strategy.runtime.SignalCooldownService;
@@ -56,6 +57,7 @@ public class CatalogDrivenScanScheduler {
     private final TradingSafeStartupGateService safeStartupGateService;
     private final FeedHealthMonitorService feedHealthMonitorService;
     private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
+    private final SignalPipelineAuditService signalPipelineAuditService;
 
     @Value("${stokr.catalog.scan.require-operational-path:false}")
     private boolean requireOperationalLivePath;
@@ -114,6 +116,9 @@ public class CatalogDrivenScanScheduler {
 
             if (feed.equityStale() || feed.indexStale()) {
                 runtimeHealthService.recordScanBlockedFeed(strategyKey, "FEED_STALE", tick);
+                signalPipelineAuditService.recordRejection(
+                        strategyKey, "*", "FEED_CHECK", "BLOCKED",
+                        "FEED_STALE", "Market feed stale — scan skipped for binding");
                 continue;
             }
 
@@ -174,6 +179,13 @@ public class CatalogDrivenScanScheduler {
                         }
 
                         if (!signalCooldownService.shouldEmitSignal(symbol, strategyKey, tick)) {
+                            int remaining = signalCooldownService.cooldownRemainingSeconds(symbol, strategyKey, tick);
+                            signalPipelineAuditService.record(
+                                    null, strategyKey, symbol, null,
+                                    "COOLDOWN_BLOCKED", "COOLDOWN",
+                                    "COOLDOWN", "Strategy cooldown — " + remaining + "s remaining",
+                                    mode.name(), mode.name(),
+                                    null, "SKIPPED", "PASSED", remaining);
                             bindingHold++;
                             totalSymbols++;
                             continue;

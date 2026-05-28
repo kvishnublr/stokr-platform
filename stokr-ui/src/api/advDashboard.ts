@@ -1,5 +1,16 @@
 import { api } from "./client";
 
+export type ExecutionStatus =
+  | "EXECUTABLE"
+  | "WATCHLIST"
+  | "INTELLIGENCE_ONLY"
+  | "BLOCKED"
+  | "REJECTED"
+  | "COOLDOWN"
+  | "OMS_REJECTED"
+  | "QUALITY_REJECTED"
+  | "EXECUTED";
+
 export type AdvSetupCard = {
   symbol: string;
   setupType: string;
@@ -16,18 +27,43 @@ export type AdvSetupCard = {
 
 export type AdvScannerRow = {
   rank: number;
+  signalId?: string | null;
   symbol: string;
-  ltp?: number | string;
-  changePct?: number | string;
-  aiScore: number;
-  status: string;
+  strategy?: string;
   side?: string;
+  ltp?: number | string | null;
+  aiScore: number;
+  probability?: number;
+  executionStatus: ExecutionStatus | string;
+  pipelineStage?: string;
+  rejectionReason?: string | null;
+  rejectionCode?: string | null;
+  requestedMode?: string;
+  effectiveMode?: string;
+  qualityGate?: string;
+  riskGate?: string;
+  cooldownSecRemaining?: number;
+  lifecycle?: string[];
   setupType?: string;
-  buyPct?: number;
-  volumeMultiple?: string;
-  winPct?: number;
-  regimeFit?: boolean;
-  badges?: string[];
+  status?: string;
+  signalAgeSec?: number;
+  tradeQuality?: string;
+  omsEligible?: boolean;
+  outcomeStatus?: string;
+  reason?: string;
+  createdAt?: string;
+};
+
+export type AdvLiveControl = {
+  liveEnabled?: boolean;
+  platformLiveFlag?: boolean;
+  liveGateOpen?: boolean;
+  feedEquityStale?: boolean;
+  feedIndexStale?: boolean;
+  feedOperational?: boolean;
+  safeStartupReady?: boolean;
+  marketOpen?: boolean;
+  scanIntervalSec?: number;
 };
 
 export type AdvTerminalSnapshot = {
@@ -35,15 +71,28 @@ export type AdvTerminalSnapshot = {
   regimeNarrative: string;
   marketOpen: boolean;
   istTime: string;
+  scanIntervalSec?: number;
+  truthSource?: string;
   metrics: Record<string, unknown>;
   scannerRows: AdvScannerRow[];
-  liveCards: Record<string, unknown>[];
+  liveCards: AdvScannerRow[];
   engine?: Record<string, unknown>;
-  orderFlow?: { symbol: string; buyPct: number; sellPct: number; obi: number | string; trend: string }[];
-  decisions?: { time: string; symbol: string; action: string; strategy: string; aiScore: number; result: string }[];
+  orderFlow?: { symbol: string; executionStatus?: string; rejectionReason?: string; obi?: string; trend?: string }[];
+  decisions?: {
+    time: string;
+    symbol: string;
+    action: string;
+    strategy: string;
+    aiScore: number;
+    executionStatus?: string;
+    rejectionReason?: string;
+    lifecycle?: string[];
+    result: string;
+  }[];
   sectors?: { name: string; count: number; stocks: string[] }[];
   risk?: Record<string, unknown>;
   performance?: Record<string, unknown>;
+  liveControl?: AdvLiveControl;
 };
 
 export type AdvDashboardSnapshot = {

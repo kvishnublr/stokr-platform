@@ -54,6 +54,7 @@ public class StrategySignalPipelineService {
     private final SignalSymbolPriceGateService signalSymbolPriceGateService;
     private final SignalQualityGateService signalQualityGateService;
     private final StrategyDailySignalCapService dailySignalCapService;
+    private final SignalPipelineAuditService signalPipelineAuditService;
 
     @Value("${stokr.strategy.signal-session-guard.enabled:true}")
     private boolean signalSessionGuardEnabled;
@@ -127,6 +128,9 @@ public class StrategySignalPipelineService {
         if (signalSessionGuardEnabled && !Boolean.TRUE.equals(signal.getTestTrade()) && shouldDropOutsideSession(signal, sessionCheckTime)) {
             log.info("signal.dropped_outside_session strategy={} symbol={} mode={} replay={}",
                     signal.getStrategyName(), signal.getSymbol(), executionMode, replaySignal);
+            signalPipelineAuditService.recordRejection(
+                    signal.getStrategyName(), signal.getSymbol(), "SESSION_CHECK", "SESSION_BLOCKED",
+                    "SESSION_BLOCKED", "Outside canonical NSE/MCX session window");
             return null;
         }
         if (!Boolean.TRUE.equals(signal.getTestTrade()) && signal.getBacktestRunId() == null
@@ -136,11 +140,16 @@ public class StrategySignalPipelineService {
                 return null;
             }
             if (signalQualityGateService.shouldDrop(signal)) {
+                String reason = signalQualityGateService.dropReason(signal);
+                signalPipelineAuditService.recordSignalDrop(signal, "QUALITY_GATE", reason, "FAILED");
                 return null;
             }
             if (signalEmissionGuardService.shouldSuppress(signal)) {
                 log.info("signal.dropped_duplicate strategy={} symbol={} type={}",
                         signal.getStrategyName(), signal.getSymbol(), signal.getSignalType());
+                signalPipelineAuditService.recordRejection(
+                        signal.getStrategyName(), signal.getSymbol(), "DEDUP", "REJECTED",
+                        "DUPLICATE", "Duplicate signal suppressed (DB dedup window)");
                 return null;
             }
             if (signal.getOutcomeStatus() == null || signal.getOutcomeStatus().isBlank()) {
@@ -149,6 +158,9 @@ public class StrategySignalPipelineService {
             String capKey = signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
             if (dailySignalCapService.isOverCap(capKey, signalTime)) {
                 log.info("signal.dropped_daily_cap strategy={} symbol={}", capKey, signal.getSymbol());
+                signalPipelineAuditService.recordRejection(
+                        capKey, signal.getSymbol(), "DAILY_CAP", "REJECTED",
+                        "DAILY_CAP", "Daily signal cap reached for strategy");
                 return null;
             }
         }
