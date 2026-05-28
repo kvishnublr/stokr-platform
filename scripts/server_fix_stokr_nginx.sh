@@ -66,7 +66,21 @@ server {
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 }
 
+server {
+    if ($host = www.stokr.in) {
+        return 301 https://$host$request_uri;
+    }
+    if ($host = stokr.in) {
+        return 301 https://$host$request_uri;
+    }
+    server_name stokr.in www.stokr.in;
+    listen 80;
+    return 404;
+}
+NGINX
+
 ln -sf /etc/nginx/sites-available/stokr /etc/nginx/sites-enabled/stokr
+nginx -t
 systemctl reload nginx
 echo "==> nginx reloaded"
 
