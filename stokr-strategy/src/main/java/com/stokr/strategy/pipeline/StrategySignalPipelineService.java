@@ -2,6 +2,7 @@ package com.stokr.strategy.pipeline;
 
 import com.stokr.common.events.OperationalRealtimeEvent;
 import com.stokr.common.events.SignalPublishedEvent;
+import com.stokr.common.pipeline.OmsIntentDispatcher;
 import com.stokr.common.pipeline.PipelineQueues;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
 import com.stokr.common.runtime.ExecutionPipelineRuntimeReadinessService;
@@ -43,6 +44,7 @@ public class StrategySignalPipelineService {
     private final StrategySignalRepository signalRepository;
     private final StrategyInstanceRepository strategyInstanceRepository;
     private final RabbitTemplate rabbitTemplate;
+    private final OmsIntentDispatcher omsIntentDispatcher;
     private final ApplicationEventPublisher eventPublisher;
     private final SignalDistributionTelemetryService signalDistributionTelemetryService;
     private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
@@ -209,8 +211,7 @@ public class StrategySignalPipelineService {
                     return;
                 }
                 if (runningInstances.isEmpty()) {
-                    // No active traders — dispatch system-level message so the OMS still records the signal
-                    rabbitTemplate.convertAndSend(PipelineQueues.OMS_ORDER, systemMsg);
+                    omsIntentDispatcher.dispatch(systemMsg, true);
                     log.info("signal.fanout.no_traders signalId={} strategy={} symbol={}", saved.getId(), sk, saved.getSymbol());
                 } else {
                     for (StrategyInstance inst : runningInstances) {
@@ -224,7 +225,7 @@ public class StrategySignalPipelineService {
                                 saved.getBacktestRunId(),
                                 instMode
                         );
-                        rabbitTemplate.convertAndSend(PipelineQueues.OMS_ORDER, traderMsg);
+                        omsIntentDispatcher.dispatch(traderMsg, true);
                     }
                     log.info("signal.fanout.dispatched signalId={} strategy={} symbol={} traders={}",
                             saved.getId(), sk, saved.getSymbol(), runningInstances.size());

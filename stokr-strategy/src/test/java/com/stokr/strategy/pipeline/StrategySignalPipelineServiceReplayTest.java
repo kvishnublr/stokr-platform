@@ -1,5 +1,6 @@
 package com.stokr.strategy.pipeline;
 
+import com.stokr.common.pipeline.OmsIntentDispatcher;
 import com.stokr.common.pipeline.PipelineQueues;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
 import com.stokr.common.runtime.ExecutionPipelineRuntimeReadinessService;
@@ -46,6 +47,8 @@ class StrategySignalPipelineServiceReplayTest {
     private StrategyInstanceRepository strategyInstanceRepository;
     @Mock
     private RabbitTemplate rabbitTemplate;
+    @Mock
+    private OmsIntentDispatcher omsIntentDispatcher;
     @Mock
     private ApplicationEventPublisher eventPublisher;
     @Mock
@@ -124,7 +127,7 @@ class StrategySignalPipelineServiceReplayTest {
         }
 
         verify(rabbitTemplate).convertAndSend(eq(PipelineQueues.STRATEGY_SIGNAL), any(SignalPersistedMessage.class));
-        verify(rabbitTemplate, never()).convertAndSend(eq(PipelineQueues.OMS_ORDER), any(SignalPersistedMessage.class));
+        verify(omsIntentDispatcher, never()).dispatch(any(), eq(true));
     }
 
     @Test
@@ -150,7 +153,7 @@ class StrategySignalPipelineServiceReplayTest {
         }
 
         ArgumentCaptor<SignalPersistedMessage> captor = ArgumentCaptor.forClass(SignalPersistedMessage.class);
-        verify(rabbitTemplate).convertAndSend(eq(PipelineQueues.OMS_ORDER), captor.capture());
+        verify(omsIntentDispatcher).dispatch(captor.capture(), eq(true));
         assertThat(captor.getValue().executionMode()).isEqualTo("SIMULATED");
     }
 }
