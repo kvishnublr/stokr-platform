@@ -111,6 +111,13 @@ function liveLtpKey(ltp: number | null): string {
   return ltp != null ? ltp.toFixed(2) : "na";
 }
 
+function formatExecutionQualityScore(score: Record<string, unknown> | undefined): string {
+  const raw = score?.score;
+  if (raw == null || raw === "") return "—";
+  const value = Number(raw);
+  return Number.isFinite(value) ? `${Math.round(value)}/100` : String(raw);
+}
+
 function syncTone(state: string) {
   const s = (state || "").toUpperCase();
   if (s === "VERIFIED" || s === "SYNCED" || s === "READY") return "ok";
@@ -450,7 +457,7 @@ export function IntradayCockpitPage() {
               <MetricPill label="Mode" value={ws?.accountSummary?.executionMode ?? "—"} isLight={isLight} />
               <MetricPill label="Day P&L" value={formatPnlDisplay(resolvedPnl.mtm)} highlight pnl={resolvedPnl.mtm} isLight={isLight} />
               <MetricPill label="Open" value={String(openPositions.length)} isLight={isLight} />
-              <MetricPill label="Quality" value={String(ws?.executionQualityScore?.grade ?? ws?.executionQualityScore?.score ?? "—")} isLight={isLight} />
+              <MetricPill label="Exec Score" value={formatExecutionQualityScore(ws?.executionQualityScore)} isLight={isLight} />
             </div>
           </div>
 
