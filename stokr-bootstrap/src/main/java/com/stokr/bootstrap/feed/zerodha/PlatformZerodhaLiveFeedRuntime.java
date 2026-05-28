@@ -71,6 +71,7 @@ public class PlatformZerodhaLiveFeedRuntime {
     private final UniverseInstrumentEnrichmentService universeInstrumentEnrichmentService;
     private final StrategyUniverseSymbolRepository strategyUniverseSymbolRepository;
     private final ObjectMapper objectMapper;
+    private final IntradaySessionGapFillService intradaySessionGapFillService;
 
     private final AtomicReference<WebSocket> activeSocket = new AtomicReference<>();
     private final AtomicBoolean wsOpen = new AtomicBoolean(false);
@@ -90,6 +91,7 @@ public class PlatformZerodhaLiveFeedRuntime {
     /** Cached symbol map — fetched once per access token, not on every 3-second poll. */
     private volatile Map<Integer, String> cachedSymbolMap = null;
     private volatile String cachedForToken = null;
+    private volatile int consecutiveHeartbeatOnlyWindows;
 
     private ScheduledExecutorService scheduler;
 
@@ -171,11 +173,12 @@ public class PlatformZerodhaLiveFeedRuntime {
             long tickAgeSec = lastTickAt == null
                     ? Long.MAX_VALUE
                     : Duration.between(lastTickAt, Instant.now()).getSeconds();
-            if (tickAgeSec <= 120) {
+            if (tickAgeSec <= 60) {
                 return;
             }
             log.warn("platform.ws.stale_ticks_reconnect tickAgeSec={} lastPacketAt={}", tickAgeSec, lastPacketAt);
             closeActive("stale_ticks");
+            intradaySessionGapFillService.fillNiftySessionGapsIfNeeded("ws_stale_reconnect");
         }
         if (wsOpen.get() && activeSocket.get() != null) {
             return;
@@ -569,6 +572,53 @@ public class PlatformZerodhaLiveFeedRuntime {
         if (unresolvedTokens > 0) {
             log.warn("platform.ws.unresolved_tokens_window count={}", unresolvedTokens);
         }
+        if (wsOpen.get() && tk == 0 && pk > 0) {
+            consecutiveHeartbeatOnlyWindows++;
+            if (consecutiveHeartbeatOnlyWindows >= 5) {
+                consecutiveHeartbeatOnlyWindows = 0;
+                log.warn("platform.ws.heartbeat_only_resubscribe packets={} ticks={}", pk, tk);
+                resubscribeActive("heartbeat_only");
+            }
+        } else if (tk > 0) {
+            consecutiveHeartbeatOnlyWindows = 0;
+        }
+    }
+
+    private void resubscribeActive(String reason) {
+        WebSocket ws = activeSocket.get();
+        List<Integer> tokens = subscribedTokens;
+        if (ws == null || !wsOpen.get() || tokens == null || tokens.isEmpty()) {
+            return;
+        }
+        try {
+            String sub = objectMapper.writeValueAsString(Map.of("a", "subscribe", "v", tokens));
+            ws.sendText(sub, true).whenComplete((ignored, err) -> {
+                if (err != null) {
+                    log.warn("platform.ws.resubscribe_failed reason={} {}", reason, err.toString());
+                    closeActive("resubscribe_failed");
+                    return;
+                }
+                sendQuoteMode(ws, tokens, "resubscribe:" + reason);
+            });
+        } catch (Exception ex) {
+            log.warn("platform.ws.resubscribe_failed reason={} {}", reason, ex.toString());
+            closeActive("resubscribe_failed");
+        }
+    }
+
+    private void sendQuoteMode(WebSocket webSocket, List<Integer> tokens, String context) {
+        try {
+            String mode = objectMapper.writeValueAsString(Map.of("a", "mode", "v", List.of("quote", tokens)));
+            webSocket.sendText(mode, true).whenComplete((ignored, err) -> {
+                if (err != null) {
+                    log.error("platform.ws.mode_send_failed context={} {}", context, err.toString());
+                } else {
+                    log.info("platform.ws.mode_sent_ok context={}", context);
+                }
+            });
+        } catch (Exception ex) {
+            log.warn("platform.ws.mode_send_failed context={} {}", context, ex.toString());
+        }
     }
 
     @PreDestroy
@@ -599,24 +649,13 @@ public class PlatformZerodhaLiveFeedRuntime {
                 String sub = objectMapper.writeValueAsString(Map.of("a", "subscribe", "v", tokens));
                 log.info("platform.ws.subscribe_msg length={} first_100_chars={}", sub.length(),
                         sub.length() > 100 ? sub.substring(0, 100) + "..." : sub);
-                webSocket.sendText(sub, true).whenComplete((ws, err) -> {
+                webSocket.sendText(sub, true).whenComplete((ignored, err) -> {
                     if (err != null) {
                         log.error("platform.ws.subscribe_send_failed {}", err.toString());
-                    } else {
-                        log.info("platform.ws.subscribe_sent_ok");
+                        return;
                     }
-                });
-                // "quote" mode (44 bytes/tick) gives us LTP + lastTradedQty + volumeTraded + OHLC
-                // "ltp" mode (8 bytes) only gives price — no volume data for candles
-                String mode = objectMapper.writeValueAsString(Map.of("a", "mode", "v", List.of("quote", tokens)));
-                log.info("platform.ws.mode_msg length={} first_100_chars={}", mode.length(),
-                        mode.length() > 100 ? mode.substring(0, 100) + "..." : mode);
-                webSocket.sendText(mode, true).whenComplete((ws, err) -> {
-                    if (err != null) {
-                        log.error("platform.ws.mode_send_failed {}", err.toString());
-                    } else {
-                        log.info("platform.ws.mode_sent_ok");
-                    }
+                    log.info("platform.ws.subscribe_sent_ok");
+                    sendQuoteMode(webSocket, tokens, "onOpen");
                 });
             } catch (Exception ex) {
                 log.warn("platform.ws.subscribe_failed {}", ex.toString());
