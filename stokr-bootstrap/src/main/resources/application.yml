@@ -160,6 +160,8 @@ stokr:
     volatility-halt-atr-close-ratio: ${STOKR_RISK_VOLATILITY_HALT_ATR_CLOSE_RATIO:0}
     trading-window-start: ${STOKR_RISK_TRADING_WINDOW_START:09:25}
     trading-window-end: ${STOKR_RISK_TRADING_WINDOW_END:14:45}
+    trading-window-mcx-start: ${STOKR_RISK_TRADING_WINDOW_MCX_START:09:00}
+    trading-window-mcx-end: ${STOKR_RISK_TRADING_WINDOW_MCX_END:23:55}
   catalog:
     scan:
       enabled: ${STOKR_CATALOG_SCAN_ENABLED:true}
@@ -187,6 +189,11 @@ stokr:
       ADV_CASH: ${STOKR_EXEC_MODE_ADV_CASH:PAPER}
       S3_VWAP_RETEST: ${STOKR_EXEC_MODE_S3:PAPER}
       S7_RANGE_FADE: ${STOKR_EXEC_MODE_S7:PAPER}
+      COMMODITIES_E2E_TEST: ${STOKR_EXEC_MODE_COMMODITIES_E2E_TEST:PAPER}
+    commodities-e2e-test:
+      enabled: ${STOKR_COMMODITIES_E2E_TEST_ENABLED:true}
+      scan-fire: ${STOKR_COMMODITIES_E2E_TEST_SCAN_FIRE:false}
+      max-candle-age-seconds: ${STOKR_COMMODITIES_E2E_TEST_MAX_CANDLE_AGE_SEC:180}
     safe-startup:
       enabled: ${STOKR_SAFE_STARTUP_ENABLED:true}
       min-warmup-seconds: ${STOKR_SAFE_STARTUP_WARMUP_SEC:120}
@@ -322,7 +329,12 @@ stokr:
     market-close:
       no-new-entries-after: ${STOKR_OMS_NO_NEW_ENTRIES_AFTER:15:00}
       flatten-time: ${STOKR_OMS_FLATTEN_TIME:15:20}
+      flatten-end: ${STOKR_OMS_FLATTEN_END:15:30}
       flatten-cron: ${STOKR_OMS_FLATTEN_CRON:0 20 15 * * MON-FRI}
+      mcx-no-new-entries-after: ${STOKR_OMS_MCX_NO_NEW_ENTRIES_AFTER:23:55}
+      mcx-flatten-time: ${STOKR_OMS_MCX_FLATTEN_TIME:23:50}
+      mcx-flatten-end: ${STOKR_OMS_MCX_FLATTEN_END:23:55}
+      mcx-flatten-cron: ${STOKR_OMS_MCX_FLATTEN_CRON:0 50 23 * * MON-FRI}
       force-close-stale-positions: ${STOKR_OMS_FORCE_CLOSE_STALE:true}
     broker-disconnect:
       block-live: ${STOKR_OMS_BROKER_DISCONNECT_BLOCK:true}

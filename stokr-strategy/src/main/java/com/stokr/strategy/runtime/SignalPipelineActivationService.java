@@ -39,7 +39,8 @@ public class SignalPipelineActivationService {
     private static final List<String> CASH_UNIVERSE_GROUP_KEYS = List.of("NIFTY_50", "NIFTY_100");
 
     private static final List<String> COMMODITY_STRATEGY_KEYS = List.of(
-            "BREAKOUT_COMMODITIES"
+            "BREAKOUT_COMMODITIES",
+            "COMMODITIES_E2E_TEST"
     );
 
     private static final List<String> WATCHLIST_SYMBOLS = List.of(

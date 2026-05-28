@@ -19,21 +19,33 @@ public class OmsSafetyScheduler {
     private final StrategySignalRepository signalRepository;
 
     @Scheduled(cron = "${stokr.oms.market-close.flatten-cron:0 20 15 * * MON-FRI}", zone = "${stokr.strategy.session.zone:Asia/Kolkata}")
-    public void marketCloseFlatten() {
+    public void nseMarketCloseFlatten() {
+        triggerFlattenIfDue("NSE");
+    }
+
+    @Scheduled(cron = "${stokr.oms.market-close.mcx-flatten-cron:0 50 23 * * MON-FRI}", zone = "${stokr.strategy.session.zone:Asia/Kolkata}")
+    public void mcxMarketCloseFlatten() {
+        triggerFlattenIfDue("MCX");
+    }
+
+    private void triggerFlattenIfDue(String segment) {
         Instant now = Instant.now();
-        if (!marketCloseProtectionService.shouldFlatten(now)) {
+        boolean due = "MCX".equals(segment)
+                ? marketCloseProtectionService.shouldFlatten(now, "MCX:CRUDEOIL", "COMMODITIES_E2E_TEST")
+                : marketCloseProtectionService.shouldFlatten(now, "NSE:RELIANCE", "GAP_FILL");
+        if (!due) {
             return;
         }
-        log.warn("oms.market_close.flatten_trigger at={}", now.atZone(ZoneId.of("Asia/Kolkata")));
+        log.warn("oms.market_close.flatten_trigger segment={} at={}", segment, now.atZone(ZoneId.of("Asia/Kolkata")));
         killSwitchService.activate(
                 TradingKillSwitchService.TriggerSource.MARKET_CLOSE,
-                "Scheduled market-close flatten",
+                "Scheduled " + segment + " market-close flatten",
                 marketCloseProtectionService.forceCloseStalePositionsEnabled(),
                 "scheduler");
 
         if (marketCloseProtectionService.forceCloseStalePositionsEnabled()) {
             long stale = signalRepository.count();
-            log.info("oms.market_close.stale_signals_checked count={}", stale);
+            log.info("oms.market_close.stale_signals_checked segment={} count={}", segment, stale);
         }
     }
 }

@@ -51,7 +51,9 @@ public class OmsSafetyGateService {
         }
 
         if (effectiveMode == ExecutionMode.LIVE) {
-            if (marketCloseProtectionService.blocksNewLiveEntries(now) && isEntrySignal(signal)) {
+            if (!Boolean.TRUE.equals(signal.getTestTrade())
+                    && marketCloseProtectionService.blocksNewLiveEntries(now, signal.getSymbol(), strategyKey)
+                    && isEntrySignal(signal)) {
                 return block(signal, userId, requestedMode, ExecutionMode.PAPER,
                         "MARKET_CLOSE_NO_NEW_ENTRIES", "New LIVE entries blocked near market close", reasons);
             }

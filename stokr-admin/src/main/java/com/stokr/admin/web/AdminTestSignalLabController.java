@@ -5,6 +5,7 @@ import com.stokr.admin.dto.TestSignalLabDtos.TestSignalLabRequest;
 import com.stokr.admin.dto.TestSignalLabDtos.TestSignalPreflightReport;
 import com.stokr.admin.dto.TestSignalLabDtos.TestSignalRunSummaryDto;
 import com.stokr.admin.service.AdminTestSignalLabService;
+import com.stokr.strategy.catalog.CommoditiesE2eTestTriggerService;
 import com.stokr.admin.service.AdminTestSignalLabRemediationService;
 import com.stokr.auth.security.StokrUserDetails;
 import com.stokr.common.api.ApiResponse;
@@ -38,8 +39,11 @@ public class AdminTestSignalLabController {
 
     private final AdminTestSignalLabService testSignalLabService;
     private final AdminTestSignalLabRemediationService remediationService;
+    private final CommoditiesE2eTestTriggerService commoditiesE2eTestTriggerService;
 
     public record RemediationRequest(String actionCode, UUID traderUserId, String vendor) {}
+
+    public record QueueScannerFireRequest(String symbol) {}
 
     @PostMapping("/run")
     @Operation(summary = "Run isolated end-to-end test signal through production execution pipeline")
@@ -92,5 +96,18 @@ public class AdminTestSignalLabController {
                 remediationService.remediate(request.actionCode(), request.traderUserId(), request.vendor()),
                 CorrelationIdHolder.get()
         );
+    }
+
+    @PostMapping("/queue-scanner-fire")
+    @Operation(summary = "Queue a one-shot COMMODITIES_E2E_TEST scanner signal for the symbol")
+    public ApiResponse<Map<String, Object>> queueScannerFire(@RequestBody QueueScannerFireRequest request) {
+        String symbol = request.symbol() == null || request.symbol().isBlank() ? "CRUDEOIL" : request.symbol().trim();
+        commoditiesE2eTestTriggerService.queueFire(symbol);
+        return ApiResponse.ok(Map.of(
+                "queued", true,
+                "symbol", symbol,
+                "strategyKey", "COMMODITIES_E2E_TEST",
+                "message", "Next scanner cycle will emit a probe signal if data is fresh"
+        ), CorrelationIdHolder.get());
     }
 }

@@ -75,6 +75,11 @@ export async function remediateTestIssue(payload: { actionCode: string; traderUs
   return res.data?.data as any;
 }
 
+export async function queueCommoditiesScannerFire(symbol = "CRUDEOIL") {
+  const res = await api.post("/api/admin/test-signal-lab/queue-scanner-fire", { symbol });
+  return res.data?.data as { queued: boolean; symbol: string; strategyKey: string; message: string };
+}
+
 export async function fetchTestSignalTelemetry() {
   const res = await api.get("/api/admin/test-signal-lab/telemetry");
   return res.data?.data as any;
