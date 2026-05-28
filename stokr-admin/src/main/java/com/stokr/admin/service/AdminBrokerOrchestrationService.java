@@ -12,7 +12,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -61,6 +63,39 @@ public class AdminBrokerOrchestrationService {
         Map<String, Object> res = Map.of("vendor", v, "userId", userId.toString(), "opsFeedPaused", paused);
         operationalHistoryService.record("BROKER_FEED_PAUSE", res, "ADMIN", userId);
         return res;
+    }
+
+    @Transactional
+    public Map<String, Object> setOutboundIp(UUID userId, String outboundIp) {
+        BrokerAccount account = brokerAccountRepository
+                .findFirstByUserIdAndVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(userId, "ZERODHA")
+                .orElseThrow(() -> new BadRequestException("No Zerodha broker account for user"));
+        String cleanIp = outboundIp == null || outboundIp.isBlank() ? null : outboundIp.trim();
+        account.setOutboundIp(cleanIp);
+        brokerAccountRepository.save(account);
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("userId", userId.toString());
+        res.put("brokerUserId", account.getBrokerUserId());
+        res.put("outboundIp", cleanIp);
+        operationalHistoryService.record("BROKER_OUTBOUND_IP_SET", res, "ADMIN", userId);
+        return res;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> listOutboundIps() {
+        List<BrokerAccount> accounts = brokerAccountRepository
+                .findAllByVendorCodeIgnoreCaseAndDeletedFalse("ZERODHA");
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (BrokerAccount a : accounts) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("userId", a.getUserId().toString());
+            entry.put("brokerUserId", a.getBrokerUserId());
+            entry.put("outboundIp", a.getOutboundIp());
+            entry.put("status", a.getStatus());
+            entry.put("healthStatus", a.getHealthStatus());
+            result.add(entry);
+        }
+        return result;
     }
 
     private ObjectNode readMeta(String json) {

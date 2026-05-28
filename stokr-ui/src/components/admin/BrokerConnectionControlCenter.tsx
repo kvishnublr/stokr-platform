@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -38,10 +38,47 @@ export function BrokerConnectionControlCenter({
   const vendors = asRecord(root?.vendors) ?? {};
   const marketLive = hasActiveBrokerMarketFeed(snapshot);
   const [userPick, setUserPick] = useState<Record<string, string>>({});
+  const [outboundIps, setOutboundIps] = useState<Record<string, string>>({});
+  const [ipDraft, setIpDraft] = useState<Record<string, string>>({});
+  const [ipLoading, setIpLoading] = useState(false);
+
+  // Fetch outbound IPs on mount
+  useEffect(() => {
+    api
+      .get("/api/admin/brokers/orchestration/outbound-ips")
+      .then((res) => {
+        const list = (res.data as { data?: Array<{ userId: string; outboundIp: string | null }> })?.data ?? [];
+        const map: Record<string, string> = {};
+        for (const item of list) {
+          if (item.userId) map[item.userId] = item.outboundIp ?? "";
+        }
+        setOutboundIps(map);
+        setIpDraft(map);
+      })
+      .catch(() => {});
+  }, []);
 
   const invalidate = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ADMIN_OPS_SNAPSHOT_KEY });
   }, [qc]);
+
+  const saveOutboundIp = useCallback(
+    async (userId: string) => {
+      setIpLoading(true);
+      try {
+        const ip = ipDraft[userId]?.trim() || null;
+        await api.post("/api/admin/brokers/orchestration/outbound-ip", { userId, outboundIp: ip });
+        setOutboundIps((prev) => ({ ...prev, [userId]: ip ?? "" }));
+        toast.success(`Outbound IP ${ip ? "set to " + ip : "cleared"}`);
+        invalidate();
+      } catch (e) {
+        toast.error(parseAxiosMessage(e));
+      } finally {
+        setIpLoading(false);
+      }
+    },
+    [ipDraft, invalidate],
+  );
 
   const runZerodha = useCallback(
     async (path: string, body: Record<string, unknown>) => {
@@ -246,6 +283,46 @@ export function BrokerConnectionControlCenter({
                     <span className="self-center text-[10px] text-muted-foreground">Admin orchestration API: Zerodha only in this build.</span>
                   )}
                 </div>
+                {vk === "ZERODHA" && uid ? (
+                  <div className="mt-3 border-t border-border pt-3">
+                    <label className="block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      Outbound IP (Zerodha whitelist)
+                    </label>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="e.g. 173.249.55.85"
+                        className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground"
+                        value={ipDraft[uid] ?? outboundIps[uid] ?? ""}
+                        onChange={(e) => setIpDraft((prev) => ({ ...prev, [uid]: e.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        disabled={ipLoading || (ipDraft[uid] ?? "") === (outboundIps[uid] ?? "")}
+                        className="rounded-md border border-primary/40 bg-primary/10 px-2 py-1.5 text-[10px] font-bold text-foreground hover:bg-primary/15 disabled:opacity-40"
+                        onClick={() => saveOutboundIp(uid)}
+                      >
+                        Save
+                      </button>
+                      {outboundIps[uid] ? (
+                        <button
+                          type="button"
+                          disabled={ipLoading}
+                          className="rounded-md border border-border bg-card px-2 py-1.5 text-[10px] font-semibold text-foreground hover:bg-background disabled:opacity-40"
+                          onClick={() => {
+                            setIpDraft((prev) => ({ ...prev, [uid]: "" }));
+                            void saveOutboundIp(uid);
+                          }}
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      IP bound to this trader's Kite API calls. Empty = default server IP.
+                    </p>
+                  </div>
+                ) : null}
               </div>
             </div>
           );

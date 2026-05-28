@@ -48,4 +48,8 @@ public class BrokerAccount extends BaseEntity {
 
     @Column(name = "health_status", nullable = false, length = 32)
     private String healthStatus = "UNKNOWN";
+
+    /** Server IP used for outbound Zerodha API calls. NULL = use default server IP. */
+    @Column(name = "outbound_ip", length = 45)
+    private String outboundIp;
 }

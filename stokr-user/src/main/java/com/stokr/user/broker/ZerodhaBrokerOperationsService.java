@@ -145,7 +145,7 @@ public class ZerodhaBrokerOperationsService {
             // Backfill missing snapshot from live broker when session exists, so sidebar margin is not blank.
             try {
                 Session s = requireSession(userId);
-                JsonNode margins = kiteApiClient.getMargins(s.apiKey(), s.accessToken());
+                JsonNode margins = kiteApiClient.getMargins(s.apiKey(), s.accessToken(), s.outboundIp());
                 if ("success".equalsIgnoreCase(margins.path("status").asText())) {
                     JsonNode data = margins.path("data");
                     account.setMarginSnapshotJson(data.toString());
@@ -243,7 +243,7 @@ public class ZerodhaBrokerOperationsService {
     @Transactional(readOnly = true)
     public List<BrokerPositionDetail> fetchBrokerPositionDetails(UUID userId) {
         Session s = requireSession(userId);
-        JsonNode payload = kiteApiClient.getPositions(s.apiKey(), s.accessToken());
+        JsonNode payload = kiteApiClient.getPositions(s.apiKey(), s.accessToken(), s.outboundIp());
         List<BrokerPositionDetail> positions = ZerodhaKitePositionsParser.parseDetails(payload);
         log.debug("zerodha.positions.fetched user={} count={}", userId, positions.size());
         return positions;
@@ -251,7 +251,7 @@ public class ZerodhaBrokerOperationsService {
 
     private List<BrokerOpenOrderDto> fetchOrders(UUID userId, boolean onlyOpen, int limit) {
         Session s = requireSession(userId);
-        JsonNode payload = kiteApiClient.getOrders(s.apiKey(), s.accessToken());
+        JsonNode payload = kiteApiClient.getOrders(s.apiKey(), s.accessToken(), s.outboundIp());
         if (!"success".equalsIgnoreCase(payload.path("status").asText(""))) {
             return List.of();
         }
@@ -305,7 +305,7 @@ public class ZerodhaBrokerOperationsService {
             throw new BadRequestException("orderId is required");
         }
         String safeVariety = variety == null || variety.isBlank() ? "regular" : variety.trim().toLowerCase();
-        JsonNode payload = kiteApiClient.cancelOrder(s.apiKey(), s.accessToken(), safeVariety, safeOrderId);
+        JsonNode payload = kiteApiClient.cancelOrder(s.apiKey(), s.accessToken(), safeVariety, safeOrderId, s.outboundIp());
         String status = payload.path("status").asText("");
         boolean ok = "success".equalsIgnoreCase(status);
         String message = ok
@@ -346,7 +346,7 @@ public class ZerodhaBrokerOperationsService {
         String marginSummary = null;
         try {
             log.debug("broker.test_connection.profile_fetch userId={}", userId);
-            JsonNode profile = kiteApiClient.getProfile(s.apiKey(), s.accessToken());
+            JsonNode profile = kiteApiClient.getProfile(s.apiKey(), s.accessToken(), s.outboundIp());
             if (!"success".equalsIgnoreCase(profile.path("status").asText())) {
                 throw new BadRequestException("Kite profile call rejected: " + profile.path("message").asText("unknown error"));
             }
@@ -355,7 +355,7 @@ public class ZerodhaBrokerOperationsService {
             String profileEmail = textOrNull(pdata.path("email"));
 
             log.debug("broker.test_connection.margins_fetch userId={}", userId);
-            JsonNode margins = kiteApiClient.getMargins(s.apiKey(), s.accessToken());
+            JsonNode margins = kiteApiClient.getMargins(s.apiKey(), s.accessToken(), s.outboundIp());
             if (!"success".equalsIgnoreCase(margins.path("status").asText())) {
                 throw new BadRequestException("Kite margins call rejected: " + margins.path("message").asText("unknown error"));
             }
@@ -502,7 +502,8 @@ public class ZerodhaBrokerOperationsService {
                 side,
                 qty,
                 orderType,
-                product
+                product,
+                s.outboundIp()
         );
         String entryApiStatus = entryResp.path("status").asText("");
         String entryOrderId = entryResp.path("data").path("order_id").asText("");
@@ -551,7 +552,8 @@ public class ZerodhaBrokerOperationsService {
                     exitSide,
                     exitQty,
                     orderType,
-                    product
+                    product,
+                    s.outboundIp()
             );
             String exitApiStatus = exitResp.path("status").asText("");
             String exitOrderId = exitResp.path("data").path("order_id").asText("");
@@ -633,7 +635,7 @@ public class ZerodhaBrokerOperationsService {
     }
 
     private Optional<KiteOrderSnapshot> fetchOrderSnapshot(Session s, String orderId) {
-        JsonNode payload = kiteApiClient.getOrders(s.apiKey(), s.accessToken());
+        JsonNode payload = kiteApiClient.getOrders(s.apiKey(), s.accessToken(), s.outboundIp());
         if (!"success".equalsIgnoreCase(payload.path("status").asText(""))) {
             return Optional.empty();
         }
@@ -689,10 +691,10 @@ public class ZerodhaBrokerOperationsService {
             throw new BadRequestException("Missing broker session");
         }
         String accessToken = fieldCipher.decrypt(a.getAccessTokenEnc());
-        return new Session(zerodhaBrokerProperties.getApiKey(), accessToken, a);
+        return new Session(zerodhaBrokerProperties.getApiKey(), accessToken, a, a.getOutboundIp());
     }
 
-    private record Session(String apiKey, String accessToken, BrokerAccount account) {
+    private record Session(String apiKey, String accessToken, BrokerAccount account, String outboundIp) {
     }
 
     private static String textOrNull(JsonNode n) {

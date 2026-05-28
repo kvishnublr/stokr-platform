@@ -2,6 +2,7 @@ package com.stokr.user.broker;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stokr.broker.adapter.OutboundIpRestClientFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -24,6 +25,7 @@ import java.util.Map;
 
 /**
  * Minimal Kite Connect REST client (session token auth).
+ * Supports per-trader outbound IP binding for Zerodha IP whitelisting.
  */
 @Component
 @RequiredArgsConstructor
@@ -36,7 +38,17 @@ public class ZerodhaKiteApiClient {
     private static final DateTimeFormatter KITE_DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final ObjectMapper objectMapper;
-    private final RestClient http = RestClient.builder().build();
+    private final OutboundIpRestClientFactory ipClientFactory;
+
+    /** Get the RestClient for a given outbound IP (null = default). */
+    private RestClient http(String outboundIp) {
+        return ipClientFactory.clientFor(outboundIp);
+    }
+
+    /** Backward-compatible: default IP (no binding). */
+    private RestClient http() {
+        return ipClientFactory.clientFor(null);
+    }
 
     private HttpHeaders authHeaders(String apiKey, String accessToken) {
         HttpHeaders h = new HttpHeaders();
@@ -44,8 +56,15 @@ public class ZerodhaKiteApiClient {
         return h;
     }
 
+    // ---- IP-aware public API methods ----
+    // Each method accepts an optional outboundIp (null = default server IP).
+
     public JsonNode getProfile(String apiKey, String accessToken) {
-        String body = http.get()
+        return getProfile(apiKey, accessToken, null);
+    }
+
+    public JsonNode getProfile(String apiKey, String accessToken, String outboundIp) {
+        String body = http(outboundIp).get()
                 .uri(BASE + "/user/profile")
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
                 .retrieve()
@@ -54,7 +73,11 @@ public class ZerodhaKiteApiClient {
     }
 
     public JsonNode getMargins(String apiKey, String accessToken) {
-        String body = http.get()
+        return getMargins(apiKey, accessToken, null);
+    }
+
+    public JsonNode getMargins(String apiKey, String accessToken, String outboundIp) {
+        String body = http(outboundIp).get()
                 .uri(BASE + "/user/margins")
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
                 .retrieve()
@@ -63,7 +86,11 @@ public class ZerodhaKiteApiClient {
     }
 
     public JsonNode getOrders(String apiKey, String accessToken) {
-        String body = http.get()
+        return getOrders(apiKey, accessToken, null);
+    }
+
+    public JsonNode getOrders(String apiKey, String accessToken, String outboundIp) {
+        String body = http(outboundIp).get()
                 .uri(BASE + "/orders")
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
                 .retrieve()
@@ -73,7 +100,11 @@ public class ZerodhaKiteApiClient {
 
     /** Portfolio positions (day + net). */
     public JsonNode getPositions(String apiKey, String accessToken) {
-        String body = http.get()
+        return getPositions(apiKey, accessToken, null);
+    }
+
+    public JsonNode getPositions(String apiKey, String accessToken, String outboundIp) {
+        String body = http(outboundIp).get()
                 .uri(BASE + "/portfolio/positions")
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
                 .retrieve()
@@ -82,9 +113,13 @@ public class ZerodhaKiteApiClient {
     }
 
     public JsonNode cancelOrder(String apiKey, String accessToken, String variety, String orderId) {
+        return cancelOrder(apiKey, accessToken, variety, orderId, null);
+    }
+
+    public JsonNode cancelOrder(String apiKey, String accessToken, String variety, String orderId, String outboundIp) {
         String normalizedVariety = variety == null || variety.isBlank() ? "regular" : variety.trim().toLowerCase();
         String oid = orderId == null ? "" : orderId.trim();
-        String body = http.delete()
+        String body = http(outboundIp).delete()
                 .uri(BASE + "/orders/" + normalizedVariety + "/" + oid)
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
                 .retrieve()
@@ -96,8 +131,12 @@ public class ZerodhaKiteApiClient {
      * Full instrument dump for one exchange (CSV). Used to map instrument_token to tradingsymbol for platform WS ticks.
      */
     public String getInstrumentsCsv(String apiKey, String accessToken, String exchange) {
+        return getInstrumentsCsv(apiKey, accessToken, exchange, null);
+    }
+
+    public String getInstrumentsCsv(String apiKey, String accessToken, String exchange, String outboundIp) {
         String ex = exchange == null || exchange.isBlank() ? "NSE" : exchange.trim().toUpperCase();
-        return http.get()
+        return http(outboundIp).get()
                 .uri(BASE + "/instruments/" + ex)
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
                 .retrieve()
@@ -108,12 +147,16 @@ public class ZerodhaKiteApiClient {
      * Renews access token using refresh token flow.
      */
     public JsonNode renewAccessToken(String apiKey, String apiSecret, String refreshToken) {
+        return renewAccessToken(apiKey, apiSecret, refreshToken, null);
+    }
+
+    public JsonNode renewAccessToken(String apiKey, String apiSecret, String refreshToken, String outboundIp) {
         String checksum = sha256Hex(apiKey + refreshToken + apiSecret);
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("api_key", apiKey);
         form.add("refresh_token", refreshToken);
         form.add("checksum", checksum);
-        String body = http.post()
+        String body = http(outboundIp).post()
                 .uri(BASE + "/session/refresh_token")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(form)
@@ -126,12 +169,18 @@ public class ZerodhaKiteApiClient {
      * Historical candles endpoint (Kite): returns raw payload so adapters can map broker-specific schema safely.
      */
     public JsonNode getHistoricalCandles(
-            String apiKey,
-            String accessToken,
-            long instrumentToken,
-            String interval,
-            Instant fromInclusive,
-            Instant toInclusive
+            String apiKey, String accessToken,
+            long instrumentToken, String interval,
+            Instant fromInclusive, Instant toInclusive
+    ) {
+        return getHistoricalCandles(apiKey, accessToken, instrumentToken, interval, fromInclusive, toInclusive, null);
+    }
+
+    public JsonNode getHistoricalCandles(
+            String apiKey, String accessToken,
+            long instrumentToken, String interval,
+            Instant fromInclusive, Instant toInclusive,
+            String outboundIp
     ) {
         String itv = interval == null || interval.isBlank() ? "minute" : interval.trim().toLowerCase();
         String from = KITE_DT.format(fromInclusive.atZone(INDIA));
@@ -145,7 +194,7 @@ public class ZerodhaKiteApiClient {
                 .build()
                 .encode(StandardCharsets.UTF_8)
                 .toUri();
-        String body = http.get()
+        String body = http(outboundIp).get()
                 .uri(uri)
                 .headers(h -> h.addAll(authHeaders(apiKey, accessToken)))
                 .retrieve()
@@ -157,15 +206,20 @@ public class ZerodhaKiteApiClient {
      * Places a regular (exchange) order. Caller must enforce safety limits.
      */
     public JsonNode placeRegularOrder(
-            String apiKey,
-            String accessToken,
-            String variety,
-            String exchange,
-            String tradingsymbol,
-            String transactionType,
-            int quantity,
-            String orderType,
-            String product
+            String apiKey, String accessToken,
+            String variety, String exchange,
+            String tradingsymbol, String transactionType,
+            int quantity, String orderType, String product
+    ) {
+        return placeRegularOrder(apiKey, accessToken, variety, exchange, tradingsymbol, transactionType, quantity, orderType, product, null);
+    }
+
+    public JsonNode placeRegularOrder(
+            String apiKey, String accessToken,
+            String variety, String exchange,
+            String tradingsymbol, String transactionType,
+            int quantity, String orderType, String product,
+            String outboundIp
     ) {
         String normalizedVariety = variety == null || variety.isBlank() ? "regular" : variety.trim().toLowerCase();
         Map<String, String> fields = new LinkedHashMap<>();
@@ -183,7 +237,7 @@ public class ZerodhaKiteApiClient {
         }
         String formBody = encodeForm(fields);
 
-        String body = http.post()
+        String body = http(outboundIp).post()
                 .uri(BASE + "/orders/" + normalizedVariety)
                 .headers(h -> {
                     h.addAll(authHeaders(apiKey, accessToken));

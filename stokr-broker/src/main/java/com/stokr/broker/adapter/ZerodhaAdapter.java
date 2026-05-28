@@ -33,7 +33,7 @@ public class ZerodhaAdapter implements BrokerAdapter {
     private static final String KITE_BASE = "https://api.kite.trade";
 
     private final ObjectMapper objectMapper;
-    private final RestClient http = RestClient.builder().build();
+    private final OutboundIpRestClientFactory ipClientFactory;
 
     @Override
     public String vendorCode() {
@@ -97,6 +97,7 @@ public class ZerodhaAdapter implements BrokerAdapter {
                 exchange, tradingsymbol, side, qty, orderType, product);
 
         try {
+            RestClient http = ipClientFactory.clientFor(request.outboundIp());
             String raw = http.post()
                     .uri(KITE_BASE + "/orders/regular")
                     .header("Authorization", "token " + apiKey + ":" + accessToken)
@@ -156,6 +157,7 @@ public class ZerodhaAdapter implements BrokerAdapter {
             return Collections.emptyList();
         }
         try {
+            RestClient http = ipClientFactory.clientFor(null);
             String raw = http.get()
                     .uri(KITE_BASE + "/portfolio/positions")
                     .header("Authorization", "token " + credentials.apiKey() + ":" + credentials.additionalToken())
