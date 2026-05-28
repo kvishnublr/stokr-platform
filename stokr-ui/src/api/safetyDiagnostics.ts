@@ -105,3 +105,52 @@ export async function fetchStrategyValidationDiagnostics(): Promise<StrategyVali
   const res = await api.get("/api/admin/strategy-validation/diagnostics");
   return res.data?.data as StrategyValidationDiagnostics;
 }
+
+export type TradePairRow = {
+  signalId?: string;
+  strategyKey?: string;
+  symbol?: string;
+  reconciliationStatus?: string;
+  paperRealizedPnl?: number;
+  liveRealizedPnl?: number;
+  pnlDrift?: number;
+  paperHoldSeconds?: number;
+  liveHoldSeconds?: number;
+  holdTimeDrift?: number;
+  paperExitCategory?: string;
+  liveExitCategory?: string;
+  slippageDivergencePct?: number;
+  fillCountDifference?: number;
+  quantityDrift?: number;
+  failureReason?: string;
+  reconciledAt?: string;
+};
+
+export type TradeReconciliationDiagnostics = {
+  tradePairs: { pairs: TradePairRow[] };
+  unreconciled: TradePairRow[];
+  reconciliationFailures: TradePairRow[];
+  lifecycleDivergence: TradePairRow[];
+  driftAnalytics: { today: Array<Record<string, unknown>> };
+  safetyScan: {
+    alertCount?: number;
+    unreconciledCount?: number;
+    failedCount?: number;
+    alerts?: Array<{ type?: string; detail?: string; severity?: string }>;
+  };
+  promotionGuardrails: {
+    strategies?: Array<{
+      strategyKey?: string;
+      promotionAllowed?: boolean;
+      blockers?: string[];
+      warnings?: string[];
+      sampleSize?: number;
+    }>;
+    thresholds?: Record<string, unknown>;
+  };
+};
+
+export async function fetchTradeReconciliationDiagnostics(): Promise<TradeReconciliationDiagnostics> {
+  const res = await api.get("/api/admin/trade-reconciliation/diagnostics");
+  return res.data?.data as TradeReconciliationDiagnostics;
+}

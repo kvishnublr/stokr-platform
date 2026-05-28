@@ -28,6 +28,7 @@ import com.stokr.oms.portfolio.PortfolioAccountingService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.execution.alert.ExecutionAlertService;
+import com.stokr.execution.comparison.TradeLifecycleReconciliationService;
 import com.stokr.execution.safety.BrokerDisconnectProtectionService;
 import com.stokr.execution.safety.BrokerExecutionTelemetryService;
 import com.stokr.execution.guard.ExecutionGuardTelemetryService;
@@ -76,6 +77,7 @@ public class ExecutionSimulator {
     private final ReconciliationEventRepository reconciliationEventRepository;
     private final BrokerExecutionTelemetryService brokerExecutionTelemetryService;
     private final BrokerDisconnectProtectionService brokerDisconnectProtectionService;
+    private final TradeLifecycleReconciliationService tradeLifecycleReconciliationService;
 
     @Value("${stokr.simulation.candle-timeframe:1m}")
     private String candleTimeframe;
@@ -310,6 +312,10 @@ public class ExecutionSimulator {
                 "fills", fillLots.size()
         )));
         log.info("execution.simulated orderId={} lastFillPrice={} fills={}", order.getId(), lastFillPrice, fillLots.size());
+        if (order.getSignalId() != null) {
+            tradeLifecycleReconciliationService.onOrderFilled(
+                    order, lastFillPrice, fillLots.size(), effectiveLatencyMs * fillLots.size());
+        }
         if (order.isTestTrade()) {
             recordTestLabVerification(order, "PAPER/SIM simulated fill");
         }

@@ -55,6 +55,7 @@ public class AdminStrategyValidationDiagnosticsService {
                 "paperAndLiveEligible", List.of("GAP_FILL"),
                 "paperValidatingOnly", List.of("NSE_SPIKE_DETECTION", "VWAP_BOUNCE"),
                 "dryRunOrDisabled", "all others"));
+        out.put("reconciliationEndpoint", "/api/admin/trade-reconciliation/diagnostics");
         return out;
     }
 

@@ -9,10 +9,12 @@ import {
   fetchOmsDiagnostics,
   fetchOperationalDiagnostics,
   fetchStrategyValidationDiagnostics,
+  fetchTradeReconciliationDiagnostics,
   type KillSwitchStatus,
   type OmsDiagnostics,
   type OperationalDiagnostics,
   type StrategyRuntimeHealthRow,
+  type TradeReconciliationDiagnostics,
 } from "../../api/safetyDiagnostics";
 import {
   AdminPageShell,
@@ -433,6 +435,149 @@ function OmsPanel({ data, isLight }: { data: OmsDiagnostics; isLight: boolean })
   );
 }
 
+function TradeReconciliationPanel({
+  data,
+  isLight,
+}: {
+  data: TradeReconciliationDiagnostics;
+  isLight: boolean;
+}) {
+  const safety = data.safetyScan ?? {};
+  const driftToday = data.driftAnalytics?.today ?? [];
+  const guardrails = data.promotionGuardrails?.strategies ?? [];
+  const pairs = data.tradePairs?.pairs ?? [];
+  const unreconciled = data.unreconciled ?? [];
+  const failures = data.reconciliationFailures ?? [];
+
+  return (
+    <AdminSection
+      isLight={isLight}
+      title="Paper vs live reconciliation"
+      subtitle="Lifecycle pairs, PnL drift, slippage, promotion guardrails, and safety alerts"
+    >
+      <div className="space-y-4">
+        <MetricGrid
+          isLight={isLight}
+          items={[
+            { label: "Unreconciled", value: safety.unreconciledCount, warn: (safety.unreconciledCount ?? 0) > 0 },
+            { label: "Failed reconciliations", value: safety.failedCount, warn: (safety.failedCount ?? 0) > 0 },
+            { label: "Safety alerts", value: safety.alertCount, warn: (safety.alertCount ?? 0) > 0 },
+            { label: "Trade pairs tracked", value: pairs.length },
+          ]}
+        />
+
+        {guardrails.length > 0 ? (
+          <AdminPanel isLight={isLight} title="Promotion guardrails">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className={isLight ? "bg-neutral-100" : "bg-neutral-900/80"}>
+                  <tr>
+                    {["Strategy", "Sample", "Allowed", "Blockers"].map((h) => (
+                      <th key={h} className="px-2 py-2 text-left font-semibold text-muted-foreground">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {guardrails.map((g) => (
+                    <tr key={g.strategyKey} className="border-t dark:border-neutral-800">
+                      <td className="px-2 py-2 font-medium">{g.strategyKey}</td>
+                      <td className="px-2 py-2 font-mono">{g.sampleSize ?? "—"}</td>
+                      <td className="px-2 py-2">{g.promotionAllowed ? "YES" : "NO"}</td>
+                      <td className="px-2 py-2 text-rose-500">{(g.blockers ?? []).join("; ") || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </AdminPanel>
+        ) : null}
+
+        {driftToday.length > 0 ? (
+          <AdminPanel isLight={isLight} title="Drift analytics (today)">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className={isLight ? "bg-neutral-100" : "bg-neutral-900/80"}>
+                  <tr>
+                    {["Strategy", "Degradation", "Slippage P50", "Latency P50", "Underperf %", "Win Δ"].map((h) => (
+                      <th key={h} className="px-2 py-2 text-left font-semibold text-muted-foreground">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {driftToday.map((d) => (
+                    <tr key={String(d.strategyKey)} className="border-t dark:border-neutral-800">
+                      <td className="px-2 py-2 font-medium">{String(d.strategyKey ?? "—")}</td>
+                      <td className="px-2 py-2 font-mono">{fmtVal(d.strategyDegradationScore)}</td>
+                      <td className="px-2 py-2 font-mono">{fmtVal(d.slippageP50Bps)}</td>
+                      <td className="px-2 py-2 font-mono">{fmtVal(d.latencyP50Ms)}</td>
+                      <td className="px-2 py-2 font-mono">{fmtVal(d.liveUnderperformancePct)}</td>
+                      <td className="px-2 py-2 font-mono">{fmtVal(d.winRateDelta)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </AdminPanel>
+        ) : null}
+
+        <AdminPanel isLight={isLight} title="Recent paper/live trade pairs">
+          <TradePairTable rows={pairs.slice(0, 15)} isLight={isLight} />
+        </AdminPanel>
+
+        {(unreconciled.length > 0 || failures.length > 0) ? (
+          <AdminPanel isLight={isLight} accent title="Reconciliation issues">
+            {unreconciled.length > 0 ? (
+              <>
+                <p className="mb-2 text-xs font-semibold text-amber-500">Unreconciled ({unreconciled.length})</p>
+                <TradePairTable rows={unreconciled.slice(0, 10)} isLight={isLight} />
+              </>
+            ) : null}
+            {failures.length > 0 ? (
+              <>
+                <p className="mb-2 mt-4 text-xs font-semibold text-rose-500">Failures ({failures.length})</p>
+                <TradePairTable rows={failures.slice(0, 10)} isLight={isLight} />
+              </>
+            ) : null}
+          </AdminPanel>
+        ) : null}
+      </div>
+    </AdminSection>
+  );
+}
+
+function TradePairTable({ rows, isLight }: { rows: Array<Record<string, unknown>>; isLight: boolean }) {
+  if (rows.length === 0) {
+    return <p className="text-xs text-muted-foreground">No trade pairs yet.</p>;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead className={isLight ? "bg-neutral-100" : "bg-neutral-900/80"}>
+          <tr>
+            {["Strategy", "Symbol", "Status", "Paper PnL", "Live PnL", "PnL drift", "Hold drift", "Slippage %"].map((h) => (
+              <th key={h} className="px-2 py-2 text-left font-semibold text-muted-foreground">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, idx) => (
+            <tr key={String(r.signalId ?? idx)} className="border-t dark:border-neutral-800">
+              <td className="px-2 py-2 font-medium">{fmtVal(r.strategyKey)}</td>
+              <td className="px-2 py-2">{fmtVal(r.symbol)}</td>
+              <td className="px-2 py-2">{fmtVal(r.reconciliationStatus)}</td>
+              <td className="px-2 py-2 font-mono">{fmtVal(r.paperRealizedPnl)}</td>
+              <td className="px-2 py-2 font-mono">{fmtVal(r.liveRealizedPnl)}</td>
+              <td className="px-2 py-2 font-mono">{fmtVal(r.pnlDrift)}</td>
+              <td className="px-2 py-2 font-mono">{fmtVal(r.holdTimeDrift)}</td>
+              <td className="px-2 py-2 font-mono">{fmtVal(r.slippageDivergencePct)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function AdminSafetyDiagnosticsPage() {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const qc = useQueryClient();
@@ -460,6 +605,12 @@ export function AdminSafetyDiagnosticsPage() {
   const validationQ = useQuery({
     queryKey: ["admin-strategy-validation-diagnostics"],
     queryFn: fetchStrategyValidationDiagnostics,
+    refetchInterval: 30_000,
+  });
+
+  const reconciliationQ = useQuery({
+    queryKey: ["admin-trade-reconciliation-diagnostics"],
+    queryFn: fetchTradeReconciliationDiagnostics,
     refetchInterval: 30_000,
   });
 
@@ -514,6 +665,8 @@ export function AdminSafetyDiagnosticsPage() {
               void opsQ.refetch();
               void omsQ.refetch();
               void ksQ.refetch();
+              void validationQ.refetch();
+              void reconciliationQ.refetch();
             }}
             className={cn("rounded-lg border px-2 py-1 text-xs", isLight ? "border-neutral-300" : "border-neutral-700")}
           >
@@ -575,6 +728,10 @@ export function AdminSafetyDiagnosticsPage() {
               </table>
             </div>
           </AdminSection>
+        ) : null}
+
+        {reconciliationQ.data ? (
+          <TradeReconciliationPanel data={reconciliationQ.data} isLight={isLight} />
         ) : null}
 
         {(opsQ.isError || omsQ.isError) ? (

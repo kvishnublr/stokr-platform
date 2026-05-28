@@ -102,6 +102,111 @@ public class ExecutionComparisonMetrics {
     @Column(name = "broker_ack_latency_ms")
     private Long brokerAckLatencyMs;
 
+    @Column(name = "paper_exit_price", precision = 24, scale = 8)
+    private BigDecimal paperExitPrice;
+
+    @Column(name = "live_exit_price", precision = 24, scale = 8)
+    private BigDecimal liveExitPrice;
+
+    @Column(name = "slippage_entry", precision = 12, scale = 6)
+    private BigDecimal slippageEntry;
+
+    @Column(name = "slippage_exit", precision = 12, scale = 6)
+    private BigDecimal slippageExit;
+
+    @Column(name = "hold_time_diff_seconds")
+    private Long holdTimeDiffSeconds;
+
+    @Column(name = "paper_exit_reason", length = 128)
+    private String paperExitReason;
+
+    @Column(name = "live_exit_reason", length = 128)
+    private String liveExitReason;
+
+    @Column(name = "direction", length = 8)
+    private String direction;
+
+    @Column(name = "paper_realized_pnl", precision = 24, scale = 8)
+    private BigDecimal paperRealizedPnl;
+
+    @Column(name = "live_realized_pnl", precision = 24, scale = 8)
+    private BigDecimal liveRealizedPnl;
+
+    @Column(name = "pnl_drift", precision = 24, scale = 8)
+    private BigDecimal pnlDrift;
+
+    @Column(name = "paper_hold_seconds")
+    private Long paperHoldSeconds;
+
+    @Column(name = "live_hold_seconds")
+    private Long liveHoldSeconds;
+
+    @Column(name = "hold_time_drift")
+    private Long holdTimeDrift;
+
+    @Column(name = "paper_exit_category", length = 32)
+    private String paperExitCategory;
+
+    @Column(name = "live_exit_category", length = 32)
+    private String liveExitCategory;
+
+    @Column(name = "paper_max_drawdown", precision = 24, scale = 8)
+    private BigDecimal paperMaxDrawdown;
+
+    @Column(name = "live_max_drawdown", precision = 24, scale = 8)
+    private BigDecimal liveMaxDrawdown;
+
+    @Column(name = "paper_max_profit", precision = 24, scale = 8)
+    private BigDecimal paperMaxProfit;
+
+    @Column(name = "live_max_profit", precision = 24, scale = 8)
+    private BigDecimal liveMaxProfit;
+
+    @Column(name = "fill_count_difference")
+    private Long fillCountDifference;
+
+    @Column(name = "partial_fill_difference")
+    private Long partialFillDifference;
+
+    @Column(name = "paper_fill_count")
+    private long paperFillCount;
+
+    @Column(name = "live_fill_count")
+    private long liveFillCount;
+
+    @Column(name = "reconciliation_status", length = 32)
+    private String reconciliationStatus = "PENDING";
+
+    @Column(name = "reconciled_at")
+    private Instant reconciledAt;
+
+    @Column(name = "paper_closed_at")
+    private Instant paperClosedAt;
+
+    @Column(name = "live_closed_at")
+    private Instant liveClosedAt;
+
+    @Column(name = "reconciliation_failure_reason", length = 512)
+    private String reconciliationFailureReason;
+
+    @Column(name = "paper_entry_filled")
+    private boolean paperEntryFilled;
+
+    @Column(name = "live_entry_filled")
+    private boolean liveEntryFilled;
+
+    @Column(name = "paper_position_closed")
+    private boolean paperPositionClosed;
+
+    @Column(name = "live_position_closed")
+    private boolean livePositionClosed;
+
+    @Column(name = "paper_entry_at")
+    private Instant paperEntryAt;
+
+    @Column(name = "live_entry_at")
+    private Instant liveEntryAt;
+
     @PrePersist
     void prePersist() {
         createdAt = Instant.now();

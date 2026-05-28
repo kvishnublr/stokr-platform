@@ -13,6 +13,7 @@ import com.stokr.oms.repository.OmsTradeRepository;
 import com.stokr.oms.service.ExecutionLedgerService;
 import com.stokr.oms.service.OrderLifecycleService;
 import com.stokr.execution.guard.ExecutionGuardTelemetryService;
+import com.stokr.execution.comparison.TradeLifecycleReconciliationService;
 import com.stokr.oms.trace.ExecutionTraceService;
 import com.stokr.user.broker.ZerodhaBrokerOperationsService;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +54,7 @@ public class LiveBrokerFillSyncService {
     private final ExecutionGuardTelemetryService executionGuardTelemetryService;
     private final ApplicationEventPublisher eventPublisher;
     private final ZerodhaBrokerOperationsService zerodhaBrokerOperationsService;
+    private final TradeLifecycleReconciliationService tradeLifecycleReconciliationService;
 
     @Value("${stokr.execution.broker-fill-sync.enabled:true}")
     private boolean enabled;
@@ -196,6 +198,10 @@ public class LiveBrokerFillSyncService {
         )));
         log.info("broker.fill_sync.filled orderId={} kiteOrderId={} qty={} price={}",
                 filled.getId(), filled.getBrokerExternalOrderId(), qty, price);
+        if (filled.getSignalId() != null || TradeLifecycleReconciliationService.isExitOrder(filled)) {
+            tradeLifecycleReconciliationService.onOrderFilled(
+                    filled, price, 1, latencyMs != null ? latencyMs : 0L);
+        }
         return true;
     }
 
