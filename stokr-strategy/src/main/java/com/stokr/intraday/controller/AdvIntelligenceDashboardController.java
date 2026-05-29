@@ -4,6 +4,7 @@ import com.stokr.common.api.ApiResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.intraday.service.AdvIntelligenceFeedService;
 import com.stokr.intraday.service.AdvIntelligenceTerminalService;
+import com.stokr.intraday.service.LiveIntradayMoverService;
 import com.stokr.intraday.stream.RealTimeSetupStream;
 import com.stokr.intraday.engine.MarketRegimeDetector;
 import com.stokr.intraday.domain.CurrentSetup;
@@ -31,6 +32,7 @@ public class AdvIntelligenceDashboardController {
     private final RealTimeSetupStream realTimeStream;
     private final AdvIntelligenceFeedService feedService;
     private final AdvIntelligenceTerminalService terminalService;
+    private final LiveIntradayMoverService liveMoverService;
 
     @GetMapping("/snapshot")
     @PreAuthorize("isAuthenticated()")
@@ -56,6 +58,12 @@ public class AdvIntelligenceDashboardController {
                         "Regime context adjusts confidence before any trade suggestion."
                 )
         );
+    }
+
+    @GetMapping("/movers")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<List<Map<String, Object>>> movers() {
+        return ApiResponse.ok(liveMoverService.liveWatchRows(25), CorrelationIdHolder.get());
     }
 
     @GetMapping("/terminal")

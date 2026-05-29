@@ -6,17 +6,11 @@ import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.catalog.StrategyUniverseResolverService;
 import com.stokr.strategy.domain.StrategyRuntimeBinding;
 import com.stokr.strategy.domain.StrategySignalEntity;
-import com.stokr.strategy.domain.StrategyUniverseSymbol;
-import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.pipeline.SignalPipelineAudit;
 import com.stokr.strategy.pipeline.SignalPipelineAuditService;
 import com.stokr.strategy.pipeline.SignalPipelineEligibilityService;
 import com.stokr.strategy.pipeline.SignalPipelineEligibilityService.EligibilityResult;
 import com.stokr.strategy.repository.StrategySignalRepository;
-import com.stokr.strategy.runtime.StrategyRegistry;
-import com.stokr.strategy.signals.SignalType;
-import com.stokr.strategy.signals.StrategySignal;
-import com.stokr.strategy.context.StrategyContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
@@ -52,7 +46,7 @@ public class UnifiedSignalTruthService {
     private final SignalPipelineEligibilityService eligibilityService;
     private final SignalPipelineAuditService auditService;
     private final StrategyUniverseResolverService universeResolver;
-    private final StrategyRegistry strategyRegistry;
+    private final LiveIntradayMoverService liveMoverService;
     private final MarketDataQueryService marketDataQueryService;
     private final MarketRegimeDetector regimeDetector;
 
@@ -69,6 +63,9 @@ public class UnifiedSignalTruthService {
 
         List<Map<String, Object>> scannerRows = new ArrayList<>();
         Set<String> seenKeys = new LinkedHashSet<>();
+        Set<String> seenSymbols = new LinkedHashSet<>();
+
+        appendLiveMarketRows(scannerRows, seenSymbols, 28);
 
         for (StrategySignalEntity sig : persisted) {
             if (sig.getCreatedAt() != null && sig.getCreatedAt().isBefore(dayStart)) {
@@ -77,33 +74,45 @@ public class UnifiedSignalTruthService {
             if (Boolean.TRUE.equals(sig.getTestTrade())) {
                 continue;
             }
-            String key = dedupeKey(sig.getStrategyName(), sig.getSymbol());
-            if (!seenKeys.add(key)) {
+            String sym = stripNse(sig.getSymbol());
+            if (!seenSymbols.add(sym)) {
                 continue;
             }
+            String key = dedupeKey(sig.getStrategyName(), sym);
+            seenKeys.add(key);
             EligibilityResult elig = eligibilityService.enrichPersistedSignal(sig);
-            scannerRows.add(toUnifiedRow(sig, elig, scannerRows.size() + 1));
+            scannerRows.add(toUnifiedRow(sig, elig, 0));
         }
 
-        for (SignalPipelineAudit audit : auditService.recentToday(userId, 80)) {
-            String key = dedupeKey(audit.getStrategyKey(), audit.getSymbol());
-            if (!seenKeys.add(key)) {
+        int auditAdded = 0;
+        List<SignalPipelineAudit> audits = auditService.recentToday(userId, 40);
+        for (SignalPipelineAudit audit : audits) {
+            if (auditAdded >= 10) {
+                break;
+            }
+            String sym = stripNse(audit.getSymbol());
+            if (!seenSymbols.add(sym)) {
                 continue;
             }
             if ("EXECUTED".equals(audit.getExecutionStatus()) || "OMS_ELIGIBLE".equals(audit.getExecutionStatus())) {
                 continue;
             }
-            scannerRows.add(auditToRow(audit, scannerRows.size() + 1));
+            String key = dedupeKey(audit.getStrategyKey(), sym);
+            if (!seenKeys.add(key)) {
+                continue;
+            }
+            scannerRows.add(auditToRow(audit, 0));
+            auditAdded++;
         }
-
-        appendScanPreview(scannerRows, seenKeys, now, 40);
 
         for (Map<String, Object> row : scannerRows) {
             enrichDisplayFields(row);
         }
 
         scannerRows.sort(Comparator
-                .comparingInt((Map<String, Object> r) -> statusRank(String.valueOf(r.get("executionStatus"))))
+                .comparingInt((Map<String, Object> r) -> sourceRank(String.valueOf(r.getOrDefault("source", ""))))
+                .thenComparingInt((Map<String, Object> r) -> statusRank(String.valueOf(r.get("executionStatus"))))
+                .thenComparing((Map<String, Object> r) -> (Double) r.getOrDefault("activityScore", 0.0), Comparator.reverseOrder())
                 .thenComparing((Map<String, Object> r) -> (Integer) r.getOrDefault("aiScore", 0), Comparator.reverseOrder()));
 
         int rank = 1;
@@ -124,7 +133,7 @@ public class UnifiedSignalTruthService {
         out.put("engine", buildEngine(scannerRows, dayStart));
         out.put("orderFlow", buildOrderFlow(scannerRows));
         out.put("orderFlowSummary", buildOrderFlowSummary(scannerRows));
-        out.put("decisions", buildDecisions(scannerRows));
+        out.put("decisions", buildDecisions(persisted, audits, dayStart));
         out.put("rejectedSetups", buildRejectedSetups(scannerRows));
         out.put("sectors", buildSectors(scannerRows));
         out.put("risk", buildRisk(scannerRows));
@@ -132,67 +141,70 @@ public class UnifiedSignalTruthService {
         out.put("systemHealth", buildSystemHealth(now));
         out.put("liveControl", eligibilityService.liveControlPanel(now));
         out.put("scanIntervalSec", (int) Math.max(1, scanPollMs / 1000));
-        out.put("truthSource", "PRODUCTION_PIPELINE");
+        out.put("truthSource", "LIVE_SCANNER + PRODUCTION");
         return out;
     }
 
-    private void appendScanPreview(
-            List<Map<String, Object>> rows,
-            Set<String> seenKeys,
-            Instant now,
-            int maxPreview) {
-        if (rows.size() >= maxPreview) {
-            return;
-        }
-        List<StrategyRuntimeBinding> bindings = universeResolver.resolveActiveBindings();
-        int added = 0;
-        for (StrategyRuntimeBinding binding : bindings) {
-            if (added >= maxPreview) {
-                break;
-            }
-            String strategyKey = binding.getStrategyCatalog().getStrategyKey();
-            TradingStrategy strategy = strategyRegistry.get(strategyKey);
-            if (strategy == null) {
+    private void appendLiveMarketRows(List<Map<String, Object>> rows, Set<String> seenSymbols, int maxRows) {
+        for (Map<String, Object> live : liveMoverService.liveScannerRows(maxRows)) {
+            String sym = String.valueOf(live.get("symbol"));
+            if (!seenSymbols.add(sym)) {
                 continue;
             }
-            List<StrategyUniverseSymbol> symbols =
-                    universeResolver.resolveSymbolEntitiesForGroup(binding.getUniverseGroup().getId());
-            int symLimit = Math.min(8, symbols.size());
-            for (int i = 0; i < symLimit && added < maxPreview; i++) {
-                StrategyUniverseSymbol sym = symbols.get(i);
-                String symbol = sym.getTradingSymbol() != null ? sym.getTradingSymbol() : sym.getSymbol();
-                String key = dedupeKey(strategyKey, symbol);
-                if (!seenKeys.add(key)) {
-                    continue;
-                }
-                StrategyContext ctx = new StrategyContext(symbol, now, Map.of(), BigDecimal.ZERO);
-                StrategySignal evaluated;
-                try {
-                    evaluated = strategy.evaluate(ctx);
-                } catch (Exception ex) {
-                    continue;
-                }
-                if (evaluated == null || evaluated.type() == SignalType.HOLD) {
-                    EligibilityResult gate = eligibilityService.evaluatePrePersist(strategyKey, symbol, null, now);
-                    if (gate.rejectionMessage() != null && !"EXECUTABLE".equals(gate.executionStatus())) {
-                        rows.add(previewRow(strategyKey, symbol, gate, rows.size() + 1, null));
-                        added++;
-                    }
-                    continue;
-                }
-                StrategySignalEntity preview = new StrategySignalEntity();
-                preview.setStrategyName(strategyKey);
-                preview.setSymbol(symbol);
-                preview.setSignalType(evaluated.type());
-                preview.setEntryReferencePrice(evaluated.entryPrice());
-                preview.setStopPrice(evaluated.stopPrice());
-                preview.setTargetPrice(evaluated.targetPrice());
-                preview.setReason(evaluated.reason());
-                EligibilityResult elig = eligibilityService.evaluatePrePersist(strategyKey, symbol, preview, now);
-                rows.add(previewRow(strategyKey, symbol, elig, rows.size() + 1, preview));
-                added++;
+            rows.add(live);
+        }
+    }
+
+    private List<Map<String, Object>> buildDecisions(
+            List<StrategySignalEntity> persisted,
+            List<SignalPipelineAudit> audits,
+            Instant dayStart) {
+        List<Map<String, Object>> out = new ArrayList<>();
+
+        for (StrategySignalEntity sig : persisted) {
+            if (sig.getCreatedAt() != null && sig.getCreatedAt().isBefore(dayStart)) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(sig.getTestTrade())) {
+                continue;
+            }
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("time", sig.getCreatedAt() != null
+                    ? sig.getCreatedAt().atZone(IST).format(DateTimeFormatter.ofPattern("HH:mm")) : "—");
+            d.put("symbol", stripNse(sig.getSymbol()));
+            d.put("action", sig.getSignalType() != null ? sig.getSignalType().name() : "SIGNAL");
+            d.put("strategy", sig.getStrategyName());
+            d.put("aiScore", aiScore(sig.getConfidenceScore(), sig));
+            d.put("executionStatus", sig.getOutcomeStatus() != null ? sig.getOutcomeStatus() : "PIPELINE");
+            d.put("rejectionReason", null);
+            d.put("decisionFactors", List.of("Persisted signal", sig.getReason() != null ? sig.getReason() : "—"));
+            d.put("result", sig.getOutcomeStatus() != null ? sig.getOutcomeStatus() : "ACTIVE");
+            out.add(d);
+            if (out.size() >= 15) {
+                break;
             }
         }
+
+        for (SignalPipelineAudit audit : audits) {
+            if (out.size() >= 20) {
+                break;
+            }
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("time", audit.getCreatedAt() != null
+                    ? audit.getCreatedAt().atZone(IST).format(DateTimeFormatter.ofPattern("HH:mm")) : "—");
+            d.put("symbol", stripNse(audit.getSymbol()));
+            d.put("action", "REJECTED");
+            d.put("strategy", audit.getStrategyKey());
+            d.put("aiScore", audit.getConfidenceScore() != null ? aiScore(audit.getConfidenceScore(), null) : 0);
+            d.put("executionStatus", audit.getExecutionStatus());
+            d.put("rejectionReason", audit.getRejectionMessage());
+            d.put("decisionFactors", List.of(
+                    audit.getRejectionCode() != null ? audit.getRejectionCode() : "REJECTED",
+                    audit.getRejectionMessage() != null ? audit.getRejectionMessage() : "—"));
+            d.put("result", audit.getExecutionStatus());
+            out.add(d);
+        }
+        return out;
     }
 
     private Map<String, Object> toUnifiedRow(StrategySignalEntity sig, EligibilityResult elig, int rank) {
@@ -224,6 +236,7 @@ public class UnifiedSignalTruthService {
         row.put("createdAt", sig.getCreatedAt() != null ? sig.getCreatedAt().toString() : null);
         row.put("tradeQuality", tradeQualityLabel((Integer) row.get("aiScore")));
         row.put("omsEligible", "EXECUTABLE".equals(elig.executionStatus()) || "EXECUTED".equals(elig.executionStatus()));
+        row.put("source", "PRODUCTION");
         return row;
     }
 
@@ -254,39 +267,7 @@ public class UnifiedSignalTruthService {
                 ? ChronoUnit.SECONDS.between(audit.getCreatedAt(), Instant.now()) : 0);
         row.put("tradeQuality", tradeQualityLabel((Integer) row.get("aiScore")));
         row.put("omsEligible", false);
-        return row;
-    }
-
-    private Map<String, Object> previewRow(
-            String strategyKey,
-            String symbol,
-            EligibilityResult elig,
-            int rank,
-            StrategySignalEntity preview) {
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("signalId", null);
-        row.put("rank", rank);
-        row.put("symbol", stripNse(symbol));
-        row.put("strategy", strategyKey);
-        row.put("side", preview != null && preview.getSignalType() != null ? preview.getSignalType().name() : "—");
-        row.put("ltp", preview != null ? preview.getEntryReferencePrice() : lastPrice(symbol));
-        row.put("aiScore", preview != null ? aiScore(preview.getConfidenceScore(), preview) : 0);
-        row.put("probability", row.get("aiScore"));
-        row.put("executionStatus", elig.executionStatus());
-        row.put("pipelineStage", elig.pipelineStage());
-        row.put("rejectionReason", elig.rejectionMessage());
-        row.put("rejectionCode", elig.rejectionCode());
-        row.put("requestedMode", elig.requestedMode());
-        row.put("effectiveMode", elig.effectiveMode());
-        row.put("qualityGate", elig.qualityGate());
-        row.put("riskGate", elig.riskGate());
-        row.put("cooldownSecRemaining", elig.cooldownSecRemaining());
-        row.put("lifecycle", elig.lifecycle());
-        row.put("setupType", strategyKey);
-        row.put("status", elig.executionStatus());
-        row.put("signalAgeSec", 0);
-        row.put("tradeQuality", tradeQualityLabel((Integer) row.get("aiScore")));
-        row.put("omsEligible", "EXECUTABLE".equals(elig.executionStatus()));
+        row.put("source", "PRODUCTION");
         return row;
     }
 
@@ -378,7 +359,7 @@ public class UnifiedSignalTruthService {
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             String st = String.valueOf(row.get("executionStatus"));
-            if ("EXECUTABLE".equals(st) || "EXECUTED".equals(st) || "WATCHLIST".equals(st)) {
+            if ("INTELLIGENCE_ONLY".equals(st) || "LIVE_MARKET".equals(row.get("source"))) {
                 continue;
             }
             Map<String, Object> r = new LinkedHashMap<>();
@@ -392,26 +373,6 @@ public class UnifiedSignalTruthService {
             if (out.size() >= 12) {
                 break;
             }
-        }
-        return out;
-    }
-
-    private List<Map<String, Object>> buildDecisions(List<Map<String, Object>> rows) {
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (Map<String, Object> row : rows.stream().limit(20).toList()) {
-            Map<String, Object> d = new LinkedHashMap<>();
-            d.put("time", row.get("createdAt") != null
-                    ? String.valueOf(row.get("createdAt")).substring(11, 16) : "—");
-            d.put("symbol", row.get("symbol"));
-            d.put("action", row.get("side"));
-            d.put("strategy", row.get("strategy"));
-            d.put("aiScore", row.get("aiScore"));
-            d.put("executionStatus", row.get("executionStatus"));
-            d.put("rejectionReason", row.get("rejectionReason"));
-            d.put("lifecycle", row.get("lifecycle"));
-            d.put("result", row.get("outcomeStatus") != null ? row.get("outcomeStatus") : row.get("executionStatus"));
-            d.put("decisionFactors", buildDecisionFactors(row));
-            out.add(d);
         }
         return out;
     }
@@ -532,20 +493,33 @@ public class UnifiedSignalTruthService {
     }
 
     private void enrichDisplayFields(Map<String, Object> row) {
-        int score = (Integer) row.getOrDefault("aiScore", 0);
-        String side = String.valueOf(row.getOrDefault("side", "BUY"));
-        boolean isBuy = side.contains("BUY") || side.contains("LONG");
-        int buyPct = isBuy
-                ? Math.min(95, Math.max(35, 40 + score / 2))
-                : Math.max(5, Math.min(45, 60 - score / 2));
-        row.put("buyPct", buyPct);
-        row.put("sellPct", 100 - buyPct);
-        row.put("displayStatus", mapDisplayStatus(String.valueOf(row.get("executionStatus"))));
-        row.put("regimeFit", "EXECUTABLE".equals(row.get("executionStatus"))
-                || "WATCHLIST".equals(row.get("executionStatus"))
-                || "EXECUTED".equals(row.get("executionStatus")));
-        row.put("volumeMultiple", "—");
-        row.put("winPct", "—");
+        if (!row.containsKey("activityScore")) {
+            row.put("activityScore", 0.0);
+        }
+        if (!row.containsKey("buyPct")) {
+            int score = (Integer) row.getOrDefault("aiScore", 0);
+            String side = String.valueOf(row.getOrDefault("side", "BUY"));
+            boolean isBuy = side.contains("BUY") || side.contains("LONG");
+            int buyPct = isBuy
+                    ? Math.min(95, Math.max(35, 40 + score / 2))
+                    : Math.max(5, Math.min(45, 60 - score / 2));
+            row.put("buyPct", buyPct);
+            row.put("sellPct", 100 - buyPct);
+        }
+        if (!row.containsKey("displayStatus")) {
+            row.put("displayStatus", mapDisplayStatus(String.valueOf(row.get("executionStatus"))));
+        }
+        if (!row.containsKey("regimeFit")) {
+            row.put("regimeFit", "EXECUTABLE".equals(row.get("executionStatus"))
+                    || "WATCHLIST".equals(row.get("executionStatus"))
+                    || "EXECUTED".equals(row.get("executionStatus")));
+        }
+        if (!row.containsKey("volumeMultiple")) {
+            row.put("volumeMultiple", "—");
+        }
+        if (!row.containsKey("winPct")) {
+            row.put("winPct", "—");
+        }
     }
 
     private static String mapDisplayStatus(String executionStatus) {
@@ -663,6 +637,15 @@ public class UnifiedSignalTruthService {
         if (score >= 65) return "B SETUP";
         if (score >= 50) return "WEAK SETUP";
         return "HIGH RISK";
+    }
+
+    private static int sourceRank(String source) {
+        return switch (source) {
+            case "RANKING_BOARD" -> 0;
+            case "LIVE_MARKET" -> 1;
+            case "PRODUCTION" -> 2;
+            default -> 3;
+        };
     }
 
     private static int statusRank(String status) {

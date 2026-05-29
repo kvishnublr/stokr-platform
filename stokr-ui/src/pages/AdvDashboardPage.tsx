@@ -4,8 +4,8 @@ import {
   AdvScannerRow,
   AdvTerminalSnapshot,
   fetchAdvExecutionSummary,
+  fetchAdvMovers,
   fetchAdvTerminal,
-  fetchAdvWatch,
   fetchAdvWorkstation,
 } from "../api/advDashboard";
 import "./adv/adv-terminal.css";
@@ -34,16 +34,18 @@ export function AdvDashboardPage() {
     retry: 2,
   });
 
-  const watchQ = useQuery({ queryKey: ["adv-watch"], queryFn: fetchAdvWatch, refetchInterval: 10_000 });
+  const moversQ = useQuery({ queryKey: ["adv-movers"], queryFn: fetchAdvMovers, refetchInterval: 10_000 });
   const execQ = useQuery({ queryKey: ["adv-exec"], queryFn: fetchAdvExecutionSummary, refetchInterval: 15_000 });
   const wsQ = useQuery({ queryKey: ["adv-ws"], queryFn: fetchAdvWorkstation, refetchInterval: 15_000 });
 
   const data = terminalQ.data;
-  const rows = useEnrichedRows(data, watchQ.data);
+  const rows = useEnrichedRows(data, moversQ.data);
+  const loadingTerminal = terminalQ.isLoading && !data;
+  const syncing = terminalQ.isFetching && !!data;
 
   const refresh = () => {
     void terminalQ.refetch();
-    void watchQ.refetch();
+    void moversQ.refetch();
     void execQ.refetch();
     void wsQ.refetch();
   };
@@ -57,7 +59,7 @@ export function AdvDashboardPage() {
             Intraday Intelligence
           </div>
           <p className="adv-sub">
-            AI-powered scanner · Production pipeline · scan every {data?.scanIntervalSec ?? data?.liveControl?.scanIntervalSec ?? 10}s
+            AI-powered scanner · Live movers + production pipeline · scan every {data?.scanIntervalSec ?? data?.liveControl?.scanIntervalSec ?? 10}s
           </p>
         </div>
         <div className="adv-pills">
@@ -68,10 +70,11 @@ export function AdvDashboardPage() {
           <div className="adv-pill">
             Regime: <strong>{data?.marketRegime?.replace(/_/g, " ") ?? "—"}</strong>
           </div>
-          <div className="adv-pill adv-pill-truth">{data?.truthSource ?? "PRODUCTION_PIPELINE"}</div>
+          <div className="adv-pill adv-pill-truth">{data?.truthSource ?? "LIVE_SCANNER"}</div>
           <button type="button" className="adv-pill adv-pill-btn" onClick={refresh} disabled={terminalQ.isFetching}>
             {terminalQ.isFetching ? "Refreshing…" : "Refresh"}
           </button>
+          {syncing ? <div className="adv-pill adv-pill-truth">Syncing…</div> : null}
         </div>
       </header>
 
@@ -84,30 +87,35 @@ export function AdvDashboardPage() {
         <span className="adv-live-badge"><span className="adv-live-dot" /> LIVE</span>
       </div>
 
-      {terminalQ.isLoading && <div className="adv-empty">Loading production intelligence terminal…</div>}
-      {terminalQ.error && (
+      {loadingTerminal && rows.length === 0 ? (
+        <div className="adv-empty">Loading live market scanner…</div>
+      ) : null}
+      {loadingTerminal && rows.length > 0 ? (
+        <div className="adv-empty adv-span-all">Syncing pipeline — showing top intraday movers now</div>
+      ) : null}
+      {terminalQ.error && !rows.length ? (
         <div className="adv-error">
           Failed to load terminal — log in and ensure API is running. {(terminalQ.error as Error).message}
         </div>
-      )}
+      ) : null}
 
-      {data && (
+      {(data || rows.length > 0) && (
         <div className="adv-main">
           {tab === "intelligence" && (
-            <IntelligenceTab data={data} rows={rows} exec={execQ.data} ws={wsQ.data} selected={selected} onSelect={setSelected} />
+            <IntelligenceTab data={data} rows={rows} exec={execQ.data} ws={wsQ.data} selected={selected} onSelect={setSelected} partial={!data} />
           )}
-          {tab === "orderflow" && <OrderFlowTab data={data} rows={rows} />}
-          {tab === "decisions" && <DecisionsTab data={data} rows={rows} />}
-          {tab === "sectors" && <SectorsTab data={data} />}
-          {tab === "risk" && <RiskTab data={data} rows={rows} />}
-          {tab === "performance" && <PerformanceTab data={data} exec={execQ.data} />}
+          {tab === "orderflow" && <OrderFlowTab data={data} rows={rows} partial={!data} />}
+          {tab === "decisions" && <DecisionsTab data={data} rows={rows} partial={!data} />}
+          {tab === "sectors" && (data ? <SectorsTab data={data} /> : <div className="adv-empty">Sector view loads with full terminal sync.</div>)}
+          {tab === "risk" && <RiskTab data={data} rows={rows} partial={!data} />}
+          {tab === "performance" && <PerformanceTab data={data} exec={execQ.data} partial={!data} />}
         </div>
       )}
 
-      {data && (
+      {(data || rows.length > 0) && (
         <aside className="adv-side-panels">
-          <LiveControlPanel live={data.liveControl} scanSec={data.scanIntervalSec ?? 10} />
-          <EnginePanel engine={data.engine} metrics={data.metrics} exec={execQ.data} />
+          <LiveControlPanel live={data?.liveControl} scanSec={data?.scanIntervalSec ?? 10} />
+          <EnginePanel engine={data?.engine} metrics={data?.metrics ?? {}} exec={execQ.data} rowCount={rows.length} partial={!data} />
           <StrategiesPanel ws={wsQ.data} />
         </aside>
       )}
@@ -117,20 +125,53 @@ export function AdvDashboardPage() {
 
 function useEnrichedRows(
   data: AdvTerminalSnapshot | undefined,
-  watch: { symbol: string; price?: string; changePct?: string }[] | undefined,
+  movers: { symbol: string; price?: string; changePct?: string; source?: string; aiScore?: number }[] | undefined,
 ): EnrichedRow[] {
   return useMemo(() => {
-    const watchMap = new Map((watch ?? []).map((w) => [String(w.symbol), w]));
-    return (data?.scannerRows ?? []).map((r) => {
-      const w = watchMap.get(String(r.symbol));
-      return {
-        ...r,
-        aiScore: Number(r.aiScore ?? 0),
-        ltpDisplay: w?.price ?? fmtNum(r.ltp),
-        changePct: toNum(w?.changePct) ?? 0,
-      };
-    });
-  }, [data?.scannerRows, watch]);
+    const moverMap = new Map((movers ?? []).map((w) => [String(w.symbol), w]));
+
+    if (data?.scannerRows?.length) {
+      return data.scannerRows.map((r, i) => {
+        const symbol = String(r.symbol ?? "—");
+        const w = moverMap.get(symbol);
+        return {
+          ...r,
+          rank: r.rank ?? i + 1,
+          id: r.signalId ?? `${symbol}-${r.strategy ?? i}`,
+          aiScore: Number(r.aiScore ?? 0),
+          ltpDisplay: w?.price ?? fmtNum(r.ltp),
+          changePct: toNum((r as EnrichedRow).changePct) ?? toNum(w?.changePct) ?? 0,
+          source: r.source ?? w?.source ?? "PRODUCTION",
+        };
+      });
+    }
+
+    return (movers ?? [])
+      .map((w) => ({ ...w, move: Math.abs(toNum(w.changePct) ?? 0) }))
+      .filter((w) => w.symbol)
+      .sort((a, b) => b.move - a.move)
+      .slice(0, 25)
+      .map((w, i) => {
+        const chg = toNum(w.changePct) ?? 0;
+        const ai = Number(w.aiScore ?? Math.min(88, Math.max(42, 45 + Math.abs(chg) * 12)));
+        return {
+          rank: i + 1,
+          id: `mover-${w.symbol}`,
+          symbol: w.symbol,
+          aiScore: ai,
+          executionStatus: "INTELLIGENCE_ONLY",
+          strategy: "LIVE_MARKET",
+          setupType: Math.abs(chg) >= 1.5 ? "HIGH_MOMENTUM" : "ACTIVE",
+          side: chg >= 0 ? "BUY" : "SELL",
+          ltpDisplay: w.price ?? "—",
+          changePct: chg,
+          source: w.source ?? "LIVE_MARKET",
+          qualityGate: "MARKET",
+          riskGate: "N/A",
+          omsEligible: false,
+        } as EnrichedRow;
+      });
+  }, [data?.scannerRows, movers]);
 }
 
 function IntelligenceTab({
@@ -140,26 +181,28 @@ function IntelligenceTab({
   ws,
   selected,
   onSelect,
+  partial,
 }: {
-  data: AdvTerminalSnapshot;
+  data?: AdvTerminalSnapshot;
   rows: EnrichedRow[];
   exec?: Record<string, unknown>;
   ws?: Record<string, unknown>;
   selected: EnrichedRow | null;
   onSelect: (r: EnrichedRow | null) => void;
+  partial?: boolean;
 }) {
-  const m = data.metrics ?? {};
-  const cards = (data.liveCards?.length ? data.liveCards : rows.slice(0, 3)) as AdvScannerRow[];
+  const m = data?.metrics ?? {};
+  const cards = ((data?.liveCards?.length ? data.liveCards : rows.slice(0, 3)) as AdvScannerRow[]);
 
   return (
     <>
       <div className="adv-metrics">
-        <Metric label="Stocks Tracked" value={String(m.stocksTracked ?? 0)} hint="Live universe" />
-        <Metric label="Active Setups" value={String(m.activeSetups ?? rows.length)} hint="Pipeline rows" />
+        <Metric label="Stocks Tracked" value={String(m.stocksTracked ?? rows.length)} hint="Live universe" />
+        <Metric label="Active Setups" value={String(m.activeSetups ?? rows.length)} hint={partial ? "Watch movers" : "Pipeline rows"} />
         <Metric label="Executable" value={String(m.executableCount ?? 0)} hint="OMS eligible" accent />
         <Metric label="Market Breadth" value={String(m.marketBreadth ?? "—")} hint="Adv : Decl" />
-        <Metric label="Top AI Score" value={String(m.topScore ?? 0)} hint="Best setup" />
-        <Metric label="Orders Today" value={String(exec?.ordersTotal ?? data.engine?.trades ?? 0)} hint="Execution client" />
+        <Metric label="Top AI Score" value={String(m.topScore ?? rows.reduce((mx, r) => Math.max(mx, r.aiScore), 0))} hint="Best setup" />
+        <Metric label="Orders Today" value={String(exec?.ordersTotal ?? data?.engine?.trades ?? 0)} hint="Execution client" />
       </div>
 
       <div className="adv-live-cards">
@@ -184,13 +227,14 @@ function IntelligenceTab({
             </div>
           ))
         )}
-        <EngineMini engine={data.engine} ws={ws} />
+        <EngineMini engine={data?.engine} ws={ws} />
       </div>
 
       <div className="adv-card">
         <div className="adv-card-head">
           <span className="adv-card-title">Live Scanner</span>
-          <span className="adv-badge adv-badge-green">{rows.length} setups · {String(m.executableCount ?? 0)} executable</span>
+          <span className="adv-badge adv-badge-green">{rows.length} movers · {String(m.executableCount ?? 0)} executable</span>
+          {partial ? <span className="adv-badge adv-badge-blue">Live watch</span> : null}
         </div>
         <div className="adv-scroll">
           <ScannerTable rows={rows} onSelect={onSelect} />
@@ -198,17 +242,18 @@ function IntelligenceTab({
       </div>
 
       {selected ? <DiagnosticsPanel row={selected} onClose={() => onSelect(null)} /> : null}
-      {data.regimeNarrative ? <p className="adv-footnote">{data.regimeNarrative}</p> : null}
+      {data?.regimeNarrative ? <p className="adv-footnote">{data.regimeNarrative}</p> : null}
     </>
   );
 }
 
-function OrderFlowTab({ data, rows }: { data: AdvTerminalSnapshot; rows: EnrichedRow[] }) {
-  const summary = data.orderFlowSummary ?? {};
-  const flow = data.orderFlow ?? [];
+function OrderFlowTab({ data, rows, partial }: { data?: AdvTerminalSnapshot; rows: EnrichedRow[]; partial?: boolean }) {
+  const summary = data?.orderFlowSummary ?? deriveFlowSummary(rows);
+  const flow = data?.orderFlow ?? deriveOrderFlow(rows);
 
   return (
     <>
+      {partial ? <div className="adv-empty adv-span-all">Order flow from live movers — full pipeline syncs in background</div> : null}
       <div className="adv-metrics adv-metrics-5">
         <Metric label="Bullish Flow" value={String(summary.bullishCount ?? 0)} hint="Buy pressure ≥55%" accent />
         <Metric label="Bearish Flow" value={String(summary.bearishCount ?? 0)} hint="Sell pressure ≥55%" />
@@ -266,25 +311,30 @@ function OrderFlowTab({ data, rows }: { data: AdvTerminalSnapshot; rows: Enriche
   );
 }
 
-function DecisionsTab({ data, rows }: { data: AdvTerminalSnapshot; rows: EnrichedRow[] }) {
-  const decisions = data.decisions ?? [];
-  const rejected = data.rejectedSetups ?? [];
-  const health = data.systemHealth ?? {};
+function DecisionsTab({ data, rows, partial }: { data?: AdvTerminalSnapshot; rows: EnrichedRow[]; partial?: boolean }) {
+  const decisions = data?.decisions ?? [];
+  const rejected = data?.rejectedSetups ?? [];
+  const health = data?.systemHealth ?? {};
 
   return (
     <>
+      {partial ? (
+        <div className="adv-empty adv-span-all">
+          System Decisions show real pipeline signals and rejections — not live scanner rows. Syncing audit log…
+        </div>
+      ) : null}
       <div className="adv-metrics adv-metrics-4">
-        <Metric label="Pipeline Rows" value={String(rows.length)} hint="Today" />
-        <Metric label="Executable" value={String(data.metrics?.executableCount ?? 0)} hint="OMS eligible" accent />
+        <Metric label="Pipeline Rows" value={String(partial ? "—" : rows.length)} hint="Today" />
+        <Metric label="Executable" value={String(data?.metrics?.executableCount ?? 0)} hint="OMS eligible" accent />
         <Metric label="Rejected" value={String(rejected.length)} hint="With reasons" />
-        <Metric label="System" value={String(health.status ?? "—")} hint="Feed + startup" />
+        <Metric label="System" value={String(health.status ?? (partial ? "SYNCING" : "—"))} hint="Feed + startup" />
       </div>
 
       <div className="adv-layout-2">
         <div className="adv-card">
           <div className="adv-card-head"><span className="adv-card-title">Decision Log</span></div>
           {decisions.length === 0 ? (
-            <div className="adv-empty">No decisions logged today.</div>
+            <div className="adv-empty">{partial ? "Waiting for pipeline audit sync…" : "No decisions logged today."}</div>
           ) : (
             <table className="adv-table">
               <thead><tr><th>Time</th><th>Symbol</th><th>Action</th><th>Strategy</th><th>AI</th><th>Status</th><th>Result</th></tr></thead>
@@ -324,7 +374,7 @@ function DecisionsTab({ data, rows }: { data: AdvTerminalSnapshot; rows: Enriche
 
           <div className="adv-card">
             <div className="adv-card-head"><span className="adv-card-title">System Health</span></div>
-            <SystemHealthList health={health} live={data.liveControl} />
+            <SystemHealthList health={health} live={data?.liveControl} />
           </div>
         </div>
       </div>
@@ -379,8 +429,8 @@ function SectorsTab({ data }: { data: AdvTerminalSnapshot }) {
   );
 }
 
-function RiskTab({ data, rows }: { data: AdvTerminalSnapshot; rows: EnrichedRow[] }) {
-  const r = data.risk ?? {};
+function RiskTab({ data, rows, partial }: { data?: AdvTerminalSnapshot; rows: EnrichedRow[]; partial?: boolean }) {
+  const r = data?.risk ?? {};
   const positions = (r.positions as { symbol: string; side?: string; aiScore?: number; executionStatus?: string }[] | undefined) ?? [];
   const risky = rows.filter((row) =>
     ["BLOCKED", "REJECTED", "OMS_REJECTED", "QUALITY_REJECTED", "COOLDOWN"].includes(String(row.executionStatus)),
@@ -388,6 +438,7 @@ function RiskTab({ data, rows }: { data: AdvTerminalSnapshot; rows: EnrichedRow[
 
   return (
     <>
+      {partial ? <div className="adv-empty adv-span-all">Risk matrix uses production pipeline — live movers are intelligence-only</div> : null}
       <div className="adv-metrics adv-metrics-4">
         <Metric label="Open Risk" value={String(r.openRisk ?? "—")} hint="Blocked exposure" />
         <Metric label="Capital Used" value={`${r.capitalUsedPct ?? 0}%`} hint="Executable share" />
@@ -441,12 +492,13 @@ function RiskTab({ data, rows }: { data: AdvTerminalSnapshot; rows: EnrichedRow[
   );
 }
 
-function PerformanceTab({ data, exec }: { data: AdvTerminalSnapshot; exec?: Record<string, unknown> }) {
-  const p = data.performance ?? {};
+function PerformanceTab({ data, exec, partial }: { data?: AdvTerminalSnapshot; exec?: Record<string, unknown>; partial?: boolean }) {
+  const p = data?.performance ?? {};
   const bySetup = p.bySetupType ?? [];
 
   return (
     <>
+      {partial ? <div className="adv-empty adv-span-all">Performance stats load with full terminal sync</div> : null}
       <div className="adv-metrics adv-metrics-4">
         <Metric label="Signals Today" value={String(p.trades ?? 0)} hint="All pipelines" />
         <Metric label="Orders" value={String(exec?.ordersTotal ?? 0)} hint="OMS total" />
@@ -482,7 +534,7 @@ function PerformanceTab({ data, exec }: { data: AdvTerminalSnapshot; exec?: Reco
             <div><span>Win rate</span><strong>{String(p.winRate ?? "—")}</strong></div>
             <div><span>Avg latency</span><strong>{p.avgLatencyMs != null ? `${p.avgLatencyMs}ms` : "—"}</strong></div>
             <div><span>Fill rate</span><strong>{String(p.fillRate ?? "—")}</strong></div>
-            <div><span>Executable now</span><strong>{String(data.metrics?.executableCount ?? 0)}</strong></div>
+            <div><span>Executable now</span><strong>{String(data?.metrics?.executableCount ?? 0)}</strong></div>
           </div>
         </div>
       </div>
@@ -498,7 +550,7 @@ function ScannerTable({ rows, onSelect }: { rows: EnrichedRow[]; onSelect?: (r: 
     <table className="adv-table">
       <thead>
         <tr>
-          <th>#</th><th>Symbol</th><th>LTP</th><th>AI</th><th>Execution</th><th>Buy:Sell</th><th>Quality</th><th>Mode</th><th>Reason</th>
+          <th>#</th><th>Symbol</th><th>LTP</th><th>Chg%</th><th>AI</th><th>Source</th><th>Execution</th><th>Buy:Sell</th><th>Quality</th><th>Mode</th><th>Reason</th>
         </tr>
       </thead>
       <tbody>
@@ -510,7 +562,11 @@ function ScannerTable({ rows, onSelect }: { rows: EnrichedRow[]; onSelect?: (r: 
               <div className="adv-cell-sub">{r.side} · {shortSetup(r.setupType ?? r.strategy)}</div>
             </td>
             <td>{r.ltpDisplay}</td>
+            <td className={r.changePct >= 0 ? "adv-chg-up" : r.changePct < 0 ? "adv-chg-down" : ""}>
+              {r.changePct >= 0 ? "+" : ""}{r.changePct.toFixed(2)}%
+            </td>
             <td><strong className={r.aiScore >= 75 ? "adv-score-high" : "adv-score-mid"}>{r.aiScore}</strong></td>
+            <td><SourceBadge source={String(r.source ?? r.strategy ?? "—")} /></td>
             <td><ExecBadge status={String(r.executionStatus ?? r.status ?? "—")} /></td>
             <td><PressureBar buyPct={r.buyPct ?? 50} /></td>
             <td className="adv-cell-sub">{r.qualityGate ?? "—"}/{r.riskGate ?? "—"}</td>
@@ -552,19 +608,24 @@ function EnginePanel({
   engine,
   metrics,
   exec,
+  rowCount,
+  partial,
 }: {
   engine?: Record<string, unknown>;
   metrics: Record<string, unknown>;
   exec?: Record<string, unknown>;
+  rowCount?: number;
+  partial?: boolean;
 }) {
   return (
     <div className="adv-card adv-side-card">
       <div className="adv-card-title">Today&apos;s Engine</div>
       <div className="adv-kv-list">
         <div><span>Signals</span><strong>{String(engine?.trades ?? metrics.executedCount ?? 0)}</strong></div>
-        <div><span>Active</span><strong>{String(engine?.active ?? metrics.activeSetups ?? 0)}</strong></div>
+        <div><span>Live movers</span><strong>{String(rowCount ?? metrics.activeSetups ?? 0)}</strong></div>
         <div><span>Executable</span><strong className="adv-ok">{String(engine?.executable ?? metrics.executableCount ?? 0)}</strong></div>
         <div><span>Orders</span><strong>{String(exec?.ordersTotal ?? 0)}</strong></div>
+        {partial ? <div><span>Pipeline</span><strong>Syncing…</strong></div> : null}
       </div>
     </div>
   );
@@ -655,6 +716,49 @@ function DiagnosticsPanel({ row, onClose }: { row: EnrichedRow; onClose: () => v
   );
 }
 
+function SourceBadge({ source }: { source: string }) {
+  const u = source.toUpperCase();
+  const cls = u.includes("LIVE") ? "adv-badge-green"
+    : u.includes("RANKING") ? "adv-badge-blue"
+    : u.includes("PRODUCTION") || u.includes("ADV") || u.includes("EARLY") ? "adv-badge-amber"
+    : "adv-badge-gray";
+  const label = u.includes("LIVE") ? "LIVE"
+    : u.includes("RANKING") ? "SETUP"
+    : u.includes("PRODUCTION") ? "OMS"
+    : shortSetup(source);
+  return <span className={`adv-badge adv-badge-sm ${cls}`}>{label}</span>;
+}
+
+function deriveFlowSummary(rows: EnrichedRow[]) {
+  let bullish = 0;
+  let bearish = 0;
+  for (const row of rows) {
+    const buyPct = row.buyPct ?? 50;
+    if (buyPct >= 55) bullish++;
+    else if (buyPct <= 45) bearish++;
+  }
+  return {
+    bullishCount: bullish,
+    bearishCount: bearish,
+    neutralCount: Math.max(0, rows.length - bullish - bearish),
+    imbalanceIndex: rows.length
+      ? rows.reduce((s, r) => s + ((r.buyPct ?? 50) - 50), 0) / rows.length / 50
+      : 0,
+  };
+}
+
+function deriveOrderFlow(rows: EnrichedRow[]) {
+  return rows.slice(0, 12).map((r) => ({
+    symbol: r.symbol,
+    buyPct: r.buyPct ?? 50,
+    sellPct: r.sellPct ?? 100 - (r.buyPct ?? 50),
+    executionStatus: r.executionStatus,
+    rejectionReason: r.rejectionReason,
+    obi: r.buyPct != null ? `${((r.buyPct - 50) / 50).toFixed(2)}` : "—",
+    trend: (r.buyPct ?? 50) >= 60 ? "Build" : (r.buyPct ?? 50) <= 40 ? "Heavy sell" : "Neutral",
+  }));
+}
+
 function ExecBadge({ status, small }: { status: string; small?: boolean }) {
   const cls = statusClass(status);
   return <span className={`adv-badge ${cls}${small ? " adv-badge-sm" : ""}`}>{status.replace(/_/g, " ")}</span>;
@@ -690,7 +794,7 @@ function Diag({ label, value }: { label: string; value: string }) {
 
 function statusClass(status: string): string {
   if (status === "EXECUTABLE" || status === "EXECUTED" || status === "TRADING") return "adv-badge-green";
-  if (status === "WATCHLIST" || status === "WATCHING") return "adv-badge-blue";
+  if (status === "WATCHLIST" || status === "WATCHING" || status === "INTELLIGENCE ONLY") return "adv-badge-blue";
   if (status === "COOLDOWN") return "adv-badge-amber";
   if (["BLOCKED", "REJECTED", "OMS_REJECTED", "QUALITY_REJECTED"].includes(status)) return "adv-badge-red";
   return "adv-badge-gray";

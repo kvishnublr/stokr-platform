@@ -43,7 +43,10 @@ export type AdvScannerRow = {
   sellPct?: number;
   volumeMultiple?: string;
   winPct?: string | number;
-  regimeFit?: boolean;
+  source?: string;
+  changePct?: number;
+  momentumPct?: number;
+  activityScore?: number;
 };
 
 export type AdvSectorStock = {
@@ -127,6 +130,11 @@ export type AdvTerminalSnapshot = {
 export async function fetchAdvTerminal(): Promise<AdvTerminalSnapshot> {
   const res = await api.get("/api/v1/adv-dashboard/terminal");
   return (res.data?.data ?? res.data) as AdvTerminalSnapshot;
+}
+
+export async function fetchAdvMovers(): Promise<{ symbol: string; price?: string; changePct?: string; source?: string; aiScore?: number }[]> {
+  const res = await api.get("/api/v1/adv-dashboard/movers");
+  return Array.isArray(res.data?.data) ? res.data.data : [];
 }
 
 export async function fetchAdvWatch(): Promise<{ symbol: string; price?: string; changePct?: string; volume?: number | string }[]> {
