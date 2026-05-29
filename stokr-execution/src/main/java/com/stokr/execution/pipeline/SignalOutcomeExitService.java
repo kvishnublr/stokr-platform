@@ -36,7 +36,8 @@ import java.util.UUID;
 public class SignalOutcomeExitService {
 
     private static final Set<String> EXIT_OUTCOMES = Set.of(
-            "TARGET_HIT", "STOPLOSS_HIT", "BREAKEVEN_EXIT"
+            "TARGET_HIT", "STOPLOSS_HIT", "SL_HIT", "BREAKEVEN_EXIT",
+            "PRESSURE_EXIT", "LIQUIDITY_PROTECTION", "FEED_PROTECTION", "TIME_EXIT"
     );
 
     private static final Set<OrderState> FILLED_ENTRY_STATES = Set.of(

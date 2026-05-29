@@ -103,6 +103,41 @@ class SignalOutcomeExitServiceTest {
     }
 
     @Test
+    void placesExitOrderOnLiquidityProtection() {
+        StrategySignalEntity signal = liveSignal();
+        when(signalRepository.findById(signalId)).thenReturn(Optional.of(signal));
+
+        OmsOrder entry = new OmsOrder();
+        entry.setId(UUID.randomUUID());
+        entry.setUserId(userId);
+        entry.setSymbol("NSE:INFY");
+        entry.setSide("SELL");
+        entry.setQuantity(BigDecimal.ONE);
+        entry.setState(OrderState.FILLED);
+        entry.setExecutionMode(ExecutionMode.PAPER);
+        entry.setStrategyKey("ADV_CASH");
+        when(omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(signalId))
+                .thenReturn(List.of(entry));
+
+        when(brokerPositionTruthService.snapshot(userId)).thenReturn(snapshotWithQty("NSE:INFY", BigDecimal.ONE.negate()));
+
+        OmsOrder exit = new OmsOrder();
+        exit.setId(UUID.randomUUID());
+        exit.setState(OrderState.PENDING_SUBMISSION);
+        when(orderPlacementService.place(eq(userId), any(CreateOrderRequest.class))).thenReturn(exit);
+
+        service.onSignalOutcome(new OperationalRealtimeEvent("signal_outcome", Map.of(
+                "signalId", signalId.toString(),
+                "outcomeStatus", "LIQUIDITY_PROTECTION",
+                "userId", userId.toString()
+        )));
+
+        ArgumentCaptor<CreateOrderRequest> captor = ArgumentCaptor.forClass(CreateOrderRequest.class);
+        verify(orderPlacementService).place(eq(userId), captor.capture());
+        assertThat(captor.getValue().side()).isEqualTo("BUY");
+    }
+
+    @Test
     void skipsReplaySignals() {
         StrategySignalEntity signal = liveSignal();
         signal.setSignalSource(SignalProvenance.REPLAY);

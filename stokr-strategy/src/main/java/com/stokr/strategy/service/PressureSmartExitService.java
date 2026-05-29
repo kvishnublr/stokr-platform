@@ -77,8 +77,16 @@ public class PressureSmartExitService {
     @Value("${stokr.strategy.smart-exit.enabled:true}")
     private boolean enabled;
 
+    /** Min-hold pressure path: bar-range % vs mid on latest 1m candle (not bid-ask spread). */
     @Value("${stokr.strategy.lifecycle.emergency.spread-pct:0.50}")
     private double emergencySpreadPct;
+
+    /**
+     * Emergency liquidity exit: same bar-range proxy but higher threshold so normal 1m volatility
+     * does not instantly close every signal before target/SL tracking can run.
+     */
+    @Value("${stokr.strategy.lifecycle.emergency.bar-range-pct:2.5}")
+    private double emergencyBarRangePct;
 
     @Value("${stokr.strategy.lifecycle.emergency.candle-stale-seconds:120}")
     private long emergencyCandleStaleSeconds;
@@ -173,11 +181,11 @@ public class PressureSmartExitService {
                             ctx.candleStaleSeconds(), emergencyCandleStaleSeconds));
         }
 
-        if (ctx.spreadPct() >= emergencySpreadPct) {
+        if (ctx.spreadPct() >= emergencyBarRangePct) {
             return ExitDecision.emergency(
                     ExitCategory.LIQUIDITY_PROTECTION,
-                    String.format("SPREAD_EXPLOSION: spreadPct=%.3f thresholdPct=%.3f barRange=%.4f",
-                            ctx.spreadPct(), emergencySpreadPct, ctx.barRange()));
+                    String.format("BAR_RANGE_SPIKE: rangePct=%.3f thresholdPct=%.3f barRange=%.4f",
+                            ctx.spreadPct(), emergencyBarRangePct, ctx.barRange()));
         }
 
         if (ctx.volumeVacuum()) {

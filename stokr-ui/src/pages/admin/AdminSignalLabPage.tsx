@@ -18,6 +18,7 @@ type StrategyStatsRow = {
   slHit: number;
   running: number;
   expired: number;
+  protectedExit: number;
   pending: number;
   winRate?: number;
 };
@@ -104,9 +105,10 @@ export function AdminSignalLabPage() {
         slHit: acc.slHit + (r.slHit ?? 0),
         running: acc.running + (r.running ?? 0),
         expired: acc.expired + (r.expired ?? 0),
+        protectedExit: acc.protectedExit + (r.protectedExit ?? 0),
         pending: acc.pending + (r.pending ?? 0),
       }),
-      { total: 0, targetHit: 0, slHit: 0, running: 0, expired: 0, pending: 0 },
+      { total: 0, targetHit: 0, slHit: 0, running: 0, expired: 0, protectedExit: 0, pending: 0 },
     );
   }, [statsQ.data]);
 
@@ -343,6 +345,7 @@ export function AdminSignalLabPage() {
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">Signals {totals.total}</span>
             <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-800"><Target className="mr-1 inline h-3 w-3" />Target {totals.targetHit}</span>
             <span className="rounded-full bg-rose-100 px-2.5 py-1 text-rose-800">SL {totals.slHit}</span>
+            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-800">Protected {totals.protectedExit}</span>
             <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-indigo-800">Win {pct(totalWinRate)}</span>
           </div>
         </div>
@@ -358,6 +361,7 @@ export function AdminSignalLabPage() {
                 <th className="px-4 py-3 text-right">SL</th>
                 <th className="px-4 py-3 text-right">Running</th>
                 <th className="px-4 py-3 text-right">Expired</th>
+                <th className="px-4 py-3 text-right">Protected</th>
                 <th className="px-4 py-3 text-right">Pending</th>
                 <th className="px-4 py-3 text-right">Win %</th>
               </tr>
@@ -365,7 +369,7 @@ export function AdminSignalLabPage() {
             <tbody>
               {(statsQ.data ?? []).length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={11} className="px-4 py-8 text-center text-slate-400">
                     {statsQ.isLoading ? "Loading…" : "No signals in this range."}
                   </td>
                 </tr>
@@ -380,6 +384,7 @@ export function AdminSignalLabPage() {
                     <td className="px-4 py-3 text-right tabular-nums font-medium text-rose-700">{row.slHit}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{row.running}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{row.expired}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-amber-700">{row.protectedExit}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{row.pending}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{pct(row.winRate)}</td>
                   </tr>

@@ -96,7 +96,8 @@ public class AdminSignalCleanupService {
                     toLong(r[5]),
                     toLong(r[6]),
                     toLong(r[7]),
-                    toLong(r[8])
+                    toLong(r[8]),
+                    toLong(r[9])
             ));
         }
         return out;

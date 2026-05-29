@@ -11,6 +11,8 @@ public record AdminSignalStatsDto(
         long slHit,
         long running,
         long expired,
+        long protectedExit,
+        long pending,
         long totalAllTime
 ) {
     public double winRate() {

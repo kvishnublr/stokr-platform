@@ -119,7 +119,7 @@ public class AdminSignalQueryService {
     public AdminSignalStatsDto stats(Instant since) {
         List<Object[]> rows = signalRepo.computeStats(since);
         if (rows.isEmpty()) {
-            return new AdminSignalStatsDto(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0);
+            return new AdminSignalStatsDto(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0);
         }
         Object[] r = rows.get(0);
         return new AdminSignalStatsDto(
@@ -133,7 +133,9 @@ public class AdminSignalQueryService {
                 toLong(r[7]),  // slHit
                 toLong(r[8]),  // running
                 toLong(r[9]),  // expired
-                toLong(r[10]) // totalAllTime
+                toLong(r[10]), // protectedExit
+                toLong(r[11]), // pending
+                toLong(r[12])  // totalAllTime
         );
     }
 

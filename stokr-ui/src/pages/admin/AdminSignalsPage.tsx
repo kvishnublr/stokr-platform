@@ -76,7 +76,8 @@ type PageResp = { content: SignalRow[]; totalPages: number; totalElements: numbe
 type StatsResp = {
   totalToday: number; buyToday: number; sellToday: number;
   liveToday: number; paperToday: number; avgConfidence: number | null;
-  targetHit: number; slHit: number; running: number; expired: number; totalAllTime: number;
+  targetHit: number; slHit: number; running: number; expired: number;
+  protectedExit: number; pending: number; totalAllTime: number;
 };
 
 type CatalogSignalStats = { strategyKey: string; signalsToday: number; lastSignalAt: string | null };

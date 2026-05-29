@@ -9,6 +9,7 @@ public record AdminSignalStrategyStatsDto(
         long slHit,
         long running,
         long expired,
+        long protectedExit,
         long pending
 ) {
     public double winRate() {

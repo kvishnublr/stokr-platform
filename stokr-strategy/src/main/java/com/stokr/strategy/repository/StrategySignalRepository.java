@@ -133,9 +133,11 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
                 COUNT(*) FILTER (WHERE created_at >= :since AND pipeline = 'PAPER')::bigint                  AS paper_today,
                 AVG(confidence_score) FILTER (WHERE created_at >= :since)                                     AS avg_confidence,
                 COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'TARGET_HIT')::bigint        AS target_hit,
-                COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'STOPLOSS_HIT')::bigint      AS sl_hit,
-                COUNT(*) FILTER (WHERE created_at >= :since AND (outcome_status IS NULL OR outcome_status IN ('PENDING', 'RUNNING')))::bigint AS running_count,
-                COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'EXPIRED')::bigint           AS expired_count,
+                COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status IN ('STOPLOSS_HIT', 'SL_HIT'))::bigint AS sl_hit,
+                COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status = 'RUNNING')::bigint           AS running_count,
+                COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status IN ('EXPIRED', 'TIME_EXIT'))::bigint AS expired_count,
+                COUNT(*) FILTER (WHERE created_at >= :since AND outcome_status IN ('PRESSURE_EXIT', 'LIQUIDITY_PROTECTION', 'FEED_PROTECTION', 'BREAKEVEN_EXIT'))::bigint AS protected_count,
+                COUNT(*) FILTER (WHERE created_at >= :since AND (outcome_status IS NULL OR outcome_status = 'PENDING'))::bigint AS pending_count,
                 COUNT(*)::bigint                                                                               AS total_all_time
             FROM strategy_signals
             WHERE deleted = FALSE AND backtest_run_id IS NULL AND is_test_trade = FALSE
@@ -236,9 +238,10 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
                 COUNT(*) FILTER (WHERE signal_type = 'BUY')::bigint                      AS buy_count,
                 COUNT(*) FILTER (WHERE signal_type = 'SELL')::bigint                     AS sell_count,
                 COUNT(*) FILTER (WHERE outcome_status = 'TARGET_HIT')::bigint            AS target_hit,
-                COUNT(*) FILTER (WHERE outcome_status = 'STOPLOSS_HIT')::bigint            AS sl_hit,
+                COUNT(*) FILTER (WHERE outcome_status IN ('STOPLOSS_HIT', 'SL_HIT'))::bigint AS sl_hit,
                 COUNT(*) FILTER (WHERE outcome_status = 'RUNNING')::bigint                 AS running_count,
-                COUNT(*) FILTER (WHERE outcome_status = 'EXPIRED')::bigint                 AS expired_count,
+                COUNT(*) FILTER (WHERE outcome_status IN ('EXPIRED', 'TIME_EXIT'))::bigint AS expired_count,
+                COUNT(*) FILTER (WHERE outcome_status IN ('PRESSURE_EXIT', 'LIQUIDITY_PROTECTION', 'FEED_PROTECTION', 'BREAKEVEN_EXIT'))::bigint AS protected_count,
                 COUNT(*) FILTER (WHERE outcome_status IS NULL OR outcome_status = 'PENDING')::bigint AS pending_count
             FROM strategy_signals
             WHERE deleted = FALSE
