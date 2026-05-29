@@ -35,7 +35,42 @@ function statusPillClassName(status?: string | null) {
   return "border-border bg-muted/40 text-foreground";
 }
 
-type StrategyOption = { id: string; strategyKey: string; displayName: string };
+type StrategyOption = {
+  id: string;
+  strategyKey: string;
+  displayName: string;
+  segment?: string;
+  defaultExchange?: string;
+};
+
+function isMcxStrategy(strategyKey: string, segment?: string): boolean {
+  const key = strategyKey.toUpperCase();
+  if (key.includes("MCX") || key.includes("COMMODIT")) return true;
+  return (segment ?? "").toUpperCase() === "MCX";
+}
+
+function defaultSymbolForStrategy(strategyKey: string, segment?: string): string {
+  if (isMcxStrategy(strategyKey, segment)) return "MCX:CRUDEOIL";
+  const exchange = (segment ?? "NSE").toUpperCase() === "BSE" ? "BSE" : "NSE";
+  return `${exchange}:ITC`;
+}
+
+function applyStrategyFormDefaults(
+  prev: TestSignalLabRequest,
+  strategyKey: string,
+  strategies: StrategyOption[],
+): TestSignalLabRequest {
+  const meta = strategies.find((s) => s.strategyKey === strategyKey);
+  const mcx = isMcxStrategy(strategyKey, meta?.segment);
+  const livePath = prev.executionMode === "LIVE" || prev.executionMode === "BOTH";
+  return {
+    ...prev,
+    strategyKey,
+    symbol: defaultSymbolForStrategy(strategyKey, meta?.segment),
+    exchange: mcx ? "MCX" : (meta?.defaultExchange ?? "NSE"),
+    productType: mcx ? (livePath ? "NRML" : "CNC") : livePath ? "MIS" : prev.productType ?? "MIS",
+  };
+}
 
 function StrategySearchDropdown({
   strategies,
@@ -252,11 +287,38 @@ export function AdminTestSignalLabPage() {
       side: "BUY",
       quantity: 1,
       executionMode: mode,
-      productType: mode === "LIVE" ? "MIS" : "CNC",
+      productType: mode === "LIVE" ? "NRML" : "CNC",
       autoSquareOffMinutes: 0,
       forceQuantityOne: true,
       ...LIVE_SAFETY_FLAGS,
     }));
+  }
+
+  function applyNseCashPreset(mode: "LIVE" | "PAPER" = "LIVE") {
+    const traders = options.data?.traders ?? [];
+    const approved = traders.find((t) => t.liveTradingApproved) ?? traders[0];
+    const strategies = options.data?.strategies ?? [];
+    const cashKey =
+      strategies.find((s) => s.strategyKey === "GAP_FILL")?.strategyKey
+      ?? strategies.find((s) => s.strategyKey === "NSE_SPIKE_DETECTION")?.strategyKey
+      ?? "NSE_SPIKE_DETECTION";
+    setForm((p) =>
+      applyStrategyFormDefaults(
+        {
+          ...p,
+          traderUserId: p.traderUserId || approved?.userId || "",
+          strategyKey: cashKey,
+          side: "BUY",
+          quantity: 1,
+          executionMode: mode,
+          autoSquareOffMinutes: 0,
+          forceQuantityOne: true,
+          ...LIVE_SAFETY_FLAGS,
+        },
+        cashKey,
+        strategies,
+      ),
+    );
   }
 
   const brokerOptions = useMemo(() => {
@@ -321,6 +383,20 @@ export function AdminTestSignalLabPage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"
+              onClick={() => applyNseCashPreset("LIVE")}
+            >
+              Load NSE Cash (LIVE)
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-muted/60"
+              onClick={() => applyNseCashPreset("PAPER")}
+            >
+              Load NSE Cash (PAPER)
+            </button>
+            <button
+              type="button"
               className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
               onClick={() => applyMcxE2ePreset("LIVE")}
             >
@@ -365,7 +441,9 @@ export function AdminTestSignalLabPage() {
             <StrategySearchDropdown
               strategies={options.data?.strategies ?? []}
               value={form.strategyKey}
-              onChange={(key) => setForm((p) => ({ ...p, strategyKey: key }))}
+              onChange={(key) =>
+                setForm((p) => applyStrategyFormDefaults(p, key, options.data?.strategies ?? []))
+              }
             />
           </label>
 
@@ -417,13 +495,14 @@ export function AdminTestSignalLabPage() {
           </label>
 
           <label className="space-y-1.5">
-            <span className={sectionTitleClassName()}>Product (LIVE = MIS)</span>
+            <span className={sectionTitleClassName()}>Product</span>
             <select
               className={fieldClassName()}
               value={form.productType ?? "MIS"}
               onChange={(e) => setForm((p) => ({ ...p, productType: e.target.value }))}
             >
-              <option value="MIS">MIS (intraday)</option>
+              <option value="MIS">MIS (NSE intraday)</option>
+              <option value="NRML">NRML (MCX / carry)</option>
               <option value="CNC">CNC (delivery, PAPER only)</option>
             </select>
           </label>

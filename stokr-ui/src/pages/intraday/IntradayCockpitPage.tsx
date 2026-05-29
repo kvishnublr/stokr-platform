@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import { api, parseAxiosMessage } from "../../api/client";
@@ -14,12 +14,15 @@ import {
   signalStrategyKey,
 } from "../../lib/intradaySignals";
 import { fmtTime, istTodayYmd } from "../../lib/dateUtils";
+import { deriveSessionBanner } from "../../lib/intradayLiveOps";
 import {
   brokerPositionPollMs,
   formatBrokerSyncAge,
   isBrokerSyncPulseLive,
   useBrokerPositionSync,
 } from "../../lib/hooks/useBrokerPositionSync";
+import { connectStomp } from "../../lib/realtime/stomp";
+import { LiveOpsStrip } from "../../components/intraday/LiveOpsStrip";
 import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl } from "../../lib/moneyUtils";
 import { useSessionStore } from "../../state/session";
 import { useUiThemeStore } from "../../state/uiTheme";
@@ -109,6 +112,14 @@ const rowIn = {
 
 function liveLtpKey(ltp: number | null): string {
   return ltp != null ? ltp.toFixed(2) : "na";
+}
+
+function ltpLookupVariants(symbol: unknown): string[] {
+  const raw = String(symbol ?? "").trim().toUpperCase();
+  if (!raw) return [];
+  const bare = raw.includes(":") ? raw.slice(raw.indexOf(":") + 1) : raw;
+  const variants = new Set([raw, bare, `NSE:${bare}`]);
+  return [...variants];
 }
 
 function formatExecutionQualityScore(score: Record<string, unknown> | undefined): string {
@@ -258,6 +269,7 @@ export function IntradayCockpitPage() {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const accessToken = useSessionStore((s) => s.accessToken);
   const userId = useSessionStore((s) => s.userId);
+  const queryClient = useQueryClient();
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [guardEvents, setGuardEvents] = useState<Array<Record<string, unknown>>>([]);
   const [integrityOpen, setIntegrityOpen] = useState(false);
@@ -302,7 +314,18 @@ export function IntradayCockpitPage() {
       return (Array.isArray(res.data?.data) ? res.data.data : []) as WatchRow[];
     },
     refetchInterval: positionPollMs,
-    staleTime: 1_500,
+    staleTime: 1_000,
+    enabled: !!accessToken,
+  });
+
+  const executionSummaryQ = useQuery({
+    queryKey: ["intraday-execution-summary"],
+    queryFn: async () => {
+      const res = await api.get("/api/trader/execution-summary");
+      return (res.data?.data ?? {}) as Record<string, unknown>;
+    },
+    refetchInterval: 12_000,
+    staleTime: 8_000,
     enabled: !!accessToken,
   });
 
@@ -316,6 +339,20 @@ export function IntradayCockpitPage() {
   const readinessErr = readinessQ.isError ? parseAxiosMessage(readinessQ.error) : null;
   const wsErr = workstationQ.isError ? parseAxiosMessage(workstationQ.error) : null;
   const brokerErr = brokerTruthQ.isError ? parseAxiosMessage(brokerTruthQ.error) : null;
+
+  useEffect(() => {
+    if (!accessToken || !userId) return;
+    const off = connectStomp(accessToken, userId, {
+      onStrategy: () => {
+        void queryClient.invalidateQueries({ queryKey: ["intraday-market-watch"] });
+        void queryClient.invalidateQueries({ queryKey: ["intraday-workstation"] });
+      },
+      onPosition: () => {
+        void queryClient.invalidateQueries({ queryKey: ["intraday-market-watch"] });
+      },
+    });
+    return off;
+  }, [accessToken, userId, queryClient]);
 
   useEffect(() => {
     const token = localStorage.getItem("accessToken");
@@ -374,20 +411,32 @@ export function IntradayCockpitPage() {
 
   const ltpMap = useMemo(() => {
     const map = new Map<string, number>();
+    const put = (symbol: unknown, price: unknown) => {
+      const value = parseMoney(price);
+      if (value == null || value <= 0) return;
+      for (const key of ltpLookupVariants(symbol)) {
+        map.set(key, value);
+      }
+    };
     for (const row of watchQ.data ?? []) {
-      const sym = bareSymbol(row.symbol).toUpperCase();
-      const price = parseMoney(row.price ?? row.ltp);
-      if (sym && price != null) map.set(sym, price);
+      put(row.symbol, row.ltp ?? row.price);
     }
     for (const p of ws?.openPositions ?? []) {
-      const sym = bareSymbol(p.symbol).toUpperCase();
-      const ltp = parseMoney(p.ltp);
-      if (sym && ltp != null) map.set(sym, ltp);
+      put(p.symbol, p.ltp);
+    }
+    for (const sig of ws?.latestSignals ?? []) {
+      put(sig.symbol, sig.ltp);
     }
     return map;
-  }, [watchQ.data, ws?.openPositions]);
+  }, [watchQ.data, ws?.openPositions, ws?.latestSignals]);
 
-  const resolveLtp = (symbol: unknown) => ltpMap.get(bareSymbol(symbol).toUpperCase()) ?? null;
+  const resolveLtp = (symbol: unknown) => {
+    for (const key of ltpLookupVariants(symbol)) {
+      const hit = ltpMap.get(key);
+      if (hit != null) return hit;
+    }
+    return null;
+  };
 
   const filteredSignals = useMemo(() => {
     const signals = (ws?.latestSignals ?? [])
@@ -404,10 +453,23 @@ export function IntradayCockpitPage() {
     return [...guardEvents, ...persisted].slice(0, 12);
   }, [guardEvents, ws?.executionGuardEvents]);
 
-  const overallTone =
-    readiness?.overallStatus === "READY" ? "ok" : readiness?.overallStatus === "WARNING" ? "warn" : "bad";
+  const sessionBanner = useMemo(
+    () =>
+      deriveSessionBanner({
+        overallStatus: readiness?.overallStatus,
+        sessionState: readiness?.session?.sessionState,
+        sessionDetail: readiness?.session?.detail,
+        runningStrategies: readiness?.runtime?.runningStrategies,
+        totalStrategies: readiness?.runtime?.totalStrategies,
+        websocketState: readiness?.feed?.websocketState,
+        brokerConnected,
+        feedHealthy: readiness?.feed?.severity === "HEALTHY",
+      }),
+    [readiness, brokerConnected],
+  );
 
   const openPositions = ws?.openPositions ?? [];
+  const rejectedOrders = Number(executionSummaryQ.data?.rejectedOrders ?? 0);
 
   return (
     <div className={cn("relative flex min-h-0 flex-1 flex-col pb-8 font-sans", isLight ? "text-slate-900" : "text-neutral-100")}>
@@ -485,9 +547,9 @@ export function IntradayCockpitPage() {
             layout
             className={cn(
               "mt-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5 text-sm",
-              overallTone === "ok" && (isLight ? "border-emerald-200/80 bg-emerald-50/70" : "border-emerald-500/30 bg-emerald-500/10"),
-              overallTone === "warn" && (isLight ? "border-amber-200/80 bg-amber-50/70" : "border-amber-500/30 bg-amber-500/10"),
-              overallTone === "bad" && (isLight ? "border-rose-200/80 bg-rose-50/70" : "border-rose-500/30 bg-rose-500/10"),
+              sessionBanner.tone === "ok" && (isLight ? "border-emerald-200/80 bg-emerald-50/70" : "border-emerald-500/30 bg-emerald-500/10"),
+              sessionBanner.tone === "warn" && (isLight ? "border-amber-200/80 bg-amber-50/70" : "border-amber-500/30 bg-amber-500/10"),
+              sessionBanner.tone === "bad" && (isLight ? "border-rose-200/80 bg-rose-50/70" : "border-rose-500/30 bg-rose-500/10"),
             )}
           >
             {readinessQ.isLoading ? (
@@ -503,16 +565,29 @@ export function IntradayCockpitPage() {
               </>
             ) : (
               <>
-                {overallTone === "ok" ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <AlertTriangle className="h-4 w-4 text-amber-600" />}
-                <span className={cn("font-medium", isLight ? "text-slate-800" : "text-neutral-100")}>
-                  {readiness?.overallStatus ?? "CHECKING"} — {readiness?.session?.detail ?? "Validating market session"}
-                </span>
-                <span className={cn("text-xs", isLight ? "text-slate-500" : "text-neutral-400")}>
-                  {readiness?.runtime?.runningStrategies ?? 0}/{readiness?.runtime?.totalStrategies ?? 0} strategies · WS {readiness?.feed?.websocketState ?? "—"}
-                </span>
+                {sessionBanner.tone === "ok" ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <AlertTriangle className="h-4 w-4 text-amber-600" />}
+                <span className={cn("font-medium", isLight ? "text-slate-800" : "text-neutral-100")}>{sessionBanner.title}</span>
+                <span className={cn("text-xs", isLight ? "text-slate-500" : "text-neutral-400")}>{sessionBanner.subtitle}</span>
+                {readiness?.overallStatus && readiness.overallStatus !== "READY" && sessionBanner.tone !== "bad" ? (
+                  <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", isLight ? "bg-amber-100 text-amber-900" : "bg-amber-500/20 text-amber-200")}>
+                    Ops {readiness.overallStatus}
+                  </span>
+                ) : null}
               </>
             )}
           </motion.div>
+
+          <div className="mt-5">
+            <LiveOpsStrip
+              isLight={isLight}
+              latestSignals={ws?.latestSignals}
+              openPositions={openPositions}
+              livePnl={resolvedPnl.mtm}
+              guardEvents={recentGuardEvents}
+              runningStrategies={readiness?.runtime?.runningStrategies}
+              rejectedOrders={rejectedOrders}
+            />
+          </div>
         </div>
       </motion.header>
 

@@ -44,7 +44,13 @@ export async function fetchTestSignalLabOptions() {
   return res.data?.data as {
     traders: Array<{ userId: string; username: string; displayName: string; liveTradingApproved: boolean }>;
     brokerAccounts: Array<{ id: string; userId: string; vendorCode: string; status: string }>;
-    strategies: Array<{ id: string; strategyKey: string; displayName: string }>;
+    strategies: Array<{
+      id: string;
+      strategyKey: string;
+      displayName: string;
+      segment?: string;
+      defaultExchange?: string;
+    }>;
     executionModes: string[];
     triggerTypes: string[];
   };

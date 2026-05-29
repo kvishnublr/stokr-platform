@@ -188,7 +188,7 @@ public class IntradayReadinessService {
                 "WARNING", warnings.size(),
                 "INFO", info.size()
         );
-        String overall = !blockers.isEmpty() ? "BLOCKED" : (!warnings.isEmpty() ? "WARNING" : "READY");
+        String overall = computeOverallStatus(blockers, warnings, session, brokerHealth, feed, runtimeHealth);
         return new IntradayReadinessResponse(
                 overall,
                 Instant.now().toString(),
@@ -422,6 +422,40 @@ public class IntradayReadinessService {
         long stale = strategies.stream().filter(s -> "STALE".equalsIgnoreCase(s.historical())).count();
         long missing = strategies.stream().filter(s -> "NO_DATA".equalsIgnoreCase(s.historical()) || "NOT_BACKFILLED".equalsIgnoreCase(s.historical())).count();
         return new HistoricalCoverageAggregate((int) ready, (int) stale, (int) missing);
+    }
+
+    /**
+     * Overall status reflects infrastructure readiness, not every per-strategy runtime gap.
+     * During a live session with broker + feed healthy, partial strategy stops surface as WARNING.
+     */
+    private String computeOverallStatus(
+            List<ReadinessIssue> blockers,
+            List<ReadinessIssue> warnings,
+            MarketSessionInfo session,
+            BrokerHealth broker,
+            FeedHealth feed,
+            RuntimeHealth runtime
+    ) {
+        boolean infraBlocked = blockers.stream().anyMatch(b -> isInfrastructureBlocker(b.code()));
+        boolean allRuntimeStopped = runtime.runningStrategies() <= 0;
+        if (infraBlocked || allRuntimeStopped) {
+            return "BLOCKED";
+        }
+        boolean liveSession = "MARKET_OPEN".equalsIgnoreCase(session.sessionState());
+        boolean brokerReady = "CONNECTED".equalsIgnoreCase(broker.status()) && broker.tokenValid();
+        boolean feedHealthy = "HEALTHY".equalsIgnoreCase(feed.severity());
+        if (liveSession && brokerReady && feedHealthy && (!blockers.isEmpty() || !warnings.isEmpty())) {
+            return "WARNING";
+        }
+        if (!blockers.isEmpty() || !warnings.isEmpty()) {
+            return "WARNING";
+        }
+        return "READY";
+    }
+
+    private static boolean isInfrastructureBlocker(String code) {
+        String c = upper(code);
+        return "FEED_DISCONNECTED".equals(c) || "BROKER_TOKEN_INVALID".equals(c);
     }
 
     private MarketSessionInfo detectSession() {

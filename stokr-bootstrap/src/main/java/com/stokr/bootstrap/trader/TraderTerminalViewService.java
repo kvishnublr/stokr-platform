@@ -3,6 +3,7 @@ package com.stokr.bootstrap.trader;
 import com.stokr.backtest.domain.BacktestJob;
 import com.stokr.backtest.domain.BacktestJobStatus;
 import com.stokr.backtest.repository.BacktestJobRepository;
+import com.stokr.marketdata.cache.LatestPriceCache;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.execution.broker.BrokerPositionTruthService;
@@ -38,6 +39,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -64,7 +66,10 @@ public class TraderTerminalViewService {
             "NIFTY_FUT", "BANKNIFTY_FUT", "NIFTY", "RELIANCE", "BERGEPAINT"
     );
 
+    private static final Duration LIVE_TICK_MAX_AGE = Duration.ofSeconds(120);
+
     private final MarketDataQueryService marketDataQueryService;
+    private final LatestPriceCache latestPriceCache;
     private final StrategySignalRepository strategySignalRepository;
     private final OmsOrderRepository omsOrderRepository;
     private final BacktestJobRepository backtestJobRepository;
@@ -84,6 +89,7 @@ public class TraderTerminalViewService {
 
     public TraderTerminalViewService(
             MarketDataQueryService marketDataQueryService,
+            LatestPriceCache latestPriceCache,
             StrategySignalRepository strategySignalRepository,
             OmsOrderRepository omsOrderRepository,
             BacktestJobRepository backtestJobRepository,
@@ -102,6 +108,7 @@ public class TraderTerminalViewService {
             BrokerPositionTruthService brokerPositionTruthService
     ) {
         this.marketDataQueryService = marketDataQueryService;
+        this.latestPriceCache = latestPriceCache;
         this.strategySignalRepository = strategySignalRepository;
         this.omsOrderRepository = omsOrderRepository;
         this.backtestJobRepository = backtestJobRepository;
@@ -137,6 +144,11 @@ public class TraderTerminalViewService {
                     symbols.add(si.getSymbol().trim());
                 }
             }
+            for (StrategySignalEntity sig : strategySignalRepository.findRecentForTrader(userId, PageRequest.of(0, 80))) {
+                if (sig.getSymbol() != null && !sig.getSymbol().isBlank()) {
+                    symbols.add(sig.getSymbol().trim());
+                }
+            }
         }
         if (symbols.isEmpty()) {
             symbols.addAll(DEFAULT_WATCH_SYMBOLS);
@@ -160,24 +172,31 @@ public class TraderTerminalViewService {
     }
 
     private Map<String, Object> watchRowForSymbol(String symbol) {
+        BigDecimal live = lastPrice(symbol);
+        if (live == null || live.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
         List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, "5m", 2);
         if (bars.isEmpty()) {
             bars = marketDataQueryService.lastBarsAsc(symbol, "1m", 2);
         }
-        if (bars.isEmpty()) {
-            return null;
+        double lastClose = live.doubleValue();
+        double prevClose = lastClose;
+        Instant lastOpen = null;
+        if (!bars.isEmpty()) {
+            MarketdataCandle last = bars.get(bars.size() - 1);
+            MarketdataCandle prev = bars.size() > 1 ? bars.get(bars.size() - 2) : null;
+            prevClose = prev != null ? bd(prev.getClosePrice()) : lastClose;
+            lastOpen = last.getOpenTime();
         }
-        MarketdataCandle last = bars.get(bars.size() - 1);
-        MarketdataCandle prev = bars.size() > 1 ? bars.get(bars.size() - 2) : null;
-        double lastClose = bd(last.getClosePrice());
-        double prevClose = prev != null ? bd(prev.getClosePrice()) : lastClose;
         double pct = prevClose == 0d ? 0d : ((lastClose - prevClose) / prevClose) * 100d;
 
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("symbol", symbol);
         row.put("price", String.format("%.2f", lastClose));
+        row.put("ltp", live);
         row.put("changePct", String.format("%.2f", pct));
-        row.put("lastOpenTime", last.getOpenTime() != null ? last.getOpenTime().toString() : null);
+        row.put("lastOpenTime", lastOpen != null ? lastOpen.toString() : null);
         return row;
     }
 
@@ -662,11 +681,42 @@ public class TraderTerminalViewService {
     }
 
     private BigDecimal lastPrice(String symbol) {
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, "1m", 1);
-        if (bars.isEmpty() || bars.getFirst().getClosePrice() == null) {
+        if (symbol == null || symbol.isBlank()) {
             return BigDecimal.ZERO;
         }
-        return bars.getFirst().getClosePrice();
+        for (String variant : priceLookupVariants(symbol)) {
+            BigDecimal cached = latestPriceCache.getLastPrice(variant);
+            if (cached != null && cached.compareTo(BigDecimal.ZERO) > 0) {
+                return cached;
+            }
+        }
+        for (String variant : priceLookupVariants(symbol)) {
+            List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(variant, "1m", 1);
+            if (!bars.isEmpty() && bars.getFirst().getClosePrice() != null) {
+                MarketdataCandle bar = bars.getFirst();
+                if (bar.getOpenTime() != null
+                        && Duration.between(bar.getOpenTime(), Instant.now()).compareTo(LIVE_TICK_MAX_AGE) <= 0) {
+                    return bar.getClosePrice();
+                }
+                if (bars.getFirst().getClosePrice().compareTo(BigDecimal.ZERO) > 0) {
+                    return bars.getFirst().getClosePrice();
+                }
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private static List<String> priceLookupVariants(String symbol) {
+        String raw = symbol.trim();
+        String upper = raw.toUpperCase();
+        String bare = upper.contains(":") ? upper.substring(upper.indexOf(':') + 1) : upper;
+        LinkedHashSet<String> variants = new LinkedHashSet<>();
+        variants.add(upper);
+        variants.add(bare);
+        if (!upper.contains(":")) {
+            variants.add("NSE:" + bare);
+        }
+        return List.copyOf(variants);
     }
 
     private static BigDecimal resolveUnrealizedPnl(

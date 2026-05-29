@@ -54,7 +54,7 @@ public class StrategyInstanceLifecycleService {
             si.setExecutionMode("PAPER");
             mode = "PAPER";
         }
-        if ("LIVE".equals(mode)) {
+        if ("LIVE".equals(mode) || "BOTH".equals(mode)) {
             liveStrategyGate.ifAvailable(g -> g.assertLiveRuntimeAllowed(userId, si.getDefinition().getStrategyKey()));
         }
         si.setRuntimeState(STATE_RUNNING);
@@ -139,8 +139,8 @@ public class StrategyInstanceLifecycleService {
 
     private static String normalizeExecutionMode(String raw) {
         String u = raw.trim().toUpperCase(Locale.ROOT);
-        if (!u.equals("SIMULATED") && !u.equals("LIVE") && !u.equals("PAPER")) {
-            throw new BadRequestException("executionMode must be SIMULATED, LIVE, or PAPER");
+        if (!u.equals("SIMULATED") && !u.equals("LIVE") && !u.equals("PAPER") && !u.equals("BOTH")) {
+            throw new BadRequestException("executionMode must be SIMULATED, LIVE, PAPER, or BOTH");
         }
         return u;
     }

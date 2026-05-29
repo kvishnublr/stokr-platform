@@ -63,7 +63,8 @@ public class AdminTestSignalLabSquareOffService {
         BigDecimal qty = entryOrder.getQuantity() != null && entryOrder.getQuantity().signum() > 0
                 ? entryOrder.getQuantity()
                 : (run.getQuantity() != null ? run.getQuantity() : BigDecimal.ONE);
-        String symbol = AdminTestSignalLabSymbol.normalize(run.getSymbol(), run.getExchange());
+        String symbol = AdminTestSignalLabSymbol.normalize(
+                run.getSymbol(), run.getExchange(), null, run.getStrategyKey());
         ExecutionMode mode = "LIVE".equalsIgnoreCase(run.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER;
         String broker = mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM";
         String idempotencyKey = "test-squareoff:" + run.getId() + ":" + exitSide;

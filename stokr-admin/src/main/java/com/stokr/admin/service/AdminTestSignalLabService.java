@@ -105,7 +105,7 @@ public class AdminTestSignalLabService {
         run.setBrokerVendor(broker != null ? broker.getVendorCode() : "ZERODHA");
         run.setStrategyKey(request.strategyKey().trim());
         run.setStrategyTemplate(request.strategyTemplate());
-        String normalizedSymbol = AdminTestSignalLabSymbol.normalize(request.symbol(), request.exchange());
+        String normalizedSymbol = resolveNormalizedSymbol(request);
         run.setSymbol(normalizedSymbol);
         run.setSide(request.side().trim().toUpperCase());
         run.setQuantity(resolveQuantity(request.quantity(), request.forceQuantityOne()));
@@ -321,6 +321,46 @@ public class AdminTestSignalLabService {
             blockers.add("Strategy is not enabled in catalog");
         }
 
+        String strategySegment = strategyDefinitionRepository.findByStrategyKeyAndDeletedFalse(strategyKey)
+                .map(s -> s.getSegment())
+                .orElse("NSE");
+        String expectedExchange = AdminTestSignalLabSymbol.expectedExchange(strategySegment, strategyKey);
+        String normalizedSymbol = hasRequired
+                ? AdminTestSignalLabSymbol.normalize(request.symbol(), request.exchange(), strategySegment, strategyKey)
+                : "";
+        boolean symbolSegmentOk = !hasRequired || AdminTestSignalLabSymbol.exchangeMatchesStrategy(
+                normalizedSymbol, strategySegment, strategyKey);
+        String rawSymbol = request.symbol() == null ? "" : request.symbol().trim().toUpperCase();
+        boolean staleMcxHint = symbolSegmentOk
+                && ("NSE".equals(expectedExchange) || "BSE".equals(expectedExchange))
+                && request.exchange() != null
+                && "MCX".equalsIgnoreCase(request.exchange().trim());
+        boolean wrongMcxPrefix = symbolSegmentOk
+                && ("NSE".equals(expectedExchange) || "BSE".equals(expectedExchange))
+                && rawSymbol.startsWith("MCX:");
+        checks.add(new TestSignalCheckResult(
+                "symbol_exchange",
+                "Symbol / Exchange",
+                symbolSegmentOk ? "SUCCESS" : "FAILED",
+                symbolSegmentOk
+                        ? "Canonical symbol " + normalizedSymbol + " (" + expectedExchange + " segment)"
+                        : "Symbol does not match strategy segment " + expectedExchange,
+                symbolSegmentOk ? null : "Use " + expectedExchange + ":SYMBOL for this strategy (not MCX)",
+                symbolSegmentOk ? null : "OPEN_FORM_REQUIRED_FIELDS"
+        ));
+        if (!symbolSegmentOk) {
+            blockers.add("Symbol exchange does not match strategy segment (" + expectedExchange + ")");
+        } else if (staleMcxHint || wrongMcxPrefix) {
+            checks.add(new TestSignalCheckResult(
+                    "symbol_exchange_hint",
+                    "Exchange Hint Corrected",
+                    "WARNING",
+                    "Will route as " + normalizedSymbol + " — clear MCX preset or use Load NSE Cash preset",
+                    "MCX exchange hint does not apply to " + strategyKey,
+                    "OPEN_FORM_REQUIRED_FIELDS"
+            ));
+        }
+
         boolean executionConfigReady = strategyReady
                 && strategyExecutionConfigService.getByStrategyKey(strategyKey).isPresent();
         checks.add(new TestSignalCheckResult(
@@ -395,7 +435,7 @@ public class AdminTestSignalLabService {
 
             boolean sessionOpen = !marketCloseProtectionService.blocksNewLiveEntries(
                     Instant.now(),
-                    AdminTestSignalLabSymbol.normalize(request.symbol(), request.exchange()),
+                    normalizedSymbol,
                     strategyKey);
             checks.add(new TestSignalCheckResult(
                     "market_session",
@@ -514,7 +554,9 @@ public class AdminTestSignalLabService {
                 .map(s -> mapOf(
                         "id", s.getId().toString(),
                         "strategyKey", s.getStrategyKey(),
-                        "displayName", s.getDisplayName() == null ? s.getStrategyKey() : s.getDisplayName()
+                        "displayName", s.getDisplayName() == null ? s.getStrategyKey() : s.getDisplayName(),
+                        "segment", s.getSegment() == null ? "NSE" : s.getSegment(),
+                        "defaultExchange", s.getDefaultExchange() == null ? "NSE" : s.getDefaultExchange()
                 ))
                 .toList();
 
@@ -555,6 +597,14 @@ public class AdminTestSignalLabService {
             return BigDecimal.ONE;
         }
         return requested;
+    }
+
+    private String resolveNormalizedSymbol(TestSignalLabRequest request) {
+        String strategyKey = request.strategyKey() == null ? "" : request.strategyKey().trim();
+        String segment = strategyDefinitionRepository.findByStrategyKeyAndDeletedFalse(strategyKey)
+                .map(s -> s.getSegment())
+                .orElse("NSE");
+        return AdminTestSignalLabSymbol.normalize(request.symbol(), request.exchange(), segment, strategyKey);
     }
 
     private static String resolveDispatchMode(String mode, boolean dryRunOnly, boolean skipActualBrokerExecution) {
@@ -975,11 +1025,11 @@ public class AdminTestSignalLabService {
         return "FILLED".equals(order.getState().name()) || "PARTIALLY_FILLED".equals(order.getState().name());
     }
 
-    private static StrategySignalEntity previewSignal(TestSignalLabRequest request, UUID traderUserId, String strategyKey) {
+    private StrategySignalEntity previewSignal(TestSignalLabRequest request, UUID traderUserId, String strategyKey) {
         StrategySignalEntity preview = new StrategySignalEntity();
         preview.setUserId(traderUserId);
         preview.setStrategyName(strategyKey);
-        preview.setSymbol(AdminTestSignalLabSymbol.normalize(request.symbol(), request.exchange()));
+        preview.setSymbol(resolveNormalizedSymbol(request));
         preview.setSignalType("SELL".equalsIgnoreCase(request.side()) ? SignalType.SELL : SignalType.BUY);
         preview.setTestTrade(true);
         preview.setCandleTimestamp(Instant.now());
