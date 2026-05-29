@@ -122,8 +122,7 @@ public class LiveIntradayMoverService {
             if (isIndexSymbol(sym)) {
                 continue;
             }
-            String query = raw.startsWith("NSE:") ? raw : "NSE:" + sym;
-            List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(query, "1m", 90);
+            List<MarketdataCandle> bars = loadBars(sym);
             if (bars.size() < 3) {
                 continue;
             }
@@ -145,6 +144,14 @@ public class LiveIntradayMoverService {
         return out;
     }
 
+    private List<MarketdataCandle> loadBars(String sym) {
+        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(sym, "1m", 90);
+        if (bars.size() >= 3) {
+            return bars;
+        }
+        return marketDataQueryService.lastBarsAsc(sym, "5m", 60);
+    }
+
     private MoverScore scoreSymbol(String symbol, List<MarketdataCandle> bars, LocalDate today) {
         MarketdataCandle last = bars.get(bars.size() - 1);
         BigDecimal close = last.getClosePrice();
@@ -152,13 +159,15 @@ public class LiveIntradayMoverService {
             return null;
         }
 
+        LocalDate sessionDay = resolveSessionDay(bars, today);
         BigDecimal sessionOpen = null;
         long volumeSum = 0;
         for (MarketdataCandle bar : bars) {
             if (bar.getOpenTime() == null) {
                 continue;
             }
-            if (!bar.getOpenTime().atZone(IST).toLocalDate().equals(today)) {
+            LocalDate barDay = bar.getOpenTime().atZone(IST).toLocalDate();
+            if (!barDay.equals(sessionDay)) {
                 continue;
             }
             if (sessionOpen == null && bar.getOpenPrice() != null && bar.getOpenPrice().signum() > 0) {
@@ -276,6 +285,20 @@ public class LiveIntradayMoverService {
                 .filter(s -> s != null && !s.isBlank())
                 .limit(moverScanLimit)
                 .toList();
+    }
+
+    private static LocalDate resolveSessionDay(List<MarketdataCandle> bars, LocalDate today) {
+        boolean hasToday = bars.stream()
+                .anyMatch(b -> b.getOpenTime() != null
+                        && b.getOpenTime().atZone(IST).toLocalDate().equals(today));
+        if (hasToday) {
+            return today;
+        }
+        return bars.stream()
+                .filter(b -> b.getOpenTime() != null)
+                .map(b -> b.getOpenTime().atZone(IST).toLocalDate())
+                .max(LocalDate::compareTo)
+                .orElse(today);
     }
 
     private static boolean isIndexSymbol(String sym) {

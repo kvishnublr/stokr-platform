@@ -6,6 +6,7 @@ import {
   fetchAdvExecutionSummary,
   fetchAdvMovers,
   fetchAdvTerminal,
+  fetchAdvWatch,
   fetchAdvWorkstation,
 } from "../api/advDashboard";
 import "./adv/adv-terminal.css";
@@ -35,11 +36,17 @@ export function AdvDashboardPage() {
   });
 
   const moversQ = useQuery({ queryKey: ["adv-movers"], queryFn: fetchAdvMovers, refetchInterval: 10_000 });
+  const watchQ = useQuery({
+    queryKey: ["adv-watch"],
+    queryFn: fetchAdvWatch,
+    refetchInterval: 10_000,
+    enabled: (moversQ.data?.length ?? 0) === 0,
+  });
   const execQ = useQuery({ queryKey: ["adv-exec"], queryFn: fetchAdvExecutionSummary, refetchInterval: 15_000 });
   const wsQ = useQuery({ queryKey: ["adv-ws"], queryFn: fetchAdvWorkstation, refetchInterval: 15_000 });
 
   const data = terminalQ.data;
-  const rows = useEnrichedRows(data, moversQ.data);
+  const rows = useEnrichedRows(data, moversQ.data?.length ? moversQ.data : watchQ.data);
   const loadingTerminal = terminalQ.isLoading && !data;
   const syncing = terminalQ.isFetching && !!data;
 
