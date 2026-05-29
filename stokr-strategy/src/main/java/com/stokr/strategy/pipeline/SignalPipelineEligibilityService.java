@@ -232,7 +232,18 @@ public class SignalPipelineEligibilityService {
         FeedHealthMonitorService.FeedHealthSnapshot feed = feedHealthMonitorService.snapshot(now);
         panel.put("feedEquityStale", feed.equityStale());
         panel.put("feedIndexStale", feed.indexStale());
-        panel.put("feedOperational", !feed.equityStale() && !feed.indexStale());
+        panel.put("websocketConnected", feed.websocketConnected());
+        panel.put("tickGapSeconds", feed.tickGapSeconds());
+
+        boolean candlesFresh = !feed.equityStale() && !feed.indexStale();
+        boolean ticksLive = feed.websocketConnected() && !feed.tickStale();
+        boolean feedOperational = candlesFresh || ticksLive;
+        boolean feedWarmup = !candlesFresh && ticksLive;
+        panel.put("feedOperational", feedOperational);
+        panel.put("feedWarmup", feedWarmup);
+        panel.put("feedStatus", feedOperational
+                ? (feedWarmup ? "WARMUP" : "OPERATIONAL")
+                : (feed.websocketConnected() ? "RECOVERING" : "STALE"));
 
         panel.put("safeStartupReady", safeStartupGateService.isTradingReady(now));
         panel.put("marketOpen", NseMarketSession.isRegularSessionOpen(now));

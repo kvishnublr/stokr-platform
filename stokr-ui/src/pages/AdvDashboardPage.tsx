@@ -12,8 +12,10 @@ import {
 import {
   advScanPollMs,
   isNseSessionOpenClient,
+  liveGateDisplay,
   mergeAdvMovers,
   mergeAdvTerminalSnapshot,
+  type LiveGateDisplay,
 } from "../lib/advDashboardMerge";
 import "./adv/adv-terminal.css";
 
@@ -39,10 +41,17 @@ export function AdvDashboardPage() {
   const terminalQ = useQuery({
     queryKey: ["adv-terminal"],
     queryFn: async () => {
-      const next = await fetchAdvTerminal();
-      const merged = mergeAdvTerminalSnapshot(lastTerminalRef.current, next);
-      lastTerminalRef.current = merged;
-      return merged;
+      try {
+        const next = await fetchAdvTerminal();
+        const merged = mergeAdvTerminalSnapshot(lastTerminalRef.current, next);
+        lastTerminalRef.current = merged;
+        return merged;
+      } catch (err) {
+        if (lastTerminalRef.current) {
+          return lastTerminalRef.current;
+        }
+        throw err;
+      }
     },
     placeholderData: keepPreviousData,
     refetchInterval: () => advScanPollMs(lastTerminalRef.current?.marketOpen),
@@ -52,10 +61,17 @@ export function AdvDashboardPage() {
   const moversQ = useQuery({
     queryKey: ["adv-movers"],
     queryFn: async () => {
-      const next = await fetchAdvMovers();
-      const merged = mergeAdvMovers(lastMoversRef.current, next);
-      lastMoversRef.current = merged;
-      return merged;
+      try {
+        const next = await fetchAdvMovers();
+        const merged = mergeAdvMovers(lastMoversRef.current, next);
+        lastMoversRef.current = merged;
+        return merged;
+      } catch {
+        if (lastMoversRef.current.length) {
+          return lastMoversRef.current;
+        }
+        throw new Error("Failed to load movers");
+      }
     },
     placeholderData: keepPreviousData,
     refetchInterval: () => advScanPollMs(lastTerminalRef.current?.marketOpen),
@@ -150,7 +166,7 @@ export function AdvDashboardPage() {
 
       {(data || rows.length > 0) && (
         <aside className="adv-side-panels">
-          <LiveControlPanel live={data?.liveControl} marketOpen={marketOpen} scanSec={data?.scanIntervalSec ?? 5} />
+          <LiveControlPanel live={data?.liveControl} marketOpen={marketOpen} scanSec={data?.scanIntervalSec ?? 5} syncing={syncing} />
           <EnginePanel engine={data?.engine} metrics={data?.metrics ?? {}} exec={execQ.data} rowCount={rows.length} partial={!data} />
           <StrategiesPanel ws={wsQ.data} />
         </aside>
@@ -619,35 +635,72 @@ function LiveControlPanel({
   live,
   marketOpen,
   scanSec,
+  syncing,
 }: {
   live?: AdvTerminalSnapshot["liveControl"];
   marketOpen: boolean;
   scanSec: number;
+  syncing?: boolean;
 }) {
-  const items = [
-    ["LIVE enabled", live?.liveEnabled],
-    ["Feed operational", live?.feedOperational],
-    ["Safe startup", live?.safeStartupReady],
-    ["Market open", marketOpen || live?.marketOpen],
-    ["Live gate", live?.liveGateOpen],
-  ] as const;
+  const feedPartial = Boolean(
+    live?.feedWarmup
+    || live?.feedStatus === "WARMUP"
+    || live?.feedStatus === "RECOVERING"
+    || (live?.websocketConnected && !live?.feedOperational),
+  );
+  const startupPartial = Boolean(
+    feedPartial
+    || live?.feedStatus === "RECOVERING"
+    || (live?.websocketConnected && live?.feedOperational && !live?.safeStartupReady),
+  );
+
+  const items: { label: string; status: LiveGateDisplay }[] = [
+    { label: "LIVE enabled", status: liveGateDisplay(live?.liveEnabled) },
+    { label: "Feed operational", status: liveGateDisplay(live?.feedOperational, feedPartial) },
+    { label: "Safe startup", status: liveGateDisplay(live?.safeStartupReady, startupPartial) },
+    { label: "Market open", status: liveGateDisplay(marketOpen || live?.marketOpen) },
+    { label: "Live gate", status: liveGateDisplay(live?.liveGateOpen) },
+  ];
 
   return (
     <div className="adv-card adv-side-card">
       <div className="adv-card-title">Live Control</div>
+      {syncing ? <div className="adv-live-sync-hint">Syncing pipeline…</div> : null}
       <div className="adv-kv-list">
-        {items.map(([label, ok]) => (
+        {items.map(({ label, status }) => (
           <div key={label}>
             <span>{label}</span>
-            <strong className={ok ? "adv-ok" : ok === undefined ? "" : "adv-bad"}>
-              {ok === undefined ? "—" : ok ? "OK" : "BLOCKED"}
-            </strong>
+            <strong className={gateStatusClass(status)}>{gateStatusLabel(status)}</strong>
           </div>
         ))}
         <div><span>Scan interval</span><strong>{scanSec}s</strong></div>
+        {live?.feedStatus ? (
+          <div><span>Feed status</span><strong className={feedStatusClass(String(live.feedStatus))}>{String(live.feedStatus)}</strong></div>
+        ) : null}
       </div>
     </div>
   );
+}
+
+function gateStatusLabel(status: LiveGateDisplay): string {
+  if (status === "OK") return "OK";
+  if (status === "PARTIAL") return "PARTIAL";
+  if (status === "BLOCKED") return "BLOCKED";
+  return "—";
+}
+
+function gateStatusClass(status: LiveGateDisplay): string {
+  if (status === "OK") return "adv-ok";
+  if (status === "PARTIAL") return "adv-warn";
+  if (status === "BLOCKED") return "adv-bad";
+  return "";
+}
+
+function feedStatusClass(status: string): string {
+  const u = status.toUpperCase();
+  if (u === "OPERATIONAL") return "adv-ok";
+  if (u === "WARMUP" || u === "RECOVERING") return "adv-warn";
+  return "adv-bad";
 }
 
 function EnginePanel({
@@ -717,10 +770,15 @@ function StrategiesPanel({ ws }: { ws?: Record<string, unknown> }) {
 }
 
 function SystemHealthList({ health, live }: { health: Record<string, unknown>; live?: AdvTerminalSnapshot["liveControl"] }) {
+  const feedLabel = live?.feedOperational
+    ? (live.feedWarmup || live.feedStatus === "WARMUP" ? "Warmup" : "Operational")
+    : live?.feedStatus === "RECOVERING" || live?.websocketConnected
+      ? "Recovering"
+      : "Stale/blocked";
   const items = [
     ["Pipeline", String(health.status ?? "—")],
-    ["Feed", live?.feedOperational ? "Operational" : "Stale/blocked"],
-    ["Startup gate", live?.safeStartupReady ? "Ready" : "Warmup"],
+    ["Feed", feedLabel],
+    ["Startup gate", live?.safeStartupReady ? "Ready" : live?.websocketConnected ? "Warmup" : "Warmup"],
     ["LIVE route", live?.liveEnabled ? "Enabled" : "Paper/disabled"],
     ["Scan", `${live?.scanIntervalSec ?? health.scanIntervalSec ?? 10}s`],
   ];

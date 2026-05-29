@@ -478,12 +478,18 @@ public class UnifiedSignalTruthService {
         Map<String, Object> panel = eligibilityService.liveControlPanel(now);
         Map<String, Object> h = new LinkedHashMap<>();
         h.put("feedOperational", panel.get("feedOperational"));
+        h.put("feedWarmup", panel.get("feedWarmup"));
+        h.put("feedStatus", panel.get("feedStatus"));
         h.put("safeStartupReady", panel.get("safeStartupReady"));
         h.put("liveEnabled", panel.get("liveEnabled"));
         h.put("marketOpen", panel.get("marketOpen"));
         h.put("scanIntervalSec", panel.get("scanIntervalSec"));
-        h.put("status", Boolean.TRUE.equals(panel.get("feedOperational"))
-                && Boolean.TRUE.equals(panel.get("safeStartupReady")) ? "OPERATIONAL" : "DEGRADED");
+        String feedStatus = String.valueOf(panel.getOrDefault("feedStatus", "STALE"));
+        boolean operational = Boolean.TRUE.equals(panel.get("feedOperational"));
+        boolean startupReady = Boolean.TRUE.equals(panel.get("safeStartupReady"));
+        h.put("status", operational && startupReady
+                ? "OPERATIONAL"
+                : ("WARMUP".equals(feedStatus) || "RECOVERING".equals(feedStatus) ? "WARMUP" : "DEGRADED"));
         return h;
     }
 

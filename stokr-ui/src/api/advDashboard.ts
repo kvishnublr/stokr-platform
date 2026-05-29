@@ -72,6 +72,10 @@ export type AdvLiveControl = {
   feedEquityStale?: boolean;
   feedIndexStale?: boolean;
   feedOperational?: boolean;
+  feedWarmup?: boolean;
+  feedStatus?: "OPERATIONAL" | "WARMUP" | "RECOVERING" | "STALE" | string;
+  websocketConnected?: boolean;
+  tickGapSeconds?: number;
   safeStartupReady?: boolean;
   marketOpen?: boolean;
   scanIntervalSec?: number;
