@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.bootstrap.config.PlatformZerodhaFeedProperties;
 import com.stokr.common.crypto.FieldCipher;
+import com.stokr.common.events.PlatformFeedReconnectRequestedEvent;
 import com.stokr.strategy.domain.StrategyUniverseSymbol;
 import com.stokr.strategy.repository.StrategyUniverseSymbolRepository;
 import com.stokr.user.broker.PlatformMarketFeedService;
@@ -58,6 +59,7 @@ public class PlatformZerodhaLiveFeedRuntime {
     private static final int NIFTY_50_TOKEN = 256265;
     private static final String NIFTY_50_SYMBOL = "NIFTY 50";
     private static final int MAX_WS_TOKENS = 3000;
+    private static final long HANDSHAKE_TIMEOUT_SECONDS = 45;
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(20))
             .build();
@@ -80,6 +82,7 @@ public class PlatformZerodhaLiveFeedRuntime {
     private final AtomicBoolean wsOpen = new AtomicBoolean(false);
     private final AtomicBoolean closedSinceLastOpen = new AtomicBoolean(false);
     private final AtomicBoolean handshakePending = new AtomicBoolean(false);
+    private final AtomicLong handshakeStartedAtMillis = new AtomicLong(0);
     private final Object ensureGate = new Object();
     private final ByteArrayOutputStream binaryAcc = new ByteArrayOutputStream();
     private final AtomicLong windowPackets = new AtomicLong();
@@ -128,7 +131,56 @@ public class PlatformZerodhaLiveFeedRuntime {
         }
     }
 
+    @EventListener
+    public void onReconnectRequested(PlatformFeedReconnectRequestedEvent event) {
+        if (event == null || event.vendor() == null) {
+            return;
+        }
+        if (!VENDOR.equalsIgnoreCase(event.vendor())) {
+            return;
+        }
+        requestReconnect(event.reason() != null ? event.reason() : "admin_request");
+    }
+
+    public void requestReconnect(String reason) {
+        log.info("platform.ws.reconnect_requested reason={}", reason);
+        cachedSymbolMap = null;
+        cachedForToken = null;
+        closeActive(reason);
+        resetHandshakeState();
+    }
+
+    private void resetHandshakeState() {
+        handshakePending.set(false);
+        handshakeStartedAtMillis.set(0);
+    }
+
+    private void releaseStaleHandshakeIfNeeded() {
+        if (!handshakePending.get() || wsOpen.get()) {
+            return;
+        }
+        long started = handshakeStartedAtMillis.get();
+        if (started <= 0) {
+            return;
+        }
+        long elapsedSec = (System.currentTimeMillis() - started) / 1000;
+        if (elapsedSec < HANDSHAKE_TIMEOUT_SECONDS) {
+            return;
+        }
+        log.warn("platform.ws.handshake_timeout elapsedSec={} — aborting and retrying", elapsedSec);
+        WebSocket ws = activeSocket.getAndSet(null);
+        if (ws != null) {
+            try {
+                ws.abort();
+            } catch (Exception ignored) {
+            }
+        }
+        resetHandshakeState();
+        telemetryService.markWebsocketClosed(VENDOR, "handshake_timeout");
+    }
+
     private void ensureConnectedIfNeeded() {
+        releaseStaleHandshakeIfNeeded();
         if (!feedProperties.isLiveFeedEnabled()) {
             closeActive("live_feed_disabled");
             return;
@@ -217,6 +269,7 @@ public class PlatformZerodhaLiveFeedRuntime {
             if (!handshakePending.compareAndSet(false, true)) {
                 return;
             }
+            handshakeStartedAtMillis.set(System.currentTimeMillis());
 
             telemetryService.markConnecting(VENDOR);
 
@@ -227,7 +280,7 @@ public class PlatformZerodhaLiveFeedRuntime {
             CompletableFuture<WebSocket> fut = HTTP.newWebSocketBuilder()
                     .buildAsync(URI.create(url), listener);
             fut.whenComplete((ws, err) -> {
-                handshakePending.set(false);
+                resetHandshakeState();
                 if (err != null) {
                     log.warn("platform.ws.connect_failed {}", err.toString());
                     telemetryService.markWebsocketClosed(VENDOR, "connect_failed: " + err.getClass().getSimpleName());
@@ -599,7 +652,7 @@ public class PlatformZerodhaLiveFeedRuntime {
         synchronized (ensureGate) {
             ws = activeSocket.getAndSet(null);
             wsOpen.set(false);
-            handshakePending.set(false);
+            resetHandshakeState();
         }
         if (ws != null) {
             try {
@@ -809,7 +862,7 @@ public class PlatformZerodhaLiveFeedRuntime {
             activeSocket.compareAndSet(webSocket, null);
             wsOpen.set(false);
             closedSinceLastOpen.set(true);
-            handshakePending.set(false);
+            resetHandshakeState();
             log.warn("platform.ws.error {}", error.toString());
             telemetryService.markWebsocketClosed(VENDOR, "error: " + error.getClass().getSimpleName());
         }
@@ -819,7 +872,7 @@ public class PlatformZerodhaLiveFeedRuntime {
             activeSocket.compareAndSet(webSocket, null);
             wsOpen.set(false);
             closedSinceLastOpen.set(true);
-            handshakePending.set(false);
+            resetHandshakeState();
             telemetryService.markWebsocketClosed(VENDOR, "closed " + statusCode + " " + reason);
             return null;
         }

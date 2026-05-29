@@ -81,6 +81,7 @@ export type AdvTerminalSnapshot = {
   marketRegime: string;
   regimeNarrative: string;
   marketOpen: boolean;
+  sessionState?: string;
   istTime: string;
   scanIntervalSec?: number;
   truthSource?: string;

@@ -1,5 +1,6 @@
 package com.stokr.intraday.service;
 
+import com.stokr.common.market.NseMarketSession;
 import com.stokr.intraday.domain.CurrentSetup;
 import com.stokr.intraday.stream.RealTimeSetupStream;
 import com.stokr.marketdata.domain.MarketdataCandle;
@@ -107,7 +108,13 @@ public class LiveIntradayMoverService {
             if (!cachedRows.isEmpty() && Duration.between(cachedAt, Instant.now()).compareTo(CACHE_TTL) < 0) {
                 return;
             }
-            cachedRows = scanTopMovers();
+            List<Map<String, Object>> fresh = scanTopMovers();
+            if (fresh.isEmpty() && !cachedRows.isEmpty() && NseMarketSession.isRegularSessionOpen()) {
+                log.warn("live.movers.scan_empty keeping previous cache rows={}", cachedRows.size());
+                cachedAt = Instant.now();
+                return;
+            }
+            cachedRows = fresh;
             cachedAt = Instant.now();
         }
     }

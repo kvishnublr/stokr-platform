@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useRef, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   AdvScannerRow,
   AdvTerminalSnapshot,
@@ -9,6 +9,12 @@ import {
   fetchAdvWatch,
   fetchAdvWorkstation,
 } from "../api/advDashboard";
+import {
+  advScanPollMs,
+  isNseSessionOpenClient,
+  mergeAdvMovers,
+  mergeAdvTerminalSnapshot,
+} from "../lib/advDashboardMerge";
 import "./adv/adv-terminal.css";
 
 type TabId = "intelligence" | "orderflow" | "decisions" | "sectors" | "risk" | "performance";
@@ -27,28 +33,48 @@ type EnrichedRow = AdvScannerRow & { ltpDisplay: string; changePct: number };
 export function AdvDashboardPage() {
   const [tab, setTab] = useState<TabId>("intelligence");
   const [selected, setSelected] = useState<EnrichedRow | null>(null);
+  const lastTerminalRef = useRef<AdvTerminalSnapshot | undefined>(undefined);
+  const lastMoversRef = useRef<{ symbol: string; price?: string; changePct?: string; source?: string; aiScore?: number }[]>([]);
 
   const terminalQ = useQuery({
     queryKey: ["adv-terminal"],
-    queryFn: fetchAdvTerminal,
-    refetchInterval: 10_000,
+    queryFn: async () => {
+      const next = await fetchAdvTerminal();
+      const merged = mergeAdvTerminalSnapshot(lastTerminalRef.current, next);
+      lastTerminalRef.current = merged;
+      return merged;
+    },
+    placeholderData: keepPreviousData,
+    refetchInterval: () => advScanPollMs(lastTerminalRef.current?.marketOpen),
     retry: 2,
   });
 
-  const moversQ = useQuery({ queryKey: ["adv-movers"], queryFn: fetchAdvMovers, refetchInterval: 10_000 });
+  const moversQ = useQuery({
+    queryKey: ["adv-movers"],
+    queryFn: async () => {
+      const next = await fetchAdvMovers();
+      const merged = mergeAdvMovers(lastMoversRef.current, next);
+      lastMoversRef.current = merged;
+      return merged;
+    },
+    placeholderData: keepPreviousData,
+    refetchInterval: () => advScanPollMs(lastTerminalRef.current?.marketOpen),
+  });
   const watchQ = useQuery({
     queryKey: ["adv-watch"],
     queryFn: fetchAdvWatch,
-    refetchInterval: 10_000,
+    refetchInterval: () => advScanPollMs(lastTerminalRef.current?.marketOpen),
     enabled: (moversQ.data?.length ?? 0) === 0,
   });
   const execQ = useQuery({ queryKey: ["adv-exec"], queryFn: fetchAdvExecutionSummary, refetchInterval: 15_000 });
   const wsQ = useQuery({ queryKey: ["adv-ws"], queryFn: fetchAdvWorkstation, refetchInterval: 15_000 });
 
   const data = terminalQ.data;
+  const marketOpen = data?.marketOpen ?? data?.liveControl?.marketOpen ?? isNseSessionOpenClient();
   const rows = useEnrichedRows(data, moversQ.data?.length ? moversQ.data : watchQ.data);
-  const loadingTerminal = terminalQ.isLoading && !data;
+  const loadingTerminal = terminalQ.isLoading && !data && rows.length === 0;
   const syncing = terminalQ.isFetching && !!data;
+  const terminalDegraded = terminalQ.isError && !data && rows.length > 0;
 
   const refresh = () => {
     void terminalQ.refetch();
@@ -71,7 +97,7 @@ export function AdvDashboardPage() {
         </div>
         <div className="adv-pills">
           <div className="adv-pill">
-            <strong>{data?.marketOpen ? "MARKET OPEN" : "MARKET CLOSED"}</strong>
+            <strong>{marketOpen ? "MARKET OPEN" : "MARKET CLOSED"}</strong>
             <div>{data?.istTime ?? "—"} IST</div>
           </div>
           <div className="adv-pill">
@@ -105,6 +131,9 @@ export function AdvDashboardPage() {
           Failed to load terminal — log in and ensure API is running. {(terminalQ.error as Error).message}
         </div>
       ) : null}
+      {terminalDegraded ? (
+        <div className="adv-empty adv-span-all">Terminal sync interrupted — showing last live scanner snapshot.</div>
+      ) : null}
 
       {(data || rows.length > 0) && (
         <div className="adv-main">
@@ -121,7 +150,7 @@ export function AdvDashboardPage() {
 
       {(data || rows.length > 0) && (
         <aside className="adv-side-panels">
-          <LiveControlPanel live={data?.liveControl} scanSec={data?.scanIntervalSec ?? 10} />
+          <LiveControlPanel live={data?.liveControl} marketOpen={marketOpen} scanSec={data?.scanIntervalSec ?? 5} />
           <EnginePanel engine={data?.engine} metrics={data?.metrics ?? {}} exec={execQ.data} rowCount={rows.length} partial={!data} />
           <StrategiesPanel ws={wsQ.data} />
         </aside>
@@ -586,12 +615,20 @@ function ScannerTable({ rows, onSelect }: { rows: EnrichedRow[]; onSelect?: (r: 
   );
 }
 
-function LiveControlPanel({ live, scanSec }: { live?: AdvTerminalSnapshot["liveControl"]; scanSec: number }) {
+function LiveControlPanel({
+  live,
+  marketOpen,
+  scanSec,
+}: {
+  live?: AdvTerminalSnapshot["liveControl"];
+  marketOpen: boolean;
+  scanSec: number;
+}) {
   const items = [
     ["LIVE enabled", live?.liveEnabled],
     ["Feed operational", live?.feedOperational],
     ["Safe startup", live?.safeStartupReady],
-    ["Market open", live?.marketOpen],
+    ["Market open", marketOpen || live?.marketOpen],
     ["Live gate", live?.liveGateOpen],
   ] as const;
 
@@ -602,7 +639,9 @@ function LiveControlPanel({ live, scanSec }: { live?: AdvTerminalSnapshot["liveC
         {items.map(([label, ok]) => (
           <div key={label}>
             <span>{label}</span>
-            <strong className={ok ? "adv-ok" : "adv-bad"}>{ok ? "OK" : "BLOCKED"}</strong>
+            <strong className={ok ? "adv-ok" : ok === undefined ? "" : "adv-bad"}>
+              {ok === undefined ? "—" : ok ? "OK" : "BLOCKED"}
+            </strong>
           </div>
         ))}
         <div><span>Scan interval</span><strong>{scanSec}s</strong></div>

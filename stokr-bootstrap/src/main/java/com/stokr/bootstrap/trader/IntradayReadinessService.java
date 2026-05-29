@@ -213,7 +213,8 @@ public class IntradayReadinessService {
         return switch (normalized) {
             case "RECONNECT_FEED" -> {
                 Map<String, Object> r = platformMarketFeedService.refreshFromKite("ZERODHA");
-                yield new ReadinessActionResult(true, "Feed reconnect requested", r, null);
+                Map<String, Object> ws = platformMarketFeedService.requestWebsocketReconnect("ZERODHA", "readiness_action");
+                yield new ReadinessActionResult(true, "Feed reconnect requested", Map.of("tokenRefresh", r, "websocket", ws), null);
             }
             case "RENEW_BROKER_SESSION" -> {
                 Map<String, Object> refresh = platformMarketFeedService.refreshAllZerodhaTokens(Duration.ofHours(2));

@@ -3,6 +3,7 @@ package com.stokr.user.broker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.common.crypto.FieldCipher;
+import com.stokr.common.events.PlatformFeedReconnectRequestedEvent;
 import com.stokr.common.exception.BadRequestException;
 import com.stokr.user.config.ZerodhaBrokerProperties;
 import com.stokr.user.domain.BrokerAccount;
@@ -13,6 +14,7 @@ import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
 import com.stokr.user.repository.PlatformBrokerOauthStateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +53,7 @@ public class PlatformMarketFeedService {
     private final PlatformBrokerOauthStateRepository oauthStateRepository;
     private final BrokerAccountRepository brokerAccountRepository;
     private final ZerodhaKiteApiClient kiteApiClient;
+    private final ApplicationEventPublisher eventPublisher;
     private final RestClient http = RestClient.builder().build();
 
     public boolean isPlatformOauthState(String state) {
@@ -267,6 +270,17 @@ public class PlatformMarketFeedService {
                 "action", action,
                 "detail", "Not implemented in this build — no in-process websocket / instrument sync worker wired to platform session yet."
         );
+    }
+
+    public Map<String, Object> requestWebsocketReconnect(String vendor, String reason) {
+        String v = normalizeVendor(vendor);
+        if (!"ZERODHA".equals(v)) {
+            throw new BadRequestException("WebSocket reconnect implemented for ZERODHA only in this build");
+        }
+        sessionRepository.findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(v)
+                .orElseThrow(() -> new BadRequestException("No platform session for vendor"));
+        eventPublisher.publishEvent(new PlatformFeedReconnectRequestedEvent(v, reason));
+        return Map.of("vendor", v, "ok", true, "detail", "WebSocket reconnect requested");
     }
 
     /**

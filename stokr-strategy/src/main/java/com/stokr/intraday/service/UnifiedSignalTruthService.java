@@ -1,5 +1,6 @@
 package com.stokr.intraday.service;
 
+import com.stokr.common.market.NseMarketSession;
 import com.stokr.intraday.engine.MarketRegimeDetector;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
@@ -109,6 +110,13 @@ public class UnifiedSignalTruthService {
             enrichDisplayFields(row);
         }
 
+        if (scannerRows.isEmpty() && NseMarketSession.isRegularSessionOpen(now)) {
+            appendLiveMarketRows(scannerRows, seenSymbols, 28);
+            for (Map<String, Object> row : scannerRows) {
+                enrichDisplayFields(row);
+            }
+        }
+
         scannerRows.sort(Comparator
                 .comparingInt((Map<String, Object> r) -> sourceRank(String.valueOf(r.getOrDefault("source", ""))))
                 .thenComparingInt((Map<String, Object> r) -> statusRank(String.valueOf(r.get("executionStatus"))))
@@ -125,7 +133,8 @@ public class UnifiedSignalTruthService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("marketRegime", regime.regime().name());
         out.put("regimeNarrative", regime.narrative());
-        out.put("marketOpen", isNseSessionOpen());
+        out.put("marketOpen", NseMarketSession.isRegularSessionOpen(now));
+        out.put("sessionState", NseMarketSession.sessionState(now).name());
         out.put("istTime", LocalTime.now(IST).format(DateTimeFormatter.ofPattern("HH:mm:ss")));
         out.put("metrics", metrics);
         out.put("scannerRows", scannerRows);
@@ -689,8 +698,4 @@ public class UnifiedSignalTruthService {
         };
     }
 
-    private static boolean isNseSessionOpen() {
-        LocalTime now = LocalTime.now(IST);
-        return !now.isBefore(LocalTime.of(9, 15)) && !now.isAfter(LocalTime.of(15, 30));
-    }
 }

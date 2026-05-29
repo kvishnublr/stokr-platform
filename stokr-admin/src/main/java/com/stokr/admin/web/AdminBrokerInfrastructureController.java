@@ -77,7 +77,9 @@ public class AdminBrokerInfrastructureController {
     @PostMapping("/{vendor}/restart-ws")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<Map<String, Object>> restartWs(@PathVariable String vendor) {
-        return ApiResponse.ok(platformMarketFeedService.notImplemented("restart-ws"), CorrelationIdHolder.get());
+        return ApiResponse.ok(
+                platformMarketFeedService.requestWebsocketReconnect(vendor, "admin_restart_ws"),
+                CorrelationIdHolder.get());
     }
 
     @PostMapping("/{vendor}/resync")

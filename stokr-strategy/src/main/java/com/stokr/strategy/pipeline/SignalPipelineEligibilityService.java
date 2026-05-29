@@ -1,5 +1,6 @@
 package com.stokr.strategy.pipeline;
 
+import com.stokr.common.market.NseMarketSession;
 import com.stokr.marketdata.monitor.FeedHealthMonitorService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
@@ -16,8 +17,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,8 +29,6 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class SignalPipelineEligibilityService {
-
-    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final TradingSafeStartupGateService safeStartupGateService;
     private final FeedHealthMonitorService feedHealthMonitorService;
@@ -238,7 +235,8 @@ public class SignalPipelineEligibilityService {
         panel.put("feedOperational", !feed.equityStale() && !feed.indexStale());
 
         panel.put("safeStartupReady", safeStartupGateService.isTradingReady(now));
-        panel.put("marketOpen", isNseSessionOpen());
+        panel.put("marketOpen", NseMarketSession.isRegularSessionOpen(now));
+        panel.put("sessionState", NseMarketSession.sessionState(now).name());
         panel.put("scanIntervalSec", scanIntervalSec());
         return panel;
     }
@@ -285,8 +283,4 @@ public class SignalPipelineEligibilityService {
         };
     }
 
-    private static boolean isNseSessionOpen() {
-        LocalTime now = LocalTime.now(IST);
-        return !now.isBefore(LocalTime.of(9, 15)) && !now.isAfter(LocalTime.of(15, 30));
-    }
 }

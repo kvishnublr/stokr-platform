@@ -1,0 +1,1 @@
+SELECT strategy_key, symbol, side, state, broker_vendor, created_at FROM oms_orders WHERE user_id = '6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4' AND created_at  - interval '3 days' ORDER BY created_at DESC LIMIT 30; 
