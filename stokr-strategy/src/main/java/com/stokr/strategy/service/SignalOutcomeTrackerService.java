@@ -105,6 +105,20 @@ public class SignalOutcomeTrackerService {
         }
     }
 
+    /**
+     * Lightweight evaluation used by protection engines to ensure MFE/MAE and terminal target/SL
+     * states are updated before any emergency exit can close the signal.
+     */
+    public boolean evaluateSingleSignal(StrategySignalEntity sig, Instant now) {
+        if (sig == null) {
+            return false;
+        }
+        Instant refNow = now != null ? now : Instant.now();
+        signalPriceEnrichmentService.enrichIfMissing(sig,
+                sig.getCandleTimestamp() != null ? sig.getCandleTimestamp() : sig.getCreatedAt());
+        return evaluate(sig, refNow);
+    }
+
     @Transactional
     public int trackAllPending() {
         int total = 0;
@@ -207,7 +221,7 @@ public class SignalOutcomeTrackerService {
         refreshMarkToMarket(sig, bars, postSignal, entry, isBuy, qty);
 
         if (target == null || sl == null) {
-            sig.setOutcomeStatus(STATUS_RUNNING);
+            SignalLifecycleService.updateOutcome(sig,STATUS_RUNNING);
             sig.setOutcomeTime(now);
             return true;
         }
@@ -275,7 +289,7 @@ public class SignalOutcomeTrackerService {
         refreshMarkToMarket(sig, bars, postSignal, entry, isBuy, qty);
 
         if (target == null || sl == null) {
-            sig.setOutcomeStatus(STATUS_RUNNING);
+            SignalLifecycleService.updateOutcome(sig,STATUS_RUNNING);
             sig.setOutcomeTime(now);
             return true;
         }
@@ -305,7 +319,7 @@ public class SignalOutcomeTrackerService {
         } else if (tryBreakevenExit(sig, postSignal, entry, target, isBuy, qty, now)) {
             // closed at entry after partial favorable move
         } else {
-            sig.setOutcomeStatus(STATUS_RUNNING);
+            SignalLifecycleService.updateOutcome(sig,STATUS_RUNNING);
             sig.setOutcomeTime(now);
         }
 
@@ -353,7 +367,7 @@ public class SignalOutcomeTrackerService {
     }
 
     private void markRunningNoBars(StrategySignalEntity sig, Instant now) {
-        sig.setOutcomeStatus(STATUS_RUNNING);
+        SignalLifecycleService.updateOutcome(sig,STATUS_RUNNING);
         sig.setOutcomeTime(now);
         ensureUnrealizedPresent(sig);
     }
@@ -391,7 +405,7 @@ public class SignalOutcomeTrackerService {
             boolean isBuy,
             Instant now,
             PressureExitTrigger trigger) {
-        sig.setOutcomeStatus(status);
+        SignalLifecycleService.updateOutcome(sig,status);
         sig.setHitTarget(hitTarget);
         sig.setHitStoploss(hitSl);
         sig.setOutcomeTime(now);
@@ -471,7 +485,7 @@ public class SignalOutcomeTrackerService {
             sig.setRealizedPnl(sig.getUnrealizedPnl());
         }
         sig.setUnrealizedPnl(null);
-        sig.setOutcomeStatus(category.outcomeStatus());
+        SignalLifecycleService.updateOutcome(sig,category.outcomeStatus());
         sig.setOutcomeTime(now);
         sig.setExpiryReason(category.name() + ": " + reason);
         exitTelemetryService.recordExit(sig, category, reason, now, null, trigger, minHoldBypassed);

@@ -1,6 +1,7 @@
 package com.stokr.strategy.service;
 
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.signals.SignalOwnerType;
 import com.stokr.strategy.signals.StrategySignal;
 
 import java.math.BigDecimal;
@@ -47,6 +48,11 @@ public final class StrategySignalEntityMapper {
         entity.setReasonText(signal.reason());
         entity.setReason(signal.reason());
         entity.setSuggestedQty(signal.suggestedQty() != null ? signal.suggestedQty() : BigDecimal.ONE);
+        entity.setConfidenceScore(signal.confidenceScore());
+        entity.setProbability(signal.probability());
+        entity.setTradeQuality(signal.tradeQuality());
+        entity.setConfidenceVersion(signal.confidenceVersion());
+        entity.setConfidenceBreakdownJson(signal.confidenceBreakdownJson());
         entity.setCandleTimestamp(candleTime);
         entity.setUserId(userId);
         entity.setPipeline(pipeline);
@@ -54,6 +60,22 @@ public final class StrategySignalEntityMapper {
         entity.setHitStoploss(false);
         applyPrices(entity, signal);
         return entity;
+    }
+
+    public static void applyStreamMetadata(
+            StrategySignalEntity entity,
+            SignalOwnerType ownerType,
+            String lifecycleStatus
+    ) {
+        if (entity == null) {
+            return;
+        }
+        if (ownerType != null) {
+            entity.setOwnerType(ownerType);
+        }
+        if (lifecycleStatus != null && !lifecycleStatus.isBlank()) {
+            SignalLifecycleService.applyInitial(entity, lifecycleStatus);
+        }
     }
 
     private static BigDecimal scale(BigDecimal v) {

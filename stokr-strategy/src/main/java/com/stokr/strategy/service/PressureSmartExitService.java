@@ -33,6 +33,8 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Objects;
 
 /**
  * Lifecycle-aware pressure exit engine with strategy-specific minimum hold times.
@@ -52,6 +54,8 @@ public class PressureSmartExitService {
     private final MarketDataQueryService marketDataQueryService;
     private final ApplicationEventPublisher eventPublisher;
     private final StrategyExitTelemetryService exitTelemetryService;
+    private final SignalOutcomeTrackerService signalOutcomeTrackerService;
+    private final InstrumentNormalizationService instrumentNormalizationService;
 
     @Value("${stokr.strategy.smart-exit.pressure-reversal-buy:0.43}")
     private double pressureReversalBuyThreshold;
@@ -93,6 +97,12 @@ public class PressureSmartExitService {
 
     @Value("${stokr.strategy.lifecycle.emergency.volume-vacuum-ratio:0.10}")
     private double emergencyVolumeVacuumRatio;
+
+    @Value("${stokr.strategy.lifecycle.emergency.min-hold-seconds:180}")
+    private long emergencyMinHoldSeconds;
+
+    @Value("${stokr.strategy.lifecycle.emergency.current-bar-min-age-seconds:55}")
+    private long emergencyCurrentBarMinAgeSeconds;
 
     @Scheduled(fixedDelayString = "${stokr.strategy.smart-exit.interval-ms:15000}")
     @Transactional
@@ -146,6 +156,12 @@ public class PressureSmartExitService {
         StrategyLifecycleProfile profile = StrategyLifecycleProfile.forStrategy(sig.getStrategyName());
         long holdSeconds = StrategyExitTelemetryService.holdSeconds(sig, now);
         boolean minHoldSatisfied = holdSeconds >= profile.minHoldSeconds();
+        boolean emergencyMinHoldSatisfied = holdSeconds >= Math.max(profile.minHoldSeconds(), emergencyMinHoldSeconds);
+
+        signalOutcomeTrackerService.evaluateSingleSignal(sig, now);
+        if (ExitCategory.isTerminalOutcome(sig.getOutcomeStatus()) && !Objects.equals(sig.getOutcomeStatus(), STATUS_RUNNING)) {
+            return null;
+        }
 
         ExitContext ctx = buildContext(sig, now, profile);
         if (ctx == null) {
@@ -154,6 +170,12 @@ public class PressureSmartExitService {
 
         ExitDecision emergency = evaluateEmergencyExit(ctx);
         if (emergency != null) {
+            if ((emergency.category() == ExitCategory.HARD_STOP || emergency.category() == ExitCategory.FEED_PROTECTION)) {
+                return emergency;
+            }
+            if (!emergencyMinHoldSatisfied) {
+                return null;
+            }
             return emergency;
         }
 
@@ -191,8 +213,9 @@ public class PressureSmartExitService {
         if (ctx.volumeVacuum()) {
             return ExitDecision.emergency(
                     ExitCategory.LIQUIDITY_PROTECTION,
-                    String.format("VOLUME_VACUUM: currentVol=%.0f avgVol=%.0f ratioThreshold=%.2f",
-                            ctx.currentVolume(), ctx.avgVolume(), emergencyVolumeVacuumRatio));
+                    String.format("VOLUME_VACUUM: currentVol=%.0f expectedVol=%.0f avgVol=%.0f barAgeSec=%d ratioThreshold=%.2f",
+                            ctx.currentVolume(), ctx.expectedCurrentVolume(), ctx.avgVolume(),
+                            ctx.currentBarAgeSeconds(), emergencyVolumeVacuumRatio));
         }
 
         return null;
@@ -294,10 +317,15 @@ public class PressureSmartExitService {
         BigDecimal target = sig.getTargetPrice();
         BigDecimal sl = sig.getStopPrice();
 
-        PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
-        PressureAnalysis analysis = pressureTracker.analyze(symbol, pressureLookback);
+        String normalizedSymbol = instrumentNormalizationService.normalizeForMarketData(symbol);
+        if (normalizedSymbol == null) {
+            return null;
+        }
 
-        List<MarketdataCandle> recentBars = marketDataQueryService.lastBarsAsc(symbol, "1m", 12);
+        PressureSnapshot snapshot = pressureTracker.getSnapshot(normalizedSymbol);
+        PressureAnalysis analysis = pressureTracker.analyze(normalizedSymbol, pressureLookback);
+
+        List<MarketdataCandle> recentBars = marketDataQueryService.lastBarsAsc(normalizedSymbol, "1m", 12);
         if (recentBars.isEmpty()) {
             return null;
         }
@@ -339,8 +367,10 @@ public class PressureSmartExitService {
         double spreadPct = mid > 0 ? barRange / mid * 100 : 0;
 
         long candleStaleSeconds = 0;
+        long currentBarAgeSeconds = 0;
         if (lastBar.getOpenTime() != null) {
             candleStaleSeconds = Duration.between(lastBar.getOpenTime(), now).getSeconds();
+            currentBarAgeSeconds = Math.max(0, candleStaleSeconds % 60);
         }
 
         double currentVolume = lastBar.getVolume() != null ? lastBar.getVolume().doubleValue() : 0;
@@ -362,13 +392,18 @@ public class PressureSmartExitService {
                 ? currentPrice <= entryPrice * 1.001
                 : currentPrice >= entryPrice * 0.999;
 
-        boolean volumeVacuum = avgVolume > 0 && currentVolume / avgVolume < emergencyVolumeVacuumRatio;
+        double progressFactor = Math.min(1d, Math.max(0d, currentBarAgeSeconds / 60d));
+        double expectedCurrentVolume = avgVolume * progressFactor;
+        boolean volumeVacuum = currentBarAgeSeconds >= emergencyCurrentBarMinAgeSeconds
+                && expectedCurrentVolume > 0
+                && currentVolume / expectedCurrentVolume < emergencyVolumeVacuumRatio;
 
         return new ExitContext(
                 sig, profile, isBuy, snapshot, analysis, recentBars, lastBar,
                 currentPrice, slPrice, pnlPct, currentProgress, mfePctOfTarget,
                 ageMinutes, spreadPct, barRange, candleStaleSeconds,
-                currentVolume, avgVolume, hardSlBreached, backAtEntry, volumeVacuum);
+                currentVolume, avgVolume, expectedCurrentVolume, currentBarAgeSeconds,
+                hardSlBreached, backAtEntry, volumeVacuum);
     }
 
     private void applyExit(StrategySignalEntity sig, ExitDecision decision, Instant now) {
@@ -382,7 +417,7 @@ public class PressureSmartExitService {
                 ? exitPrice.subtract(entry).multiply(qty)
                 : entry.subtract(exitPrice).multiply(qty);
 
-        sig.setOutcomeStatus(decision.category().outcomeStatus());
+        SignalLifecycleService.updateOutcome(sig, decision.category().outcomeStatus());
         sig.setOutcomeTime(now);
         sig.setExitPrice(exitPrice);
         sig.setRealizedPnl(pnl.setScale(2, RoundingMode.HALF_UP));
@@ -398,7 +433,8 @@ public class PressureSmartExitService {
         }
 
         BigDecimal pressureScore = null;
-        PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
+        String normalizedSymbol = instrumentNormalizationService.normalizeForMarketData(symbol);
+        PressureSnapshot snapshot = pressureTracker.getSnapshot(normalizedSymbol != null ? normalizedSymbol : symbol);
         if (snapshot != null) {
             pressureScore = BigDecimal.valueOf(snapshot.imbalanceRatio()).setScale(4, RoundingMode.HALF_UP);
         }
@@ -426,7 +462,11 @@ public class PressureSmartExitService {
             return sig.getStopPrice();
         }
 
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(sig.getSymbol(), "1m", 1);
+        String normalizedSymbol = instrumentNormalizationService.normalizeForMarketData(sig.getSymbol());
+        if (normalizedSymbol == null) {
+            return entry;
+        }
+        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(normalizedSymbol, "1m", 1);
         if (!bars.isEmpty() && bars.get(bars.size() - 1).getClosePrice() != null) {
             return bars.get(bars.size() - 1).getClosePrice();
         }
@@ -510,6 +550,8 @@ public class PressureSmartExitService {
             long candleStaleSeconds,
             double currentVolume,
             double avgVolume,
+            double expectedCurrentVolume,
+            long currentBarAgeSeconds,
             boolean hardSlBreached,
             boolean backAtEntry,
             boolean volumeVacuum) {

@@ -14,8 +14,10 @@ import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.runtime.BindingScanThrottleService;
 import com.stokr.strategy.runtime.SignalCooldownService;
 import com.stokr.strategy.runtime.StrategyRegistry;
+import com.stokr.strategy.service.ConfidenceEngineV2;
 import com.stokr.strategy.service.StrategyDailySignalCapService;
 import com.stokr.strategy.service.StrategySignalEntityMapper;
+import com.stokr.strategy.signals.SignalOwnerType;
 import com.stokr.strategy.signals.StrategySignal;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.context.StrategyContext;
@@ -50,6 +52,7 @@ public class CatalogDrivenScanScheduler {
     private final BindingScanThrottleService bindingScanThrottleService;
     private final SignalCooldownService signalCooldownService;
     private final StrategyDailySignalCapService dailySignalCapService;
+    private final ConfidenceEngineV2 confidenceEngineV2;
     private final StrategyGeneratorIntegrityGate integrityGate;
     private final StrategySessionEntryGuardService sessionEntryGuard;
     private final StrategyExecutionModeService executionModeService;
@@ -221,8 +224,9 @@ public class CatalogDrivenScanScheduler {
             StrategyExecutionMode mode) {
         try {
             String pipelineMode = mode.name();
+            StrategySignal scoredSignal = confidenceEngineV2.enrich(signal, strategyKey, symbol, candleTime);
             StrategySignalEntity entity = StrategySignalEntityMapper.baseEntity(
-                    signal,
+                    scoredSignal,
                     strategyKey,
                     symbol,
                     candleTime,
@@ -230,6 +234,7 @@ public class CatalogDrivenScanScheduler {
                     pipelineMode,
                     "2.0.0"
             );
+            StrategySignalEntityMapper.applyStreamMetadata(entity, SignalOwnerType.SYSTEM, "PENDING");
             StrategySignalEntity saved = signalPipelineService.persistAndDispatch(
                     entity, UUID.randomUUID().toString(), pipelineMode, mode.skipsBrokerExecution());
             if (saved != null) {

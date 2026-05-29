@@ -25,6 +25,7 @@ public class SignalPriceEnrichmentService {
     private static final double TARGET_ATR_MULT = 2.5;
 
     private final MarketDataQueryService marketDataQueryService;
+    private final InstrumentNormalizationService instrumentNormalizationService;
 
     public void enrichIfMissing(StrategySignalEntity entity, Instant asOf) {
         if (entity == null || entity.getSymbol() == null || entity.getSignalType() == null) {
@@ -37,10 +38,15 @@ public class SignalPriceEnrichmentService {
         }
 
         Instant ref = asOf != null ? asOf : Instant.now();
+        String normalizedSymbol = instrumentNormalizationService.normalizeForMarketData(entity.getSymbol());
+        if (normalizedSymbol == null) {
+            return;
+        }
+
         List<MarketdataCandle> bars = marketDataQueryService.lastBarsAscEndingAt(
-                entity.getSymbol(), "1m", 40, ref);
+                normalizedSymbol, "1m", 40, ref);
         if (bars.size() < 3) {
-            bars = marketDataQueryService.lastBarsAscEndingAt(entity.getSymbol(), "5m", 40, ref);
+            bars = marketDataQueryService.lastBarsAscEndingAt(normalizedSymbol, "5m", 40, ref);
         }
         if (bars.isEmpty()) {
             return;

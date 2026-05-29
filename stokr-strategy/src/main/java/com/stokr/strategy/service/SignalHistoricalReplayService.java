@@ -12,6 +12,7 @@ import com.stokr.strategy.domain.StrategyUniverseSymbol;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.runtime.StrategyRegistry;
+import com.stokr.strategy.signals.SignalOwnerType;
 import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
@@ -51,6 +52,7 @@ public class SignalHistoricalReplayService {
     private final StrategySignalPipelineService pipelineService;
     private final StrategyRegistry strategyRegistry;
     private final ReplayEquityCandleSeedService replayEquityCandleSeedService;
+    private final ConfidenceEngineV2 confidenceEngineV2;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
@@ -206,7 +208,8 @@ public class SignalHistoricalReplayService {
                                     bar.getClosePrice() != null ? bar.getClosePrice() : BigDecimal.ZERO);
                             StrategySignal signal = strategy.evaluate(ctx);
                             if (signal != null && signal.type() != SignalType.HOLD) {
-                                StrategySignalEntity entity = toEntity(strategyKey, symbol, signal, bar.getOpenTime());
+                                StrategySignal scored = confidenceEngineV2.enrich(signal, strategyKey, symbol, bar.getOpenTime());
+                                StrategySignalEntity entity = toEntity(strategyKey, symbol, scored, bar.getOpenTime());
                                 StrategySignalEntity saved = pipelineService.persistAndDispatch(
                                         entity, UUID.randomUUID().toString(), REPLAY_EXECUTION_MODE, SignalProvenance.REPLAY);
                                 if (saved != null) {
@@ -268,7 +271,9 @@ public class SignalHistoricalReplayService {
     }
 
     private StrategySignalEntity toEntity(String strategyKey, String symbol, StrategySignal signal, Instant barTime) {
-        return StrategySignalEntityMapper.baseEntity(
+        StrategySignalEntity entity = StrategySignalEntityMapper.baseEntity(
                 signal, strategyKey, symbol, barTime, systemUserId, REPLAY_EXECUTION_MODE, "2.0.0");
+        StrategySignalEntityMapper.applyStreamMetadata(entity, SignalOwnerType.SYSTEM, "PENDING");
+        return entity;
     }
 }

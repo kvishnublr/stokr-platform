@@ -41,6 +41,9 @@ public class SignalQualityGateService {
             return null;
         }
         BigDecimal confidence = signal.getConfidenceScore();
+        if (confidence == null) {
+            return "Confidence missing";
+        }
         if (confidence != null && confidence.doubleValue() < minConfidence) {
             log.info("signal.dropped_low_confidence strategy={} symbol={} confidence={} min={}",
                     signal.getStrategyName(), signal.getSymbol(), confidence, minConfidence);

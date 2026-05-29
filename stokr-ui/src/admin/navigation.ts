@@ -146,6 +146,22 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         keywords: ["lab", "benchmark", "cleanup"],
       },
       {
+        to: "/admin/protection-diagnostics",
+        label: "Protection Diagnostics",
+        description: "Volume vacuum, min-hold, exit telemetry truth",
+        icon: ShieldCheck,
+        tier: "critical",
+        keywords: ["protection", "vacuum", "min-hold"],
+      },
+      {
+        to: "/admin/strategy-diagnostics",
+        label: "Strategy Diagnostics",
+        description: "Confidence V2 persistence and dashboard alignment",
+        icon: BarChart3,
+        tier: "critical",
+        keywords: ["confidence", "lifecycle", "owner"],
+      },
+      {
         to: "/admin/signal-replay",
         label: "Signal Replay",
         description: "Historical signal replay sessions",

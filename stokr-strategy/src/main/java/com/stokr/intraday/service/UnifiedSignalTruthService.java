@@ -183,7 +183,7 @@ public class UnifiedSignalTruthService {
             d.put("symbol", stripNse(sig.getSymbol()));
             d.put("action", sig.getSignalType() != null ? sig.getSignalType().name() : "SIGNAL");
             d.put("strategy", sig.getStrategyName());
-            d.put("aiScore", aiScore(sig.getConfidenceScore(), sig));
+            d.put("aiScore", aiScore(sig.getConfidenceScore()));
             d.put("executionStatus", sig.getOutcomeStatus() != null ? sig.getOutcomeStatus() : "PIPELINE");
             d.put("rejectionReason", null);
             d.put("decisionFactors", List.of("Persisted signal", sig.getReason() != null ? sig.getReason() : "—"));
@@ -204,7 +204,7 @@ public class UnifiedSignalTruthService {
             d.put("symbol", stripNse(audit.getSymbol()));
             d.put("action", "REJECTED");
             d.put("strategy", audit.getStrategyKey());
-            d.put("aiScore", audit.getConfidenceScore() != null ? aiScore(audit.getConfidenceScore(), null) : 0);
+            d.put("aiScore", audit.getConfidenceScore() != null ? aiScore(audit.getConfidenceScore()) : 0);
             d.put("executionStatus", audit.getExecutionStatus());
             d.put("rejectionReason", audit.getRejectionMessage());
             d.put("decisionFactors", List.of(
@@ -224,8 +224,10 @@ public class UnifiedSignalTruthService {
         row.put("strategy", sig.getStrategyName());
         row.put("side", sig.getSignalType() != null ? sig.getSignalType().name() : "BUY");
         row.put("ltp", sig.getEntryReferencePrice());
-        row.put("aiScore", aiScore(sig.getConfidenceScore(), sig));
-        row.put("probability", aiScore(sig.getConfidenceScore(), sig));
+        int score = aiScore(sig.getConfidenceScore());
+        row.put("aiScore", score);
+        row.put("probability", sig.getProbability() != null
+                ? aiScore(sig.getProbability()) : score);
         row.put("executionStatus", elig.executionStatus());
         row.put("pipelineStage", elig.pipelineStage());
         row.put("rejectionReason", elig.rejectionMessage());
@@ -243,7 +245,8 @@ public class UnifiedSignalTruthService {
         row.put("outcomeStatus", sig.getOutcomeStatus());
         row.put("reason", sig.getReason());
         row.put("createdAt", sig.getCreatedAt() != null ? sig.getCreatedAt().toString() : null);
-        row.put("tradeQuality", tradeQualityLabel((Integer) row.get("aiScore")));
+        row.put("tradeQuality", sig.getTradeQuality() != null
+                ? sig.getTradeQuality() : tradeQualityLabel((Integer) row.get("aiScore")));
         row.put("omsEligible", "EXECUTABLE".equals(elig.executionStatus()) || "EXECUTED".equals(elig.executionStatus()));
         row.put("source", "PRODUCTION");
         return row;
@@ -258,7 +261,7 @@ public class UnifiedSignalTruthService {
         row.put("side", "—");
         row.put("ltp", null);
         row.put("aiScore", audit.getConfidenceScore() != null
-                ? aiScore(audit.getConfidenceScore(), null) : 0);
+                ? aiScore(audit.getConfidenceScore()) : 0);
         row.put("probability", row.get("aiScore"));
         row.put("executionStatus", audit.getExecutionStatus());
         row.put("pipelineStage", audit.getPipelineStage());
@@ -628,20 +631,12 @@ public class UnifiedSignalTruthService {
         return bars.get(bars.size() - 1).getClosePrice();
     }
 
-    private static int aiScore(BigDecimal confidence, StrategySignalEntity sig) {
+    private static int aiScore(BigDecimal confidence) {
         if (confidence != null) {
             if (confidence.compareTo(BigDecimal.ONE) <= 0) {
                 return confidence.multiply(BigDecimal.valueOf(100)).setScale(0, RoundingMode.HALF_UP).intValue();
             }
             return confidence.setScale(0, RoundingMode.HALF_UP).intValue();
-        }
-        if (sig != null && sig.getEntryReferencePrice() != null && sig.getStopPrice() != null && sig.getTargetPrice() != null) {
-            BigDecimal risk = sig.getEntryReferencePrice().subtract(sig.getStopPrice()).abs();
-            BigDecimal reward = sig.getTargetPrice().subtract(sig.getEntryReferencePrice()).abs();
-            if (risk.signum() > 0) {
-                double rr = reward.divide(risk, 4, RoundingMode.HALF_UP).doubleValue();
-                return (int) Math.min(85, Math.max(45, 50 + rr * 15));
-            }
         }
         return 0;
     }

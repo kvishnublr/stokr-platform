@@ -12,11 +12,13 @@ import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.service.SignalEmissionGuardService;
+import com.stokr.strategy.service.SignalLifecycleService;
 import com.stokr.strategy.service.SignalPriceEnrichmentService;
 import com.stokr.strategy.service.SignalQualityGateService;
 import com.stokr.strategy.service.SignalProvenanceResolver;
 import com.stokr.strategy.service.SignalSymbolPriceGateService;
 import com.stokr.strategy.service.StrategyDailySignalCapService;
+import com.stokr.strategy.signals.SignalOwnerType;
 import com.stokr.strategy.signals.SignalProvenance;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +37,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -121,6 +124,11 @@ public class StrategySignalPipelineService {
             );
         }
         signalProvenanceResolver.applyForPersist(signal, executionMode, provenanceOverride);
+        if (signal.getOwnerType() == null) {
+            boolean systemCatalog = signal.getUserId() != null
+                    && signal.getUserId().equals(UUID.fromString("33333333-3333-3333-3333-333333333333"));
+            signal.setOwnerType(SignalOwnerType.fromExecutionMode(executionMode, systemCatalog));
+        }
         boolean replaySignal = signal.getSignalSource() == SignalProvenance.REPLAY || replayAnalytics;
 
         Instant signalTime = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
@@ -135,6 +143,11 @@ public class StrategySignalPipelineService {
         }
         if (!Boolean.TRUE.equals(signal.getTestTrade()) && signal.getBacktestRunId() == null
                 && signal.getSignalSource() != null && signal.getSignalSource().isProductionAnalytics()) {
+            if (signal.getConfidenceScore() == null) {
+                throw new IllegalStateException("Confidence missing for production signal: "
+                        + Objects.toString(signal.getStrategyName(), "UNKNOWN") + " / "
+                        + Objects.toString(signal.getSymbol(), "UNKNOWN"));
+            }
             signalPriceEnrichmentService.enrichIfMissing(signal, signalTime);
             if (signalSymbolPriceGateService.exceedsMaxPrice(signal, signalTime)) {
                 return null;
@@ -152,8 +165,10 @@ public class StrategySignalPipelineService {
                         "DUPLICATE", "Duplicate signal suppressed (DB dedup window)");
                 return null;
             }
-            if (signal.getOutcomeStatus() == null || signal.getOutcomeStatus().isBlank()) {
-                signal.setOutcomeStatus("PENDING");
+            if (signal.getLifecycleStatus() == null || signal.getLifecycleStatus().isBlank()) {
+                SignalLifecycleService.applyInitial(signal, "PENDING");
+            } else {
+                SignalLifecycleService.syncFromOutcome(signal);
             }
             String capKey = signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
             if (dailySignalCapService.isOverCap(capKey, signalTime)) {
@@ -164,8 +179,8 @@ public class StrategySignalPipelineService {
                 return null;
             }
         }
-        if (replaySignal && (signal.getOutcomeStatus() == null || signal.getOutcomeStatus().isBlank())) {
-            signal.setOutcomeStatus("PENDING");
+        if (replaySignal && (signal.getLifecycleStatus() == null || signal.getLifecycleStatus().isBlank())) {
+            SignalLifecycleService.applyInitial(signal, "PENDING");
         }
         StrategySignalEntity saved = signalRepository.save(signal);
 

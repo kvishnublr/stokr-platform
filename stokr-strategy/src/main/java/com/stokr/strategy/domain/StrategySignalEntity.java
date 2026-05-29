@@ -1,6 +1,7 @@
 package com.stokr.strategy.domain;
 
 import com.stokr.common.domain.BaseEntity;
+import com.stokr.strategy.signals.SignalOwnerType;
 import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import jakarta.persistence.Column;
@@ -59,6 +60,18 @@ public class StrategySignalEntity extends BaseEntity {
     @Column(name = "confidence_score", precision = 10, scale = 6)
     private BigDecimal confidenceScore;
 
+    @Column(name = "probability", precision = 10, scale = 6)
+    private BigDecimal probability;
+
+    @Column(name = "trade_quality", length = 32)
+    private String tradeQuality;
+
+    @Column(name = "confidence_version", length = 32)
+    private String confidenceVersion;
+
+    @Column(name = "confidence_breakdown_json", columnDefinition = "text")
+    private String confidenceBreakdownJson;
+
     @Column(name = "rsi_value", precision = 24, scale = 8)
     private BigDecimal rsiValue;
 
@@ -97,6 +110,13 @@ public class StrategySignalEntity extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "signal_source", length = 16)
     private SignalProvenance signalSource;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "owner_type", length = 32)
+    private SignalOwnerType ownerType;
+
+    @Column(name = "lifecycle_status", length = 32)
+    private String lifecycleStatus;
 
     @Column(name = "stop_price", precision = 24, scale = 8)
     private BigDecimal stopPrice;
