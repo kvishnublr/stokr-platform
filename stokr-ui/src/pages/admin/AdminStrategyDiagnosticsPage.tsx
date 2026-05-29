@@ -41,9 +41,13 @@ export function AdminStrategyDiagnosticsPage() {
   const d = q.data;
 
   return (
-    <AdminPageShell title="Strategy Diagnostics" subtitle="Production confidence persistence vs unified AI score">
-      <AdminSection title="Confidence health">
-        <AdminPanel>
+    <AdminPageShell
+      isLight={isLight}
+      title="Strategy Diagnostics"
+      subtitle="Production confidence persistence vs unified AI score"
+    >
+      <AdminSection isLight={isLight} title="Confidence health">
+        <AdminPanel isLight={isLight}>
           {d && (
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {[
@@ -67,8 +71,8 @@ export function AdminStrategyDiagnosticsPage() {
           )}
         </AdminPanel>
       </AdminSection>
-      <AdminSection title="Recent production signals">
-        <AdminPanel>
+      <AdminSection isLight={isLight} title="Recent production signals">
+        <AdminPanel isLight={isLight}>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
