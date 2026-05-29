@@ -59,6 +59,7 @@ import { AdminFailureAnalysisConsolePage } from "./pages/admin/AdminFailureAnaly
 import { AdminSafetyDiagnosticsPage } from "./pages/admin/AdminSafetyDiagnosticsPage";
 import { AdminProtectionDiagnosticsPage } from "./pages/admin/AdminProtectionDiagnosticsPage";
 import { AdminStrategyDiagnosticsPage } from "./pages/admin/AdminStrategyDiagnosticsPage";
+import { AdminStrategyEffectivenessPage } from "./pages/admin/AdminStrategyEffectivenessPage";
 import { useSessionStore } from "./state/session";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { OnboardingWizardPage } from "./pages/OnboardingWizardPage";
@@ -271,6 +272,7 @@ export default function App() {
               <Route path="safety-diagnostics" element={<AdminSafetyDiagnosticsPage />} />
               <Route path="protection-diagnostics" element={<AdminProtectionDiagnosticsPage />} />
               <Route path="strategy-diagnostics" element={<AdminStrategyDiagnosticsPage />} />
+              <Route path="strategy-effectiveness" element={<AdminStrategyEffectivenessPage />} />
               <Route path="capital" element={<AdminCapitalPage />} />
               <Route path="oms" element={<AdminOmsMonitorPage />} />
               <Route path="settings" element={<AdminSectionPage section="settings" />} />

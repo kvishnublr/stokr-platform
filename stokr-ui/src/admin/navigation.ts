@@ -162,6 +162,14 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         keywords: ["confidence", "lifecycle", "owner"],
       },
       {
+        to: "/admin/strategy-effectiveness",
+        label: "Strategy Effectiveness",
+        description: "Production scorecards, win rates, protection impact, V8 comparison",
+        icon: FileBarChart,
+        tier: "critical",
+        keywords: ["effectiveness", "win rate", "expectancy", "leaderboard"],
+      },
+      {
         to: "/admin/signal-replay",
         label: "Signal Replay",
         description: "Historical signal replay sessions",
