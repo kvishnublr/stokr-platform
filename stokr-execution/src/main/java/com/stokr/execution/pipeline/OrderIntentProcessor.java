@@ -604,23 +604,83 @@ public class OrderIntentProcessor {
 
         // Transition and dispatch PAPER
         if (paperOrder.getState() == OrderState.CREATED) {
-            paperOrder = orderLifecycleService.transition(paperOrder.getId(), OrderState.VALIDATED, null);
-            paperOrder = orderLifecycleService.transition(paperOrder.getId(), OrderState.PENDING_SUBMISSION, null);
-            executionService.dispatch(new ExecutionDispatchMessage(
-                    paperOrder.getId(), userId, signal.getId(), "SIM", 0,
-                    signal.getBacktestRunId(), "PAPER", fillKey, anchor), synchronousExecution);
+            paperOrder = advanceOrderForDispatch(paperOrder, signal, userId, ExecutionMode.PAPER);
+            if (paperOrder.getState() == OrderState.PENDING_SUBMISSION) {
+                executionService.dispatch(new ExecutionDispatchMessage(
+                        paperOrder.getId(), userId, signal.getId(), "SIM", 0,
+                        signal.getBacktestRunId(), "PAPER", fillKey, anchor), synchronousExecution);
+            }
         }
 
         // Transition and dispatch LIVE
         if (liveOrder != null && liveOrder.getState() == OrderState.CREATED) {
-            liveOrder = orderLifecycleService.transition(liveOrder.getId(), OrderState.VALIDATED, null);
-            liveOrder = orderLifecycleService.transition(liveOrder.getId(), OrderState.PENDING_SUBMISSION, null);
-            executionService.dispatch(new ExecutionDispatchMessage(
-                    liveOrder.getId(), userId, signal.getId(), "ZERODHA", 0,
-                    signal.getBacktestRunId(), "LIVE", fillKey, anchor), synchronousExecution);
+            liveOrder = advanceOrderForDispatch(liveOrder, signal, userId, ExecutionMode.LIVE);
+            if (liveOrder.getState() == OrderState.PENDING_SUBMISSION) {
+                executionService.dispatch(new ExecutionDispatchMessage(
+                        liveOrder.getId(), userId, signal.getId(), "ZERODHA", 0,
+                        signal.getBacktestRunId(), "LIVE", fillKey, anchor), synchronousExecution);
+            }
         }
 
         log.info("both_mode.dispatched signalId={} paper={} live={}",
                 signal.getId(), paperOrder.getId(), liveOrder != null ? liveOrder.getId() : "BLOCKED");
+    }
+
+    private OmsOrder advanceOrderForDispatch(
+            OmsOrder order, StrategySignalEntity signal, UUID userId, ExecutionMode legMode) {
+        if (order.getState() != OrderState.CREATED) {
+            return order;
+        }
+        order = orderLifecycleService.transition(order.getId(), OrderState.VALIDATED, null);
+        order = orderLifecycleService.transition(order.getId(), OrderState.RISK_CHECK, null);
+
+        ZoneId zone = ZoneId.of(riskZone);
+        Instant evalInstant = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
+        RiskContext ctx = riskContextFactory.build(userId, order, zone, evalInstant, atrToCloseRatio(signal));
+        RiskDecision decision = riskEngineService.evaluate(ctx);
+        riskEvaluationTraceService.record(ctx, decision, order.getId());
+        if (!decision.allowed()) {
+            capitalReservationService.releaseByOrder(order.getId(), "RISK_REJECT");
+            riskEventRecorder.record(
+                    userId,
+                    order.getId(),
+                    decision.reasonCode() != null ? decision.reasonCode() : "RISK",
+                    "REJECT",
+                    decision.message()
+            );
+            order = orderLifecycleService.transition(order.getId(), OrderState.REJECTED, decision.message());
+            executionTraceService.trace(order, ExecutionEventType.EXECUTION_REJECTED, Map.of(
+                    "phase", "RISK",
+                    "reason", decision.message() != null ? decision.message() : ""
+            ));
+            signalDistributionTelemetryService.recordRiskRejected(userId, signal.getId());
+            return order;
+        }
+
+        executionTraceService.trace(order, ExecutionEventType.RISK_CHECK_PASSED, Map.of(
+                "riskReason", decision.message() != null ? decision.message() : "OK"
+        ));
+        order = orderLifecycleService.transition(order.getId(), OrderState.PENDING_SUBMISSION, null);
+
+        if (legMode == ExecutionMode.LIVE) {
+            brokerPositionTruthService.syncUser(userId);
+            String side = order.getSide();
+            ExecutionGuardMode guardMode = "SELL".equalsIgnoreCase(side)
+                    ? ExecutionGuardMode.EXIT_SAFE
+                    : ExecutionGuardMode.ENTRY_STRICT;
+            var brokerViolations = brokerPositionTruthService.validateForExecution(
+                    userId, order.getSymbol(), side, guardMode, Instant.now());
+            if (!brokerViolations.isEmpty()) {
+                ExecutionGuardViolation v = brokerViolations.getFirst();
+                order = orderLifecycleService.transition(order.getId(), OrderState.REJECTED, v.message());
+                executionTraceService.trace(order, ExecutionEventType.EXECUTION_REJECTED, Map.of(
+                        "phase", "BROKER_TRUTH",
+                        "code", v.code(),
+                        "detail", v.detail() != null ? v.detail() : ""
+                ));
+                signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), v.code());
+            }
+        }
+        return order;
     }
 }
