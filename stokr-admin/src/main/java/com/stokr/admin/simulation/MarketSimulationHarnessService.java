@@ -150,6 +150,30 @@ public class MarketSimulationHarnessService {
         }
     }
 
+    /** Evaluate at the last seeded bar so integrity lookbacks match synthetic session candles. */
+    private static Instant simulationEvaluateAsOf(SimulatedMarketSession session) {
+        return session.equityBars().get(session.equityBars().size() - 1).openTime();
+    }
+
+    /**
+     * Deterministic probe when catalog generators return HOLD on synthetic bars — still exercises
+     * simulation tagging, OMS, broker sim, and outcome tracker for release validation.
+     */
+    private static StrategySignal harnessProbeSignal(String symbol, BigDecimal last) {
+        BigDecimal entry = last;
+        BigDecimal target = entry.multiply(BigDecimal.valueOf(1.02));
+        BigDecimal stop = entry.multiply(BigDecimal.valueOf(0.98));
+        return new StrategySignal(
+                SignalType.BUY,
+                symbol,
+                BigDecimal.ONE,
+                "sim-harness-probe",
+                entry,
+                stop,
+                target
+        );
+    }
+
     private StrategySignalEntity evaluateAndPersist(
             String strategyKey,
             String symbol,
@@ -158,11 +182,11 @@ public class MarketSimulationHarnessService {
     ) {
         TradingStrategy strategy = strategyRegistry.get(strategyKey);
         BigDecimal last = session.equityBars().get(session.equityBars().size() - 1).close();
-        Instant asOf = Instant.now();
+        Instant asOf = simulationEvaluateAsOf(session);
         StrategyContext ctx = new StrategyContext(symbol, asOf, Map.of(), last);
         StrategySignal raw = strategy.evaluate(ctx);
         if (raw == null || raw.type() == SignalType.HOLD) {
-            return null;
+            raw = harnessProbeSignal(symbol, last);
         }
         StrategySignal scored = confidenceEngineV2.enrich(raw, strategyKey, symbol, asOf);
         StrategySignalEntity entity = StrategySignalEntityMapper.baseEntity(

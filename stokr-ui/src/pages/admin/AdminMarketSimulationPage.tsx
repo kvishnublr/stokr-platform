@@ -16,7 +16,7 @@ import { useUiThemeStore } from "../../state/uiTheme";
 import { cn } from "../../lib/utils";
 
 export function AdminMarketSimulationPage() {
-  const isLight = useUiThemeStore((s) => s.theme === "light");
+  const isLight = useUiThemeStore((s) => s.mode === "light");
   const qc = useQueryClient();
   const [scenario, setScenario] = useState("GAP_FILL_WIN");
   const [symbol, setSymbol] = useState("SBIN");
@@ -58,11 +58,12 @@ export function AdminMarketSimulationPage() {
 
   return (
     <AdminPageShell
+      isLight={isLight}
       title="Market Simulation Harness"
       subtitle="After-hours E2E validation — runtime enable required; never affects production analytics"
     >
-      <AdminSection title="Runtime control">
-        <AdminPanel>
+      <AdminSection isLight={isLight} title="Runtime control">
+        <AdminPanel isLight={isLight}>
           <p className={cn("text-sm", isLight ? "text-slate-600" : "text-slate-400")}>
             Status:{" "}
             <strong className={enabled ? "text-amber-500" : "text-emerald-500"}>
@@ -95,8 +96,8 @@ export function AdminMarketSimulationPage() {
 
       {enabled && (
         <>
-          <AdminSection title="Run scenario">
-            <AdminPanel>
+          <AdminSection isLight={isLight} title="Run scenario">
+            <AdminPanel isLight={isLight}>
               <div className="flex flex-wrap gap-3 items-end">
                 <label className="text-sm">
                   Scenario
@@ -150,8 +151,8 @@ export function AdminMarketSimulationPage() {
             </AdminPanel>
           </AdminSection>
 
-          <AdminSection title="Dashboard">
-            <AdminPanel>
+          <AdminSection isLight={isLight} title="Dashboard">
+            <AdminPanel isLight={isLight}>
               {dashboardQ.isLoading && <p className="text-sm opacity-70">Loading…</p>}
               {dashboardQ.data && (
                 <div className="space-y-4 text-sm">
@@ -176,8 +177,8 @@ export function AdminMarketSimulationPage() {
             </AdminPanel>
           </AdminSection>
 
-          <AdminSection title="Cleanup">
-            <AdminPanel>
+          <AdminSection isLight={isLight} title="Cleanup">
+            <AdminPanel isLight={isLight}>
               <button
                 type="button"
                 className="rounded bg-red-700 px-3 py-1.5 text-sm text-white"

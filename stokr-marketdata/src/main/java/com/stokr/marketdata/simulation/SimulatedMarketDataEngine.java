@@ -48,7 +48,13 @@ public class SimulatedMarketDataEngine {
             throw new IllegalStateException("Simulation runtime is not enabled");
         }
         BigDecimal base = basePrice != null ? basePrice : BigDecimal.valueOf(100);
-        Instant anchor = ZonedDateTime.now(zone).toInstant();
+        // Anchor midday IST so harness strategies read the same session as seeded candles (not wall-clock evening).
+        Instant anchor = ZonedDateTime.now(zone)
+                .withHour(10)
+                .withMinute(30)
+                .withSecond(0)
+                .withNano(0)
+                .toInstant();
         List<SimulatedBar> equityBars = generateEquityPath(scenario, symbol, base, sessionBars, anchor);
         persistBars(symbol, equityBars);
         List<SimulatedBar> niftyBars = generateIndexPath(sessionBars, anchor);

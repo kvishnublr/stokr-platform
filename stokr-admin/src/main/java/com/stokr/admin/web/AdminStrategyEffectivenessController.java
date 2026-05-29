@@ -1,6 +1,7 @@
 package com.stokr.admin.web;
 
 import com.stokr.common.api.ApiResponse;
+import com.stokr.common.simulation.AnalyticsDataScope;
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.strategy.analytics.StrategyEffectivenessEngine;
 import com.stokr.strategy.analytics.AlphaValidationEngine.AlphaValidationReport;
@@ -32,9 +33,12 @@ public class AdminStrategyEffectivenessController {
     public ApiResponse<StrategyEffectivenessReport> report(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(required = false) Instant v8Cutoff
+            @RequestParam(required = false) Instant v8Cutoff,
+            @RequestParam(required = false, defaultValue = "REAL") String dataScope
     ) {
-        return ApiResponse.ok(effectivenessEngine.buildReport(from, to, v8Cutoff), CorrelationIdHolder.get());
+        return ApiResponse.ok(
+                effectivenessEngine.buildReport(from, to, v8Cutoff, AnalyticsDataScope.parse(dataScope)),
+                CorrelationIdHolder.get());
     }
 
     @GetMapping("/alpha-validation")

@@ -3,7 +3,6 @@
 Deploy verification + ordered simulation scenario runs on production.
 Outputs JSON evidence with IDs, timestamps, tags.
 """
-import base64
 import json
 import sys
 import time
@@ -42,17 +41,38 @@ def ssh(cmd: str, timeout: int = 600) -> str:
 
 def psql(sql: str) -> str:
     return ssh(
-        "docker exec stokr-postgres psql -U stokr -d stokr_platform -t -A -F'|' -c "
-        + repr(sql)
-        + " 2>/dev/null || docker exec stokr-postgres psql -U postgres -d stokr_platform -t -A -F'|' -c "
+        "docker exec stokr-postgres psql -U postgres -d stokr_platform -t -A -F'|' -c "
         + repr(sql)
     )
 
 
+_jwt_token: str | None = None
+
+
+def login_jwt() -> str:
+    global _jwt_token
+    if _jwt_token:
+        return _jwt_token
+    data = json.dumps({"principal": ADMIN_USER, "password": ADMIN_PASS}).encode()
+    req = urllib.request.Request(
+        API + "/api/auth/login",
+        data=data,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        payload = json.loads(resp.read().decode())
+    token = payload.get("data", {}).get("accessToken")
+    if not token:
+        raise RuntimeError(f"admin login failed: {payload}")
+    _jwt_token = token
+    return token
+
+
 def api(method: str, path: str, body: dict | None = None) -> dict:
-    auth = base64.b64encode(f"{ADMIN_USER}:{ADMIN_PASS}".encode()).decode()
+    token = login_jwt()
     data = None
-    headers = {"Authorization": f"Basic {auth}"}
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     if body is not None:
         data = json.dumps(body).encode()
         headers["Content-Type"] = "application/json"
@@ -115,8 +135,12 @@ def main():
     report["post_deploy_checks"]["git_head"] = ssh(f"cd {BASE} && git log -1 --oneline")
     report["post_deploy_checks"]["health"] = ssh("curl -sf http://localhost:8080/actuator/health")
 
-    report["post_deploy_checks"]["flyway_v80"] = ssh(
+    report["post_deploy_checks"]["flyway_v80_logs"] = ssh(
         "docker logs stokr-api 2>&1 | grep -E 'V80|simulation_safety' | tail -20"
+    )
+    report["post_deploy_checks"]["flyway_v80_schema"] = psql(
+        "SELECT version, description, installed_on::text, success::text "
+        "FROM flyway_schema_history WHERE version='80' ORDER BY installed_rank DESC LIMIT 1"
     )
     report["post_deploy_checks"]["migration_columns"] = psql(
         "SELECT table_name, column_name FROM information_schema.columns "
@@ -132,17 +156,15 @@ def main():
         "docker logs stokr-api 2>&1 | grep -E 'SIMULATION MODE' | tail -5"
     )
 
-    try:
-        report["post_deploy_checks"]["runtime_status_api"] = api("GET", "/api/admin/simulation/runtime/status")
-    except Exception as ex:
-        report["post_deploy_checks"]["runtime_status_api"] = {"error": str(ex)}
+    report["post_deploy_checks"]["admin_login"] = "ok"
+    report["post_deploy_checks"]["runtime_status_api"] = api(
+        "GET", "/api/admin/simulation/runtime/status"
+    )
 
     # Enable simulation
     en = api("POST", "/api/admin/simulation/runtime/enable")
     report["post_deploy_checks"]["runtime_enable_response"] = en
     time.sleep(2)
-
-  # Broker block smoke: runtime on + check log after BROKER_REJECT will show FAILED not external broker
 
     for scenario in SCENARIOS_ORDER:
         print(f"Running scenario {scenario}...")

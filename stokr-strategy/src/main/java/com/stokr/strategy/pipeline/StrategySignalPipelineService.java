@@ -12,6 +12,7 @@ import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.common.simulation.SimulationModeService;
+import com.stokr.common.simulation.SimulationScenarioContext;
 import com.stokr.strategy.service.SignalEmissionGuardService;
 import com.stokr.strategy.service.SignalLifecycleService;
 import com.stokr.strategy.service.SignalPriceEnrichmentService;
@@ -207,74 +208,99 @@ public class StrategySignalPipelineService {
         );
 
         long dispatchLatencyStartNanos = System.nanoTime();
+        Runnable dispatchAfterPersist = () -> dispatchAfterSignalPersist(
+                saved,
+                sk,
+                executionMode,
+                cid,
+                systemMsg,
+                runningInstances,
+                skipBrokerExecution,
+                dispatchLatencyStartNanos
+        );
 
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                // strategy.signal.queue — telemetry/broadcast (one message per signal, always system user)
-                rabbitTemplate.convertAndSend(PipelineQueues.STRATEGY_SIGNAL, systemMsg);
-
-                // oms.order.queue — fan out to every RUNNING trader instance for this strategy
-                // REPLAY signals are analytics-only unless explicitly enabled (never LIVE).
-                if (saved.getSignalSource() == SignalProvenance.REPLAY && !replayDispatchToOms) {
-                    log.info("signal.replay.skip_oms signalId={} strategy={} symbol={}",
-                            saved.getId(), sk, saved.getSymbol());
-                    eventPublisher.publishEvent(new OperationalRealtimeEvent("signal_routed", java.util.Map.of(
-                            "signalId", saved.getId().toString(),
-                            "userId", saved.getUserId().toString(),
-                            "strategyKey", sk,
-                            "executionMode", "REPLAY_ANALYTICS_ONLY"
-                    )));
-                    eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
-                    signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);
-                    return;
+        // Harness runs in one @Transactional — afterCommit fires after harness reads OMS, so dispatch inline.
+        if (SimulationScenarioContext.runId() != null) {
+            dispatchAfterPersist.run();
+        } else {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    dispatchAfterPersist.run();
                 }
-                if (skipBrokerExecution) {
-                    log.info("signal.skip_broker signalId={} strategy={} symbol={} mode={}",
-                            saved.getId(), sk, saved.getSymbol(), executionMode);
-                    eventPublisher.publishEvent(new OperationalRealtimeEvent("signal_routed", java.util.Map.of(
-                            "signalId", saved.getId().toString(),
-                            "userId", saved.getUserId().toString(),
-                            "strategyKey", sk,
-                            "executionMode", executionMode != null ? executionMode : "PAPER"
-                    )));
-                    eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
-                    signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);
-                    return;
-                }
-                if (runningInstances.isEmpty()) {
-                    omsIntentDispatcher.dispatch(systemMsg, true);
-                    log.info("signal.fanout.no_traders signalId={} strategy={} symbol={}", saved.getId(), sk, saved.getSymbol());
-                } else {
-                    for (StrategyInstance inst : runningInstances) {
-                        String instMode = saved.getSignalSource() == SignalProvenance.REPLAY
-                                ? "SIMULATED"
-                                : inst.getExecutionMode();
-                        SignalPersistedMessage traderMsg = new SignalPersistedMessage(
-                                saved.getId(),
-                                inst.getUserId(),
-                                cid + ":" + inst.getUserId(),
-                                saved.getBacktestRunId(),
-                                instMode
-                        );
-                        omsIntentDispatcher.dispatch(traderMsg, true);
-                    }
-                    log.info("signal.fanout.dispatched signalId={} strategy={} symbol={} traders={}",
-                            saved.getId(), sk, saved.getSymbol(), runningInstances.size());
-                }
-
-                eventPublisher.publishEvent(new OperationalRealtimeEvent("signal_routed", java.util.Map.of(
-                        "signalId", saved.getId().toString(),
-                        "userId", saved.getUserId().toString(),
-                        "strategyKey", sk,
-                        "executionMode", executionMode != null ? executionMode : ""
-                )));
-                eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
-                signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);
-            }
-        });
+            });
+        }
 
         return saved;
+    }
+
+    private void dispatchAfterSignalPersist(
+            StrategySignalEntity saved,
+            String sk,
+            String executionMode,
+            String cid,
+            SignalPersistedMessage systemMsg,
+            List<StrategyInstance> runningInstances,
+            boolean skipBrokerExecution,
+            long dispatchLatencyStartNanos
+    ) {
+        rabbitTemplate.convertAndSend(PipelineQueues.STRATEGY_SIGNAL, systemMsg);
+
+        if (saved.getSignalSource() == SignalProvenance.REPLAY && !replayDispatchToOms) {
+            log.info("signal.replay.skip_oms signalId={} strategy={} symbol={}",
+                    saved.getId(), sk, saved.getSymbol());
+            eventPublisher.publishEvent(new OperationalRealtimeEvent("signal_routed", java.util.Map.of(
+                    "signalId", saved.getId().toString(),
+                    "userId", saved.getUserId().toString(),
+                    "strategyKey", sk,
+                    "executionMode", "REPLAY_ANALYTICS_ONLY"
+            )));
+            eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
+            signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);
+            return;
+        }
+        if (skipBrokerExecution) {
+            log.info("signal.skip_broker signalId={} strategy={} symbol={} mode={}",
+                    saved.getId(), sk, saved.getSymbol(), executionMode);
+            eventPublisher.publishEvent(new OperationalRealtimeEvent("signal_routed", java.util.Map.of(
+                    "signalId", saved.getId().toString(),
+                    "userId", saved.getUserId().toString(),
+                    "strategyKey", sk,
+                    "executionMode", executionMode != null ? executionMode : "PAPER"
+            )));
+            eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
+            signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);
+            return;
+        }
+        if (runningInstances.isEmpty()) {
+            omsIntentDispatcher.dispatch(systemMsg, true);
+            log.info("signal.fanout.no_traders signalId={} strategy={} symbol={}", saved.getId(), sk, saved.getSymbol());
+        } else {
+            for (StrategyInstance inst : runningInstances) {
+                String instMode = saved.getSignalSource() == SignalProvenance.REPLAY
+                        ? "SIMULATED"
+                        : inst.getExecutionMode();
+                SignalPersistedMessage traderMsg = new SignalPersistedMessage(
+                        saved.getId(),
+                        inst.getUserId(),
+                        cid + ":" + inst.getUserId(),
+                        saved.getBacktestRunId(),
+                        instMode
+                );
+                omsIntentDispatcher.dispatch(traderMsg, true);
+            }
+            log.info("signal.fanout.dispatched signalId={} strategy={} symbol={} traders={}",
+                    saved.getId(), sk, saved.getSymbol(), runningInstances.size());
+        }
+
+        eventPublisher.publishEvent(new OperationalRealtimeEvent("signal_routed", java.util.Map.of(
+                "signalId", saved.getId().toString(),
+                "userId", saved.getUserId().toString(),
+                "strategyKey", sk,
+                "executionMode", executionMode != null ? executionMode : ""
+        )));
+        eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
+        signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);
     }
 
     private boolean shouldDropOutsideSession(StrategySignalEntity signal, Instant now) {

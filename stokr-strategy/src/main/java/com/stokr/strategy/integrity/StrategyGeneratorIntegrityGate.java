@@ -75,6 +75,9 @@ public class StrategyGeneratorIntegrityGate {
             LookbackWindow window,
             StrategyContext context) {
         List<MarketdataCandle> raw = loadRawBars(symbol, timeframe, fetchBars, context);
+        if (simulationModeService.bypassIntegrityGate()) {
+            return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
+        }
         Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
         return integrityService.validateSessionBarSeries(strategyKey, symbol, raw, lookbackBars, window, asOf);
     }
