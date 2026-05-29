@@ -23,6 +23,7 @@ import com.stokr.risk.model.LiveTraderEligibilityResult;
 import com.stokr.risk.service.LiveTradingTraderEligibilityService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
+import com.stokr.execution.broker.LiveBrokerFillSyncService;
 import com.stokr.execution.pipeline.OrderIntentProcessor;
 import com.stokr.execution.safety.MarketCloseProtectionService;
 import com.stokr.execution.safety.OmsSafetyGateService;
@@ -38,6 +39,7 @@ import com.stokr.user.domain.BrokerAccount;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
 import com.stokr.user.repository.BrokerAccountRepository;
 import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
+import com.stokr.user.broker.ZerodhaBrokerOperationsService;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -83,6 +85,8 @@ public class AdminTestSignalLabService {
     private final SignalPriceEnrichmentService signalPriceEnrichmentService;
     private final OmsSafetyGateService omsSafetyGateService;
     private final MarketCloseProtectionService marketCloseProtectionService;
+    private final LiveBrokerFillSyncService liveBrokerFillSyncService;
+    private final ZerodhaBrokerOperationsService zerodhaBrokerOperationsService;
 
     private static final String TEST_LAB_PRODUCT_MIS = "MIS";
 
@@ -225,6 +229,15 @@ public class AdminTestSignalLabService {
                     runRepository.save(run);
                 }
             }
+            UUID entryOrderId = order.map(OmsOrder::getId).orElse(entry.getId());
+            liveBrokerFillSyncService.syncTestLabRunOrders(
+                    run.getTraderUserId(),
+                    entryOrderId,
+                    run.getSquareOffOrderId(),
+                    Duration.ofSeconds(12)
+            );
+            entityManager.flush();
+            order = omsOrderRepository.findById(entryOrderId);
         }
 
         Map<String, Object> healthSnapshot = buildHealthSnapshot();
@@ -843,8 +856,7 @@ public class AdminTestSignalLabService {
         ));
 
         boolean positionVisible = liveMode
-                ? order.map(o -> hasKiteOrderId && ("FILLED".equals(o.getState().name()) || "PARTIALLY_FILLED".equals(o.getState().name())))
-                .orElse(false)
+                ? order.map(o -> isLivePositionVerified(o, run)).orElse(false)
                 : portfolioPositionRepository.findByUserIdAndSymbolAndDeletedFalse(run.getTraderUserId(), run.getSymbol())
                         .map(PortfolioPosition::getQuantity)
                         .map(q -> q.signum() != 0)
@@ -1012,17 +1024,61 @@ public class AdminTestSignalLabService {
         };
     }
 
-    private static boolean isLiveBrokerFill(OmsOrder order, boolean liveMode) {
+    private boolean isLiveBrokerFill(OmsOrder order, boolean liveMode) {
         if (order == null) {
             return false;
         }
         if (liveMode) {
-            return order.getExecutionMode() == ExecutionMode.LIVE
+            boolean omsFilled = order.getExecutionMode() == ExecutionMode.LIVE
                     && order.getBrokerExternalOrderId() != null
                     && !order.getBrokerExternalOrderId().isBlank()
                     && ("FILLED".equals(order.getState().name()) || "PARTIALLY_FILLED".equals(order.getState().name()));
+            if (omsFilled) {
+                return true;
+            }
+            return isKiteOrderComplete(order.getUserId(), order.getBrokerExternalOrderId());
         }
         return "FILLED".equals(order.getState().name()) || "PARTIALLY_FILLED".equals(order.getState().name());
+    }
+
+    private boolean isLivePositionVerified(OmsOrder order, AdminTestSignalRun run) {
+        if (order == null) {
+            return false;
+        }
+        if (isLiveBrokerFill(order, true)) {
+            return true;
+        }
+        // MIS round-trip: entry fills then square-off closes position — Kite COMPLETE on both legs is sufficient.
+        if (run != null && "COMPLETED".equalsIgnoreCase(run.getSquareOffStatus())) {
+            boolean entryComplete = isKiteOrderComplete(order.getUserId(), order.getBrokerExternalOrderId());
+            if (!entryComplete) {
+                return false;
+            }
+            if (run.getSquareOffOrderId() == null) {
+                return true;
+            }
+            return omsOrderRepository.findById(run.getSquareOffOrderId())
+                    .map(exit -> isKiteOrderComplete(exit.getUserId(), exit.getBrokerExternalOrderId()))
+                    .orElse(false);
+        }
+        return false;
+    }
+
+    private boolean isKiteOrderComplete(UUID userId, String kiteOrderId) {
+        if (userId == null || kiteOrderId == null || kiteOrderId.isBlank()) {
+            return false;
+        }
+        try {
+            return zerodhaBrokerOperationsService.recentOrders(userId, 300).stream()
+                    .filter(o -> kiteOrderId.equals(o.orderId()))
+                    .anyMatch(o -> {
+                        String status = o.status() != null ? o.status().trim().toUpperCase() : "";
+                        return "COMPLETE".equals(status) || "COMPLETED".equals(status);
+                    });
+        } catch (Exception ex) {
+            log.debug("test.lab.kite_status_check_failed userId={} kiteOrderId={} {}", userId, kiteOrderId, ex.getMessage());
+            return false;
+        }
     }
 
     private StrategySignalEntity previewSignal(TestSignalLabRequest request, UUID traderUserId, String strategyKey) {

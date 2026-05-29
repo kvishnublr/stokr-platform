@@ -26,7 +26,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -114,6 +116,82 @@ public class LiveBrokerFillSyncService {
             }
         }
         return updated;
+    }
+
+    /**
+     * Reconcile a single LIVE order from Kite order book — includes test-lab orders excluded from scheduled sync.
+     */
+    @Transactional
+    public boolean syncOrder(UUID orderId) {
+        if (orderId == null) {
+            return false;
+        }
+        OmsOrder order = orderRepository.findById(orderId).orElse(null);
+        if (order == null || !isSyncEligible(order)) {
+            return false;
+        }
+        if (order.getState() == OrderState.FILLED) {
+            return false;
+        }
+        List<ZerodhaBrokerOperationsService.BrokerOpenOrderDto> kiteOrders;
+        try {
+            kiteOrders = zerodhaBrokerOperationsService.recentOrders(order.getUserId(), 300);
+        } catch (Exception ex) {
+            log.debug("broker.fill_sync.kite_fetch_failed orderId={} {}", orderId, ex.getMessage());
+            return false;
+        }
+        Map<String, ZerodhaBrokerOperationsService.BrokerOpenOrderDto> byKiteId = kiteOrders.stream()
+                .filter(k -> k.orderId() != null)
+                .collect(Collectors.toMap(ZerodhaBrokerOperationsService.BrokerOpenOrderDto::orderId, k -> k, (a, b) -> a));
+        ZerodhaBrokerOperationsService.BrokerOpenOrderDto kite = byKiteId.get(order.getBrokerExternalOrderId());
+        if (kite == null) {
+            return false;
+        }
+        return applyBrokerStatus(order, kite);
+    }
+
+    /**
+     * Poll Kite and sync test-lab entry/exit legs until entry is FILLED or timeout.
+     * Test Signal Lab runs synchronously and cannot rely on the 15s scheduled fill sync cycle.
+     */
+    public void syncTestLabRunOrders(UUID userId, UUID entryOrderId, UUID exitOrderId, Duration timeout) {
+        if (userId == null || entryOrderId == null || timeout == null || timeout.isNegative() || timeout.isZero()) {
+            return;
+        }
+        List<UUID> legIds = new ArrayList<>();
+        legIds.add(entryOrderId);
+        if (exitOrderId != null) {
+            legIds.add(exitOrderId);
+        }
+        Instant until = Instant.now().plus(timeout);
+        while (Instant.now().isBefore(until)) {
+            for (UUID legId : legIds) {
+                syncOrder(legId);
+            }
+            OmsOrder entry = orderRepository.findById(entryOrderId).orElse(null);
+            if (entry != null && (entry.getState() == OrderState.FILLED || entry.getState() == OrderState.PARTIALLY_FILLED)) {
+                log.info("broker.fill_sync.test_lab_done entryOrderId={} state={}", entryOrderId, entry.getState());
+                return;
+            }
+            try {
+                Thread.sleep(250);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        log.warn("broker.fill_sync.test_lab_timeout entryOrderId={} exitOrderId={} timeoutMs={}",
+                entryOrderId, exitOrderId, timeout.toMillis());
+    }
+
+    private static boolean isSyncEligible(OmsOrder order) {
+        if (!SYNC_STATES.contains(order.getState())) {
+            return false;
+        }
+        if (order.getBrokerExternalOrderId() == null || order.getBrokerExternalOrderId().isBlank()) {
+            return false;
+        }
+        return "ZERODHA".equalsIgnoreCase(order.getBrokerVendor());
     }
 
     private boolean applyBrokerStatus(OmsOrder order, ZerodhaBrokerOperationsService.BrokerOpenOrderDto kite) {
