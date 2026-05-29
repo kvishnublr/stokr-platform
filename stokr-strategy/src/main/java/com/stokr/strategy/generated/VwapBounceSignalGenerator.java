@@ -8,6 +8,7 @@ import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.telemetry.StrategyGateTelemetry;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +61,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
 
     private final StrategyGeneratorIntegrityGate integrityGate;
     private final OrderBookPressureTracker pressureTracker;
+    private final StrategyGateTelemetry gateTelemetry;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -157,13 +159,23 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
 
         // 4. VWAP TOUCH
         double distPct = Math.abs(currentPrice - currentVwap) / currentVwap * 100;
-        if (distPct > touchThresholdPct) return hold(context);
+        if (distPct > touchThresholdPct) {
+            if (distPct <= touchThresholdPct * 2.5) {
+                gateTelemetry.infoNearMiss(key(), symbol, "VWAP_NOT_TOUCHING",
+                        "dist=%.3f%% need<=%.2f%% vwap=%.2f price=%.2f", distPct, touchThresholdPct, currentVwap, currentPrice);
+            }
+            return hold(context);
+        }
 
         // 5. VWAP SLOPE — must be clearly trending
         int slopeWindow = Math.min(15, lastIdx);
         double prevVwap = vwapArr[lastIdx - slopeWindow];
         double slopePct = (currentVwap - prevVwap) / prevVwap * 100;
-        if (Math.abs(slopePct) < minSlopePct * slopeWindow) return hold(context);
+        if (Math.abs(slopePct) < minSlopePct * slopeWindow) {
+            gateTelemetry.infoNearMiss(key(), symbol, "VWAP_SLOPE_FLAT",
+                    "slope=%.4f%% need|slope|>=%.4f%% window=%d", slopePct, minSlopePct * slopeWindow, slopeWindow);
+            return hold(context);
+        }
 
         boolean isUptrend = slopePct > 0;
 
@@ -198,11 +210,19 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
             bounceConfirmed = curClose < curOpen && prevClose < prevOpen
                     && (currentVwap - curClose) / currentVwap * 100 >= bounceConfirmPct;
         }
-        if (!bounceConfirmed) return hold(context);
+        if (!bounceConfirmed) {
+            gateTelemetry.infoNearMiss(key(), symbol, "BOUNCE_NOT_CONFIRMED",
+                    "uptrend=%s dist=%.3f%%", isUptrend, distPct);
+            return hold(context);
+        }
 
         // 9. VOLUME
         double avgVol = totalVol / (lastIdx + 1);
-        if (avgVol > 0 && currentVolume / avgVol < minVolumeMultiple) return hold(context);
+        if (avgVol > 0 && currentVolume / avgVol < minVolumeMultiple) {
+            gateTelemetry.infoNearMiss(key(), symbol, "VOLUME_LOW",
+                    "volMult=%.2f need>=%.2f", currentVolume / avgVol, minVolumeMultiple);
+            return hold(context);
+        }
 
         // 10. WAS AWAY FROM VWAP (confirms bounce, not lingering)
         boolean wasAway = false;
@@ -211,7 +231,11 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
             double d = Math.abs(prc - vwapArr[i]) / vwapArr[i] * 100;
             if (d > touchThresholdPct * 2.5) { wasAway = true; break; }
         }
-        if (!wasAway) return hold(context);
+        if (!wasAway) {
+            gateTelemetry.infoNearMiss(key(), symbol, "NOT_AWAY_FROM_VWAP",
+                    "price lingering near vwap (dist=%.3f%%)", distPct);
+            return hold(context);
+        }
 
         // 11. COOLDOWN
         Instant now = context.asOf() != null ? context.asOf() : Instant.now();

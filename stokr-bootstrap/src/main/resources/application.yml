@@ -201,6 +201,9 @@ stokr:
     safe-startup:
       enabled: ${STOKR_SAFE_STARTUP_ENABLED:true}
       min-warmup-seconds: ${STOKR_SAFE_STARTUP_WARMUP_SEC:120}
+    gate-telemetry:
+      enabled: ${STOKR_STRATEGY_GATE_TELEMETRY_ENABLED:false}
+      min-interval-seconds: ${STOKR_STRATEGY_GATE_TELEMETRY_INTERVAL_SEC:60}
     session-summary:
       cron: ${STOKR_SESSION_SUMMARY_CRON:0 35 15 * * MON-FRI}
     lifecycle:

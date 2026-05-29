@@ -9,6 +9,7 @@ import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
 import com.stokr.strategy.service.StrategyMarketIndicatorService;
+import com.stokr.strategy.telemetry.StrategyGateTelemetry;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -151,6 +152,7 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
     private final OrderBookPressureTracker pressureTracker;
     private final StrategyGeneratorIntegrityGate integrityGate;
     private final StrategyMarketIndicatorService marketIndicatorService;
+    private final StrategyGateTelemetry gateTelemetry;
 
     // Dedup: per symbol+direction, track last emit time
     private final ConcurrentHashMap<String, Instant> lastEmitByKey = new ConcurrentHashMap<>();
@@ -179,12 +181,17 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
         }
         int currentMin = now.getHour() * 60 + now.getMinute();
         if (currentMin < TIME_START_MIN || currentMin > TIME_END_MIN) {
+            gateTelemetry.infoThrottled(key(), "TIME_WINDOW",
+                    "now=%02d:%02d outside 10:15-13:45 IST", now.getHour(), now.getMinute());
             return hold(context);
         }
 
         // ─── GATE: VIX BLOCK — NOW REAL from StrategyMarketIndicatorService ───
         double vix = marketIndicatorService.getVix(asOf);
+        double pcrPreview = marketIndicatorService.getPcr(asOf);
         if (vix >= VIX_BLOCK_ABOVE) {
+            gateTelemetry.infoThrottled(key(), "VIX_BLOCK",
+                    "vix=%.2f >= %.1f pcr=%.2f", vix, VIX_BLOCK_ABOVE, pcrPreview);
             return hold(context);
         }
 
@@ -192,6 +199,8 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
         var barsOpt = integrityGate.sessionBars(
                 key(), symbol, TIMEFRAME, BARS_FETCH, TREND_LOOKBACK_BARS, LookbackWindow.THIRTY_MINUTE, context);
         if (barsOpt.isEmpty()) {
+            gateTelemetry.infoThrottled(key(), "NO_OPTION_BARS",
+                    "symbol=%s has no session 1m bars", symbol);
             return hold(context);
         }
         List<MarketdataCandle> bars = barsOpt.get();
@@ -231,6 +240,10 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
         double chgLo = CHG_MIN_PCT;
         double chgHi = CHG_MAX_PCT;
         if (Math.abs(chg) < chgLo || Math.abs(chg) > chgHi) {
+            if (Math.abs(chg) >= chgLo * 0.5) {
+                gateTelemetry.infoNearMiss(key(), symbol, "CHG5M_BAND",
+                        "chg5m=%.3f%% need %.3f-%.2f%% vix=%.1f", chg, chgLo, chgHi, vix);
+            }
             return hold(context);
         }
         boolean isCe = chg > 0;
@@ -408,6 +421,8 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
 
         // Quality floor check
         if (quality < QUALITY_FLOOR) {
+            gateTelemetry.infoNearMiss(key(), symbol, "QUALITY_FLOOR",
+                    "quality=%d need>=%d chg5m=%.3f%% pcr=%.2f vix=%.1f", quality, QUALITY_FLOOR, chg, pcr, vix);
             return hold(context);
         }
 

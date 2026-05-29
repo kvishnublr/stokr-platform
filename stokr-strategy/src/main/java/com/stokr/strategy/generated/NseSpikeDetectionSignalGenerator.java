@@ -9,6 +9,7 @@ import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.telemetry.StrategyGateTelemetry;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -71,6 +72,7 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
 
     private final OrderBookPressureTracker pressureTracker;
     private final StrategyGeneratorIntegrityGate integrityGate;
+    private final StrategyGateTelemetry gateTelemetry;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -194,7 +196,8 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         boolean pressureBuy;
 
         if (snapshot == null || pressureAnalysis == null) {
-            // No pressure data = no signal (V3.5: NO FALLBACK. Pressure is mandatory.)
+            gateTelemetry.infoNearMiss(key(), symbol, "NO_PRESSURE_DATA",
+                    "snapshot=%s analysis=%s", snapshot != null, pressureAnalysis != null);
             return hold(context);
         }
 
@@ -235,6 +238,9 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
 
         // HARD GATE: raised from 40 → 55
         if (imbalanceScore < 55) {
+            gateTelemetry.infoNearMiss(key(), symbol, "IMBALANCE_GATE",
+                    "imbScore=%.0f need>=55 ratio=%.2f consist=%.0f%%",
+                    imbalanceScore, ratio, consistency * 100);
             return hold(context);
         }
 
@@ -304,6 +310,12 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
                     String.format("%.0f", momentumScore),
                     String.format("%.0f", volumeAccelScore),
                     String.format("%.0f", barQualityScore));
+            if (compositeScore >= minCompositeScore - 12) {
+                gateTelemetry.infoNearMiss(key(), symbol, "COMPOSITE_LOW",
+                        "score=%.1f need>=%.0f [nifty=%.0f imb=%.0f mom=%.0f vol=%.0f bar=%.0f]",
+                        compositeScore, minCompositeScore,
+                        niftyComponent, imbalanceScore, momentumScore, volumeAccelScore, barQualityScore);
+            }
             return hold(context);
         }
 

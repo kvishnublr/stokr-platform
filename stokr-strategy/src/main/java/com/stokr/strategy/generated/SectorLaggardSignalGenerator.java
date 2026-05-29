@@ -8,6 +8,7 @@ import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.telemetry.StrategyGateTelemetry;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +61,7 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
 
     private final OrderBookPressureTracker pressureTracker;
     private final StrategyGeneratorIntegrityGate integrityGate;
+    private final StrategyGateTelemetry gateTelemetry;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -137,7 +139,11 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
 
         double sectorMovePct = (indexNow - indexPrev) / indexPrev * 100.0;
         double absSectorMove = Math.abs(sectorMovePct);
-        if (absSectorMove < minSectorMovePct) return hold(context);
+        if (absSectorMove < minSectorMovePct) {
+            gateTelemetry.infoThrottled(key(), "SECTOR_MOVE_LOW",
+                    "sector30m=%+.3f%% need|move|>=%.2f%% (NIFTY 50)", sectorMovePct, minSectorMovePct);
+            return hold(context);
+        }
 
         boolean sectorBullish = sectorMovePct > 0;
 
@@ -154,13 +160,23 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
         if (sectorBullish) {
             divergence = sectorMovePct - stockMovePct;
             if (stockMovePct < -maxCounterMovePct) return hold(context); // Stock-specific selling
-            if (divergence < minDivergencePct) return hold(context);
+            if (divergence < minDivergencePct) {
+                gateTelemetry.infoNearMiss(key(), symbol, "DIVERGENCE_LOW",
+                        "sector=%+.2f%% stock=%+.2f%% divergence=%.2f%% need>=%.2f%%",
+                        sectorMovePct, stockMovePct, divergence, minDivergencePct);
+                return hold(context);
+            }
             signalType = SignalType.BUY;
         } else {
             // V2: Bearish laggard — stock hasn't fallen as much as sector → SHORT it
             divergence = stockMovePct - sectorMovePct; // positive = stock lagging the selloff
             if (stockMovePct > maxCounterMovePct) return hold(context); // Stock-specific buying
-            if (divergence < minDivergencePct) return hold(context);
+            if (divergence < minDivergencePct) {
+                gateTelemetry.infoNearMiss(key(), symbol, "DIVERGENCE_LOW",
+                        "sector=%+.2f%% stock=%+.2f%% divergence=%.2f%% need>=%.2f%%",
+                        sectorMovePct, stockMovePct, divergence, minDivergencePct);
+                return hold(context);
+            }
             signalType = SignalType.SELL;
         }
 
