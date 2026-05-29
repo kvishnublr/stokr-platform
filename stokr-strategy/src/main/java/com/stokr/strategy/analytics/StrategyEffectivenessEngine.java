@@ -34,12 +34,17 @@ public class StrategyEffectivenessEngine {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final StrategyEffectivenessRepository repository;
+    private final AlphaValidationEngine alphaValidationEngine;
 
     @Value("${stokr.analytics.v8-cutoff-instant:2026-05-29T17:35:00Z}")
     private Instant defaultV8Cutoff;
 
-    public StrategyEffectivenessEngine(StrategyEffectivenessRepository repository) {
+    public StrategyEffectivenessEngine(
+            StrategyEffectivenessRepository repository,
+            AlphaValidationEngine alphaValidationEngine
+    ) {
         this.repository = repository;
+        this.alphaValidationEngine = alphaValidationEngine;
     }
 
     public StrategyEffectivenessReport buildReport(LocalDate fromDate, LocalDate toDate, Instant v8CutoffOverride) {
@@ -67,6 +72,8 @@ public class StrategyEffectivenessEngine {
         List<StrategyLeaderboardEntry> leaderboard = buildLeaderboard(scorecards, protection);
         List<LiveReadiness> readiness = buildReadiness(scorecards, leaderboard);
         V8Comparison v8 = buildV8Comparison(repository.periodComparison(fromInstant, toExclusive, v8Cutoff));
+        AlphaValidationEngine.AlphaValidationReport alphaValidation =
+                alphaValidationEngine.buildReport(from, to, v8Cutoff);
 
         return new StrategyEffectivenessReport(
                 from.toString(),
@@ -78,8 +85,20 @@ public class StrategyEffectivenessEngine {
                 confidenceByStrategy,
                 protection,
                 readiness,
-                v8
+                v8,
+                alphaValidation
         );
+    }
+
+    public AlphaValidationEngine.AlphaValidationReport buildAlphaValidationReport(
+            LocalDate fromDate,
+            LocalDate toDate,
+            Instant v8CutoffOverride
+    ) {
+        LocalDate from = fromDate != null ? fromDate : LocalDate.now(IST).minusDays(30);
+        LocalDate to = toDate != null ? toDate : LocalDate.now(IST);
+        Instant v8Cutoff = v8CutoffOverride != null ? v8CutoffOverride : defaultV8Cutoff;
+        return alphaValidationEngine.buildReport(from, to, v8Cutoff);
     }
 
     private Map<String, Long> mapRejections(List<Object[]> rows) {
@@ -358,7 +377,8 @@ public class StrategyEffectivenessEngine {
             Map<String, List<ConfidenceBucket>> confidenceByStrategy,
             Map<String, ProtectionImpact> protectionByStrategy,
             List<LiveReadiness> liveReadiness,
-            V8Comparison v8Comparison
+            V8Comparison v8Comparison,
+            AlphaValidationEngine.AlphaValidationReport alphaValidation
     ) {
     }
 

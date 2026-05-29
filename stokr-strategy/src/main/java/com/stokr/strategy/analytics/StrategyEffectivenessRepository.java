@@ -200,4 +200,155 @@ public class StrategyEffectivenessRepository {
         q.setParameter("v8Cutoff", v8Cutoff);
         return (Object[]) q.getSingleResult();
     }
+
+    @SuppressWarnings("unchecked")
+    public List<Object[]> alphaAttributionByStrategy(Instant from, Instant toExclusive) {
+        String sql = """
+                SELECT
+                    COALESCE(s.strategy_name, 'UNKNOWN'),
+                    COUNT(*)::bigint,
+                    COUNT(DISTINCT o.id) FILTER (
+                        WHERE o.id IS NOT NULL AND o.deleted = FALSE
+                          AND o.state IN ('FILLED', 'PARTIALLY_FILLED', 'EXIT_FILLED')
+                    )::bigint,
+                    COUNT(*) FILTER (WHERE s.outcome_status = 'TARGET_HIT')::bigint,
+                    COUNT(*) FILTER (WHERE s.outcome_status IN ('STOPLOSS_HIT', 'SL_HIT'))::bigint,
+                    COUNT(*) FILTER (WHERE s.outcome_status IN (
+                        'PRESSURE_EXIT', 'LIQUIDITY_PROTECTION', 'BREAKEVEN_EXIT', 'FEED_PROTECTION'))::bigint,
+                    AVG(EXTRACT(EPOCH FROM (COALESCE(s.outcome_time, s.updated_at) - s.created_at)))
+                        FILTER (WHERE s.outcome_status NOT IN ('PENDING', 'RUNNING')) AS avg_hold_sec,
+                    AVG(s.confidence_score) FILTER (WHERE s.confidence_score IS NOT NULL),
+                    AVG(s.probability) FILTER (WHERE s.probability IS NOT NULL),
+                    COALESCE(SUM(s.realized_pnl), 0),
+                    COALESCE(SUM(
+                        CASE
+                            WHEN s.realized_pnl IS NOT NULL THEN s.realized_pnl
+                            WHEN s.outcome_status = 'TARGET_HIT'
+                                 AND s.entry_price IS NOT NULL AND s.target_price IS NOT NULL THEN
+                                (CASE WHEN s.signal_type = 'BUY'
+                                      THEN s.target_price - s.entry_price
+                                      ELSE s.entry_price - s.target_price END)
+                                * COALESCE(s.suggested_qty, 1)
+                            WHEN s.outcome_status IN ('STOPLOSS_HIT', 'SL_HIT')
+                                 AND s.entry_price IS NOT NULL AND s.stop_price IS NOT NULL THEN
+                                (CASE WHEN s.signal_type = 'BUY'
+                                      THEN s.stop_price - s.entry_price
+                                      ELSE s.entry_price - s.stop_price END)
+                                * COALESCE(s.suggested_qty, 1)
+                            ELSE 0
+                        END
+                    ), 0),
+                    AVG(s.realized_pnl) FILTER (WHERE s.realized_pnl IS NOT NULL),
+                    COALESCE(SUM(s.realized_pnl) FILTER (WHERE s.realized_pnl > 0), 0),
+                    COALESCE(SUM(ABS(s.realized_pnl)) FILTER (WHERE s.realized_pnl < 0), 0)
+                FROM strategy_signals s
+                LEFT JOIN oms_orders o ON o.signal_id = s.id
+                WHERE """ + PRODUCTION_FILTER + """
+                  AND s.created_at >= :from
+                  AND s.created_at < :toExclusive
+                GROUP BY s.strategy_name
+                ORDER BY COUNT(*) DESC
+                """;
+        Query q = entityManager.createNativeQuery(sql);
+        q.setParameter("from", from);
+        q.setParameter("toExclusive", toExclusive);
+        return q.getResultList();
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<Object[]> protectionRemovalByStrategy(Instant from, Instant toExclusive) {
+        String protectedFilter =
+                "s.outcome_status IN ('PRESSURE_EXIT', 'LIQUIDITY_PROTECTION', 'BREAKEVEN_EXIT', 'FEED_PROTECTION')";
+        String wouldTarget =
+                "(s.hit_target = TRUE OR (s.entry_price IS NOT NULL AND s.target_price IS NOT NULL "
+                        + "AND s.max_favorable_excursion IS NOT NULL "
+                        + "AND s.max_favorable_excursion >= ABS(s.target_price - s.entry_price)))";
+        String wouldStop =
+                "(s.hit_stoploss = TRUE OR (s.entry_price IS NOT NULL AND s.stop_price IS NOT NULL "
+                        + "AND s.max_adverse_excursion IS NOT NULL "
+                        + "AND s.max_adverse_excursion >= ABS(s.entry_price - s.stop_price)))";
+        String sql =
+                "SELECT COALESCE(s.strategy_name, 'UNKNOWN'), "
+                        + "COUNT(*) FILTER (WHERE " + protectedFilter + ")::bigint, "
+                        + "COUNT(*) FILTER (WHERE " + protectedFilter + " AND " + wouldTarget + ")::bigint, "
+                        + "COUNT(*) FILTER (WHERE " + protectedFilter + " AND " + wouldStop + ")::bigint, "
+                        + "COUNT(*) FILTER (WHERE " + protectedFilter + " AND NOT (" + wouldTarget + ") AND NOT ("
+                        + wouldStop + "))::bigint, "
+                        + "COUNT(*) FILTER (WHERE " + protectedFilter
+                        + " AND s.realized_pnl IS NOT NULL AND s.realized_pnl > 0)::bigint, "
+                        + "COUNT(*) FILTER (WHERE " + protectedFilter
+                        + " AND s.realized_pnl IS NOT NULL AND s.realized_pnl < 0)::bigint, "
+                        + "COALESCE(SUM(CASE WHEN " + protectedFilter + " AND " + wouldTarget
+                        + " AND s.entry_price IS NOT NULL AND s.target_price IS NOT NULL "
+                        + "THEN ABS(s.target_price - s.entry_price) * COALESCE(s.suggested_qty, 1) ELSE 0 END), 0), "
+                        + "COALESCE(SUM(CASE WHEN " + protectedFilter + " AND " + wouldStop
+                        + " AND s.entry_price IS NOT NULL AND s.stop_price IS NOT NULL "
+                        + "THEN ABS(s.entry_price - s.stop_price) * COALESCE(s.suggested_qty, 1) ELSE 0 END), 0) "
+                        + "FROM strategy_signals s WHERE " + PRODUCTION_FILTER
+                        + " AND s.created_at >= :from AND s.created_at < :toExclusive "
+                        + "GROUP BY s.strategy_name HAVING COUNT(*) FILTER (WHERE " + protectedFilter + ") > 0 "
+                        + "ORDER BY COUNT(*) FILTER (WHERE " + protectedFilter + ") DESC";
+        Query q = entityManager.createNativeQuery(sql);
+        q.setParameter("from", from);
+        q.setParameter("toExclusive", toExclusive);
+        return q.getResultList();
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<Object[]> confidenceValidationBuckets(Instant from, Instant toExclusive, String strategyName) {
+        return confidenceValidationQuery(from, toExclusive, strategyName, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<Object[]> confidenceValidationBucketsPostV8(Instant from, Instant toExclusive, Instant v8Cutoff) {
+        return confidenceValidationQuery(from, toExclusive, null, v8Cutoff);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object[]> confidenceValidationQuery(
+            Instant from,
+            Instant toExclusive,
+            String strategyName,
+            Instant v8Cutoff
+    ) {
+        String strategyFilter = strategyName == null || strategyName.isBlank()
+                ? "" : " AND upper(s.strategy_name) = upper(:strategyName) ";
+        String v8Filter = v8Cutoff == null ? "" : " AND s.created_at >= :v8Cutoff AND s.confidence_version = 'CONFIDENCE_V2' ";
+        String sql = """
+                SELECT
+                    CASE
+                        WHEN s.confidence_score IS NULL THEN 'NULL'
+                        WHEN s.confidence_score * 100 <= 20 THEN '0-20'
+                        WHEN s.confidence_score * 100 <= 40 THEN '21-40'
+                        WHEN s.confidence_score * 100 <= 60 THEN '41-60'
+                        WHEN s.confidence_score * 100 <= 80 THEN '61-80'
+                        ELSE '81-100'
+                    END AS bucket,
+                    COUNT(*)::bigint,
+                    COUNT(*) FILTER (WHERE s.realized_pnl > 0)::bigint,
+                    COUNT(*) FILTER (WHERE s.realized_pnl < 0)::bigint,
+                    COUNT(*) FILTER (WHERE s.outcome_status = 'TARGET_HIT')::bigint,
+                    COUNT(*) FILTER (WHERE s.outcome_status IN ('STOPLOSS_HIT', 'SL_HIT'))::bigint,
+                    COALESCE(SUM(s.realized_pnl) FILTER (WHERE s.realized_pnl > 0), 0),
+                    COALESCE(SUM(ABS(s.realized_pnl)) FILTER (WHERE s.realized_pnl < 0), 0),
+                    AVG(s.realized_pnl) FILTER (WHERE s.realized_pnl IS NOT NULL)
+                FROM strategy_signals s
+                WHERE """ + PRODUCTION_FILTER + """
+                  AND s.created_at >= :from
+                  AND s.created_at < :toExclusive
+                """ + strategyFilter + v8Filter + """
+                GROUP BY 1
+                ORDER BY 1
+                """;
+        Query q = entityManager.createNativeQuery(sql);
+        q.setParameter("from", from);
+        q.setParameter("toExclusive", toExclusive);
+        if (strategyName != null && !strategyName.isBlank()) {
+            q.setParameter("strategyName", strategyName.trim());
+        }
+        if (v8Cutoff != null) {
+            q.setParameter("v8Cutoff", v8Cutoff);
+        }
+        return q.getResultList();
+    }
 }

@@ -3,6 +3,7 @@ package com.stokr.admin.web;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.strategy.analytics.StrategyEffectivenessEngine;
+import com.stokr.strategy.analytics.AlphaValidationEngine.AlphaValidationReport;
 import com.stokr.strategy.analytics.StrategyEffectivenessEngine.StrategyEffectivenessReport;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,5 +35,15 @@ public class AdminStrategyEffectivenessController {
             @RequestParam(required = false) Instant v8Cutoff
     ) {
         return ApiResponse.ok(effectivenessEngine.buildReport(from, to, v8Cutoff), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/alpha-validation")
+    @Operation(summary = "V8 alpha validation sprint — attribution, protection removal, capital tiers (production data)")
+    public ApiResponse<AlphaValidationReport> alphaValidation(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) Instant v8Cutoff
+    ) {
+        return ApiResponse.ok(effectivenessEngine.buildAlphaValidationReport(from, to, v8Cutoff), CorrelationIdHolder.get());
     }
 }
