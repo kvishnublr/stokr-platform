@@ -102,11 +102,24 @@ def main():
     except Exception as ex:
         report["stages"]["7_admin_strategy"] = {"error": str(ex)}
 
-    git_sha = ssh_sql("cd /opt/stokr/stokr-platform && git log -1 --oneline;")
-    report["prod_git"] = git_sha.strip()
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(HOST, username=USER, password=PWD, timeout=30)
+    _, stdout, _ = client.exec_command(
+        f"cd {BASE} && git log -1 --oneline && curl -sf http://localhost:8080/actuator/health | head -c 500",
+        timeout=60,
+    )
+    shell_out = stdout.read().decode(errors="replace").strip()
+    client.close()
+    report["prod_git_health"] = shell_out
 
-    health = ssh_sql("curl -sf http://localhost:8080/actuator/health 2>/dev/null | head -c 500;")
-    report["health"] = health.strip()
+    post_deploy = ssh_sql(
+        "SELECT COUNT(*)::text, COUNT(*) FILTER (WHERE confidence_version='CONFIDENCE_V2')::text, "
+        "COUNT(*) FILTER (WHERE confidence_score IS NULL)::text "
+        "FROM strategy_signals WHERE deleted=false AND signal_source IN ('LIVE','PAPER') "
+        "AND created_at > NOW() - INTERVAL '30 minutes';"
+    )
+    report["stages"]["post_deploy_30m"] = post_deploy.strip()
 
     print(json.dumps(report, indent=2))
 

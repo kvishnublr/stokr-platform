@@ -35,9 +35,13 @@ export function AdminProtectionDiagnosticsPage() {
   const d = q.data;
 
   return (
-    <AdminPageShell title="Protection Diagnostics" subtitle="Persisted exit telemetry — volume vacuum and min-hold gates">
-      <AdminSection title="Summary">
-        <AdminPanel>
+    <AdminPageShell
+      isLight={isLight}
+      title="Protection Diagnostics"
+      subtitle="Persisted exit telemetry — volume vacuum and min-hold gates"
+    >
+      <AdminSection isLight={isLight} title="Summary">
+        <AdminPanel isLight={isLight}>
           {q.isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
           {d && (
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -63,14 +67,14 @@ export function AdminProtectionDiagnosticsPage() {
         </AdminPanel>
       </AdminSection>
       {d?.exitsByCategory && (
-        <AdminSection title="By category">
-          <AdminPanel>
+        <AdminSection isLight={isLight} title="By category">
+          <AdminPanel isLight={isLight}>
             <pre className="overflow-auto text-xs">{JSON.stringify(d.exitsByCategory, null, 2)}</pre>
           </AdminPanel>
         </AdminSection>
       )}
-      <AdminSection title="Recent exits">
-        <AdminPanel>
+      <AdminSection isLight={isLight} title="Recent exits">
+        <AdminPanel isLight={isLight}>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
