@@ -1,5 +1,6 @@
 package com.stokr.strategy.operational;
 
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.marketdata.integrity.MarketDataIntegrityService;
 import com.stokr.marketdata.monitor.FeedHealthMonitorService;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
@@ -34,6 +35,7 @@ public class TradingSafeStartupGateService {
     private final MarketDataIntegrityService integrityService;
     private final MarketdataCandleRepository candleRepository;
     private final FeedHealthMonitorService feedHealthMonitorService;
+    private final SimulationModeService simulationModeService;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
@@ -57,6 +59,9 @@ public class TradingSafeStartupGateService {
     }
 
     public boolean isTradingReady(Instant now) {
+        if (simulationModeService.bypassSafeStartup()) {
+            return true;
+        }
         if (!enabled) {
             return true;
         }

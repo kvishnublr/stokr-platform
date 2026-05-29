@@ -1,5 +1,7 @@
 package com.stokr.strategy.analytics;
 
+import com.stokr.common.simulation.AnalyticsDataScope;
+import com.stokr.common.simulation.SimulationAnalyticsFilters;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
@@ -11,18 +13,19 @@ import java.util.List;
 @Repository
 public class StrategyEffectivenessRepository {
 
-    private static final String PRODUCTION_FILTER = """
-            s.deleted = FALSE
-            AND s.is_test_trade = FALSE
-            AND s.backtest_run_id IS NULL
-            AND (s.signal_source IS NULL OR s.signal_source IN ('LIVE', 'PAPER'))
-            """;
+    private static String signalScopeFilter(AnalyticsDataScope scope) {
+        return "s.deleted = FALSE AND " + SimulationAnalyticsFilters.signalScopeFilter(scope);
+    }
 
     @PersistenceContext
     private EntityManager entityManager;
 
     @SuppressWarnings("unchecked")
     public List<Object[]> scorecardByStrategy(Instant from, Instant toExclusive) {
+        return scorecardByStrategy(from, toExclusive, AnalyticsDataScope.REAL);
+    }
+
+    public List<Object[]> scorecardByStrategy(Instant from, Instant toExclusive, AnalyticsDataScope scope) {
         String sql = """
                 SELECT
                     COALESCE(s.strategy_name, 'UNKNOWN') AS strategy_name,
@@ -64,7 +67,7 @@ public class StrategyEffectivenessRepository {
                     COUNT(*) FILTER (WHERE s.confidence_score IS NULL)::bigint AS confidence_null_count
                 FROM strategy_signals s
                 LEFT JOIN oms_orders o ON o.signal_id = s.id
-                WHERE """ + PRODUCTION_FILTER + """
+                WHERE """ + signalScopeFilter(scope) + """
                   AND s.created_at >= :from
                   AND s.created_at < :toExclusive
                 GROUP BY s.strategy_name
@@ -78,6 +81,11 @@ public class StrategyEffectivenessRepository {
 
     @SuppressWarnings("unchecked")
     public List<Object[]> rejectionsByStrategy(Instant from, Instant toExclusive) {
+        return rejectionsByStrategy(from, toExclusive, AnalyticsDataScope.REAL);
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<Object[]> rejectionsByStrategy(Instant from, Instant toExclusive, AnalyticsDataScope scope) {
         String sql = """
                 SELECT strategy_key, COUNT(*)::bigint
                 FROM signal_pipeline_audit
@@ -114,7 +122,7 @@ public class StrategyEffectivenessRepository {
                     COUNT(*) FILTER (WHERE s.outcome_status = 'TARGET_HIT')::bigint AS target_hits,
                     COUNT(*) FILTER (WHERE s.outcome_status IN ('STOPLOSS_HIT', 'SL_HIT'))::bigint AS sl_hits
                 FROM strategy_signals s
-                WHERE """ + PRODUCTION_FILTER + """
+                WHERE """ + signalScopeFilter(AnalyticsDataScope.REAL) + """
                   AND s.created_at >= :from
                   AND s.created_at < :toExclusive
                 """ + strategyFilter + """
@@ -154,7 +162,7 @@ public class StrategyEffectivenessRepository {
                                 AND s.max_adverse_excursion >= ABS(s.entry_price - s.stop_price))
                         ))::bigint AS would_have_hit_stop
                 FROM strategy_signals s
-                WHERE """ + PRODUCTION_FILTER + """
+                WHERE """ + signalScopeFilter(AnalyticsDataScope.REAL) + """
                   AND s.created_at >= :from
                   AND s.created_at < :toExclusive
                 GROUP BY s.strategy_name
@@ -190,7 +198,7 @@ public class StrategyEffectivenessRepository {
                     COUNT(*) FILTER (WHERE s.created_at < :v8Cutoff AND s.max_favorable_excursion IS NOT NULL)::bigint AS pre_mfe_tracked,
                     COUNT(*) FILTER (WHERE s.created_at >= :v8Cutoff AND s.max_favorable_excursion IS NOT NULL)::bigint AS post_mfe_tracked
                 FROM strategy_signals s
-                WHERE """ + PRODUCTION_FILTER + """
+                WHERE """ + signalScopeFilter(AnalyticsDataScope.REAL) + """
                   AND s.created_at >= :from
                   AND s.created_at < :toExclusive
                 """;
@@ -243,7 +251,7 @@ public class StrategyEffectivenessRepository {
                     COALESCE(SUM(ABS(s.realized_pnl)) FILTER (WHERE s.realized_pnl < 0), 0)
                 FROM strategy_signals s
                 LEFT JOIN oms_orders o ON o.signal_id = s.id
-                WHERE """ + PRODUCTION_FILTER + """
+                WHERE """ + signalScopeFilter(AnalyticsDataScope.REAL) + """
                   AND s.created_at >= :from
                   AND s.created_at < :toExclusive
                 GROUP BY s.strategy_name
@@ -284,7 +292,7 @@ public class StrategyEffectivenessRepository {
                         + "COALESCE(SUM(CASE WHEN " + protectedFilter + " AND " + wouldStop
                         + " AND s.entry_price IS NOT NULL AND s.stop_price IS NOT NULL "
                         + "THEN ABS(s.entry_price - s.stop_price) * COALESCE(s.suggested_qty, 1) ELSE 0 END), 0) "
-                        + "FROM strategy_signals s WHERE " + PRODUCTION_FILTER
+                        + "FROM strategy_signals s WHERE " + signalScopeFilter(AnalyticsDataScope.REAL)
                         + " AND s.created_at >= :from AND s.created_at < :toExclusive "
                         + "GROUP BY s.strategy_name HAVING COUNT(*) FILTER (WHERE " + protectedFilter + ") > 0 "
                         + "ORDER BY COUNT(*) FILTER (WHERE " + protectedFilter + ") DESC";
@@ -333,7 +341,7 @@ public class StrategyEffectivenessRepository {
                     COALESCE(SUM(ABS(s.realized_pnl)) FILTER (WHERE s.realized_pnl < 0), 0),
                     AVG(s.realized_pnl) FILTER (WHERE s.realized_pnl IS NOT NULL)
                 FROM strategy_signals s
-                WHERE """ + PRODUCTION_FILTER + """
+                WHERE """ + signalScopeFilter(AnalyticsDataScope.REAL) + """
                   AND s.created_at >= :from
                   AND s.created_at < :toExclusive
                 """ + strategyFilter + v8Filter + """

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.broker.api.BrokerAdapter;
 import com.stokr.broker.kite.ZerodhaKitePositionsParser;
 import com.stokr.broker.kite.ZerodhaKiteInstrumentResolver;
+import com.stokr.broker.safety.BrokerLiveOrderGuard;
 import com.stokr.broker.model.BrokerCredentials;
 import com.stokr.broker.model.BrokerOrderRequest;
 import com.stokr.broker.model.BrokerOrderResponse;
@@ -36,6 +37,7 @@ public class ZerodhaAdapter implements BrokerAdapter {
     private final ObjectMapper objectMapper;
     private final OutboundIpRestClientFactory ipClientFactory;
     private final ZerodhaKiteInstrumentResolver instrumentResolver;
+    private final BrokerLiveOrderGuard brokerLiveOrderGuard;
 
     @Override
     public String vendorCode() {
@@ -55,6 +57,7 @@ public class ZerodhaAdapter implements BrokerAdapter {
 
     @Override
     public BrokerOrderResponse placeOrder(BrokerOrderRequest request) {
+        brokerLiveOrderGuard.assertLiveOrderAllowed(vendorCode());
         String apiKey = request.apiKey();
         String accessToken = request.accessToken();
         if (apiKey == null || apiKey.isBlank() || accessToken == null || accessToken.isBlank()) {

@@ -71,6 +71,11 @@ public class ExecutionLedgerService {
         ex.setReferencePrice(referencePrice);
         ex.setReplaySource(replaySource);
         ex.setReplayRunId(replayRunId);
+        if (order.isSimulation()) {
+            ex.setSimulation(true);
+            ex.setSimulationRunId(order.getSimulationRunId());
+            ex.setSimulationScenario(order.getSimulationScenario());
+        }
         OmsExecution saved = executionRepository.save(ex);
 
         Map<String, Object> journal = new LinkedHashMap<>();

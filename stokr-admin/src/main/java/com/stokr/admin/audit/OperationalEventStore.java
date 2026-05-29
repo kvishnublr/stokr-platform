@@ -2,6 +2,7 @@ package com.stokr.admin.audit;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stokr.common.simulation.SimulationScenarioContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,13 @@ public class OperationalEventStore {
         row.setTopic(topic);
         row.setActor(actor);
         row.setTargetUserId(targetUserId);
+        if (SimulationScenarioContext.active()) {
+            row.setSimulation(true);
+            row.setSimulationRunId(SimulationScenarioContext.runId());
+            if (SimulationScenarioContext.scenario() != null) {
+                row.setSimulationScenario(SimulationScenarioContext.scenario().name());
+            }
+        }
         try {
             row.setPayloadJson(objectMapper.writeValueAsString(payload != null ? payload : Map.of()));
         } catch (JsonProcessingException e) {

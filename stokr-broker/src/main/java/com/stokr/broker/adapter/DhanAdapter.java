@@ -6,6 +6,8 @@ import com.stokr.broker.model.BrokerOrderRequest;
 import com.stokr.broker.model.BrokerOrderResponse;
 import com.stokr.broker.model.BrokerPosition;
 import com.stokr.broker.model.BrokerTick;
+import com.stokr.broker.safety.BrokerLiveOrderGuard;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Collections;
@@ -14,7 +16,10 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 @Component
+@RequiredArgsConstructor
 public class DhanAdapter implements BrokerAdapter {
+
+    private final BrokerLiveOrderGuard brokerLiveOrderGuard;
 
     @Override
     public String vendorCode() {
@@ -27,6 +32,7 @@ public class DhanAdapter implements BrokerAdapter {
 
     @Override
     public BrokerOrderResponse placeOrder(BrokerOrderRequest request) {
+        brokerLiveOrderGuard.assertLiveOrderAllowed(vendorCode());
         return new BrokerOrderResponse(UUID.randomUUID(), "ACCEPTED", request.symbol(), request.quantity());
     }
 

@@ -249,6 +249,14 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         keywords: ["test", "e2e"],
       },
       {
+        to: "/admin/market-simulation",
+        label: "Market Simulation",
+        description: "After-hours E2E harness, validation pack, simulation dashboard",
+        icon: Radar,
+        tier: "frequent",
+        keywords: ["simulation", "harness", "e2e", "validation"],
+      },
+      {
         to: "/admin/test-execution-monitor",
         label: "Test Monitor",
         description: "Telemetry for recent test signal runs",

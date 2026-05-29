@@ -4,6 +4,8 @@ import com.stokr.broker.api.BrokerAdapter;
 import com.stokr.broker.model.BrokerOrderRequest;
 import com.stokr.broker.model.BrokerOrderResponse;
 import com.stokr.broker.registry.BrokerAdapterRegistry;
+import com.stokr.broker.safety.BrokerLiveOrderGuard;
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.common.exception.ConflictException;
 import com.stokr.common.exception.NotFoundException;
@@ -36,6 +38,8 @@ public class OrderLifecycleService {
 
     private final OmsOrderRepository orderRepository;
     private final BrokerAdapterRegistry brokerAdapterRegistry;
+    private final SimulationModeService simulationModeService;
+    private final BrokerLiveOrderGuard brokerLiveOrderGuard;
 
     @Transactional
     public OmsOrder createOrGetIdempotent(UUID userId, String idempotencyKey, OmsOrder draft) {
@@ -111,7 +115,11 @@ public class OrderLifecycleService {
             throw new ConflictException("Order must be PENDING_SUBMISSION before broker submission");
         }
         OmsOrder submitted = transition(order.getId(), OrderState.SUBMITTED, null);
-        BrokerAdapter adapter = brokerAdapterRegistry.get(brokerVendor);
+        String effectiveVendor = simulationModeService.simulateBrokerExecution()
+                ? simulationModeService.brokerVendor()
+                : brokerVendor;
+        brokerLiveOrderGuard.assertLiveOrderAllowed(effectiveVendor);
+        BrokerAdapter adapter = brokerAdapterRegistry.get(effectiveVendor);
         BrokerOrderRequest req = new BrokerOrderRequest(
                 submitted.getSymbol(),
                 submitted.getSide(),
@@ -126,10 +134,18 @@ public class OrderLifecycleService {
         );
         try {
             BrokerOrderResponse res = adapter.placeOrder(req);
-            submitted.setBrokerVendor(brokerVendor);
+            submitted.setBrokerVendor(effectiveVendor);
             submitted.setBrokerOrderId(res.brokerOrderId());
             if (res.externalOrderId() != null && !res.externalOrderId().isBlank()) {
                 submitted.setBrokerExternalOrderId(res.externalOrderId().trim());
+            }
+            String status = res.status() != null ? res.status().trim().toUpperCase() : "";
+            if ("REJECTED".equals(status) || "CANCELLED".equals(status)) {
+                return transition(submitted.getId(), OrderState.FAILED, "BROKER_REJECTED: " + status);
+            }
+            if ("PARTIALLY_FILLED".equals(status)) {
+                submitted.setState(OrderState.PARTIALLY_FILLED);
+                return orderRepository.save(submitted);
             }
             return orderRepository.save(submitted);
         } catch (Exception ex) {
@@ -139,7 +155,7 @@ public class OrderLifecycleService {
                     ? ex.getMessage().substring(0, Math.min(ex.getMessage().length(), 450))
                     : "broker_error";
             log.error("broker.submit.failed orderId={} vendor={} reason={}",
-                    submitted.getId(), brokerVendor, reason);
+                    submitted.getId(), effectiveVendor, reason);
             return transition(submitted.getId(), OrderState.FAILED, "BROKER_REJECTED: " + reason);
         }
     }

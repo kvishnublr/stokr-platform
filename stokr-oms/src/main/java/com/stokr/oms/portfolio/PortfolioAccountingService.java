@@ -1,6 +1,7 @@
 package com.stokr.oms.portfolio;
 
 import com.stokr.oms.domain.OmsExecution;
+import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.PortfolioDailySummary;
 import com.stokr.oms.domain.PortfolioPnlSnapshot;
 import com.stokr.oms.domain.PortfolioPosition;
@@ -91,6 +92,12 @@ public class PortfolioAccountingService {
         pos.setMtmPrice(null);
         if (strategyKey != null) {
             pos.setStrategyKey(strategyKey);
+        }
+        if (!executions.isEmpty() && executions.get(0).getOrder().isSimulation()) {
+            OmsOrder ref = executions.get(0).getOrder();
+            pos.setSimulation(true);
+            pos.setSimulationRunId(ref.getSimulationRunId());
+            pos.setSimulationScenario(ref.getSimulationScenario());
         }
         positionRepository.save(pos);
     }

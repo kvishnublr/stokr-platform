@@ -11,6 +11,7 @@ import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.strategy.service.SignalEmissionGuardService;
 import com.stokr.strategy.service.SignalLifecycleService;
 import com.stokr.strategy.service.SignalPriceEnrichmentService;
@@ -58,6 +59,7 @@ public class StrategySignalPipelineService {
     private final SignalQualityGateService signalQualityGateService;
     private final StrategyDailySignalCapService dailySignalCapService;
     private final SignalPipelineAuditService signalPipelineAuditService;
+    private final SimulationModeService simulationModeService;
 
     @Value("${stokr.strategy.signal-session-guard.enabled:true}")
     private boolean signalSessionGuardEnabled;
@@ -133,7 +135,10 @@ public class StrategySignalPipelineService {
 
         Instant signalTime = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
         Instant sessionCheckTime = replaySignal ? signalTime : Instant.now();
-        if (signalSessionGuardEnabled && !Boolean.TRUE.equals(signal.getTestTrade()) && shouldDropOutsideSession(signal, sessionCheckTime)) {
+        if (!simulationModeService.bypassSessionGuard()
+                && signalSessionGuardEnabled
+                && !Boolean.TRUE.equals(signal.getTestTrade())
+                && shouldDropOutsideSession(signal, sessionCheckTime)) {
             log.info("signal.dropped_outside_session strategy={} symbol={} mode={} replay={}",
                     signal.getStrategyName(), signal.getSymbol(), executionMode, replaySignal);
             signalPipelineAuditService.recordRejection(

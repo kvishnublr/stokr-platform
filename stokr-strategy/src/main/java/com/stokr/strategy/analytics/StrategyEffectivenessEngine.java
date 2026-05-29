@@ -1,5 +1,6 @@
 package com.stokr.strategy.analytics;
 
+import com.stokr.common.simulation.AnalyticsDataScope;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -48,6 +49,16 @@ public class StrategyEffectivenessEngine {
     }
 
     public StrategyEffectivenessReport buildReport(LocalDate fromDate, LocalDate toDate, Instant v8CutoffOverride) {
+        return buildReport(fromDate, toDate, v8CutoffOverride, AnalyticsDataScope.REAL);
+    }
+
+    public StrategyEffectivenessReport buildReport(
+            LocalDate fromDate,
+            LocalDate toDate,
+            Instant v8CutoffOverride,
+            AnalyticsDataScope scope
+    ) {
+        AnalyticsDataScope dataScope = scope != null ? scope : AnalyticsDataScope.REAL;
         LocalDate from = fromDate != null ? fromDate : LocalDate.now(IST).minusDays(30);
         LocalDate to = toDate != null ? toDate : LocalDate.now(IST);
         if (to.isBefore(from)) {
@@ -59,7 +70,7 @@ public class StrategyEffectivenessEngine {
 
         Map<String, Long> rejections = mapRejections(repository.rejectionsByStrategy(fromInstant, toExclusive));
         List<StrategyScorecard> scorecards = buildScorecards(
-                repository.scorecardByStrategy(fromInstant, toExclusive), rejections);
+                repository.scorecardByStrategy(fromInstant, toExclusive, dataScope), rejections);
         Map<String, ProtectionImpact> protection = buildProtectionMap(
                 repository.protectionImpactByStrategy(fromInstant, toExclusive));
         List<ConfidenceBucket> globalConfidence = buildConfidenceBuckets(
@@ -73,12 +84,15 @@ public class StrategyEffectivenessEngine {
         List<LiveReadiness> readiness = buildReadiness(scorecards, leaderboard);
         V8Comparison v8 = buildV8Comparison(repository.periodComparison(fromInstant, toExclusive, v8Cutoff));
         AlphaValidationEngine.AlphaValidationReport alphaValidation =
-                alphaValidationEngine.buildReport(from, to, v8Cutoff);
+                dataScope == AnalyticsDataScope.REAL
+                        ? alphaValidationEngine.buildReport(from, to, v8Cutoff)
+                        : null;
 
         return new StrategyEffectivenessReport(
                 from.toString(),
                 to.toString(),
                 v8Cutoff.toString(),
+                dataScope.name(),
                 scorecards,
                 leaderboard,
                 globalConfidence,
@@ -371,6 +385,7 @@ public class StrategyEffectivenessEngine {
             String fromDate,
             String toDate,
             String v8CutoffInstant,
+            String dataScope,
             List<StrategyScorecard> scorecards,
             List<StrategyLeaderboardEntry> leaderboard,
             List<ConfidenceBucket> globalConfidenceBuckets,

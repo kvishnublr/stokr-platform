@@ -67,4 +67,14 @@ public class OmsExecution extends BaseEntity {
 
     @Column(name = "replay_run_id", updatable = false)
     private java.util.UUID replayRunId;
+
+    @Column(name = "is_simulation", nullable = false)
+    private boolean simulation;
+
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.UUID)
+    @Column(name = "simulation_run_id")
+    private java.util.UUID simulationRunId;
+
+    @Column(name = "simulation_scenario", length = 64)
+    private String simulationScenario;
 }

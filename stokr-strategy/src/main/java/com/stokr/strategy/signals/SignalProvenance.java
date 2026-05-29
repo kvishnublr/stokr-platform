@@ -8,7 +8,8 @@ public enum SignalProvenance {
     LIVE,
     PAPER,
     REPLAY,
-    LAB;
+    LAB,
+    SIMULATION;
 
     public boolean isProductionAnalytics() {
         return this == LIVE || this == PAPER;

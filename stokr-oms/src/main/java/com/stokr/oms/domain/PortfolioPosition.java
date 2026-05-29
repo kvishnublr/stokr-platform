@@ -39,4 +39,14 @@ public class PortfolioPosition extends BaseEntity {
 
     @Column(name = "strategy_key", length = 128)
     private String strategyKey;
+
+    @Column(name = "is_simulation", nullable = false)
+    private boolean simulation;
+
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.UUID)
+    @Column(name = "simulation_run_id")
+    private java.util.UUID simulationRunId;
+
+    @Column(name = "simulation_scenario", length = 64)
+    private String simulationScenario;
 }

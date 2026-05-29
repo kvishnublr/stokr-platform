@@ -378,6 +378,11 @@ public class OrderIntentProcessor {
         o.setBrokerVendor(mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM");
         o.setTestTrade(Boolean.TRUE.equals(signal.getTestTrade()));
         o.setTestRunId(signal.getTestRunId());
+        if (signal.isSimulation()) {
+            o.setSimulation(true);
+            o.setSimulationRunId(signal.getSimulationRunId());
+            o.setSimulationScenario(signal.getSimulationScenario());
+        }
         return o;
     }
 

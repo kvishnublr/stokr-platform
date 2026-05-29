@@ -403,6 +403,16 @@ stokr:
       enabled: ${STOKR_INTRADAY_GAP_FILL_UNIVERSE_ENABLED:true}
       max-symbols-per-run: ${STOKR_INTRADAY_GAP_FILL_UNIVERSE_MAX_SYMBOLS:30}
 
+  simulation-mode:
+    enabled: false
+    bypass-session-guard: true
+    bypass-integrity-guard: true
+    bypass-safe-startup: true
+    simulate-broker-execution: true
+    broker-vendor: SIMULATED
+    default-execution-mode: PAPER
+    system-user-id: "33333333-3333-3333-3333-333333333333"
+
 logging:
   level:
     root: INFO

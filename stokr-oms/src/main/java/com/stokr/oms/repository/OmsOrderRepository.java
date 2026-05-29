@@ -114,6 +114,8 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
 
     List<OmsOrder> findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(UUID signalId);
 
+    long countBySimulationRunIdAndDeletedFalse(UUID simulationRunId);
+
     Optional<OmsOrder> findFirstBySignalIdAndUserIdAndDeletedFalseOrderByCreatedAtDesc(UUID signalId, UUID userId);
 
     @Query("""

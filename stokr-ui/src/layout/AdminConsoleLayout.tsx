@@ -14,6 +14,7 @@ import { fetchAdminOpsSnapshotMerged } from "../lib/fetchAdminOpsSnapshotMerged"
 import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
 import { OperatorConsole } from "../components/admin/institutional/experience/OperatorConsole";
+import { SimulationRuntimeBanner } from "../components/admin/SimulationRuntimeBanner";
 
 /**
  * Wraps all `/admin/*` content: shared operations snapshot + SSE, persistent global ops header,
@@ -98,6 +99,7 @@ export function AdminConsoleLayout() {
         lastOpsPushAt={lastOpsPushAt}
         streamError={streamError}
       />
+      <SimulationRuntimeBanner isLight={isLight} />
       <div
         className={cn(
           "mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-3",

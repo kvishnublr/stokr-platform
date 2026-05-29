@@ -192,6 +192,16 @@ public class StrategySignalEntity extends BaseEntity {
     @Column(name = "test_scenario", length = 64)
     private String testScenario;
 
+    @Column(name = "is_simulation", nullable = false)
+    private boolean simulation;
+
+    @JdbcTypeCode(SqlTypes.UUID)
+    @Column(name = "simulation_run_id")
+    private UUID simulationRunId;
+
+    @Column(name = "simulation_scenario", length = 64)
+    private String simulationScenario;
+
     @PrePersist
     void prePersistDefaults() {
         if (expired == null) {

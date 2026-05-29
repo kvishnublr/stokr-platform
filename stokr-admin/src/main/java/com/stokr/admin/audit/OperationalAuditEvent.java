@@ -29,4 +29,14 @@ public class OperationalAuditEvent extends BaseEntity {
     @JdbcTypeCode(SqlTypes.UUID)
     @Column(name = "target_user_id")
     private UUID targetUserId;
+
+    @Column(name = "is_simulation", nullable = false)
+    private boolean simulation;
+
+    @JdbcTypeCode(SqlTypes.UUID)
+    @Column(name = "simulation_run_id")
+    private UUID simulationRunId;
+
+    @Column(name = "simulation_scenario", length = 64)
+    private String simulationScenario;
 }

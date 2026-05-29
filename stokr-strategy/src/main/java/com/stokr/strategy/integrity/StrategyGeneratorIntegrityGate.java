@@ -5,6 +5,7 @@ import com.stokr.marketdata.integrity.IntegrityRejectionReason;
 import com.stokr.marketdata.integrity.LookbackWindow;
 import com.stokr.marketdata.integrity.MarketDataIntegrityService;
 import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.strategy.context.StrategyContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -22,8 +23,12 @@ public class StrategyGeneratorIntegrityGate {
 
     private final MarketDataIntegrityService integrityService;
     private final MarketDataQueryService marketDataQueryService;
+    private final SimulationModeService simulationModeService;
 
     public boolean isStrategyScanAllowed(String strategyKey, Instant asOf) {
+        if (simulationModeService.bypassIntegrityGate()) {
+            return true;
+        }
         StrategyIntegrityProfile profile = StrategyIntegrityProfile.forStrategy(strategyKey);
         if (!profile.requiresNiftyOpeningSession()) {
             return true;
@@ -46,6 +51,9 @@ public class StrategyGeneratorIntegrityGate {
     }
 
     public boolean passPreEvaluate(String strategyKey, String symbol, Instant asOf) {
+        if (simulationModeService.bypassIntegrityGate()) {
+            return true;
+        }
         StrategyIntegrityProfile profile = StrategyIntegrityProfile.forStrategy(strategyKey);
         return integrityService.passesPreEvaluate(
                 strategyKey,

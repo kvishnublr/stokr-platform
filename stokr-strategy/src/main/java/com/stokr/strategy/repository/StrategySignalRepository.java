@@ -24,6 +24,10 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
 
     List<StrategySignalEntity> findTop200ByDeletedFalseOrderByCreatedAtDesc();
 
+    List<StrategySignalEntity> findBySimulationRunIdAndDeletedFalseOrderByCreatedAtDesc(UUID simulationRunId);
+
+    long countBySimulationRunIdAndDeletedFalse(UUID simulationRunId);
+
     long countByBacktestRunId(UUID backtestRunId);
 
     @Query("select count(s) from StrategySignalEntity s where s.instance.id = :instanceId and s.deleted = false")

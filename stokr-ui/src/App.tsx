@@ -53,6 +53,7 @@ import { AdminRuntimeBindingsPage } from "./pages/admin/AdminRuntimeBindingsPage
 import { AdminPipelineHealthPage } from "./pages/admin/AdminPipelineHealthPage";
 import { AdminLogsPage } from "./pages/admin/AdminLogsPage";
 import { AdminTestSignalLabPage } from "./pages/admin/AdminTestSignalLabPage";
+import { AdminMarketSimulationPage } from "./pages/admin/AdminMarketSimulationPage";
 import { AdminTestExecutionMonitorPage } from "./pages/admin/AdminTestExecutionMonitorPage";
 import { AdminInfrastructureHealthCenterPage } from "./pages/admin/AdminInfrastructureHealthCenterPage";
 import { AdminFailureAnalysisConsolePage } from "./pages/admin/AdminFailureAnalysisConsolePage";
@@ -282,6 +283,7 @@ export default function App() {
               <Route path="ops" element={<AdminOpsGate />} />
               <Route path="pipeline-health" element={<AdminPipelineHealthPage />} />
               <Route path="test-signal-lab" element={<AdminTestSignalLabPage />} />
+              <Route path="market-simulation" element={<AdminMarketSimulationPage />} />
               <Route path="test-execution-monitor" element={<AdminTestExecutionMonitorPage />} />
               <Route path="infra-health-center" element={<AdminInfrastructureHealthCenterPage />} />
               <Route path="failure-analysis" element={<AdminFailureAnalysisConsolePage />} />
