@@ -9,6 +9,7 @@ import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,32 +29,34 @@ public class PlatformZerodhaFeedTelemetryService {
 
     @Transactional
     public void saveWindow(String vendor, PlatformFeedWindowMetrics m) {
-        PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor).orElse(null);
-        if (s == null) {
-            return;
-        }
-        s.setPacketsPerSec(m.packetsPerSec());
-        s.setTicksPerSec(m.ticksPerSec());
-        s.setSubscriptionCount(m.subscriptionCount());
-        s.setWebsocketState(m.websocketState());
-        s.setReconnecting(m.reconnecting());
-        if (m.lastPacketAt() != null) {
-            s.setLastPacketAt(m.lastPacketAt());
-        }
-        if (m.lastTickAt() != null) {
-            s.setLastTickAt(m.lastTickAt());
-        }
-        if (m.lastHeartbeatAt() != null) {
-            s.setLastHeartbeatAt(m.lastHeartbeatAt());
-        }
-        if (m.feedLagMs() != null) {
-            s.setFeedLagMs(m.feedLagMs());
-        }
-        if (m.tickProcessingLatencyMs() != null) {
-            s.setTickProcessingLatencyMs(m.tickProcessingLatencyMs());
-        }
-        s.setTelemetryJson(encodeTelemetryJson(m));
-        sessionRepository.save(s);
+        runConflictTolerant("saveWindow", vendor, () -> {
+            PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor).orElse(null);
+            if (s == null) {
+                return;
+            }
+            s.setPacketsPerSec(m.packetsPerSec());
+            s.setTicksPerSec(m.ticksPerSec());
+            s.setSubscriptionCount(m.subscriptionCount());
+            s.setWebsocketState(m.websocketState());
+            s.setReconnecting(m.reconnecting());
+            if (m.lastPacketAt() != null) {
+                s.setLastPacketAt(m.lastPacketAt());
+            }
+            if (m.lastTickAt() != null) {
+                s.setLastTickAt(m.lastTickAt());
+            }
+            if (m.lastHeartbeatAt() != null) {
+                s.setLastHeartbeatAt(m.lastHeartbeatAt());
+            }
+            if (m.feedLagMs() != null) {
+                s.setFeedLagMs(m.feedLagMs());
+            }
+            if (m.tickProcessingLatencyMs() != null) {
+                s.setTickProcessingLatencyMs(m.tickProcessingLatencyMs());
+            }
+            s.setTelemetryJson(encodeTelemetryJson(m));
+            sessionRepository.save(s);
+        });
         if ("OPEN".equalsIgnoreCase(m.websocketState())) {
             feedHealthWebSocketState.markConnected();
         } else if ("CLOSED".equalsIgnoreCase(m.websocketState())) {
@@ -80,37 +83,43 @@ public class PlatformZerodhaFeedTelemetryService {
 
     @Transactional
     public void markWebsocketClosed(String vendor, String reason) {
-        PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor).orElse(null);
-        if (s == null) {
-            return;
-        }
-        s.setWebsocketState("CLOSED");
-        s.setReconnecting(false);
-        s.setDisconnectReason(truncate(reason, 512));
-        sessionRepository.save(s);
+        runConflictTolerant("markWebsocketClosed", vendor, () -> {
+            PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor).orElse(null);
+            if (s == null) {
+                return;
+            }
+            s.setWebsocketState("CLOSED");
+            s.setReconnecting(false);
+            s.setDisconnectReason(truncate(reason, 512));
+            sessionRepository.save(s);
+        });
         feedHealthWebSocketState.markDisconnected(reason);
         brokerDisconnectProtectionService.ifAvailable(svc -> svc.onBrokerDisconnected(reason));
     }
 
     @Transactional
     public void markReconnectBump(String vendor) {
-        PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor).orElse(null);
-        if (s == null) {
-            return;
-        }
-        s.setReconnectCount(s.getReconnectCount() + 1);
-        sessionRepository.save(s);
+        runConflictTolerant("markReconnectBump", vendor, () -> {
+            PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor).orElse(null);
+            if (s == null) {
+                return;
+            }
+            s.setReconnectCount(s.getReconnectCount() + 1);
+            sessionRepository.save(s);
+        });
         feedHealthWebSocketState.incrementReconnectAttempt();
     }
 
     @Transactional
     public void markWebsocketOpen(String vendor) {
-        PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor).orElse(null);
-        if (s != null) {
-            s.setWebsocketState("OPEN");
-            s.setReconnecting(false);
-            sessionRepository.save(s);
-        }
+        runConflictTolerant("markWebsocketOpen", vendor, () -> {
+            PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor).orElse(null);
+            if (s != null) {
+                s.setWebsocketState("OPEN");
+                s.setReconnecting(false);
+                sessionRepository.save(s);
+            }
+        });
         int attempts = feedHealthWebSocketState.reconnectAttempts();
         feedHealthWebSocketState.markConnected();
         if (attempts > 0) {
@@ -121,14 +130,25 @@ public class PlatformZerodhaFeedTelemetryService {
 
     @Transactional
     public void markConnecting(String vendor) {
-        PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor).orElse(null);
-        if (s == null) {
-            return;
-        }
-        s.setReconnecting(true);
-        s.setWebsocketState("CONNECTING");
-        sessionRepository.save(s);
+        runConflictTolerant("markConnecting", vendor, () -> {
+            PlatformBrokerFeedSession s = sessionRepository.findByVendorCodeIgnoreCaseAndDeletedFalse(vendor).orElse(null);
+            if (s == null) {
+                return;
+            }
+            s.setReconnecting(true);
+            s.setWebsocketState("CONNECTING");
+            sessionRepository.save(s);
+        });
         feedHealthWebSocketState.markDisconnected("CONNECTING");
+    }
+
+    private void runConflictTolerant(String action, String vendor, Runnable dbWrite) {
+        try {
+            dbWrite.run();
+        } catch (OptimisticLockingFailureException ex) {
+            log.warn("platform.ws.telemetry_write_conflict action={} vendor={} detail={}",
+                    action, vendor, ex.getClass().getSimpleName());
+        }
     }
 
     private static String truncate(String s, int max) {
