@@ -1,5 +1,6 @@
 package com.stokr.execution.safety;
 
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.marketdata.monitor.FeedHealthMonitorService;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.strategy.domain.StrategySignalEntity;
@@ -26,6 +27,7 @@ public class LiveRolloutGateService {
     private final TradingKillSwitchService killSwitchService;
     private final BrokerDisconnectProtectionService brokerDisconnectProtectionService;
     private final OmsExposureControlService exposureControlService;
+    private final SimulationModeService simulationModeService;
 
     public LiveRolloutDecision evaluate(
             String strategyKey,
@@ -38,6 +40,10 @@ public class LiveRolloutGateService {
         }
 
         List<String> blockers = new ArrayList<>();
+
+        if (signal.isSimulation() && simulationModeService.isActive()) {
+            return LiveRolloutDecision.allow(ExecutionMode.LIVE, List.of("SIMULATION_HARNESS"));
+        }
 
         // Test Signal Lab explicit LIVE broker E2E — bypass feed/startup/strategy-mode downgrades.
         // Kill switch and broker connectivity still apply.
