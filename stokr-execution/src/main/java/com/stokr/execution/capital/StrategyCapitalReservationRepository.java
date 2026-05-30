@@ -20,6 +20,10 @@ public interface StrategyCapitalReservationRepository extends JpaRepository<Stra
     @Query("""
             select coalesce(sum(r.reservedAmount), 0) from StrategyCapitalReservation r
             where r.strategyKey = :strategyKey and r.status = 'ACTIVE' and r.deleted = false
+            and (r.orderId is null or exists (
+                select 1 from OmsOrder o
+                where o.id = r.orderId and o.deleted = false and o.simulation = false
+            ))
             """)
     BigDecimal sumActiveReserved(@Param("strategyKey") String strategyKey);
 

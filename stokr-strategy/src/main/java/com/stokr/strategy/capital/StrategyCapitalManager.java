@@ -65,7 +65,7 @@ public class StrategyCapitalManager {
 
     private StrategyCapitalSummary toStrategyCapitalSummary(StrategyExecutionConfig cfg) {
         List<PortfolioPosition> positions = positionRepository
-                .findByStrategyKeyAndDeletedFalse(cfg.getStrategyKey());
+                .findRealByStrategyKeyAndDeletedFalse(cfg.getStrategyKey());
 
         BigDecimal realizedPnl = positions.stream()
                 .map(p -> p.getRealizedPnl() != null ? p.getRealizedPnl() : BigDecimal.ZERO)

@@ -22,6 +22,7 @@ import com.stokr.strategy.service.SignalSymbolPriceGateService;
 import com.stokr.strategy.service.StrategyDailySignalCapService;
 import com.stokr.strategy.signals.SignalOwnerType;
 import com.stokr.strategy.signals.SignalProvenance;
+import com.stokr.common.simulation.SimulationScenario;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -126,7 +127,12 @@ public class StrategySignalPipelineService {
                     "Execution pipeline disabled: Rabbit listeners are OFF. Signal routing and OMS execution are inactive."
             );
         }
-        signalProvenanceResolver.applyForPersist(signal, executionMode, provenanceOverride);
+        applySimulationTagsIfActive(signal);
+        SignalProvenance effectiveProvenance = provenanceOverride;
+        if (effectiveProvenance == null && (signal.isSimulation() || SimulationScenarioContext.active())) {
+            effectiveProvenance = SignalProvenance.SIMULATION;
+        }
+        signalProvenanceResolver.applyForPersist(signal, executionMode, effectiveProvenance);
         if (signal.getOwnerType() == null) {
             boolean systemCatalog = signal.getUserId() != null
                     && signal.getUserId().equals(UUID.fromString("33333333-3333-3333-3333-333333333333"));
@@ -307,6 +313,24 @@ public class StrategySignalPipelineService {
         )));
         eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
         signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);
+    }
+
+    /**
+     * Central simulation tagging for harness catalog scans and direct pipeline paths.
+     */
+    private void applySimulationTagsIfActive(StrategySignalEntity signal) {
+        if (signal == null || !SimulationScenarioContext.active()) {
+            return;
+        }
+        signal.setSimulation(true);
+        UUID runId = SimulationScenarioContext.runId();
+        if (runId != null) {
+            signal.setSimulationRunId(runId);
+        }
+        SimulationScenario scenario = SimulationScenarioContext.scenario();
+        if (scenario != null) {
+            signal.setSimulationScenario(scenario.name());
+        }
     }
 
     private boolean shouldDropOutsideSession(StrategySignalEntity signal, Instant now) {

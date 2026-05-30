@@ -1,5 +1,6 @@
 package com.stokr.strategy.service;
 
+import com.stokr.common.simulation.SimulationScenarioContext;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.signals.SignalProvenance;
 import org.springframework.stereotype.Component;
@@ -13,6 +14,9 @@ public class SignalProvenanceResolver {
     public SignalProvenance resolve(StrategySignalEntity signal, String executionMode) {
         if (signal == null) {
             return SignalProvenance.LIVE;
+        }
+        if (signal.isSimulation() || SimulationScenarioContext.active()) {
+            return SignalProvenance.SIMULATION;
         }
         if (Boolean.TRUE.equals(signal.getTestTrade())) {
             return SignalProvenance.LAB;

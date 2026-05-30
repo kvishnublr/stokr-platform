@@ -49,6 +49,9 @@ public class MaxStrategyCapitalRule implements RiskRule {
         if (o.getBacktestRunId() != null) {
             return RiskDecision.ok();
         }
+        if (o.isSimulation()) {
+            return RiskDecision.ok();
+        }
         if (maxStrategyNotional == null || maxStrategyNotional.compareTo(BigDecimal.ZERO) <= 0) {
             return RiskDecision.ok();
         }

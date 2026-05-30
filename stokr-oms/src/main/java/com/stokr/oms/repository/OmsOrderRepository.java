@@ -1,5 +1,6 @@
 package com.stokr.oms.repository;
 
+import com.stokr.common.simulation.AnalyticsDataScope;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
 import org.springframework.data.domain.Pageable;
@@ -96,7 +97,7 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             select coalesce(sum(o.quantity * coalesce(o.limitPrice, o.entryReferencePrice, 0)), 0)
             from OmsOrder o
             where o.userId = :userId and o.strategyKey = :strategyKey and o.deleted = false
-            and o.backtestRunId is null and o.id <> :excludeId and o.state in :states
+            and o.backtestRunId is null and o.simulation = false and o.id <> :excludeId and o.state in :states
             """)
     BigDecimal sumOpenNotionalExcluding(
             @Param("userId") UUID userId,
@@ -152,11 +153,20 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             FROM oms_orders
             WHERE deleted = FALSE AND backtest_run_id IS NULL
               AND state = 'REJECTED' AND reject_reason IS NOT NULL
+              AND (
+                :scope = 'MIXED'
+                OR (:scope = 'SIMULATION' AND is_simulation = TRUE)
+                OR (:scope = 'REAL' AND is_simulation = FALSE AND is_test_trade = FALSE)
+              )
             GROUP BY reject_reason
             ORDER BY cnt DESC
             LIMIT 20
             """, nativeQuery = true)
-    List<Object[]> countRejectionsByReason();
+    List<Object[]> countRejectionsByReason(@Param("scope") String scope);
+
+    default List<Object[]> countRejectionsByReason() {
+        return countRejectionsByReason(AnalyticsDataScope.REAL.name());
+    }
 
     @Query(value = """
             SELECT
@@ -168,9 +178,18 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
                 COUNT(*) FILTER (WHERE created_at >= :since AND state IN ('CREATED','VALIDATED','SUBMITTED','ACCEPTED'))::bigint AS pending_today,
                 COUNT(*)::bigint                                                                                                AS total_all_time
             FROM oms_orders
-            WHERE deleted = FALSE AND backtest_run_id IS NULL AND is_test_trade = FALSE
+            WHERE deleted = FALSE AND backtest_run_id IS NULL
+              AND (
+                :scope = 'MIXED'
+                OR (:scope = 'SIMULATION' AND is_simulation = TRUE)
+                OR (:scope = 'REAL' AND is_simulation = FALSE AND is_test_trade = FALSE)
+              )
             """, nativeQuery = true)
-    List<Object[]> computeStats(@Param("since") Instant since);
+    List<Object[]> computeStats(@Param("since") Instant since, @Param("scope") String scope);
+
+    default List<Object[]> computeStats(Instant since) {
+        return computeStats(since, AnalyticsDataScope.REAL.name());
+    }
 
     @Query("""
             select o from OmsOrder o
@@ -188,7 +207,7 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             select coalesce(sum(o.quantity * coalesce(o.entryReferencePrice, o.limitPrice, 0)), 0)
             from OmsOrder o
             where o.strategyKey = :strategyKey and o.deleted = false and o.backtestRunId is null
-            and o.state in :states
+            and o.simulation = false and o.state in :states
             """)
     BigDecimal sumPendingNotionalByStrategy(
             @Param("strategyKey") String strategyKey,

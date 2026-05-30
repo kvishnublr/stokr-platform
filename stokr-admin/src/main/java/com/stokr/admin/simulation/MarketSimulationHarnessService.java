@@ -205,7 +205,7 @@ public class MarketSimulationHarnessService {
                 ? SimulationScenarioContext.scenario().name()
                 : "CUSTOM");
         entity.setTestTrade(false);
-        entity.setSignalSource(SignalProvenance.SIMULATION);
+        // Simulation tags + SIMULATION provenance are applied centrally in StrategySignalPipelineService.
         StrategySignalEntityMapper.applyStreamMetadata(
                 entity,
                 com.stokr.strategy.signals.SignalOwnerType.SYSTEM,

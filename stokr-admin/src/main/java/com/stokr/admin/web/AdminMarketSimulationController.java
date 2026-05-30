@@ -6,6 +6,7 @@ import com.stokr.admin.simulation.MarketSimulationHarnessService.SimulationHarne
 import com.stokr.admin.simulation.SimulationCleanupService;
 import com.stokr.admin.simulation.SimulationCleanupService.SimulationCleanupRequest;
 import com.stokr.admin.simulation.SimulationDashboardService;
+import com.stokr.admin.simulation.SimulationIsolationValidator;
 import com.stokr.admin.simulation.SimulationValidationPackService;
 import com.stokr.admin.simulation.SimulationValidationPackService.ValidationPackReport;
 import com.stokr.auth.security.StokrUserDetails;
@@ -55,6 +56,7 @@ public class AdminMarketSimulationController {
     private final SimulationCleanupService cleanupService;
     private final SimulationValidationPackService validationPackService;
     private final StrategyEffectivenessEngine effectivenessEngine;
+    private final SimulationIsolationValidator isolationValidator;
 
     @GetMapping("/runtime/status")
     @Operation(summary = "Simulation runtime toggle status (explicit admin enable required)")
@@ -118,6 +120,14 @@ public class AdminMarketSimulationController {
         return ApiResponse.ok(
                 effectivenessEngine.buildReport(from, to, null, AnalyticsDataScope.parse(dataScope)),
                 CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/isolation-check")
+    @Operation(summary = "Verify REAL OMS/capital metrics exclude simulation data")
+    public ApiResponse<SimulationIsolationValidator.IsolationCheckResult> isolationCheck(
+            @RequestParam(required = false) UUID runId
+    ) {
+        return ApiResponse.ok(isolationValidator.check(runId), CorrelationIdHolder.get());
     }
 
     @PostMapping("/validate-release")

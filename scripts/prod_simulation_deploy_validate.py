@@ -162,6 +162,9 @@ def main():
     )
 
     # Enable simulation
+    report["real_oms_before"] = api("GET", "/api/admin/oms/stats?dataScope=REAL")
+    report["real_capital_before"] = api("GET", "/api/admin/capital/summary")
+
     en = api("POST", "/api/admin/simulation/runtime/enable")
     report["post_deploy_checks"]["runtime_enable_response"] = en
     time.sleep(2)
@@ -187,16 +190,10 @@ def main():
             "run_id": run_id,
         }
         if run_id:
-            time.sleep(3)
+            time.sleep(2)
             entry["db_evidence"] = evidence_for_run(run_id)
-            entry["effectiveness_simulation"] = api(
-                "GET", "/api/admin/simulation/analytics?dataScope=SIMULATION"
-            )
-            entry["effectiveness_real"] = api(
-                "GET", "/api/admin/simulation/analytics?dataScope=REAL"
-            )
-            entry["alpha_validation_real"] = api(
-                "GET", "/api/admin/strategy-effectiveness/alpha-validation?dataScope=REAL"
+            entry["isolation_check"] = api(
+                "GET", f"/api/admin/simulation/isolation-check?runId={run_id}"
             )
         report["scenario_runs"].append(entry)
         time.sleep(2)
@@ -212,6 +209,11 @@ def main():
         "SELECT id::text, scenario, status, success::text, started_at::text, completed_at::text "
         "FROM simulation_runs WHERE deleted=false ORDER BY started_at DESC LIMIT 20"
     )
+
+    report["real_oms_after"] = api("GET", "/api/admin/oms/stats?dataScope=REAL")
+    report["simulation_oms_after"] = api("GET", "/api/admin/oms/stats?dataScope=SIMULATION")
+    report["real_capital_after"] = api("GET", "/api/admin/capital/summary")
+    report["isolation_check_final"] = api("GET", "/api/admin/simulation/isolation-check")
 
     dis = api("POST", "/api/admin/simulation/runtime/disable")
     report["post_disable"]["disable_response"] = dis

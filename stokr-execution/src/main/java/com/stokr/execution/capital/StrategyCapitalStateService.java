@@ -35,7 +35,7 @@ public class StrategyCapitalStateService {
         StrategyExecutionConfig cfg = resolveConfig(strategyKey, userId);
         BigDecimal allocated = cfg.getAllocatedCapital() != null ? cfg.getAllocatedCapital() : BigDecimal.ZERO;
 
-        List<PortfolioPosition> positions = positionRepository.findByStrategyKeyAndDeletedFalse(strategyKey);
+        List<PortfolioPosition> positions = positionRepository.findRealByStrategyKeyAndDeletedFalse(strategyKey);
         BigDecimal deployed = positions.stream()
                 .filter(p -> p.getQuantity() != null && p.getQuantity().compareTo(BigDecimal.ZERO) != 0)
                 .map(this::positionNotional)

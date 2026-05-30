@@ -4,6 +4,7 @@ import com.stokr.admin.signal.AdminOmsStatsDto;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.api.PageResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
+import com.stokr.common.simulation.AnalyticsDataScope;
 import com.stokr.oms.dto.ExecutionEventRowDto;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.dto.OmsExecutionRowDto;
@@ -50,11 +51,12 @@ public class AdminOmsController {
     @GetMapping("/stats")
     @Operation(summary = "Aggregate OMS stats for today or custom window")
     public ApiResponse<AdminOmsStatsDto> omsStats(
-            @RequestParam(required = false) Instant since
+            @RequestParam(required = false) Instant since,
+            @RequestParam(defaultValue = "REAL") String dataScope
     ) {
         Instant from = since != null ? since
                 : Instant.now().atZone(java.time.ZoneId.of("Asia/Kolkata")).truncatedTo(ChronoUnit.DAYS).toInstant();
-        List<Object[]> rows = omsOrderRepository.computeStats(from);
+        List<Object[]> rows = omsOrderRepository.computeStats(from, AnalyticsDataScope.parse(dataScope).name());
         AdminOmsStatsDto dto;
         if (rows.isEmpty()) {
             dto = new AdminOmsStatsDto(0, 0, 0, 0, 0, 0, 0);
@@ -142,8 +144,10 @@ public class AdminOmsController {
 
     @GetMapping("/reject-reasons")
     @Operation(summary = "Top reject reasons by count across all orders")
-    public ApiResponse<List<Map<String, Object>>> rejectReasons() {
-        List<Object[]> rows = omsOrderRepository.countRejectionsByReason();
+    public ApiResponse<List<Map<String, Object>>> rejectReasons(
+            @RequestParam(defaultValue = "REAL") String dataScope
+    ) {
+        List<Object[]> rows = omsOrderRepository.countRejectionsByReason(AnalyticsDataScope.parse(dataScope).name());
         List<Map<String, Object>> result = rows.stream()
                 .map(r -> Map.<String, Object>of("reason", r[0], "count", ((Number) r[1]).longValue()))
                 .toList();

@@ -401,10 +401,16 @@ public class OrderIntentProcessor {
         }
         o.setTestTrade(Boolean.TRUE.equals(signal.getTestTrade()));
         o.setTestRunId(signal.getTestRunId());
-        if (signal.isSimulation()) {
+        if (signal.isSimulation() || SimulationScenarioContext.active()) {
             o.setSimulation(true);
-            o.setSimulationRunId(signal.getSimulationRunId());
-            o.setSimulationScenario(signal.getSimulationScenario());
+            o.setSimulationRunId(signal.getSimulationRunId() != null
+                    ? signal.getSimulationRunId()
+                    : SimulationScenarioContext.runId());
+            if (signal.getSimulationScenario() != null) {
+                o.setSimulationScenario(signal.getSimulationScenario());
+            } else if (SimulationScenarioContext.scenario() != null) {
+                o.setSimulationScenario(SimulationScenarioContext.scenario().name());
+            }
         }
         return o;
     }
