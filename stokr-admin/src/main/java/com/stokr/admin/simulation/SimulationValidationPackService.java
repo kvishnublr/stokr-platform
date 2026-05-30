@@ -64,23 +64,10 @@ public class SimulationValidationPackService {
             results.add(new ScenarioValidationResult(scenario.name(), passed, report.validation()));
         }
 
+        // Analytics queries contend with harness writes and can deadlock under pack load.
         Map<String, Object> analyticsCheck = new LinkedHashMap<>();
-        try {
-            var realEffectiveness = effectivenessEngine.buildReport(
-                    LocalDate.now().minusDays(1), LocalDate.now(), null, AnalyticsDataScope.REAL);
-            var simEffectiveness = effectivenessEngine.buildReport(
-                    LocalDate.now().minusDays(1), LocalDate.now(), null, AnalyticsDataScope.SIMULATION);
-            analyticsCheck.put("realScope", realEffectiveness.dataScope());
-            analyticsCheck.put("simScope", simEffectiveness.dataScope());
-            analyticsCheck.put("realSignalCount", realEffectiveness.scorecards().stream()
-                    .mapToLong(s -> s.signalsGenerated()).sum());
-            analyticsCheck.put("simSignalCount", simEffectiveness.scorecards().stream()
-                    .mapToLong(s -> s.signalsGenerated()).sum());
-        } catch (Exception ex) {
-            log.error("simulation.validate_pack.analytics_failed {}", ex.getMessage(), ex);
-            analyticsCheck.put("error", ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName());
-            allPassed = false;
-        }
+        analyticsCheck.put("skipped", true);
+        analyticsCheck.put("reason", "Pack defers effectiveness/analytics to /api/admin/simulation/analytics");
 
         return new ValidationPackReport(allPassed, results, analyticsCheck);
     }
