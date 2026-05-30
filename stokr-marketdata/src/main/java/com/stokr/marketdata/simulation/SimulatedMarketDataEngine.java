@@ -102,17 +102,49 @@ public class SimulatedMarketDataEngine {
 
     private void persistBars(String symbol, List<SimulatedBar> bars) {
         for (SimulatedBar bar : bars) {
-            candleRepository.upsertCandle(
-                    symbol,
-                    TIMEFRAME,
-                    bar.openTime(),
-                    bar.open(),
-                    bar.high(),
-                    bar.low(),
-                    bar.close(),
-                    bar.volume()
-            );
+            upsertWithDeadlockRetry(symbol, bar);
         }
+    }
+
+    private void upsertWithDeadlockRetry(String symbol, SimulatedBar bar) {
+        int attempts = 0;
+        while (true) {
+            try {
+                candleRepository.upsertCandle(
+                        symbol,
+                        TIMEFRAME,
+                        bar.openTime(),
+                        bar.open(),
+                        bar.high(),
+                        bar.low(),
+                        bar.close(),
+                        bar.volume()
+                );
+                return;
+            } catch (Exception ex) {
+                if (++attempts >= 4 || !isDeadlock(ex)) {
+                    throw ex;
+                }
+                try {
+                    Thread.sleep(150L * attempts);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw ex;
+                }
+            }
+        }
+    }
+
+    private static boolean isDeadlock(Throwable ex) {
+        Throwable t = ex;
+        while (t != null) {
+            String msg = t.getMessage();
+            if (msg != null && msg.toLowerCase().contains("deadlock")) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
     }
 
     private List<SimulatedBar> generateEquityPath(

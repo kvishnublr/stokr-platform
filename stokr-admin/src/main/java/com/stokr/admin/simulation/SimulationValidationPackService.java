@@ -43,25 +43,36 @@ public class SimulationValidationPackService {
         List<ScenarioValidationResult> results = new ArrayList<>();
         boolean allPassed = true;
         for (SimulationScenario scenario : PACK) {
-            MarketSimulationHarnessService.SimulationHarnessReport report = harnessService.runScenario(
-                    new MarketSimulationHarnessService.SimulationHarnessRequest(
-                            scenario,
-                            null,
-                            null,
-                            null,
-                            120,
-                            null,
-                            null,
-                            false,
-                            scenario == SimulationScenario.PROTECTION_EXIT,
-                            0,
-                            null
-                    ));
-            boolean passed = report.success();
-            if (!passed) {
+            try {
+                MarketSimulationHarnessService.SimulationHarnessReport report = harnessService.runScenario(
+                        new MarketSimulationHarnessService.SimulationHarnessRequest(
+                                scenario,
+                                null,
+                                null,
+                                null,
+                                120,
+                                null,
+                                null,
+                                false,
+                                scenario == SimulationScenario.PROTECTION_EXIT,
+                                0,
+                                null
+                        ));
+                boolean passed = report.success();
+                if (!passed) {
+                    allPassed = false;
+                }
+                results.add(new ScenarioValidationResult(scenario.name(), passed, report.validation()));
+            } catch (Exception ex) {
+                log.error("simulation.validate_pack.scenario_failed scenario={} {}", scenario, ex.getMessage(), ex);
                 allPassed = false;
+                results.add(new ScenarioValidationResult(
+                        scenario.name(),
+                        false,
+                        Map.of("error", ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName())
+                ));
             }
-            results.add(new ScenarioValidationResult(scenario.name(), passed, report.validation()));
+            pauseBetweenPackScenarios();
         }
 
         // Analytics queries contend with harness writes and can deadlock under pack load.
@@ -70,6 +81,14 @@ public class SimulationValidationPackService {
         analyticsCheck.put("reason", "Pack defers effectiveness/analytics to /api/admin/simulation/analytics");
 
         return new ValidationPackReport(allPassed, results, analyticsCheck);
+    }
+
+    private static void pauseBetweenPackScenarios() {
+        try {
+            Thread.sleep(2000L);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     public record ScenarioValidationResult(String scenario, boolean passed, Map<String, Object> validation) {
