@@ -167,8 +167,8 @@ public class OrderIntentProcessor {
             if (isSystemUser) {
                 if (!simulationHarness) {
                     LiveTraderEligibilityResult platformGate =
-                            liveTradingTraderEligibilityService.evaluateForLiveStrategyActivation(
-                                    userId, strategyKey, "ZERODHA");
+                            liveTradingTraderEligibilityService.evaluateForCatalogSystemLive(
+                                    strategyKey, "ZERODHA");
                     if (!platformGate.allowed()) {
                         log.warn("live.order.blocked.platform signalId={} reason={}", signal.getId(), platformGate.reasonCode());
                         riskEventRecorder.record(userId, null, platformGate.reasonCode(), "REJECT", platformGate.message());

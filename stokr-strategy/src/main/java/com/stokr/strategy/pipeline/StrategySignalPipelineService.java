@@ -84,6 +84,12 @@ public class StrategySignalPipelineService {
     @Value("${stokr.marketdata.session.mcx.end:23:30}")
     private LocalTime mcxEnd;
 
+    @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
+    private UUID systemUserId;
+
+    @Value("${stokr.strategy.primary-trader-user-id:}")
+    private String primaryTraderUserIdRaw;
+
     private static final List<String> MCX_PREFIXES = List.of(
             "CRUDEOIL", "NATURALGAS", "GOLD", "GOLDM", "GOLDPETAL", "SILVER", "SILVERM",
             "SILVERMIC", "COPPER", "ALUMINIUM", "ALUMINUM", "ZINC", "LEAD", "NICKEL",
@@ -285,8 +291,17 @@ public class StrategySignalPipelineService {
             log.info("signal.harness.dispatch signalId={} strategy={} symbol={} mode={}",
                     saved.getId(), sk, saved.getSymbol(), executionMode);
         } else if (runningInstances.isEmpty()) {
-            omsIntentDispatcher.dispatch(systemMsg, true);
-            log.info("signal.fanout.no_traders signalId={} strategy={} symbol={}", saved.getId(), sk, saved.getSymbol());
+            UUID dispatchUserId = resolveCatalogDispatchUserId(saved.getUserId(), executionMode);
+            SignalPersistedMessage dispatchMsg = new SignalPersistedMessage(
+                    saved.getId(),
+                    dispatchUserId,
+                    cid + (systemUserId.equals(dispatchUserId) ? "" : ":" + dispatchUserId),
+                    saved.getBacktestRunId(),
+                    systemMsg.executionMode()
+            );
+            omsIntentDispatcher.dispatch(dispatchMsg, true);
+            log.info("signal.fanout.no_traders signalId={} strategy={} symbol={} dispatchUserId={}",
+                    saved.getId(), sk, saved.getSymbol(), dispatchUserId);
         } else {
             for (StrategyInstance inst : runningInstances) {
                 String instMode = saved.getSignalSource() == SignalProvenance.REPLAY
@@ -361,5 +376,41 @@ public class StrategySignalPipelineService {
             }
         }
         return false;
+    }
+
+    /**
+     * When no trader instances are running, route catalog signals to the configured primary trader
+     * so LIVE orders use a real broker account instead of the synthetic system user.
+     */
+    private UUID resolveCatalogDispatchUserId(UUID signalUserId, String executionMode) {
+        if (signalUserId == null || !systemUserId.equals(signalUserId)) {
+            return signalUserId != null ? signalUserId : systemUserId;
+        }
+        if (executionMode == null || executionMode.isBlank()) {
+            return systemUserId;
+        }
+        String mode = executionMode.trim().toUpperCase();
+        if ("PAPER".equals(mode) || "DRY_RUN".equals(mode) || "SIMULATED".equals(mode)) {
+            return systemUserId;
+        }
+        UUID primaryTrader = parsePrimaryTraderUserId();
+        if (primaryTrader != null) {
+            log.info("signal.dispatch.primary_trader strategyUser={} trader={} mode={}",
+                    signalUserId, primaryTrader, mode);
+            return primaryTrader;
+        }
+        return systemUserId;
+    }
+
+    private UUID parsePrimaryTraderUserId() {
+        if (primaryTraderUserIdRaw == null || primaryTraderUserIdRaw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(primaryTraderUserIdRaw.trim());
+        } catch (IllegalArgumentException ex) {
+            log.warn("signal.dispatch.invalid_primary_trader_user_id value={}", primaryTraderUserIdRaw);
+            return null;
+        }
     }
 }

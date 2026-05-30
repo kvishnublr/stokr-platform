@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -41,6 +42,12 @@ public class LiveTradingTraderEligibilityService {
     @Value("${stokr.runtime.live-heartbeat-stale-seconds:600}")
     private long liveHeartbeatStaleSeconds;
 
+    @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
+    private UUID systemUserId;
+
+    @Value("${stokr.strategy.primary-trader-user-id:}")
+    private String primaryTraderUserIdRaw;
+
     /**
      * Paper / SIM path: strategy must exist in catalog and be enabled.
      */
@@ -60,6 +67,41 @@ public class LiveTradingTraderEligibilityService {
      */
     public LiveTraderEligibilityResult evaluateForLiveStrategyActivation(UUID userId, String strategyKey, String brokerVendor) {
         return evaluateLiveCore(userId, strategyKey, brokerVendor, false);
+    }
+
+    /**
+     * Catalog auto-trading path for system-generated signals: platform gates plus primary trader broker health.
+     * Does not require the synthetic system user to exist in auth_users or hold broker credentials.
+     */
+    public LiveTraderEligibilityResult evaluateForCatalogSystemLive(String strategyKey, String brokerVendor) {
+        if (SimulationScenarioContext.active() && simulationModeService.isActive()) {
+            return LiveTraderEligibilityResult.ok();
+        }
+        if (killSwitchService.isEnabled()) {
+            return LiveTraderEligibilityResult.reject("KILL_SWITCH", "Global kill switch is enabled");
+        }
+        if (!liveTradingGate.liveOrdersAllowed()) {
+            return LiveTraderEligibilityResult.reject(
+                    "LIVE_TRADING_BLOCKED",
+                    "Live trading disabled or platform not armed"
+            );
+        }
+        LiveTraderEligibilityResult strat = strategyGate(strategyKey);
+        if (!strat.allowed()) {
+            return strat;
+        }
+        UUID primaryTrader = parsePrimaryTraderUserId();
+        if (primaryTrader == null) {
+            return LiveTraderEligibilityResult.reject(
+                    "PRIMARY_TRADER_NOT_CONFIGURED",
+                    "Configure stokr.strategy.primary-trader-user-id for catalog LIVE execution"
+            );
+        }
+        return evaluateLiveCore(primaryTrader, strategyKey, brokerVendor, false);
+    }
+
+    public boolean isSystemUser(UUID userId) {
+        return userId != null && Objects.equals(systemUserId, userId);
     }
 
     private LiveTraderEligibilityResult evaluateLiveCore(
@@ -208,6 +250,18 @@ public class LiveTradingTraderEligibilityService {
         } catch (Exception e) {
             log.debug("broker.metadata.parse_failed {}", e.toString());
             return false;
+        }
+    }
+
+    private UUID parsePrimaryTraderUserId() {
+        if (primaryTraderUserIdRaw == null || primaryTraderUserIdRaw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(primaryTraderUserIdRaw.trim());
+        } catch (IllegalArgumentException ex) {
+            log.warn("live.eligibility.invalid_primary_trader_user_id value={}", primaryTraderUserIdRaw);
+            return null;
         }
     }
 }
