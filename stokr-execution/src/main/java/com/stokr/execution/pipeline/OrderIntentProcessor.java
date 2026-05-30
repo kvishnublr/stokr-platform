@@ -2,6 +2,7 @@ package com.stokr.execution.pipeline;
 
 import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.common.telemetry.SignalDistributionTelemetryService;
 import com.stokr.execution.broker.BrokerPositionTruthService;
 import com.stokr.execution.safety.OmsSafetyGateService;
@@ -79,6 +80,7 @@ public class OrderIntentProcessor {
     private final BrokerPositionTruthService brokerPositionTruthService;
     private final TraderExecutionModePreferenceService traderExecutionModePreferenceService;
     private final OmsSafetyGateService omsSafetyGateService;
+    private final SimulationModeService simulationModeService;
 
     @Value("${stokr.risk.zone:Asia/Kolkata}")
     private String riskZone;
@@ -153,18 +155,24 @@ public class OrderIntentProcessor {
         log.info("order.intent.mode_resolved signalId={} msgMode={} resolvedMode={} isTestTrade={}",
                 signal.getId(), msg.executionMode(), mode, Boolean.TRUE.equals(signal.getTestTrade()));
 
+        boolean simulationHarness = signal.isSimulation()
+                && simulationModeService.isActive();
+
         // System-generated signals bypass paper/SIM user-level gate (no trader account needed).
         // For LIVE mode: system signals only check platform gates (kill switch, live armed).
         // Real trader signals run the full user eligibility gate (broker, onboarding, etc).
         if (mode == ExecutionMode.LIVE) {
             if (isSystemUser) {
-                LiveTraderEligibilityResult platformGate =
-                        liveTradingTraderEligibilityService.evaluateForLiveStrategyActivation(userId, strategyKey, "ZERODHA");
-                if (!platformGate.allowed()) {
-                    log.warn("live.order.blocked.platform signalId={} reason={}", signal.getId(), platformGate.reasonCode());
-                    riskEventRecorder.record(userId, null, platformGate.reasonCode(), "REJECT", platformGate.message());
-                    signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "LIVE_PLATFORM_GATE");
-                    return;
+                if (!simulationHarness) {
+                    LiveTraderEligibilityResult platformGate =
+                            liveTradingTraderEligibilityService.evaluateForLiveStrategyActivation(
+                                    userId, strategyKey, "ZERODHA");
+                    if (!platformGate.allowed()) {
+                        log.warn("live.order.blocked.platform signalId={} reason={}", signal.getId(), platformGate.reasonCode());
+                        riskEventRecorder.record(userId, null, platformGate.reasonCode(), "REJECT", platformGate.message());
+                        signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "LIVE_PLATFORM_GATE");
+                        return;
+                    }
                 }
             } else {
                 LiveTraderEligibilityResult gate = Boolean.TRUE.equals(signal.getTestTrade())
@@ -227,6 +235,7 @@ public class OrderIntentProcessor {
         recordSizingTelemetry(signal, userId, mode, sizing, order.getId());
 
         if (mode == ExecutionMode.LIVE
+                && !simulationHarness
                 && !Boolean.TRUE.equals(signal.getTestTrade())
                 && !omsSafetyGateService.acquireLiveDedupe(signal, userId, order.getId(), mode, safetyNow)) {
             capitalReservationService.releaseByOrder(order.getId(), "DUPLICATE_EXECUTION_KEY");
@@ -296,7 +305,7 @@ public class OrderIntentProcessor {
 
         order = orderLifecycleService.transition(order.getId(), OrderState.PENDING_SUBMISSION, null);
 
-        if (mode == ExecutionMode.LIVE) {
+        if (mode == ExecutionMode.LIVE && !simulationHarness) {
             brokerPositionTruthService.syncUser(userId);
             String side = order.getSide();
             ExecutionGuardMode guardMode = "SELL".equalsIgnoreCase(side)
@@ -328,12 +337,18 @@ public class OrderIntentProcessor {
         long fillKey = fillDeterminismKey(signal);
         Instant anchor = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : order.getCreatedAt();
 
+        String dispatchVendor = order.getBrokerVendor();
+        if (mode == ExecutionMode.LIVE && simulationHarness) {
+            dispatchVendor = simulationModeService.simulateBrokerExecution()
+                    ? simulationModeService.brokerVendor()
+                    : dispatchVendor;
+        }
         executionService.dispatch(
                 new ExecutionDispatchMessage(
                         order.getId(),
                         order.getUserId(),
                         signal.getId(),
-                        order.getBrokerVendor(),
+                        dispatchVendor,
                         0,
                         signal.getBacktestRunId(),
                         msg.executionMode(),
@@ -375,7 +390,13 @@ public class OrderIntentProcessor {
         o.setTargetPrice(signal.getTargetPrice());
         o.setEntryReferencePrice(signal.getEntryReferencePrice());
         o.setBacktestRunId(signal.getBacktestRunId());
-        o.setBrokerVendor(mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM");
+        if (mode == ExecutionMode.LIVE) {
+            o.setBrokerVendor(signal.isSimulation() && simulationModeService.simulateBrokerExecution()
+                    ? simulationModeService.brokerVendor()
+                    : "ZERODHA");
+        } else {
+            o.setBrokerVendor("SIM");
+        }
         o.setTestTrade(Boolean.TRUE.equals(signal.getTestTrade()));
         o.setTestRunId(signal.getTestRunId());
         if (signal.isSimulation()) {
@@ -463,6 +484,9 @@ public class OrderIntentProcessor {
 
     private ExecutionMode applyTraderExecutionPreference(ExecutionMode mode, UUID userId, boolean isSystemUser) {
         if (isSystemUser || mode == ExecutionMode.BOTH) {
+            return mode;
+        }
+        if (simulationModeService.isActive() && mode == ExecutionMode.LIVE) {
             return mode;
         }
         if (mode == ExecutionMode.SIMULATED) {

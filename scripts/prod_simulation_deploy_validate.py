@@ -78,7 +78,7 @@ def api(method: str, path: str, body: dict | None = None) -> dict:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(API + path, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        with urllib.request.urlopen(req, timeout=600) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         raw = e.read().decode(errors="replace")

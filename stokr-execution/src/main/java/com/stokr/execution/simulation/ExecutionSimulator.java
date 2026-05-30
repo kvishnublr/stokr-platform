@@ -2,6 +2,7 @@ package com.stokr.execution.simulation;
 
 import com.stokr.common.events.realtime.RealtimeBridgeEvents;
 import com.stokr.common.execution.DeterministicExecutionRng;
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
 import com.stokr.common.crypto.FieldCipher;
 import com.stokr.marketdata.domain.MarketdataCandle;
@@ -78,6 +79,7 @@ public class ExecutionSimulator {
     private final BrokerExecutionTelemetryService brokerExecutionTelemetryService;
     private final BrokerDisconnectProtectionService brokerDisconnectProtectionService;
     private final TradeLifecycleReconciliationService tradeLifecycleReconciliationService;
+    private final SimulationModeService simulationModeService;
 
     @Value("${stokr.simulation.candle-timeframe:1m}")
     private String candleTimeframe;
@@ -112,11 +114,14 @@ public class ExecutionSimulator {
             log.info("execution.live.path orderId={} mode={}", order.getId(), order.getExecutionMode());
             String vendor = msg.brokerVendor() != null ? msg.brokerVendor() : order.getBrokerVendor();
             final UUID liveUserId = order.getUserId();
-            LiveTraderEligibilityResult gate = order.isTestTrade()
-                    ? liveTradingTraderEligibilityService.evaluateForLiveStrategyActivation(
-                            liveUserId, order.getStrategyKey(), vendor != null ? vendor : "ZERODHA")
-                    : liveTradingTraderEligibilityService.evaluateForLiveOrder(
-                            liveUserId, order.getStrategyKey(), vendor != null ? vendor : "ZERODHA");
+            boolean simulationLive = order.isSimulation() && simulationModeService.isActive();
+            LiveTraderEligibilityResult gate = simulationLive
+                    ? LiveTraderEligibilityResult.ok()
+                    : order.isTestTrade()
+                            ? liveTradingTraderEligibilityService.evaluateForLiveStrategyActivation(
+                                    liveUserId, order.getStrategyKey(), vendor != null ? vendor : "ZERODHA")
+                            : liveTradingTraderEligibilityService.evaluateForLiveOrder(
+                                    liveUserId, order.getStrategyKey(), vendor != null ? vendor : "ZERODHA");
             if (!gate.allowed()) {
                 log.warn("execution.sim.live_blocked orderId={} reason={}", order.getId(), gate.reasonCode());
                 brokerExecutionTelemetryService.recordRejection(order.getId(), gate.message());
@@ -138,7 +143,7 @@ public class ExecutionSimulator {
                 return;
             }
             String effectiveVendor = vendor != null ? vendor : "ZERODHA";
-            if (brokerDisconnectProtectionService.blocksLiveOrders(liveUserId)) {
+            if (!simulationLive && brokerDisconnectProtectionService.blocksLiveOrders(liveUserId)) {
                 String reason = "Broker disconnected or execution degraded";
                 brokerExecutionTelemetryService.recordRejection(order.getId(), reason);
                 orderLifecycleService.transition(order.getId(), OrderState.REJECTED, reason);

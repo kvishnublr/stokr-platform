@@ -1,5 +1,6 @@
 package com.stokr.execution.safety;
 
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.strategy.domain.StrategySignalEntity;
@@ -27,6 +28,7 @@ public class OmsSafetyGateService {
     private final MarketCloseProtectionService marketCloseProtectionService;
     private final BrokerDisconnectProtectionService brokerDisconnectProtectionService;
     private final OmsSafetyBlockedOrderPersistence blockedOrderPersistence;
+    private final SimulationModeService simulationModeService;
 
     public OmsSafetyGateResult evaluatePreOrder(
             StrategySignalEntity signal,
@@ -38,7 +40,11 @@ public class OmsSafetyGateService {
         ExecutionMode effectiveMode = requestedMode;
         List<String> reasons = new ArrayList<>();
 
-        if (killSwitchService.forcesPaperMode() && effectiveMode == ExecutionMode.LIVE) {
+        boolean harnessSimulation = signal.isSimulation()
+                && simulationModeService.isActive();
+        if (!harnessSimulation
+                && killSwitchService.forcesPaperMode()
+                && effectiveMode == ExecutionMode.LIVE) {
             effectiveMode = ExecutionMode.PAPER;
             reasons.add("KILL_SWITCH_FORCE_PAPER");
         }

@@ -272,7 +272,12 @@ public class StrategySignalPipelineService {
             signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);
             return;
         }
-        if (runningInstances.isEmpty()) {
+        // Harness: always route system signal with requested execution mode (avoid trader fan-out gates).
+        if (SimulationScenarioContext.runId() != null) {
+            omsIntentDispatcher.dispatch(systemMsg, true);
+            log.info("signal.harness.dispatch signalId={} strategy={} symbol={} mode={}",
+                    saved.getId(), sk, saved.getSymbol(), executionMode);
+        } else if (runningInstances.isEmpty()) {
             omsIntentDispatcher.dispatch(systemMsg, true);
             log.info("signal.fanout.no_traders signalId={} strategy={} symbol={}", saved.getId(), sk, saved.getSymbol());
         } else {

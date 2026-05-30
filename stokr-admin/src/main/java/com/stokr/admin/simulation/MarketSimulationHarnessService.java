@@ -76,7 +76,7 @@ public class MarketSimulationHarnessService {
         String executionMode = request.executionMode() != null
                 ? request.executionMode()
                 : simulationMode.defaultExecutionMode();
-        if (scenario == SimulationScenario.BROKER_REJECT && simulationMode.simulateBrokerExecution()) {
+        if (scenario == SimulationScenario.BROKER_REJECT) {
             executionMode = "LIVE";
         }
 
