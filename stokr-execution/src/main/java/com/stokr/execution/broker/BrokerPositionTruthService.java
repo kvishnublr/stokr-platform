@@ -7,6 +7,7 @@ import com.stokr.execution.guard.ExecutionGuardMode;
 import com.stokr.execution.guard.ExecutionGuardSeverity;
 import com.stokr.execution.guard.ExecutionGuardViolation;
 import com.stokr.oms.domain.OrderState;
+import com.stokr.oms.portfolio.PortfolioAccountingService;
 import com.stokr.oms.reconciliation.BrokerReconciliationService;
 import com.stokr.oms.reconciliation.ReconciliationEventRepository;
 import com.stokr.oms.repository.OmsExecutionRepository;
@@ -66,6 +67,7 @@ public class BrokerPositionTruthService {
     private final BrokerReconciliationService brokerReconciliationService;
     private final ApplicationEventPublisher eventPublisher;
     private final BrokerAccountRepository brokerAccountRepository;
+    private final PortfolioAccountingService portfolioAccountingService;
 
     private final ConcurrentHashMap<UUID, BrokerPositionTruthSnapshot> cache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Instant> brokerClosedAt = new ConcurrentHashMap<>();
@@ -356,6 +358,7 @@ public class BrokerPositionTruthService {
         }
         log.warn("broker.truth.external_exit user={} symbol={} internalQty={}", userId, symbol, internalQty);
         persistRecon(userId, symbol, "EXTERNAL_BROKER_EXIT", BigDecimal.ZERO, internalQty);
+        reconcilePortfolioGhost(userId, symbol);
         haltStrategyRuntimeForSymbol(userId, symbol);
         eventPublisher.publishEvent(new ExecutionAlertEvent(
                 "BROKER_EXTERNAL_EXIT",
@@ -385,6 +388,22 @@ public class BrokerPositionTruthService {
                 log.info("broker.truth.runtime_halted instance={} symbol={}", si.getId(), norm);
             }
         }
+    }
+
+    private void reconcilePortfolioGhost(UUID userId, String symbol) {
+        try {
+            portfolioAccountingService.clearStaleOpenPosition(userId, displaySymbolForLedger(symbol));
+        } catch (Exception ex) {
+            log.warn("broker.truth.portfolio_reconcile_failed user={} symbol={} {}", userId, symbol, ex.getMessage());
+        }
+    }
+
+    private static String displaySymbolForLedger(String normalizedSymbol) {
+        if (normalizedSymbol == null || normalizedSymbol.isBlank()) {
+            return normalizedSymbol;
+        }
+        int idx = normalizedSymbol.indexOf(':');
+        return idx >= 0 ? normalizedSymbol.substring(idx + 1) : normalizedSymbol;
     }
 
     private void persistRecon(UUID userId, String symbol, String kind, BigDecimal brokerQty, BigDecimal internalQty) {

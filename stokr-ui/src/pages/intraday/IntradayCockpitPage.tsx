@@ -32,7 +32,7 @@ import {
 } from "../../lib/hooks/useBrokerPositionSync";
 import { connectStomp } from "../../lib/realtime/stomp";
 import { LiveOpsStrip } from "../../components/intraday/LiveOpsStrip";
-import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl } from "../../lib/moneyUtils";
+import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl, filterBrokerMirrorPositions, isBrokerSessionLive } from "../../lib/moneyUtils";
 import { useSessionStore } from "../../state/session";
 import { useUiThemeStore } from "../../state/uiTheme";
 import { cn } from "../../lib/utils";
@@ -484,7 +484,15 @@ export function IntradayCockpitPage() {
     [readiness, brokerConnected],
   );
 
-  const openPositions = ws?.openPositions ?? [];
+  const brokerSessionLive = isBrokerSessionLive(brokerTruth as Record<string, unknown> | undefined);
+  const openPositions = useMemo(() => {
+    const rows = (ws?.openPositions ?? []).map((p) => ({
+      ...p,
+      quantitySource: String(p.quantitySource ?? p.pnlSource ?? "OMS").toUpperCase(),
+      brokerQty: parseMoney(p.brokerQty),
+    }));
+    return filterBrokerMirrorPositions(rows, brokerSessionLive) as Array<Record<string, unknown>>;
+  }, [ws?.openPositions, brokerSessionLive]);
   const rejectedOrders = Number(executionSummaryQ.data?.rejectedOrders ?? 0);
 
   return (

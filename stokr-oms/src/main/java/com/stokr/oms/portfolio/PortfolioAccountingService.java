@@ -24,6 +24,7 @@ import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -69,7 +70,46 @@ public class PortfolioAccountingService {
 
     @Transactional
     public void rebuildSymbol(UUID userId, String symbol, String strategyKey) {
-        List<OmsExecution> executions = executionRepository.findAllForUserAndSymbolOrdered(userId, symbol);
+        applyLedgerToPosition(
+                userId,
+                symbol,
+                strategyKey,
+                executionRepository.findAllForUserAndSymbolOrdered(userId, symbol),
+                false);
+    }
+
+    /**
+     * Clears a stale OMS open leg when broker truth confirms the account is flat for the symbol.
+     */
+    @Transactional
+    public void clearStaleOpenPosition(UUID userId, String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return;
+        }
+        String trimmed = symbol.trim();
+        Optional<PortfolioPosition> direct = positionRepository.findByUserIdAndSymbolAndDeletedFalse(userId, trimmed);
+        Optional<PortfolioPosition> prefixed = trimmed.contains(":")
+                ? Optional.empty()
+                : positionRepository.findByUserIdAndSymbolAndDeletedFalse(userId, "NSE:" + trimmed);
+        PortfolioPosition pos = direct.or(() -> prefixed).orElse(null);
+        if (pos == null) {
+            return;
+        }
+        pos.setQuantity(BigDecimal.ZERO);
+        pos.setAvgPrice(BigDecimal.ZERO);
+        pos.setUnrealizedPnl(BigDecimal.ZERO);
+        pos.setMtmPrice(null);
+        pos.setDeleted(true);
+        positionRepository.save(pos);
+    }
+
+    private void applyLedgerToPosition(
+            UUID userId,
+            String symbol,
+            String strategyKey,
+            List<OmsExecution> executions,
+            boolean liveLedgerOnly
+    ) {
         Ledger ledger = new Ledger();
         for (OmsExecution e : executions) {
             String s = e.getOrder().getSide();
@@ -85,7 +125,8 @@ public class PortfolioAccountingService {
                     return p;
                 });
 
-        pos.setQuantity(ledger.netQty());
+        BigDecimal netQty = ledger.netQty();
+        pos.setQuantity(netQty);
         pos.setAvgPrice(ledger.netAvgForOpenPosition());
         pos.setRealizedPnl(ledger.realized());
         pos.setUnrealizedPnl(BigDecimal.ZERO);
@@ -93,11 +134,18 @@ public class PortfolioAccountingService {
         if (strategyKey != null) {
             pos.setStrategyKey(strategyKey);
         }
-        if (!executions.isEmpty() && executions.get(0).getOrder().isSimulation()) {
+        if (liveLedgerOnly) {
+            pos.setSimulation(false);
+            pos.setSimulationRunId(null);
+            pos.setSimulationScenario(null);
+        } else if (!executions.isEmpty() && executions.get(0).getOrder().isSimulation()) {
             OmsOrder ref = executions.get(0).getOrder();
             pos.setSimulation(true);
             pos.setSimulationRunId(ref.getSimulationRunId());
             pos.setSimulationScenario(ref.getSimulationScenario());
+        }
+        if (netQty.compareTo(BigDecimal.ZERO) == 0 && liveLedgerOnly) {
+            pos.setDeleted(true);
         }
         positionRepository.save(pos);
     }

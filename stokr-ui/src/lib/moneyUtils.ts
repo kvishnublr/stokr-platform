@@ -34,7 +34,7 @@ export type AccountPnlSnapshot = {
   openPositions: number | null;
 };
 
-export type PnlDataSource = "BROKER" | "WORKSTATION" | "POSITIONS" | "OMS" | "UNKNOWN";
+export type PnlDataSource = "BROKER" | "WORKSTATION" | "POSITIONS" | "OMS" | "BROKER_REQUIRED" | "UNKNOWN";
 
 export type ResolvedAccountPnl = AccountPnlSnapshot & { source: PnlDataSource };
 
@@ -153,6 +153,10 @@ export function resolveAccountPnl(input: {
   portfolioOverview?: Record<string, unknown>;
 }): ResolvedAccountPnl {
   const brokerSessionLive = isBrokerSessionLive(input.brokerTruth);
+  if (!brokerSessionLive) {
+    return { mtm: 0, unrealized: 0, realized: 0, openPositions: 0, source: "BROKER_REQUIRED" };
+  }
+
   const brokerRows = brokerSessionLive
     ? (input.openPositions ?? []).filter((row) => {
         const src = String(row.quantitySource ?? row.pnlSource ?? "").toUpperCase();
@@ -207,7 +211,7 @@ export function resolveAccountPnl(input: {
     return { ...fromOms, source: "OMS" };
   }
 
-  return { mtm: null, unrealized: null, realized: null, openPositions: null, source: "UNKNOWN" };
+  return { mtm: 0, unrealized: 0, realized: 0, openPositions: 0, source: "BROKER_REQUIRED" };
 }
 
 export function pnlToneClass(value: number | null | undefined, isLight = true): string {

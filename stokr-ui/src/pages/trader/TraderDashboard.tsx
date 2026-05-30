@@ -448,7 +448,7 @@ export function TraderDashboard() {
         )}>
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="flex-1 min-w-[200px]">
-            Broker disconnected — P&amp;L reflects OMS positions; margin and live quotes need a connected Zerodha session.
+            Broker disconnected — live positions and P&amp;L are hidden until Zerodha reconnects. Connect broker to mirror your real account.
           </span>
           <Link
             to="/brokers"
@@ -498,7 +498,7 @@ export function TraderDashboard() {
       {openPositionRows.length > 0 ? (
         <LivePositionsCommandTable
           title="Live positions"
-          subtitle="Zerodha mirror · sync every 2s"
+          subtitle={brokerSessionLive ? "Zerodha mirror · sync every 2s" : "Connect Zerodha to mirror your live account"}
           syncPulseLive={brokerConnected && (syncPulseLive || workstationQ.isFetching)}
           onExit={(symbol) => exitMutation.mutate(symbol)}
           exitingSymbol={exitMutation.isPending ? (exitMutation.variables ?? null) : null}

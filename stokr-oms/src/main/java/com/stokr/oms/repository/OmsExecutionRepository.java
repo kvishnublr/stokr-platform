@@ -41,6 +41,20 @@ public interface OmsExecutionRepository extends JpaRepository<OmsExecution, UUID
     @Query("""
             select e from OmsExecution e
             join fetch e.order o
+            where o.userId = :userId
+              and o.symbol = :symbol
+              and e.deleted = false
+              and o.deleted = false
+              and o.executionMode = com.stokr.oms.domain.ExecutionMode.LIVE
+              and o.testTrade = false
+              and o.backtestRunId is null
+            order by e.executionTimestamp asc, e.createdAt asc
+            """)
+    List<OmsExecution> findLiveForUserAndSymbolOrdered(@Param("userId") UUID userId, @Param("symbol") String symbol);
+
+    @Query("""
+            select e from OmsExecution e
+            join fetch e.order o
             where o.backtestRunId = :runId and e.deleted = false and o.deleted = false
             order by e.executionTimestamp asc, e.createdAt asc
             """)

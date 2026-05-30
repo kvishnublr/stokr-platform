@@ -404,6 +404,9 @@ public class TraderTerminalViewService {
         BigDecimal sumRealized = BigDecimal.ZERO;
         BigDecimal sumUnrealized = BigDecimal.ZERO;
         for (PortfolioPosition p : positions) {
+            if (p.isSimulation()) {
+                continue;
+            }
             BigDecimal qty = p.getQuantity() == null ? BigDecimal.ZERO : p.getQuantity();
             String symbol = p.getSymbol();
             BigDecimal ltp = lastPrice(symbol);
@@ -502,6 +505,10 @@ public class TraderTerminalViewService {
                     stopBySymbol,
                     targetBySymbol
             );
+        } else {
+            // Zerodha mirror requires a connected session — never show stale OMS portfolio ghosts.
+            openPositions.clear();
+            closedPositions.clear();
         }
 
         BigDecimal totalRealized = sumRealized.setScale(8, java.math.RoundingMode.HALF_UP);
@@ -522,8 +529,11 @@ public class TraderTerminalViewService {
                 openCount = 0;
                 pnlSource = "BROKER";
             }
-        } else if (openCount <= 0) {
-            openCount = overview.openPositionCount();
+        } else {
+            totalRealized = BigDecimal.ZERO;
+            totalUnrealized = BigDecimal.ZERO;
+            openCount = 0;
+            pnlSource = "BROKER_REQUIRED";
         }
         BigDecimal totalPnl = totalRealized.add(totalUnrealized).setScale(8, java.math.RoundingMode.HALF_UP);
 
@@ -548,6 +558,7 @@ public class TraderTerminalViewService {
         accountSummary.put("unrealizedPnl", totalUnrealized);
         accountSummary.put("openPositions", openCount);
         accountSummary.put("pnlSource", pnlSource);
+        accountSummary.put("positionsSource", brokerPnlSource ? "BROKER" : "BROKER_REQUIRED");
         accountSummary.put("activeStrategies", strategyInstances.stream()
                 .filter(si -> "RUNNING".equalsIgnoreCase(si.getRuntimeState())).count());
         accountSummary.put("brokerConnectionState", broker.connected() ? "BROKER_CONNECTED" : "BROKER_DISCONNECTED");
@@ -837,22 +848,9 @@ public class TraderTerminalViewService {
             }
         }
 
-        List<Map<String, Object>> omsOnlyOpen = new ArrayList<>();
-        for (Map<String, Object> omsRow : openPositions) {
-            String sym = BrokerPositionTruthService.normalizeSymbol(String.valueOf(omsRow.get("symbol")));
-            if (!brokerOpenSymbols.contains(sym)) {
-                omsRow.put("parityState", "MISMATCH");
-                omsRow.put("brokerSyncState", brokerTruth.syncState().name());
-                omsOnlyOpen.add(omsRow);
-            }
-        }
-
         openPositions.clear();
         openPositions.addAll(brokerOpen);
-        // Live terminal mirrors Zerodha only — hide internal OMS ghosts when broker session is active.
-        if (!brokerTruth.brokerConnected() || brokerTruth.lastSyncAt() == null) {
-            openPositions.addAll(omsOnlyOpen);
-        }
+        // Live terminal mirrors Zerodha only — OMS-only ghosts stay hidden while broker session is active.
 
         Set<String> flatBrokerSymbols = brokerTruth.positions().stream()
                 .filter(t -> t.brokerQty() == null || t.brokerQty().compareTo(BigDecimal.ZERO) == 0)
