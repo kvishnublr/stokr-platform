@@ -20,49 +20,8 @@ jobs:
       - name: Prepare SSH deploy key
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-        run: |
-          set -euo pipefail
-
-          install -m 700 -d "$HOME/.ssh"
-          python3 <<'PY'
-          import os
-          from pathlib import Path
-
-          required = ("DEPLOY_HOST", "DEPLOY_USER", "DEPLOY_PATH", "DEPLOY_SSH_KEY")
-          missing = [name for name in required if not os.environ.get(name)]
-          if missing:
-              raise SystemExit(f"Missing required GitHub Actions secrets: {', '.join(missing)}")
-
-          key = os.environ["DEPLOY_SSH_KEY"].strip()
-          if "\\n" in key and "\n" not in key:
-              key = key.replace("\\n", "\n")
-
-          key_path = Path.home() / ".ssh" / "contabo_deploy"
-          key_path.write_text(key + "\n", encoding="utf-8")
-          key_path.chmod(0o600)
-          PY
-
-          if ! ssh-keygen -y -f "$HOME/.ssh/contabo_deploy" > "$HOME/.ssh/contabo_deploy.pub"; then
-            echo "::error::DEPLOY_SSH_KEY is not a valid SSH private key. Re-run scripts/contabo_bootstrap_autodeploy.sh on Contabo and paste the printed private key into the DEPLOY_SSH_KEY repo secret."
-            exit 1
-          fi
-
-          echo "Deploy key fingerprint:"
-          ssh-keygen -l -f "$HOME/.ssh/contabo_deploy.pub"
-          DEPLOY_FP="$(ssh-keygen -lf "$HOME/.ssh/contabo_deploy.pub" | awk '{print $2}')"
-          if [ -f deploy/contabo_github_deploy.pub ]; then
-            echo "Repo-bundled deploy public key fingerprint:"
-            ssh-keygen -l -f deploy/contabo_github_deploy.pub || true
-            REPO_FP="$(ssh-keygen -lf deploy/contabo_github_deploy.pub | awk '{print $2}')"
-            if [ "$DEPLOY_FP" != "$REPO_FP" ]; then
-              echo "::warning::DEPLOY_SSH_KEY fingerprint ($DEPLOY_FP) does not match deploy/contabo_github_deploy.pub ($REPO_FP). Update the GitHub secret or rerun scripts/contabo_bootstrap_autodeploy.sh on Contabo."
-            fi
-          fi
-
-          ssh-keyscan -H -p 22 "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+        run: bash scripts/ci_prepare_deploy_ssh.sh
 
       - name: Emergency install deploy pubkey (Postgres)
         env:
@@ -70,27 +29,15 @@ jobs:
           DEPLOY_PG_PASSWORD: ${{ secrets.DEPLOY_PG_PASSWORD }}
         run: |
           set -euo pipefail
+          export DEPLOY_SSH_PUB="$(tr -d '\r' < deploy/contabo_github_deploy.pub)"
           pip install psycopg2-binary -q
           export DEPLOY_PG_HOST="${DEPLOY_HOST}"
           export DEPLOY_PG_PASSWORD="${DEPLOY_PG_PASSWORD:-root123}"
-          python3 scripts/emergency_install_deploy_ssh_key.py || \
-            echo "::warning::Postgres emergency pubkey install did not confirm success (Contabo cron or console may still be required)."
+          python3 scripts/emergency_install_deploy_ssh_key.py
 
       - name: Deploy on Contabo
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-        run: |
-          set -euo pipefail
-
-          remote_path="$(printf '%q' "$DEPLOY_PATH")"
-          ssh \
-            -i "$HOME/.ssh/contabo_deploy" \
-            -o BatchMode=yes \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes \
-            -o ConnectTimeout=60 \
-            -p 22 \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd ${remote_path} && bash scripts/server_deploy_release_v1.sh"
+        run: bash scripts/ci_ssh_deploy.sh

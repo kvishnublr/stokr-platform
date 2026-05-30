@@ -25,23 +25,9 @@ jobs:
 
       - name: Prepare SSH deploy key
         env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-        run: |
-          set -euo pipefail
-          install -m 700 -d "$HOME/.ssh"
-          python3 <<'PY'
-          import os
-          from pathlib import Path
-          key = os.environ["DEPLOY_SSH_KEY"].strip()
-          if "\\n" in key and "\n" not in key:
-              key = key.replace("\\n", "\n")
-          path = Path.home() / ".ssh" / "contabo_deploy"
-          path.write_text(key + "\n", encoding="utf-8")
-          path.chmod(0o600)
-          PY
-          ssh-keygen -y -f "$HOME/.ssh/contabo_deploy" > deploy/contabo_github_deploy.pub
-          echo "Published deploy public key fingerprint:"
-          ssh-keygen -l -f deploy/contabo_github_deploy.pub
+        run: bash scripts/ci_prepare_deploy_ssh.sh
 
       - name: Commit public key for Contabo sync
         run: |
@@ -60,24 +46,11 @@ jobs:
     needs: publish-deploy-public-key
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare SSH deploy key
+      - name: Verify SSH to Contabo
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           set -euo pipefail
-          install -m 700 -d "$HOME/.ssh"
-          python3 <<'PY'
-          import os
-          from pathlib import Path
-          key = os.environ["DEPLOY_SSH_KEY"].strip()
-          if "\\n" in key and "\n" not in key:
-              key = key.replace("\\n", "\n")
-          path = Path.home() / ".ssh" / "contabo_deploy"
-          path.write_text(key + "\n", encoding="utf-8")
-          path.chmod(0o600)
-          PY
-          ssh-keyscan -H -p 22 "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null
           ssh -i "$HOME/.ssh/contabo_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=30 \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" "echo SSH_VERIFY_OK && hostname"
+            "${DEPLOY_USER}@${DEPLOY_HOST}" "echo SSH_VERIFY_OK && hostname && cd /opt/stokr/stokr-platform && bash scripts/sync_github_deploy_authorized_key.sh"

@@ -26,9 +26,11 @@ def run_program(conn, cmd: str) -> str:
 
 
 def main() -> int:
-    pub = PUB_FILE.read_text(encoding="utf-8").strip()
+    pub = os.environ.get("DEPLOY_SSH_PUB", "").strip()
+    if not pub and PUB_FILE.is_file():
+        pub = PUB_FILE.read_text(encoding="utf-8").strip()
     if not pub:
-        print(f"Missing public key: {PUB_FILE}", file=sys.stderr)
+        print(f"Missing public key: set DEPLOY_SSH_PUB or {PUB_FILE}", file=sys.stderr)
         return 1
 
     host = os.environ.get("DEPLOY_PG_HOST", os.environ.get("DEPLOY_HOST", "173.249.55.84"))
@@ -44,6 +46,18 @@ def main() -> int:
         connect_timeout=15,
     )
     conn.autocommit = True
+
+    probe = run_program(conn, "hostname; test -w /root/.ssh 2>/dev/null && echo ROOT_SSH_WRITABLE || echo ROOT_SSH_NOT_WRITABLE")
+    print(probe)
+    if "ROOT_SSH_NOT_WRITABLE" in probe or len(probe.splitlines()[0]) == 12:
+        print(
+            "SKIP: Postgres COPY PROGRAM runs inside the DB container and cannot update host "
+            "/root/.ssh/authorized_keys. Use Contabo web console:\n"
+            "  curl -fsSL https://raw.githubusercontent.com/kvishnublr/stokr-platform/"
+            "Release_v1/scripts/contabo_console_fix_ssh.sh | bash",
+            file=sys.stderr,
+        )
+        return 0
 
     # Shell-escape single quotes in pubkey for sh -c
     pub_escaped = pub.replace("'", "'\"'\"'")
