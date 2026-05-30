@@ -1,0 +1,57 @@
+name: Repair Deploy SSH Secret
+
+# Publishes the DEPLOY_SSH_KEY public half into deploy/contabo_github_deploy.pub so
+# Contabo cron/deploy can install it via scripts/sync_github_deploy_authorized_key.sh.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - Release_v1
+    paths:
+      - .github/workflows/repair-deploy-ssh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish-deploy-public-key:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: Release_v1
+
+      - name: Prepare SSH deploy key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          python3 <<'PY'
+          import os
+          from pathlib import Path
+          key = os.environ["DEPLOY_SSH_KEY"].strip()
+          if "\\n" in key and "\n" not in key:
+              key = key.replace("\\n", "\n")
+          path = Path.home() / ".ssh" / "contabo_deploy"
+          path.write_text(key + "\n", encoding="utf-8")
+          path.chmod(0o600)
+          PY
+          ssh-keygen -y -f "$HOME/.ssh/contabo_deploy" > deploy/contabo_github_deploy.pub
+          echo "Published deploy public key fingerprint:"
+          ssh-keygen -l -f deploy/contabo_github_deploy.pub
+
+      - name: Commit public key for Contabo sync
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deploy/contabo_github_deploy.pub
+          if git diff --cached --quiet; then
+            echo "deploy/contabo_github_deploy.pub already matches DEPLOY_SSH_KEY"
+            exit 0
+          fi
+          git commit -m "Sync deploy public key with DEPLOY_SSH_KEY for Contabo authorized_keys"
+          git push origin HEAD:Release_v1
