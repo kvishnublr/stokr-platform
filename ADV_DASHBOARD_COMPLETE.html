@@ -1,0 +1,1817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stokr Pro - Complete Trading Terminal</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #00d084;
+            --primary-dark: #00a866;
+            --primary-light: #e0f7f0;
+            --secondary: #3b82f6;
+            --secondary-light: #dbeafe;
+            --accent: #f59e0b;
+            --danger: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --dark: #0f172a;
+            --dark-soft: #1e293b;
+            --gray-light: #f1f5f9;
+            --gray-lighter: #f8fafc;
+            --gray-text: #64748b;
+            --gray-border: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #fafbfc 0%, #f0f9f7 50%, #f8f9ff 100%);
+            color: var(--dark);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 2000px;
+            margin: 0 auto;
+        }
+
+        /* NAVBAR */
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--gray-border);
+            border-radius: 16px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--dark);
+        }
+
+        .brand-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            box-shadow: 0 4px 12px rgba(0, 208, 132, 0.3);
+        }
+
+        .nav-stats {
+            display: flex;
+            gap: 32px;
+            align-items: center;
+        }
+
+        .nav-stat {
+            text-align: center;
+        }
+
+        .nav-stat-label {
+            font-size: 11px;
+            color: var(--gray-text);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .nav-stat-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--dark-soft);
+        }
+
+        .nav-stat-value.up {
+            color: var(--primary);
+        }
+
+        /* TOOLBAR */
+        .toolbar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            background: white;
+            padding: 12px;
+            border-radius: 14px;
+            border: 1px solid var(--gray-border);
+            overflow-x: auto;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+        }
+
+        .tool-tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--gray-text);
+            white-space: nowrap;
+            transition: all 0.3s ease;
+        }
+
+        .tool-tab:hover {
+            background: var(--gray-lighter);
+            color: var(--primary-dark);
+        }
+
+        .tool-tab.active {
+            background: linear-gradient(135deg, var(--primary-light), var(--secondary-light));
+            color: var(--primary-dark);
+            border: 1px solid var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* CONTENT SECTIONS */
+        .content-wrapper {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .market-overview {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .market-card {
+            background: white;
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px solid var(--gray-border);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .market-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--primary), transparent);
+        }
+
+        .market-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--primary);
+            box-shadow: 0 8px 16px rgba(0, 208, 132, 0.1);
+        }
+
+        .market-card-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--gray-text);
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .market-card-symbol {
+            font-size: 18px;
+            font-weight: 800;
+            color: var(--dark-soft);
+            margin-bottom: 12px;
+        }
+
+        .market-card-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 8px;
+        }
+
+        .market-card-change {
+            font-size: 12px;
+            color: var(--gray-text);
+        }
+
+        .market-card-change.up {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        /* SIGNALS GRID */
+        .signals-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .signal-card-premium {
+            background: white;
+            border-radius: 16px;
+            border: 2px solid var(--gray-border);
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .signal-card-premium::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), transparent);
+            animation: slideLeft 3s ease-in-out infinite;
+        }
+
+        @keyframes slideLeft {
+            0%, 100% { transform: translateX(-100%); }
+            50% { transform: translateX(100%); }
+        }
+
+        .signal-card-premium:hover {
+            border-color: var(--primary);
+            box-shadow: 0 12px 32px rgba(0, 208, 132, 0.15);
+            transform: translateY(-8px);
+        }
+
+        .signal-header-premium {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .signal-symbol {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--dark-soft);
+        }
+
+        .signal-badge {
+            font-size: 9px;
+            background: var(--primary-light);
+            color: var(--primary-dark);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-weight: 700;
+            text-transform: uppercase;
+            border: 1px solid var(--primary);
+        }
+
+        .signal-badge.blocked {
+            background: #fee2e2;
+            color: #991b1b;
+            border-color: #fecaca;
+        }
+
+        .ai-gauge {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 28px;
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 208, 132, 0.2);
+            background: conic-gradient(var(--primary) 0deg, var(--primary) 295deg, #e8f5f1 295deg);
+        }
+
+        .ai-info {
+            flex: 1;
+        }
+
+        .ai-trend {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--primary);
+        }
+
+        /* CHARTS */
+        .charts-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .chart-card {
+            background: white;
+            border-radius: 16px;
+            border: 1px solid var(--gray-border);
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        .chart-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--dark-soft);
+            margin-bottom: 16px;
+        }
+
+        /* METRICS */
+        .metrics-section {
+            background: white;
+            border-radius: 16px;
+            border: 1px solid var(--gray-border);
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        .metrics-header {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--dark-soft);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 16px;
+        }
+
+        .metric-item {
+            background: var(--gray-lighter);
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--gray-border);
+            transition: all 0.3s ease;
+        }
+
+        .metric-item:hover {
+            background: var(--primary-light);
+            border-color: var(--primary);
+        }
+
+        .metric-name {
+            font-size: 10px;
+            color: var(--gray-text);
+            margin-bottom: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .metric-value {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--primary);
+            margin-bottom: 4px;
+        }
+
+        /* SIDEBAR */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .sidebar-card {
+            background: white;
+            border-radius: 16px;
+            border: 1px solid var(--gray-border);
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        .sidebar-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--dark-soft);
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .watchlist-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--gray-border);
+            font-size: 12px;
+        }
+
+        .watchlist-symbol {
+            font-weight: 700;
+            color: var(--dark-soft);
+        }
+
+        .watchlist-change.up {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .watchlist-change.down {
+            color: var(--danger);
+            font-weight: 600;
+        }
+
+        /* TABLE */
+        .table-container {
+            background: white;
+            border-radius: 16px;
+            border: 1px solid var(--gray-border);
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            overflow-x: auto;
+        }
+
+        .advanced-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .advanced-table thead {
+            background: var(--gray-lighter);
+            border-bottom: 2px solid var(--gray-border);
+        }
+
+        .advanced-table th {
+            padding: 12px;
+            text-align: left;
+            color: var(--gray-text);
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+        }
+
+        .advanced-table td {
+            padding: 14px 12px;
+            border-bottom: 1px solid var(--gray-border);
+            color: var(--dark);
+        }
+
+        .advanced-table tbody tr:hover {
+            background: var(--primary-light);
+        }
+
+        .symbol-cell {
+            font-weight: 800;
+            color: var(--dark-soft);
+            font-size: 13px;
+        }
+
+        .status-badge-table {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .status-executable {
+            background: var(--primary-light);
+            color: var(--primary-dark);
+        }
+
+        .btn-trade {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-trade:hover {
+            background: var(--primary-dark);
+            box-shadow: 0 4px 12px rgba(0, 208, 132, 0.3);
+        }
+
+        .trend-up { color: var(--primary); font-weight: 600; }
+        .trend-down { color: var(--danger); font-weight: 600; }
+
+        /* GRID UTILITIES */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        /* HEATMAP */
+        .heatmap-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .heatmap-cell {
+            aspect-ratio: 1;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 11px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .heatmap-cell:hover {
+            transform: scale(1.15);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .heat-extreme { background: linear-gradient(135deg, #00d084, #009d6f); }
+        .heat-hot { background: linear-gradient(135deg, #34d399, #00b884); }
+        .heat-warm { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+        .heat-cool { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+
+        /* TIMELINE */
+        .timeline-vertical {
+            position: relative;
+            padding-left: 30px;
+            margin-bottom: 24px;
+        }
+
+        .timeline-vertical::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, var(--primary), transparent);
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--gray-border);
+        }
+
+        .timeline-dot {
+            position: absolute;
+            left: -24px;
+            top: 0;
+            width: 16px;
+            height: 16px;
+            background: var(--primary);
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 0 8px rgba(0, 208, 132, 0.4);
+        }
+
+        .timeline-content-item {
+            font-size: 12px;
+            color: var(--dark);
+        }
+
+        .timeline-time {
+            font-size: 11px;
+            color: var(--gray-text);
+            margin-bottom: 4px;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 1200px) {
+            .content-wrapper {
+                grid-template-columns: 1fr;
+            }
+            .sidebar {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .signals-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .market-overview {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .signals-grid {
+                grid-template-columns: 1fr;
+            }
+            .metrics-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 700;
+        }
+
+        .badge-success {
+            background: var(--primary-light);
+            color: var(--primary-dark);
+        }
+
+        .badge-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .pattern-card {
+            background: var(--gray-lighter);
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid var(--gray-border);
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .pattern-card:hover {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .pattern-name {
+            font-weight: 700;
+            color: var(--dark-soft);
+            margin-bottom: 4px;
+            font-size: 12px;
+        }
+
+        .pattern-stats {
+            display: flex;
+            gap: 12px;
+            font-size: 11px;
+            color: var(--gray-text);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- NAVBAR -->
+        <div class="navbar">
+            <div class="brand">
+                <div class="brand-icon">₹</div>
+                <span>Stokr Pro</span>
+            </div>
+
+            <div class="nav-stats">
+                <div class="nav-stat">
+                    <div class="nav-stat-label">Market Status</div>
+                    <div class="nav-stat-value up">⚡ LIVE</div>
+                </div>
+                <div class="nav-stat">
+                    <div class="nav-stat-label">NIFTY 50</div>
+                    <div class="nav-stat-value up">20,485.40</div>
+                </div>
+                <div class="nav-stat">
+                    <div class="nav-stat-label">Change</div>
+                    <div class="nav-stat-value up">+1.85%</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TOOLBAR -->
+        <div class="toolbar">
+            <button class="tool-tab active" onclick="showTab('dashboard')">📊 Dashboard</button>
+            <button class="tool-tab" onclick="showTab('intelligence')">💡 Intelligence</button>
+            <button class="tool-tab" onclick="showTab('patterns')">🎯 Pattern Analysis</button>
+            <button class="tool-tab" onclick="showTab('analytics')">📈 Deep Analytics</button>
+            <button class="tool-tab" onclick="showTab('execution')">⚡ Execution</button>
+            <button class="tool-tab" onclick="showTab('portfolio')">💼 Portfolio</button>
+            <button class="tool-tab" onclick="showTab('advanced')">⚙️ Advanced</button>
+        </div>
+
+        <!-- TAB 1: DASHBOARD -->
+        <div id="dashboard" class="tab-content active">
+            <div class="content-wrapper">
+                <div>
+                    <!-- MARKET OVERVIEW -->
+                    <div class="market-overview">
+                        <div class="market-card">
+                            <div class="market-card-label">Most Active</div>
+                            <div class="market-card-symbol">SBIN</div>
+                            <div class="market-card-value">₹485.50</div>
+                            <div class="market-card-change up">+2.30% • AI: 84</div>
+                        </div>
+                        <div class="market-card">
+                            <div class="market-card-label">Trending Up</div>
+                            <div class="market-card-symbol">RELIANCE</div>
+                            <div class="market-card-value">₹2,980.75</div>
+                            <div class="market-card-change up">+1.90% • AI: 82</div>
+                        </div>
+                        <div class="market-card">
+                            <div class="market-card-label">High Volatility</div>
+                            <div class="market-card-symbol">INFY</div>
+                            <div class="market-card-value">₹2,445.00</div>
+                            <div class="market-card-change up">-0.50% • AI: 78</div>
+                        </div>
+                        <div class="market-card">
+                            <div class="market-card-label">Top Gainer</div>
+                            <div class="market-card-symbol">BAJAJ</div>
+                            <div class="market-card-value">₹3,285.20</div>
+                            <div class="market-card-change up">+3.45% • AI: 81</div>
+                        </div>
+                    </div>
+
+                    <!-- LIVE SIGNALS -->
+                    <div style="margin-bottom: 24px;">
+                        <div style="font-size: 14px; font-weight: 700; color: var(--dark-soft); margin-bottom: 14px;">⚡ Live Trading Signals (3 Executable)</div>
+                        <div class="signals-grid">
+                            <div class="signal-card-premium">
+                                <div class="signal-header-premium">
+                                    <div class="signal-symbol">SBIN</div>
+                                    <div class="signal-badge">✓ Executable</div>
+                                </div>
+                                <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+                                    <div class="ai-gauge">84</div>
+                                    <div class="ai-info">
+                                        <div style="font-size: 10px; color: var(--gray-text); font-weight: 600;">Signal Quality</div>
+                                        <div class="ai-trend">▲ BUY Signal</div>
+                                        <div style="font-size: 10px; color: var(--gray-text);">📊 Breakout</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="signal-card-premium">
+                                <div class="signal-header-premium">
+                                    <div class="signal-symbol">RELIANCE</div>
+                                    <div class="signal-badge">✓ Executable</div>
+                                </div>
+                                <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+                                    <div class="ai-gauge" style="background: conic-gradient(#3b82f6 0deg, #3b82f6 287deg, #e0e7ff 287deg);">82</div>
+                                    <div class="ai-info">
+                                        <div style="font-size: 10px; color: var(--gray-text); font-weight: 600;">Signal Quality</div>
+                                        <div class="ai-trend">▲ BUY Signal</div>
+                                        <div style="font-size: 10px; color: var(--gray-text);">📈 Momentum</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="signal-card-premium">
+                                <div class="signal-header-premium">
+                                    <div class="signal-symbol" style="color: #991b1b;">INFY</div>
+                                    <div class="signal-badge blocked">⊘ Blocked</div>
+                                </div>
+                                <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+                                    <div class="ai-gauge" style="background: conic-gradient(#ef4444 0deg, #ef4444 273deg, #fee2e2 273deg);">78</div>
+                                    <div class="ai-info">
+                                        <div style="font-size: 10px; color: var(--gray-text); font-weight: 600;">Signal Quality</div>
+                                        <div style="display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 700; color: var(--danger);">▼ SELL Signal</div>
+                                        <div style="font-size: 10px; color: var(--gray-text);">⟲ Reversal</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="signal-card-premium">
+                                <div class="signal-header-premium">
+                                    <div class="signal-symbol">ITC</div>
+                                    <div class="signal-badge">🔔 Watch</div>
+                                </div>
+                                <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+                                    <div class="ai-gauge" style="background: conic-gradient(#3b82f6 0deg, #3b82f6 259deg, #e0e7ff 259deg);">72</div>
+                                    <div class="ai-info">
+                                        <div style="font-size: 10px; color: var(--gray-text); font-weight: 600;">Signal Quality</div>
+                                        <div class="ai-trend">▲ BUY Signal</div>
+                                        <div style="font-size: 10px; color: var(--gray-text);">⏳ Pending</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CHARTS -->
+                    <div class="charts-container">
+                        <div class="chart-card">
+                            <div class="chart-title">📈 Price Action - SBIN</div>
+                            <canvas id="priceChart" style="max-height: 300px;"></canvas>
+                        </div>
+
+                        <div class="chart-card">
+                            <div class="chart-title">📊 Volume Profile</div>
+                            <canvas id="volumeChart" style="max-height: 300px;"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- METRICS -->
+                    <div class="metrics-section">
+                        <div class="metrics-header">📊 Key Performance Indicators</div>
+                        <div class="metrics-grid">
+                            <div class="metric-item">
+                                <div class="metric-name">Win Rate</div>
+                                <div class="metric-value">62%</div>
+                                <div style="font-size: 11px; color: var(--primary); font-weight: 600;">↑ +4% vs avg</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-name">Avg Trade</div>
+                                <div class="metric-value">₹2,450</div>
+                                <div style="font-size: 11px; color: var(--primary); font-weight: 600;">↑ +12% week</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-name">Execution</div>
+                                <div class="metric-value">245ms</div>
+                                <div style="font-size: 11px; color: var(--primary); font-weight: 600;">↓ -30% faster</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-name">Fill Rate</div>
+                                <div class="metric-value">98%</div>
+                                <div style="font-size: 11px; color: var(--primary); font-weight: 600;">↑ +2% vs avg</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-name">Open Orders</div>
+                                <div class="metric-value">12</div>
+                                <div style="font-size: 11px; color: var(--gray-text); font-weight: 600;">4 today</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-name">Capital Used</div>
+                                <div class="metric-value">42%</div>
+                                <div style="font-size: 11px; color: var(--gray-text); font-weight: 600;">of limit</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SIDEBAR -->
+                <div class="sidebar">
+                    <div class="sidebar-card">
+                        <div class="sidebar-title">⭐ Watchlist</div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">SBIN</div>
+                            <div style="flex: 1;"></div>
+                            <span>₹485.35</span>
+                            <span class="watchlist-change up">+2.3%</span>
+                        </div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">RELIANCE</div>
+                            <div style="flex: 1;"></div>
+                            <span>₹2,980.75</span>
+                            <span class="watchlist-change up">+1.9%</span>
+                        </div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">HDFCBANK</div>
+                            <div style="flex: 1;"></div>
+                            <span>₹1,890.25</span>
+                            <span class="watchlist-change up">+1.6%</span>
+                        </div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">INFY</div>
+                            <div style="flex: 1;"></div>
+                            <span>₹2,445.00</span>
+                            <span class="watchlist-change down">-0.5%</span>
+                        </div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">ITC</div>
+                            <div style="flex: 1;"></div>
+                            <span>₹425.80</span>
+                            <span class="watchlist-change up">+1.2%</span>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-card">
+                        <div class="sidebar-title">⚠️ Risk Metrics</div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">Portfolio Risk</div>
+                            <span class="badge badge-warning">MEDIUM</span>
+                        </div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">Max Drawdown</div>
+                            <span style="color: var(--danger);">-3.2%</span>
+                        </div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">Sharpe Ratio</div>
+                            <span style="color: var(--primary);">1.84</span>
+                        </div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">Beta</div>
+                            <span>1.12</span>
+                        </div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">VaR (95%)</div>
+                            <span>₹4,250</span>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-card">
+                        <div class="sidebar-title">💼 Portfolio</div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">Total Value</div>
+                            <span style="font-weight: 800; color: var(--dark-soft);">₹8,45,000</span>
+                        </div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">Today P&L</div>
+                            <span class="watchlist-change up">+₹12,450</span>
+                        </div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">This Week</div>
+                            <span class="watchlist-change up">+₹45,230</span>
+                        </div>
+                        <div class="watchlist-item">
+                            <div class="watchlist-symbol">This Month</div>
+                            <span class="watchlist-change up">+₹1,28,450</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: INTELLIGENCE -->
+        <div id="intelligence" class="tab-content">
+            <div style="margin-bottom: 24px;">
+                <div style="font-size: 16px; font-weight: 800; color: var(--dark-soft); margin-bottom: 20px;">💡 Trading Intelligence & Insights</div>
+
+                <div class="grid-2">
+                    <div class="chart-card">
+                        <div class="chart-title">📊 Signal Distribution</div>
+                        <canvas id="signalChart" style="max-height: 300px;"></canvas>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-title">🎯 Win Rate by Setup Type</div>
+                        <canvas id="setupChart" style="max-height: 300px;"></canvas>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <div style="font-size: 14px; font-weight: 700; color: var(--dark-soft); margin-bottom: 16px;">📋 Detailed Signal Analysis</div>
+                    <table class="advanced-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Signal Type</th>
+                                <th>AI Score</th>
+                                <th>Entry Price</th>
+                                <th>Target</th>
+                                <th>Stop Loss</th>
+                                <th>Risk/Reward</th>
+                                <th>Historical Win %</th>
+                                <th>Confidence</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="symbol-cell">SBIN</td>
+                                <td>Breakout • Support Breaking</td>
+                                <td><strong>84</strong></td>
+                                <td>₹485.50</td>
+                                <td>₹510.00</td>
+                                <td>₹475.00</td>
+                                <td>2.1:1</td>
+                                <td>68%</td>
+                                <td><span class="badge badge-success">Very High</span></td>
+                                <td><button class="btn-trade">EXECUTE</button></td>
+                            </tr>
+                            <tr>
+                                <td class="symbol-cell">RELIANCE</td>
+                                <td>Momentum • Trend Following</td>
+                                <td><strong>82</strong></td>
+                                <td>₹2,980.75</td>
+                                <td>₹3,085.00</td>
+                                <td>₹2,940.00</td>
+                                <td>1.8:1</td>
+                                <td>65%</td>
+                                <td><span class="badge badge-success">Very High</span></td>
+                                <td><button class="btn-trade">EXECUTE</button></td>
+                            </tr>
+                            <tr>
+                                <td class="symbol-cell">HDFCBANK</td>
+                                <td>Breakout • Volume Surge</td>
+                                <td><strong>76</strong></td>
+                                <td>₹1,890.25</td>
+                                <td>₹1,950.00</td>
+                                <td>₹1,850.00</td>
+                                <td>1.5:1</td>
+                                <td>62%</td>
+                                <td><span class="badge badge-success">High</span></td>
+                                <td><button class="btn-trade">EXECUTE</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: PATTERN ANALYSIS -->
+        <div id="patterns" class="tab-content">
+            <div style="margin-bottom: 24px;">
+                <div style="font-size: 16px; font-weight: 800; color: var(--dark-soft); margin-bottom: 20px;">🎯 Pattern Recognition & Historical Analysis</div>
+
+                <div class="grid-3">
+                    <div class="chart-card">
+                        <div class="chart-title">📈 Double Bottom Pattern</div>
+                        <div style="padding: 20px; text-align: center; color: var(--primary);">
+                            <div style="font-size: 32px; margin-bottom: 10px;">📊</div>
+                            <div style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">SBIN</div>
+                            <div style="font-size: 12px; color: var(--gray-text); margin-bottom: 12px;">Success Rate: <strong style="color: var(--primary);">71%</strong> (24 trades)</div>
+                            <button class="btn-trade">View Details</button>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-title">📈 Breakout + Retest</div>
+                        <div style="padding: 20px; text-align: center; color: var(--primary);">
+                            <div style="font-size: 32px; margin-bottom: 10px;">📈</div>
+                            <div style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">RELIANCE</div>
+                            <div style="font-size: 12px; color: var(--gray-text); margin-bottom: 12px;">Success Rate: <strong style="color: var(--primary);">68%</strong> (18 trades)</div>
+                            <button class="btn-trade">View Details</button>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-title">📈 Cup & Handle</div>
+                        <div style="padding: 20px; text-align: center; color: var(--primary);">
+                            <div style="font-size: 32px; margin-bottom: 10px;">🏴</div>
+                            <div style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">HDFCBANK</div>
+                            <div style="font-size: 12px; color: var(--gray-text); margin-bottom: 12px;">Success Rate: <strong style="color: var(--primary);">73%</strong> (31 trades)</div>
+                            <button class="btn-trade">View Details</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <div style="font-size: 14px; font-weight: 700; color: var(--dark-soft); margin-bottom: 16px;">📋 Recent Pattern Matches (Last 30 Days)</div>
+                    <table class="advanced-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Symbol</th>
+                                <th>Pattern</th>
+                                <th>AI Score</th>
+                                <th>Entry</th>
+                                <th>Exit</th>
+                                <th>P&L</th>
+                                <th>Result</th>
+                                <th>Time Held</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>31-May-2026</td>
+                                <td class="symbol-cell">SBIN</td>
+                                <td>Double Bottom</td>
+                                <td><strong>84</strong></td>
+                                <td>₹485.50</td>
+                                <td>₹510.20</td>
+                                <td><strong class="trend-up">+₹12,350</strong></td>
+                                <td><span class="badge badge-success">WIN</span></td>
+                                <td>2h 45m</td>
+                            </tr>
+                            <tr>
+                                <td>30-May-2026</td>
+                                <td class="symbol-cell">RELIANCE</td>
+                                <td>Breakout</td>
+                                <td><strong>82</strong></td>
+                                <td>₹2,980.75</td>
+                                <td>₹3,040.00</td>
+                                <td><strong class="trend-up">+₹8,925</strong></td>
+                                <td><span class="badge badge-success">WIN</span></td>
+                                <td>1h 30m</td>
+                            </tr>
+                            <tr>
+                                <td>29-May-2026</td>
+                                <td class="symbol-cell">INFY</td>
+                                <td>Cup & Handle</td>
+                                <td><strong>78</strong></td>
+                                <td>₹2,445.00</td>
+                                <td>₹2,420.00</td>
+                                <td><strong class="trend-down">-₹4,150</strong></td>
+                                <td><span class="badge badge-danger">LOSS</span></td>
+                                <td>1h 15m</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: DEEP ANALYTICS -->
+        <div id="analytics" class="tab-content">
+            <div style="margin-bottom: 24px;">
+                <div style="font-size: 16px; font-weight: 800; color: var(--dark-soft); margin-bottom: 20px;">📈 Advanced Analytics & Statistics</div>
+
+                <div class="grid-2">
+                    <div class="chart-card">
+                        <div class="chart-title">📊 Monthly Performance</div>
+                        <canvas id="perfChart" style="max-height: 300px;"></canvas>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-title">📊 Drawdown Analysis</div>
+                        <canvas id="drawdownChart" style="max-height: 300px;"></canvas>
+                    </div>
+                </div>
+
+                <div class="metrics-section">
+                    <div class="metrics-header">📊 Statistical Analysis</div>
+                    <div class="metrics-grid">
+                        <div class="metric-item">
+                            <div class="metric-name">Total Trades</div>
+                            <div class="metric-value">248</div>
+                            <div style="font-size: 11px; color: var(--gray-text);">this year</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-name">Win Rate</div>
+                            <div class="metric-value">62%</div>
+                            <div style="font-size: 11px; color: var(--gray-text);">154 wins</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-name">Avg Win</div>
+                            <div class="metric-value">₹3,245</div>
+                            <div style="font-size: 11px; color: var(--gray-text);">per trade</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-name">Avg Loss</div>
+                            <div class="metric-value">₹1,850</div>
+                            <div style="font-size: 11px; color: var(--gray-text);">per trade</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-name">Profit Factor</div>
+                            <div class="metric-value">1.85</div>
+                            <div style="font-size: 11px; color: var(--gray-text);">Win/Loss ratio</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-name">ROI</div>
+                            <div class="metric-value">245%</div>
+                            <div style="font-size: 11px; color: var(--gray-text);">YTD return</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <div style="font-size: 14px; font-weight: 700; color: var(--dark-soft); margin-bottom: 16px;">📋 Sector Performance Analysis</div>
+                    <table class="advanced-table">
+                        <thead>
+                            <tr>
+                                <th>Sector</th>
+                                <th>Stocks Tracked</th>
+                                <th>Avg AI Score</th>
+                                <th>Win Rate</th>
+                                <th>Avg Trade</th>
+                                <th>Total Profit</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>IT</strong></td>
+                                <td>8</td>
+                                <td>82</td>
+                                <td><span class="trend-up">68%</span></td>
+                                <td>₹4,250</td>
+                                <td>₹2,85,000</td>
+                                <td><span class="badge badge-success">Strong</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Finance</strong></td>
+                                <td>12</td>
+                                <td>78</td>
+                                <td><span class="trend-up">62%</span></td>
+                                <td>₹3,125</td>
+                                <td>₹1,45,000</td>
+                                <td><span class="badge badge-success">Good</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Energy</strong></td>
+                                <td>6</td>
+                                <td>71</td>
+                                <td><span class="trend-up">58%</span></td>
+                                <td>₹2,450</td>
+                                <td>₹85,750</td>
+                                <td><span class="badge badge-warning">Moderate</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: EXECUTION -->
+        <div id="execution" class="tab-content">
+            <div style="margin-bottom: 24px;">
+                <div style="font-size: 16px; font-weight: 800; color: var(--dark-soft); margin-bottom: 20px;">⚡ Trade Execution & Order Management</div>
+
+                <div class="grid-2">
+                    <div class="chart-card">
+                        <div class="chart-title">⚡ Execution Timeline - SBIN</div>
+                        <div class="timeline-vertical">
+                            <div class="timeline-item">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-content-item">
+                                    <div class="timeline-time">09:45:32 IST</div>
+                                    <strong>Signal Generated</strong> - Breakout detected at ₹485.50
+                                </div>
+                            </div>
+                            <div class="timeline-item">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-content-item">
+                                    <div class="timeline-time">09:45:35 IST</div>
+                                    <strong>Quality Gate</strong> - Risk parameters validated ✓
+                                </div>
+                            </div>
+                            <div class="timeline-item">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-content-item">
+                                    <div class="timeline-time">09:45:38 IST</div>
+                                    <strong>Risk Check</strong> - Position size: 500 shares
+                                </div>
+                            </div>
+                            <div class="timeline-item">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-content-item">
+                                    <div class="timeline-time">09:45:41 IST</div>
+                                    <strong>Order Sent</strong> - Limit order @₹485.50
+                                </div>
+                            </div>
+                            <div class="timeline-item">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-content-item">
+                                    <div class="timeline-time">09:45:44 IST</div>
+                                    <strong>Order Filled</strong> - Execution price: ₹485.35
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-title">📊 Order Book - SBIN</div>
+                        <canvas id="orderBookChart" style="max-height: 300px;"></canvas>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <div style="font-size: 14px; font-weight: 700; color: var(--dark-soft); margin-bottom: 16px;">📋 Active Orders & Fills</div>
+                    <table class="advanced-table">
+                        <thead>
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Quantity</th>
+                                <th>Order Price</th>
+                                <th>Filled Price</th>
+                                <th>Filled Qty</th>
+                                <th>Status</th>
+                                <th>Execution Time</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>#ORD001</strong></td>
+                                <td class="symbol-cell">SBIN</td>
+                                <td><span class="trend-up">BUY</span></td>
+                                <td>500</td>
+                                <td>₹485.50</td>
+                                <td><strong>₹485.35</strong></td>
+                                <td>500</td>
+                                <td><span class="badge badge-success">FILLED</span></td>
+                                <td>12ms</td>
+                            </tr>
+                            <tr>
+                                <td><strong>#ORD002</strong></td>
+                                <td class="symbol-cell">RELIANCE</td>
+                                <td><span class="trend-up">BUY</span></td>
+                                <td>250</td>
+                                <td>₹2,980.75</td>
+                                <td><strong>₹2,980.50</strong></td>
+                                <td>250</td>
+                                <td><span class="badge badge-success">FILLED</span></td>
+                                <td>8ms</td>
+                            </tr>
+                            <tr>
+                                <td><strong>#ORD003</strong></td>
+                                <td class="symbol-cell">HDFCBANK</td>
+                                <td><span class="trend-up">BUY</span></td>
+                                <td>150</td>
+                                <td>₹1,890.25</td>
+                                <td><strong>₹1,890.10</strong></td>
+                                <td>150</td>
+                                <td><span class="badge badge-success">FILLED</span></td>
+                                <td>15ms</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 6: PORTFOLIO -->
+        <div id="portfolio" class="tab-content">
+            <div style="margin-bottom: 24px;">
+                <div style="font-size: 16px; font-weight: 800; color: var(--dark-soft); margin-bottom: 20px;">💼 Portfolio Management</div>
+
+                <div class="grid-2">
+                    <div class="chart-card">
+                        <div class="chart-title">📊 Portfolio Allocation</div>
+                        <canvas id="allocationChart" style="max-height: 300px;"></canvas>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-title">📊 Holdings Performance</div>
+                        <canvas id="holdingsChart" style="max-height: 300px;"></canvas>
+                    </div>
+                </div>
+
+                <div class="metrics-section">
+                    <div class="metrics-header">💼 Portfolio Summary</div>
+                    <div class="metrics-grid">
+                        <div class="metric-item">
+                            <div class="metric-name">Total Assets</div>
+                            <div class="metric-value">₹8,45,000</div>
+                            <div style="font-size: 11px; color: var(--gray-text);">Invested capital</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-name">Current Value</div>
+                            <div class="metric-value">₹9,28,450</div>
+                            <div style="font-size: 11px; color: var(--primary); font-weight: 600;">↑ +9.82%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-name">Today Gain</div>
+                            <div class="metric-value" style="color: var(--primary);">+₹12,450</div>
+                            <div style="font-size: 11px; color: var(--gray-text);">+1.35%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-name">Month Gain</div>
+                            <div class="metric-value" style="color: var(--primary);">+₹1,28,450</div>
+                            <div style="font-size: 11px; color: var(--gray-text);">+15.2%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-name">Open P&L</div>
+                            <div class="metric-value" style="color: var(--primary);">+₹45,230</div>
+                            <div style="font-size: 11px; color: var(--gray-text);">unrealized</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-name">Cash Available</div>
+                            <div class="metric-value">₹1,85,000</div>
+                            <div style="font-size: 11px; color: var(--gray-text);">buying power</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <div style="font-size: 14px; font-weight: 700; color: var(--dark-soft); margin-bottom: 16px;">📋 Current Holdings</div>
+                    <table class="advanced-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Quantity</th>
+                                <th>Avg Cost</th>
+                                <th>Current Price</th>
+                                <th>Total Value</th>
+                                <th>Gain/Loss</th>
+                                <th>Return %</th>
+                                <th>Weight %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="symbol-cell">SBIN</td>
+                                <td>500</td>
+                                <td>₹474.50</td>
+                                <td>₹485.35</td>
+                                <td>₹2,42,675</td>
+                                <td><span class="trend-up">+₹5,425</span></td>
+                                <td><span class="trend-up">+2.28%</span></td>
+                                <td>26.2%</td>
+                            </tr>
+                            <tr>
+                                <td class="symbol-cell">RELIANCE</td>
+                                <td>250</td>
+                                <td>₹2,925.00</td>
+                                <td>₹2,980.50</td>
+                                <td>₹7,45,125</td>
+                                <td><span class="trend-up">+₹13,875</span></td>
+                                <td><span class="trend-up">+1.89%</span></td>
+                                <td>80.4%</td>
+                            </tr>
+                            <tr>
+                                <td class="symbol-cell">HDFCBANK</td>
+                                <td>150</td>
+                                <td>₹1,850.00</td>
+                                <td>₹1,890.25</td>
+                                <td>₹2,83,538</td>
+                                <td><span class="trend-up">+₹6,038</span></td>
+                                <td><span class="trend-up">+2.18%</span></td>
+                                <td>30.6%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 7: ADVANCED -->
+        <div id="advanced" class="tab-content">
+            <div style="margin-bottom: 24px;">
+                <div style="font-size: 16px; font-weight: 800; color: var(--dark-soft); margin-bottom: 20px;">⚙️ Advanced Features & Settings</div>
+
+                <div class="grid-3">
+                    <div class="chart-card">
+                        <div class="chart-title">🔧 System Configuration</div>
+                        <div style="padding: 20px;">
+                            <div style="font-size: 12px; margin-bottom: 12px;">
+                                <div style="color: var(--gray-text); font-weight: 600; margin-bottom: 4px;">Signal Threshold (AI Score)</div>
+                                <input type="range" min="60" max="90" value="75" style="width: 100%;">
+                                <div style="font-size: 10px; color: var(--gray-text); margin-top: 4px;">Current: 75</div>
+                            </div>
+                            <div style="font-size: 12px; margin-bottom: 12px;">
+                                <div style="color: var(--gray-text); font-weight: 600; margin-bottom: 4px;">Risk Per Trade (%)</div>
+                                <input type="range" min="0.5" max="5" step="0.5" value="2" style="width: 100%;">
+                                <div style="font-size: 10px; color: var(--gray-text); margin-top: 4px;">Current: 2%</div>
+                            </div>
+                            <div style="font-size: 12px;">
+                                <div style="color: var(--gray-text); font-weight: 600; margin-bottom: 4px;">Max Positions</div>
+                                <input type="number" value="10" style="width: 100%; padding: 6px; border: 1px solid var(--gray-border); border-radius: 6px; font-size: 12px;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-title">🔔 Alert Configuration</div>
+                        <div style="padding: 20px;">
+                            <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" checked id="alert1">
+                                <label for="alert1" style="font-size: 12px; color: var(--dark); cursor: pointer;">Price Breakout Alerts</label>
+                            </div>
+                            <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" checked id="alert2">
+                                <label for="alert2" style="font-size: 12px; color: var(--dark); cursor: pointer;">AI Score Changes</label>
+                            </div>
+                            <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" checked id="alert3">
+                                <label for="alert3" style="font-size: 12px; color: var(--dark); cursor: pointer;">Risk Warnings</label>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" checked id="alert4">
+                                <label for="alert4" style="font-size: 12px; color: var(--dark); cursor: pointer;">Order Filled Notifications</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-title">📊 Data & Backtest</div>
+                        <div style="padding: 20px;">
+                            <button class="btn-trade" style="width: 100%; margin-bottom: 8px;">📥 Export Data</button>
+                            <button class="btn-trade" style="width: 100%; margin-bottom: 8px;">📊 Backtest Strategy</button>
+                            <button class="btn-trade" style="width: 100%; margin-bottom: 8px;">🔄 Reset Settings</button>
+                            <button class="btn-trade" style="width: 100%;">💾 Save Snapshot</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <div style="font-size: 14px; font-weight: 700; color: var(--dark-soft); margin-bottom: 16px;">📋 Advanced Signal Parameters</div>
+                    <table class="advanced-table">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Value</th>
+                                <th>Min</th>
+                                <th>Max</th>
+                                <th>Impact</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Momentum Threshold</strong></td>
+                                <td>1.5x</td>
+                                <td>1.0x</td>
+                                <td>3.0x</td>
+                                <td>High</td>
+                                <td><span class="badge badge-success">Optimal</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Volume Confirmation</strong></td>
+                                <td>2.0x avg</td>
+                                <td>1.5x</td>
+                                <td>3.5x</td>
+                                <td>High</td>
+                                <td><span class="badge badge-success">Active</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Support Level Distance</strong></td>
+                                <td>2.5%</td>
+                                <td>1%</td>
+                                <td>5%</td>
+                                <td>Medium</td>
+                                <td><span class="badge badge-success">Configured</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Regression Slope</strong></td>
+                                <td>0.45</td>
+                                <td>0.2</td>
+                                <td>0.8</td>
+                                <td>Medium</td>
+                                <td><span class="badge badge-warning">Monitor</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // TAB SWITCHING
+        function showTab(tabName) {
+            const tabs = document.querySelectorAll('.tab-content');
+            const buttons = document.querySelectorAll('.tool-tab');
+
+            tabs.forEach(tab => tab.classList.remove('active'));
+            buttons.forEach(btn => btn.classList.remove('active'));
+
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // CHART 1: Price Chart
+        if (document.getElementById('priceChart')) {
+            const priceCtx = document.getElementById('priceChart').getContext('2d');
+            new Chart(priceCtx, {
+                type: 'line',
+                data: {
+                    labels: ['09:15', '10:00', '10:45', '11:30', '12:15', '13:00', '13:45', '14:30', '15:15'],
+                    datasets: [{
+                        label: 'SBIN Price',
+                        data: [480, 482, 484, 483, 485, 487, 489, 488, 485.35],
+                        borderColor: '#00d084',
+                        backgroundColor: 'rgba(0, 208, 132, 0.08)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#00d084',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: true, labels: { font: { size: 11 }, color: '#64748b' } } },
+                    scales: {
+                        y: { beginAtZero: false, ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { color: '#e2e8f0' } },
+                        x: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        // CHART 2: Volume Chart
+        if (document.getElementById('volumeChart')) {
+            const volCtx = document.getElementById('volumeChart').getContext('2d');
+            new Chart(volCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['09:15', '10:00', '10:45', '11:30', '12:15', '13:00', '13:45', '14:30', '15:15'],
+                    datasets: [
+                        { label: 'Buy', data: [12000, 15000, 14000, 16000, 18000, 17000, 19000, 16000, 14500], backgroundColor: 'rgba(0, 208, 132, 0.8)' },
+                        { label: 'Sell', data: [10000, 11000, 9000, 12000, 13000, 14000, 11000, 12500, 13000], backgroundColor: 'rgba(239, 68, 68, 0.8)' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, color: '#94a3b8' } } },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { color: '#e2e8f0' } },
+                        x: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        // CHART 3: Signal Distribution
+        if (document.getElementById('signalChart')) {
+            const sigCtx = document.getElementById('signalChart').getContext('2d');
+            new Chart(sigCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Executable', 'Setup Confirmed', 'Watch', 'Intelligence Only'],
+                    datasets: [{
+                        data: [3, 8, 12, 35],
+                        backgroundColor: ['#00d084', '#3b82f6', '#f59e0b', '#cbd5e1']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, color: '#64748b' } } }
+                }
+            });
+        }
+
+        // CHART 4: Setup Type Chart
+        if (document.getElementById('setupChart')) {
+            const setupCtx = document.getElementById('setupChart').getContext('2d');
+            new Chart(setupCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Breakout', 'Momentum', 'Reversal', 'Consolidation'],
+                    datasets: [{
+                        label: 'Win Rate %',
+                        data: [68, 65, 45, 55],
+                        backgroundColor: ['#00d084', '#3b82f6', '#f59e0b', '#cbd5e1']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    indexAxis: 'y',
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { color: '#e2e8f0' } },
+                        y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        // CHART 5: Performance Chart
+        if (document.getElementById('perfChart')) {
+            const perfCtx = document.getElementById('perfChart').getContext('2d');
+            new Chart(perfCtx, {
+                type: 'line',
+                data: {
+                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May'],
+                    datasets: [{
+                        label: 'Monthly Profit',
+                        data: [45000, 62000, 58000, 72000, 95000],
+                        borderColor: '#00d084',
+                        backgroundColor: 'rgba(0, 208, 132, 0.08)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: true, labels: { font: { size: 11 }, color: '#64748b' } } },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { color: '#e2e8f0' } },
+                        x: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        // CHART 6: Drawdown
+        if (document.getElementById('drawdownChart')) {
+            const ddCtx = document.getElementById('drawdownChart').getContext('2d');
+            new Chart(ddCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Max DD', 'Avg DD', 'Consecutive', 'Recovery Days'],
+                    datasets: [{
+                        label: 'Values',
+                        data: [3.2, 1.5, 5, 12],
+                        backgroundColor: '#ef4444'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { color: '#e2e8f0' } },
+                        x: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        // CHART 7: Order Book
+        if (document.getElementById('orderBookChart')) {
+            const obCtx = document.getElementById('orderBookChart').getContext('2d');
+            new Chart(obCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['485.00', '485.25', '485.50', '485.75', '486.00'],
+                    datasets: [
+                        { label: 'Bid Volume', data: [5000, 8000, 12000, 6000, 3000], backgroundColor: 'rgba(0, 208, 132, 0.6)' },
+                        { label: 'Ask Volume', data: [3000, 6000, 11000, 7000, 4000], backgroundColor: 'rgba(239, 68, 68, 0.6)' }
+                    ]
+                },
+                options: {
+                    indexAxis: 'x',
+                    responsive: true,
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { color: '#e2e8f0' } },
+                        x: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        // CHART 8: Allocation
+        if (document.getElementById('allocationChart')) {
+            const allocCtx = document.getElementById('allocationChart').getContext('2d');
+            new Chart(allocCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['RELIANCE', 'SBIN', 'HDFCBANK', 'INFY', 'Others'],
+                    datasets: [{
+                        data: [42, 26, 15, 12, 5],
+                        backgroundColor: ['#00d084', '#3b82f6', '#f59e0b', '#ef4444', '#cbd5e1']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, color: '#64748b' } } }
+                }
+            });
+        }
+
+        // CHART 9: Holdings
+        if (document.getElementById('holdingsChart')) {
+            const holdCtx = document.getElementById('holdingsChart').getContext('2d');
+            new Chart(holdCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['RELIANCE', 'SBIN', 'HDFCBANK'],
+                    datasets: [{
+                        label: 'Gain %',
+                        data: [1.89, 2.28, 2.18],
+                        backgroundColor: '#00d084'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { color: '#e2e8f0' } },
+                        x: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
