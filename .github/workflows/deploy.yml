@@ -17,16 +17,63 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare SSH deploy key
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          install -m 700 -d "$HOME/.ssh"
+          python3 <<'PY'
+          import os
+          from pathlib import Path
+
+          required = ("DEPLOY_HOST", "DEPLOY_USER", "DEPLOY_PATH", "DEPLOY_SSH_KEY")
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit(f"Missing required GitHub Actions secrets: {', '.join(missing)}")
+
+          key = os.environ["DEPLOY_SSH_KEY"].strip()
+          if "\\n" in key and "\n" not in key:
+              key = key.replace("\\n", "\n")
+
+          key_path = Path.home() / ".ssh" / "contabo_deploy"
+          key_path.write_text(key + "\n", encoding="utf-8")
+          key_path.chmod(0o600)
+          PY
+
+          if ! ssh-keygen -y -f "$HOME/.ssh/contabo_deploy" > "$HOME/.ssh/contabo_deploy.pub"; then
+            echo "::error::DEPLOY_SSH_KEY is not a valid SSH private key. Re-run scripts/contabo_bootstrap_autodeploy.sh on Contabo and paste the printed private key into the DEPLOY_SSH_KEY repo secret."
+            exit 1
+          fi
+
+          echo "Deploy key fingerprint:"
+          ssh-keygen -l -f "$HOME/.ssh/contabo_deploy.pub"
+          if [ -f deploy/contabo_github_deploy.pub ]; then
+            echo "Repo-bundled fallback public key fingerprint:"
+            ssh-keygen -l -f deploy/contabo_github_deploy.pub || true
+          fi
+
+          ssh-keyscan -H -p 22 "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+
       - name: Deploy on Contabo
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: 22
-          timeout: 60s
-          command_timeout: 45m
-          script: |
-            set -euo pipefail
-            cd ${{ secrets.DEPLOY_PATH }}
-            bash scripts/server_deploy_release_v1.sh
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+
+          remote_path="$(printf '%q' "$DEPLOY_PATH")"
+          ssh \
+            -i "$HOME/.ssh/contabo_deploy" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=60 \
+            -p 22 \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd ${remote_path} && bash scripts/server_deploy_release_v1.sh"

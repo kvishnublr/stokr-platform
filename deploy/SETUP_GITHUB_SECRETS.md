@@ -22,7 +22,7 @@ This will:
 | `DEPLOY_HOST` | `173.249.55.84` |
 | `DEPLOY_USER` | `root` |
 | `DEPLOY_PATH` | `/opt/stokr/stokr-platform` |
-| `DEPLOY_SSH_KEY` | Private key matching `deploy/contabo_github_deploy.pub` |
+| `DEPLOY_SSH_KEY` | Private key printed by `scripts/contabo_bootstrap_autodeploy.sh` |
 
 Generate a fresh pair on the server if needed:
 
@@ -31,6 +31,15 @@ ssh-keygen -t ed25519 -f /root/.ssh/github_actions_deploy -N "" -C "github-actio
 cat /root/.ssh/github_actions_deploy.pub >> /root/.ssh/authorized_keys
 cat /root/.ssh/github_actions_deploy   # paste into DEPLOY_SSH_KEY secret
 ```
+
+Paste the full private key into `DEPLOY_SSH_KEY`, including the `BEGIN/END`
+lines. The workflow accepts either normal multiline keys or keys pasted with
+literal `\n` line separators, but the private key must match a public key in
+`/root/.ssh/authorized_keys` on the Contabo server.
+
+If GitHub Actions fails with `unable to authenticate`, rerun the bootstrap
+script from the Contabo web console and update `DEPLOY_SSH_KEY` with the
+newly printed private key.
 
 ## How auto-deploy works
 
