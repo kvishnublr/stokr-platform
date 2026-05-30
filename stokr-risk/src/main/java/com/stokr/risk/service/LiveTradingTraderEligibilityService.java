@@ -1,5 +1,7 @@
 package com.stokr.risk.service;
 
+import com.stokr.common.simulation.SimulationModeService;
+import com.stokr.common.simulation.SimulationScenarioContext;
 import com.stokr.auth.domain.AuthUser;
 import com.stokr.auth.repository.AuthUserRepository;
 import com.stokr.risk.model.LiveTraderEligibilityResult;
@@ -34,6 +36,7 @@ public class LiveTradingTraderEligibilityService {
     private final StrategyDefinitionRepository strategyDefinitionRepository;
     private final StrategyInstanceRepository strategyInstanceRepository;
     private final ObjectMapper objectMapper;
+    private final SimulationModeService simulationModeService;
 
     @Value("${stokr.runtime.live-heartbeat-stale-seconds:600}")
     private long liveHeartbeatStaleSeconds;
@@ -65,6 +68,9 @@ public class LiveTradingTraderEligibilityService {
             String brokerVendor,
             boolean requireHealthyLiveRuntime
     ) {
+        if (SimulationScenarioContext.active() && simulationModeService.isActive()) {
+            return LiveTraderEligibilityResult.ok();
+        }
         if (killSwitchService.isEnabled()) {
             return LiveTraderEligibilityResult.reject("KILL_SWITCH", "Global kill switch is enabled");
         }
