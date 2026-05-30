@@ -1,0 +1,84 @@
+name: Rotate and Verify Deploy SSH
+
+on:
+  workflow_dispatch:
+    inputs:
+      rotate_secret:
+        description: Generate a new DEPLOY_SSH_KEY and update the repo public key
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: write
+  secrets: write
+
+jobs:
+  rotate-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: Release_v1
+
+      - name: Prepare deploy key material
+        id: keymat
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          ROTATE: ${{ inputs.rotate_secret }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          if [ "$ROTATE" = "true" ]; then
+            ssh-keygen -t ed25519 -f "$HOME/.ssh/github_actions_deploy" -N "" -C "github-actions-stokr-deploy"
+          else
+            python3 <<'PY'
+          import os
+          from pathlib import Path
+          key = os.environ["DEPLOY_SSH_KEY"].strip()
+          if "\\n" in key and "\n" not in key:
+              key = key.replace("\\n", "\n")
+          path = Path.home() / ".ssh" / "github_actions_deploy"
+          path.write_text(key + "\n", encoding="utf-8")
+          path.chmod(0o600)
+          PY
+          fi
+          ssh-keygen -y -f "$HOME/.ssh/github_actions_deploy" > deploy/contabo_github_deploy.pub
+          if [ "$ROTATE" = "true" ]; then
+            gh secret set DEPLOY_SSH_KEY < "$HOME/.ssh/github_actions_deploy"
+          fi
+          echo "fingerprint=$(ssh-keygen -lf deploy/contabo_github_deploy.pub | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Commit rotated public key
+        if: inputs.rotate_secret == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deploy/contabo_github_deploy.pub
+          git diff --cached --quiet && exit 0
+          git commit -m "Rotate deploy SSH public key for Contabo"
+          git push origin HEAD:Release_v1
+
+      - name: Emergency install via Postgres
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          pip install psycopg2-binary -q
+          export DEPLOY_PG_HOST="${DEPLOY_HOST}"
+          export DEPLOY_PG_PASSWORD="${DEPLOY_PG_PASSWORD:-root123}"
+          python3 scripts/emergency_install_deploy_ssh_key.py || true
+
+      - name: Verify SSH to Contabo
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh-keyscan -H -p 22 "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          ssh -i "$HOME/.ssh/github_actions_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=30 \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" "echo SSH_VERIFY_OK && cd /opt/stokr/stokr-platform && bash scripts/sync_github_deploy_authorized_key.sh && git log -1 --oneline"
