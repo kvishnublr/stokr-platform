@@ -75,7 +75,7 @@ public class PositionSizingService {
         snapshot.put("capitalAllocated", capital.allocatedCapital());
         snapshot.put("utilizationPct", capital.utilizationPct());
 
-        if (capital.openPositions() >= cfg.getMaxPositions()) {
+        if (!request.simulationHarness() && capital.openPositions() >= cfg.getMaxPositions()) {
             return reject("MAX_POSITIONS_EXCEEDED", mode, request, snapshot, hash);
         }
 
@@ -100,11 +100,11 @@ public class PositionSizingService {
             exposure = rawQty.multiply(marketPrice);
         }
 
-        if (capitalEnforced && capital.availableCapital().compareTo(exposure) < 0) {
+        if (!request.simulationHarness() && capitalEnforced && capital.availableCapital().compareTo(exposure) < 0) {
             return reject("INSUFFICIENT_STRATEGY_CAPITAL", mode, request, snapshot, hash);
         }
 
-        if (capitalEnforced && cfg.getMaxTotalExposure() != null) {
+        if (!request.simulationHarness() && capitalEnforced && cfg.getMaxTotalExposure() != null) {
             BigDecimal total = capital.deployedCapital().add(capital.reservedCapital())
                     .add(capital.pendingOrderCapital()).add(exposure);
             if (total.compareTo(cfg.getMaxTotalExposure()) > 0) {

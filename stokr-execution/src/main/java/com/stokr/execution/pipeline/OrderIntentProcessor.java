@@ -461,6 +461,9 @@ public class OrderIntentProcessor {
         if (Boolean.TRUE.equals(signal.getTestTrade())) {
             return parseMode(msgMode);
         }
+        if (signal.isSimulation() && simulationModeService.isActive()) {
+            return parseMode(msgMode);
+        }
         try {
             java.util.Optional<StrategyExecutionConfig> cfgOpt =
                     strategyExecutionConfigService.getByStrategyKeyForUser(userId, strategyKey);
@@ -563,7 +566,8 @@ public class OrderIntentProcessor {
                 signal.getSuggestedQty(),
                 signal.getEntryReferencePrice(),
                 mode,
-                Boolean.TRUE.equals(signal.getTestTrade()));
+                Boolean.TRUE.equals(signal.getTestTrade()),
+                signal.isSimulation() && simulationModeService.isActive());
         PositionSizingResult result = positionSizingService.resolve(req);
         if (!result.accepted()) {
             throw new PositionSizingRejectedException(
@@ -580,7 +584,8 @@ public class OrderIntentProcessor {
                 new PositionSizingRequest(
                         strategyKey, userId, signal.getId(), signal.getSymbol(),
                         signal.getSuggestedQty(), signal.getEntryReferencePrice(), mode,
-                        Boolean.TRUE.equals(signal.getTestTrade())),
+                        Boolean.TRUE.equals(signal.getTestTrade()),
+                        signal.isSimulation() && simulationModeService.isActive()),
                 sizing,
                 orderId);
     }
