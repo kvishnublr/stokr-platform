@@ -64,6 +64,18 @@ jobs:
 
           ssh-keyscan -H -p 22 "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null
 
+      - name: Emergency install deploy pubkey (Postgres)
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PG_PASSWORD: ${{ secrets.DEPLOY_PG_PASSWORD }}
+        run: |
+          set -euo pipefail
+          pip install psycopg2-binary -q
+          export DEPLOY_PG_HOST="${DEPLOY_HOST}"
+          export DEPLOY_PG_PASSWORD="${DEPLOY_PG_PASSWORD:-root123}"
+          python3 scripts/emergency_install_deploy_ssh_key.py || \
+            echo "::warning::Postgres emergency pubkey install did not confirm success (Contabo cron or console may still be required)."
+
       - name: Deploy on Contabo
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
