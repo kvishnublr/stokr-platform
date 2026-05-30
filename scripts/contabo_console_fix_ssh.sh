@@ -2,7 +2,13 @@
 # Run in Contabo web/serial console as root (SSH password auth is disabled).
 set -euo pipefail
 
-PUB='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBYw6au3c/lLOOZTstVl2sv0Z++aIAyM/AsPvbRgANWO stokr@github'
+ROOT="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd || echo /opt/stokr/stokr-platform)"
+PUB_FILE="${ROOT}/deploy/contabo_github_deploy.pub"
+if [ -f "$PUB_FILE" ]; then
+  PUB="$(tr -d '\r' < "$PUB_FILE")"
+else
+  PUB='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBYw6au3c/lLOOZTstVl2sv0Z++aIAyM/AsPvbRgANWO stokr@github'
+fi
 AUTH=/root/.ssh/authorized_keys
 
 mkdir -p /root/.ssh

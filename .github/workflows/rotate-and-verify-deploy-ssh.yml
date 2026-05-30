@@ -67,7 +67,10 @@ jobs:
       - name: Emergency install via Postgres
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PG_PASSWORD: ${{ secrets.DEPLOY_PG_PASSWORD }}
         run: |
+          set -euo pipefail
+          export DEPLOY_SSH_PUB="$(tr -d '\r' < deploy/contabo_github_deploy.pub)"
           pip install psycopg2-binary -q
           export DEPLOY_PG_HOST="${DEPLOY_HOST}"
           export DEPLOY_PG_PASSWORD="${DEPLOY_PG_PASSWORD:-root123}"

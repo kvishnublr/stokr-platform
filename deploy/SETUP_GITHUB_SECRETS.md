@@ -39,15 +39,28 @@ literal `\n` line separators, but the private key must match a public key in
 
 If GitHub Actions fails with `Permission denied (publickey)`:
 
-1. Run **Repair Deploy SSH Secret** workflow (Actions tab) — it publishes the
-   `DEPLOY_SSH_KEY` public half into `deploy/contabo_github_deploy.pub`.
-2. On Contabo **web/serial console** as root (password SSH is disabled):
+**Root cause:** `DEPLOY_SSH_KEY` is valid, but the matching public key is not in
+`/root/.ssh/authorized_keys` on the host. The Postgres “emergency” step cannot fix
+this when Postgres runs in Docker (it cannot write `/root/.ssh` on the host).
+
+**Fix (one time, Contabo web/serial console as root):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kvishnublr/stokr-platform/Release_v1/scripts/contabo_console_fix_ssh.sh | bash
+```
+
+This installs the deploy key, pulls `Release_v1`, and runs a full deploy.
+
+Then re-run **Auto Deploy to Contabo** (Actions → Run workflow) or push to `Release_v1`.
+
+Optional: run **Repair Deploy SSH Secret** workflow — it publishes the
+`DEPLOY_SSH_KEY` public half into `deploy/contabo_github_deploy.pub` on GitHub.
+
+If the repo already exists on the server:
 
 ```bash
 bash /opt/stokr/stokr-platform/scripts/contabo_console_fix_ssh.sh
 ```
-
-Or paste the one-liner from that script if the repo is not pulled yet.
 
 If the repo is missing, rerun bootstrap:
 
