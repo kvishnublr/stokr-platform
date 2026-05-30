@@ -202,6 +202,10 @@ def main():
         time.sleep(2)
 
     print("Running validate-release pack...")
+    rt = api("GET", "/api/admin/simulation/runtime/status")
+    if not (isinstance(rt.get("data"), dict) and rt["data"].get("enabled")):
+        api("POST", "/api/admin/simulation/runtime/enable")
+        time.sleep(1)
     report["validate_release"] = api("POST", "/api/admin/simulation/validate-release")
     time.sleep(5)
     report["validate_release_all_runs"] = psql(

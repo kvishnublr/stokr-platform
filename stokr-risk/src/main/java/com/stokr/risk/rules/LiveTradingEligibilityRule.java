@@ -1,5 +1,6 @@
 package com.stokr.risk.rules;
 
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.risk.api.RiskRule;
 import com.stokr.risk.model.LiveTraderEligibilityResult;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Component;
 public class LiveTradingEligibilityRule implements RiskRule {
 
     private final LiveTradingTraderEligibilityService traderEligibilityService;
+    private final SimulationModeService simulationModeService;
 
     @Override
     public String code() {
@@ -25,6 +27,9 @@ public class LiveTradingEligibilityRule implements RiskRule {
     @Override
     public RiskDecision evaluate(RiskContext context) {
         if (context.order().getExecutionMode() != ExecutionMode.LIVE) {
+            return RiskDecision.ok();
+        }
+        if (context.order().isSimulation() && simulationModeService.isActive()) {
             return RiskDecision.ok();
         }
         LiveTraderEligibilityResult r = context.order().isTestTrade()
