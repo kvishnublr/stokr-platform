@@ -13,6 +13,15 @@ import {
   signalDirection,
   signalStrategyKey,
 } from "../../lib/intradaySignals";
+import {
+  lookupAdvScore,
+  pickTopConfirmation,
+  resolveConfirmation,
+  sortSignals,
+  type SignalSortMode,
+} from "../../lib/confirmationRank";
+import { useAdvAiScoreMap } from "../../hooks/useAdvAiScoreMap";
+import { ConfirmationTierChip, ConfirmationTopPick } from "../../components/confirmation/ConfirmationTopPick";
 import { fmtTime, istTodayYmd } from "../../lib/dateUtils";
 import { deriveSessionBanner } from "../../lib/intradayLiveOps";
 import {
@@ -271,7 +280,9 @@ export function IntradayCockpitPage() {
   const userId = useSessionStore((s) => s.userId);
   const queryClient = useQueryClient();
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
+  const [signalSortMode, setSignalSortMode] = useState<SignalSortMode>("confirmation");
   const [guardEvents, setGuardEvents] = useState<Array<Record<string, unknown>>>([]);
+  const { advMap, isAligned: advAligned } = useAdvAiScoreMap(!!accessToken);
   const [integrityOpen, setIntegrityOpen] = useState(false);
   const [integrityTab, setIntegrityTab] = useState<"reconcile" | "guards">("reconcile");
   const todayYmd = istTodayYmd();
@@ -445,8 +456,13 @@ export function IntradayCockpitPage() {
     const scoped = selectedStrategy
       ? signals.filter((s) => signalStrategyKey(s).toUpperCase().includes(selectedStrategy.toUpperCase()))
       : signals;
-    return scoped.slice(0, 32);
-  }, [ws?.latestSignals, selectedStrategy, todayYmd]);
+    return sortSignals(scoped, signalSortMode, advMap).slice(0, 32);
+  }, [ws?.latestSignals, selectedStrategy, todayYmd, signalSortMode, advMap]);
+
+  const topPick = useMemo(
+    () => pickTopConfirmation(filteredSignals, advMap, "A"),
+    [filteredSignals, advMap],
+  );
 
   const recentGuardEvents = useMemo(() => {
     const persisted = ws?.executionGuardEvents ?? [];
@@ -519,7 +535,11 @@ export function IntradayCockpitPage() {
               <MetricPill label="Mode" value={ws?.accountSummary?.executionMode ?? "—"} isLight={isLight} />
               <MetricPill label="Day P&L" value={formatPnlDisplay(resolvedPnl.mtm)} highlight pnl={resolvedPnl.mtm} isLight={isLight} />
               <MetricPill label="Open" value={String(openPositions.length)} isLight={isLight} />
-              <MetricPill label="Exec Score" value={formatExecutionQualityScore(ws?.executionQualityScore)} isLight={isLight} />
+              <MetricPill
+                label="Exec health"
+                value={formatExecutionQualityScore(ws?.executionQualityScore)}
+                isLight={isLight}
+              />
             </div>
           </div>
 
@@ -675,11 +695,61 @@ export function IntradayCockpitPage() {
               icon={Activity}
               isLight={isLight}
               action={
-                selectedStrategy ? (
-                  <button type="button" onClick={() => setSelectedStrategy(null)} className={cn("rounded-full border px-3 py-1 text-[11px] font-medium", isLight ? "border-slate-200 bg-white text-slate-700" : "border-neutral-700 bg-neutral-900 text-neutral-200")}>
-                    Clear filter
-                  </button>
-                ) : null
+                <div className="flex flex-wrap items-center gap-2">
+                  <div
+                    className={cn(
+                      "inline-flex rounded-full border p-0.5 text-[10px] font-semibold",
+                      isLight ? "border-slate-200 bg-white" : "border-neutral-700 bg-neutral-900",
+                    )}
+                    role="group"
+                    aria-label="Signal sort order"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSignalSortMode("confirmation")}
+                      className={cn(
+                        "rounded-full px-2.5 py-1 transition",
+                        signalSortMode === "confirmation"
+                          ? isLight
+                            ? "bg-indigo-600 text-white"
+                            : "bg-indigo-500 text-white"
+                          : isLight
+                            ? "text-slate-600"
+                            : "text-neutral-400",
+                      )}
+                    >
+                      By confirmation
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSignalSortMode("time")}
+                      className={cn(
+                        "rounded-full px-2.5 py-1 transition",
+                        signalSortMode === "time"
+                          ? isLight
+                            ? "bg-indigo-600 text-white"
+                            : "bg-indigo-500 text-white"
+                          : isLight
+                            ? "text-slate-600"
+                            : "text-neutral-400",
+                      )}
+                    >
+                      By time
+                    </button>
+                  </div>
+                  {selectedStrategy ? (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStrategy(null)}
+                      className={cn(
+                        "rounded-full border px-3 py-1 text-[11px] font-medium",
+                        isLight ? "border-slate-200 bg-white text-slate-700" : "border-neutral-700 bg-neutral-900 text-neutral-200",
+                      )}
+                    >
+                      Clear filter
+                    </button>
+                  ) : null}
+                </div>
               }
             />
             <motion.span
@@ -694,6 +764,23 @@ export function IntradayCockpitPage() {
               Live
             </motion.span>
           </div>
+
+          {topPick && filteredSignals.length > 0 ? (
+            <ConfirmationTopPick
+              pick={topPick.row}
+              rank={topPick.rank}
+              isLight={isLight}
+              advAligned={advAligned}
+              executionMode={ws?.accountSummary?.executionMode}
+              onClearStrategyFilter={selectedStrategy ? () => setSelectedStrategy(null) : undefined}
+            />
+          ) : null}
+
+          {!topPick && filteredSignals.length > 0 ? (
+            <p className={cn("text-xs", isLight ? "text-slate-500" : "text-neutral-400")}>
+              No A-tier setup in the current list — widen strategy filter or wait for stronger confirmation (RR ≥ 1.5).
+            </p>
+          ) : null}
 
           <div className="relative">
             <motion.div
@@ -723,13 +810,15 @@ export function IntradayCockpitPage() {
                         <th className="px-3 py-3 text-right">SL</th>
                         <th className="px-3 py-3 text-right">Target</th>
                         <th className="px-3 py-3 text-right">RR</th>
-                        <th className="px-4 py-3 text-right">Conf</th>
+                        <th className="px-3 py-3 text-right">Rank</th>
+                        <th className="px-3 py-3 text-right">Conf</th>
                       </tr>
                     </thead>
                     <motion.tbody variants={stagger} initial="hidden" animate="show">
                       <AnimatePresence mode="popLayout">
                         {filteredSignals.map((row, i) => {
                           const dir = signalDirection(row);
+                          const confirmation = resolveConfirmation(row, lookupAdvScore(row, advMap));
                           const ltp = resolveLtp(row.symbol);
                           const entry = parseMoney(row.entryReferencePrice);
                           const ltpVsEntry =
@@ -799,6 +888,9 @@ export function IntradayCockpitPage() {
                               <td className="px-3 py-3 text-right font-mono tabular-nums text-rose-600">{fmtNum(row.stopPrice)}</td>
                               <td className="px-3 py-3 text-right font-mono tabular-nums text-emerald-600">{fmtNum(row.targetPrice)}</td>
                               <td className="px-3 py-3 text-right font-mono tabular-nums font-semibold text-violet-700 dark:text-violet-300">{fmtNum(row.riskReward)}</td>
+                              <td className="px-3 py-3 text-right">
+                                <ConfirmationTierChip rank={confirmation} isLight={isLight} compact />
+                              </td>
                               <td className="px-4 py-3 text-right">
                                 <motion.span
                                   whileHover={{ scale: 1.05 }}
