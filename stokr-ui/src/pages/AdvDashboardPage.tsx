@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   AdvScannerRow,
@@ -126,6 +127,16 @@ export function AdvDashboardPage() {
           {syncing ? <div className="adv-pill adv-pill-truth">Syncing…</div> : null}
         </div>
       </header>
+
+      <div className="adv-confirmation-bridge">
+        <span>
+          <strong>Scanner score (AI)</strong> ranks the universe here.{" "}
+          <strong>Setup confirmation</strong> (confidence + RR + optional ADV match) ranks actionable signals on the Intraday Terminal.
+        </span>
+        <Link to="/intraday" className="adv-confirmation-link">
+          Open top pick →
+        </Link>
+      </div>
 
       <div className="adv-tabs">
         {TABS.map((t) => (
@@ -305,7 +316,15 @@ function OrderFlowTab({ data, rows, partial }: { data?: AdvTerminalSnapshot; row
 
   return (
     <>
-      {partial ? <div className="adv-empty adv-span-all">Order flow from live movers — full pipeline syncs in background</div> : null}
+      {partial ? (
+        <div className="adv-empty adv-span-all">
+          Order flow from live movers (market watch) — not strategy signals. Confirm trades on{" "}
+          <Link to="/intraday" className="adv-confirmation-link-inline">
+            Intraday Terminal
+          </Link>
+          .
+        </div>
+      ) : null}
       <div className="adv-metrics adv-metrics-5">
         <Metric label="Bullish Flow" value={String(summary.bullishCount ?? 0)} hint="Buy pressure ≥55%" accent />
         <Metric label="Bearish Flow" value={String(summary.bearishCount ?? 0)} hint="Sell pressure ≥55%" />

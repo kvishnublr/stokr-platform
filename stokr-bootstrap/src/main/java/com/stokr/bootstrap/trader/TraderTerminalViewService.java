@@ -249,7 +249,12 @@ public class TraderTerminalViewService {
             m.put("entryReferencePrice", s.getEntryReferencePrice());
             m.put("stopPrice", s.getStopPrice());
             m.put("targetPrice", s.getTargetPrice());
-            m.put("riskReward", computeRiskReward(s.getEntryReferencePrice(), s.getStopPrice(), s.getTargetPrice()));
+            BigDecimal riskReward = computeRiskReward(s.getEntryReferencePrice(), s.getStopPrice(), s.getTargetPrice());
+            m.put("riskReward", riskReward);
+            ConfirmationRank.Result confirmation = ConfirmationRank.rank(s.getConfidenceScore(), riskReward, null);
+            m.put("confirmationScore", confirmation.score());
+            m.put("confirmationTier", confirmation.tier());
+            m.put("highConviction", confirmation.highConviction());
             m.put("executionMode", s.getPipeline() != null ? s.getPipeline() : null);
             m.put("pipeline", s.getPipeline());
 

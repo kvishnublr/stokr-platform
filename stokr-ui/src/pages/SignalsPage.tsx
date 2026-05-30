@@ -6,11 +6,21 @@ import {
   signalMatchesExecutionMode,
 } from "../lib/traderExecutionMode";
 import { fmtDateTime } from "../lib/dateUtils";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { cn } from "../lib/utils";
 import { useUiThemeStore } from "../state/uiTheme";
+import { normalizeSignalRow } from "../lib/intradaySignals";
+import {
+  passesHighConvictionFilter,
+  resolveConfirmation,
+  sortSignals,
+  lookupAdvScore,
+  type SignalSortMode,
+} from "../lib/confirmationRank";
+import { useAdvAiScoreMap } from "../hooks/useAdvAiScoreMap";
+import { ConfirmationTierChip } from "../components/confirmation/ConfirmationTopPick";
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, X, ChevronRight, AlertTriangle,
   Target, ShieldAlert, Zap, Activity, DollarSign, BarChart3, CheckCircle2, XCircle, Clock
@@ -235,7 +245,17 @@ function SummaryBanner({ rows, light }: { rows: SignalRow[]; light: boolean }) {
   );
 }
 
-function SignalDetailDrawer({ signal, onClose, light }: { signal: SignalRow; onClose: () => void; light: boolean }) {
+function SignalDetailDrawer({
+  signal,
+  onClose,
+  light,
+  advMap,
+}: {
+  signal: SignalRow;
+  onClose: () => void;
+  light: boolean;
+  advMap?: Map<string, number>;
+}) {
   const bg = light ? "bg-white" : "bg-neutral-950";
   const border = light ? "border-neutral-200" : "border-white/[0.07]";
   const cardBg = light ? "bg-neutral-50" : "bg-white/[0.04]";
@@ -243,6 +263,8 @@ function SignalDetailDrawer({ signal, onClose, light }: { signal: SignalRow; onC
   const valueCls = "mt-1 font-mono text-sm " + (light ? "text-neutral-900" : "text-white");
 
   const pnlVal = fmtPnl(signal.pnl);
+  const normalized = normalizeSignalRow(signal as Record<string, unknown>);
+  const confirmation = resolveConfirmation(normalized, lookupAdvScore(normalized, advMap));
 
   return (
     <>
@@ -313,7 +335,13 @@ function SignalDetailDrawer({ signal, onClose, light }: { signal: SignalRow; onC
                 { label: "Target", value: <span className={light ? "text-emerald-600" : "text-emerald-400"}>{fmt(signal.targetPrice)}</span> },
                 { label: "Exit Price", value: signal.exitPrice ? fmt(signal.exitPrice) : "—" },
                 { label: "Qty", value: fmt(signal.suggestedQty) },
+                { label: "Setup rank", value: <ConfirmationTierChip rank={confirmation} isLight={light} /> },
                 { label: "Confidence", value: signal.confidenceScore != null ? `${(Number(signal.confidenceScore) * 100).toFixed(1)}%` : "—" },
+                {
+                  label: "Risk : Reward",
+                  value:
+                    confirmation.riskReward != null ? `${confirmation.riskReward.toFixed(2)}×` : "—",
+                },
                 { label: "Outcome", value: <OutcomeBadge status={signal.outcomeStatus} light={light} /> },
               ].map(({ label, value }) => (
                 <motion.div
@@ -344,7 +372,10 @@ export function SignalsPage() {
   const [symbol, setSymbol] = useState("");
   const [signalType, setSignalType] = useState("ALL");
   const [outcomeFilter, setOutcomeFilter] = useState("ALL");
+  const [highConvictionOnly, setHighConvictionOnly] = useState(false);
+  const [signalSortMode, setSignalSortMode] = useState<SignalSortMode>("confirmation");
   const [selectedSignal, setSelectedSignal] = useState<SignalRow | null>(null);
+  const { advMap } = useAdvAiScoreMap(true);
 
   const modeQ = useQuery({
     queryKey: [...TRADER_EXECUTION_MODE_QUERY_KEY],
@@ -362,18 +393,31 @@ export function SignalsPage() {
     refetchInterval: 15_000,
   });
 
-  const rows = (q.data ?? []).filter((r) => {
-    const symOk = !symbol.trim() || (r.symbol ?? "").toUpperCase().includes(symbol.toUpperCase());
-    const typeOk = signalType === "ALL" || (r.signalType ?? "").toUpperCase() === signalType;
-    const outcomeOk = outcomeFilter === "ALL"
-      || (outcomeFilter === "RUNNING" && !r.outcomeStatus)
-      || (outcomeFilter === "TARGET_HIT" && (r.outcomeStatus ?? "").toUpperCase() === "TARGET_HIT")
-      || (outcomeFilter === "SL_HIT" && (r.outcomeStatus ?? "").toUpperCase() === "SL_HIT")
-      || (outcomeFilter === "PRESSURE_EXIT" && (r.outcomeStatus ?? "").toUpperCase() === "PRESSURE_EXIT")
-      || (outcomeFilter === "PROFIT" && fmtPnl(r.pnl) != null && fmtPnl(r.pnl)! > 0)
-      || (outcomeFilter === "LOSS" && fmtPnl(r.pnl) != null && fmtPnl(r.pnl)! < 0);
-    return symOk && typeOk && outcomeOk && signalMatchesExecutionMode(r, executionMode);
-  });
+  const rows = useMemo(() => {
+    const filtered = (q.data ?? []).filter((r) => {
+      const symOk = !symbol.trim() || (r.symbol ?? "").toUpperCase().includes(symbol.toUpperCase());
+      const typeOk = signalType === "ALL" || (r.signalType ?? "").toUpperCase() === signalType;
+      const outcomeOk = outcomeFilter === "ALL"
+        || (outcomeFilter === "RUNNING" && !r.outcomeStatus)
+        || (outcomeFilter === "TARGET_HIT" && (r.outcomeStatus ?? "").toUpperCase() === "TARGET_HIT")
+        || (outcomeFilter === "SL_HIT" && (r.outcomeStatus ?? "").toUpperCase() === "SL_HIT")
+        || (outcomeFilter === "PRESSURE_EXIT" && (r.outcomeStatus ?? "").toUpperCase() === "PRESSURE_EXIT")
+        || (outcomeFilter === "PROFIT" && fmtPnl(r.pnl) != null && fmtPnl(r.pnl)! > 0)
+        || (outcomeFilter === "LOSS" && fmtPnl(r.pnl) != null && fmtPnl(r.pnl)! < 0);
+      if (!symOk || !typeOk || !outcomeOk || !signalMatchesExecutionMode(r, executionMode)) {
+        return false;
+      }
+      if (highConvictionOnly) {
+        return passesHighConvictionFilter(normalizeSignalRow(r as Record<string, unknown>), advMap);
+      }
+      return true;
+    });
+    return sortSignals(
+      filtered.map((r) => normalizeSignalRow(r as Record<string, unknown>) as SignalRow),
+      signalSortMode,
+      advMap,
+    );
+  }, [q.data, symbol, signalType, outcomeFilter, executionMode, highConvictionOnly, signalSortMode, advMap]);
 
   const bg = isLight ? "bg-white" : "bg-neutral-950";
   const borderCls = isLight ? "border-neutral-200" : "border-white/[0.07]";
@@ -436,8 +480,42 @@ export function SignalsPage() {
           <option value="PROFIT">In Profit</option>
           <option value="LOSS">In Loss</option>
         </select>
-        {(symbol || signalType !== "ALL" || outcomeFilter !== "ALL") && (
-          <button type="button" onClick={() => { setSymbol(""); setSignalType("ALL"); setOutcomeFilter("ALL"); }}
+        <select className={selectCls} value={signalSortMode} onChange={e => setSignalSortMode(e.target.value as SignalSortMode)}>
+          <option value="confirmation">Sort: confirmation</option>
+          <option value="time">Sort: newest</option>
+        </select>
+        <label
+          className={cn(
+            "inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold",
+            highConvictionOnly
+              ? isLight
+                ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+              : isLight
+                ? "border-neutral-200 bg-white text-neutral-600"
+                : "border-white/[0.1] bg-white/[0.05] text-neutral-300",
+          )}
+        >
+          <input
+            type="checkbox"
+            className="sr-only"
+            checked={highConvictionOnly}
+            onChange={e => setHighConvictionOnly(e.target.checked)}
+          />
+          High conviction only
+        </label>
+        <button
+          type="button"
+          onClick={() => navigate("/intraday")}
+          className={cn(
+            "rounded-lg border px-3 py-1.5 text-xs font-semibold",
+            isLight ? "border-indigo-200 text-indigo-700 hover:bg-indigo-50" : "border-indigo-500/30 text-indigo-300",
+          )}
+        >
+          Intraday top pick
+        </button>
+        {(symbol || signalType !== "ALL" || outcomeFilter !== "ALL" || highConvictionOnly) && (
+          <button type="button" onClick={() => { setSymbol(""); setSignalType("ALL"); setOutcomeFilter("ALL"); setHighConvictionOnly(false); }}
             className={cn("flex items-center gap-1 text-xs", textMuted, "hover:text-red-500")}>
             <X className="h-3 w-3" /> Clear
           </button>
@@ -450,9 +528,11 @@ export function SignalsPage() {
           isLight ? "border-amber-200 bg-amber-50 text-amber-800" : "border-amber-500/25 bg-amber-500/[0.07] text-amber-300")}>
           <AlertTriangle className="h-8 w-8 opacity-60" />
           <div>
-            <div className="font-semibold">No signals yet</div>
+            <div className="font-semibold">{highConvictionOnly ? "No high-conviction signals" : "No signals yet"}</div>
             <div className="mt-1 text-xs opacity-80">
-              Signals appear here once the market opens and your strategies begin scanning.
+              {highConvictionOnly
+                ? "Try turning off High conviction only or check Intraday Terminal for A-tier setups."
+                : "Signals appear here once the market opens and your strategies begin scanning."}
             </div>
           </div>
           <div className="flex gap-2 mt-1">
@@ -476,7 +556,7 @@ export function SignalsPage() {
           <table className="w-full min-w-[1050px] text-xs">
             <thead className={cn("sticky top-0 z-10 border-b", borderCls, hdrBg)}>
               <tr>
-                {["Time", "Strategy", "Symbol", "Side", "Entry", "LTP", "SL", "Target", "P&L", "Status", "Confidence", "Rationale"].map(h => (
+                {["Time", "Strategy", "Symbol", "Side", "Entry", "LTP", "SL", "Target", "RR", "Rank", "P&L", "Status", "Conf", "Rationale"].map(h => (
                   <th key={h} className={cn("whitespace-nowrap px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest", textMuted)}>{h}</th>
                 ))}
                 <th className="w-8" />
@@ -484,10 +564,14 @@ export function SignalsPage() {
             </thead>
             <tbody>
               {q.isLoading && (
-                <tr><td colSpan={13} className={cn("px-4 py-12 text-center", textMuted)}>Loading signals...</td></tr>
+                <tr><td colSpan={15} className={cn("px-4 py-12 text-center", textMuted)}>Loading signals...</td></tr>
               )}
               {rows.map((r, i) => {
                 const pnlVal = fmtPnl(r.pnl);
+                const confirmation = resolveConfirmation(
+                  normalizeSignalRow(r as Record<string, unknown>),
+                  lookupAdvScore(normalizeSignalRow(r as Record<string, unknown>), advMap),
+                );
                 return (
                   <tr key={r.id}
                     onClick={() => setSelectedSignal(r)}
@@ -509,10 +593,16 @@ export function SignalsPage() {
                     <td className={cn("px-3 py-2.5 font-mono font-semibold", isLight ? "text-sky-600" : "text-sky-400")}>{fmt(r.ltp)}</td>
                     <td className={cn("px-3 py-2.5 font-mono", isLight ? "text-rose-600" : "text-rose-400")}>{fmt(r.stopPrice)}</td>
                     <td className={cn("px-3 py-2.5 font-mono", isLight ? "text-emerald-600" : "text-emerald-400")}>{fmt(r.targetPrice)}</td>
+                    <td className={cn("px-3 py-2.5 font-mono", isLight ? "text-violet-700" : "text-violet-300")}>
+                      {confirmation.riskReward != null ? confirmation.riskReward.toFixed(2) : "—"}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <ConfirmationTierChip rank={confirmation} isLight={isLight} compact />
+                    </td>
                     <td className="px-3 py-2.5"><PnlCell value={r.pnl} light={isLight} /></td>
                     <td className="px-3 py-2.5"><OutcomeBadge status={r.outcomeStatus} light={isLight} /></td>
                     <td className={cn("px-3 py-2.5 font-mono", isLight ? "text-neutral-600" : "text-neutral-300")}>
-                      {r.confidenceScore != null ? `${(Number(r.confidenceScore) * 100).toFixed(1)}%` : "—"}
+                      {r.confidenceScore != null ? `${(Number(r.confidenceScore) <= 1 ? Number(r.confidenceScore) * 100 : Number(r.confidenceScore)).toFixed(0)}%` : "—"}
                     </td>
                     <td className={cn("max-w-[160px] truncate px-3 py-2.5", textMuted)} title={r.reason ?? ""}>{r.reason ?? "—"}</td>
                     <td className={cn("px-3 py-2.5", textMuted)}><ChevronRight className="h-3.5 w-3.5" /></td>
@@ -526,7 +616,7 @@ export function SignalsPage() {
 
       <AnimatePresence>
         {selectedSignal ? (
-          <SignalDetailDrawer signal={selectedSignal} onClose={() => setSelectedSignal(null)} light={isLight} />
+          <SignalDetailDrawer signal={selectedSignal} onClose={() => setSelectedSignal(null)} light={isLight} advMap={advMap} />
         ) : null}
       </AnimatePresence>
     </div>
