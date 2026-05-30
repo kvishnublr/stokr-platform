@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  secrets: write
 
 jobs:
   publish-deploy-public-key:
@@ -51,7 +52,33 @@ jobs:
           git add deploy/contabo_github_deploy.pub
           if git diff --cached --quiet; then
             echo "deploy/contabo_github_deploy.pub already matches DEPLOY_SSH_KEY"
-            exit 0
+          else
+            git commit -m "Sync deploy public key with DEPLOY_SSH_KEY for Contabo authorized_keys"
+            git push origin HEAD:Release_v1
           fi
-          git commit -m "Sync deploy public key with DEPLOY_SSH_KEY for Contabo authorized_keys"
-          git push origin HEAD:Release_v1
+
+  verify-deploy-ssh:
+    needs: publish-deploy-public-key
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare SSH deploy key
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          python3 <<'PY'
+          import os
+          from pathlib import Path
+          key = os.environ["DEPLOY_SSH_KEY"].strip()
+          if "\\n" in key and "\n" not in key:
+              key = key.replace("\\n", "\n")
+          path = Path.home() / ".ssh" / "contabo_deploy"
+          path.write_text(key + "\n", encoding="utf-8")
+          path.chmod(0o600)
+          PY
+          ssh-keyscan -H -p 22 "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          ssh -i "$HOME/.ssh/contabo_deploy" -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=30 \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" "echo SSH_VERIFY_OK && hostname"

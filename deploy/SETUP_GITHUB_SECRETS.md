@@ -37,9 +37,25 @@ lines. The workflow accepts either normal multiline keys or keys pasted with
 literal `\n` line separators, but the private key must match a public key in
 `/root/.ssh/authorized_keys` on the Contabo server.
 
-If GitHub Actions fails with `unable to authenticate`, rerun the bootstrap
-script from the Contabo web console and update `DEPLOY_SSH_KEY` with the
-newly printed private key.
+If GitHub Actions fails with `Permission denied (publickey)`:
+
+1. Run **Repair Deploy SSH Secret** workflow (Actions tab) — it publishes the
+   `DEPLOY_SSH_KEY` public half into `deploy/contabo_github_deploy.pub`.
+2. On Contabo **web/serial console** as root (password SSH is disabled):
+
+```bash
+bash /opt/stokr/stokr-platform/scripts/contabo_console_fix_ssh.sh
+```
+
+Or paste the one-liner from that script if the repo is not pulled yet.
+
+If the repo is missing, rerun bootstrap:
+
+```bash
+cd /opt/stokr/stokr-platform && bash scripts/contabo_bootstrap_autodeploy.sh
+```
+
+Then update `DEPLOY_SSH_KEY` with the private key it prints if it generated a new pair.
 
 ## How auto-deploy works
 
