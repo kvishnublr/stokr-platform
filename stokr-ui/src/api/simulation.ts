@@ -6,6 +6,23 @@ export type SimulationRuntimeStatus = {
   enabledBy?: string;
 };
 
+export type HarnessValidation = {
+  signalGenerated?: boolean;
+  confidencePersisted?: boolean;
+  confidenceV2?: boolean;
+  omsExecuted?: boolean;
+  orderState?: string | null;
+  outcomeStatus?: string | null;
+  entryPrice?: number | string | null;
+  targetPrice?: number | string | null;
+  stopPrice?: number | string | null;
+  realizedPnl?: number | string | null;
+  protectionTriggered?: boolean;
+  simulationRunId?: string | null;
+  pipelineSteps?: string[];
+  error?: string | null;
+};
+
 export type SimulationHarnessReport = {
   simulationRunId: string;
   scenario: string;
@@ -13,13 +30,58 @@ export type SimulationHarnessReport = {
   symbol: string;
   signalId: string | null;
   success: boolean;
-  validation: Record<string, unknown>;
+  validation: HarnessValidation;
+};
+
+export type SimulationRunRow = {
+  runId: string;
+  scenario: string;
+  status: string;
+  success: boolean;
+  startedAt: string;
+  completedAt?: string | null;
+  signalCount: number;
+  orderCount: number;
+};
+
+export type SimulationSignalRow = {
+  signalId: string;
+  strategy: string;
+  symbol: string;
+  confidence: number | null;
+  confidenceVersion: string | null;
+  outcomeStatus: string | null;
+  targetPrice?: number | string | null;
+  stopPrice?: number | string | null;
+  realizedPnl?: number | string | null;
+  scenario?: string | null;
+  orderState: string | null;
+};
+
+export type SimulationAggregates = {
+  signals?: number;
+  targetHits?: number;
+  stopLosses?: number;
+  protectionExits?: number;
+  confidencePopulated?: number;
 };
 
 export type SimulationDashboard = {
-  runs: Array<Record<string, unknown>>;
-  signals: Array<Record<string, unknown>>;
-  aggregates: Record<string, unknown>;
+  runs: SimulationRunRow[];
+  signals: SimulationSignalRow[];
+  aggregates: SimulationAggregates;
+};
+
+export type ScenarioValidationResult = {
+  scenario: string;
+  passed: boolean;
+  validation: HarnessValidation;
+};
+
+export type ValidationPackReport = {
+  allPassed: boolean;
+  scenarios: ScenarioValidationResult[];
+  analyticsIsolation: Record<string, unknown>;
 };
 
 export async function fetchSimulationStatus() {
@@ -56,7 +118,7 @@ export async function fetchSimulationDashboard(runId?: string) {
 
 export async function runValidationPack() {
   const res = await api.post("/api/admin/simulation/validate-release");
-  return res.data.data;
+  return res.data.data as ValidationPackReport;
 }
 
 export async function cleanupSimulation(body: {

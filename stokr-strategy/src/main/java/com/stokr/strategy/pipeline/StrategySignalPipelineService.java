@@ -221,6 +221,7 @@ public class StrategySignalPipelineService {
 
         // Harness runs in one @Transactional — afterCommit fires after harness reads OMS, so dispatch inline.
         if (SimulationScenarioContext.runId() != null) {
+            signalRepository.flush();
             dispatchAfterPersist.run();
         } else {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {

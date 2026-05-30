@@ -3,6 +3,8 @@ package com.stokr.execution.pipeline;
 import com.stokr.common.pipeline.messages.ExecutionDispatchMessage;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
 import com.stokr.common.simulation.SimulationModeService;
+import com.stokr.common.simulation.SimulationScenario;
+import com.stokr.common.simulation.SimulationScenarioContext;
 import com.stokr.common.telemetry.SignalDistributionTelemetryService;
 import com.stokr.execution.broker.BrokerPositionTruthService;
 import com.stokr.execution.safety.OmsSafetyGateService;
@@ -155,8 +157,8 @@ public class OrderIntentProcessor {
         log.info("order.intent.mode_resolved signalId={} msgMode={} resolvedMode={} isTestTrade={}",
                 signal.getId(), msg.executionMode(), mode, Boolean.TRUE.equals(signal.getTestTrade()));
 
-        boolean simulationHarness = signal.isSimulation()
-                && simulationModeService.isActive();
+        boolean simulationHarness = simulationModeService.isActive()
+                && (signal.isSimulation() || SimulationScenarioContext.active());
 
         // System-generated signals bypass paper/SIM user-level gate (no trader account needed).
         // For LIVE mode: system signals only check platform gates (kill switch, live armed).
@@ -461,8 +463,13 @@ public class OrderIntentProcessor {
         if (Boolean.TRUE.equals(signal.getTestTrade())) {
             return parseMode(msgMode);
         }
-        if (signal.isSimulation() && simulationModeService.isActive()) {
-            return parseMode(msgMode);
+        if (simulationModeService.isActive()) {
+            if (SimulationScenarioContext.scenario() == SimulationScenario.BROKER_REJECT) {
+                return ExecutionMode.LIVE;
+            }
+            if (signal.isSimulation() || SimulationScenarioContext.active()) {
+                return parseMode(msgMode);
+            }
         }
         try {
             java.util.Optional<StrategyExecutionConfig> cfgOpt =

@@ -1,6 +1,7 @@
 package com.stokr.execution.safety;
 
 import com.stokr.common.simulation.SimulationModeService;
+import com.stokr.common.simulation.SimulationScenarioContext;
 import com.stokr.marketdata.monitor.FeedHealthMonitorService;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.strategy.domain.StrategySignalEntity;
@@ -41,7 +42,8 @@ public class LiveRolloutGateService {
 
         List<String> blockers = new ArrayList<>();
 
-        if (signal.isSimulation() && simulationModeService.isActive()) {
+        if (simulationModeService.isActive()
+                && (signal.isSimulation() || SimulationScenarioContext.active())) {
             return LiveRolloutDecision.allow(ExecutionMode.LIVE, List.of("SIMULATION_HARNESS"));
         }
 

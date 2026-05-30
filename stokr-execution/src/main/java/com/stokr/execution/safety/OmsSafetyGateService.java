@@ -1,6 +1,7 @@
 package com.stokr.execution.safety;
 
 import com.stokr.common.simulation.SimulationModeService;
+import com.stokr.common.simulation.SimulationScenarioContext;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.strategy.domain.StrategySignalEntity;
@@ -40,8 +41,8 @@ public class OmsSafetyGateService {
         ExecutionMode effectiveMode = requestedMode;
         List<String> reasons = new ArrayList<>();
 
-        boolean harnessSimulation = signal.isSimulation()
-                && simulationModeService.isActive();
+        boolean harnessSimulation = simulationModeService.isActive()
+                && (signal.isSimulation() || SimulationScenarioContext.active());
         if (!harnessSimulation
                 && killSwitchService.forcesPaperMode()
                 && effectiveMode == ExecutionMode.LIVE) {

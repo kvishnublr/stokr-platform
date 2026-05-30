@@ -141,8 +141,9 @@ public class MarketSimulationHarnessService {
             steps.add("OUTCOME_TRACKER");
             boolean confidenceOk = refreshed.getConfidenceScore() != null
                     && "CONFIDENCE_V2".equals(refreshed.getConfidenceVersion());
+            Optional<OmsOrder> orderFinal = resolveOrder(refreshed.getId());
             SimulationHarnessReport report = buildReport(
-                    runId, scenario, strategyKey, symbol, steps, refreshed, order.orElse(null), confidenceOk, null);
+                    runId, scenario, strategyKey, symbol, steps, refreshed, orderFinal.orElse(null), confidenceOk, null);
             simulationRunService.completeRun(runId, report.success(), report);
             return report;
         } finally {
