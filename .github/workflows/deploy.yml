@@ -52,9 +52,14 @@ jobs:
 
           echo "Deploy key fingerprint:"
           ssh-keygen -l -f "$HOME/.ssh/contabo_deploy.pub"
+          DEPLOY_FP="$(ssh-keygen -lf "$HOME/.ssh/contabo_deploy.pub" | awk '{print $2}')"
           if [ -f deploy/contabo_github_deploy.pub ]; then
-            echo "Repo-bundled fallback public key fingerprint:"
+            echo "Repo-bundled deploy public key fingerprint:"
             ssh-keygen -l -f deploy/contabo_github_deploy.pub || true
+            REPO_FP="$(ssh-keygen -lf deploy/contabo_github_deploy.pub | awk '{print $2}')"
+            if [ "$DEPLOY_FP" != "$REPO_FP" ]; then
+              echo "::warning::DEPLOY_SSH_KEY fingerprint ($DEPLOY_FP) does not match deploy/contabo_github_deploy.pub ($REPO_FP). Update the GitHub secret or rerun scripts/contabo_bootstrap_autodeploy.sh on Contabo."
+            fi
           fi
 
           ssh-keyscan -H -p 22 "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null

@@ -25,6 +25,9 @@ fi
 log "New commits on origin/$BRANCH ($LOCAL -> $REMOTE)"
 git checkout "$BRANCH"
 git pull origin "$BRANCH" >>"$LOG" 2>&1
-chmod +x ./deploy.sh ./health-check.sh 2>/dev/null || true
+chmod +x ./deploy.sh ./health-check.sh ./scripts/sync_github_deploy_authorized_key.sh 2>/dev/null || true
+if [ "$(id -u)" = "0" ] && [ -f ./scripts/sync_github_deploy_authorized_key.sh ]; then
+  bash ./scripts/sync_github_deploy_authorized_key.sh >>"$LOG" 2>&1 || true
+fi
 ./deploy.sh api ui >>"$LOG" 2>&1
 log "Deploy finished at $(git rev-parse --short HEAD)"

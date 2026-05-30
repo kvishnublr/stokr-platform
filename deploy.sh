@@ -140,6 +140,10 @@ deploy_jar() {
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+if [ "$(id -u)" = "0" ] && [ -f "$PROJECT_DIR/scripts/sync_github_deploy_authorized_key.sh" ]; then
+    bash "$PROJECT_DIR/scripts/sync_github_deploy_authorized_key.sh"
+fi
+
 TARGETS=("$@")
 
 if [ ${#TARGETS[@]} -eq 0 ]; then
