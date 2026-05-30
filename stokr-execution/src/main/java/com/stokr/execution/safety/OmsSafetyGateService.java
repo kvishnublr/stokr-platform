@@ -57,7 +57,7 @@ public class OmsSafetyGateService {
             reasons.addAll(rollout.blockers());
         }
 
-        if (effectiveMode == ExecutionMode.LIVE) {
+        if (effectiveMode == ExecutionMode.LIVE && !harnessSimulation) {
             if (!Boolean.TRUE.equals(signal.getTestTrade())
                     && marketCloseProtectionService.blocksNewLiveEntries(now, signal.getSymbol(), strategyKey)
                     && isEntrySignal(signal)) {

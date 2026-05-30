@@ -157,7 +157,9 @@ public class AdminMarketSimulationController {
                 body.executionMode(),
                 body.brokerOutcome(),
                 Boolean.TRUE.equals(body.useCatalogScan()),
-                body.runProtectionMonitor() == null || body.runProtectionMonitor(),
+                body.runProtectionMonitor() != null
+                        ? body.runProtectionMonitor()
+                        : body.scenario() == SimulationScenario.PROTECTION_EXIT,
                 body.pushLiveTicks() != null ? body.pushLiveTicks() : 0,
                 body.tickPriceOverride()
         );
