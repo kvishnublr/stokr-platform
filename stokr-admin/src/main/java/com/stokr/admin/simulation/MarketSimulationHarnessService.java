@@ -250,7 +250,7 @@ public class MarketSimulationHarnessService {
         validation.put("error", error);
         boolean success = signal != null && signal.getConfidenceScore() != null;
         if (scenario == SimulationScenario.BROKER_REJECT) {
-            success = order != null && order.getState() == OrderState.FAILED;
+            success = order != null && brokerRejectionOrder(order);
         } else {
             success = success && order != null;
         }
@@ -296,6 +296,17 @@ public class MarketSimulationHarnessService {
             case BROKER_REJECT -> SimulatedBrokerOutcome.REJECTED;
             default -> SimulatedBrokerOutcome.FILLED;
         };
+    }
+
+    private static boolean brokerRejectionOrder(OmsOrder order) {
+        if (order.getState() == OrderState.FAILED) {
+            return true;
+        }
+        if (order.getState() == OrderState.REJECTED) {
+            String reason = order.getRejectReason();
+            return reason != null && reason.toUpperCase().contains("BROKER");
+        }
+        return false;
     }
 
     private Optional<OmsOrder> resolveOrder(UUID signalId) {
