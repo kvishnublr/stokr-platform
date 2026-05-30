@@ -1,6 +1,8 @@
 package com.stokr.admin.simulation;
 
 import com.stokr.common.simulation.AnalyticsDataScope;
+import com.stokr.common.simulation.SimulationModeService;
+import com.stokr.common.simulation.SimulationRuntimeControlService;
 import com.stokr.common.simulation.SimulationScenario;
 import com.stokr.strategy.analytics.StrategyEffectivenessEngine;
 import lombok.RequiredArgsConstructor;
@@ -37,12 +39,15 @@ public class SimulationValidationPackService {
 
     private final MarketSimulationHarnessService harnessService;
     private final StrategyEffectivenessEngine effectivenessEngine;
+    private final SimulationRuntimeControlService runtimeControl;
+    private final SimulationModeService simulationModeService;
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ValidationPackReport runPack() {
         List<ScenarioValidationResult> results = new ArrayList<>();
         boolean allPassed = true;
         for (SimulationScenario scenario : PACK) {
+            ensureRuntimeEnabled();
             try {
                 MarketSimulationHarnessService.SimulationHarnessReport report = harnessService.runScenario(
                         new MarketSimulationHarnessService.SimulationHarnessRequest(
@@ -81,6 +86,12 @@ public class SimulationValidationPackService {
         analyticsCheck.put("reason", "Pack defers effectiveness/analytics to /api/admin/simulation/analytics");
 
         return new ValidationPackReport(allPassed, results, analyticsCheck);
+    }
+
+    private void ensureRuntimeEnabled() {
+        if (!runtimeControl.isRuntimeEnabled()) {
+            runtimeControl.enable(simulationModeService.systemUserId());
+        }
     }
 
     private static void pauseBetweenPackScenarios() {
