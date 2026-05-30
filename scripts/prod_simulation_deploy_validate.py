@@ -167,6 +167,10 @@ def main():
     time.sleep(2)
 
     for scenario in SCENARIOS_ORDER:
+        rt = api("GET", "/api/admin/simulation/runtime/status")
+        if not (isinstance(rt.get("data"), dict) and rt["data"].get("enabled")):
+            api("POST", "/api/admin/simulation/runtime/enable")
+            time.sleep(1)
         print(f"Running scenario {scenario}...")
         run_resp = api("POST", "/api/admin/simulation/run", {
             "scenario": scenario,
