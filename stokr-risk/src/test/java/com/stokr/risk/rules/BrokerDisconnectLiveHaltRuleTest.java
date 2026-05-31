@@ -1,9 +1,14 @@
 package com.stokr.risk.rules;
 
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.risk.model.RiskContext;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
@@ -12,9 +17,18 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@ExtendWith(MockitoExtension.class)
 class BrokerDisconnectLiveHaltRuleTest {
 
-    private final BrokerDisconnectLiveHaltRule rule = new BrokerDisconnectLiveHaltRule();
+    @Mock
+    private SimulationModeService simulationModeService;
+
+    private BrokerDisconnectLiveHaltRule rule;
+
+    @BeforeEach
+    void setUp() {
+        rule = new BrokerDisconnectLiveHaltRule(simulationModeService);
+    }
 
     @Test
     void simulatedIgnoresCircuit() {

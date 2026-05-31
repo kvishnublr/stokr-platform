@@ -1,5 +1,6 @@
 package com.stokr.risk.rules;
 
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.risk.model.LiveTraderEligibilityResult;
@@ -25,7 +26,8 @@ class LiveTradingEligibilityRuleTest {
     @Test
     void simulatedAlwaysPassesRegardlessOfGate() {
         LiveTradingTraderEligibilityService eligibility = mock(LiveTradingTraderEligibilityService.class);
-        LiveTradingEligibilityRule rule = new LiveTradingEligibilityRule(eligibility);
+        SimulationModeService simulationMode = mock(SimulationModeService.class);
+        LiveTradingEligibilityRule rule = new LiveTradingEligibilityRule(eligibility, simulationMode);
         OmsOrder o = new OmsOrder();
         o.setExecutionMode(ExecutionMode.SIMULATED);
         RiskContext ctx = ctx(o);
@@ -42,7 +44,8 @@ class LiveTradingEligibilityRuleTest {
                         "Live trading disabled or platform not armed"
                 )
         );
-        LiveTradingEligibilityRule rule = new LiveTradingEligibilityRule(eligibility);
+        SimulationModeService simulationMode = mock(SimulationModeService.class);
+        LiveTradingEligibilityRule rule = new LiveTradingEligibilityRule(eligibility, simulationMode);
         OmsOrder o = new OmsOrder();
         o.setExecutionMode(ExecutionMode.LIVE);
         RiskDecision d = rule.evaluate(ctx(o));
