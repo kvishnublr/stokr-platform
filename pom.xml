@@ -14,8 +14,8 @@
     <modules>
         <module>stokr-common</module>
         <module>stokr-auth</module>
-        <module>stokr-user</module>
         <module>stokr-broker</module>
+        <module>stokr-user</module>
         <module>stokr-oms</module>
         <module>stokr-risk</module>
         <module>stokr-marketdata</module>
