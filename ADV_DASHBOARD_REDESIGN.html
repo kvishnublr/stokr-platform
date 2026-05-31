@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADV Dashboard Redesign - Live Mockup</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
+            color: #334155;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* HEADER */
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid #e2e8f0;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .header-title h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .header-sub {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+
+        .pills {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .pill {
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .pill-live {
+            background: #f0fdf4;
+            border-color: #bbf7d0;
+            color: #16a34a;
+            font-weight: 600;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #22c55e;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* TABS */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            background: white;
+            padding: 12px;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #64748b;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            background: #f1f5f9;
+            color: #334155;
+        }
+
+        .tab.active {
+            background: #f0fdf4;
+            color: #16a34a;
+            font-weight: 600;
+            border: 1px solid #dcfce7;
+        }
+
+        /* ALERTS */
+        .alerts-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .alert-toast {
+            background: white;
+            border-left: 4px solid;
+            padding: 14px 16px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            font-size: 13px;
+            max-width: 300px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .alert-green {
+            border-left-color: #22c55e;
+            background: #f0fdf4;
+            color: #15803d;
+        }
+
+        .alert-orange {
+            border-left-color: #f97316;
+            background: #fff7ed;
+            color: #c2410c;
+        }
+
+        .alert-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* MAIN GRID */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        /* HERO CARDS */
+        .hero-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1e293b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .badge {
+            background: #f0fdf4;
+            color: #16a34a;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            margin-left: auto;
+        }
+
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .hero-card {
+            background: linear-gradient(135deg, #f0fdf4 0%, white 100%);
+            border: 2px solid #bbf7d0;
+            border-radius: 12px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .hero-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(34, 197, 94, 0.15);
+        }
+
+        .hero-card.sell {
+            background: linear-gradient(135deg, #fff1f2 0%, white 100%);
+            border-color: #fecdd3;
+        }
+
+        .hero-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .hero-symbol {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .exec-badge {
+            background: #f0fdf4;
+            color: #16a34a;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+        }
+
+        .hero-body {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .hero-info {
+            flex: 1;
+        }
+
+        .ai-score {
+            font-size: 32px;
+            font-weight: 800;
+            color: #16a34a;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .ai-sparkline {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-left: 4px;
+            color: #22c55e;
+        }
+
+        .setup-type {
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .signal-meta {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .score-ring {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: 3px solid #dcfce7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 24px;
+            color: #15803d;
+            flex-shrink: 0;
+        }
+
+        /* METRICS ROW */
+        .metrics-row {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, #f0fdf4 0%, white 100%);
+            border: 1px solid #bbf7d0;
+            border-radius: 10px;
+            padding: 14px;
+            text-align: center;
+        }
+
+        .metric-label {
+            font-size: 10px;
+            color: #94a3b8;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: 800;
+            color: #1e293b;
+            margin-bottom: 4px;
+        }
+
+        .metric-hint {
+            font-size: 10px;
+            color: #16a34a;
+            font-weight: 600;
+        }
+
+        /* TODAY VS 7-DAY */
+        .comparison-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+            margin-bottom: 20px;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 16px;
+        }
+
+        .comparison-card {
+            background: linear-gradient(135deg, #f0f9ff 0%, white 100%);
+            border: 1px solid #bfdbfe;
+            border-radius: 10px;
+            padding: 16px;
+        }
+
+        .comparison-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 12px;
+        }
+
+        .comparison-values {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .today-val {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .avg-val {
+            font-size: 14px;
+            color: #64748b;
+        }
+
+        .trend-arrow {
+            color: #16a34a;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .trend-arrow.down {
+            color: #dc2626;
+        }
+
+        /* HEATMAP */
+        .heatmap-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+            margin-bottom: 20px;
+        }
+
+        .heatmap-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .heatmap-table th {
+            background: #f8fafc;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .heatmap-table td {
+            padding: 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .heatmap-cell {
+            text-align: center;
+            font-weight: 600;
+            border-radius: 6px;
+            padding: 8px;
+            color: white;
+        }
+
+        .heat-cold { background: #e5e7eb; color: #374151; }
+        .heat-cool { background: #fbbf24; color: white; }
+        .heat-warm { background: #86efac; color: #166534; }
+        .heat-hot { background: #22c55e; color: white; }
+
+        /* SCANNER TABLE */
+        .table-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+            margin-bottom: 20px;
+            overflow-x: auto;
+        }
+
+        .scanner-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .scanner-table th {
+            background: #f8fafc;
+            padding: 14px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e2e8f0;
+            white-space: nowrap;
+        }
+
+        .scanner-table td {
+            padding: 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .scanner-table tr:hover {
+            background: #f8fffe;
+        }
+
+        .symbol-cell {
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .ltp-cell {
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .chg-up {
+            color: #16a34a;
+            font-weight: 600;
+        }
+
+        .chg-down {
+            color: #dc2626;
+            font-weight: 600;
+        }
+
+        .ai-badge {
+            background: #f0fdf4;
+            color: #16a34a;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+            display: inline-block;
+        }
+
+        .pressure-bar {
+            height: 8px;
+            border-radius: 4px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            overflow: hidden;
+            width: 60px;
+            display: inline-block;
+        }
+
+        .pressure-buy {
+            height: 100%;
+            background: linear-gradient(90deg, #22c55e, #4ade80);
+            float: left;
+        }
+
+        /* SIDEBAR */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .sidebar-card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+        }
+
+        .sidebar-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #1e293b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        .kv-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            font-size: 12px;
+        }
+
+        .kv-item {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .kv-label {
+            color: #64748b;
+        }
+
+        .kv-value {
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .kv-status-ok {
+            color: #16a34a;
+        }
+
+        .kv-status-warn {
+            color: #d97706;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 1400px) {
+            .cards-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .cards-grid {
+                grid-template-columns: 1fr;
+            }
+            .metrics-row {
+                grid-template-columns: repeat(3, 1fr);
+            }
+            .comparison-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .footer {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 12px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+        }
+    </style>
+</head>
+<body>
+    <!-- ALERTS -->
+    <div class="alerts-container">
+        <div class="alert-toast alert-green">
+            <div class="alert-title">🟢 New Executable Signal</div>
+            <div>SBIN - AI 84 - Press Enter to trade</div>
+        </div>
+        <div class="alert-toast alert-orange">
+            <div class="alert-title">⚠️ AI Score Drop</div>
+            <div>ITC: 78 → 68 (momentum loss)</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- HEADER -->
+        <div class="header">
+            <div class="header-title">
+                <div class="logo-circle">◎</div>
+                <div>
+                    <h1>Intraday Intelligence</h1>
+                    <div class="header-sub">AI-powered scanner · Live movers + production pipeline · scan every 10s</div>
+                </div>
+            </div>
+            <div class="pills">
+                <div class="pill">
+                    <strong>MARKET OPEN</strong>
+                    <div>13:28 IST</div>
+                </div>
+                <div class="pill">Regime: <strong>BULLISH_MOMENTUM</strong></div>
+                <div class="pill">LIVE_SCANNER</div>
+                <div class="pill pill-live">
+                    <span class="live-dot"></span> LIVE
+                </div>
+            </div>
+        </div>
+
+        <!-- TABS -->
+        <div class="tabs">
+            <button class="tab active">Intelligence</button>
+            <button class="tab">Order Flow</button>
+            <button class="tab">Decisions</button>
+            <button class="tab">Sectors</button>
+            <button class="tab">Risk Matrix</button>
+            <button class="tab">Performance</button>
+        </div>
+
+        <!-- METRICS -->
+        <div class="metrics-row">
+            <div class="metric-card">
+                <div class="metric-label">Stocks Tracked</div>
+                <div class="metric-value">58</div>
+                <div class="metric-hint">Live universe</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Active Setups</div>
+                <div class="metric-value">58</div>
+                <div class="metric-hint">Pipeline rows</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Executable</div>
+                <div class="metric-value" style="color: #16a34a;">3</div>
+                <div class="metric-hint">OMS eligible</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Market Breadth</div>
+                <div class="metric-value">2.3:1</div>
+                <div class="metric-hint">Adv : Decl</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Top AI Score</div>
+                <div class="metric-value">84</div>
+                <div class="metric-hint">Best setup</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Orders Today</div>
+                <div class="metric-value">12</div>
+                <div class="metric-hint">Execution</div>
+            </div>
+        </div>
+
+        <!-- MAIN CONTENT -->
+        <div class="main-grid">
+            <div>
+                <!-- HERO CARDS -->
+                <div class="hero-section">
+                    <div class="section-title">
+                        🎯 Live Executable Signals
+                        <div class="badge">3 New</div>
+                    </div>
+
+                    <div class="cards-grid">
+                        <div class="hero-card">
+                            <div class="hero-header">
+                                <div class="hero-symbol">SBIN</div>
+                                <div class="exec-badge">OMS YES</div>
+                            </div>
+                            <div class="hero-body">
+                                <div class="hero-info">
+                                    <div class="ai-score">84 <span class="ai-sparkline">↗</span></div>
+                                    <div class="setup-type">▲ BUY BREAKOUT</div>
+                                    <div class="signal-meta">OBI: +2.1 · Chg: +2.3%</div>
+                                </div>
+                                <div class="score-ring">84</div>
+                            </div>
+                        </div>
+
+                        <div class="hero-card">
+                            <div class="hero-header">
+                                <div class="hero-symbol">RELIANCE</div>
+                                <div class="exec-badge">OMS YES</div>
+                            </div>
+                            <div class="hero-body">
+                                <div class="hero-info">
+                                    <div class="ai-score">82</div>
+                                    <div class="setup-type">▲ BUY MOMENTUM</div>
+                                    <div class="signal-meta">OBI: +1.8 · Chg: +1.9%</div>
+                                </div>
+                                <div class="score-ring">82</div>
+                            </div>
+                        </div>
+
+                        <div class="hero-card sell">
+                            <div class="hero-header">
+                                <div class="hero-symbol">INFY</div>
+                                <div class="exec-badge" style="background: #fecdd3; color: #991b1b;">BLOCKED</div>
+                            </div>
+                            <div class="hero-body">
+                                <div class="hero-info">
+                                    <div class="ai-score" style="color: #dc2626;">78</div>
+                                    <div class="setup-type">⟲ SELL REVERSAL</div>
+                                    <div class="signal-meta">OBI: -1.5 · Chg: -0.5%</div>
+                                </div>
+                                <div class="score-ring" style="border-color: #fecdd3; color: #b91c1c;">78</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TODAY VS 7-DAY -->
+                <div class="comparison-section">
+                    <div class="section-title">📊 Today vs. 7-Day Average</div>
+                    <div class="comparison-grid">
+                        <div class="comparison-card">
+                            <div class="comparison-title">Win Rate</div>
+                            <div class="comparison-values">
+                                <div>
+                                    <div class="today-val">62%</div>
+                                    <div class="avg-val">58% avg</div>
+                                </div>
+                                <div class="trend-arrow">↑</div>
+                            </div>
+                        </div>
+                        <div class="comparison-card">
+                            <div class="comparison-title">Avg Latency</div>
+                            <div class="comparison-values">
+                                <div>
+                                    <div class="today-val">245ms</div>
+                                    <div class="avg-val">310ms avg</div>
+                                </div>
+                                <div class="trend-arrow">↑</div>
+                            </div>
+                        </div>
+                        <div class="comparison-card">
+                            <div class="comparison-title">Fill Rate</div>
+                            <div class="comparison-values">
+                                <div>
+                                    <div class="today-val">98%</div>
+                                    <div class="avg-val">96% avg</div>
+                                </div>
+                                <div class="trend-arrow">↑</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTOR HEATMAP -->
+                <div class="heatmap-section">
+                    <div class="section-title">🌡️ Sector Performance Heatmap</div>
+                    <table class="heatmap-table">
+                        <thead>
+                            <tr>
+                                <th>Sector</th>
+                                <th>Avg AI</th>
+                                <th>Advance%</th>
+                                <th>Win Rate%</th>
+                                <th>Capital%</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="text-align: left;"><strong>IT</strong></td>
+                                <td><div class="heatmap-cell heat-hot">82</div></td>
+                                <td><div class="heatmap-cell heat-hot">72%</div></td>
+                                <td><div class="heatmap-cell heat-hot">68%</div></td>
+                                <td><div class="heatmap-cell heat-warm">45%</div></td>
+                            </tr>
+                            <tr>
+                                <td style="text-align: left;"><strong>Finance</strong></td>
+                                <td><div class="heatmap-cell heat-hot">78</div></td>
+                                <td><div class="heatmap-cell heat-warm">68%</div></td>
+                                <td><div class="heatmap-cell heat-warm">65%</div></td>
+                                <td><div class="heatmap-cell heat-cool">38%</div></td>
+                            </tr>
+                            <tr>
+                                <td style="text-align: left;"><strong>Energy</strong></td>
+                                <td><div class="heatmap-cell heat-cool">71</div></td>
+                                <td><div class="heatmap-cell heat-cool">45%</div></td>
+                                <td><div class="heatmap-cell heat-cool">58%</div></td>
+                                <td><div class="heatmap-cell heat-cold">22%</div></td>
+                            </tr>
+                            <tr>
+                                <td style="text-align: left;"><strong>Pharma</strong></td>
+                                <td><div class="heatmap-cell heat-cool">69</div></td>
+                                <td><div class="heatmap-cell heat-cool">42%</div></td>
+                                <td><div class="heatmap-cell heat-warm">62%</div></td>
+                                <td><div class="heatmap-cell heat-cold">18%</div></td>
+                            </tr>
+                            <tr>
+                                <td style="text-align: left;"><strong>Auto</strong></td>
+                                <td><div class="heatmap-cell heat-cool">65</div></td>
+                                <td><div class="heatmap-cell heat-cold">38%</div></td>
+                                <td><div class="heatmap-cell heat-cool">55%</div></td>
+                                <td><div class="heatmap-cell heat-cold">15%</div></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- SCANNER TABLE -->
+                <div class="table-section">
+                    <div class="section-title">
+                        🔍 Live Scanner
+                        <div class="badge">12 movers · 3 executable</div>
+                    </div>
+                    <table class="scanner-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Symbol</th>
+                                <th>LTP</th>
+                                <th>Chg%</th>
+                                <th>AI</th>
+                                <th>Source</th>
+                                <th>Status</th>
+                                <th>OBI</th>
+                                <th>Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>1</strong></td>
+                                <td class="symbol-cell">SBIN</td>
+                                <td class="ltp-cell">485.20</td>
+                                <td class="chg-up">+2.31%</td>
+                                <td><div class="ai-badge">84 ↗</div></td>
+                                <td><span class="ai-badge" style="background: #f0fdf4; color: #16a34a;">LIVE</span></td>
+                                <td><span style="color: #16a34a; font-weight: 600;">✓ OMS</span></td>
+                                <td>+2.1</td>
+                                <td>Breakout confirmed</td>
+                            </tr>
+                            <tr>
+                                <td><strong>2</strong></td>
+                                <td class="symbol-cell">RELIANCE</td>
+                                <td class="ltp-cell">2980.50</td>
+                                <td class="chg-up">+1.85%</td>
+                                <td><div class="ai-badge">82</div></td>
+                                <td><span class="ai-badge" style="background: #fef3c7; color: #b45309;">PROD</span></td>
+                                <td><span style="color: #16a34a; font-weight: 600;">✓ OMS</span></td>
+                                <td>+1.8</td>
+                                <td>Momentum rising</td>
+                            </tr>
+                            <tr>
+                                <td><strong>3</strong></td>
+                                <td class="symbol-cell">INFY</td>
+                                <td class="ltp-cell">2445.75</td>
+                                <td class="chg-down">-0.52%</td>
+                                <td><div style="background: #fee2e2; color: #991b1b; padding: 4px 8px; border-radius: 4px; font-weight: 700; display: inline-block;">78</div></td>
+                                <td><span class="ai-badge" style="background: #fef3c7; color: #b45309;">PROD</span></td>
+                                <td><span style="color: #dc2626; font-weight: 600;">⊘ BLOCKED</span></td>
+                                <td>-1.5</td>
+                                <td>Quality gate: HIGH_RISK</td>
+                            </tr>
+                            <tr>
+                                <td><strong>4</strong></td>
+                                <td class="symbol-cell">ITC</td>
+                                <td class="ltp-cell">452.30</td>
+                                <td class="chg-up">+1.23%</td>
+                                <td><div style="background: #dbeafe; color: #1e40af; padding: 4px 8px; border-radius: 4px; font-weight: 700; display: inline-block;">72</div></td>
+                                <td><span class="ai-badge" style="background: #eff6ff; color: #1e40af;">SETUP</span></td>
+                                <td><span style="color: #64748b;">⊘ WATCH</span></td>
+                                <td>+0.8</td>
+                                <td>Setup confirmation pending</td>
+                            </tr>
+                            <tr>
+                                <td><strong>5</strong></td>
+                                <td class="symbol-cell">HDFCBANK</td>
+                                <td class="ltp-cell">1625.45</td>
+                                <td class="chg-up">+1.58%</td>
+                                <td><div style="background: #dbeafe; color: #1e40af; padding: 4px 8px; border-radius: 4px; font-weight: 700; display: inline-block;">70</div></td>
+                                <td><span class="ai-badge" style="background: #f0fdf4; color: #16a34a;">LIVE</span></td>
+                                <td><span style="color: #64748b;">⊘ WATCH</span></td>
+                                <td>+1.2</td>
+                                <td>Momentum building</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SIDEBAR -->
+            <div class="sidebar">
+                <div class="sidebar-card">
+                    <div class="sidebar-title">📡 Live Control</div>
+                    <div class="kv-list">
+                        <div class="kv-item">
+                            <span class="kv-label">LIVE Enabled</span>
+                            <span class="kv-value kv-status-ok">✓ YES</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">Feed Status</span>
+                            <span class="kv-value kv-status-ok">⚡ OPERATIONAL</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">Safe Startup</span>
+                            <span class="kv-value kv-status-ok">✓ READY</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">Market Open</span>
+                            <span class="kv-value kv-status-ok">✓ YES</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">Live Gate</span>
+                            <span class="kv-value kv-status-ok">✓ OPEN</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">Scan Interval</span>
+                            <span class="kv-value">10 seconds</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-card">
+                    <div class="sidebar-title">⚙️ Today's Engine</div>
+                    <div class="kv-list">
+                        <div class="kv-item">
+                            <span class="kv-label">Signals</span>
+                            <span class="kv-value">58</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">Executable</span>
+                            <span class="kv-value kv-status-ok">3</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">Orders</span>
+                            <span class="kv-value">12</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">Trades</span>
+                            <span class="kv-value">8</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">Active</span>
+                            <span class="kv-value">3 running</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-card">
+                    <div class="sidebar-title">🎯 Active Strategies</div>
+                    <div class="kv-list">
+                        <div class="kv-item">
+                            <span class="kv-label">INDEX_HUNT</span>
+                            <span class="kv-value">⚡ RUN</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">MOMENTUM</span>
+                            <span class="kv-value">⚡ RUN</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">BREAKOUT_PRO</span>
+                            <span class="kv-value">⚡ RUN</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="kv-label">EARLY_BIRD</span>
+                            <span class="kv-value">⏸ WAIT</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FOOTER -->
+        <div class="footer">
+            ✨ ADV Dashboard Redesign - Live Mockup | Shows improved UI, 3-tier signals, heatmap, Today vs. 7-Day comparison, real-time alerts
+        </div>
+    </div>
+</body>
+</html>
