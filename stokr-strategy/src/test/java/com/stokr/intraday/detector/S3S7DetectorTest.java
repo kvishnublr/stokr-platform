@@ -60,7 +60,7 @@ public class S3S7DetectorTest {
         assertEquals("S3", signal.getStrategyName());
         assertEquals("NIFTY", signal.getSymbolName());
         assertEquals("LONG", signal.getDirection());
-        assertGreaterThanOrEqual(signal.getQualityScore(), BigDecimal.valueOf(65));
+        assertTrue(signal.getQualityScore().compareTo(BigDecimal.valueOf(65)) >= 0, "Quality score should be >= 65");
     }
 
     @Test

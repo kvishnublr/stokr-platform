@@ -1,5 +1,6 @@
 package com.stokr.strategy.operational;
 
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.integrity.MarketDataIntegrityService;
 import com.stokr.marketdata.monitor.FeedHealthMonitorService;
@@ -32,12 +33,14 @@ class TradingSafeStartupGateServiceTest {
     private MarketdataCandleRepository candleRepository;
     @Mock
     private FeedHealthMonitorService feedHealthMonitorService;
+    @Mock
+    private SimulationModeService simulationModeService;
 
     private TradingSafeStartupGateService gate;
 
     @BeforeEach
     void setUp() {
-        gate = new TradingSafeStartupGateService(integrityService, candleRepository, feedHealthMonitorService);
+        gate = new TradingSafeStartupGateService(integrityService, candleRepository, feedHealthMonitorService, simulationModeService);
         ReflectionTestUtils.setField(gate, "zone", ZoneId.of("Asia/Kolkata"));
         ReflectionTestUtils.setField(gate, "minWarmupSeconds", 0L);
         ReflectionTestUtils.setField(gate, "enabled", true);
