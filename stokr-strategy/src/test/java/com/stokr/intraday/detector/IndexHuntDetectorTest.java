@@ -414,21 +414,21 @@ public class IndexHuntDetectorTest {
         extremes.put("high", BigDecimal.valueOf(24100));
         extremes.put("low", BigDecimal.valueOf(23900));
 
-        return new MarketDataProvider.IndexMarketData(
-                "NIFTY",
-                BigDecimal.valueOf(24000),      // currentPrice
-                BigDecimal.valueOf(16.5),       // vixLevel
-                BigDecimal.valueOf(1.10),       // pcrRatio
-                BigDecimal.valueOf(1000000L),   // volume5m
-                BigDecimal.valueOf(0.15),       // change5m (default)
-                BigDecimal.valueOf(0.15),       // trend30m (default)
-                BigDecimal.valueOf(24010),      // sessionOpen
-                BigDecimal.valueOf(23950),      // prevClose
-                System.currentTimeMillis() / 1000,
-                BigDecimal.valueOf(50.0),       // niftyCallLTP
-                BigDecimal.valueOf(45.0),       // niftyPutLTP
-                BigDecimal.valueOf(350.0),      // bnfCallLTP
-                BigDecimal.valueOf(320.0)       // bnfPutLTP
-        );
+        MarketDataProvider.IndexMarketData data = new MarketDataProvider.IndexMarketData();
+        data.indexName = "NIFTY";
+        data.currentPrice = BigDecimal.valueOf(24000);
+        data.vixLevel = BigDecimal.valueOf(16.5);
+        data.pcrRatio = BigDecimal.valueOf(1.10);
+        data.volume5m = BigDecimal.valueOf(1000000L);
+        data.change5m = BigDecimal.valueOf(0.15);
+        data.trend30m = BigDecimal.valueOf(0.15);
+        data.sessionOpen = BigDecimal.valueOf(24010);
+        data.prevClose = BigDecimal.valueOf(23950);
+        data.timestamp = System.currentTimeMillis() / 1000;
+        data.niftyCallLTP = BigDecimal.valueOf(50.0);
+        data.niftyPutLTP = BigDecimal.valueOf(45.0);
+        data.bnfCallLTP = BigDecimal.valueOf(350.0);
+        data.bnfPutLTP = BigDecimal.valueOf(320.0);
+        return data;
     }
 }

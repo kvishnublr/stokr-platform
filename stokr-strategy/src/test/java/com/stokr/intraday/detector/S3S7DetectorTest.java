@@ -110,7 +110,7 @@ public class S3S7DetectorTest {
         // Verify quality score >= 80
         if (!signals.isEmpty()) {
             FuturesSignal signal = signals.get(0);
-            assertGreaterThanOrEqual(signal.getQualityScore(), BigDecimal.valueOf(80));
+            assertTrue(signal.getQualityScore().compareTo(BigDecimal.valueOf(80)) >= 0, "Quality score should be >= 80");
         }
     }
 
