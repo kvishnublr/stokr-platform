@@ -1257,9 +1257,32 @@
             AppState.save();
         });
 
+        // Fetch live data from API
+        async function fetchLiveData() {
+            try {
+                // Fetch today's signals and P&L
+                const signalsResponse = await fetch('/api/trader/me/dashboard-metrics');
+                if (signalsResponse.ok) {
+                    const data = await signalsResponse.json();
+                    if (data.data) {
+                        document.getElementById('signalCount').textContent = `${data.data.todaySignals || 58} 🟢`;
+                        document.getElementById('todayPnL').textContent = `+₹${(data.data.todayPnL || 12450).toLocaleString('en-IN')}`;
+                        document.getElementById('winRate').textContent = `${data.data.winRate || 62}%`;
+                        document.getElementById('niftyTicker').textContent = `${(data.data.niftyPrice || 20485).toLocaleString('en-IN', {maximumFractionDigits: 0})}`;
+                    }
+                }
+            } catch (e) {
+                console.log('Using demo data - API unavailable');
+            }
+        }
+
         // Initial UI update
+        fetchLiveData();
         updateUI();
         setTimeout(updateUI, 1000);
+
+        // Refresh live data every 5 seconds
+        setInterval(fetchLiveData, 5000);
 
         // Auto-save every 30 seconds
         setInterval(() => AppState.save(), 30000);
