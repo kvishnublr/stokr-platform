@@ -97,7 +97,7 @@ export function StrategyEngineCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className={cn("truncate text-sm font-semibold", isLight ? "text-neutral-900" : "text-white")}>
+            <h3 className={cn("text-sm font-semibold break-words", isLight ? "text-neutral-900" : "text-white")}>
               {strategy.displayName ?? strategy.code}
             </h3>
             <span
