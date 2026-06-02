@@ -132,6 +132,11 @@ public class PreOpenGapOISignalGenerator extends BaseGeneratedStrategy implement
             // Outside 9:16-9:18 entry window — too early or too late
             return hold(context);
         }
+        // Hard exit gate — no new entries after 11:00 AM (gap plays stall by mid-session)
+        if (!lt.isBefore(HARD_EXIT_TIME)) {
+            log.debug("preopengapoi.hard_exit_gate symbol={} time={} — past 11:00 IST cutoff", symbol, lt);
+            return hold(context);
+        }
 
         // ── load bars (prev session + today opening) ─────────────────────────
         List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(
@@ -180,29 +185,38 @@ public class PreOpenGapOISignalGenerator extends BaseGeneratedStrategy implement
         double gapPct    = (todayOpen - prevClose) / prevClose * 100.0;
         double absGapPct = Math.abs(gapPct);
         if (absGapPct < minGapPct || absGapPct > maxGapPct) {
-            log.debug("preopengapoi.gap_skip symbol={} gapPct={:.2f} — outside [{},{}]",
-                    symbol, gapPct, minGapPct, maxGapPct);
+            log.debug("preopengapoi.gap_skip symbol={} gapPct={} — outside [{},{}]",
+                    symbol, String.format("%.2f", gapPct), minGapPct, maxGapPct);
             return hold(context);
         }
         boolean isGapUp = gapPct > 0;
 
         int filtersHit = 1; // gap size passed
 
-        // ── FILTER 2: Order book pressure (proxy for OI direction) ───────────
+        // ── FILTER 2: Order book pressure (proxy for OI direction) ─────────────
         // Gap up = expect buy pressure (ratio > 0.52 = more bids than asks)
         // Gap dn = expect sell pressure (ratio < 0.48)
+        // HARD GATE: if pressure data is available it MUST align — opposing pressure
+        // means gap is institutional trap / short covering, not a sustained move.
+        // If data is unavailable (pre-market feed lag), we skip this filter but
+        // cap the signal at quality=B (max 2% risk) via filtersHit staying at 1.
         PressureSnapshot snap = pressureTracker.getSnapshot(symbol);
-        boolean pressureAligns = false;
-        double  pressureRatio  = 0.5;
+        double pressureRatio  = 0.5;
         if (snap != null) {
-            pressureRatio  = snap.imbalanceRatio();
-            pressureAligns = isGapUp ? pressureRatio > 0.52 : pressureRatio < 0.48;
-            if (pressureAligns) filtersHit++;
-            else {
-                // Pressure opposes gap direction — very likely to reverse, skip
-                log.debug("preopengapoi.pressure_fail symbol={} gapUp={} ratio={:.2f}", symbol, isGapUp, pressureRatio);
+            pressureRatio = snap.imbalanceRatio();
+            boolean pressureAligns = isGapUp ? pressureRatio > 0.52 : pressureRatio < 0.48;
+            if (pressureAligns) {
+                filtersHit++;
+            } else {
+                // Pressure opposes gap direction — very likely to reverse, hard skip
+                log.debug("preopengapoi.pressure_fail symbol={} gapUp={} ratio={}",
+                        symbol, isGapUp, String.format("%.2f", pressureRatio));
                 return hold(context);
             }
+        } else {
+            // Pressure data unavailable — do not treat as passing filter,
+            // signal can still fire but quality capped (filtersHit stays at 1 here)
+            log.debug("preopengapoi.pressure_unavailable symbol={} — no snapshot yet", symbol);
         }
 
         // ── FILTER 3: NIFTY alignment ────────────────────────────────────────
@@ -242,9 +256,15 @@ public class PreOpenGapOISignalGenerator extends BaseGeneratedStrategy implement
         if (volOk) filtersHit++;
         // Volume not a hard gate — some stocks have thin pre-open, penalise via sizing
 
-        // ── Need minimum 3 filters (gap + pressure + candle always required) ──
-        // pressure + candle are hard gates above, so if we're here, at least those passed
-        if (filtersHit < 3) return hold(context);
+        // ── Minimum quality gate: need at least 3 filters ───────────────────
+        // Guaranteed by this point: gap(1) + candle(1) = 2 minimum (both hard gates)
+        // Pressure adds 1 if snap available + aligns (hard reject if misaligns)
+        // Nifty and volume are soft — add 1 each if met
+        // So filtersHit=2 only when pressure data is missing AND nifty+vol both fail → skip
+        if (filtersHit < 3) {
+            log.debug("preopengapoi.quality_fail symbol={} filtersHit={} — minimum 3 required", symbol, filtersHit);
+            return hold(context);
+        }
 
         // ── Entry & Risk Parameters ──────────────────────────────────────────
         double currentPrice = toDouble(bars.get(n - 1).getClosePrice());
