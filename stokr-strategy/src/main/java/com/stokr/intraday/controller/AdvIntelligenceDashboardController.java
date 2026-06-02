@@ -37,9 +37,9 @@ public class AdvIntelligenceDashboardController {
     /**
      * Dashboard metrics endpoint for the enhanced frontend dashboard.
      * Returns current trading metrics including NIFTY price, active signals, P&L, and win rate.
+     * Public endpoint - no authentication required for initial display.
      */
     @GetMapping("/dashboard-metrics")
-    @PreAuthorize("isAuthenticated()")
     public ApiResponse<Map<String, Object>> dashboardMetrics(@AuthenticationPrincipal StokrUserDetails user) {
         var uid = user != null ? user.getId() : null;
         Map<String, Object> terminal = terminalService.buildTerminal(uid);
