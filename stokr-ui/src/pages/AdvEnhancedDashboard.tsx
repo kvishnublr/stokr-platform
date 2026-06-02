@@ -17,7 +17,7 @@ export function AdvEnhancedDashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await fetch("/api/trader/me/dashboard-metrics");
+        const response = await fetch("/api/v1/adv-dashboard/dashboard-metrics");
         if (response.ok) {
           const result = await response.json();
           if (result.data) {
@@ -28,9 +28,11 @@ export function AdvEnhancedDashboard() {
               winRate: result.data.winRate || 62,
             });
           }
+        } else {
+          console.log(`API responded with status ${response.status}, using demo data`);
         }
       } catch (error) {
-        console.log("Using demo data - API unavailable");
+        console.log("API call failed, using demo data:", error);
       }
     };
 

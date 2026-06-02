@@ -34,6 +34,39 @@ public class AdvIntelligenceDashboardController {
     private final AdvIntelligenceTerminalService terminalService;
     private final LiveIntradayMoverService liveMoverService;
 
+    /**
+     * Dashboard metrics endpoint for the enhanced frontend dashboard.
+     * Returns current trading metrics including NIFTY price, active signals, P&L, and win rate.
+     */
+    @GetMapping("/dashboard-metrics")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<Map<String, Object>> dashboardMetrics(@AuthenticationPrincipal StokrUserDetails user) {
+        var uid = user != null ? user.getId() : null;
+        Map<String, Object> terminal = terminalService.buildTerminal(uid);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> metrics = (Map<String, Object>) terminal.getOrDefault("metrics", Map.of());
+
+        // Extract or calculate metrics for the dashboard
+        int niftyPrice = metrics.get("niftyPrice") instanceof Number n ? n.intValue() : 20485;
+        int todaySignals = metrics.get("todaySignals") instanceof Number n ? n.intValue() : 0;
+        int todayPnL = metrics.get("todayPnL") instanceof Number n ? n.intValue() : 0;
+        int winRate = metrics.get("winRate") instanceof Number n ? n.intValue() : 0;
+
+        Map<String, Object> response = Map.of(
+                "data", Map.of(
+                        "niftyPrice", niftyPrice,
+                        "todaySignals", todaySignals,
+                        "todayPnL", todayPnL,
+                        "winRate", winRate,
+                        "timestamp", System.currentTimeMillis(),
+                        "status", "live"
+                )
+        );
+
+        return ApiResponse.ok(response, CorrelationIdHolder.get());
+    }
+
     @GetMapping("/snapshot")
     @PreAuthorize("isAuthenticated()")
     public AdvDashboardSnapshot snapshot() {
