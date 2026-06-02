@@ -54,6 +54,9 @@ public class PlatformZerodhaFeedTelemetryService {
             if (m.tickProcessingLatencyMs() != null) {
                 s.setTickProcessingLatencyMs(m.tickProcessingLatencyMs());
             }
+            if ("OPEN".equalsIgnoreCase(m.websocketState()) && (m.lastPacketAt() != null || m.lastTickAt() != null)) {
+                s.setDisconnectReason(null);
+            }
             s.setTelemetryJson(encodeTelemetryJson(m));
             sessionRepository.save(s);
         });
@@ -117,6 +120,7 @@ public class PlatformZerodhaFeedTelemetryService {
             if (s != null) {
                 s.setWebsocketState("OPEN");
                 s.setReconnecting(false);
+                s.setDisconnectReason(null);
                 sessionRepository.save(s);
             }
         });
