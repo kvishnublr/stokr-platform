@@ -28,11 +28,54 @@ type SettingsSummary = {
   uptimeSeconds: number;
   uptimeHuman: string;
   strategiesTotal: number;
+  strategyExecutionModes?: Record<string, string>;
   marketFeedState?: string;
   marketFeedSubscriptions?: number;
   marketFeedTicksPerSec?: string;
   marketFeedLastPacket?: string;
 };
+
+function formatExecutionModeSummary(
+  modes: Record<string, string> | undefined,
+  liveTradingArmed: string | undefined,
+): string {
+  if (!modes || Object.keys(modes).length === 0) {
+    return "—";
+  }
+  const counts = new Map<string, number>();
+  for (const mode of Object.values(modes)) {
+    const key = (mode ?? "PAPER").toUpperCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const order = ["LIVE", "PAPER", "DRY_RUN", "DISABLED"];
+  const parts = order
+    .filter((k) => (counts.get(k) ?? 0) > 0)
+    .map((k) => `${counts.get(k)} ${k}`);
+  const armed = liveTradingArmed === "ARMED";
+  const suffix = armed ? " · armed" : " · disarmed";
+  return parts.length > 0 ? `${parts.join(" / ")}${suffix}` : `—${suffix}`;
+}
+
+function riskGateLabel(
+  modes: Record<string, string> | undefined,
+  liveTradingArmed: string | undefined,
+  killSwitchEngaged: boolean,
+): string {
+  if (killSwitchEngaged) {
+    return "blocked (kill switch)";
+  }
+  const liveCount = modes
+    ? Object.values(modes).filter((m) => m?.toUpperCase() === "LIVE").length
+    : 0;
+  const armed = liveTradingArmed === "ARMED";
+  if (liveCount > 0 && armed) {
+    return `${liveCount} LIVE validated · armed`;
+  }
+  if (liveCount > 0 && !armed) {
+    return `${liveCount} LIVE configured · disarmed`;
+  }
+  return "PAPER / DRY_RUN only";
+}
 
 type HealthData = {
   killSwitch: boolean;
@@ -486,6 +529,9 @@ export function AdminPipelineHealthPage() {
   const idleCount  = statusList.filter((x) => x === "idle" || x === "loading").length;
 
   const uptime = s?.uptimeHuman ?? (h ? `${Math.floor((h.uptimeSeconds ?? 0) / 3600)}h ${Math.floor(((h.uptimeSeconds ?? 0) % 3600) / 60)}m` : "—");
+  const executionModeSummary = formatExecutionModeSummary(s?.strategyExecutionModes, s?.liveTradingArmed);
+  const killSwitchEngaged = (s?.killSwitch ?? "").toUpperCase() === "ENGAGED" || Boolean(h?.killSwitch);
+  const riskGateValue = riskGateLabel(s?.strategyExecutionModes, s?.liveTradingArmed, killSwitchEngaged);
 
   const nodeProps = { isLight };
 
@@ -557,7 +603,7 @@ export function AdminPipelineHealthPage() {
           { label: "Signals total",    value: String(signalsTotal) },
           { label: "Scan interval",    value: "60 sec" },
           { label: "Strategies",       value: String(s?.strategiesTotal ?? "—") },
-          { label: "Execution mode",   value: "PAPER" },
+          { label: "Execution mode",   value: executionModeSummary },
         ]}
         fix="3 NPEs fixed — EMA slope, null candle prices, system userId (commits 14245d4, 6edc248, 52cb339)"
         issue={strategyStatus === "warn" ? "Market closed or insufficient bars — signals expected after 09:30 IST" : undefined}
@@ -588,7 +634,7 @@ export function AdminPipelineHealthPage() {
 
       <PipelineNode step={6} icon={ShieldCheck} title="Risk Engine  ·  Pre-execution safety checks" status={riskStatus} {...nodeProps}
         metrics={[
-          { label: "Gate",       value: "PAPER allowed" },
+          { label: "Gate",       value: riskGateValue },
           { label: "Kill switch",value: h?.killSwitch ? "ENGAGED" : "OFF" },
           { label: "Live armed", value: h?.liveTradingArmed ? "ARMED" : "DISARMED" },
         ]}
@@ -598,7 +644,7 @@ export function AdminPipelineHealthPage() {
 
       <PipelineNode step={7} icon={TrendingUp} title="Execution  ·  Paper sim / Zerodha live" status={execStatus} {...nodeProps}
         metrics={[
-          { label: "Mode",   value: "PAPER" },
+          { label: "Mode",   value: executionModeSummary },
           { label: "Filled", value: String(filledOrders) },
           { label: "Broker", value: "SIM / ZERODHA" },
         ]}

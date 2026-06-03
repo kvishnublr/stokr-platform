@@ -10,6 +10,7 @@ import com.stokr.execution.safety.TradingKillSwitchService;
 import com.stokr.risk.service.KillSwitchService;
 import com.stokr.risk.service.LiveTradingArmingService;
 import com.stokr.risk.service.StrategyToggleService;
+import com.stokr.strategy.operational.StrategyExecutionModeService;
 import com.stokr.strategy.repository.StrategyDefinitionRepository;
 import com.stokr.strategy.service.StrategyEmergencyStopService;
 import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
@@ -42,6 +43,7 @@ public class AdminController {
     private final AdminOperationalSnapshotService adminOperationalSnapshotService;
     private final StrategyDefinitionRepository strategyDefinitionRepository;
     private final PlatformBrokerFeedSessionRepository feedSessionRepository;
+    private final StrategyExecutionModeService strategyExecutionModeService;
 
     @GetMapping("/health")
     @PreAuthorize("hasRole('ADMIN')")
@@ -140,6 +142,7 @@ public class AdminController {
                 "omsOrder", PipelineQueues.OMS_ORDER,
                 "execution", PipelineQueues.EXECUTION
         ));
+        m.put("strategyExecutionModes", strategyExecutionModeService.allModes());
         return ApiResponse.ok(m, CorrelationIdHolder.get());
     }
 

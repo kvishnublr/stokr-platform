@@ -29,6 +29,8 @@ public class StrategyExecutionModeService {
             @Value("${stokr.strategy.execution-modes.ADV_CASH:DRY_RUN}") String advCash,
             @Value("${stokr.strategy.execution-modes.S3_VWAP_RETEST:DRY_RUN}") String s3,
             @Value("${stokr.strategy.execution-modes.S7_RANGE_FADE:DRY_RUN}") String s7,
+            @Value("${stokr.strategy.execution-modes.PRE_OPEN_GAP_OI:PAPER}") String preOpenGapOi,
+            @Value("${stokr.strategy.execution-modes.COMMODITIES_E2E_TEST:PAPER}") String commoditiesE2eTest,
             @Value("${stokr.strategy.execution-modes.allow-live:false}") boolean allowLive,
             @Value("${stokr.strategy.execution-modes.live-validated:GAP_FILL}") String liveValidatedCsv) {
         modes = new LinkedHashMap<>();
@@ -41,6 +43,8 @@ public class StrategyExecutionModeService {
         modes.put("ADV_CASH", StrategyExecutionMode.parse(advCash));
         modes.put("S3_VWAP_RETEST", StrategyExecutionMode.parse(s3));
         modes.put("S7_RANGE_FADE", StrategyExecutionMode.parse(s7));
+        modes.put("PRE_OPEN_GAP_OI", StrategyExecutionMode.parse(preOpenGapOi));
+        modes.put("COMMODITIES_E2E_TEST", StrategyExecutionMode.parse(commoditiesE2eTest));
         this.allowLive = allowLive;
         this.liveValidated = parseValidatedList(liveValidatedCsv);
     }

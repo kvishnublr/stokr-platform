@@ -34,9 +34,6 @@ public class MarketDataIntegrityService {
     public static final String NIFTY_50_SYMBOL = "NIFTY 50";
     private static final String TIMEFRAME_1M = "1m";
     private static final LocalTime SESSION_OPEN = LocalTime.of(9, 15);
-    private static final Duration EQUITY_CANDLE_MAX_AGE = Duration.ofMinutes(3);
-    private static final Duration INDEX_CANDLE_MAX_AGE = Duration.ofMinutes(3);
-    private static final Duration TICK_MAX_AGE = Duration.ofSeconds(90);
     private static final Duration NIFTY_BAR_GAP_TOLERANCE = Duration.ofMinutes(2);
     private static final int MIN_NIFTY_MID_SESSION_BARS = 30;
 
@@ -53,6 +50,18 @@ public class MarketDataIntegrityService {
 
     @Value("${stokr.marketdata.integrity.mid-session-recovery.enabled:true}")
     private boolean midSessionRecoveryEnabled;
+
+    @Value("${stokr.marketdata.integrity.equity-candle-max-age-seconds:300}")
+    private long equityCandleMaxAgeSeconds;
+
+    @Value("${stokr.marketdata.integrity.index-candle-max-age-seconds:300}")
+    private long indexCandleMaxAgeSeconds;
+
+    @Value("${stokr.marketdata.integrity.tick-max-age-seconds:90}")
+    private long tickMaxAgeSeconds;
+
+    @Value("${stokr.marketdata.integrity.use-live-tick-proxy-for-candle-freshness:true}")
+    private boolean useLiveTickProxyForCandleFreshness;
 
     public boolean isEnabled() {
         return enabled;
@@ -83,7 +92,7 @@ public class MarketDataIntegrityService {
         }
 
         if (checkEquityCandleFreshness && !isIndexSymbol(symbol)) {
-            if (!isCandleFresh(strategyName, symbol, anchor, EQUITY_CANDLE_MAX_AGE,
+            if (!isCandleFresh(strategyName, symbol, anchor, equityCandleMaxAge(),
                     IntegrityRejectionReason.EQUITY_CANDLE_STALE, sessionDate, false)) {
                 return false;
             }
@@ -91,7 +100,7 @@ public class MarketDataIntegrityService {
 
         if (checkIndexCandleFreshness || isIndexSymbol(symbol)) {
             String indexSymbol = isIndexSymbol(symbol) ? symbol : NIFTY_50_SYMBOL;
-            if (!isCandleFresh(strategyName, indexSymbol, anchor, INDEX_CANDLE_MAX_AGE,
+            if (!isCandleFresh(strategyName, indexSymbol, anchor, indexCandleMaxAge(),
                     IntegrityRejectionReason.INDEX_CANDLE_STALE, sessionDate, true)) {
                 return false;
             }
@@ -173,7 +182,7 @@ public class MarketDataIntegrityService {
             return false;
         }
         return isCandleFreshInternal(
-                NIFTY_50_SYMBOL, anchor, INDEX_CANDLE_MAX_AGE, sessionDate(anchor), true);
+                NIFTY_50_SYMBOL, anchor, indexCandleMaxAge(), sessionDate(anchor), true);
     }
 
     /**
@@ -354,14 +363,44 @@ public class MarketDataIntegrityService {
             LocalDate sessionDate,
             boolean indexFeed) {
         Optional<MarketdataCandle> latest = latestSessionCandle(symbol, sessionDate, indexFeed);
-        if (latest.isEmpty() || latest.get().getOpenTime() == null) {
+        if (latest.isPresent() && latest.get().getOpenTime() != null) {
+            Instant latestTime = latest.get().getOpenTime();
+            if (Duration.between(latestTime, anchor).compareTo(maxAge) <= 0
+                    && sessionDate.equals(sessionDate(latestTime))) {
+                return true;
+            }
+        }
+        if (useLiveTickProxyForCandleFreshness && hasFreshLiveTick(symbol, anchor, maxAge)) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean hasFreshLiveTick(String symbol, Instant anchor, Duration maxAge) {
+        if (symbol == null || symbol.isBlank()) {
             return false;
         }
-        Instant latestTime = latest.get().getOpenTime();
-        if (Duration.between(latestTime, anchor).compareTo(maxAge) > 0) {
-            return false;
+        Instant liveTick = pressureTracker.getLastUpdate(symbol);
+        if (liveTick != null && Duration.between(liveTick, anchor).compareTo(maxAge) <= 0) {
+            return true;
         }
-        return sessionDate.equals(sessionDate(latestTime));
+        if (isIndexSymbol(symbol)) {
+            Instant niftyTick = pressureTracker.getLastUpdate(NIFTY_50_SYMBOL);
+            return niftyTick != null && Duration.between(niftyTick, anchor).compareTo(maxAge) <= 0;
+        }
+        return false;
+    }
+
+    private Duration equityCandleMaxAge() {
+        return Duration.ofSeconds(Math.max(60L, equityCandleMaxAgeSeconds));
+    }
+
+    private Duration indexCandleMaxAge() {
+        return Duration.ofSeconds(Math.max(60L, indexCandleMaxAgeSeconds));
+    }
+
+    private Duration tickMaxAge() {
+        return Duration.ofSeconds(Math.max(30L, tickMaxAgeSeconds));
     }
 
     private Optional<MarketdataCandle> latestSessionCandle(
@@ -378,25 +417,26 @@ public class MarketDataIntegrityService {
 
     private boolean isTickFresh(String strategyName, String symbol, Instant anchor, LocalDate sessionDate) {
         Instant liveTick = pressureTracker.getLastUpdate(symbol);
-        if (liveTick != null && Duration.between(liveTick, anchor).compareTo(TICK_MAX_AGE) <= 0) {
+        Duration tickAge = tickMaxAge();
+        if (liveTick != null && Duration.between(liveTick, anchor).compareTo(tickAge) <= 0) {
             return true;
         }
         // OBI ticks are in-memory only (persist-ticks=false). A fresh session equity candle
         // means the symbol is on the live websocket feed even without order-book quantities.
-        if (isCandleFreshInternal(symbol, anchor, TICK_MAX_AGE, sessionDate, false)) {
+        if (isCandleFreshInternal(symbol, anchor, tickAge, sessionDate, false)) {
             return true;
         }
         Optional<com.stokr.marketdata.domain.MarketdataTick> latest =
                 tickRepository.findFirstBySymbolOrderByTickTimeDesc(symbol);
         if (latest.isEmpty() || latest.get().getTickTime() == null) {
             recordRejection(strategyName, symbol, IntegrityRejectionReason.TICK_FEED_STALE,
-                    liveTick, anchor.minus(TICK_MAX_AGE), sessionDate);
+                    liveTick, anchor.minus(tickAge), sessionDate);
             return false;
         }
         Instant tickTime = latest.get().getTickTime();
-        if (Duration.between(tickTime, anchor).compareTo(TICK_MAX_AGE) > 0) {
+        if (Duration.between(tickTime, anchor).compareTo(tickAge) > 0) {
             recordRejection(strategyName, symbol, IntegrityRejectionReason.TICK_FEED_STALE,
-                    tickTime, anchor.minus(TICK_MAX_AGE), sessionDate);
+                    tickTime, anchor.minus(tickAge), sessionDate);
             return false;
         }
         return true;

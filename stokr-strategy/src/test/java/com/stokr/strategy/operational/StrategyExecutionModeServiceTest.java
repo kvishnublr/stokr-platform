@@ -13,7 +13,7 @@ class StrategyExecutionModeServiceTest {
     void defaultsMatchGoLiveOperationalPlan() {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
-                "PAPER", "PAPER", "PAPER", "PAPER",
+                "PAPER", "PAPER", "PAPER", "PAPER", "PAPER", "PAPER",
                 true, LIVE_COHORT);
 
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
@@ -25,13 +25,15 @@ class StrategyExecutionModeServiceTest {
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("ADV_CASH"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("S3_VWAP_RETEST"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("S7_RANGE_FADE"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("PRE_OPEN_GAP_OI"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("COMMODITIES_E2E_TEST"));
     }
 
     @Test
     void liveModeDowngradedWhenNotValidated() {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
-                "PAPER", "PAPER", "PAPER", "PAPER",
+                "PAPER", "PAPER", "PAPER", "PAPER", "PAPER", "PAPER",
                 false, LIVE_COHORT);
 
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("GAP_FILL"));
@@ -42,7 +44,7 @@ class StrategyExecutionModeServiceTest {
     void liveModeAllowedOnlyWhenExplicitlyValidated() {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
-                "PAPER", "PAPER", "PAPER", "PAPER",
+                "PAPER", "PAPER", "PAPER", "PAPER", "PAPER", "PAPER",
                 true, LIVE_COHORT);
 
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
@@ -54,7 +56,7 @@ class StrategyExecutionModeServiceTest {
     void liveCohortRequiresAllowLiveFlag() {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
-                "PAPER", "PAPER", "PAPER", "PAPER",
+                "PAPER", "PAPER", "PAPER", "PAPER", "PAPER", "PAPER",
                 true, "GAP_FILL");
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("NSE_SPIKE_DETECTION"));

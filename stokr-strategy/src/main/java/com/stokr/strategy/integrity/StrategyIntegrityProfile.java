@@ -21,7 +21,9 @@ public record StrategyIntegrityProfile(
             Map.entry("INDEX_HUNT", new StrategyIntegrityProfile(true, false, false, true)),
             Map.entry("ADV_CASH", new StrategyIntegrityProfile(false, true, true, false)),
             Map.entry("S3_VWAP_RETEST", new StrategyIntegrityProfile(false, false, false, true)),
-            Map.entry("S7_RANGE_FADE", new StrategyIntegrityProfile(false, false, false, true))
+            Map.entry("S7_RANGE_FADE", new StrategyIntegrityProfile(false, false, false, true)),
+            Map.entry("PRE_OPEN_GAP_OI", new StrategyIntegrityProfile(false, false, true, true)),
+            Map.entry("COMMODITIES_E2E_TEST", new StrategyIntegrityProfile(false, false, true, false))
     );
 
     private static final StrategyIntegrityProfile DEFAULT =

@@ -111,6 +111,10 @@ stokr:
   marketdata:
     integrity:
       enabled: ${STOKR_MARKETDATA_INTEGRITY_ENABLED:true}
+      equity-candle-max-age-seconds: ${STOKR_MARKETDATA_INTEGRITY_EQUITY_CANDLE_MAX_AGE_SEC:300}
+      index-candle-max-age-seconds: ${STOKR_MARKETDATA_INTEGRITY_INDEX_CANDLE_MAX_AGE_SEC:300}
+      tick-max-age-seconds: ${STOKR_MARKETDATA_INTEGRITY_TICK_MAX_AGE_SEC:90}
+      use-live-tick-proxy-for-candle-freshness: ${STOKR_MARKETDATA_INTEGRITY_USE_LIVE_TICK_PROXY:true}
       mid-session-recovery:
         enabled: ${STOKR_MARKETDATA_INTEGRITY_MID_SESSION_RECOVERY:true}
     feed-health:
@@ -194,6 +198,7 @@ stokr:
       ADV_CASH: ${STOKR_EXEC_MODE_ADV_CASH:LIVE}
       S3_VWAP_RETEST: ${STOKR_EXEC_MODE_S3:PAPER}
       S7_RANGE_FADE: ${STOKR_EXEC_MODE_S7:PAPER}
+      PRE_OPEN_GAP_OI: ${STOKR_EXEC_MODE_PRE_OPEN_GAP_OI:LIVE}
       COMMODITIES_E2E_TEST: ${STOKR_EXEC_MODE_COMMODITIES_E2E_TEST:PAPER}
     commodities-e2e-test:
       enabled: ${STOKR_COMMODITIES_E2E_TEST_ENABLED:true}
