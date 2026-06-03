@@ -766,7 +766,7 @@ export function AdminSafetyDiagnosticsPage() {
           <AdminSection
             isLight={isLight}
             title="Strategy validation & capital"
-            subtitle="Global execution config (user_id null). FIXED_QUANTITY uses fixed_qty / max_positions; capital columns apply to CAPITAL_BUCKET and similar modes."
+            subtitle="Lifecycle stage (e.g. LIVE_SHADOW) tracks promotion metrics only — it does not block broker orders. Execution mode (LIVE/PAPER/BOTH) controls OMS routing. Global config (user_id null). FIXED_QUANTITY uses fixed_qty / max_positions."
           >
             <div className="overflow-x-auto rounded-lg border dark:border-neutral-800">
               <table className="w-full text-xs">
@@ -774,8 +774,8 @@ export function AdminSafetyDiagnosticsPage() {
                   <tr>
                     {[
                       "Strategy",
-                      "Validation",
-                      "Mode",
+                      "Lifecycle stage",
+                      "Execution mode",
                       "Sizing",
                       "Fixed qty",
                       "Max pos",
@@ -808,8 +808,12 @@ export function AdminSafetyDiagnosticsPage() {
                     return (
                       <tr key={s.strategyKey} className="border-t dark:border-neutral-800">
                         <td className="px-2 py-2 font-medium">{s.strategyKey}</td>
-                        <td className="px-2 py-2">{s.validationStatus}</td>
-                        <td className="px-2 py-2">{String(cfg.executionMode ?? "—")}</td>
+                        <td className="px-2 py-2" title="Promotion/metrics stage — not OMS execution mode">
+                          {s.validationStatus}
+                        </td>
+                        <td className="px-2 py-2 font-medium" title="OMS/broker routing mode">
+                          {String(cfg.executionMode ?? "—")}
+                        </td>
                         <td className="px-2 py-2">{sizingMode || "—"}</td>
                         <td className="px-2 py-2 font-mono">{isFixedQty ? String(fixedQty ?? "—") : "—"}</td>
                         <td className="px-2 py-2 font-mono">{maxPos != null ? String(maxPos) : "—"}</td>
