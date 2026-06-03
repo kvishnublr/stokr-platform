@@ -115,6 +115,7 @@ stokr:
       index-candle-max-age-seconds: ${STOKR_MARKETDATA_INTEGRITY_INDEX_CANDLE_MAX_AGE_SEC:300}
       tick-max-age-seconds: ${STOKR_MARKETDATA_INTEGRITY_TICK_MAX_AGE_SEC:90}
       use-live-tick-proxy-for-candle-freshness: ${STOKR_MARKETDATA_INTEGRITY_USE_LIVE_TICK_PROXY:true}
+      rejection-dedupe-seconds: ${STOKR_MARKETDATA_INTEGRITY_REJECTION_DEDUPE_SEC:300}
       mid-session-recovery:
         enabled: ${STOKR_MARKETDATA_INTEGRITY_MID_SESSION_RECOVERY:true}
     feed-health:

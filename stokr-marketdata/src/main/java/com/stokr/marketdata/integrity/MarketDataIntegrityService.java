@@ -21,6 +21,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Central fail-closed market data integrity gate for live strategy evaluation.
@@ -62,6 +63,12 @@ public class MarketDataIntegrityService {
 
     @Value("${stokr.marketdata.integrity.use-live-tick-proxy-for-candle-freshness:true}")
     private boolean useLiveTickProxyForCandleFreshness;
+
+    /** Suppress repeated DB rows for the same strategy/symbol/reason within a session window. */
+    @Value("${stokr.marketdata.integrity.rejection-dedupe-seconds:300}")
+    private long rejectionDedupeSeconds;
+
+    private final ConcurrentHashMap<String, Instant> recentRejectionKeys = new ConcurrentHashMap<>();
 
     public boolean isEnabled() {
         return enabled;
@@ -312,6 +319,17 @@ public class MarketDataIntegrityService {
             Instant latestBarTime,
             Instant expectedBarTime,
             LocalDate sessionDate) {
+        Instant anchor = rejectionAnchor(latestBarTime, expectedBarTime, sessionDate, zone);
+        if (!isWithinMarketHours(anchor)) {
+            log.debug("marketdata.integrity.reject.skipped_outside_session strategy={} symbol={} reason={}",
+                    strategyName, symbol, reason.name());
+            return;
+        }
+        if (!shouldPersistRejection(strategyName, symbol, reason, sessionDate, anchor)) {
+            log.debug("marketdata.integrity.reject.deduped strategy={} symbol={} reason={}",
+                    strategyName, symbol, reason.name());
+            return;
+        }
         log.warn("marketdata.integrity.reject strategy={} symbol={} reason={} latestBar={} expectedBar={} session={}",
                 strategyName, symbol, reason.name(), latestBarTime, expectedBarTime, sessionDate);
 
@@ -321,9 +339,48 @@ public class MarketDataIntegrityService {
         row.setRejectionReason(reason.name());
         row.setLatestBarTime(latestBarTime);
         row.setExpectedBarTime(expectedBarTime);
-        row.setSessionDate(sessionDate != null ? sessionDate : sessionDate(Instant.now()));
+        row.setSessionDate(sessionDate != null ? sessionDate : sessionDate(anchor));
         row.setCreatedAt(Instant.now());
         rejectionRepository.save(row);
+    }
+
+    private static Instant rejectionAnchor(
+            Instant latestBarTime, Instant expectedBarTime, LocalDate sessionDate, ZoneId zone) {
+        if (latestBarTime != null) {
+            return latestBarTime;
+        }
+        if (expectedBarTime != null) {
+            return expectedBarTime;
+        }
+        if (sessionDate != null) {
+            return ZonedDateTime.of(sessionDate, SESSION_OPEN, zone).toInstant();
+        }
+        return Instant.now();
+    }
+
+    private boolean shouldPersistRejection(
+            String strategyName,
+            String symbol,
+            IntegrityRejectionReason reason,
+            LocalDate sessionDate,
+            Instant anchor) {
+        if (rejectionDedupeSeconds <= 0) {
+            return true;
+        }
+        String key = (sessionDate != null ? sessionDate : sessionDate(anchor))
+                + "|" + (strategyName != null ? strategyName : "UNKNOWN")
+                + "|" + (symbol != null ? symbol : "*")
+                + "|" + reason.name();
+        Instant last = recentRejectionKeys.get(key);
+        if (last != null && Duration.between(last, anchor).getSeconds() < rejectionDedupeSeconds) {
+            return false;
+        }
+        recentRejectionKeys.put(key, anchor);
+        if (recentRejectionKeys.size() > 50_000) {
+            recentRejectionKeys.entrySet().removeIf(e ->
+                    Duration.between(e.getValue(), anchor).getSeconds() > rejectionDedupeSeconds * 4);
+        }
+        return true;
     }
 
     public boolean isIndexSymbol(String symbol) {

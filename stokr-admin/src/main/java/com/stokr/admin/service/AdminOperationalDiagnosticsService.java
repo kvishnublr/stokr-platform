@@ -1,5 +1,6 @@
 package com.stokr.admin.service;
 
+import com.stokr.common.market.NseMarketSession;
 import com.stokr.marketdata.monitor.FeedHealthMonitorService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.operational.StrategyExecutionMode;
@@ -44,7 +45,8 @@ public class AdminOperationalDiagnosticsService {
 
         List<StrategyRuntimeHealth> health = runtimeHealthService.healthForToday(now);
         out.put("strategyRuntimeHealth", runtimeHealthRows(health));
-        out.put("blockedStrategies", blockedStrategies(health));
+        out.put("marketSessionOpen", NseMarketSession.isRegularSessionOpen(now));
+        out.put("blockedStrategies", blockedStrategies(health, now));
         out.put("integrityFailuresToday", integrityFailureCount(now));
         out.put("activeTrades", activeTradeCount());
         out.put("staleSymbols", staleSymbolSample(now));
@@ -77,7 +79,8 @@ public class AdminOperationalDiagnosticsService {
         return rows;
     }
 
-    private List<Map<String, Object>> blockedStrategies(List<StrategyRuntimeHealth> health) {
+    private List<Map<String, Object>> blockedStrategies(List<StrategyRuntimeHealth> health, Instant now) {
+        boolean sessionOpen = NseMarketSession.isRegularSessionOpen(now);
         List<Map<String, Object>> blocked = new ArrayList<>();
         for (StrategyRuntimeHealth row : health) {
             StrategyExecutionMode mode = StrategyExecutionMode.parse(row.getExecutionMode());
@@ -85,10 +88,15 @@ public class AdminOperationalDiagnosticsService {
                 blocked.add(Map.of(
                         "strategyName", row.getStrategyName(),
                         "reason", "EXECUTION_MODE_DISABLED"));
-            } else if (row.getLastRejectionReason() != null && row.getScansBlockedIntegrity() > 0) {
-                blocked.add(Map.of(
-                        "strategyName", row.getStrategyName(),
-                        "reason", row.getLastRejectionReason()));
+            } else if (sessionOpen) {
+                if (row.getScansBlockedFeed() > 0) {
+                    String reason = row.getLastRejectionReason() != null ? row.getLastRejectionReason() : "FEED_STALE";
+                    blocked.add(Map.of("strategyName", row.getStrategyName(), "reason", reason));
+                } else if (row.getLastRejectionReason() != null && row.getScansBlockedIntegrity() > 0) {
+                    blocked.add(Map.of(
+                            "strategyName", row.getStrategyName(),
+                            "reason", row.getLastRejectionReason()));
+                }
             }
         }
         for (var entry : executionModeService.allModes().entrySet()) {
@@ -104,8 +112,13 @@ public class AdminOperationalDiagnosticsService {
 
     private long integrityFailureCount(Instant now) {
         LocalDate session = now.atZone(ZoneId.of("Asia/Kolkata")).toLocalDate();
-        Object r = entityManager.createNativeQuery(
-                        "select count(*) from market_data_integrity_rejections where session_date = :d")
+        Object r = entityManager.createNativeQuery("""
+                select count(*) from (
+                    select 1 from market_data_integrity_rejections
+                    where session_date = :d
+                    group by strategy_name, symbol, rejection_reason
+                ) deduped
+                """)
                 .setParameter("d", session)
                 .getSingleResult();
         return r instanceof Number n ? n.longValue() : 0L;
@@ -119,6 +132,9 @@ public class AdminOperationalDiagnosticsService {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> staleSymbolSample(Instant now) {
+        if (!NseMarketSession.isRegularSessionOpen(now)) {
+            return List.of();
+        }
         List<Object[]> rows = entityManager.createNativeQuery("""
                 select symbol, max(open_time) as mx,
                        extract(epoch from (current_timestamp - max(open_time))) as lag_sec

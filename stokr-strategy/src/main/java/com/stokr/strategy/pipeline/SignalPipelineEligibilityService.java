@@ -72,10 +72,11 @@ public class SignalPipelineEligibilityService {
                     strategyKey, lifecycle);
         }
 
-        FeedHealthMonitorService.FeedHealthSnapshot feed = feedHealthMonitorService.snapshot(now);
-        if (feed.equityStale() || feed.indexStale()) {
+        if (!feedHealthMonitorService.isHealthyForLiveExecution(now)) {
+            FeedHealthMonitorService.FeedHealthSnapshot feed = feedHealthMonitorService.snapshot(now);
             return blocked("BLOCKED", "FEED_STALE",
-                    "Market feed stale (equity=" + feed.equityStale() + ", index=" + feed.indexStale() + ")",
+                    "Market feed unhealthy (equityStale=" + feed.equityStale()
+                            + ", indexStale=" + feed.indexStale() + ", level=" + feed.level() + ")",
                     strategyKey, lifecycle);
         }
         lifecycle.add("VALIDATED");
