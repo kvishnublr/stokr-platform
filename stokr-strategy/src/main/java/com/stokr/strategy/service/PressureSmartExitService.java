@@ -247,10 +247,15 @@ public class PressureSmartExitService {
 
         if (analysis != null) {
             double consistency = analysis.pressureConsistency();
-            if (consistency < exhaustionConsistency && ctx.currentProgress() < 50) {
+            int directionalTicks = analysis.buyPressureTicks() + analysis.sellPressureTicks();
+            // consistency=0 with no strong OBI ticks is choppy/neutral book — not pressure exhaustion.
+            if (directionalTicks >= 3
+                    && consistency > 0
+                    && consistency < exhaustionConsistency
+                    && ctx.currentProgress() < 50) {
                 String reason = String.format(
-                        "VOLUME_VACUUM: consistency=%.2f threshold=%.2f progress=%.1f%%",
-                        consistency, exhaustionConsistency, ctx.currentProgress());
+                        "PRESSURE_EXHAUSTION: consistency=%.2f threshold=%.2f directionalTicks=%d progress=%.1f%%",
+                        consistency, exhaustionConsistency, directionalTicks, ctx.currentProgress());
                 logPressureExit(sig, PressureExitTrigger.VOLUME_VACUUM, reason);
                 return ExitDecision.pressure(PressureExitTrigger.VOLUME_VACUUM, reason, false);
             }

@@ -219,8 +219,20 @@ stokr:
     lifecycle:
       emergency:
         spread-pct: ${STOKR_LIFECYCLE_EMERGENCY_SPREAD_PCT:0.50}
+        bar-range-pct: ${STOKR_LIFECYCLE_EMERGENCY_BAR_RANGE_PCT:2.5}
         candle-stale-seconds: ${STOKR_LIFECYCLE_EMERGENCY_CANDLE_STALE_SEC:120}
         volume-vacuum-ratio: ${STOKR_LIFECYCLE_EMERGENCY_VOLUME_VACUUM:0.10}
+        min-hold-seconds: ${STOKR_LIFECYCLE_EMERGENCY_MIN_HOLD_SEC:180}
+    smart-exit:
+      enabled: ${STOKR_SMART_EXIT_ENABLED:true}
+      interval-ms: ${STOKR_SMART_EXIT_INTERVAL_MS:15000}
+      pressure-reversal-buy: ${STOKR_SMART_EXIT_PRESSURE_REVERSAL_BUY:0.43}
+      pressure-reversal-sell: ${STOKR_SMART_EXIT_PRESSURE_REVERSAL_SELL:0.57}
+      exhaustion-consistency: ${STOKR_SMART_EXIT_EXHAUSTION_CONSISTENCY:0.35}
+      pressure-lookback: ${STOKR_SMART_EXIT_PRESSURE_LOOKBACK:60}
+      trailing-mfe-ratio: ${STOKR_SMART_EXIT_TRAILING_MFE_RATIO:0.40}
+      min-progress-pct: ${STOKR_SMART_EXIT_MIN_PROGRESS_PCT:20}
+      counter-candle-body-ratio: ${STOKR_SMART_EXIT_COUNTER_CANDLE_BODY_RATIO:0.55}
     # Drop new signals when reference price exceeds ceiling (INR). 0 or negative = disabled.
     max-entry-price: ${STOKR_STRATEGY_MAX_ENTRY_PRICE:5000}
     quality-gate:
