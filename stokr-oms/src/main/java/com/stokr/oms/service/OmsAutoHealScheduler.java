@@ -1,5 +1,6 @@
 package com.stokr.oms.service;
 
+import com.stokr.oms.portfolio.PortfolioAccountingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -17,6 +18,7 @@ public class OmsAutoHealScheduler {
     private static final int STUCK_THRESHOLD_MINUTES = 8;
 
     private final OrderLifecycleService orderLifecycleService;
+    private final PortfolioAccountingService portfolioAccountingService;
 
     @Scheduled(fixedDelay = 120_000)
     public void expireStuckOrders() {
@@ -27,6 +29,18 @@ public class OmsAutoHealScheduler {
             }
         } catch (Exception ex) {
             log.error("oms.auto_heal.error {}", ex.getMessage(), ex);
+        }
+    }
+
+    @Scheduled(fixedDelay = 300_000)
+    public void clearPortfolioGhosts() {
+        try {
+            int cleared = portfolioAccountingService.clearZeroPriceGhostPositions();
+            if (cleared > 0) {
+                log.warn("oms.auto_heal.portfolio_ghosts_cleared count={}", cleared);
+            }
+        } catch (Exception ex) {
+            log.error("oms.auto_heal.portfolio_ghosts_error {}", ex.getMessage(), ex);
         }
     }
 }

@@ -12,6 +12,7 @@ import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.common.events.realtime.RealtimeBridgeEvents;
 import com.stokr.common.events.StrategyPnlUpdateEvent;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +30,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PortfolioAccountingService {
 
     private final OmsExecutionRepository executionRepository;
@@ -101,6 +103,26 @@ public class PortfolioAccountingService {
         pos.setMtmPrice(null);
         pos.setDeleted(true);
         positionRepository.save(pos);
+    }
+
+    /**
+     * Clears OMS portfolio rows that show open qty but have no entry price (legacy paper/test ghosts).
+     */
+    @Transactional
+    public int clearZeroPriceGhostPositions() {
+        int cleared = 0;
+        for (PortfolioPosition pos : positionRepository.findZeroPriceGhostPositions()) {
+            log.info("portfolio.ghost_cleared user={} symbol={} strategy={} qty={}",
+                    pos.getUserId(), pos.getSymbol(), pos.getStrategyKey(), pos.getQuantity());
+            pos.setQuantity(BigDecimal.ZERO);
+            pos.setAvgPrice(BigDecimal.ZERO);
+            pos.setUnrealizedPnl(BigDecimal.ZERO);
+            pos.setMtmPrice(null);
+            pos.setDeleted(true);
+            positionRepository.save(pos);
+            cleared++;
+        }
+        return cleared;
     }
 
     private void applyLedgerToPosition(

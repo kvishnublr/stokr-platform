@@ -22,4 +22,13 @@ public interface PortfolioPositionRepository extends JpaRepository<PortfolioPosi
             where p.strategyKey = :strategyKey and p.deleted = false and p.simulation = false
             """)
     List<PortfolioPosition> findRealByStrategyKeyAndDeletedFalse(@Param("strategyKey") String strategyKey);
+
+    /** OMS legs with qty but no entry price — never a real broker position. */
+    @Query("""
+            select p from PortfolioPosition p
+            where p.deleted = false and p.simulation = false
+            and p.quantity <> 0
+            and (p.avgPrice is null or p.avgPrice = 0)
+            """)
+    List<PortfolioPosition> findZeroPriceGhostPositions();
 }
