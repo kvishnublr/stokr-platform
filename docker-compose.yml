@@ -136,12 +136,25 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
     volumes:
       - stokr_rabbitmq_data:/var/lib/rabbitmq
+    labels:
+      - autoheal=true
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 15
+      interval: 20s
+      timeout: 15s
+      retries: 10
       start_period: 120s
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: stokr-autoheal
+    restart: always
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: 30
+      AUTOHEAL_START_PERIOD: 300
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   mailpit:
     image: axllent/mailpit:latest
