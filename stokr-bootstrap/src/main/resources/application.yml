@@ -416,10 +416,29 @@ stokr:
     seed-synthetic-candles: ${STOKR_REPLAY_SEED_SYNTHETIC:false}
   platform:
     auto-heal:
+      # Legacy keys — ranked recovery reads stokr.platform.recovery.* (below).
       enabled: ${STOKR_PLATFORM_AUTO_HEAL_ENABLED:true}
       interval-ms: ${STOKR_PLATFORM_AUTO_HEAL_INTERVAL_MS:45000}
       reconnect-cooldown-sec: ${STOKR_PLATFORM_AUTO_HEAL_RECONNECT_COOLDOWN_SEC:30}
       pipeline-cooldown-sec: ${STOKR_PLATFORM_AUTO_HEAL_PIPELINE_COOLDOWN_SEC:300}
+    recovery:
+      enabled: ${STOKR_PLATFORM_RECOVERY_ENABLED:${STOKR_PLATFORM_AUTO_HEAL_ENABLED:true}}
+      interval-ms: ${STOKR_PLATFORM_RECOVERY_INTERVAL_MS:${STOKR_PLATFORM_AUTO_HEAL_INTERVAL_MS:45000}}
+      recheck-wait-ms: ${STOKR_PLATFORM_RECOVERY_RECHECK_WAIT_MS:15000}
+      recheck-wait-max-ms: ${STOKR_PLATFORM_RECOVERY_RECHECK_WAIT_MAX_MS:30000}
+      service-key: ${STOKR_PLATFORM_RECOVERY_SERVICE_KEY:platform-api}
+      max-attempts-per-signature: ${STOKR_PLATFORM_RECOVERY_MAX_ATTEMPTS:3}
+      action-cooldown-sec: ${STOKR_PLATFORM_RECOVERY_ACTION_COOLDOWN_SEC:60}
+      reconnect-cooldown-sec: ${STOKR_PLATFORM_RECOVERY_RECONNECT_COOLDOWN_SEC:${STOKR_PLATFORM_AUTO_HEAL_RECONNECT_COOLDOWN_SEC:30}}
+      pipeline-cooldown-sec: ${STOKR_PLATFORM_RECOVERY_PIPELINE_COOLDOWN_SEC:${STOKR_PLATFORM_AUTO_HEAL_PIPELINE_COOLDOWN_SEC:300}}
+      webhook-url: ${STOKR_PLATFORM_RECOVERY_WEBHOOK_URL:}
+      escalate-after-attempts: ${STOKR_PLATFORM_RECOVERY_ESCALATE_AFTER:5}
+      container-restart-flag-key: ${STOKR_PLATFORM_RECOVERY_RESTART_FLAG_KEY:stokr:platform:recovery:restart-requested}
+      scanner-stale-seconds: ${STOKR_PLATFORM_RECOVERY_SCANNER_STALE_SEC:120}
+      broker-vendor: ${STOKR_PLATFORM_RECOVERY_BROKER_VENDOR:ZERODHA}
+      kill-switch-auto-disarm-sources:
+        - BROKER_DISCONNECT
+        - RISK_BREACH
     zerodha:
       # In-process Kite WebSocket for admin platform feed — persists telemetry to platform_broker_feed_sessions and ingests LTP ticks.
       live-feed-enabled: ${STOKR_PLATFORM_ZERODHA_LIVE_FEED_ENABLED:true}
