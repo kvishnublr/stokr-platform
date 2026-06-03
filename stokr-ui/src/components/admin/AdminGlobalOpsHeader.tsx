@@ -23,7 +23,7 @@ export function AdminGlobalOpsHeader({
     opsStreamLive,
     lastOpsPushAt,
     streamError,
-    snapshotLoading: snapshotLoading ?? (isFetching && !snapshot),
+    snapshotLoading: snapshotLoading === true,
   });
   const at = snapshot?.collectedAt ?? "";
 

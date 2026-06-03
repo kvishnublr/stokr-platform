@@ -32,10 +32,22 @@ export function AdminConsoleLayout() {
   const snapshot = useQuery({
     queryKey: ADMIN_OPS_SNAPSHOT_KEY,
     queryFn: fetchAdminOpsSnapshotMerged,
-    refetchInterval: opsStreamLive ? false : 8000,
-    retry: 2,
+    refetchInterval: (query) => {
+      if (!query.state.data) return 5000;
+      return opsStreamLive ? false : 8000;
+    },
+    retry: (failureCount, error) => {
+      if (failureCount >= 4) return false;
+      const code = (error as { code?: string })?.code;
+      return code === "ECONNABORTED" || code === "ERR_NETWORK" || failureCount < 3;
+    },
+    retryDelay: (attempt) => Math.min(3000 * 2 ** attempt, 30_000),
     staleTime: 1500,
+    placeholderData: (prev) => prev,
+    gcTime: 30 * 60 * 1000,
   });
+
+  const snapshotInitialLoad = !snapshot.data && snapshot.isFetching && !snapshot.isError;
 
   const health = useQuery({
     queryKey: ["admin-health"],
@@ -95,10 +107,17 @@ export function AdminConsoleLayout() {
       <AdminGlobalOpsHeader
         snapshot={snapshot.data}
         isFetching={snapshot.isFetching}
-        snapshotLoading={snapshot.isLoading || snapshot.isPending}
+        snapshotLoading={snapshotInitialLoad}
         opsStreamLive={opsStreamLive}
         lastOpsPushAt={lastOpsPushAt}
-        streamError={streamError ?? (snapshot.isError ? "snapshot API failed — retrying" : undefined)}
+        streamError={
+          streamError ??
+          (snapshot.isError
+            ? snapshot.error instanceof Error
+              ? snapshot.error.message
+              : "snapshot API failed — retrying with backoff"
+            : undefined)
+        }
       />
       <SimulationRuntimeBanner isLight={isLight} />
       <div

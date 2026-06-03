@@ -100,6 +100,12 @@ public class AdminOperationalSnapshotService {
     @Value("${stokr.strategy.symbols:NIFTY_FUT,BANKNIFTY_FUT}")
     private String strategySymbolsCsv;
 
+    @Value("${stokr.admin.ops.snapshot-cache-ms:4000}")
+    private long snapshotCacheMs;
+
+    private volatile OperationsSnapshotDto cachedSnapshot;
+    private volatile long cachedSnapshotAtMs;
+
     @Autowired
     public AdminOperationalSnapshotService(
             KillSwitchService killSwitchService,
@@ -156,6 +162,24 @@ public class AdminOperationalSnapshotService {
     }
 
     public OperationsSnapshotDto snapshot() {
+        long nowMs = System.currentTimeMillis();
+        OperationsSnapshotDto hit = cachedSnapshot;
+        if (hit != null && nowMs - cachedSnapshotAtMs < snapshotCacheMs) {
+            return hit;
+        }
+        synchronized (this) {
+            hit = cachedSnapshot;
+            if (hit != null && nowMs - cachedSnapshotAtMs < snapshotCacheMs) {
+                return hit;
+            }
+            OperationsSnapshotDto built = buildSnapshot();
+            cachedSnapshot = built;
+            cachedSnapshotAtMs = System.currentTimeMillis();
+            return built;
+        }
+    }
+
+    private OperationsSnapshotDto buildSnapshot() {
         Instant now = Instant.now();
         Map<String, Object> marketFreshness = marketDataFreshnessService.snapshot(now);
         Map<String, Object> marketInfra = marketInfra(now, marketFreshness);

@@ -138,6 +138,13 @@ stokr:
   admin:
     ops:
       sse-tick-ms: ${STOKR_ADMIN_OPS_SSE_TICK_MS:15000}
+      snapshot-cache-ms: ${STOKR_ADMIN_OPS_SNAPSHOT_CACHE_MS:4000}
+  platform:
+    auto-heal:
+      enabled: ${STOKR_PLATFORM_AUTO_HEAL_ENABLED:true}
+      interval-ms: ${STOKR_PLATFORM_AUTO_HEAL_INTERVAL_MS:45000}
+      reconnect-cooldown-sec: ${STOKR_PLATFORM_AUTO_HEAL_RECONNECT_COOLDOWN_SEC:30}
+      pipeline-cooldown-sec: ${STOKR_PLATFORM_AUTO_HEAL_PIPELINE_COOLDOWN_SEC:300}
   # Single env: STOKR_CORS_ALLOWED_ORIGINS (comma-separated). Edit repo-root .env only — local + Docker + IntelliJ all load it.
   cors:
     allowed-origins: ${STOKR_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175}
