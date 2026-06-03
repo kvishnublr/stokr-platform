@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -29,7 +31,7 @@ public class AdminTradeReconciliationDiagnosticsService {
 
     public Map<String, Object> fullDiagnostics() {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("tradePairs", recentTradePairs(50));
+        out.put("tradePairs", Map.of("pairs", recentTradePairs(50)));
         out.put("unreconciled", unreconciledTrades(30));
         out.put("reconciliationFailures", failedTrades(20));
         out.put("lifecycleDivergence", lifecycleDivergenceSample(20));
@@ -92,25 +94,81 @@ public class AdminTradeReconciliationDiagnosticsService {
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         Map<String, Object> out = new LinkedHashMap<>();
         List<Map<String, Object>> byStrategy = new ArrayList<>();
+        long pairCountToday = comparisonRepository.findAll().stream()
+                .filter(m -> !m.isDeleted())
+                .filter(m -> m.getCreatedAt() != null
+                        && !m.getCreatedAt().isBefore(today.atStartOfDay(ZoneId.of("Asia/Kolkata")).toInstant()))
+                .count();
+        boolean pairMetricsAvailable = false;
         for (StrategyValidationMetrics m : validationMetricsRepository.findAll()) {
             if (!today.equals(m.getSessionDate())) {
                 continue;
             }
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("strategyKey", m.getStrategyName());
-            row.put("expectancyDrift", m.getExpectancyDrift());
-            row.put("slippageP50Bps", m.getSlippageP50Bps());
-            row.put("slippageP95Bps", m.getSlippageP95Bps());
-            row.put("latencyP50Ms", m.getLatencyP50Ms());
-            row.put("latencyP95Ms", m.getLatencyP95Ms());
-            row.put("exitTimingDriftSec", m.getExitTimingDriftSeconds());
-            row.put("liveUnderperformancePct", m.getLiveUnderperformancePct());
-            row.put("strategyDegradationScore", m.getStrategyDegradationScore());
-            row.put("winRateDelta", m.getWinRateDelta());
+            Map<String, Object> row = driftRow(m);
+            if (hasPairDriftMetrics(row)) {
+                pairMetricsAvailable = true;
+            }
             byStrategy.add(row);
         }
         out.put("today", byStrategy);
+        out.put("meta", Map.of(
+                "sessionDate", today.toString(),
+                "reconciledPairCountToday", pairCountToday,
+                "pairMetricsAvailable", pairMetricsAvailable,
+                "pairMetricsRequireBothMode",
+                "Paper/live slippage, latency, and win-rate delta require BOTH-mode LIVE+PAPER "
+                        + "orders reconciled in execution_comparison_metrics."));
         return out;
+    }
+
+    private static Map<String, Object> driftRow(StrategyValidationMetrics m) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("strategyKey", m.getStrategyName());
+        row.put("expectancyDrift", m.getExpectancyDrift());
+        row.put("slippageP50Bps", m.getSlippageP50Bps());
+        row.put("slippageP95Bps", m.getSlippageP95Bps());
+        row.put("latencyP50Ms", m.getLatencyP50Ms());
+        row.put("latencyP95Ms", m.getLatencyP95Ms());
+        row.put("exitTimingDriftSec", m.getExitTimingDriftSeconds());
+        row.put("liveUnderperformancePct", m.getLiveUnderperformancePct());
+        row.put("strategyDegradationScore",
+                m.getStrategyDegradationScore() != null
+                        ? m.getStrategyDegradationScore()
+                        : computeDegradationScoreFallback(m));
+        row.put("winRateDelta", m.getWinRateDelta());
+        row.put("signalsGenerated", m.getSignalsGenerated());
+        row.put("sampleSize", m.getSampleSize());
+        row.put("omsRejectRate", m.getOmsRejectRate());
+        row.put("integrityRejectionPct", m.getIntegrityRejectionPct());
+        row.put("paperPnl", m.getPaperPnl());
+        row.put("winRate", m.getWinRate());
+        return row;
+    }
+
+    private static boolean hasPairDriftMetrics(Map<String, Object> row) {
+        return row.get("slippageP50Bps") != null
+                || row.get("latencyP50Ms") != null
+                || row.get("winRateDelta") != null;
+    }
+
+    private static BigDecimal computeDegradationScoreFallback(StrategyValidationMetrics row) {
+        double score = 0;
+        if (row.getPaperLiveDrift() != null) {
+            score += Math.min(40, row.getPaperLiveDrift().abs().doubleValue());
+        }
+        if (row.getAvgSlippageBps() != null) {
+            score += Math.min(25, row.getAvgSlippageBps().doubleValue());
+        }
+        if (row.getOmsRejectRate() != null) {
+            score += Math.min(20, row.getOmsRejectRate().doubleValue());
+        }
+        if (row.getIntegrityRejectionPct() != null) {
+            score += Math.min(15, row.getIntegrityRejectionPct().doubleValue());
+        }
+        if (score == 0) {
+            return null;
+        }
+        return BigDecimal.valueOf(score).setScale(4, RoundingMode.HALF_UP);
     }
 
     private Map<String, Object> pairSnapshot(ExecutionComparisonMetrics m) {

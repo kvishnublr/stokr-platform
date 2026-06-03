@@ -145,6 +145,9 @@ public class StrategyValidationMetricsRollupService {
         }
 
         applyDriftAnalytics(row, comparisons);
+        if (row.getStrategyDegradationScore() == null) {
+            row.setStrategyDegradationScore(computeDegradationScore(row));
+        }
         row.setUnreconciledTrades(comparisonRepository.countByStrategyKeyAndReconciliationStatusAndDeletedFalse(
                 strategyKey, "AWAITING_CLOSE")
                 + comparisonRepository.countByStrategyKeyAndReconciliationStatusAndDeletedFalse(strategyKey, "PENDING"));

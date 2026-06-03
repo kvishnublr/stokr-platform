@@ -42,6 +42,24 @@ function fmtVal(v: unknown): string {
   return JSON.stringify(v);
 }
 
+function normalizeTradePairs(
+  tradePairs: TradeReconciliationDiagnostics["tradePairs"] | undefined,
+): Array<Record<string, unknown>> {
+  if (Array.isArray(tradePairs)) {
+    return tradePairs as Array<Record<string, unknown>>;
+  }
+  return (tradePairs?.pairs ?? []) as Array<Record<string, unknown>>;
+}
+
+function hasPairDriftColumns(rows: Array<Record<string, unknown>>): boolean {
+  return rows.some(
+    (d) =>
+      d.slippageP50Bps != null
+      || d.latencyP50Ms != null
+      || d.winRateDelta != null,
+  );
+}
+
 function MetricGrid({
   items,
   isLight,
@@ -451,8 +469,10 @@ function TradeReconciliationPanel({
 }) {
   const safety = data.safetyScan ?? {};
   const driftToday = data.driftAnalytics?.today ?? [];
+  const driftMeta = data.driftAnalytics?.meta;
   const guardrails = data.promotionGuardrails?.strategies ?? [];
-  const pairs = data.tradePairs?.pairs ?? [];
+  const pairs = normalizeTradePairs(data.tradePairs);
+  const showSignalFallback = driftToday.length > 0 && !hasPairDriftColumns(driftToday);
   const unreconciled = data.unreconciled ?? [];
   const failures = data.reconciliationFailures ?? [];
 
@@ -501,11 +521,23 @@ function TradeReconciliationPanel({
 
         {driftToday.length > 0 ? (
           <AdminPanel isLight={isLight} title="Drift analytics (today)">
+            {showSignalFallback ? (
+              <p className="mb-3 text-xs text-muted-foreground">
+                {driftMeta?.pairMetricsRequireBothMode
+                  ?? "Pair drift (slippage, latency, win Δ) needs BOTH-mode paper+LIVE orders reconciled today."}
+                {" "}
+                Reconciled pairs today: {fmtVal(driftMeta?.reconciledPairCountToday ?? pairs.length)}.
+                Signal-level degradation and OMS stats shown where pair metrics are unavailable.
+              </p>
+            ) : null}
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className={isLight ? "bg-neutral-100" : "bg-neutral-900/80"}>
                   <tr>
-                    {["Strategy", "Degradation", "Slippage P50", "Latency P50", "Underperf %", "Win Δ"].map((h) => (
+                    {(showSignalFallback
+                      ? ["Strategy", "Degradation", "Signals", "OMS reject %", "Integrity %", "Win %"]
+                      : ["Strategy", "Degradation", "Slippage P50", "Latency P50", "Underperf %", "Win Δ"]
+                    ).map((h) => (
                       <th key={h} className="px-2 py-2 text-left font-semibold text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -515,10 +547,21 @@ function TradeReconciliationPanel({
                     <tr key={String(d.strategyKey)} className="border-t dark:border-neutral-800">
                       <td className="px-2 py-2 font-medium">{String(d.strategyKey ?? "—")}</td>
                       <td className="px-2 py-2 font-mono">{fmtVal(d.strategyDegradationScore)}</td>
-                      <td className="px-2 py-2 font-mono">{fmtVal(d.slippageP50Bps)}</td>
-                      <td className="px-2 py-2 font-mono">{fmtVal(d.latencyP50Ms)}</td>
-                      <td className="px-2 py-2 font-mono">{fmtVal(d.liveUnderperformancePct)}</td>
-                      <td className="px-2 py-2 font-mono">{fmtVal(d.winRateDelta)}</td>
+                      {showSignalFallback ? (
+                        <>
+                          <td className="px-2 py-2 font-mono">{fmtVal(d.signalsGenerated)}</td>
+                          <td className="px-2 py-2 font-mono">{fmtVal(d.omsRejectRate)}</td>
+                          <td className="px-2 py-2 font-mono">{fmtVal(d.integrityRejectionPct)}</td>
+                          <td className="px-2 py-2 font-mono">{fmtVal(d.winRate)}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-2 py-2 font-mono">{fmtVal(d.slippageP50Bps)}</td>
+                          <td className="px-2 py-2 font-mono">{fmtVal(d.latencyP50Ms)}</td>
+                          <td className="px-2 py-2 font-mono">{fmtVal(d.liveUnderperformancePct)}</td>
+                          <td className="px-2 py-2 font-mono">{fmtVal(d.winRateDelta)}</td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -528,7 +571,13 @@ function TradeReconciliationPanel({
         ) : null}
 
         <AdminPanel isLight={isLight} title="Recent paper/live trade pairs">
-          <TradePairTable rows={pairs.slice(0, 15)} isLight={isLight} />
+          <TradePairTable rows={pairs.slice(0, 15)} isLight={isLight} emptyHint={
+            pairs.length === 0
+              ? "No paper/live pairs yet. Pairs are created when BOTH-mode strategies dispatch a LIVE leg "
+                + "(paired with PAPER) and fills reconcile in execution_comparison_metrics. "
+                + "Today there are 0 LIVE OMS orders on prod until go-live strategies fire in BOTH mode."
+              : undefined
+          } />
         </AdminPanel>
 
         {(unreconciled.length > 0 || failures.length > 0) ? (
@@ -552,9 +601,21 @@ function TradeReconciliationPanel({
   );
 }
 
-function TradePairTable({ rows, isLight }: { rows: Array<Record<string, unknown>>; isLight: boolean }) {
+function TradePairTable({
+  rows,
+  isLight,
+  emptyHint,
+}: {
+  rows: Array<Record<string, unknown>>;
+  isLight: boolean;
+  emptyHint?: string;
+}) {
   if (rows.length === 0) {
-    return <p className="text-xs text-muted-foreground">No trade pairs yet.</p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        {emptyHint ?? "No trade pairs yet."}
+      </p>
+    );
   }
   return (
     <div className="overflow-x-auto">

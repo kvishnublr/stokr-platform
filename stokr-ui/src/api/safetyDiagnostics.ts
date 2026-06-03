@@ -148,12 +148,19 @@ export type TradePairRow = {
   reconciledAt?: string;
 };
 
+export type DriftAnalyticsMeta = {
+  sessionDate?: string;
+  reconciledPairCountToday?: number;
+  pairMetricsAvailable?: boolean;
+  pairMetricsRequireBothMode?: string;
+};
+
 export type TradeReconciliationDiagnostics = {
-  tradePairs: { pairs: TradePairRow[] };
+  tradePairs: { pairs: TradePairRow[] } | TradePairRow[];
   unreconciled: TradePairRow[];
   reconciliationFailures: TradePairRow[];
   lifecycleDivergence: TradePairRow[];
-  driftAnalytics: { today: Array<Record<string, unknown>> };
+  driftAnalytics: { today: Array<Record<string, unknown>>; meta?: DriftAnalyticsMeta };
   safetyScan: {
     alertCount?: number;
     unreconciledCount?: number;
