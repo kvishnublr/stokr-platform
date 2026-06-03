@@ -342,7 +342,7 @@ function OperationalPanel({ data, isLight }: { data: OperationalDiagnostics; isL
           </AdminPanel>
         ) : null}
 
-        <AdminPanel isLight={isLight} title="Strategy runtime health (today)">
+        <AdminPanel isLight={isLight} title="Strategy runtime health (today)" subtitle="Signals = persisted to DB (matches Signal Monitor). Trades = opened/closed outcomes.">
           <StrategyHealthTable rows={data.strategyRuntimeHealth ?? []} isLight={isLight} />
         </AdminPanel>
       </div>

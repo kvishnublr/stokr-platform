@@ -173,11 +173,10 @@ public class CatalogDrivenScanScheduler {
                     StrategySignal signal = strategy.evaluate(ctx);
 
                     if (signal != null && signal.type() != SignalType.HOLD) {
-                        runtimeHealthService.recordSignalGenerated(strategyKey, tick);
-
                         if (mode.skipsSignalPersist()) {
                             log.info("catalog.scan.dry_run_signal strategyKey={} symbol={} type={}",
                                     strategyKey, symbol, signal.type());
+                            runtimeHealthService.recordSignalGenerated(strategyKey, tick);
                             bindingSignals++;
                             totalSymbols++;
                             continue;
@@ -241,6 +240,7 @@ public class CatalogDrivenScanScheduler {
                     entity, UUID.randomUUID().toString(), pipelineMode, mode.skipsBrokerExecution());
             if (saved != null) {
                 signalCooldownService.recordEmitted(symbol, strategyKey, candleTime);
+                runtimeHealthService.recordSignalGenerated(strategyKey, candleTime);
                 runtimeHealthService.recordTradeOpened(strategyKey, candleTime);
             }
         } catch (Exception ex) {
