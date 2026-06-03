@@ -14,6 +14,7 @@ class StrategyExecutionModeServiceTest {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
                 "PAPER", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
+                "PAPER", "PAPER",
                 true, LIVE_COHORT);
 
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
@@ -27,6 +28,8 @@ class StrategyExecutionModeServiceTest {
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("S7_RANGE_FADE"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("PRE_OPEN_GAP_OI"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("COMMODITIES_E2E_TEST"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("USDINR_MOMENTUM"));
+        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("EURINR_MEAN_REVERSION"));
     }
 
     @Test
@@ -34,6 +37,7 @@ class StrategyExecutionModeServiceTest {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
                 "PAPER", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
+                "PAPER", "PAPER",
                 false, LIVE_COHORT);
 
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("GAP_FILL"));
@@ -45,6 +49,7 @@ class StrategyExecutionModeServiceTest {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
                 "PAPER", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
+                "PAPER", "PAPER",
                 true, LIVE_COHORT);
 
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
@@ -57,6 +62,7 @@ class StrategyExecutionModeServiceTest {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
                 "PAPER", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
+                "PAPER", "PAPER",
                 true, "GAP_FILL");
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("NSE_SPIKE_DETECTION"));

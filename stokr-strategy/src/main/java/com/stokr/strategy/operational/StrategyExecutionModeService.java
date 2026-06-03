@@ -31,6 +31,8 @@ public class StrategyExecutionModeService {
             @Value("${stokr.strategy.execution-modes.S7_RANGE_FADE:DRY_RUN}") String s7,
             @Value("${stokr.strategy.execution-modes.PRE_OPEN_GAP_OI:PAPER}") String preOpenGapOi,
             @Value("${stokr.strategy.execution-modes.COMMODITIES_E2E_TEST:PAPER}") String commoditiesE2eTest,
+            @Value("${stokr.strategy.execution-modes.USDINR_MOMENTUM:PAPER}") String usdInrMomentum,
+            @Value("${stokr.strategy.execution-modes.EURINR_MEAN_REVERSION:PAPER}") String eurInrMeanReversion,
             @Value("${stokr.strategy.execution-modes.allow-live:true}") boolean allowLive,
             @Value("${stokr.strategy.execution-modes.live-validated:GAP_FILL,NSE_SPIKE_DETECTION,VWAP_BOUNCE,SECTOR_LAGGARD,ADV_CASH}") String liveValidatedCsv) {
         modes = new LinkedHashMap<>();
@@ -45,6 +47,8 @@ public class StrategyExecutionModeService {
         modes.put("S7_RANGE_FADE", StrategyExecutionMode.parse(s7));
         modes.put("PRE_OPEN_GAP_OI", StrategyExecutionMode.parse(preOpenGapOi));
         modes.put("COMMODITIES_E2E_TEST", StrategyExecutionMode.parse(commoditiesE2eTest));
+        modes.put("USDINR_MOMENTUM", StrategyExecutionMode.parse(usdInrMomentum));
+        modes.put("EURINR_MEAN_REVERSION", StrategyExecutionMode.parse(eurInrMeanReversion));
         this.allowLive = allowLive;
         this.liveValidated = parseValidatedList(liveValidatedCsv);
     }
