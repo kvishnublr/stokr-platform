@@ -176,7 +176,6 @@ public class CatalogDrivenScanScheduler {
                         if (mode.skipsSignalPersist()) {
                             log.info("catalog.scan.dry_run_signal strategyKey={} symbol={} type={}",
                                     strategyKey, symbol, signal.type());
-                            runtimeHealthService.recordSignalGenerated(strategyKey, tick);
                             bindingSignals++;
                             totalSymbols++;
                             continue;
