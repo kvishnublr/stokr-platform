@@ -89,8 +89,10 @@ export function buildAdminOpsPills(
     const hint = stream.snapshotLoading
       ? "fetching /api/admin/operations/snapshot"
       : stream.streamError
-        ? `${stream.streamError} — auto-heal / retry active`
-        : "awaiting first telemetry tick — SSE or HTTP snapshot";
+        ? `${stream.streamError} — reconnecting`
+        : stream.opsStreamLive
+          ? "SSE live — refreshing snapshot"
+          : "reconnecting — auto-heal active";
     const labels = ["Market feed", "OMS", "Redis", "RabbitMQ", "PostgreSQL", "Replay queue", "Signal engine", "Broker rail", "LIVE arm", "Kill switch", "Ops stream"];
     const keys = ["mkt", "oms", "redis", "mq", "pg", "rpq", "sig", "brk", "arm", "kill", "ops"];
     return keys.map((key, i) => ({ key, label: labels[i], status, hint }));

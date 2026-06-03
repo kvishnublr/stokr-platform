@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { ADMIN_OPS_SNAPSHOT_KEY } from "./lib/adminQueryKeys";
 import { AdminConsoleLayout } from "./layout/AdminConsoleLayout";
 import { ShellLayout } from "./layout/ShellLayout";
 import { LoginPage } from "./pages/LoginPage";
@@ -104,9 +106,22 @@ function Protected({ children }: { children: ReactNode }) {
 }
 
 function AdminGate() {
+  const queryClient = useQueryClient();
   const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
   const isTrader = useSessionStore((s) => s.hasTraderAccess());
   const ok = isAdmin && !isTrader;
+
+  useEffect(() => {
+    if (!ok) return;
+    void import("./lib/fetchAdminOpsSnapshotMerged").then(({ fetchAdminOpsSnapshotMerged }) => {
+      void queryClient.prefetchQuery({
+        queryKey: ADMIN_OPS_SNAPSHOT_KEY,
+        queryFn: fetchAdminOpsSnapshotMerged,
+        staleTime: 1500,
+      });
+    });
+  }, [ok, queryClient]);
+
   if (!ok) {
     return <Navigate to="/dashboard" replace />;
   }

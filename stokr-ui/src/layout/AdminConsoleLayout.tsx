@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { Outlet, useLocation } from "react-router-dom";
 import { AnimatedPage } from "../components/ds/AnimatedPage";
@@ -10,11 +10,14 @@ import { adminBreadcrumbs } from "../admin/navigation";
 import { useAdminWorkspaceStore } from "../admin/adminWorkspaceStore";
 import { subscribeAdminOperationsSse } from "../hooks/useAdminOperationsSse";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
+import { readAdminOpsSnapshotCache } from "../lib/adminOpsSnapshotCache";
 import { fetchAdminOpsSnapshotMerged } from "../lib/fetchAdminOpsSnapshotMerged";
 import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
 import { OperatorConsole } from "../components/admin/institutional/experience/OperatorConsole";
 import { SimulationRuntimeBanner } from "../components/admin/SimulationRuntimeBanner";
+
+const LOADING_CAP_MS = 2_000;
 
 /**
  * Wraps all `/admin/*` content: shared operations snapshot + SSE, persistent global ops header,
@@ -28,30 +31,49 @@ export function AdminConsoleLayout() {
   const [opsStreamLive, setOpsStreamLive] = useState(false);
   const [lastOpsPushAt, setLastOpsPushAt] = useState<string | undefined>(undefined);
   const [streamError, setStreamError] = useState<string | undefined>(undefined);
+  const [loadingCapExpired, setLoadingCapExpired] = useState(false);
+  const cachedSnapshot = useRef(readAdminOpsSnapshotCache());
+
+  useEffect(() => {
+    void queryClient.prefetchQuery({
+      queryKey: ADMIN_OPS_SNAPSHOT_KEY,
+      queryFn: fetchAdminOpsSnapshotMerged,
+      staleTime: 1500,
+    });
+  }, [queryClient]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoadingCapExpired(true), LOADING_CAP_MS);
+    return () => window.clearTimeout(t);
+  }, []);
 
   const snapshot = useQuery({
     queryKey: ADMIN_OPS_SNAPSHOT_KEY,
     queryFn: fetchAdminOpsSnapshotMerged,
+    initialData: cachedSnapshot.current,
+    initialDataUpdatedAt: cachedSnapshot.current ? Date.now() - 1000 : undefined,
     refetchInterval: (query) => {
-      if (!query.state.data) return 5000;
+      if (!query.state.data) return 4000;
       return opsStreamLive ? false : 8000;
     },
     retry: (failureCount, error) => {
-      if (failureCount >= 4) return false;
+      if (failureCount >= 3) return false;
       const code = (error as { code?: string })?.code;
-      return code === "ECONNABORTED" || code === "ERR_NETWORK" || failureCount < 3;
+      return code === "ECONNABORTED" || code === "ERR_NETWORK" || failureCount < 2;
     },
-    retryDelay: (attempt) => Math.min(3000 * 2 ** attempt, 30_000),
+    retryDelay: (attempt) => Math.min(1500 * 2 ** attempt, 12_000),
     staleTime: 1500,
-    placeholderData: (prev) => prev,
+    placeholderData: (prev) => prev ?? readAdminOpsSnapshotCache(),
     gcTime: 30 * 60 * 1000,
+    refetchOnMount: "always",
   });
 
-  const snapshotInitialLoad = !snapshot.data && snapshot.isFetching && !snapshot.isError;
+  const snapshotInitialLoad =
+    !snapshot.data && snapshot.isFetching && !snapshot.isError && !loadingCapExpired;
 
   const health = useQuery({
     queryKey: ["admin-health"],
-    queryFn: async () => (await api.get("/api/admin/health")).data?.data as Record<string, unknown>,
+    queryFn: async () => (await api.get("/api/admin/health", { timeout: 8000 })).data?.data as Record<string, unknown>,
     refetchInterval: 15_000,
     retry: 2,
   });

@@ -1,21 +1,36 @@
 import { api } from "../api/client";
 import type { OpsSnapshot } from "../components/admin/cockpit/opsTypes";
+import { writeAdminOpsSnapshotCache } from "./adminOpsSnapshotCache";
 import { mergePlatformMarketFeedIntoSnapshot } from "./adminOpsSnapshotMerge";
 
-const SNAPSHOT_TIMEOUT_MS = 25_000;
-const INFRA_TIMEOUT_MS = 10_000;
+/** Initial admin strip paint — snapshot only, no broker-infrastructure wait. */
+const SNAPSHOT_TIMEOUT_MS = 12_000;
+const INFRA_TIMEOUT_MS = 6_000;
+
+async function fetchSnapshotCore(): Promise<OpsSnapshot> {
+  const snapRes = await api.get("/api/admin/operations/snapshot", { timeout: SNAPSHOT_TIMEOUT_MS });
+  return snapRes.data?.data as OpsSnapshot;
+}
 
 /**
- * Operations snapshot plus optional `platformMarketFeed` from broker-infrastructure.
- * Snapshot is fetched first with a hard timeout so the readiness strip never spins forever.
+ * Fast path for readiness strip: snapshot first (persisted to session cache), infra merged when available.
  */
 export async function fetchAdminOpsSnapshotMerged(): Promise<OpsSnapshot> {
-  const snapRes = await api.get("/api/admin/operations/snapshot", { timeout: SNAPSHOT_TIMEOUT_MS });
-  const raw = snapRes.data?.data as OpsSnapshot;
+  const raw = await fetchSnapshotCore();
+  writeAdminOpsSnapshotCache(raw);
   try {
     const infraRes = await api.get("/api/admin/broker-infrastructure", { timeout: INFRA_TIMEOUT_MS });
-    return mergePlatformMarketFeedIntoSnapshot(raw, infraRes.data?.data);
+    const merged = mergePlatformMarketFeedIntoSnapshot(raw, infraRes.data?.data);
+    writeAdminOpsSnapshotCache(merged);
+    return merged;
   } catch {
     return raw;
   }
+}
+
+/** Snapshot-only for warm cache / prefetch (no infra round-trip). */
+export async function prefetchAdminOpsSnapshot(): Promise<OpsSnapshot> {
+  const raw = await fetchSnapshotCore();
+  writeAdminOpsSnapshotCache(raw);
+  return raw;
 }
