@@ -31,4 +31,12 @@ public interface PortfolioPositionRepository extends JpaRepository<PortfolioPosi
             and (p.avgPrice is null or p.avgPrice = 0)
             """)
     List<PortfolioPosition> findZeroPriceGhostPositions();
+
+    @Query("""
+            select p from PortfolioPosition p
+            where p.deleted = false and p.simulation = false
+            and p.quantity <> 0
+            order by p.updatedAt desc
+            """)
+    List<PortfolioPosition> findAllRealOpenPositions();
 }

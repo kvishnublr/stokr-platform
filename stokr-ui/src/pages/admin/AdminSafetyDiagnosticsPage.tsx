@@ -29,8 +29,14 @@ import { toneChipClasses } from "../../lib/statusTone";
 import { parseAxiosMessage } from "../../api/client";
 import { useSessionStore } from "../../state/session";
 import { useUiThemeStore } from "../../state/uiTheme";
+import { fetchPositionReconciliation } from "../../api/positionReconciliation";
+import {
+  PositionReconciliationLoadError,
+  PositionReconciliationPanel,
+} from "../../components/admin/PositionReconciliationPanel";
 
 const OPS_QK = ["admin-operational-diagnostics"] as const;
+const POSITION_RECON_QK = ["admin-position-reconciliation"] as const;
 const OMS_QK = ["admin-oms-diagnostics"] as const;
 const KS_QK = ["admin-kill-switch-status"] as const;
 
@@ -730,6 +736,13 @@ export function AdminSafetyDiagnosticsPage() {
     ...queryRetry,
   });
 
+  const positionReconQ = useQuery({
+    queryKey: POSITION_RECON_QK,
+    queryFn: fetchPositionReconciliation,
+    refetchInterval: 30_000,
+    ...queryRetry,
+  });
+
   const activateMut = useMutation({
     mutationFn: ({ reason, flatten }: { reason: string; flatten: boolean }) => activateKillSwitch(reason, flatten),
     onSuccess: (data) => {
@@ -892,11 +905,27 @@ export function AdminSafetyDiagnosticsPage() {
           </AdminSection>
         ) : null}
 
+        {positionReconQ.isError ? (
+          <PositionReconciliationLoadError
+            error={positionReconQ.error}
+            onRetry={() => positionReconQ.refetch()}
+            isLight={isLight}
+          />
+        ) : null}
+
+        {positionReconQ.data ? (
+          <PositionReconciliationPanel
+            data={positionReconQ.data}
+            isLight={isLight}
+            queryKey={POSITION_RECON_QK}
+          />
+        ) : null}
+
         {reconciliationQ.data ? (
           <TradeReconciliationPanel data={reconciliationQ.data} isLight={isLight} />
         ) : null}
 
-        {opsQ.isFetching || omsQ.isFetching ? (
+        {opsQ.isFetching || omsQ.isFetching || positionReconQ.isFetching ? (
           <p className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-400")}>
             Refreshing diagnostics…
           </p>

@@ -112,6 +112,16 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
     List<StrategySignalEntity> findRunningSignalsSince(@Param("since") Instant since, Pageable pageable);
 
     @Query("""
+            select s from StrategySignalEntity s
+            where s.deleted = false
+              and s.backtestRunId is null
+              and s.testTrade = false
+              and s.outcomeStatus in ('RUNNING', 'PENDING')
+            order by s.createdAt desc
+            """)
+    List<StrategySignalEntity> findActiveRunningSignals();
+
+    @Query("""
             select case when count(s) > 0 then true else false end
             from StrategySignalEntity s
             where s.deleted = false

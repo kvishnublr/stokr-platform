@@ -1,5 +1,6 @@
 package com.stokr.admin.web;
 
+import com.stokr.admin.service.AdminPositionReconciliationService;
 import com.stokr.admin.signal.AdminOmsStatsDto;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.api.PageResponse;
@@ -47,6 +48,7 @@ public class AdminOmsController {
     private final OmsExecutionEventRepository executionEventRepository;
     private final OmsOrderRepository omsOrderRepository;
     private final OrderLifecycleService orderLifecycleService;
+    private final AdminPositionReconciliationService positionReconciliationService;
 
     @GetMapping("/stats")
     @Operation(summary = "Aggregate OMS stats for today or custom window")
@@ -167,6 +169,18 @@ public class AdminOmsController {
 
     private static long toLong(Object v) {
         return v == null ? 0L : ((Number) v).longValue();
+    }
+
+    @GetMapping("/position-reconciliation")
+    @Operation(summary = "OMS open legs vs broker holdings and RUNNING signals")
+    public ApiResponse<Map<String, Object>> positionReconciliation() {
+        return ApiResponse.ok(positionReconciliationService.reconciliation(), CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/position-reconciliation/clear-ghosts")
+    @Operation(summary = "Soft-delete zero-price ghost portfolio rows (auto-heal)")
+    public ApiResponse<Map<String, Object>> clearGhostPositions() {
+        return ApiResponse.ok(positionReconciliationService.clearGhostPositions(), CorrelationIdHolder.get());
     }
 
     @GetMapping("/summary")
