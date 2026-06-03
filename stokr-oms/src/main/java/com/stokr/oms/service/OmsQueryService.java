@@ -40,6 +40,9 @@ import java.util.UUID;
 @Transactional(readOnly = true)
 public class OmsQueryService {
 
+    private static final Instant METRICS_FROM_SENTINEL = Instant.parse("1970-01-01T00:00:00Z");
+    private static final Instant METRICS_TO_SENTINEL = Instant.parse("2099-01-01T00:00:00Z");
+
     private final OmsOrderRepository orderRepository;
     private final OmsExecutionRepository executionRepository;
     private final OmsTradeRepository tradeRepository;
@@ -80,8 +83,10 @@ public class OmsQueryService {
         long cancelled = orderRepository.count(Specification.where(base).and(OmsOrderSpecifications.stateEquals(OrderState.CANCELLED)));
         Specification<OmsExecution> execBase = executionSpec(restrictUserId, p);
         long fillLegs = executionRepository.count(Specification.where(execBase).and(filledLegSpec()));
-        Double avgLat = executionRepository.averageLatencyMs(restrictUserId, p.fromInclusive(), p.toExclusive());
-        BigDecimal avgSlip = executionRepository.averageSlippageBps(restrictUserId, p.fromInclusive(), p.toExclusive());
+        Instant from = p.fromInclusive() != null ? p.fromInclusive() : METRICS_FROM_SENTINEL;
+        Instant to = p.toExclusive() != null ? p.toExclusive() : METRICS_TO_SENTINEL;
+        Double avgLat = executionRepository.averageLatencyMs(restrictUserId, from, to);
+        BigDecimal avgSlip = executionRepository.averageSlippageBps(restrictUserId, from, to);
         return new OmsSummaryMetricsDto(total, rejects, cancelled, fillLegs, avgLat, avgSlip);
     }
 
