@@ -168,8 +168,8 @@ public class LiveTradingTraderEligibilityService {
             );
         }
         String hs = broker.getHealthStatus();
-        if (hs != null && (hs.equalsIgnoreCase("DISCONNECTED") || hs.equalsIgnoreCase("DEGRADED"))) {
-            return LiveTraderEligibilityResult.reject("BROKER_UNHEALTHY", "Broker connection is unhealthy");
+        if (hs != null && hs.equalsIgnoreCase("DISCONNECTED")) {
+            return LiveTraderEligibilityResult.reject("BROKER_UNHEALTHY", "Broker connection is disconnected");
         }
         if (!brokerAccessValid(broker)) {
             return LiveTraderEligibilityResult.reject("BROKER_TOKEN_EXPIRED", "Broker access token missing or expired");

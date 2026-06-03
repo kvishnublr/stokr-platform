@@ -240,7 +240,6 @@ public class CatalogDrivenScanScheduler {
             if (saved != null) {
                 signalCooldownService.recordEmitted(symbol, strategyKey, candleTime);
                 runtimeHealthService.recordSignalGenerated(strategyKey, candleTime);
-                runtimeHealthService.recordTradeOpened(strategyKey, candleTime);
             }
         } catch (Exception ex) {
             log.warn("catalog.scan.persist_failed strategyKey={} symbol={} {}", strategyKey, symbol, ex.toString());

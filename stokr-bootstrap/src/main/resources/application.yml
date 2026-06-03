@@ -354,6 +354,7 @@ stokr:
       force-close-stale-positions: ${STOKR_OMS_FORCE_CLOSE_STALE:true}
     broker-disconnect:
       block-live: ${STOKR_OMS_BROKER_DISCONNECT_BLOCK:true}
+      auto-heal-before-block: ${STOKR_OMS_BROKER_AUTO_HEAL_BEFORE_BLOCK:true}
       flatten-on-disconnect: ${STOKR_OMS_BROKER_DISCONNECT_FLATTEN:false}
       halt-ttl-hours: ${STOKR_OMS_BROKER_HALT_TTL_HOURS:4}
     live-rollout:
