@@ -403,8 +403,8 @@ export function AdminSignalsPage() {
     setIncludeReplayLab(provenanceTab === "REPLAY_LAB");
     setPage(0);
   }, [provenanceTab]);
-  const [viewMode, setViewMode] = useState<"stream" | "grid">("stream");
-  const [showDetailGrid, setShowDetailGrid] = useState(false);
+  const [viewMode, setViewMode] = useState<"stream" | "grid">("grid");
+  const [showDetailGrid, setShowDetailGrid] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dateViewMode, setDateViewMode] = useState<"today" | "range">("today");
   const [rangeFrom, setRangeFrom] = useState("");
