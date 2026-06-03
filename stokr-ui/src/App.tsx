@@ -113,10 +113,10 @@ function AdminGate() {
 
   useEffect(() => {
     if (!ok) return;
-    void import("./lib/fetchAdminOpsSnapshotMerged").then(({ fetchAdminOpsSnapshotMerged }) => {
+    void import("./lib/fetchAdminOpsSnapshotMerged").then(({ prefetchAdminOpsSnapshot }) => {
       void queryClient.prefetchQuery({
         queryKey: ADMIN_OPS_SNAPSHOT_KEY,
-        queryFn: fetchAdminOpsSnapshotMerged,
+        queryFn: prefetchAdminOpsSnapshot,
         staleTime: 1500,
       });
     });

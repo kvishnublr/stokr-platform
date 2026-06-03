@@ -8,6 +8,7 @@ export function AdminGlobalOpsHeader({
   snapshot,
   isFetching,
   snapshotLoading,
+  snapshotFetching,
   opsStreamLive,
   lastOpsPushAt,
   streamError,
@@ -15,6 +16,7 @@ export function AdminGlobalOpsHeader({
   snapshot: OpsSnapshot | undefined;
   isFetching: boolean;
   snapshotLoading?: boolean;
+  snapshotFetching?: boolean;
   opsStreamLive: boolean;
   lastOpsPushAt?: string;
   streamError?: string;
@@ -24,6 +26,7 @@ export function AdminGlobalOpsHeader({
     lastOpsPushAt,
     streamError,
     snapshotLoading: snapshotLoading === true,
+    snapshotFetching: snapshotFetching === true,
   });
   const at = snapshot?.collectedAt ?? "";
 

@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { OpsSnapshot } from "../components/admin/cockpit/opsTypes";
 import { carryForwardPlatformMarketFeed } from "../lib/adminOpsSnapshotMerge";
+import { writeAdminOpsSnapshotCache } from "../lib/adminOpsSnapshotCache";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
 
 /**
@@ -62,9 +63,11 @@ export async function subscribeAdminOperationsSse(
       const o = parsed as Record<string, unknown>;
       const payload = o.payload;
       if (payload && typeof payload === "object") {
-        queryClient.setQueryData(ADMIN_OPS_SNAPSHOT_KEY, (prev) =>
-          carryForwardPlatformMarketFeed(payload as OpsSnapshot, prev as OpsSnapshot | undefined),
-        );
+        queryClient.setQueryData(ADMIN_OPS_SNAPSHOT_KEY, (prev) => {
+          const merged = carryForwardPlatformMarketFeed(payload as OpsSnapshot, prev as OpsSnapshot | undefined);
+          writeAdminOpsSnapshotCache(merged);
+          return merged;
+        });
       }
       onOpsRealtime?.();
     }

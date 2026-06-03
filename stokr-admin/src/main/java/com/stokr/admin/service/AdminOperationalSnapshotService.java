@@ -37,10 +37,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.user.SimpUserRegistry;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
+import java.util.concurrent.atomic.AtomicBoolean;
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.HikariPoolMXBean;
 
@@ -103,8 +106,13 @@ public class AdminOperationalSnapshotService {
     @Value("${stokr.admin.ops.snapshot-cache-ms:4000}")
     private long snapshotCacheMs;
 
+    /** Serve last good snapshot while a refresh runs — avoids 60s+ cold waits on HTTP/SSE. */
+    @Value("${stokr.admin.ops.snapshot-stale-max-ms:120000}")
+    private long snapshotStaleMaxMs;
+
     private volatile OperationsSnapshotDto cachedSnapshot;
     private volatile long cachedSnapshotAtMs;
+    private final AtomicBoolean refreshInFlight = new AtomicBoolean(false);
 
     @Autowired
     public AdminOperationalSnapshotService(
@@ -167,8 +175,44 @@ public class AdminOperationalSnapshotService {
         if (hit != null && nowMs - cachedSnapshotAtMs < snapshotCacheMs) {
             return hit;
         }
+        if (hit != null && nowMs - cachedSnapshotAtMs < snapshotStaleMaxMs) {
+            triggerAsyncRefresh();
+            return hit;
+        }
+        return refreshSnapshotBlocking();
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void warmSnapshotOnStartup() {
+        Thread.startVirtualThread(this::refreshSnapshotBlocking);
+    }
+
+    @Scheduled(fixedDelayString = "${stokr.admin.ops.snapshot-warm-ms:10000}")
+    public void warmSnapshotPeriodically() {
+        long nowMs = System.currentTimeMillis();
+        if (cachedSnapshot != null && nowMs - cachedSnapshotAtMs < snapshotCacheMs) {
+            return;
+        }
+        triggerAsyncRefresh();
+    }
+
+    private void triggerAsyncRefresh() {
+        if (!refreshInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        Thread.startVirtualThread(() -> {
+            try {
+                refreshSnapshotBlocking();
+            } finally {
+                refreshInFlight.set(false);
+            }
+        });
+    }
+
+    private OperationsSnapshotDto refreshSnapshotBlocking() {
         synchronized (this) {
-            hit = cachedSnapshot;
+            long nowMs = System.currentTimeMillis();
+            OperationsSnapshotDto hit = cachedSnapshot;
             if (hit != null && nowMs - cachedSnapshotAtMs < snapshotCacheMs) {
                 return hit;
             }
@@ -302,11 +346,13 @@ public class AdminOperationalSnapshotService {
         m.put("collectedAt", collectedAt.toString());
         Instant since60 = collectedAt.minusSeconds(60);
         m.put("ticksIngestedLast60sPlatformWs", countTicksSince(since60, "PLATFORM_ZERODHA_WS"));
-        m.put("distinctSymbols", queryLong("select count(distinct symbol) from marketdata_candles where deleted = false"));
-        m.put("candles1mTotal", queryLong("select count(*) from marketdata_candles where deleted = false and timeframe = '1m'"));
-        m.put("candles5mTotal", queryLong("select count(*) from marketdata_candles where deleted = false and timeframe = '5m'"));
-        m.put("latestCandleOpenTime1m", queryInstant("select max(open_time) from marketdata_candles where deleted = false and timeframe = '1m'"));
-        m.put("latestCandleOpenTime5m", queryInstant("select max(open_time) from marketdata_candles where deleted = false and timeframe = '5m'"));
+        Object distinct = freshness.get("distinctSymbols");
+        m.put("distinctSymbols", distinct != null ? distinct : -1L);
+        m.put("candles1mTotal", -1L);
+        m.put("candles5mTotal", -1L);
+        m.put("candlesTotalsNote", "deferred — full-table counts removed from hot ops snapshot path");
+        m.put("latestCandleOpenTime1m", null);
+        m.put("latestCandleOpenTime5m", null);
         m.put("globalBrokerHalt", brokerOperationalCircuit.isGlobalBrokerHalt());
         m.put("freshnessStatus", freshness.get("status"));
         m.put("latest1mLagSeconds", freshness.get("latest1mLagSeconds"));

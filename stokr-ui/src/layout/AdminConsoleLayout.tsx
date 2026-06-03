@@ -11,13 +11,14 @@ import { useAdminWorkspaceStore } from "../admin/adminWorkspaceStore";
 import { subscribeAdminOperationsSse } from "../hooks/useAdminOperationsSse";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "../lib/adminQueryKeys";
 import { readAdminOpsSnapshotCache } from "../lib/adminOpsSnapshotCache";
-import { fetchAdminOpsSnapshotMerged } from "../lib/fetchAdminOpsSnapshotMerged";
+import { fetchAdminOpsSnapshotFast, prefetchAdminOpsSnapshot } from "../lib/fetchAdminOpsSnapshotMerged";
 import { useUiThemeStore } from "../state/uiTheme";
 import { cn } from "../lib/utils";
 import { OperatorConsole } from "../components/admin/institutional/experience/OperatorConsole";
 import { SimulationRuntimeBanner } from "../components/admin/SimulationRuntimeBanner";
 
-const LOADING_CAP_MS = 1_500;
+const LOADING_CAP_MS = 3_000;
+const SNAPSHOT_ERROR_AFTER_MS = 18_000;
 
 /**
  * Wraps all `/admin/*` content: shared operations snapshot + SSE, persistent global ops header,
@@ -32,24 +33,29 @@ export function AdminConsoleLayout() {
   const [lastOpsPushAt, setLastOpsPushAt] = useState<string | undefined>(undefined);
   const [streamError, setStreamError] = useState<string | undefined>(undefined);
   const [loadingCapExpired, setLoadingCapExpired] = useState(false);
+  const [snapshotHardTimeout, setSnapshotHardTimeout] = useState(false);
   const cachedSnapshot = useRef(readAdminOpsSnapshotCache());
 
   useEffect(() => {
     void queryClient.prefetchQuery({
       queryKey: ADMIN_OPS_SNAPSHOT_KEY,
-      queryFn: fetchAdminOpsSnapshotMerged,
+      queryFn: prefetchAdminOpsSnapshot,
       staleTime: 1500,
     });
   }, [queryClient]);
 
   useEffect(() => {
     const t = window.setTimeout(() => setLoadingCapExpired(true), LOADING_CAP_MS);
-    return () => window.clearTimeout(t);
+    const err = window.setTimeout(() => setSnapshotHardTimeout(true), SNAPSHOT_ERROR_AFTER_MS);
+    return () => {
+      window.clearTimeout(t);
+      window.clearTimeout(err);
+    };
   }, []);
 
   const snapshot = useQuery({
     queryKey: ADMIN_OPS_SNAPSHOT_KEY,
-    queryFn: fetchAdminOpsSnapshotMerged,
+    queryFn: fetchAdminOpsSnapshotFast,
     initialData: cachedSnapshot.current,
     initialDataUpdatedAt: cachedSnapshot.current ? Date.now() - 1000 : undefined,
     refetchInterval: (query) => {
@@ -70,6 +76,16 @@ export function AdminConsoleLayout() {
 
   const snapshotInitialLoad =
     !snapshot.data && snapshot.isFetching && !snapshot.isError && !loadingCapExpired;
+
+  const snapshotStreamError =
+    streamError ??
+    (snapshotHardTimeout && !snapshot.data && snapshot.isFetching
+      ? "operations snapshot slow — retrying (check API warm cache)"
+      : snapshot.isError
+        ? snapshot.error instanceof Error
+          ? snapshot.error.message
+          : "snapshot API failed — retrying with backoff"
+        : undefined);
 
   const health = useQuery({
     queryKey: ["admin-health"],
@@ -130,16 +146,10 @@ export function AdminConsoleLayout() {
         snapshot={snapshot.data}
         isFetching={snapshot.isFetching}
         snapshotLoading={snapshotInitialLoad}
+        snapshotFetching={snapshot.isFetching && Boolean(snapshot.data)}
         opsStreamLive={opsStreamLive}
         lastOpsPushAt={lastOpsPushAt}
-        streamError={
-          streamError ??
-          (snapshot.isError
-            ? snapshot.error instanceof Error
-              ? snapshot.error.message
-              : "snapshot API failed — retrying with backoff"
-            : undefined)
-        }
+        streamError={snapshotStreamError}
       />
       <SimulationRuntimeBanner isLight={isLight} />
       <div

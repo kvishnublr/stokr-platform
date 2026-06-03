@@ -82,17 +82,25 @@ function brokerRailAggregate(vendors: Record<string, unknown> | undefined): { st
 
 export function buildAdminOpsPills(
   s: OpsSnapshot | undefined,
-  stream: { opsStreamLive: boolean; lastOpsPushAt?: string; streamError?: string; snapshotLoading?: boolean },
+  stream: {
+    opsStreamLive: boolean;
+    lastOpsPushAt?: string;
+    streamError?: string;
+    snapshotLoading?: boolean;
+    snapshotFetching?: boolean;
+  },
 ): AdminOpsPill[] {
   if (!s) {
-    const status = stream.snapshotLoading ? "LOADING" : "CONNECTED";
+    const status = stream.snapshotLoading ? "LOADING" : stream.streamError ? "DEGRADED" : "CONNECTED";
     const hint = stream.snapshotLoading
       ? "fetching /api/admin/operations/snapshot"
       : stream.streamError
-        ? `${stream.streamError} — reconnecting`
-        : stream.opsStreamLive
-          ? "SSE live — refreshing snapshot"
-          : "reconnecting — auto-heal active";
+        ? `${stream.streamError} — retry or hard refresh`
+        : stream.opsStreamLive && stream.snapshotFetching
+          ? "SSE live — syncing snapshot"
+          : stream.opsStreamLive
+            ? "SSE live — awaiting snapshot payload"
+            : "reconnecting — auto-heal active";
     const labels = ["Market feed", "OMS", "Redis", "RabbitMQ", "PostgreSQL", "Replay queue", "Signal engine", "Broker rail", "LIVE arm", "Kill switch", "Ops stream"];
     const keys = ["mkt", "oms", "redis", "mq", "pg", "rpq", "sig", "brk", "arm", "kill", "ops"];
     return keys.map((key, i) => ({ key, label: labels[i], status, hint }));

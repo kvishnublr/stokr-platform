@@ -28,13 +28,30 @@ export function LivePlatformTopology({ snapshot, isLight }: { snapshot: OpsSnaps
   const lifecycle = asRecord(snapshot?.operationalLifecycle);
   const scan = asRecord(snapshot?.scannerTelemetry);
 
+  const running = Number(scan?.runningStrategyInstances ?? 0);
+  const sig60 = Number(scan?.signalsEmittedLast60m ?? 0);
+  const signalStatus =
+    running > 0
+      ? `${running} RUNNING`
+      : sig60 > 0
+        ? `${sig60}/60m`
+        : fresh?.status === "OK"
+          ? "IDLE"
+          : "—";
+  const omsStatus = String(oms?.omsPlaneState ?? oms?.health ?? oms?.status ?? "—");
+
   const nodes: NodeDef[] = [
     {
       id: "feed",
       label: "Market feed",
       icon: Radio,
-      status: String(fresh?.status ?? snapshot?.marketInfra?.sessionState ?? "—"),
-      tone: fresh?.status === "STALE" ? "warn" : fresh?.status === "OK" || fresh?.status === "LIVE" ? "ok" : "bad",
+      status: String(fresh?.status ?? snapshot?.marketInfra?.freshnessStatus ?? "—"),
+      tone:
+        fresh?.status === "STALE"
+          ? "warn"
+          : fresh?.status === "OK" || fresh?.status === "MARKET_CLOSED"
+            ? "ok"
+            : "bad",
       delayMs: typeof fresh?.lagMs === "number" ? fresh.lagMs : undefined,
       to: "/admin/market",
     },
@@ -42,7 +59,7 @@ export function LivePlatformTopology({ snapshot, isLight }: { snapshot: OpsSnaps
       id: "signals",
       label: "Signal engine",
       icon: Zap,
-      status: String(lifecycle?.signals ?? scan?.signalsFromScannerTotal ?? "—"),
+      status: String(lifecycle?.signals ?? signalStatus),
       tone: Number(scan?.failuresTotal ?? 0) > 0 ? "warn" : "ok",
       to: "/admin/signals",
     },
@@ -50,7 +67,7 @@ export function LivePlatformTopology({ snapshot, isLight }: { snapshot: OpsSnaps
       id: "risk",
       label: "Risk engine",
       icon: Shield,
-      status: String(lifecycle?.risk ?? "GUARD"),
+      status: String(lifecycle?.risk ?? (omsStatus === "OPERATIONAL" ? "GUARD" : omsStatus)),
       tone: "ok",
       to: "/admin/risk-dashboard",
     },
@@ -58,8 +75,8 @@ export function LivePlatformTopology({ snapshot, isLight }: { snapshot: OpsSnaps
       id: "oms",
       label: "OMS",
       icon: Cpu,
-      status: String(oms?.health ?? oms?.status ?? "—"),
-      tone: oms?.health === "DEGRADED" ? "warn" : "ok",
+      status: omsStatus,
+      tone: omsStatus === "DEGRADED" ? "warn" : "ok",
       delayMs: extractOmsLatencyMs(snapshot) ?? undefined,
       to: "/admin/oms",
     },

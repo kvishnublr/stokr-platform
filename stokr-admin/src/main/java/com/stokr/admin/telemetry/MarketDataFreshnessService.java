@@ -50,7 +50,9 @@ public class MarketDataFreshnessService {
             m.put("reason", "CANDLES_FRESH");
         }
         m.put("staleThresholdSeconds", STALE_LAG_SECONDS);
-        m.put("distinctSymbols", queryLong("select count(distinct symbol) from marketdata_candles where deleted = false"));
+        // Full-table distinct/count scans are deferred — they blocked admin ops snapshot for 60s+ on prod.
+        m.put("distinctSymbols", -1L);
+        m.put("distinctSymbolsNote", "deferred — use Market Intel for symbol cardinality");
         m.put("worstSymbols1m", worstSymbolsSample());
         m.put("candles1mPerMinuteApprox", candles1mPerMinuteApprox());
         m.put("note", "Lag = DB clock minus max(open_time) for 1m candles. Throughput = new 1m rows in last 5m / 5.");
@@ -125,6 +127,7 @@ public class MarketDataFreshnessService {
                     select symbol, max(open_time) as mx
                     from marketdata_candles
                     where deleted = false and timeframe = '1m'
+                      and open_time >= (current_timestamp - interval '24 hours')
                     group by symbol
                     order by mx asc
                     limit 8

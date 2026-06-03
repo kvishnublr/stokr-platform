@@ -3,9 +3,9 @@ import type { OpsSnapshot } from "../components/admin/cockpit/opsTypes";
 import { writeAdminOpsSnapshotCache } from "./adminOpsSnapshotCache";
 import { mergePlatformMarketFeedIntoSnapshot } from "./adminOpsSnapshotMerge";
 
-/** Initial admin strip paint — snapshot only, no broker-infrastructure wait. */
-const SNAPSHOT_TIMEOUT_MS = 12_000;
-const INFRA_TIMEOUT_MS = 6_000;
+/** Snapshot can be slow on cold cache; server returns stale cache when warmed. */
+const SNAPSHOT_TIMEOUT_MS = 25_000;
+const INFRA_TIMEOUT_MS = 5_000;
 
 async function fetchSnapshotCore(): Promise<OpsSnapshot> {
   const snapRes = await api.get("/api/admin/operations/snapshot", { timeout: SNAPSHOT_TIMEOUT_MS });
@@ -26,6 +26,11 @@ export async function fetchAdminOpsSnapshotMerged(): Promise<OpsSnapshot> {
   } catch {
     return raw;
   }
+}
+
+/** Primary admin layout query — snapshot HTTP first; infra merge is best-effort. */
+export async function fetchAdminOpsSnapshotFast(): Promise<OpsSnapshot> {
+  return fetchAdminOpsSnapshotMerged();
 }
 
 /** Snapshot-only for warm cache / prefetch (no infra round-trip). */
