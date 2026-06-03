@@ -184,7 +184,7 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             FROM oms_orders
             WHERE deleted = FALSE AND backtest_run_id IS NULL
               AND state = 'REJECTED' AND reject_reason IS NOT NULL
-              AND (:since IS NULL OR created_at >= :since)
+              AND (CAST(:since AS timestamptz) IS NULL OR created_at >= CAST(:since AS timestamptz))
               AND (
                 :scope = 'MIXED'
                 OR (:scope = 'SIMULATION' AND is_simulation = TRUE)

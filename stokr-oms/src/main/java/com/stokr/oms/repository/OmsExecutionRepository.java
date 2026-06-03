@@ -65,8 +65,8 @@ public interface OmsExecutionRepository extends JpaRepository<OmsExecution, UUID
             where e.deleted = false and o.deleted = false
             and e.latencyMs is not null
             and (:userId is null or o.userId = :userId)
-            and (:from is null or e.createdAt >= :from)
-            and (:to is null or e.createdAt < :to)
+            and e.createdAt >= coalesce(:from, e.createdAt)
+            and e.createdAt < coalesce(:to, timestamp '2099-01-01T00:00:00Z')
             """)
     Double averageLatencyMs(
             @Param("userId") UUID userId,
@@ -86,8 +86,8 @@ public interface OmsExecutionRepository extends JpaRepository<OmsExecution, UUID
             where e.deleted = false and o.deleted = false
             and e.slippageBps is not null
             and (:userId is null or o.userId = :userId)
-            and (:from is null or e.createdAt >= :from)
-            and (:to is null or e.createdAt < :to)
+            and e.createdAt >= coalesce(:from, e.createdAt)
+            and e.createdAt < coalesce(:to, timestamp '2099-01-01T00:00:00Z')
             """)
     BigDecimal averageSlippageBps(
             @Param("userId") UUID userId,
