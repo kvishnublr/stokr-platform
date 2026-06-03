@@ -47,7 +47,8 @@ export function AdminSectionPage({ section }: { section: AdminSectionKind }) {
 
   const rows = useMemo(() => {
     const data = query.data;
-    if (Array.isArray(data)) return data;
+    // Array payloads (e.g. incidents) belong on dedicated pages, not key/value summaries.
+    if (Array.isArray(data)) return [];
     if (data != null && typeof data === "object") {
       return Object.entries(data as Record<string, unknown>).map(([key, value]) => ({
         key,

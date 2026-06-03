@@ -33,6 +33,7 @@ import { AdminStrategiesPage } from "./pages/AdminStrategiesPage";
 import { AdminOmsMonitorPage } from "./pages/AdminOmsMonitorPage";
 import { AdminOpsPage } from "./pages/AdminOpsPage";
 import { AdminSectionPage } from "./pages/AdminSectionPage";
+import { AdminAlertCenterPage } from "./pages/admin/AdminAlertCenterPage";
 import { AdminBrokerInfrastructurePage } from "./pages/admin/AdminBrokerInfrastructurePage";
 import { AdminAuditPage } from "./pages/admin/AdminAuditPage";
 import { AdminBackfillPage } from "./pages/admin/AdminBackfillPage";
@@ -296,7 +297,7 @@ export default function App() {
               <Route path="settings" element={<AdminSectionPage section="settings" />} />
               <Route path="security" element={<AdminSectionPage section="security" />} />
               <Route path="reports" element={<AdminSectionPage section="reports" />} />
-              <Route path="alerts" element={<AdminSectionPage section="alerts" />} />
+              <Route path="alerts" element={<AdminAlertCenterPage />} />
               <Route path="ops" element={<AdminOpsGate />} />
               <Route path="pipeline-health" element={<AdminPipelineHealthPage />} />
               <Route path="test-signal-lab" element={<AdminTestSignalLabPage />} />
