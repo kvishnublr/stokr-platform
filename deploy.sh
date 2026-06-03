@@ -60,8 +60,8 @@ deploy_api_docker() {
     echo "==> [API] Pulling latest code..."
     git pull origin Release_v1
 
-    echo "==> [API] Ensuring dependencies are running (postgres, redis, rabbitmq)..."
-    docker compose --profile app up -d postgres redis rabbitmq
+    echo "==> [API] Ensuring dependencies are running (postgres, redis, rabbitmq, autoheal)..."
+    docker compose --profile app up -d postgres redis rabbitmq autoheal
     echo "==> [API] Waiting for dependencies to be healthy (60 seconds)..."
     sleep 60
 
@@ -84,7 +84,7 @@ deploy_ui_docker() {
     echo "==> [UI] Ensuring API is running and healthy..."
     if ! curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1; then
         echo "==> [UI] API is not healthy. Restarting API first..."
-        docker compose --profile app up -d postgres redis rabbitmq
+        docker compose --profile app up -d postgres redis rabbitmq autoheal
         sleep 60
         docker compose --profile app up -d api
         echo "==> [UI] Waiting for API to be ready..."
@@ -103,8 +103,8 @@ deploy_jar() {
     echo "==> [JAR] Pulling latest code..."
     git pull origin Release_v1
 
-    echo "==> [JAR] Ensuring dependencies are running..."
-    docker compose --profile app up -d postgres redis rabbitmq
+    echo "==> [JAR] Ensuring dependencies are running (postgres, redis, rabbitmq, autoheal)..."
+    docker compose --profile app up -d postgres redis rabbitmq autoheal
     echo "==> [JAR] Waiting for dependencies to be healthy (30 seconds)..."
     sleep 30
 
