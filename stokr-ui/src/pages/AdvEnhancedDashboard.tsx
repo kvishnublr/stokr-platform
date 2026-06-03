@@ -93,10 +93,25 @@ function getWsNum(ws: Workstation | undefined, keys: string[], fallback = 0) {
 
 function statusTone(status?: string) {
   const s = String(status ?? "").toUpperCase();
-  if (["EXECUTABLE", "EXECUTED", "OPEN", "LIVE", "SUCCESS", "OPERATIONAL"].some((x) => s.includes(x))) return "green";
+  if (["EXECUTED"].some((x) => s.includes(x))) return "green";
+  if (["EXECUTABLE", "OPEN", "LIVE", "SUCCESS", "OPERATIONAL"].some((x) => s.includes(x))) return "green";
+  if (["INTELLIGENCE_ONLY", "INTELLIGENCE"].some((x) => s.includes(x))) return "blue";
   if (["WATCH", "COOLDOWN", "WARMUP", "PENDING"].some((x) => s.includes(x))) return "amber";
   if (["BLOCK", "REJECT", "STALE", "FAILED", "DISCONNECTED"].some((x) => s.includes(x))) return "red";
   return "blue";
+}
+
+function formatPrice(v: unknown) {
+  const n = asNum(v, Number.NaN);
+  return Number.isFinite(n) ? numberFmt.format(n) : "-";
+}
+
+function entryZone(row: AdvScannerRow) {
+  const low = row.entryZoneLow ?? row.entryPrice ?? row.ltp;
+  const high = row.entryZoneHigh ?? row.entryPrice ?? row.ltp;
+  if (low == null && high == null) return "-";
+  if (String(low) === String(high)) return formatPrice(low);
+  return `${formatPrice(low)} – ${formatPrice(high)}`;
 }
 
 function pct(v: unknown) {
@@ -185,7 +200,19 @@ function ErrorBox({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   );
 }
 
-function SignalTable({ rows, compact = false }: { rows: AdvScannerRow[]; compact?: boolean }) {
+function ExecutionBadge({ row }: { row: AdvScannerRow }) {
+  const st = String(row.executionStatus ?? "").toUpperCase();
+  const label = row.executionLabel ?? row.displayStatus ?? row.executionStatus ?? "-";
+  const tone = statusTone(st) as "green" | "amber" | "red" | "blue";
+  return (
+    <div className="space-y-1">
+      <Pill tone={tone}>{st.replace(/_/g, " ") || "-"}</Pill>
+      <div className="max-w-[200px] text-[10px] font-medium leading-snug text-slate-500 dark:text-neutral-400">{label}</div>
+    </div>
+  );
+}
+
+function SignalTable({ rows, showTradePlan = false }: { rows: AdvScannerRow[]; showTradePlan?: boolean }) {
   if (!rows.length) return <Empty text="No live signals from the pipeline yet." />;
   return (
     <TableShell>
@@ -194,33 +221,57 @@ function SignalTable({ rows, compact = false }: { rows: AdvScannerRow[]; compact
           <tr>
             <th className="px-3 py-2">Rank</th>
             <th className="px-3 py-2">Symbol</th>
-            <th className="px-3 py-2">Side</th>
-            <th className="px-3 py-2">Strategy</th>
+            <th className="px-3 py-2">Call</th>
             <th className="px-3 py-2">Score</th>
-            <th className="px-3 py-2">Status</th>
-            {!compact ? <th className="px-3 py-2">Reason</th> : null}
+            {showTradePlan ? (
+              <>
+                <th className="px-3 py-2">Entry zone</th>
+                <th className="px-3 py-2">Stop</th>
+                <th className="px-3 py-2">Target</th>
+                <th className="px-3 py-2">Exit plan</th>
+              </>
+            ) : null}
+            <th className="px-3 py-2">Execution</th>
+            <th className="min-w-[220px] px-3 py-2">Setup reason</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-neutral-800">
           {rows.map((row, idx) => (
-            <tr key={`${row.signalId ?? row.symbol}-${idx}`} className="bg-white dark:bg-neutral-900">
+            <tr key={`${row.signalId ?? row.symbol}-${idx}`} className="bg-white align-top dark:bg-neutral-900">
               <td className="px-3 py-3 font-semibold text-slate-500">#{row.rank ?? idx + 1}</td>
               <td className="px-3 py-3">
                 <div className="font-black text-slate-950 dark:text-neutral-100">{row.symbol}</div>
                 <div className="text-xs text-slate-500">{asText(row.setupType ?? row.source, "scanner")}</div>
+                <div className="text-[10px] text-slate-400">{asText(row.strategy, "")}</div>
               </td>
-              <td className="px-3 py-3">
+              <td className="max-w-[200px] px-3 py-3">
                 <Pill tone={String(row.side).toUpperCase() === "SELL" ? "red" : "green"}>{asText(row.side, "WATCH")}</Pill>
+                <div className="mt-1 text-[11px] font-semibold leading-snug text-slate-700 dark:text-neutral-300">
+                  {asText(row.tradeCall, row.entryTrigger ?? "Awaiting AI plan")}
+                </div>
               </td>
-              <td className="px-3 py-3 text-slate-600 dark:text-neutral-300">{asText(row.strategy, "-")}</td>
               <td className="px-3 py-3">
                 <div className="font-black text-blue-600">{score(row.aiScore)}</div>
                 <div className="text-xs text-slate-500">{pct(row.probability)}</div>
               </td>
+              {showTradePlan ? (
+                <>
+                  <td className="px-3 py-3">
+                    <div className="font-bold text-slate-800 dark:text-neutral-200">{entryZone(row)}</div>
+                    <div className="mt-0.5 text-[10px] text-slate-500">{asText(row.entryTrigger, "-")}</div>
+                  </td>
+                  <td className="px-3 py-3 font-bold text-rose-600">{formatPrice(row.stopLoss)}</td>
+                  <td className="px-3 py-3 font-bold text-emerald-600">{formatPrice(row.targetPrice)}</td>
+                  <td className="max-w-[260px] px-3 py-3 text-[11px] leading-snug text-slate-600 dark:text-neutral-400">{asText(row.exitPlan, "-")}</td>
+                </>
+              ) : null}
               <td className="px-3 py-3">
-                <Pill tone={statusTone(row.executionStatus) as "green" | "amber" | "red" | "blue"}>{asText(row.executionStatus, row.displayStatus ?? "-")}</Pill>
+                <ExecutionBadge row={row} />
               </td>
-              {!compact ? <td className="max-w-[280px] px-3 py-3 text-xs text-slate-500">{asText(row.rejectionReason ?? row.reason ?? row.pipelineStage, "-")}</td> : null}
+              <td className="max-w-[280px] px-3 py-3 text-xs leading-snug text-slate-500">
+                <div>{asText(row.reason ?? row.rejectionReason ?? row.pipelineStage, "-")}</div>
+                {row.invalidation ? <div className="mt-1 text-[10px] text-rose-600/90">Inv: {row.invalidation}</div> : null}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -283,7 +334,7 @@ export function AdvEnhancedDashboard() {
   const topRows = allRows
     .slice()
     .sort((a, b) => asNum(b.aiScore) - asNum(a.aiScore))
-    .slice(0, 8);
+    .slice(0, 18);
   const executableRows = allRows.filter((r) => String(r.executionStatus ?? "").toUpperCase().includes("EXEC"));
   const blockedRows = allRows.filter((r) => /BLOCK|REJECT|COOLDOWN/i.test(String(r.executionStatus ?? "")));
   const openPositions = Array.isArray(ws?.openPositions) ? ws.openPositions : [];
@@ -415,35 +466,45 @@ export function AdvEnhancedDashboard() {
 
 function DashboardTab({ rows, movers, snapshot }: { rows: AdvScannerRow[]; movers: Mover[]; snapshot?: AdvTerminalSnapshot }) {
   return (
-    <div className="space-y-5">
-      <SectionTitle icon={Gauge} title="Live Market Dashboard" subtitle={`Source: ${snapshot?.truthSource ?? "terminal API"} · scan ${snapshot?.scanIntervalSec ?? snapshot?.liveControl?.scanIntervalSec ?? 10}s`} />
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h4 className="text-sm font-black text-slate-900 dark:text-neutral-100">Highest Quality Setups</h4>
+    <div className="space-y-6">
+      <SectionTitle icon={Gauge} title="Live Market Dashboard" subtitle={`Source: ${snapshot?.truthSource ?? "terminal API"} · scan ${snapshot?.scanIntervalSec ?? snapshot?.liveControl?.scanIntervalSec ?? 10}s · AI plans before OMS`} />
+      <div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-sm font-black text-slate-900 dark:text-neutral-100">Highest Quality Setups</h4>
+          <div className="flex flex-wrap gap-2">
             <Pill tone="green">{rows.length} ranked</Pill>
+            <Pill tone="blue">INTELLIGENCE_ONLY = plan only</Pill>
+            <Pill tone="green">EXECUTED = live OMS</Pill>
           </div>
-          <SignalTable rows={rows} compact />
         </div>
-        <div className="space-y-3">
+        <SignalTable rows={rows} showTradePlan />
+      </div>
+      <div>
+        <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-black text-slate-900 dark:text-neutral-100">Live Movers</h4>
-          {movers.slice(0, 8).map((m) => {
-            const chg = asNum(m.changePct, 0);
-            return (
-              <div key={m.symbol} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-neutral-800">
-                <div>
-                  <div className="font-black text-slate-950 dark:text-neutral-100">{m.symbol}</div>
-                  <div className="text-xs text-slate-500">{m.source ?? "market watch"}</div>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold">{asText(m.price)}</div>
-                  <div className={cn("text-xs font-black", chg >= 0 ? "text-emerald-600" : "text-rose-600")}>{pct(m.changePct)}</div>
-                </div>
-              </div>
-            );
-          })}
-          {!movers.length ? <Empty text="No mover feed rows loaded yet." /> : null}
+          <Pill tone="slate">{Math.min(movers.length, 12)} active</Pill>
         </div>
+        {movers.length ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {movers.slice(0, 12).map((m) => {
+              const chg = asNum(m.changePct, 0);
+              return (
+                <div key={m.symbol} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-neutral-800">
+                  <div>
+                    <div className="font-black text-slate-950 dark:text-neutral-100">{m.symbol}</div>
+                    <div className="text-xs text-slate-500">{m.source ?? "market watch"}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold">{asText(m.price)}</div>
+                    <div className={cn("text-xs font-black", chg >= 0 ? "text-emerald-600" : "text-rose-600")}>{pct(m.changePct)}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <Empty text="No mover feed rows loaded yet." />
+        )}
       </div>
     </div>
   );
@@ -460,7 +521,7 @@ function IntelligenceTab({ rows, blockedRows }: { rows: AdvScannerRow[]; blocked
     <div className="space-y-5">
       <SectionTitle icon={Sparkles} title="Signal Intelligence" subtitle="Score distribution, rejection causes, and current decision quality." />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{buckets.map((b) => <MetricTile key={b.label} label={b.label} value={String(b.value)} tone={b.tone} />)}</div>
-      <SignalTable rows={rows.slice(0, 14)} />
+      <SignalTable rows={rows.slice(0, 24)} showTradePlan />
     </div>
   );
 }
@@ -629,7 +690,7 @@ function LiveTradingTab({ snapshot, rows }: { snapshot?: AdvTerminalSnapshot; ro
           Live gate is open. Confirm broker account and order size before firing any manual trade.
         </div>
       )}
-      <SignalTable rows={rows} />
+      <SignalTable rows={rows} showTradePlan />
     </div>
   );
 }

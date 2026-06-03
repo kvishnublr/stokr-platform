@@ -47,6 +47,18 @@ export type AdvScannerRow = {
   changePct?: number;
   momentumPct?: number;
   activityScore?: number;
+  entryPrice?: number | string | null;
+  entryZoneLow?: number | string | null;
+  entryZoneHigh?: number | string | null;
+  entryTrigger?: string;
+  stopLoss?: number | string | null;
+  targetPrice?: number | string | null;
+  invalidation?: string;
+  exitPlan?: string;
+  tradeCall?: string;
+  planSource?: string;
+  executionLabel?: string;
+  intelligenceActionable?: boolean;
 };
 
 export type AdvSectorStock = {

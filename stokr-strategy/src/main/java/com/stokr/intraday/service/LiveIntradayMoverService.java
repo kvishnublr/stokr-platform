@@ -267,6 +267,18 @@ public class LiveIntradayMoverService {
         row.put("status", "WATCHLIST");
         row.put("displayStatus", "WATCHING");
         row.put("source", "RANKING_BOARD");
+        if (setup.getEntryPrice() != null) {
+            row.put("entryPrice", setup.getEntryPrice());
+        }
+        if (setup.getStopLoss() != null) {
+            row.put("stopLoss", setup.getStopLoss());
+        }
+        if (setup.getTargetPrice() != null) {
+            row.put("targetPrice", setup.getTargetPrice());
+        }
+        row.put("reason", setup.getSetupType() != null
+                ? setup.getSetupType().replace('_', ' ') + " structure on ranking board"
+                : "Ranking board setup");
         row.put("tradeQuality", setup.getConfidenceLevel());
         row.put("omsEligible", false);
         row.put("qualityGate", "PASSED");

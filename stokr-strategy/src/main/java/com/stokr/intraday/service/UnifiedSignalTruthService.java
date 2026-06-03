@@ -50,6 +50,7 @@ public class UnifiedSignalTruthService {
     private final LiveIntradayMoverService liveMoverService;
     private final MarketDataQueryService marketDataQueryService;
     private final MarketRegimeDetector regimeDetector;
+    private final AdvTradePlanEnricher tradePlanEnricher;
 
     @Value("${stokr.catalog.scan.poll-ms:10000}")
     private long scanPollMs;
@@ -108,12 +109,14 @@ public class UnifiedSignalTruthService {
 
         for (Map<String, Object> row : scannerRows) {
             enrichDisplayFields(row);
+            tradePlanEnricher.enrich(row);
         }
 
         if (scannerRows.isEmpty() && NseMarketSession.isRegularSessionOpen(now)) {
             appendLiveMarketRows(scannerRows, seenSymbols, 28);
             for (Map<String, Object> row : scannerRows) {
                 enrichDisplayFields(row);
+                tradePlanEnricher.enrich(row);
             }
         }
 
@@ -249,6 +252,15 @@ public class UnifiedSignalTruthService {
                 ? sig.getTradeQuality() : tradeQualityLabel((Integer) row.get("aiScore")));
         row.put("omsEligible", "EXECUTABLE".equals(elig.executionStatus()) || "EXECUTED".equals(elig.executionStatus()));
         row.put("source", "PRODUCTION");
+        if (sig.getEntryReferencePrice() != null) {
+            row.put("entryPrice", sig.getEntryReferencePrice());
+        }
+        if (sig.getStopPrice() != null) {
+            row.put("stopLoss", sig.getStopPrice());
+        }
+        if (sig.getTargetPrice() != null) {
+            row.put("targetPrice", sig.getTargetPrice());
+        }
         return row;
     }
 
@@ -527,6 +539,9 @@ public class UnifiedSignalTruthService {
         if (!row.containsKey("displayStatus")) {
             row.put("displayStatus", mapDisplayStatus(String.valueOf(row.get("executionStatus"))));
         }
+        if (!row.containsKey("executionLabel")) {
+            row.put("executionLabel", mapExecutionLabel(String.valueOf(row.get("executionStatus"))));
+        }
         if (!row.containsKey("regimeFit")) {
             row.put("regimeFit", "EXECUTABLE".equals(row.get("executionStatus"))
                     || "WATCHLIST".equals(row.get("executionStatus"))
@@ -545,6 +560,19 @@ public class UnifiedSignalTruthService {
             case "EXECUTABLE", "EXECUTED" -> "TRADING";
             case "WATCHLIST" -> "WATCHING";
             case "COOLDOWN" -> "COOLDOWN";
+            case "INTELLIGENCE_ONLY" -> "AI PLAN";
+            default -> executionStatus.replace('_', ' ');
+        };
+    }
+
+    private static String mapExecutionLabel(String executionStatus) {
+        return switch (executionStatus) {
+            case "INTELLIGENCE_ONLY" -> "Intelligence plan — not executed";
+            case "EXECUTED" -> "Executed in OMS";
+            case "EXECUTABLE" -> "OMS eligible — pending fill";
+            case "WATCHLIST" -> "Watchlist — plan ready";
+            case "BLOCKED", "REJECTED", "QUALITY_REJECTED", "OMS_REJECTED" -> "Blocked — review reason";
+            case "COOLDOWN" -> "Cooldown — wait before retry";
             default -> executionStatus.replace('_', ' ');
         };
     }
