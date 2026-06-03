@@ -67,7 +67,7 @@ services:
       interval: 30s
       timeout: 15s
       retries: 8
-      start_period: 60s
+      start_period: 240s
 
   ui:
     build:

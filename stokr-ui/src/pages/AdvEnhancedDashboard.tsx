@@ -233,13 +233,38 @@ export function AdvEnhancedDashboard() {
   const isDark = useUiThemeStore((s) => s.mode === "dark");
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
 
+  const advRetry = (failureCount: number, error: unknown) => {
+    if (failureCount >= 5) return false;
+    if (!error || typeof error !== "object") return failureCount < 3;
+    const status = (error as { response?: { status?: number } }).response?.status;
+    const code = (error as { code?: string }).code;
+    return status === 502 || status === 503 || status === 504 || code === "ECONNABORTED" || code === "ERR_NETWORK";
+  };
+
   const terminalQ = useQuery({
     queryKey: ["adv-enhanced-terminal"],
     queryFn: fetchAdvTerminal,
     refetchInterval: (q) => Math.max(5000, ((q.state.data?.scanIntervalSec ?? q.state.data?.liveControl?.scanIntervalSec ?? 10) as number) * 1000),
+    retry: advRetry,
+    retryDelay: (attempt) => Math.min(4000 * 2 ** attempt, 30_000),
+    placeholderData: (prev) => prev,
   });
-  const moversQ = useQuery({ queryKey: ["adv-enhanced-movers"], queryFn: fetchAdvMovers, refetchInterval: 10000 });
-  const workstationQ = useQuery({ queryKey: ["adv-enhanced-workstation"], queryFn: fetchAdvWorkstation, refetchInterval: 10000 });
+  const moversQ = useQuery({
+    queryKey: ["adv-enhanced-movers"],
+    queryFn: fetchAdvMovers,
+    refetchInterval: 10000,
+    retry: advRetry,
+    retryDelay: (attempt) => Math.min(3000 * 2 ** attempt, 20_000),
+    placeholderData: (prev) => prev,
+  });
+  const workstationQ = useQuery({
+    queryKey: ["adv-enhanced-workstation"],
+    queryFn: fetchAdvWorkstation,
+    refetchInterval: 10000,
+    retry: advRetry,
+    retryDelay: (attempt) => Math.min(3000 * 2 ** attempt, 20_000),
+    placeholderData: (prev) => prev,
+  });
 
   const snapshot = terminalQ.data;
   const movers = moversQ.data ?? [];
@@ -268,7 +293,7 @@ export function AdvEnhancedDashboard() {
   const winRate = getMetric(snapshot, ["winRate", "winPct"], 0);
   const liveControl = snapshot?.liveControl ?? {};
   const terminalFresh = terminalQ.dataUpdatedAt ? new Date(terminalQ.dataUpdatedAt) : undefined;
-  const dataErrors = [terminalQ.error, moversQ.error, workstationQ.error].filter(Boolean);
+  const terminalFailed = Boolean(terminalQ.error && !terminalQ.data);
 
   const refreshAll = () => {
     void terminalQ.refetch();
@@ -330,7 +355,7 @@ export function AdvEnhancedDashboard() {
           </div>
         </Card>
 
-        {dataErrors.length ? <ErrorBox error={dataErrors[0]} onRetry={refreshAll} /> : null}
+        {terminalFailed ? <ErrorBox error={terminalQ.error} onRetry={refreshAll} /> : null}
 
         <Card className="p-3">
           <div className="flex flex-wrap gap-2">
@@ -369,7 +394,15 @@ export function AdvEnhancedDashboard() {
               {activeTab === "patterns" && <PatternsTab rows={allRows} sectors={snapshot?.sectors ?? []} />}
               {activeTab === "analytics" && <AnalyticsTab snapshot={snapshot} rows={allRows} pnl={pnl} winRate={winRate} />}
               {activeTab === "execution" && <ExecutionTab snapshot={snapshot} orders={orders} executions={executions} />}
-              {activeTab === "portfolio" && <PortfolioTab ws={ws} positions={openPositions} pnl={pnl} />}
+              {activeTab === "portfolio" && (
+                <PortfolioTab
+                  ws={ws}
+                  positions={openPositions}
+                  pnl={pnl}
+                  loadError={workstationQ.error}
+                  onRetry={() => void workstationQ.refetch()}
+                />
+              )}
               {activeTab === "advanced" && <AdvancedTab snapshot={snapshot} />}
               {activeTab === "trading" && <LiveTradingTab snapshot={snapshot} rows={topRows} />}
             </>
@@ -507,10 +540,23 @@ function ExecutionTab({ snapshot, orders, executions }: { snapshot?: AdvTerminal
   );
 }
 
-function PortfolioTab({ ws, positions, pnl }: { ws?: Workstation; positions: Record<string, unknown>[]; pnl: number }) {
+function PortfolioTab({
+  ws,
+  positions,
+  pnl,
+  loadError,
+  onRetry,
+}: {
+  ws?: Workstation;
+  positions: Record<string, unknown>[];
+  pnl: number;
+  loadError?: unknown;
+  onRetry?: () => void;
+}) {
   return (
     <div className="space-y-5">
       <SectionTitle icon={BriefcaseBusiness} title="Portfolio And Risk" subtitle="Workstation position mirror and account summary." />
+      {loadError && !ws ? <ErrorBox error={loadError} onRetry={onRetry ?? (() => undefined)} /> : null}
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricTile label="Open Positions" value={String(positions.length)} tone="blue" />
         <MetricTile label="Today P&L" value={rupee.format(pnl)} tone={pnl >= 0 ? "green" : "red"} />

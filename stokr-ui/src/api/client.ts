@@ -66,6 +66,9 @@ function parseAxiosMessage(err: unknown): string {
       if (mapped) return mapped;
     }
     if (err.response?.status === 401) return "Session expired - please sign in again.";
+    if (err.response?.status === 503) {
+      return "API is starting — portfolio and ops data will sync automatically in a few seconds.";
+    }
     const st = err.response?.status;
     if (st && st >= 500) {
       const isLocalDev =

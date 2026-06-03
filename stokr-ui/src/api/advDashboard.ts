@@ -132,13 +132,15 @@ export type AdvTerminalSnapshot = {
   liveControl?: AdvLiveControl;
 };
 
+const ADV_HTTP_TIMEOUT_MS = 25_000;
+
 export async function fetchAdvTerminal(): Promise<AdvTerminalSnapshot> {
-  const res = await api.get("/api/v1/adv-dashboard/terminal");
+  const res = await api.get("/api/v1/adv-dashboard/terminal", { timeout: ADV_HTTP_TIMEOUT_MS });
   return (res.data?.data ?? res.data) as AdvTerminalSnapshot;
 }
 
 export async function fetchAdvMovers(): Promise<{ symbol: string; price?: string; changePct?: string; source?: string; aiScore?: number }[]> {
-  const res = await api.get("/api/v1/adv-dashboard/movers");
+  const res = await api.get("/api/v1/adv-dashboard/movers", { timeout: ADV_HTTP_TIMEOUT_MS });
   return Array.isArray(res.data?.data) ? res.data.data : [];
 }
 
@@ -153,6 +155,6 @@ export async function fetchAdvExecutionSummary(): Promise<Record<string, unknown
 }
 
 export async function fetchAdvWorkstation(): Promise<Record<string, unknown>> {
-  const res = await api.get("/api/trader/terminal/workstation");
+  const res = await api.get("/api/trader/terminal/workstation", { timeout: ADV_HTTP_TIMEOUT_MS });
   return (res.data?.data ?? {}) as Record<string, unknown>;
 }
