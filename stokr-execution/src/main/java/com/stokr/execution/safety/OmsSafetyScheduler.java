@@ -28,6 +28,26 @@ public class OmsSafetyScheduler {
         triggerFlattenIfDue("MCX");
     }
 
+    /** Re-arm LIVE execution after overnight market-close kill switch (MON–FRI NSE open). */
+    @Scheduled(cron = "${stokr.oms.market-open.disarm-cron:0 10 9 * * MON-FRI}", zone = "${stokr.strategy.session.zone:Asia/Kolkata}")
+    public void nseMarketOpenDisarmKillSwitch() {
+        if (!killSwitchService.isActive()) {
+            return;
+        }
+        var last = killSwitchService.lastEvent();
+        if (last.isEmpty() || !last.get().isActive()) {
+            return;
+        }
+        if (!TradingKillSwitchService.TriggerSource.MARKET_CLOSE.name().equals(last.get().getTriggerSource())) {
+            return;
+        }
+        log.info("oms.market_open.disarm_kill_switch reason={}", last.get().getReason());
+        killSwitchService.deactivate(
+                TradingKillSwitchService.TriggerSource.MARKET_CLOSE,
+                "Scheduled NSE market-open re-arm",
+                "scheduler");
+    }
+
     private void triggerFlattenIfDue(String segment) {
         Instant now = Instant.now();
         boolean due = "MCX".equals(segment)

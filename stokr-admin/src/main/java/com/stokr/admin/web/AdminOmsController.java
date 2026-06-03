@@ -143,11 +143,13 @@ public class AdminOmsController {
     }
 
     @GetMapping("/reject-reasons")
-    @Operation(summary = "Top reject reasons by count across all orders")
+    @Operation(summary = "Top reject reasons by count (optional since window)")
     public ApiResponse<List<Map<String, Object>>> rejectReasons(
-            @RequestParam(defaultValue = "REAL") String dataScope
+            @RequestParam(defaultValue = "REAL") String dataScope,
+            @RequestParam(required = false) Instant since
     ) {
-        List<Object[]> rows = omsOrderRepository.countRejectionsByReason(AnalyticsDataScope.parse(dataScope).name());
+        List<Object[]> rows = omsOrderRepository.countRejectionsByReason(
+                AnalyticsDataScope.parse(dataScope).name(), since);
         List<Map<String, Object>> result = rows.stream()
                 .map(r -> Map.<String, Object>of("reason", r[0], "count", ((Number) r[1]).longValue()))
                 .toList();

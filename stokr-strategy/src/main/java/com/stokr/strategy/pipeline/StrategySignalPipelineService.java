@@ -239,7 +239,12 @@ public class StrategySignalPipelineService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    dispatchAfterPersist.run();
+                    try {
+                        dispatchAfterPersist.run();
+                    } catch (Exception ex) {
+                        log.error("signal.dispatch.after_commit_failed signalId={} strategy={} symbol={}",
+                                saved.getId(), sk, saved.getSymbol(), ex);
+                    }
                 }
             });
         }

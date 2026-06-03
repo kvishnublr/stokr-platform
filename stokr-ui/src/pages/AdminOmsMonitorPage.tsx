@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { fmtDateTime } from "../lib/dateUtils";
-import { useState } from "react";
+import { fmtDateTime, istTodayApiRange, istTodayYmd } from "../lib/dateUtils";
+import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useUiThemeStore } from "../state/uiTheme";
 import { AdminPageShell } from "../components/admin/institutional/AdminDesignSystem";
@@ -340,7 +340,10 @@ export function AdminOmsMonitorPage() {
   const [strategy, setStrategy] = useState("");
   const [state, setState] = useState("ALL");
   const [mode, setMode] = useState("ALL");
+  const [dateViewMode, setDateViewMode] = useState<"today" | "all">("today");
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
+  const todayYmd = istTodayYmd();
+  const todayRange = useMemo(() => istTodayApiRange(), [todayYmd]);
 
   const statsQ = useQuery<OmsStatsResp>({
     queryKey: ["admin-oms-stats"],
@@ -362,8 +365,13 @@ export function AdminOmsMonitorPage() {
   });
 
   const rejectReasonsQ = useQuery<{ reason: string; count: number }[]>({
-    queryKey: ["admin-oms-reject-reasons"],
-    queryFn: async () => (await api.get("/api/admin/oms/reject-reasons")).data?.data ?? [],
+    queryKey: ["admin-oms-reject-reasons", dateViewMode, todayYmd],
+    queryFn: async () => {
+      const p = new URLSearchParams();
+      if (dateViewMode === "today") p.set("since", todayRange.from);
+      const res = await api.get(`/api/admin/oms/reject-reasons?${p.toString()}`);
+      return res.data?.data ?? [];
+    },
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
@@ -379,12 +387,16 @@ export function AdminOmsMonitorPage() {
   });
 
   const q = useQuery<PageResp>({
-    queryKey: ["admin-oms-orders-v3", page, symbol, strategy, state, mode],
+    queryKey: ["admin-oms-orders-v3", page, symbol, strategy, state, mode, dateViewMode, todayYmd],
     queryFn: async () => {
       const p = new URLSearchParams();
       p.set("page", String(page));
       p.set("size", "50");
       p.set("sort", "createdAt,desc");
+      if (dateViewMode === "today") {
+        p.set("from", todayRange.from);
+        p.set("to", todayRange.to);
+      }
       if (symbol.trim()) p.set("symbol", symbol.trim());
       if (strategy.trim()) p.set("strategyKey", strategy.trim());
       if (state !== "ALL") p.set("state", state);
@@ -395,8 +407,15 @@ export function AdminOmsMonitorPage() {
     refetchInterval: 15_000,
   });
 
-  const hasFilters = !!(symbol || strategy || state !== "ALL" || mode !== "ALL");
-  const clearFilters = () => { setSymbol(""); setStrategy(""); setState("ALL"); setMode("ALL"); setPage(0); };
+  const hasFilters = !!(symbol || strategy || state !== "ALL" || mode !== "ALL" || dateViewMode === "all");
+  const clearFilters = () => {
+    setSymbol("");
+    setStrategy("");
+    setState("ALL");
+    setMode("ALL");
+    setDateViewMode("today");
+    setPage(0);
+  };
 
   const expireMut = useMutation({
     mutationFn: async () => {
@@ -475,7 +494,9 @@ export function AdminOmsMonitorPage() {
       {(rejectReasonsQ.data ?? []).length > 0 && (
         <div className="shrink-0 border-b border-slate-200 bg-rose-50/40 px-6 py-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-rose-700 mr-1">Rejection causes:</span>
+            <span className="text-xs font-semibold text-rose-700 mr-1">
+              Rejection causes ({dateViewMode === "today" ? "today" : "all-time"}):
+            </span>
             {(rejectReasonsQ.data ?? []).map(({ reason, count }) => (
               <span key={reason}
                 className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-rose-700">
@@ -490,6 +511,20 @@ export function AdminOmsMonitorPage() {
       {/* ── Filter Bar ───────────────────────────────────────────────────────── */}
       <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-3">
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
+            <button type="button"
+              onClick={() => { setDateViewMode("today"); setPage(0); }}
+              className={cn("rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
+                dateViewMode === "today" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50")}>
+              Today
+            </button>
+            <button type="button"
+              onClick={() => { setDateViewMode("all"); setPage(0); }}
+              className={cn("rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
+                dateViewMode === "all" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50")}>
+              All time
+            </button>
+          </div>
           <input className={inputCls} placeholder="Symbol…" value={symbol}
             onChange={e => { setSymbol(e.target.value); setPage(0); }} />
           <select className={selectCls} value={strategy} onChange={e => { setStrategy(e.target.value); setPage(0); }}>

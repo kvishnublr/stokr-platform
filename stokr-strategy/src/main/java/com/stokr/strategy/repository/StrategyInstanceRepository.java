@@ -58,7 +58,7 @@ public interface StrategyInstanceRepository extends JpaRepository<StrategyInstan
             join si.definition d
             where si.userId = :userId and si.deleted = false
             and d.strategyKey = :strategyKey
-            and upper(si.executionMode) = 'LIVE'
+            and upper(si.executionMode) in ('LIVE', 'BOTH')
             and si.runtimeState = 'RUNNING'
             and si.heartbeatAt is not null and si.heartbeatAt >= :cutoff
             """)

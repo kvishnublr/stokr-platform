@@ -82,6 +82,10 @@ public class TradingKillSwitchService {
         return activate(TriggerSource.RISK_BREACH, reason, flatten, "risk-engine");
     }
 
+    public java.util.Optional<TradingKillSwitchEvent> lastEvent() {
+        return eventRepository.findFirstByOrderByCreatedAtDesc();
+    }
+
     public Map<String, Object> statusMap(int stoppedInstances) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("active", isActive());

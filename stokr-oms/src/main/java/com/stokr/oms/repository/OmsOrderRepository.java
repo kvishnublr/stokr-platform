@@ -184,6 +184,7 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             FROM oms_orders
             WHERE deleted = FALSE AND backtest_run_id IS NULL
               AND state = 'REJECTED' AND reject_reason IS NOT NULL
+              AND (:since IS NULL OR created_at >= :since)
               AND (
                 :scope = 'MIXED'
                 OR (:scope = 'SIMULATION' AND is_simulation = TRUE)
@@ -193,10 +194,18 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             ORDER BY cnt DESC
             LIMIT 20
             """, nativeQuery = true)
-    List<Object[]> countRejectionsByReason(@Param("scope") String scope);
+    List<Object[]> countRejectionsByReason(@Param("scope") String scope, @Param("since") Instant since);
 
     default List<Object[]> countRejectionsByReason() {
-        return countRejectionsByReason(AnalyticsDataScope.REAL.name());
+        return countRejectionsByReason(AnalyticsDataScope.REAL.name(), null);
+    }
+
+    default List<Object[]> countRejectionsByReason(Instant since) {
+        return countRejectionsByReason(AnalyticsDataScope.REAL.name(), since);
+    }
+
+    default List<Object[]> countRejectionsByReason(String scope) {
+        return countRejectionsByReason(scope, null);
     }
 
     @Query(value = """

@@ -202,7 +202,8 @@ public class OrderIntentProcessor {
         }
 
         if (mode == ExecutionMode.BOTH) {
-            dispatchBothMode(signal, userId, idempotencyKey, strategyKey, synchronousExecution, safetyNow);
+            dispatchBothMode(signal, userId, idempotencyKey, strategyKey, synchronousExecution, safetyNow,
+                    isSystemUser, catalogPrimaryTraderDispatch);
             return;
         }
 
@@ -620,7 +621,8 @@ public class OrderIntentProcessor {
     }
 
     private void dispatchBothMode(StrategySignalEntity signal, UUID userId, String baseIdempotencyKey,
-                                   String strategyKey, boolean synchronousExecution, Instant safetyNow) {
+                                   String strategyKey, boolean synchronousExecution, Instant safetyNow,
+                                   boolean isSystemUser, boolean catalogPrimaryTraderDispatch) {
         PositionSizingResult sizing;
         try {
             sizing = resolveSizing(signal, userId, ExecutionMode.BOTH);
@@ -635,9 +637,13 @@ public class OrderIntentProcessor {
         OmsOrder paperOrder = orderLifecycleService.createOrGetIdempotent(
                 userId, baseIdempotencyKey + ":PAPER", paperDraft);
 
-        // LIVE leg — run through live gate
-        LiveTraderEligibilityResult gate = liveTradingTraderEligibilityService
-                .evaluateForLiveOrder(userId, strategyKey, "ZERODHA");
+        // LIVE leg — catalog dispatch uses platform gates; trader BOTH instances skip heartbeat requirement.
+        LiveTraderEligibilityResult gate;
+        if (isSystemUser || catalogPrimaryTraderDispatch) {
+            gate = liveTradingTraderEligibilityService.evaluateForCatalogSystemLive(strategyKey, "ZERODHA");
+        } else {
+            gate = liveTradingTraderEligibilityService.evaluateForLiveOrder(userId, strategyKey, "ZERODHA");
+        }
         OmsOrder liveOrder = null;
         if (gate.allowed()) {
             OmsOrder liveDraft = buildDraftFromSignal(signal, ExecutionMode.LIVE, userId, sizing);
