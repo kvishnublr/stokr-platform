@@ -7,6 +7,7 @@ import com.stokr.oms.repository.OmsTradeRepository;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.lifecycle.StrategyExitTelemetry;
 import com.stokr.strategy.lifecycle.StrategyExitTelemetryRepository;
+import com.stokr.strategy.operational.StrategyRuntimeHealthService;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +41,7 @@ public class TradeLifecycleReconciliationService {
     private final StrategyExitTelemetryRepository exitTelemetryRepository;
     private final OmsTradeRepository tradeRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final StrategyRuntimeHealthService runtimeHealthService;
 
     @Value("${stokr.reconciliation.qty-tolerance:0.001}")
     private BigDecimal qtyTolerance;
@@ -52,6 +54,11 @@ public class TradeLifecycleReconciliationService {
         UUID signalId = resolveSignalId(order);
         if (signalId == null) {
             return;
+        }
+
+        if (!isExitOrder(order)) {
+            String strategyKey = order.getStrategyKey() != null ? order.getStrategyKey() : "UNKNOWN";
+            runtimeHealthService.recordTradeOpened(strategyKey, Instant.now());
         }
 
         metricsRepository.findBySignalIdAndDeletedFalse(signalId).ifPresentOrElse(

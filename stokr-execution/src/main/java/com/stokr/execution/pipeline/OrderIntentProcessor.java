@@ -129,6 +129,7 @@ public class OrderIntentProcessor {
         // Use trader userId from message (fan-out path), fall back to signal entity userId
         UUID userId = resolveUserId(msg, signal);
         boolean isSystemUser = systemUserId.equals(userId);
+        boolean catalogPrimaryTraderDispatch = isCatalogPrimaryTraderDispatch(msg, signal);
         // Include userId in idempotency key so each trader gets their own order per signal
         String idempotencyKey = "signal:" + signal.getId() + ":" + userId;
         String strategyKey =
@@ -136,7 +137,7 @@ public class OrderIntentProcessor {
 
         // Resolve effective execution mode: strategy config takes precedence over the poll/message mode.
         ExecutionMode mode = resolveEffectiveMode(msg.executionMode(), strategyKey, userId, signal);
-        mode = applyTraderExecutionPreference(mode, userId, isSystemUser);
+        mode = applyTraderExecutionPreference(mode, userId, isSystemUser, catalogPrimaryTraderDispatch);
 
         Instant safetyNow = Instant.now();
         OmsSafetyGateService.OmsSafetyGateResult safety =
@@ -164,13 +165,14 @@ public class OrderIntentProcessor {
         // For LIVE mode: system signals only check platform gates (kill switch, live armed).
         // Real trader signals run the full user eligibility gate (broker, onboarding, etc).
         if (mode == ExecutionMode.LIVE) {
-            if (isSystemUser) {
+            if (isSystemUser || catalogPrimaryTraderDispatch) {
                 if (!simulationHarness) {
                     LiveTraderEligibilityResult platformGate =
                             liveTradingTraderEligibilityService.evaluateForCatalogSystemLive(
                                     strategyKey, "ZERODHA");
                     if (!platformGate.allowed()) {
-                        log.warn("live.order.blocked.platform signalId={} reason={}", signal.getId(), platformGate.reasonCode());
+                        log.warn("live.order.blocked.platform signalId={} catalogDispatch={} reason={}",
+                                signal.getId(), catalogPrimaryTraderDispatch, platformGate.reasonCode());
                         riskEventRecorder.record(userId, null, platformGate.reasonCode(), "REJECT", platformGate.message());
                         signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "LIVE_PLATFORM_GATE");
                         return;
@@ -498,8 +500,12 @@ public class OrderIntentProcessor {
         return parseMode(msgMode);
     }
 
-    private ExecutionMode applyTraderExecutionPreference(ExecutionMode mode, UUID userId, boolean isSystemUser) {
-        if (isSystemUser || mode == ExecutionMode.BOTH) {
+    private ExecutionMode applyTraderExecutionPreference(
+            ExecutionMode mode,
+            UUID userId,
+            boolean isSystemUser,
+            boolean catalogPrimaryTraderDispatch) {
+        if (isSystemUser || catalogPrimaryTraderDispatch || mode == ExecutionMode.BOTH) {
             return mode;
         }
         if (simulationModeService.isActive() && mode == ExecutionMode.LIVE) {
@@ -555,6 +561,16 @@ public class OrderIntentProcessor {
             return msg.userId();
         }
         return signal.getUserId() != null ? signal.getUserId() : systemUserId;
+    }
+
+    /**
+     * Catalog scan persists under the system user but OMS routes to {@code primary-trader-user-id}.
+     * That path must not require a per-trader LIVE runtime heartbeat.
+     */
+    private boolean isCatalogPrimaryTraderDispatch(SignalPersistedMessage msg, StrategySignalEntity signal) {
+        return systemUserId.equals(signal.getUserId())
+                && msg.userId() != null
+                && !systemUserId.equals(msg.userId());
     }
 
     private void notifyEligibility(UUID userId, LiveTraderEligibilityResult gate) {

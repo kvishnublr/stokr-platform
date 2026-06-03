@@ -12,13 +12,16 @@ public class ExecutionPipelineRuntimeReadinessService {
     @Value("${stokr.rabbit.listeners-enabled:false}")
     private boolean rabbitListenersEnabled;
 
+    @Value("${stokr.execution.sync-oms-dispatch:true}")
+    private boolean syncOmsDispatch;
+
     @Value("${stokr.strategy.poll-execution-mode:PAPER}")
     private String pollExecutionMode;
 
     public ExecutionPipelineReadiness snapshot() {
         String mode = normalizedPollExecutionMode();
         boolean requiresRabbit = "LIVE".equals(mode) || "PAPER".equals(mode);
-        boolean active = !requiresRabbit || rabbitListenersEnabled;
+        boolean active = !requiresRabbit || rabbitListenersEnabled || syncOmsDispatch;
 
         String detail;
         if (!requiresRabbit) {
@@ -43,7 +46,7 @@ public class ExecutionPipelineRuntimeReadinessService {
         }
         String mode = executionMode.trim().toUpperCase();
         if ("LIVE".equals(mode) || "PAPER".equals(mode)) {
-            return rabbitListenersEnabled;
+            return rabbitListenersEnabled || syncOmsDispatch;
         }
         return true;
     }
