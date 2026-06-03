@@ -115,6 +115,37 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
 
     List<OmsOrder> findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(UUID signalId);
 
+    @Query("""
+            select o from OmsOrder o
+            where o.deleted = false
+              and o.signalId is not null
+              and o.state in :states
+              and o.side in ('BUY', 'SELL')
+              and o.createdAt >= :since
+            order by o.createdAt desc
+            """)
+    List<OmsOrder> findRecentFilledEntriesWithSignal(
+            @Param("since") Instant since,
+            @Param("states") Collection<OrderState> states,
+            Pageable pageable);
+
+    @Query("""
+            select case when count(o) > 0 then true else false end
+            from OmsOrder o
+            where o.deleted = false
+              and o.userId = :userId
+              and o.symbol = :symbol
+              and o.side = :exitSide
+              and o.createdAt > :entryAt
+              and o.state in :states
+            """)
+    boolean existsOppositeSideAfter(
+            @Param("userId") UUID userId,
+            @Param("symbol") String symbol,
+            @Param("exitSide") String exitSide,
+            @Param("entryAt") Instant entryAt,
+            @Param("states") Collection<OrderState> states);
+
     long countBySimulationRunIdAndDeletedFalse(UUID simulationRunId);
 
     Optional<OmsOrder> findFirstBySignalIdAndUserIdAndDeletedFalseOrderByCreatedAtDesc(UUID signalId, UUID userId);

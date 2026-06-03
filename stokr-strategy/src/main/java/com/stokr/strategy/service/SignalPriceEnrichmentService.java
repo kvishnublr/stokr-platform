@@ -27,6 +27,21 @@ public class SignalPriceEnrichmentService {
     private final MarketDataQueryService marketDataQueryService;
     private final InstrumentNormalizationService instrumentNormalizationService;
 
+    /**
+     * Applies broker fill price then derives stop/target when still missing (live entry path).
+     */
+    public void enrichOnEntryFill(StrategySignalEntity entity, BigDecimal fillPrice, Instant asOf) {
+        if (entity == null) {
+            return;
+        }
+        if (fillPrice != null && fillPrice.signum() > 0) {
+            BigDecimal scaled = fillPrice.setScale(4, RoundingMode.HALF_UP);
+            entity.setEntryReferencePrice(scaled);
+            entity.setEntryPrice(scaled);
+        }
+        enrichIfMissing(entity, asOf);
+    }
+
     public void enrichIfMissing(StrategySignalEntity entity, Instant asOf) {
         if (entity == null || entity.getSymbol() == null || entity.getSignalType() == null) {
             return;

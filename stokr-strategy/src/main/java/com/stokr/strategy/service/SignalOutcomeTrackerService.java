@@ -8,6 +8,9 @@ import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.lifecycle.ExitCategory;
 import com.stokr.strategy.lifecycle.PressureExitTrigger;
 import com.stokr.strategy.lifecycle.StrategyExitTelemetryService;
+import com.stokr.oms.domain.OmsOrder;
+import com.stokr.oms.domain.OrderState;
+import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
@@ -25,8 +28,13 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Tracks signal outcomes by scanning candle data after signal generation time.
@@ -47,8 +55,24 @@ public class SignalOutcomeTrackerService {
     private static final int EXPIRY_HOURS     = 8;
     private static final int BATCH_SIZE       = 200;
     private static final int FAST_BATCH_SIZE  = 50;
+    private static final int OPEN_POSITION_LOOKBACK_DAYS = 14;
+
+    private static final Set<OrderState> OPEN_ENTRY_STATES = Set.of(
+            OrderState.FILLED,
+            OrderState.PARTIALLY_FILLED,
+            OrderState.ACCEPTED
+    );
+
+    private static final Set<OrderState> OPEN_EXIT_STATES = Set.of(
+            OrderState.FILLED,
+            OrderState.PARTIALLY_FILLED,
+            OrderState.ACCEPTED,
+            OrderState.SUBMITTED,
+            OrderState.PENDING_SUBMISSION
+    );
 
     private final StrategySignalRepository signalRepository;
+    private final OmsOrderRepository omsOrderRepository;
     private final MarketDataQueryService marketDataQueryService;
     private final ApplicationEventPublisher eventPublisher;
     private final SignalPriceEnrichmentService signalPriceEnrichmentService;
@@ -74,8 +98,15 @@ public class SignalOutcomeTrackerService {
     @Transactional
     public void trackRunningSignals() {
         Instant since = Instant.now().minus(EXPIRY_HOURS, ChronoUnit.HOURS);
-        List<StrategySignalEntity> running = signalRepository.findRunningSignalsSince(
-                since, PageRequest.of(0, FAST_BATCH_SIZE));
+        Map<UUID, StrategySignalEntity> batch = new LinkedHashMap<>();
+        for (StrategySignalEntity sig : signalRepository.findRunningSignalsSince(
+                since, PageRequest.of(0, FAST_BATCH_SIZE))) {
+            batch.put(sig.getId(), sig);
+        }
+        for (StrategySignalEntity sig : findRunningWithOpenBrokerEntries()) {
+            batch.putIfAbsent(sig.getId(), sig);
+        }
+        List<StrategySignalEntity> running = new ArrayList<>(batch.values());
         if (running.isEmpty()) return;
         Instant now = Instant.now();
         int updated = 0;
@@ -190,6 +221,47 @@ public class SignalOutcomeTrackerService {
             log.info("signal.outcome.tracked updated={} batch={}", updated, pending.size());
         }
         return pending.size();
+    }
+
+    private List<StrategySignalEntity> findRunningWithOpenBrokerEntries() {
+        Instant since = Instant.now().minus(OPEN_POSITION_LOOKBACK_DAYS, ChronoUnit.DAYS);
+        List<OmsOrder> entries = omsOrderRepository.findRecentFilledEntriesWithSignal(
+                since, OPEN_ENTRY_STATES, PageRequest.of(0, FAST_BATCH_SIZE));
+        Set<UUID> openSignalIds = new HashSet<>();
+        for (OmsOrder entry : entries) {
+            if (entry.getSignalId() == null || hasOppositeExitAfter(entry)) {
+                continue;
+            }
+            openSignalIds.add(entry.getSignalId());
+        }
+        if (openSignalIds.isEmpty()) {
+            return List.of();
+        }
+        return signalRepository.findAllById(openSignalIds).stream()
+                .filter(s -> !s.isDeleted() && !Boolean.TRUE.equals(s.getTestTrade()))
+                .filter(s -> "RUNNING".equals(s.getOutcomeStatus()) || "PENDING".equals(s.getOutcomeStatus())
+                        || s.getOutcomeStatus() == null)
+                .toList();
+    }
+
+    private boolean hasOppositeExitAfter(OmsOrder entry) {
+        if (entry.getUserId() == null || entry.getSymbol() == null || entry.getSide() == null
+                || entry.getCreatedAt() == null) {
+            return false;
+        }
+        String exitSide = "BUY".equalsIgnoreCase(entry.getSide()) ? "SELL" : "BUY";
+        if (omsOrderRepository.existsOppositeSideAfter(
+                entry.getUserId(), entry.getSymbol(), exitSide, entry.getCreatedAt(), OPEN_EXIT_STATES)) {
+            return true;
+        }
+        if (entry.getSignalId() == null) {
+            return false;
+        }
+        return omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(entry.getSignalId()).stream()
+                .anyMatch(o -> exitSide.equalsIgnoreCase(o.getSide())
+                        && OPEN_EXIT_STATES.contains(o.getState())
+                        && o.getCreatedAt() != null
+                        && o.getCreatedAt().isAfter(entry.getCreatedAt()));
     }
 
     private boolean evaluateHistorical(StrategySignalEntity sig, Instant now) {

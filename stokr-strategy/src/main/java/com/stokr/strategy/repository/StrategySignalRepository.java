@@ -106,7 +106,6 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
               and s.backtestRunId is null
               and s.testTrade = false
               and s.outcomeStatus in ('RUNNING', 'PENDING')
-              and s.entryReferencePrice is not null
               and s.createdAt >= :since
             order by s.createdAt asc
             """)
