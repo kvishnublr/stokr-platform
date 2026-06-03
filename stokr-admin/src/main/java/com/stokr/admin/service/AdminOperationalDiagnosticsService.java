@@ -7,7 +7,9 @@ import com.stokr.strategy.operational.StrategyExecutionModeService;
 import com.stokr.strategy.operational.StrategyRuntimeHealth;
 import com.stokr.strategy.operational.StrategyRuntimeHealthService;
 import com.stokr.strategy.operational.TradingSafeStartupGateService;
+import com.stokr.strategy.dto.StrategyCatalogSignalStatsDto;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.strategy.service.StrategyCatalogSignalStatsService;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -30,6 +32,7 @@ public class AdminOperationalDiagnosticsService {
     private final StrategyRuntimeHealthService runtimeHealthService;
     private final TradingSafeStartupGateService safeStartupGateService;
     private final StrategySignalRepository signalRepository;
+    private final StrategyCatalogSignalStatsService catalogSignalStatsService;
     private final EntityManager entityManager;
 
     public Map<String, Object> liveDiagnostics(Instant now) {
@@ -40,12 +43,38 @@ public class AdminOperationalDiagnosticsService {
         out.put("strategyModes", executionModeService.allModes());
 
         List<StrategyRuntimeHealth> health = runtimeHealthService.healthForToday(now);
-        out.put("strategyRuntimeHealth", health);
+        out.put("strategyRuntimeHealth", runtimeHealthRows(health));
         out.put("blockedStrategies", blockedStrategies(health));
         out.put("integrityFailuresToday", integrityFailureCount(now));
         out.put("activeTrades", activeTradeCount());
         out.put("staleSymbols", staleSymbolSample(now));
         return out;
+    }
+
+    private List<Map<String, Object>> runtimeHealthRows(List<StrategyRuntimeHealth> health) {
+        Map<String, Long> persistedByStrategy = new LinkedHashMap<>();
+        for (StrategyCatalogSignalStatsDto stat : catalogSignalStatsService.signalsTodayByStrategyKey()) {
+            persistedByStrategy.put(stat.strategyKey(), stat.signalsToday());
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (StrategyRuntimeHealth row : health) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("strategyName", row.getStrategyName());
+            m.put("executionMode", row.getExecutionMode());
+            m.put("scansAttempted", row.getScansAttempted());
+            m.put("scansBlockedIntegrity", row.getScansBlockedIntegrity());
+            m.put("scansBlockedFeed", row.getScansBlockedFeed());
+            m.put("signalsGenerated", row.getSignalsGenerated());
+            m.put("signalsPersistedToday", persistedByStrategy.getOrDefault(row.getStrategyName(), 0L));
+            m.put("tradesOpened", row.getTradesOpened());
+            m.put("tradesClosed", row.getTradesClosed());
+            m.put("rejectionRate", row.getRejectionRate());
+            m.put("lastScanTime", row.getLastScanTime());
+            m.put("lastSignalTime", row.getLastSignalTime());
+            m.put("lastRejectionReason", row.getLastRejectionReason());
+            rows.add(m);
+        }
+        return rows;
     }
 
     private List<Map<String, Object>> blockedStrategies(List<StrategyRuntimeHealth> health) {

@@ -20,6 +20,8 @@ export type StrategyRuntimeHealthRow = {
   scansBlockedIntegrity: number;
   scansBlockedFeed: number;
   signalsGenerated: number;
+  /** Persisted rows in strategy_signals today (matches Signal Monitor). */
+  signalsPersistedToday?: number;
   tradesOpened: number;
   tradesClosed: number;
   rejectionRate?: number | null;

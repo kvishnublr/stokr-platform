@@ -94,7 +94,13 @@ export function buildAdminOpsPills(
   const platformOp = hasPlatformMarketFeedOperational(s);
 
   const redisStRaw = String(redis?.status ?? "").toUpperCase();
-  const dbSt = String(db?.status ?? "UNKNOWN").toUpperCase();
+  const dbStRaw = String(db?.status ?? "UNKNOWN").toUpperCase();
+  const dbSt =
+    dbStRaw === "CONNECTED"
+      ? "CONNECTED"
+      : dbStRaw === "UNKNOWN" || dbStRaw === ""
+        ? "DEGRADED"
+        : "DISCONNECTED";
   const redisSt = redisStRaw === "CONNECTED" ? "CONNECTED" : redisStRaw === "UNKNOWN" || redisStRaw === "" ? "DEGRADED" : "DISCONNECTED";
   const redisMs = redis?.pingMs != null ? `${redis.pingMs}ms` : undefined;
   const redisHint = redisStRaw === "UNKNOWN" || redisStRaw === "" ? "probe missing - treat as degraded" : redisMs;
@@ -194,7 +200,12 @@ export function buildAdminOpsPills(
     { key: "oms", label: "OMS", status: omsSt, hint: stuck > 0 ? `stuck~${stuck}` : `rej ${rej.toFixed(2)}%` },
     { key: "redis", label: "Redis", status: redisSt, hint: redisHint },
     { key: "mq", label: "RabbitMQ", status: rb.status, hint: mqHint },
-    { key: "pg", label: "PostgreSQL", status: dbSt === "CONNECTED" ? "CONNECTED" : "DISCONNECTED", hint: dbMs },
+    {
+      key: "pg",
+      label: "PostgreSQL",
+      status: dbSt,
+      hint: dbStRaw === "UNKNOWN" || dbStRaw === "" ? "probe pending in snapshot" : dbMs,
+    },
     { key: "rpq", label: "Replay queue", status: replaySt, hint: replayHint },
     { key: "sig", label: "Signal engine", status: signalSt, hint: signalHint },
     { key: "brk", label: "Broker rail", status: br.status, hint: br.hint },

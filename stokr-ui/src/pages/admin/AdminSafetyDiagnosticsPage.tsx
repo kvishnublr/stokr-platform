@@ -253,7 +253,9 @@ function StrategyHealthTable({
               <td className="px-2 py-2 font-mono text-amber-500">
                 {r.scansBlockedIntegrity + r.scansBlockedFeed}
               </td>
-              <td className="px-2 py-2 font-mono">{r.signalsGenerated}</td>
+              <td className="px-2 py-2 font-mono" title={r.signalsGenerated !== (r.signalsPersistedToday ?? r.signalsGenerated) ? `scanner counter ${r.signalsGenerated}` : undefined}>
+                {r.signalsPersistedToday ?? r.signalsGenerated}
+              </td>
               <td className="px-2 py-2 font-mono">{r.tradesOpened}/{r.tradesClosed}</td>
               <td className="px-2 py-2 font-mono">{r.rejectionRate ?? "—"}</td>
               <td className="px-2 py-2">{r.lastScanTime ? fmtDateTime(r.lastScanTime) : "—"}</td>
