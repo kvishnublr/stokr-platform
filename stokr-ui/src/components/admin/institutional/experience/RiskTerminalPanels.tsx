@@ -18,6 +18,7 @@ import {
 import type { AdminRiskDashboardDto } from "../../../../api/riskDashboard";
 import type { GlobalCapitalSummary } from "../../../../api/riskDashboard";
 import type { ReconciliationEventDto } from "../../../../api/reconciliation";
+import { badgeClassForStatus } from "../../cockpit/opsTypes";
 
 export function LiveExposureMapPanel({
   risk,
@@ -148,6 +149,12 @@ export function BrokerDivergencePanel({
   );
 }
 
+function killSwitchPillStatus(label: string, active: boolean): string {
+  if (!active) return "OFF";
+  if (label === "Live armed") return "ARMED";
+  return "ON";
+}
+
 export function KillSwitchCenterPanel({
   risk,
   isLight,
@@ -158,46 +165,68 @@ export function KillSwitchCenterPanel({
   onEmergencyStop: (strategyKey: string, stop: boolean) => void;
 }) {
   const halted = risk.strategyRiskStates.filter((s) => s.emergencyStopEnabled);
+  const switches = [
+    { label: "Global kill", active: risk.killSwitchActive, to: "/admin/safety-diagnostics" },
+    { label: "Broker halt", active: risk.brokerHalt, to: "/admin/broker-infrastructure" },
+    { label: "Live armed", active: risk.liveTradingArmed, to: "/admin/execution-config" },
+    { label: "Signal halt", active: risk.emergencyStoppedStrategies > 0, to: "/admin/strategies" },
+    { label: "Execution halt", active: risk.todayRejects > 5, to: "/admin/oms" },
+    { label: "Emergency flatten", active: false, to: "/admin/safety-diagnostics" },
+  ] as const;
+
   return (
-    <div className={cn("rounded-2xl border p-5", isLight ? "border-neutral-200 bg-neutral-950 text-neutral-100" : "border-neutral-700 bg-neutral-950")}>
+    <div
+      className={cn(
+        "rounded-2xl border p-5",
+        isLight ? "border-border bg-card text-foreground" : "border-neutral-800 bg-neutral-950/50",
+      )}
+    >
       <div className="flex items-center gap-2">
-        <Shield className="h-4 w-4 text-rose-400" />
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-rose-400">Kill switch center</p>
+        <Shield className={cn("h-4 w-4", isLight ? "text-rose-700" : "text-rose-400")} />
+        <p className={cn("text-[10px] font-bold uppercase tracking-[0.18em]", toneEyebrowClasses(isLight, "rose"))}>
+          Kill switch center
+        </p>
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {[
-          { label: "Global kill", active: risk.killSwitchActive, to: "/admin/safety-diagnostics" },
-          { label: "Broker halt", active: risk.brokerHalt, to: "/admin/broker-infrastructure" },
-          { label: "Live armed", active: risk.liveTradingArmed, to: "/admin/execution-config" },
-          { label: "Signal halt", active: risk.emergencyStoppedStrategies > 0, to: "/admin/strategies" },
-          { label: "Execution halt", active: risk.todayRejects > 5, to: "/admin/oms" },
-          { label: "Emergency flatten", active: false, to: "/admin/safety-diagnostics" },
-        ].map((item) => (
-          <Link
-            key={item.label}
-            to={item.to}
-            className={cn(
-              "flex items-center gap-2 rounded-xl border px-3 py-2.5 transition hover:-translate-y-0.5",
-              item.active ? "border-rose-500/50 bg-rose-500/15" : "border-neutral-700 bg-neutral-900/60",
-            )}
-          >
-            {item.active ? <ShieldOff className="h-4 w-4 text-rose-400" /> : <Zap className="h-4 w-4 text-neutral-500" />}
-            <span className="text-xs font-semibold">{item.label}</span>
-            <span className={cn("ml-auto text-[10px] font-bold uppercase", item.active ? "text-rose-400" : "text-emerald-500")}>
-              {item.active ? "ACTIVE" : "OFF"}
-            </span>
-          </Link>
-        ))}
+        {switches.map((item) => {
+          const status = killSwitchPillStatus(item.label, item.active);
+          return (
+            <Link
+              key={item.label}
+              to={item.to}
+              title={item.label}
+              className={cn(
+                "flex min-h-[3.25rem] items-center gap-2 rounded-md border-2 px-3 py-2 transition hover:-translate-y-0.5",
+                badgeClassForStatus(status),
+              )}
+            >
+              {item.active ? (
+                <ShieldOff className="h-4 w-4 shrink-0 opacity-80" />
+              ) : (
+                <Zap className="h-4 w-4 shrink-0 opacity-70" />
+              )}
+              <span className="truncate text-xs font-semibold">{item.label}</span>
+              <span className="ml-auto shrink-0 font-mono text-[10px] font-bold uppercase tracking-wide">
+                {item.active ? (status === "ARMED" ? "ARMED" : "ACTIVE") : "OFF"}
+              </span>
+            </Link>
+          );
+        })}
       </div>
       {halted.length > 0 ? (
         <div className="mt-4 space-y-1">
-          <p className="text-[10px] uppercase opacity-60">Strategy halts</p>
+          <p className={cn("text-[10px] font-bold uppercase tracking-wide", isLight ? "text-muted-foreground" : "text-neutral-400")}>
+            Strategy halts
+          </p>
           {halted.map((s) => (
             <button
               key={s.strategyKey}
               type="button"
               onClick={() => { onEmergencyStop(s.strategyKey, false); toast.success(`Clearing stop for ${s.strategyKey}`); }}
-              className="block w-full rounded-lg border border-rose-500/30 px-2 py-1 text-left text-[11px] hover:bg-rose-500/10"
+              className={cn(
+                "block w-full rounded-md border-2 px-2 py-1.5 text-left text-[11px] font-medium transition",
+                toneChipClasses(isLight, "critical"),
+              )}
             >
               {s.strategyKey} — click to clear
             </button>
