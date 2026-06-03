@@ -58,7 +58,7 @@ export function badgeClassForStatus(status: string): string {
     return "border-amber-700/55 bg-amber-600/15 text-amber-950 dark:text-amber-50";
   if (s === "PAUSED" || s === "WAITING_FOR_MARKET_DATA" || s === "IDLE")
     return "border-orange-600/50 bg-orange-500/12 text-orange-950 dark:text-orange-100";
-  if (s === "UNKNOWN" || s === "NOT_INSTRUMENTED")
+  if (s === "UNKNOWN" || s === "NOT_INSTRUMENTED" || s === "LOADING" || s === "SYNC")
     return "border-dashed border-border bg-muted/40 text-foreground/80 dark:text-muted-foreground";
   return "border-border bg-card text-foreground";
 }

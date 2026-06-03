@@ -137,7 +137,7 @@ stokr:
     feed-interval-ms: ${STOKR_ADV_FEED_INTERVAL_MS:45000}
   admin:
     ops:
-      sse-tick-ms: ${STOKR_ADMIN_OPS_SSE_TICK_MS:3000}
+      sse-tick-ms: ${STOKR_ADMIN_OPS_SSE_TICK_MS:15000}
   # Single env: STOKR_CORS_ALLOWED_ORIGINS (comma-separated). Edit repo-root .env only — local + Docker + IntelliJ all load it.
   cors:
     allowed-origins: ${STOKR_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175}

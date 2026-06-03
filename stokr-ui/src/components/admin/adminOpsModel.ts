@@ -77,8 +77,20 @@ function brokerRailAggregate(vendors: Record<string, unknown> | undefined): { st
 
 export function buildAdminOpsPills(
   s: OpsSnapshot | undefined,
-  stream: { opsStreamLive: boolean; lastOpsPushAt?: string; streamError?: string },
+  stream: { opsStreamLive: boolean; lastOpsPushAt?: string; streamError?: string; snapshotLoading?: boolean },
 ): AdminOpsPill[] {
+  if (!s) {
+    const status = stream.snapshotLoading ? "LOADING" : "SYNC";
+    const hint = stream.streamError
+      ? stream.streamError
+      : stream.snapshotLoading
+        ? "fetching /api/admin/operations/snapshot"
+        : "awaiting first telemetry tick";
+    const labels = ["Market feed", "OMS", "Redis", "RabbitMQ", "PostgreSQL", "Replay queue", "Signal engine", "Broker rail", "LIVE arm", "Kill switch", "Ops stream"];
+    const keys = ["mkt", "oms", "redis", "mq", "pg", "rpq", "sig", "brk", "arm", "kill", "ops"];
+    return keys.map((key, i) => ({ key, label: labels[i], status, hint }));
+  }
+
   const sys = asRecord(s?.system);
   const redis = asRecord(sys?.redis);
   const db = asRecord(sys?.database);

@@ -64,12 +64,16 @@ public class OperationalSseService {
         if (emitters.isEmpty()) {
             return;
         }
-        OperationsSnapshotDto snap = snapshotService.snapshot();
-        Map<String, Object> payload = objectMapper.convertValue(snap, new TypeReference<>() {});
-        Map<String, Object> envelope = new LinkedHashMap<>();
-        envelope.put("type", "tick");
-        envelope.put("payload", payload);
-        broadcast("tick", envelope);
+        try {
+            OperationsSnapshotDto snap = snapshotService.snapshot();
+            Map<String, Object> payload = objectMapper.convertValue(snap, new TypeReference<>() {});
+            Map<String, Object> envelope = new LinkedHashMap<>();
+            envelope.put("type", "tick");
+            envelope.put("payload", payload);
+            broadcast("tick", envelope);
+        } catch (Exception ex) {
+            log.warn("ops.sse.snapshot_tick_failed {}", ex.toString());
+        }
     }
 
     @EventListener

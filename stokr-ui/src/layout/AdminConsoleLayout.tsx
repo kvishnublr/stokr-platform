@@ -95,9 +95,10 @@ export function AdminConsoleLayout() {
       <AdminGlobalOpsHeader
         snapshot={snapshot.data}
         isFetching={snapshot.isFetching}
+        snapshotLoading={snapshot.isLoading || snapshot.isPending}
         opsStreamLive={opsStreamLive}
         lastOpsPushAt={lastOpsPushAt}
-        streamError={streamError}
+        streamError={streamError ?? (snapshot.isError ? "snapshot API failed — retrying" : undefined)}
       />
       <SimulationRuntimeBanner isLight={isLight} />
       <div

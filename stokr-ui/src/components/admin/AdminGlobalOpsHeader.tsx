@@ -7,17 +7,24 @@ import { badgeClassForStatus, type OpsSnapshot } from "./cockpit/opsTypes";
 export function AdminGlobalOpsHeader({
   snapshot,
   isFetching,
+  snapshotLoading,
   opsStreamLive,
   lastOpsPushAt,
   streamError,
 }: {
   snapshot: OpsSnapshot | undefined;
   isFetching: boolean;
+  snapshotLoading?: boolean;
   opsStreamLive: boolean;
   lastOpsPushAt?: string;
   streamError?: string;
 }) {
-  const pills = buildAdminOpsPills(snapshot, { opsStreamLive, lastOpsPushAt, streamError });
+  const pills = buildAdminOpsPills(snapshot, {
+    opsStreamLive,
+    lastOpsPushAt,
+    streamError,
+    snapshotLoading: snapshotLoading ?? (isFetching && !snapshot),
+  });
   const at = snapshot?.collectedAt ?? "";
 
   return (

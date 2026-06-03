@@ -155,7 +155,6 @@ public class AdminOperationalSnapshotService {
         this.executionPipelineRuntimeReadinessService = executionPipelineRuntimeReadinessService;
     }
 
-    @Transactional(readOnly = true)
     public OperationsSnapshotDto snapshot() {
         Instant now = Instant.now();
         Map<String, Object> marketFreshness = marketDataFreshnessService.snapshot(now);
