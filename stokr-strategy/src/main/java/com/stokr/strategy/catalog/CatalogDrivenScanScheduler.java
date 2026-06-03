@@ -87,9 +87,11 @@ public class CatalogDrivenScanScheduler {
             }
         }
 
-        FeedHealthMonitorService.FeedHealthSnapshot feed = feedHealthMonitorService.snapshot(tick);
-        if (feed.equityStale() || feed.indexStale()) {
-            log.warn("catalog.scan.feed_stale equityStale={} indexStale={}", feed.equityStale(), feed.indexStale());
+        boolean feedHealthy = feedHealthMonitorService.isHealthyForLiveExecution(tick);
+        if (!feedHealthy) {
+            FeedHealthMonitorService.FeedHealthSnapshot feed = feedHealthMonitorService.snapshot(tick);
+            log.warn("catalog.scan.feed_unhealthy equityStale={} indexStale={} level={}",
+                    feed.equityStale(), feed.indexStale(), feed.level());
         }
 
         List<StrategyRuntimeBinding> activeBindings = resolverService.resolveActiveBindings();
@@ -117,11 +119,11 @@ public class CatalogDrivenScanScheduler {
                 continue;
             }
 
-            if (feed.equityStale() || feed.indexStale()) {
+            if (!feedHealthy) {
                 runtimeHealthService.recordScanBlockedFeed(strategyKey, "FEED_STALE", tick);
                 signalPipelineAuditService.recordRejection(
                         strategyKey, "*", "FEED_CHECK", "BLOCKED",
-                        "FEED_STALE", "Market feed stale — scan skipped for binding");
+                        "FEED_STALE", "Market feed unhealthy — scan skipped for binding");
                 continue;
             }
 

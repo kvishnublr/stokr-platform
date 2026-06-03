@@ -11,6 +11,7 @@ import com.stokr.user.broker.PlatformMarketFeedService;
 import com.stokr.user.broker.ZerodhaKiteApiClient;
 import com.stokr.user.config.ZerodhaBrokerProperties;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
+import com.stokr.marketdata.monitor.FeedHealthWebSocketState;
 import com.stokr.user.repository.PlatformBrokerFeedSessionRepository;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -77,6 +78,7 @@ public class PlatformZerodhaLiveFeedRuntime {
     private final StrategyUniverseSymbolRepository strategyUniverseSymbolRepository;
     private final ObjectMapper objectMapper;
     private final IntradaySessionGapFillService intradaySessionGapFillService;
+    private final FeedHealthWebSocketState feedHealthWebSocketState;
 
     private final AtomicReference<WebSocket> activeSocket = new AtomicReference<>();
     private final AtomicBoolean wsOpen = new AtomicBoolean(false);
@@ -839,6 +841,9 @@ public class PlatformZerodhaLiveFeedRuntime {
                                 first.instrumentToken(), first.lastPricePaise(),
                                 tokenSymbols.getOrDefault(first.instrumentToken(), "UNKNOWN"));
                     }
+                }
+                if (!ticks.isEmpty()) {
+                    feedHealthWebSocketState.recordTick(packetArrival);
                 }
                 for (KiteTickerBinaryParser.ParsedLtpTick t : ticks) {
                     windowTicks.incrementAndGet();

@@ -44,14 +44,14 @@ spring:
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:root}
     hikari:
-      # Tuned for t2/t3.micro (1 vCPU, 1GB RAM). Raise to 15 on t3.medium+.
-      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:5}
-      minimum-idle: ${HIKARI_MIN_IDLE:2}
-      # Kill connections held > 60s (runaway queries on slow hardware)
-      connection-timeout: 20000
+      # Raise HIKARI_MAX_POOL_SIZE on production (catalog scan + execution). Default 20.
+      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:20}
+      minimum-idle: ${HIKARI_MIN_IDLE:5}
+      connection-timeout: ${HIKARI_CONNECTION_TIMEOUT_MS:30000}
       idle-timeout: 300000
       max-lifetime: 900000
       keepalive-time: 60000
+      leak-detection-threshold: ${HIKARI_LEAK_DETECTION_MS:60000}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -114,11 +114,12 @@ stokr:
       mid-session-recovery:
         enabled: ${STOKR_MARKETDATA_INTEGRITY_MID_SESSION_RECOVERY:true}
     feed-health:
-      poll-ms: ${STOKR_FEED_HEALTH_POLL_MS:30000}
-      equity-stale-seconds: ${STOKR_FEED_HEALTH_EQUITY_STALE_SEC:120}
-      index-stale-seconds: ${STOKR_FEED_HEALTH_INDEX_STALE_SEC:120}
-      tick-stale-seconds: ${STOKR_FEED_HEALTH_TICK_STALE_SEC:30}
-      outage-error-seconds: ${STOKR_FEED_HEALTH_OUTAGE_ERROR_SEC:300}
+      poll-ms: ${STOKR_FEED_HEALTH_POLL_MS:${STOKR_MARKETDATA_FEED_HEALTH_POLL_MS:30000}}
+      equity-stale-seconds: ${STOKR_FEED_HEALTH_EQUITY_STALE_SEC:${STOKR_MARKETDATA_FEED_HEALTH_EQUITY_STALE_SECONDS:120}}
+      index-stale-seconds: ${STOKR_FEED_HEALTH_INDEX_STALE_SEC:${STOKR_MARKETDATA_FEED_HEALTH_INDEX_STALE_SECONDS:120}}
+      tick-stale-seconds: ${STOKR_FEED_HEALTH_TICK_STALE_SEC:${STOKR_MARKETDATA_FEED_HEALTH_TICK_STALE_SECONDS:60}}
+      outage-error-seconds: ${STOKR_FEED_HEALTH_OUTAGE_ERROR_SEC:${STOKR_MARKETDATA_FEED_HEALTH_OUTAGE_ERROR_SECONDS:900}}
+      session-warmup-seconds: ${STOKR_FEED_HEALTH_SESSION_WARMUP_SEC:180}
   broker-truth:
     poll-ms: ${STOKR_BROKER_TRUTH_POLL_MS:3000}
     stale-ms: ${STOKR_BROKER_TRUTH_STALE_MS:15000}
@@ -169,7 +170,7 @@ stokr:
   catalog:
     scan:
       enabled: ${STOKR_CATALOG_SCAN_ENABLED:true}
-      poll-ms: ${STOKR_CATALOG_SCAN_POLL_MS:10000}
+      poll-ms: ${STOKR_CATALOG_SCAN_POLL_MS:15000}
     # How long resolved bindings + universe symbols are cached in memory before re-fetching from DB.
     # Default 5 min: a 60s scan cycle costs 0 DB queries for binding resolution.
     universe-cache-seconds: ${STOKR_CATALOG_UNIVERSE_CACHE_SECONDS:300}

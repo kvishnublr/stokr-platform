@@ -15,10 +15,21 @@ public class FeedHealthWebSocketState {
     private final AtomicReference<Instant> lastConnectedAt = new AtomicReference<>();
     private final AtomicReference<Instant> lastDisconnectedAt = new AtomicReference<>();
     private final AtomicReference<String> lastDisconnectReason = new AtomicReference<>();
+    private final AtomicReference<Instant> lastTickAt = new AtomicReference<>();
 
     public void markConnected() {
         connected.set(true);
         lastConnectedAt.set(Instant.now());
+    }
+
+    public void recordTick(Instant tickTime) {
+        if (tickTime != null) {
+            lastTickAt.set(tickTime);
+        }
+    }
+
+    public void recordTickNow() {
+        lastTickAt.set(Instant.now());
     }
 
     public void markDisconnected(String reason) {
@@ -53,5 +64,17 @@ public class FeedHealthWebSocketState {
 
     public String lastDisconnectReason() {
         return lastDisconnectReason.get();
+    }
+
+    public Instant lastTickAt() {
+        return lastTickAt.get();
+    }
+
+    public long tickGapSeconds(Instant now) {
+        Instant tick = lastTickAt.get();
+        if (tick == null) {
+            return Long.MAX_VALUE / 2;
+        }
+        return Math.max(0, java.time.Duration.between(tick, now).getSeconds());
     }
 }

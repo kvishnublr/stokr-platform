@@ -60,6 +60,11 @@ public class PlatformZerodhaFeedTelemetryService {
             s.setTelemetryJson(encodeTelemetryJson(m));
             sessionRepository.save(s);
         });
+        if (m.lastTickAt() != null) {
+            feedHealthWebSocketState.recordTick(m.lastTickAt());
+        } else if (m.lastPacketAt() != null) {
+            feedHealthWebSocketState.recordTick(m.lastPacketAt());
+        }
         if ("OPEN".equalsIgnoreCase(m.websocketState())) {
             feedHealthWebSocketState.markConnected();
         } else if ("CLOSED".equalsIgnoreCase(m.websocketState())) {
@@ -126,6 +131,7 @@ public class PlatformZerodhaFeedTelemetryService {
         });
         int attempts = feedHealthWebSocketState.reconnectAttempts();
         feedHealthWebSocketState.markConnected();
+        feedHealthWebSocketState.recordTickNow();
         if (attempts > 0) {
             log.info("feed.health.websocket_reconnected vendor={} reconnectAttempts={}", vendor, attempts);
             brokerDisconnectProtectionService.ifAvailable(BrokerDisconnectProtectionService::onBrokerRecovered);

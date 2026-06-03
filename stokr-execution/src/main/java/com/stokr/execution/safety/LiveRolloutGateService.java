@@ -76,8 +76,7 @@ public class LiveRolloutGateService {
             blockers.add("SAFE_STARTUP_NOT_READY:" + safeStartupGateService.snapshot(now).get("blockReason"));
         }
 
-        FeedHealthMonitorService.FeedHealthSnapshot feed = feedHealthMonitorService.snapshot(now);
-        if (feed.equityStale() || feed.indexStale() || feed.level() == FeedHealthMonitorService.FeedHealthLevel.ERROR) {
+        if (!feedHealthMonitorService.isHealthyForLiveExecution(now)) {
             blockers.add("FEED_UNHEALTHY");
         }
 

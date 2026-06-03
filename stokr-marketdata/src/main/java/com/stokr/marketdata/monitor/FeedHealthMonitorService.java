@@ -51,6 +51,11 @@ public class FeedHealthMonitorService {
     @Value("${stokr.marketdata.feed-health.outage-error-seconds:300}")
     private long outageErrorSeconds;
 
+    @Value("${stokr.marketdata.feed-health.session-warmup-seconds:180}")
+    private long sessionWarmupSeconds;
+
+    private final AtomicReference<FeedHealthSnapshot> cachedSnapshot = new AtomicReference<>();
+
     private final AtomicReference<Instant> lastEquityCandle = new AtomicReference<>();
     private final AtomicReference<Instant> lastIndexCandle = new AtomicReference<>();
     private final AtomicReference<Instant> lastFuturesCandle = new AtomicReference<>();
@@ -87,11 +92,39 @@ public class FeedHealthMonitorService {
     public void monitor() {
         Instant now = Instant.now();
         FeedHealthSnapshot snapshot = refreshAndEvaluate(now);
+        cachedSnapshot.set(snapshot);
         emitLogs(snapshot, now);
     }
 
     public FeedHealthSnapshot snapshot(Instant now) {
-        return refreshAndEvaluate(now);
+        FeedHealthSnapshot cached = cachedSnapshot.get();
+        if (cached != null) {
+            return cached;
+        }
+        FeedHealthSnapshot fresh = refreshAndEvaluate(now);
+        cachedSnapshot.set(fresh);
+        return fresh;
+    }
+
+    /**
+     * LIVE rollout / catalog scans: trust the platform websocket tick stream when connected;
+     * do not block on DB candle lag alone (null NIFTY_FUT bars must not trip ERROR).
+     */
+    public boolean isHealthyForLiveExecution(Instant now) {
+        if (!isMarketHours(now)) {
+            return true;
+        }
+        if (isWithinSessionWarmup(now)) {
+            return webSocketState.isConnected();
+        }
+        if (webSocketState.isConnected()) {
+            long tickGap = webSocketState.tickGapSeconds(now);
+            if (tickGap <= tickStaleSeconds) {
+                return true;
+            }
+        }
+        FeedHealthSnapshot feed = snapshot(now);
+        return !feed.equityStale() && !feed.indexStale() && feed.level() != FeedHealthLevel.ERROR;
     }
 
     private FeedHealthSnapshot refreshAndEvaluate(Instant now) {
@@ -131,8 +164,13 @@ public class FeedHealthMonitorService {
                 staleFeedIncidents.incrementAndGet();
             }
         }
-        long worstGap = Math.max(equityGap, Math.max(indexGap, futuresGap));
-        if (marketHours && worstGap > outageErrorSeconds) {
+        long worstGap = Math.max(equityGap, indexGap);
+        if (futures != null) {
+            worstGap = Math.max(worstGap, futuresGap);
+        }
+        if (marketHours && isWithinSessionWarmup(now)) {
+            level = FeedHealthLevel.OK;
+        } else if (marketHours && worstGap > outageErrorSeconds) {
             level = FeedHealthLevel.ERROR;
             if (outageStartedAt == null) {
                 outageStartedAt = now;
@@ -260,5 +298,13 @@ public class FeedHealthMonitorService {
         }
         LocalTime t = zdt.toLocalTime();
         return !t.isBefore(LocalTime.of(9, 15)) && !t.isAfter(LocalTime.of(15, 30));
+    }
+
+    private boolean isWithinSessionWarmup(Instant now) {
+        if (sessionWarmupSeconds <= 0) {
+            return false;
+        }
+        Instant sessionStart = sessionStartInstant(sessionDate(now));
+        return !now.isBefore(sessionStart) && now.isBefore(sessionStart.plusSeconds(sessionWarmupSeconds));
     }
 }
