@@ -763,12 +763,28 @@ export function AdminSafetyDiagnosticsPage() {
         {omsQ.data ? <OmsPanel data={omsQ.data} isLight={isLight} /> : null}
 
         {validationQ.data ? (
-          <AdminSection isLight={isLight} title="Strategy validation & capital" subtitle="Promotion status, sizing config, capital buckets, reservations">
+          <AdminSection
+            isLight={isLight}
+            title="Strategy validation & capital"
+            subtitle="Global execution config (user_id null). FIXED_QUANTITY uses fixed_qty / max_positions; capital columns apply to CAPITAL_BUCKET and similar modes."
+          >
             <div className="overflow-x-auto rounded-lg border dark:border-neutral-800">
               <table className="w-full text-xs">
                 <thead className={isLight ? "bg-neutral-100" : "bg-neutral-900/80"}>
                   <tr>
-                    {["Strategy", "Validation", "Mode", "Sizing", "Allocated", "Available", "Util %", "Reservations"].map((h) => (
+                    {[
+                      "Strategy",
+                      "Validation",
+                      "Mode",
+                      "Sizing",
+                      "Fixed qty",
+                      "Max pos",
+                      "Open",
+                      "Alloc ₹",
+                      "Avail ₹",
+                      "Util %",
+                      "Reservations",
+                    ].map((h) => (
                       <th key={h} className="px-2 py-2 text-left font-semibold text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -777,15 +793,30 @@ export function AdminSafetyDiagnosticsPage() {
                   {validationQ.data.strategies.map((s) => {
                     const cfg = s.executionConfig ?? {};
                     const cap = s.capitalState ?? {};
+                    const sizingMode = String(cfg.sizingMode ?? cap.sizingMode ?? "");
+                    const isFixedQty =
+                      sizingMode === "FIXED_QUANTITY" || cfg.forceFixedQty === true || cap.forceFixedQty === true;
+                    const fixedQty = cfg.fixedQty ?? cap.fixedQty ?? cap.configuredTradeQty;
+                    const maxPos = cfg.maxPositions ?? cap.maxPositions;
+                    const allocNum = Number(cap.allocatedCapital ?? cfg.allocatedCapital ?? 0);
+                    const showCapital = !isFixedQty || allocNum > 0;
+                    const utilDisplay = isFixedQty && !showCapital
+                      ? cap.positionSlotUtilPct != null
+                        ? `${cap.positionSlotUtilPct}% slots`
+                        : "—"
+                      : String(cap.utilizationPct ?? "—");
                     return (
                       <tr key={s.strategyKey} className="border-t dark:border-neutral-800">
                         <td className="px-2 py-2 font-medium">{s.strategyKey}</td>
                         <td className="px-2 py-2">{s.validationStatus}</td>
                         <td className="px-2 py-2">{String(cfg.executionMode ?? "—")}</td>
-                        <td className="px-2 py-2">{String(cfg.sizingMode ?? "—")}</td>
-                        <td className="px-2 py-2 font-mono">{String(cap.allocatedCapital ?? "—")}</td>
-                        <td className="px-2 py-2 font-mono">{String(cap.availableCapital ?? "—")}</td>
-                        <td className="px-2 py-2 font-mono">{String(cap.utilizationPct ?? "—")}</td>
+                        <td className="px-2 py-2">{sizingMode || "—"}</td>
+                        <td className="px-2 py-2 font-mono">{isFixedQty ? String(fixedQty ?? "—") : "—"}</td>
+                        <td className="px-2 py-2 font-mono">{maxPos != null ? String(maxPos) : "—"}</td>
+                        <td className="px-2 py-2 font-mono">{cap.openPositions != null ? String(cap.openPositions) : "0"}</td>
+                        <td className="px-2 py-2 font-mono">{showCapital ? String(cap.allocatedCapital ?? "—") : "—"}</td>
+                        <td className="px-2 py-2 font-mono">{showCapital ? String(cap.availableCapital ?? "—") : "—"}</td>
+                        <td className="px-2 py-2 font-mono">{utilDisplay}</td>
                         <td className="px-2 py-2 font-mono">{s.activeReservations ?? 0}</td>
                       </tr>
                     );

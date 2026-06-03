@@ -13,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -82,6 +83,7 @@ public class AdminStrategyValidationDiagnosticsService {
     private Map<String, Object> capitalSnapshot(String strategyKey) {
         var snap = capitalStateService.snapshot(strategyKey, null);
         Map<String, Object> m = new LinkedHashMap<>();
+        m.put("sizingMode", snap.sizingMode());
         m.put("allocatedCapital", snap.allocatedCapital());
         m.put("deployedCapital", snap.deployedCapital());
         m.put("reservedCapital", snap.reservedCapital());
@@ -92,6 +94,21 @@ public class AdminStrategyValidationDiagnosticsService {
         m.put("maxPositions", snap.maxPositions());
         m.put("unrealizedPnl", snap.unrealizedPnl());
         m.put("realizedPnl", snap.realizedPnl());
+        configRepository.findByUserIdIsNullAndStrategyKeyAndDeletedFalse(strategyKey).ifPresent(cfg -> {
+            m.put("fixedQty", cfg.getFixedQty());
+            m.put("forceFixedQty", cfg.isForceFixedQty());
+            m.put("maxTradeQuantity", cfg.getMaxTradeQuantity());
+            boolean fixedQtyMode = cfg.isForceFixedQty()
+                    || "FIXED_QUANTITY".equalsIgnoreCase(cfg.getSizingMode());
+            if (fixedQtyMode) {
+                m.put("configuredTradeQty", cfg.getFixedQty());
+                m.put("positionSlotUtilPct", cfg.getMaxPositions() > 0
+                        ? BigDecimal.valueOf(snap.openPositions())
+                                .divide(BigDecimal.valueOf(cfg.getMaxPositions()), 4, RoundingMode.HALF_UP)
+                                .multiply(BigDecimal.valueOf(100))
+                        : BigDecimal.ZERO);
+            }
+        });
         return m;
     }
 }
