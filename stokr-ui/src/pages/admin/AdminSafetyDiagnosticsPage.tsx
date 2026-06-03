@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Power, RefreshCw, Shield, ShieldOff } from "lucide-react";
 import { toast } from "sonner";
@@ -10,6 +10,8 @@ import {
   fetchOperationalDiagnostics,
   fetchStrategyValidationDiagnostics,
   fetchTradeReconciliationDiagnostics,
+  safetyDiagnosticsQueryRetry,
+  safetyDiagnosticsRetryDelay,
   type KillSwitchStatus,
   type OmsDiagnostics,
   type OperationalDiagnostics,
@@ -24,6 +26,7 @@ import {
 import { fmtDateTime } from "../../lib/dateUtils";
 import { cn } from "../../lib/utils";
 import { toneChipClasses } from "../../lib/statusTone";
+import { parseAxiosMessage } from "../../api/client";
 import { useSessionStore } from "../../state/session";
 import { useUiThemeStore } from "../../state/uiTheme";
 
@@ -580,40 +583,88 @@ function TradePairTable({ rows, isLight }: { rows: Array<Record<string, unknown>
   );
 }
 
+function PanelLoadError({
+  label,
+  error,
+  onRetry,
+  isLight,
+}: {
+  label: string;
+  error: unknown;
+  onRetry: () => void;
+  isLight: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm",
+        isLight ? "border-amber-300 bg-amber-50 text-amber-900" : "border-amber-500/40 bg-amber-500/10 text-amber-100",
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <span>
+          {label}: {parseAxiosMessage(error)}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        className={cn("rounded-md border px-2 py-1 text-xs font-bold", isLight ? "border-amber-400" : "border-amber-600")}
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 export function AdminSafetyDiagnosticsPage() {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const qc = useQueryClient();
   const userId = useSessionStore((s) => s.userId);
   const canControlKillSwitch = useSessionStore((s) => s.canAccessKillSwitchOperations());
 
+  const [initialGateExpired, setInitialGateExpired] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setInitialGateExpired(true), 2500);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const queryRetry = { retry: safetyDiagnosticsQueryRetry, retryDelay: safetyDiagnosticsRetryDelay };
+
   const opsQ = useQuery({
     queryKey: OPS_QK,
     queryFn: fetchOperationalDiagnostics,
     refetchInterval: 20_000,
+    ...queryRetry,
   });
 
   const omsQ = useQuery({
     queryKey: [...OMS_QK, userId],
     queryFn: () => fetchOmsDiagnostics(userId || undefined),
     refetchInterval: 20_000,
+    ...queryRetry,
   });
 
   const ksQ = useQuery({
     queryKey: KS_QK,
     queryFn: fetchKillSwitchStatus,
     refetchInterval: 15_000,
+    ...queryRetry,
   });
 
   const validationQ = useQuery({
     queryKey: ["admin-strategy-validation-diagnostics"],
     queryFn: fetchStrategyValidationDiagnostics,
     refetchInterval: 30_000,
+    ...queryRetry,
   });
 
   const reconciliationQ = useQuery({
     queryKey: ["admin-trade-reconciliation-diagnostics"],
     queryFn: fetchTradeReconciliationDiagnostics,
     refetchInterval: 30_000,
+    ...queryRetry,
   });
 
   const activateMut = useMutation({
@@ -639,13 +690,17 @@ export function AdminSafetyDiagnosticsPage() {
   });
 
   const killActive = Boolean(ksQ.data?.active ?? omsQ.data?.killSwitch?.active);
-  const loading = opsQ.isLoading || omsQ.isLoading;
-  const updatedAt = Math.max(opsQ.dataUpdatedAt, omsQ.dataUpdatedAt, ksQ.dataUpdatedAt);
+  const blockingLoad =
+    !initialGateExpired && !opsQ.data && !omsQ.data && !ksQ.data && (opsQ.isFetching || omsQ.isFetching);
+  const updatedAt = Math.max(opsQ.dataUpdatedAt, omsQ.dataUpdatedAt, ksQ.dataUpdatedAt, ksQ.dataUpdatedAt);
 
-  if (loading && !opsQ.data && !omsQ.data) {
+  if (blockingLoad) {
     return (
       <AdminPageShell isLight={isLight} title="Safety & Diagnostics" subtitle="Loading operational and OMS safety telemetry…">
-        <div className="text-muted-foreground">Loading diagnostics…</div>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          Loading diagnostics…
+        </div>
       </AdminPageShell>
     );
   }
@@ -695,7 +750,14 @@ export function AdminSafetyDiagnosticsPage() {
           onDeactivate={(reason) => { deactivateMut.mutate(reason); }}
         />
 
+        {opsQ.isError && !opsQ.data ? (
+          <PanelLoadError label="Operational diagnostics" error={opsQ.error} onRetry={() => void opsQ.refetch()} isLight={isLight} />
+        ) : null}
         {opsQ.data ? <OperationalPanel data={opsQ.data} isLight={isLight} /> : null}
+
+        {omsQ.isError && !omsQ.data ? (
+          <PanelLoadError label="OMS diagnostics" error={omsQ.error} onRetry={() => void omsQ.refetch()} isLight={isLight} />
+        ) : null}
         {omsQ.data ? <OmsPanel data={omsQ.data} isLight={isLight} /> : null}
 
         {validationQ.data ? (
@@ -736,9 +798,9 @@ export function AdminSafetyDiagnosticsPage() {
           <TradeReconciliationPanel data={reconciliationQ.data} isLight={isLight} />
         ) : null}
 
-        {(opsQ.isError || omsQ.isError) ? (
-          <p className="text-sm text-rose-500">
-            Some diagnostics failed to load. Check API connectivity and admin permissions.
+        {opsQ.isFetching || omsQ.isFetching ? (
+          <p className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-400")}>
+            Refreshing diagnostics…
           </p>
         ) : null}
       </div>

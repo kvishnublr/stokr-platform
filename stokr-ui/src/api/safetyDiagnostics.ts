@@ -1,5 +1,24 @@
 import { api } from "./client";
 
+const DIAG_TIMEOUT_MS = 12_000;
+
+function diagRetry(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 4) return false;
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  const code = (error as { code?: string })?.code;
+  return (
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    code === "ECONNABORTED" ||
+    code === "ERR_NETWORK" ||
+    failureCount < 2
+  );
+}
+
+export const safetyDiagnosticsQueryRetry = diagRetry;
+export const safetyDiagnosticsRetryDelay = (attempt: number) => Math.min(1500 * 2 ** attempt, 12_000);
+
 export type KillSwitchStatus = {
   active: boolean;
   forcesPaperMode: boolean;
@@ -57,19 +76,20 @@ export type OmsDiagnostics = {
 };
 
 export async function fetchOperationalDiagnostics(): Promise<OperationalDiagnostics> {
-  const res = await api.get("/api/admin/operations/diagnostics");
+  const res = await api.get("/api/admin/operations/diagnostics", { timeout: DIAG_TIMEOUT_MS });
   return res.data?.data as OperationalDiagnostics;
 }
 
 export async function fetchOmsDiagnostics(userId?: string): Promise<OmsDiagnostics> {
   const res = await api.get("/api/admin/oms/diagnostics", {
     params: userId ? { userId } : undefined,
+    timeout: DIAG_TIMEOUT_MS,
   });
   return res.data?.data as OmsDiagnostics;
 }
 
 export async function fetchKillSwitchStatus(): Promise<KillSwitchStatus> {
-  const res = await api.get("/api/admin/oms/kill-switch/status");
+  const res = await api.get("/api/admin/oms/kill-switch/status", { timeout: DIAG_TIMEOUT_MS });
   return res.data?.data as KillSwitchStatus;
 }
 
@@ -104,7 +124,7 @@ export type StrategyValidationDiagnostics = {
 };
 
 export async function fetchStrategyValidationDiagnostics(): Promise<StrategyValidationDiagnostics> {
-  const res = await api.get("/api/admin/strategy-validation/diagnostics");
+  const res = await api.get("/api/admin/strategy-validation/diagnostics", { timeout: DIAG_TIMEOUT_MS });
   return res.data?.data as StrategyValidationDiagnostics;
 }
 
@@ -153,6 +173,6 @@ export type TradeReconciliationDiagnostics = {
 };
 
 export async function fetchTradeReconciliationDiagnostics(): Promise<TradeReconciliationDiagnostics> {
-  const res = await api.get("/api/admin/trade-reconciliation/diagnostics");
+  const res = await api.get("/api/admin/trade-reconciliation/diagnostics", { timeout: DIAG_TIMEOUT_MS });
   return res.data?.data as TradeReconciliationDiagnostics;
 }

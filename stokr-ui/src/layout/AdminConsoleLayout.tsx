@@ -17,7 +17,7 @@ import { cn } from "../lib/utils";
 import { OperatorConsole } from "../components/admin/institutional/experience/OperatorConsole";
 import { SimulationRuntimeBanner } from "../components/admin/SimulationRuntimeBanner";
 
-const LOADING_CAP_MS = 2_000;
+const LOADING_CAP_MS = 1_500;
 
 /**
  * Wraps all `/admin/*` content: shared operations snapshot + SSE, persistent global ops header,
