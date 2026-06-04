@@ -94,7 +94,7 @@ public class CurrentSetup {
     @Column(columnDefinition = "BOOLEAN DEFAULT FALSE")
     private Boolean isRecommendedForUser;
 
-    @Column(columnDefinition = "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    @Column(columnDefinition = "TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
     private Instant createdAt;
 
     @Column

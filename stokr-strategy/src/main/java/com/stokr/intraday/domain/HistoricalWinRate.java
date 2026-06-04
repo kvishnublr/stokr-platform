@@ -90,10 +90,10 @@ public class HistoricalWinRate {
     @Column(length = 20)
     private String confidenceLevel; // HIGH (n>100), MEDIUM (n>50), LOW (n<50)
 
-    @Column
+    @Column(columnDefinition = "TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
     private Instant lastUpdated;
 
-    @Column(columnDefinition = "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    @Column(columnDefinition = "TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
     private Instant createdAt;
 
     @PrePersist
