@@ -262,7 +262,8 @@ public class SignalPipelineEligibilityService {
 
     private String resolveEffectiveMode(String strategyKey) {
         StrategyExecutionMode mode = executionModeService.modeFor(strategyKey);
-        if (mode == StrategyExecutionMode.LIVE && (!liveTradingEnabled || !allowLive)) {
+        if ((mode == StrategyExecutionMode.LIVE || mode == StrategyExecutionMode.BOTH)
+                && (!liveTradingEnabled || !allowLive)) {
             return "PAPER";
         }
         return mode.name();

@@ -14,8 +14,10 @@ import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.runtime.BindingScanThrottleService;
 import com.stokr.strategy.runtime.SignalCooldownService;
 import com.stokr.strategy.runtime.StrategyRegistry;
+import com.stokr.strategy.domain.StrategyExecutionConfig;
 import com.stokr.strategy.service.ConfidenceEngineV2;
 import com.stokr.strategy.service.StrategyDailySignalCapService;
+import com.stokr.strategy.service.StrategyExecutionConfigService;
 import com.stokr.strategy.service.StrategySignalEntityMapper;
 import com.stokr.strategy.signals.SignalOwnerType;
 import com.stokr.strategy.signals.StrategySignal;
@@ -35,6 +37,8 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -56,6 +60,7 @@ public class CatalogDrivenScanScheduler {
     private final StrategyGeneratorIntegrityGate integrityGate;
     private final StrategySessionEntryGuardService sessionEntryGuard;
     private final StrategyExecutionModeService executionModeService;
+    private final StrategyExecutionConfigService executionConfigService;
     private final StrategyRuntimeHealthService runtimeHealthService;
     private final TradingSafeStartupGateService safeStartupGateService;
     private final FeedHealthMonitorService feedHealthMonitorService;
@@ -226,7 +231,8 @@ public class CatalogDrivenScanScheduler {
             Instant candleTime,
             StrategyExecutionMode mode) {
         try {
-            String pipelineMode = mode.name();
+            String pipelineMode = resolveCatalogPipelineMode(strategyKey, mode);
+            boolean skipBroker = shouldSkipBrokerForCatalog(strategyKey, mode);
             StrategySignal scoredSignal = confidenceEngineV2.enrich(signal, strategyKey, symbol, candleTime);
             StrategySignalEntity entity = StrategySignalEntityMapper.baseEntity(
                     scoredSignal,
@@ -239,7 +245,7 @@ public class CatalogDrivenScanScheduler {
             );
             StrategySignalEntityMapper.applyStreamMetadata(entity, SignalOwnerType.SYSTEM, "PENDING");
             StrategySignalEntity saved = signalPipelineService.persistAndDispatch(
-                    entity, UUID.randomUUID().toString(), pipelineMode, mode.skipsBrokerExecution());
+                    entity, UUID.randomUUID().toString(), pipelineMode, skipBroker);
             if (saved != null) {
                 signalCooldownService.recordEmitted(symbol, strategyKey, candleTime);
                 runtimeHealthService.recordSignalGenerated(strategyKey, candleTime);
@@ -247,6 +253,32 @@ public class CatalogDrivenScanScheduler {
         } catch (Exception ex) {
             log.warn("catalog.scan.persist_failed strategyKey={} symbol={} {}", strategyKey, symbol, ex.toString());
         }
+    }
+
+    /**
+     * Admin {@code strategy_execution_configs} BOTH/LIVE must route to OMS even when platform YAML mode is PAPER.
+     */
+    private boolean shouldSkipBrokerForCatalog(String strategyKey, StrategyExecutionMode platformMode) {
+        if (!platformMode.skipsBrokerExecution()) {
+            return false;
+        }
+        return resolveAdminExecutionMode(strategyKey)
+                .map(m -> !"BOTH".equals(m) && !"LIVE".equals(m))
+                .orElse(true);
+    }
+
+    private String resolveCatalogPipelineMode(String strategyKey, StrategyExecutionMode platformMode) {
+        if (!platformMode.skipsBrokerExecution()) {
+            return platformMode.pipelineLabel();
+        }
+        return resolveAdminExecutionMode(strategyKey).orElse(platformMode.pipelineLabel());
+    }
+
+    private Optional<String> resolveAdminExecutionMode(String strategyKey) {
+        return executionConfigService.getByStrategyKey(strategyKey)
+                .map(StrategyExecutionConfig::getExecutionMode)
+                .map(m -> m == null ? null : m.trim().toUpperCase(Locale.ROOT))
+                .filter(m -> m != null && !m.isBlank());
     }
 
     private StrategyContext buildContext(StrategyUniverseSymbol sym, String symbol) {

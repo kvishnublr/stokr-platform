@@ -13,7 +13,7 @@ class StrategyExecutionModeServiceTest {
     void defaultsMatchGoLiveOperationalPlan() {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
-                "PAPER", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
+                "BOTH", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
                 "PAPER", "PAPER",
                 true, LIVE_COHORT);
 
@@ -23,7 +23,7 @@ class StrategyExecutionModeServiceTest {
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("VWAP_BOUNCE"));
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("ADV_CASH"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("EARLY_BREAKOUT"));
-        assertEquals(StrategyExecutionMode.PAPER, service.modeFor("INDEX_HUNT"));
+        assertEquals(StrategyExecutionMode.BOTH, service.modeFor("INDEX_HUNT"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("S3_VWAP_RETEST"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("S7_RANGE_FADE"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("PRE_OPEN_GAP_OI"));
@@ -48,7 +48,7 @@ class StrategyExecutionModeServiceTest {
     void liveModeAllowedOnlyWhenExplicitlyValidated() {
         StrategyExecutionModeService service = new StrategyExecutionModeService(
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
-                "PAPER", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
+                "BOTH", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
                 "PAPER", "PAPER",
                 true, LIVE_COHORT);
 

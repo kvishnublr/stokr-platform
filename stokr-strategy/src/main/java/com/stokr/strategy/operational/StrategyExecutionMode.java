@@ -5,6 +5,8 @@ import java.util.Locale;
 public enum StrategyExecutionMode {
     LIVE,
     PAPER,
+    /** Dual paper + live broker legs (admin/trader execution config BOTH). */
+    BOTH,
     DRY_RUN,
     DISABLED;
 
@@ -29,5 +31,10 @@ public enum StrategyExecutionMode {
 
     public boolean skipsBrokerExecution() {
         return this == PAPER || this == DRY_RUN;
+    }
+
+    /** Pipeline label stored on signals and passed into OMS dispatch. */
+    public String pipelineLabel() {
+        return name();
     }
 }
