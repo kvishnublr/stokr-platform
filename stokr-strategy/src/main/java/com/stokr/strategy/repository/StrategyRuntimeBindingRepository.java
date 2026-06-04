@@ -4,6 +4,7 @@ import com.stokr.strategy.domain.StrategyRuntimeBinding;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -22,6 +23,16 @@ public interface StrategyRuntimeBindingRepository extends JpaRepository<Strategy
     List<StrategyRuntimeBinding> findAllActiveBindings();
 
     List<StrategyRuntimeBinding> findAllByStrategyCatalogId(UUID strategyCatalogId);
+
+    @Modifying
+    @Query("""
+            DELETE FROM StrategyRuntimeBinding b
+            WHERE b.strategyCatalog.id = :catalogId
+              AND b.universeGroup.groupKey <> :keepGroupKey
+            """)
+    int deleteByStrategyCatalogIdAndUniverseGroupGroupKeyNot(
+            @Param("catalogId") UUID catalogId,
+            @Param("keepGroupKey") String keepGroupKey);
 
     List<StrategyRuntimeBinding> findAllByUniverseGroupId(UUID universeGroupId);
 

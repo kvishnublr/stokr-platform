@@ -69,6 +69,7 @@ public class SignalPipelineActivationService {
     @Value("${stokr.strategy.pipeline.fast-scan-interval-seconds:5}")
     private int fastScanIntervalSeconds;
 
+    @Transactional
     public Map<String, Object> activate(boolean syncUniverses, boolean runImmediatePoll) {
         int universesSynced = syncUniverses ? syncUniversesIsolated() : 0;
         Map<String, Object> out = activateCore(universesSynced);
@@ -450,15 +451,12 @@ public class SignalPipelineActivationService {
             if (!isCurrencyStrategy(def)) {
                 continue;
             }
-            for (StrategyRuntimeBinding b : bindingRepository.findAllByStrategyCatalogId(def.getId())) {
-                String groupKey = b.getUniverseGroup().getGroupKey();
-                if (CDS_UNIVERSE_GROUP_KEY.equals(groupKey)) {
-                    continue;
-                }
-                bindingRepository.delete(b);
-                pruned++;
-                log.info("signal.pipeline.currency_binding_pruned strategy={} removedGroup={}",
-                        def.getStrategyKey(), groupKey);
+            int removed = bindingRepository.deleteByStrategyCatalogIdAndUniverseGroupGroupKeyNot(
+                    def.getId(), CDS_UNIVERSE_GROUP_KEY);
+            if (removed > 0) {
+                pruned += removed;
+                log.info("signal.pipeline.currency_binding_pruned strategy={} removed={}",
+                        def.getStrategyKey(), removed);
             }
         }
         return pruned;
