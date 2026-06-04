@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS signal_execution_tracks (
     side VARCHAR(16),
     quantity NUMERIC(24, 8),
     entry_price NUMERIC(24, 8),
+    signal_type VARCHAR(128),
     current_step TEXT,
     last_error TEXT,
     failure_reason VARCHAR(512),
