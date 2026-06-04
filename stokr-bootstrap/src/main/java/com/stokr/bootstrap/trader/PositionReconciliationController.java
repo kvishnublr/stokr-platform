@@ -161,7 +161,7 @@ public class PositionReconciliationController {
 
         Map<String, Object> brokerMap = new java.util.LinkedHashMap<>();
         brokerMap.put("status", status.brokerConnected());
-        brokerMap.put("sync", String.valueOf(status.brokerSync()));
+        brokerMap.put("sync", status.brokerSync());
         result.put("broker", brokerMap);
 
         Map<String, Object> detailsMap = new java.util.LinkedHashMap<>();

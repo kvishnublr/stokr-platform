@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.bootstrap.config.PlatformZerodhaFeedProperties;
 import com.stokr.common.crypto.FieldCipher;
 import com.stokr.common.events.PlatformFeedReconnectRequestedEvent;
+import com.stokr.common.market.NseMarketSession;
+import com.stokr.bootstrap.feed.zerodha.CdsMarketSession;
 import com.stokr.strategy.domain.StrategyUniverseSymbol;
 import com.stokr.strategy.repository.StrategyUniverseSymbolRepository;
 import com.stokr.user.broker.PlatformMarketFeedService;
@@ -231,6 +233,9 @@ public class PlatformZerodhaLiveFeedRuntime {
                     ? Long.MAX_VALUE
                     : Duration.between(lastTickAt, Instant.now()).getSeconds();
             if (tickAgeSec <= 60) {
+                return;
+            }
+            if (!NseMarketSession.isRegularSessionOpen() && !CdsMarketSession.isCdsMarketHours(Instant.now())) {
                 return;
             }
             log.warn("platform.ws.stale_ticks_reconnect tickAgeSec={} lastPacketAt={}", tickAgeSec, lastPacketAt);
