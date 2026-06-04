@@ -54,7 +54,6 @@ export function badgeClassForStatus(status: string): string {
     s === "RUNNING" ||
     s === "OPERATIONAL" ||
     s === "IDLE" ||
-    s === "STALE" ||
     s === "DEGRADED" ||
     s === "BACKFILLING" ||
     s === "RECONNECTING" ||
@@ -69,6 +68,8 @@ export function badgeClassForStatus(status: string): string {
     return "border-red-600/55 bg-red-600/12 text-red-900 dark:text-red-100";
   if (s === "AUTH_REQUIRED" || s === "AUTH_EXPIRED")
     return "border-red-600/55 bg-red-600/12 text-red-900 dark:text-red-100";
+  if (s === "STALE" || s === "MARKET_CLOSED")
+    return "border-amber-700/55 bg-amber-600/15 text-amber-950 dark:text-amber-50";
   if (s === "RATE_LIMITED" || s === "LIMITED")
     return "border-amber-700/55 bg-amber-600/15 text-amber-950 dark:text-amber-50";
   if (s === "UNKNOWN" || s === "NOT_INSTRUMENTED" || s === "LOADING" || s === "SYNC")

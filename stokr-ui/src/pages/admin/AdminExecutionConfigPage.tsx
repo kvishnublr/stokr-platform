@@ -21,8 +21,8 @@ const EMPTY_FORM: StrategyExecutionConfigRequest = {
   strategyId: null,
   strategyKey: "",
   enabled: true,
-  executionMode: "PAPER",
-  liveEnabled: false,
+  executionMode: "BOTH",
+  liveEnabled: true,
   paperEnabled: true,
   telegramEnabled: true,
   allocatedCapital: null,
@@ -37,6 +37,26 @@ const EMPTY_FORM: StrategyExecutionConfigRequest = {
   autoDisableOnLoss: false,
   liveConfirmationRequired: false,
 };
+
+function modeBadgeClass(mode: StrategyExecutionConfigDto["executionMode"]): string {
+  if (mode === "LIVE") return "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-200";
+  if (mode === "BOTH") return "bg-sky-100 text-sky-900 ring-1 ring-sky-200";
+  return "bg-neutral-100 text-neutral-800 ring-1 ring-neutral-200";
+}
+
+function modeLabel(mode: StrategyExecutionConfigDto["executionMode"]): string {
+  if (mode === "BOTH") return "LIVE + PAPER";
+  return mode;
+}
+
+function executionModeSideEffects(mode: "PAPER" | "LIVE" | "BOTH"): Pick<
+  StrategyExecutionConfigRequest,
+  "liveEnabled" | "paperEnabled"
+> {
+  if (mode === "BOTH") return { liveEnabled: true, paperEnabled: true };
+  if (mode === "LIVE") return { liveEnabled: true, paperEnabled: false };
+  return { liveEnabled: false, paperEnabled: true };
+}
 
 function configToForm(c: StrategyExecutionConfigDto): StrategyExecutionConfigRequest {
   return {
@@ -148,7 +168,7 @@ export function AdminExecutionConfigPage() {
           <h1 className="text-xl font-semibold tracking-tight">Strategy Execution Config</h1>
           <p className="mt-1 text-xs text-muted-foreground">
             Per-strategy position sizing, capital allocation, risk gates, and live/paper routing.
-            Default: fixed qty=1, max positions=2, live disabled.
+            Default for new configs: <span className="font-mono text-foreground">BOTH (LIVE + PAPER)</span>, fixed qty=1.
           </p>
         </div>
         <div className="flex gap-2">
@@ -193,12 +213,8 @@ export function AdminExecutionConfigPage() {
               <tr key={c.id} className="border-b border-border/60 hover:bg-background/30">
                 <td className="px-3 py-2 font-mono font-semibold text-foreground">{c.strategyKey}</td>
                 <td className="px-3 py-2">
-                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                    c.executionMode === "LIVE" ? "bg-emerald-500/15 text-emerald-300"
-                    : c.executionMode === "BOTH" ? "bg-sky-500/15 text-sky-300"
-                    : "bg-neutral-500/20 text-neutral-300"
-                  }`}>
-                    {c.executionMode}
+                  <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${modeBadgeClass(c.executionMode)}`}>
+                    {modeLabel(c.executionMode)}
                   </span>
                 </td>
                 <td className="px-3 py-2 font-mono">
@@ -215,9 +231,10 @@ export function AdminExecutionConfigPage() {
                   <button
                     type="button"
                     onClick={() => toggleLive.mutate({ id: c.id, cfg: c, live: !c.liveEnabled })}
-                    className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                      c.liveEnabled ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
-                      : "bg-neutral-500/20 text-neutral-400 hover:bg-neutral-500/30"
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ring-1 ${
+                      c.liveEnabled
+                        ? "bg-emerald-100 text-emerald-900 ring-emerald-200 hover:bg-emerald-200/80"
+                        : "bg-neutral-100 text-neutral-700 ring-neutral-200 hover:bg-neutral-200/80"
                     }`}
                     title="Toggle live"
                   >
@@ -228,9 +245,10 @@ export function AdminExecutionConfigPage() {
                   <button
                     type="button"
                     onClick={() => toggleEmergencyStop.mutate({ id: c.id, cfg: c, stop: !c.emergencyStopEnabled })}
-                    className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                      c.emergencyStopEnabled ? "bg-red-500/15 text-red-300 hover:bg-red-500/25"
-                      : "bg-neutral-500/20 text-neutral-400 hover:bg-neutral-500/30"
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ring-1 ${
+                      c.emergencyStopEnabled
+                        ? "bg-red-100 text-red-900 ring-red-200 hover:bg-red-200/80"
+                        : "bg-neutral-100 text-neutral-700 ring-neutral-200 hover:bg-neutral-200/80"
                     }`}
                     title="Toggle emergency stop"
                   >
@@ -268,10 +286,10 @@ export function AdminExecutionConfigPage() {
 
       {/* Production defaults info */}
       <div className="rounded-lg border border-border bg-background/40 p-3 text-xs text-muted-foreground">
-        <span className="font-semibold text-foreground">Production-safe defaults:</span>{" "}
-        When no config exists for a strategy, execution uses{" "}
-        <span className="font-mono text-foreground">fixed_qty=1</span>, risk rules use global limits.
-        Create a config here to override per-strategy sizing, capital, daily loss limit, and live routing.
+        <span className="font-semibold text-foreground">Recommended default:</span>{" "}
+        <span className="font-mono text-foreground">BOTH (LIVE + PAPER)</span> for equity strategies —
+        enables paper/live drift pairs in Safety Diagnostics. Currency strategies stay PAPER-only.
+        New configs use fixed qty=1 unless overridden here.
       </div>
 
       {/* Modal */}
@@ -319,12 +337,15 @@ export function AdminExecutionConfigPage() {
                 <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Execution mode</label>
                 <select
                   value={form.executionMode}
-                  onChange={(e) => setField("executionMode", e.target.value as "PAPER" | "LIVE" | "BOTH")}
+                  onChange={(e) => {
+                    const mode = e.target.value as "PAPER" | "LIVE" | "BOTH";
+                    setForm((f) => ({ ...f, executionMode: mode, ...executionModeSideEffects(mode) }));
+                  }}
                   className="mt-1 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
                 >
-                  <option value="PAPER">PAPER</option>
-                  <option value="LIVE">LIVE</option>
-                  <option value="BOTH">BOTH (paper + live simultaneously)</option>
+                  <option value="PAPER">PAPER only</option>
+                  <option value="LIVE">LIVE only</option>
+                  <option value="BOTH">BOTH — LIVE + PAPER (recommended default)</option>
                 </select>
               </div>
 
@@ -422,10 +443,11 @@ export function AdminExecutionConfigPage() {
               </div>
             </div>
 
-            {form.liveEnabled && (
-              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200/90">
-                Live mode enabled — all risk rules must pass before orders are routed to the broker.
-                Ensure Zerodha token is valid before market open.
+            {(form.liveEnabled || form.executionMode === "BOTH") && (
+              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                {form.executionMode === "BOTH"
+                  ? "BOTH mode runs paper and live legs together for drift analytics — live broker orders still require valid Zerodha OAuth and risk gates."
+                  : "Live mode enabled — all risk rules must pass before orders are routed to the broker. Ensure Zerodha token is valid before market open."}
               </div>
             )}
 

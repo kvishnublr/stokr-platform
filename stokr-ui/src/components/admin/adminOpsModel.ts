@@ -136,6 +136,7 @@ export function buildAdminOpsPills(
   const dbMs = db?.pingMs != null ? `${db.pingMs}ms` : undefined;
 
   const marketStRaw = String(fresh?.status ?? "UNKNOWN").toUpperCase();
+  const marketHours = fresh?.marketHours !== false;
   const lagSec = typeof fresh?.latest1mLagSeconds === "number" ? fresh.latest1mLagSeconds : Number(fresh?.latest1mLagSeconds ?? NaN);
   const lagStale = Number.isFinite(lagSec) && lagSec > 120;
   let marketSt: string;
@@ -143,10 +144,24 @@ export function buildAdminOpsPills(
   if (authRequired) {
     marketSt = "AUTH_REQUIRED";
     lag = [lag, "Zerodha OAuth re-auth required in Broker infrastructure"].filter(Boolean).join("  ·  ");
-  } else if (platformOp && marketStRaw === "OK" && !lagStale) {
+  } else if (marketStRaw === "MARKET_CLOSED" || !marketHours) {
+    marketSt = "MARKET_CLOSED";
+    const closedReason = typeof fresh?.reason === "string" ? fresh.reason.replace(/_/g, " ").toLowerCase() : "outside session";
+    lag = [lag, closedReason].filter(Boolean).join("  ·  ");
+  } else if (lagStale || marketStRaw === "STALE") {
+    marketSt = "STALE";
+    const detail =
+      (typeof z?.operationalLivePathDetail === "string" ? z.operationalLivePathDetail : undefined) ??
+      (z?.reconnecting === true || z?.reconnecting === "true"
+        ? "feed reconnecting"
+        : platformFed
+          ? "candle store behind wall clock"
+          : "market path warming up");
+    lag = [lag, autoHealing ? `${detail} — auto-heal active` : detail].filter(Boolean).join("  ·  ");
+  } else if (platformOp && marketStRaw === "OK") {
     marketSt = "CONNECTED";
   } else {
-    marketSt = "CONNECTED";
+    marketSt = "DEGRADED";
     const detail =
       (typeof z?.operationalLivePathDetail === "string" ? z.operationalLivePathDetail : undefined) ??
       (z?.reconnecting === true || z?.reconnecting === "true"
