@@ -63,7 +63,6 @@ spring:
   flyway:
     enabled: true
     out-of-order: ${STOKR_FLYWAY_OUT_OF_ORDER:true}
-    validate-on-migrate: ${STOKR_FLYWAY_VALIDATE_ON_MIGRATE:false}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -205,7 +204,7 @@ stokr:
     # Per-strategy execution mode: LIVE, PAPER, DRY_RUN, DISABLED
     execution-modes:
       allow-live: ${STOKR_EXECUTION_MODES_ALLOW_LIVE:true}
-      live-validated: ${STOKR_EXECUTION_MODES_LIVE_VALIDATED:GAP_FILL,NSE_SPIKE_DETECTION,VWAP_BOUNCE,SECTOR_LAGGARD,ADV_CASH}
+      live-validated: ${STOKR_EXECUTION_MODES_LIVE_VALIDATED:GAP_FILL,NSE_SPIKE_DETECTION,VWAP_BOUNCE,SECTOR_LAGGARD,ADV_CASH,INDEX_HUNT}
       GAP_FILL: ${STOKR_EXEC_MODE_GAP_FILL:LIVE}
       SECTOR_LAGGARD: ${STOKR_EXEC_MODE_SECTOR_LAGGARD:LIVE}
       NSE_SPIKE_DETECTION: ${STOKR_EXEC_MODE_NSE_SPIKE:LIVE}

@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class StrategyExecutionModeServiceTest {
 
     private static final String LIVE_COHORT =
-            "GAP_FILL,NSE_SPIKE_DETECTION,VWAP_BOUNCE,SECTOR_LAGGARD,ADV_CASH";
+            "GAP_FILL,NSE_SPIKE_DETECTION,VWAP_BOUNCE,SECTOR_LAGGARD,ADV_CASH,INDEX_HUNT";
 
     @Test
     void defaultsMatchGoLiveOperationalPlan() {
