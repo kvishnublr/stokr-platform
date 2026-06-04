@@ -134,6 +134,18 @@ public class PortfolioAccountingService {
     ) {
         Ledger ledger = new Ledger();
         for (OmsExecution e : executions) {
+            if (e == null || e.getOrder() == null) {
+                continue;
+            }
+            if (e.getFilledQty() == null || e.getAvgPrice() == null) {
+                log.warn("portfolio.accounting.skip_invalid_execution user={} symbol={} executionId={} orderId={} filledQty={} avgPrice={}",
+                        userId, symbol,
+                        e.getId(),
+                        e.getOrder() != null ? e.getOrder().getId() : null,
+                        e.getFilledQty(),
+                        e.getAvgPrice());
+                continue;
+            }
             String s = e.getOrder().getSide();
             ledger.apply(s, e.getFilledQty(), e.getAvgPrice());
         }
@@ -188,6 +200,9 @@ public class PortfolioAccountingService {
         }
 
         private void buy(BigDecimal q, BigDecimal p) {
+            if (q == null || p == null) {
+                return;
+            }
             BigDecimal remaining = q;
 
             if (shortQty.compareTo(BigDecimal.ZERO) > 0) {
@@ -209,6 +224,9 @@ public class PortfolioAccountingService {
         }
 
         private void sell(BigDecimal q, BigDecimal p) {
+            if (q == null || p == null) {
+                return;
+            }
             BigDecimal remaining = q;
 
             if (longQty.compareTo(BigDecimal.ZERO) > 0) {
