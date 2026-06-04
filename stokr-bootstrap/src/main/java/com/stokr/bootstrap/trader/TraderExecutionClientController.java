@@ -151,7 +151,7 @@ public class TraderExecutionClientController {
     @Operation(summary = "Broker position truth snapshot (Zerodha source of truth vs OMS)")
     public ApiResponse<Map<String, Object>> brokerTruth(@AuthenticationPrincipal StokrUserDetails user) {
         return ApiResponse.ok(
-                brokerPositionTruthService.syncUser(user.getId()).toApiMap(),
+                traderTerminalViewService.safeBrokerTruth(user.getId()).toApiMap(),
                 CorrelationIdHolder.get()
         );
     }

@@ -53,12 +53,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Trader-execution-plane facade over central market intelligence and OMS — UI must call these paths,
  * not {@code /api/marketdata} or {@code /api/market} directly.
  */
 @Service
+@Slf4j
 public class TraderTerminalViewService {
 
     private static final int CHART_CAP = 500;
@@ -356,7 +358,7 @@ public class TraderTerminalViewService {
     }
 
     public Map<String, Object> terminalWorkstation(UUID userId) {
-        BrokerPositionTruthSnapshot brokerTruth = brokerPositionTruthService.syncUser(userId);
+        BrokerPositionTruthSnapshot brokerTruth = safeBrokerTruth(userId);
         Map<String, BrokerPositionTruthSnapshot.BrokerTruthPositionRow> truthBySymbol = new LinkedHashMap<>();
         for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : brokerTruth.positions()) {
             truthBySymbol.put(row.symbol(), row);
@@ -601,6 +603,15 @@ public class TraderTerminalViewService {
         out.put("executionQualityScore", executionQualityScoringService.scoreForUser(userId));
         out.put("brokerTruth", brokerTruth.toApiMap());
         return out;
+    }
+
+    public BrokerPositionTruthSnapshot safeBrokerTruth(UUID userId) {
+        try {
+            return brokerPositionTruthService.syncUser(userId);
+        } catch (Exception ex) {
+            log.warn("terminal.workstation.broker_truth_sync_failed user={} {}", userId, ex.toString());
+            return brokerPositionTruthService.snapshot(userId);
+        }
     }
 
     private List<Map<String, Object>> buildUnifiedOrders(UUID userId, List<OmsOrderSummaryDto> omsOrders) {
