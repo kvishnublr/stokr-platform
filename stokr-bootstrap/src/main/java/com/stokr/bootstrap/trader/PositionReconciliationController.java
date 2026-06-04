@@ -34,7 +34,7 @@ public class PositionReconciliationController {
                 ),
                 "broker", Map.of(
                         "connected", status.brokerConnected(),
-                        "syncStatus", status.brokerSync(),
+                        "syncStatus", String.valueOf(status.brokerSync()),
                         "lastSync", status.checkedAt().toString()
                 ),
                 "ghosts", status.ghosts().stream()
@@ -161,7 +161,7 @@ public class PositionReconciliationController {
 
         Map<String, Object> brokerMap = new java.util.LinkedHashMap<>();
         brokerMap.put("status", status.brokerConnected() ? "CONNECTED" : "DISCONNECTED");
-        brokerMap.put("sync", status.brokerSync());
+        brokerMap.put("sync", String.valueOf(status.brokerSync()));
         result.put("broker", brokerMap);
 
         Map<String, Object> detailsMap = new java.util.LinkedHashMap<>();
