@@ -309,6 +309,7 @@ public class PlatformZerodhaLiveFeedRuntime {
      */
     private Map<Integer, String> buildSymbolMap(String apiKey, String accessToken) {
         Map<Integer, String> map = new LinkedHashMap<>();
+        List<Integer> cdsPinnedTokens = new ArrayList<>();
 
         if (feedProperties.isAutoSubscribeAllNse()) {
             try {
@@ -347,7 +348,10 @@ public class PlatformZerodhaLiveFeedRuntime {
                 String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "CDS");
                 Map<String, Integer> pairs = CdsInstrumentResolver.resolveMajorPairs(csv);
                 int before = map.size();
-                pairs.forEach((canonical, token) -> map.put(token, canonical));
+                pairs.forEach((canonical, token) -> {
+                    map.put(token, canonical);
+                    cdsPinnedTokens.add(token);
+                });
                 log.info("platform.ws.auto_subscribe exchange=CDS pairs={} added={}", pairs.keySet(), map.size() - before);
             } catch (Exception ex) {
                 log.warn("platform.ws.auto_subscribe_failed exchange=CDS {}", ex.toString());
@@ -385,7 +389,9 @@ public class PlatformZerodhaLiveFeedRuntime {
             map.put(NIFTY_50_TOKEN, NIFTY_50_SYMBOL);
         }
         if (map.size() > MAX_WS_TOKENS) {
-            List<Integer> pinned = resolvePinnedSubscriptionTokens(map, apiKey, accessToken);
+            List<Integer> pinned = new ArrayList<>(resolvePinnedSubscriptionTokens(map, apiKey, accessToken));
+            pinned.addAll(cdsPinnedTokens);
+            pinned = pinned.stream().distinct().toList();
             log.warn("platform.ws.token_cap original={} capped={} pinned_count={}",
                     map.size(), MAX_WS_TOKENS, pinned.size());
             return capWithPinnedTokens(map, MAX_WS_TOKENS, pinned);
