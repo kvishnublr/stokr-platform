@@ -33,7 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * from nse_edge_live_v/backend/index_radar_logic.py with INDEX_RADAR_PRECISION_V2 config.
  *
  * Gates (in order, exact match to Python):
- *   1. TIME WINDOW: 10:15-13:45 IST (615-825 min)
+ *   1. TIME WINDOW: 10:15-15:15 IST (615-915 min)
  *   2. VIX BLOCK: skip if VIX >= vix_block_above (28.0 default)
  *   3. WARMUP: need min_hist_samples (6) bars and min_hist_span_sec (270)
  *   4. 5M CHANGE BAND: |5m move| between precision_chg_min(0.055%) and precision_chg_max(0.60%)
@@ -85,7 +85,7 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
 
     // Time window
     private static final int TIME_START_MIN = 615;      // 10:15 IST
-    private static final int TIME_END_MIN   = 825;      // 13:45 IST
+    private static final int TIME_END_MIN   = 915;      // 15:15 IST
 
     // 5m change band (precision_boost + !precision_hi_only)
     private static final double CHG_MIN_PCT = 0.055;    // precision_chg_min
@@ -172,7 +172,7 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
             return hold(context);
         }
 
-        // ─── GATE: TIME WINDOW (10:15–13:45 IST) ───
+        // ─── GATE: TIME WINDOW (10:15–15:15 IST) ───
         LocalTime now;
         if (context.asOf() != null) {
             now = context.asOf().atZone(zone).toLocalTime();
@@ -182,7 +182,7 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
         int currentMin = now.getHour() * 60 + now.getMinute();
         if (currentMin < TIME_START_MIN || currentMin > TIME_END_MIN) {
             gateTelemetry.infoThrottled(key(), "TIME_WINDOW",
-                    "now=%02d:%02d outside 10:15-13:45 IST", now.getHour(), now.getMinute());
+                    "now=%02d:%02d outside 10:15-15:15 IST", now.getHour(), now.getMinute());
             return hold(context);
         }
 

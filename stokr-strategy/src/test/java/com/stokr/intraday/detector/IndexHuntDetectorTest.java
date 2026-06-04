@@ -35,7 +35,7 @@ public class IndexHuntDetectorTest {
     // ===== GATE 1: TIME WINDOW TESTS =====
 
     @Test
-    @DisplayName("Gate 1: Should accept signals between 10:15 AM - 1:45 PM IST")
+    @DisplayName("Gate 1: Should accept signals between 10:15 AM - 3:15 PM IST")
     void testGate1_AcceptDuringTradingHours() {
         // Setup: 11:30 AM IST = 690 minutes from midnight
         when(marketDataProvider.getCurrentTimeMinutes()).thenReturn(690);
@@ -65,17 +65,17 @@ public class IndexHuntDetectorTest {
     }
 
     @Test
-    @DisplayName("Gate 1: Should reject signals after 1:45 PM IST")
+    @DisplayName("Gate 1: Should reject signals after 3:15 PM IST")
     void testGate1_RejectAfterClosingWindow() {
-        // Setup: 2:00 PM IST = 840 minutes from midnight
-        when(marketDataProvider.getCurrentTimeMinutes()).thenReturn(840);
+        // Setup: 3:30 PM IST = 930 minutes from midnight
+        when(marketDataProvider.getCurrentTimeMinutes()).thenReturn(930);
 
         MarketDataProvider.IndexMarketData data = createValidMarketData();
         when(marketDataProvider.getIndexMarketData("NIFTY")).thenReturn(data);
 
         IndexSignal signal = indexHuntDetector.detectSignal("NIFTY");
 
-        assertNull(signal, "Signal should be null after 1:45 PM");
+        assertNull(signal, "Signal should be null after 3:15 PM");
     }
 
     // ===== GATE 2: MOMENTUM TESTS =====

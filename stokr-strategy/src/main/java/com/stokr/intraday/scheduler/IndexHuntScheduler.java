@@ -30,7 +30,7 @@ public class IndexHuntScheduler {
     private final MarketDataProvider marketDataProvider;
 
     private static final int TRADING_START_MIN = 615;   // 10:15 AM
-    private static final int TRADING_END_MIN = 825;     // 1:45 PM
+    private static final int TRADING_END_MIN = 915;     // 3:15 PM
     private static final int DAILY_SUMMARY_MIN = 1015;  // 3:35 PM
 
     public IndexHuntScheduler(IndexHuntService indexHuntService,
@@ -45,7 +45,7 @@ public class IndexHuntScheduler {
 
     /**
      * Run INDEX HUNT signal detection every 10 seconds
-     * Only during 10:15 AM - 1:45 PM IST
+     * Only during 10:15 AM - 3:15 PM IST
      *
      * @Scheduled: Fixed-rate in milliseconds (10000ms = 10 seconds)
      */

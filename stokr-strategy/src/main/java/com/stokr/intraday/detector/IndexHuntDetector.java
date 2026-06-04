@@ -15,7 +15,7 @@ import java.util.*;
  * INDEX HUNT: NIFTY50 & BANKNIFTY Intraday Options Momentum Detector
  *
  * Detects 5-minute momentum signals on index options with 5-gate validation:
- * Gate 1: TIME WINDOW (10:15-13:45 IST only)
+ * Gate 1: TIME WINDOW (10:15-15:15 IST only)
  * Gate 2: MOMENTUM (5m move between 0.055%-0.60%)
  * Gate 3: TREND (30m backdrop alignment)
  * Gate 4: PCR (Smart money Put-Call Ratio validation)
@@ -32,7 +32,7 @@ public class IndexHuntDetector {
 
     // Configuration (from backend/config.py PRECISION_V2 profile)
     private static final int TIME_START_MIN = 615;      // 10:15 AM
-    private static final int TIME_END_MIN = 825;        // 1:45 PM
+    private static final int TIME_END_MIN = 915;        // 3:15 PM
     private static final BigDecimal MOMENTUM_MIN_PCT = BigDecimal.valueOf(0.055);   // 0.055%
     private static final BigDecimal MOMENTUM_MAX_PCT = BigDecimal.valueOf(0.60);    // 0.60%
     private static final BigDecimal HI_STRENGTH_THRESHOLD = BigDecimal.valueOf(0.20); // "hi" above 0.20%
@@ -89,7 +89,7 @@ public class IndexHuntDetector {
         signal.setTrend30m(data.trend30m);
         signal.setSessionOpenPrice(data.sessionOpen);
 
-        // GATE 1: TIME WINDOW (10:15-13:45 IST)
+        // GATE 1: TIME WINDOW (10:15-15:15 IST)
         if (!passTimeGate()) {
             log.debug("INDEX_HUNT.gate1_fail index={} reason=outside_trading_window", indexName);
             return null;
@@ -170,7 +170,7 @@ public class IndexHuntDetector {
     }
 
     /**
-     * GATE 1: Check if current time is within trading window (10:15-13:45 IST)
+     * GATE 1: Check if current time is within trading window (10:15-15:15 IST)
      */
     private boolean passTimeGate() {
         int timeMin = marketData.getCurrentTimeMinutes();
