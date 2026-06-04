@@ -92,10 +92,10 @@ public class OrderFlowSnapshot {
     private Long imbalance;
 
     // Liquidity Metrics
-    @Column
+    @Column(name = "cumulative_bid_10_levels")
     private Long cumulativeBid10Levels;
 
-    @Column
+    @Column(name = "cumulative_ask_10_levels")
     private Long cumulativeAsk10Levels;
 
     @Column
