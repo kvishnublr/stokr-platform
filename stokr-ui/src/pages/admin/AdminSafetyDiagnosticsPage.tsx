@@ -412,7 +412,7 @@ function SignalPipelineToolsPanel({
             ["Command center", ui.commandCenter],
           ] as const
         )
-          .filter((entry): entry is readonly [string, string] => Boolean(entry[1]))
+          .filter((entry) => Boolean(entry[1]))
           .map(([label, path]) => (
             <Link
               key={path}
