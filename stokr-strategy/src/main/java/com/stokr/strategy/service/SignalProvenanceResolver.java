@@ -28,7 +28,11 @@ public class SignalProvenanceResolver {
             return signal.getSignalSource();
         }
         String mode = executionMode != null ? executionMode.trim().toUpperCase() : "";
-        if ("PAPER".equals(mode) || "PAPER".equalsIgnoreCase(signal.getPipeline())) {
+        String pipeline = signal.getPipeline() != null ? signal.getPipeline().trim().toUpperCase() : "";
+        if ("BOTH".equals(mode) || "BOTH".equals(pipeline)) {
+            return SignalProvenance.LIVE;
+        }
+        if ("PAPER".equals(mode) || "PAPER".equals(pipeline)) {
             return SignalProvenance.PAPER;
         }
         return SignalProvenance.LIVE;

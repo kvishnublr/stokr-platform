@@ -35,6 +35,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.time.DayOfWeek;
 import java.time.Instant;
+import java.util.Locale;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -307,10 +308,11 @@ public class StrategySignalPipelineService {
             log.info("signal.fanout.no_traders signalId={} strategy={} symbol={} dispatchUserId={}",
                     saved.getId(), sk, saved.getSymbol(), dispatchUserId);
         } else {
+            String catalogMode = normalizeExecutionModeLabel(executionMode);
             for (StrategyInstance inst : runningInstances) {
                 String instMode = saved.getSignalSource() == SignalProvenance.REPLAY
                         ? "SIMULATED"
-                        : inst.getExecutionMode();
+                        : mergeInstanceExecutionMode(catalogMode, inst.getExecutionMode());
                 SignalPersistedMessage traderMsg = new SignalPersistedMessage(
                         saved.getId(),
                         inst.getUserId(),
@@ -423,5 +425,27 @@ public class StrategySignalPipelineService {
             log.warn("signal.dispatch.invalid_primary_trader_user_id value={}", primaryTraderUserIdRaw);
             return null;
         }
+    }
+
+    private static String normalizeExecutionModeLabel(String executionMode) {
+        if (executionMode == null || executionMode.isBlank()) {
+            return "PAPER";
+        }
+        return executionMode.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * Catalog/admin BOTH must not be downgraded to PAPER when a trader instance is still on PAPER.
+     */
+    private static String mergeInstanceExecutionMode(String catalogMode, String instanceMode) {
+        String cat = normalizeExecutionModeLabel(catalogMode);
+        String inst = normalizeExecutionModeLabel(instanceMode);
+        if ("BOTH".equals(cat) || "BOTH".equals(inst)) {
+            return "BOTH";
+        }
+        if ("LIVE".equals(cat) || "LIVE".equals(inst)) {
+            return "LIVE";
+        }
+        return inst;
     }
 }

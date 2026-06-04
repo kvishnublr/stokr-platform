@@ -7,9 +7,11 @@ import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.trace.ExecutionTimelineProjection;
 import com.stokr.oms.trace.ExecutionTraceEvent;
+import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.strategy.service.StrategyExecutionConfigService;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -35,6 +37,7 @@ public class AdminSignalQueryService {
     private final OmsOrderRepository orderRepo;
     private final ExecutionTimelineProjection timelineProjection;
     private final MarketDataQueryService marketDataQueryService;
+    private final StrategyExecutionConfigService executionConfigService;
 
     public Page<AdminSignalDto> pageSignals(AdminSignalParams p, Pageable pageable) {
         Specification<StrategySignalEntity> spec = (root, query, cb) -> {
@@ -172,7 +175,7 @@ public class AdminSignalQueryService {
                 s.getStrategyName(),
                 s.getSymbol(),
                 s.getSignalType() != null ? s.getSignalType().name() : null,
-                s.getPipeline(),
+                resolveDisplayPipeline(s),
                 s.getSignalSource() != null ? s.getSignalSource().name() : null,
                 s.getConfidenceScore(),
                 s.getEntryReferencePrice(),
@@ -253,5 +256,38 @@ public class AdminSignalQueryService {
 
     private static Instant startOfToday() {
         return Instant.now().atZone(java.time.ZoneId.of("Asia/Kolkata")).truncatedTo(ChronoUnit.DAYS).toInstant();
+    }
+
+    /**
+     * Legacy rows stored pipeline=PAPER while admin config was BOTH; prefer config and OMS legs for display.
+     */
+    private String resolveDisplayPipeline(StrategySignalEntity s) {
+        String stored = s.getPipeline();
+        if (stored != null && ("BOTH".equalsIgnoreCase(stored) || "LIVE".equalsIgnoreCase(stored))) {
+            return stored.toUpperCase();
+        }
+        boolean liveLeg = false;
+        boolean paperLeg = false;
+        for (OmsOrder o : orderRepo.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(s.getId())) {
+            if (o.getExecutionMode() == ExecutionMode.LIVE) {
+                liveLeg = true;
+            } else if (o.getExecutionMode() == ExecutionMode.PAPER || o.getExecutionMode() == ExecutionMode.SIMULATED) {
+                paperLeg = true;
+            }
+        }
+        if (liveLeg && paperLeg) {
+            return "BOTH";
+        }
+        if (liveLeg) {
+            return "LIVE";
+        }
+        String configured = executionConfigService.getByStrategyKey(s.getStrategyName())
+                .map(c -> c.getExecutionMode())
+                .map(m -> m == null ? null : m.trim().toUpperCase())
+                .orElse(null);
+        if (configured != null && !configured.isBlank()) {
+            return configured;
+        }
+        return stored != null ? stored : "PAPER";
     }
 }

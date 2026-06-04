@@ -130,6 +130,12 @@ function ModeChip({ mode }: { mode: string | null }) {
   if (v === "PAPER") return (
     <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">PAPER</span>
   );
+  if (v === "BOTH") return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
+      <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+      LIVE+PAPER
+    </span>
+  );
   return <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">{v || "—"}</span>;
 }
 

@@ -259,19 +259,18 @@ public class CatalogDrivenScanScheduler {
      * Admin {@code strategy_execution_configs} BOTH/LIVE must route to OMS even when platform YAML mode is PAPER.
      */
     private boolean shouldSkipBrokerForCatalog(String strategyKey, StrategyExecutionMode platformMode) {
-        if (!platformMode.skipsBrokerExecution()) {
-            return false;
-        }
-        return resolveAdminExecutionMode(strategyKey)
-                .map(m -> !"BOTH".equals(m) && !"LIVE".equals(m))
-                .orElse(true);
+        String effective = resolveEffectiveCatalogExecutionMode(strategyKey, platformMode);
+        return !"BOTH".equals(effective) && !"LIVE".equals(effective);
     }
 
     private String resolveCatalogPipelineMode(String strategyKey, StrategyExecutionMode platformMode) {
-        if (!platformMode.skipsBrokerExecution()) {
-            return platformMode.pipelineLabel();
-        }
-        return resolveAdminExecutionMode(strategyKey).orElse(platformMode.pipelineLabel());
+        return resolveEffectiveCatalogExecutionMode(strategyKey, platformMode);
+    }
+
+    /** Admin execution config wins over platform YAML (trader/admin BOTH must label and route correctly). */
+    private String resolveEffectiveCatalogExecutionMode(String strategyKey, StrategyExecutionMode platformMode) {
+        return resolveAdminExecutionMode(strategyKey)
+                .orElse(platformMode != null ? platformMode.pipelineLabel() : StrategyExecutionMode.PAPER.pipelineLabel());
     }
 
     private Optional<String> resolveAdminExecutionMode(String strategyKey) {
