@@ -2,25 +2,42 @@
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
-    <!-- Console: JSON in prod, human-readable otherwise -->
+    <conversionRule conversionWord="maskedMsg"
+                    converterClass="com.stokr.bootstrap.logging.SecretMaskingConverter"/>
+
     <springProfile name="prod">
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-            <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
-        </appender>
-    </springProfile>
-    <springProfile name="!prod">
-        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-            <encoder>
-                <pattern>%d{HH:mm:ss.SSS} %highlight(%-5level) %cyan(%logger{36}) - %msg%n</pattern>
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdc>true</includeMdc>
+                <fieldNames>
+                    <timestamp>@timestamp</timestamp>
+                    <version>[ignore]</version>
+                    <levelValue>[ignore]</levelValue>
+                    <mdc>trading_context</mdc>
+                </fieldNames>
             </encoder>
         </appender>
     </springProfile>
 
-    <root level="INFO">
+    <springProfile name="!prod">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} %highlight(%-5level) %cyan(%logger{36}) [%mdc{correlationId}] %maskedMsg%n</pattern>
+            </encoder>
+        </appender>
+    </springProfile>
+
+    <appender name="ASYNC_CONSOLE" class="ch.qos.logback.classic.AsyncAppender">
+        <neverBlock>true</neverBlock>
+        <queueSize>2048</queueSize>
+        <discardingThreshold>0</discardingThreshold>
         <appender-ref ref="CONSOLE"/>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="ASYNC_CONSOLE"/>
     </root>
 
-    <!-- Reduce noise from framework internals -->
     <logger name="org.hibernate.SQL" level="WARN"/>
     <logger name="org.springframework.web.servlet.mvc.method.annotation.SseEmitter" level="WARN"/>
     <logger name="com.zaxxer.hikari" level="WARN"/>
