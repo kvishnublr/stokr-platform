@@ -341,6 +341,18 @@ public class PlatformZerodhaLiveFeedRuntime {
             }
         }
 
+        if (feedProperties.isAutoSubscribeCds()) {
+            try {
+                String csv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "CDS");
+                Map<String, Integer> pairs = CdsInstrumentResolver.resolveMajorPairs(csv);
+                int before = map.size();
+                pairs.forEach((canonical, token) -> map.put(token, canonical));
+                log.info("platform.ws.auto_subscribe exchange=CDS pairs={} added={}", pairs.keySet(), map.size() - before);
+            } catch (Exception ex) {
+                log.warn("platform.ws.auto_subscribe_failed exchange=CDS {}", ex.toString());
+            }
+        }
+
         // Fallback: use static configured tokens when auto-subscribe is off
         if (!feedProperties.isAutoSubscribeAllNse() && !feedProperties.isAutoSubscribeMcx()) {
             List<Integer> configTokens = feedProperties.parsedInstrumentTokens();
@@ -402,15 +414,21 @@ public class PlatformZerodhaLiveFeedRuntime {
 
         Map<Integer, String> nseTokenToSymbol = new LinkedHashMap<>();
         Map<Integer, String> mcxTokenToSymbol = new LinkedHashMap<>();
+        Map<Integer, String> cdsTokenToSymbol = new LinkedHashMap<>();
         String nseCsv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "NSE");
         parseInstrumentsCsvInto(nseCsv, "EQ", "NSE", nseTokenToSymbol);
 
         String mcxCsv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "MCX");
         parseInstrumentsCsvInto(mcxCsv, null, mcxTokenToSymbol);
 
+        String cdsCsv = kiteApiClient.getInstrumentsCsv(apiKey, accessToken, "CDS");
+        CdsInstrumentResolver.resolveMajorPairs(cdsCsv).forEach((canonical, token) -> cdsTokenToSymbol.put(token, canonical));
+
         Map<String, Integer> nseSymbolToToken = reverseMap(nseTokenToSymbol);
         Map<String, Integer> mcxSymbolToToken = reverseMap(mcxTokenToSymbol);
+        Map<String, Integer> cdsSymbolToToken = reverseMap(cdsTokenToSymbol);
         universeInstrumentEnrichmentService.enrichMbxUniverseSymbols(mcxSymbolToToken);
+        universeInstrumentEnrichmentService.enrichCdsUniverseSymbols(cdsSymbolToToken);
 
         Map<Integer, String> out = new LinkedHashMap<>();
         int unresolved = 0;
@@ -418,7 +436,11 @@ public class PlatformZerodhaLiveFeedRuntime {
         int dbFallback = 0;
         for (StrategyUniverseSymbol row : universeRows) {
             String exchange = normalize(row.getExchange());
-            Map<String, Integer> source = "MCX".equals(exchange) ? mcxSymbolToToken : nseSymbolToToken;
+            Map<String, Integer> source = switch (exchange) {
+                case "MCX" -> mcxSymbolToToken;
+                case "CDS" -> cdsSymbolToToken;
+                default -> nseSymbolToToken;
+            };
             String preferredTrading = normalize(row.getTradingSymbol());
             String canonical = normalize(row.getSymbol());
 
@@ -451,11 +473,12 @@ public class PlatformZerodhaLiveFeedRuntime {
                 log.info("platform.ws.universe_unresolved symbol={} exchange={} tradingSymbol={}", canonical, exchange, preferredTrading);
                 continue;
             }
+            String storedSymbol = "CDS".equals(exchange) && !canonical.isBlank() ? canonical : resolvedSymbol;
             if ("db_fallback".equals(resolveMethod)) dbFallback++;
             else liveResolved++;
             log.info("platform.ws.universe_resolved symbol={} exchange={} token={} method={} resolvedAs={}",
-                    canonical, exchange, token, resolveMethod, resolvedSymbol);
-            out.put(token, resolvedSymbol != null ? resolvedSymbol : canonical);
+                    canonical, exchange, token, resolveMethod, storedSymbol);
+            out.put(token, storedSymbol != null ? storedSymbol : canonical);
         }
 
         log.info("platform.ws.universe_resolution_summary total={} liveResolved={} dbFallback={} unresolved={}",
@@ -540,7 +563,7 @@ public class PlatformZerodhaLiveFeedRuntime {
                 continue;
             }
             String exchange = normalize(row.getExchange());
-            if (!"NSE".equals(exchange)) {
+            if (!"NSE".equals(exchange) && !"CDS".equals(exchange)) {
                 continue;
             }
             Integer token = null;

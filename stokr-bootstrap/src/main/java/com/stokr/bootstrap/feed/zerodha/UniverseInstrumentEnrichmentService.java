@@ -25,11 +25,20 @@ public class UniverseInstrumentEnrichmentService {
 
     @Transactional
     public int enrichMbxUniverseSymbols(Map<String, Integer> symbolToToken) {
+        return enrichExchangeUniverseSymbols("MCX", symbolToToken);
+    }
+
+    @Transactional
+    public int enrichCdsUniverseSymbols(Map<String, Integer> symbolToToken) {
+        return enrichExchangeUniverseSymbols("CDS", symbolToToken);
+    }
+
+    private int enrichExchangeUniverseSymbols(String exchange, Map<String, Integer> symbolToToken) {
         if (symbolToToken == null || symbolToToken.isEmpty()) {
             return 0;
         }
 
-        List<StrategyUniverseSymbol> rows = symbolRepository.findAllByEnabledTrueAndExchangeIgnoreCase("MCX");
+        List<StrategyUniverseSymbol> rows = symbolRepository.findAllByEnabledTrueAndExchangeIgnoreCase(exchange);
         if (rows.isEmpty()) {
             return 0;
         }
@@ -37,7 +46,7 @@ public class UniverseInstrumentEnrichmentService {
         int updated = 0;
         for (StrategyUniverseSymbol row : rows) {
             String canonical = normalize(row.getSymbol());
-            if (canonical.isBlank() || canonical.startsWith("MCX_")) {
+            if (canonical.isBlank() || ("MCX".equalsIgnoreCase(exchange) && canonical.startsWith("MCX_"))) {
                 continue;
             }
 
@@ -67,7 +76,7 @@ public class UniverseInstrumentEnrichmentService {
 
         if (updated > 0) {
             symbolRepository.saveAll(rows);
-            log.info("universe.instrument.enriched exchange=MCX updated={}", updated);
+            log.info("universe.instrument.enriched exchange={} updated={}", exchange, updated);
         }
         return updated;
     }

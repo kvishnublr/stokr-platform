@@ -27,6 +27,11 @@ public class PlatformZerodhaFeedProperties {
     private boolean autoSubscribeMcx = false;
 
     /**
+     * When true, subscribes to CDS major currency pairs (USDINR, EURINR) for paper currency strategies.
+     */
+    private boolean autoSubscribeCds = true;
+
+    /**
      * Fallback comma-separated Kite {@code instrument_token} values used only when
      * both autoSubscribeAllNse and autoSubscribeMcx are false.
      * Default: NIFTY 50 index for basic connectivity testing.
@@ -49,13 +54,13 @@ public class PlatformZerodhaFeedProperties {
      * Universe group keys used for universe-driven subscription.
      * Defaults to NIFTY 500 + core MCX groups.
      */
-    private String subscriptionUniverseGroupKeys = "NIFTY_500,MCX_BULLION,MCX_ENERGY,MCX_METALS,MCX_AGRI";
+    private String subscriptionUniverseGroupKeys = "NIFTY_500,MCX_BULLION,MCX_ENERGY,MCX_METALS,MCX_AGRI,CDS_MAJOR_PAIRS";
 
     /**
      * Universe groups whose instrument tokens are always pinned inside the 3000-token WS cap
      * (after NIFTY 50 index). Ensures scan universe symbols stay on the live feed.
      */
-    private String pinnedUniverseGroupKeys = "NIFTY_50,NIFTY_100";
+    private String pinnedUniverseGroupKeys = "NIFTY_50,NIFTY_100,CDS_MAJOR_PAIRS";
 
     public boolean isLiveFeedEnabled() { return liveFeedEnabled; }
     public void setLiveFeedEnabled(boolean liveFeedEnabled) { this.liveFeedEnabled = liveFeedEnabled; }
@@ -65,6 +70,9 @@ public class PlatformZerodhaFeedProperties {
 
     public boolean isAutoSubscribeMcx() { return autoSubscribeMcx; }
     public void setAutoSubscribeMcx(boolean autoSubscribeMcx) { this.autoSubscribeMcx = autoSubscribeMcx; }
+
+    public boolean isAutoSubscribeCds() { return autoSubscribeCds; }
+    public void setAutoSubscribeCds(boolean autoSubscribeCds) { this.autoSubscribeCds = autoSubscribeCds; }
 
     public String getInstrumentTokens() { return instrumentTokens; }
     public void setInstrumentTokens(String instrumentTokens) { this.instrumentTokens = instrumentTokens; }

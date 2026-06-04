@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   BarChart3,
   BriefcaseBusiness,
   CheckCircle2,
+  ChevronDown,
   Cpu,
   Crosshair,
   Gauge,
@@ -18,6 +19,7 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   type AdvScannerRow,
   type AdvSector,
@@ -26,6 +28,7 @@ import {
   fetchAdvTerminal,
   fetchAdvWorkstation,
 } from "../api/advDashboard";
+import { postBrokerTestOrder, validateTestTradingsymbol } from "../api/broker";
 import { parseAxiosMessage } from "../api/client";
 import { cn } from "../lib/utils";
 import { useUiThemeStore } from "../state/uiTheme";
@@ -112,6 +115,44 @@ function entryZone(row: AdvScannerRow) {
   if (low == null && high == null) return "-";
   if (String(low) === String(high)) return formatPrice(low);
   return `${formatPrice(low)} – ${formatPrice(high)}`;
+}
+
+function setupRowKey(row: AdvScannerRow, idx: number) {
+  return row.signalId ?? `${row.symbol}-${row.strategy ?? ""}-${row.side ?? ""}-${idx}`;
+}
+
+function normalizeSymbol(raw: unknown) {
+  return String(raw ?? "")
+    .replace(/^NSE:/i, "")
+    .replace(/^BSE:/i, "")
+    .trim()
+    .toUpperCase();
+}
+
+function aiEntryPrice(row: AdvScannerRow) {
+  if (row.entryPrice != null) return formatPrice(row.entryPrice);
+  const low = asNum(row.entryZoneLow ?? row.ltp, Number.NaN);
+  const high = asNum(row.entryZoneHigh ?? row.ltp, Number.NaN);
+  if (Number.isFinite(low) && Number.isFinite(high) && low !== high) {
+    return formatPrice((low + high) / 2);
+  }
+  if (Number.isFinite(low)) return formatPrice(low);
+  if (Number.isFinite(high)) return formatPrice(high);
+  return formatPrice(row.ltp);
+}
+
+function tradeSide(row: AdvScannerRow): "BUY" | "SELL" {
+  const s = String(row.side ?? "").toUpperCase();
+  return s === "SELL" ? "SELL" : "BUY";
+}
+
+function positionSymbol(p: Record<string, unknown>) {
+  return normalizeSymbol(p.symbol ?? p.tradingSymbol ?? p.tradingsymbol);
+}
+
+function hasOpenPosition(positions: Record<string, unknown>[], symbol: string) {
+  const sym = normalizeSymbol(symbol);
+  return positions.some((p) => positionSymbol(p) === sym && asNum(p.quantity ?? p.qty, 0) !== 0);
 }
 
 function pct(v: unknown) {
@@ -280,6 +321,213 @@ function SignalTable({ rows, showTradePlan = false }: { rows: AdvScannerRow[]; s
   );
 }
 
+function SmartSetupGrid({
+  rows,
+  liveGateOpen,
+  openPositions,
+  onRefresh,
+}: {
+  rows: AdvScannerRow[];
+  liveGateOpen: boolean;
+  openPositions: Record<string, unknown>[];
+  onRefresh: () => void;
+}) {
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [qtyByKey, setQtyByKey] = useState<Record<string, number>>({});
+  const [localWatching, setLocalWatching] = useState<Record<string, boolean>>({});
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+
+  const orderMutation = useMutation({
+    mutationFn: async ({ row, qty }: { row: AdvScannerRow; qty: number; key: string }) => {
+      const tradingsymbol = normalizeSymbol(row.symbol);
+      const symErr = validateTestTradingsymbol(tradingsymbol);
+      if (symErr) throw new Error(symErr);
+      return postBrokerTestOrder({
+        variety: "REGULAR",
+        exchange: "NSE",
+        tradingsymbol,
+        side: tradeSide(row),
+        quantity: qty,
+        orderType: "MARKET",
+        product: "MIS",
+      });
+    },
+    onSuccess: (data, vars) => {
+      setLocalWatching((prev) => ({ ...prev, [vars.key]: true }));
+      setExpandedKey(null);
+      setPendingKey(null);
+      onRefresh();
+      if (data.dryRun) {
+        toast.message("Dry run — order simulated");
+      } else if (data.orderId) {
+        toast.success(data.message || `Order placed · ${data.orderId}`);
+      } else {
+        toast.error(data.message || "Order rejected");
+      }
+    },
+    onError: (e) => {
+      setPendingKey(null);
+      toast.error(parseAxiosMessage(e));
+    },
+  });
+
+  if (!rows.length) return <Empty text="No live signals from the pipeline yet." />;
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {rows.map((row, idx) => {
+        const key = setupRowKey(row, idx);
+        const side = tradeSide(row);
+        const isSell = side === "SELL";
+        const expanded = expandedKey === key;
+        const watching = Boolean(localWatching[key]) || hasOpenPosition(openPositions, row.symbol);
+        const qty = qtyByKey[key] ?? 1;
+        const submitting = pendingKey === key && orderMutation.isPending;
+
+        const openTrade = () => {
+          if (watching) return;
+          setExpandedKey(key);
+          setQtyByKey((prev) => ({ ...prev, [key]: prev[key] ?? 1 }));
+        };
+
+        const confirmTrade = () => {
+          if (!liveGateOpen) {
+            toast.error("Live gate is closed — orders blocked");
+            return;
+          }
+          const q = Math.floor(Number(qty));
+          if (!Number.isFinite(q) || q < 1 || q > 5) {
+            toast.error("Quantity must be 1–5");
+            return;
+          }
+          setPendingKey(key);
+          orderMutation.mutate({ row, qty: q, key });
+        };
+
+        return (
+          <Card key={key} className={cn("overflow-hidden p-4", watching && "ring-2 ring-emerald-500/40")}>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-xl font-black tracking-tight text-slate-950 dark:text-neutral-50">{row.symbol}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{asText(row.setupType ?? row.strategy, "setup")}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-black text-blue-600">{score(row.aiScore)}</div>
+                <div className="text-[10px] font-bold text-slate-500">{pct(row.probability)}</div>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Pill tone={isSell ? "red" : "green"}>{side}</Pill>
+              <Pill tone={statusTone(String(row.executionStatus)) as "green" | "amber" | "red" | "blue"}>
+                {String(row.executionStatus ?? "SIGNAL").replace(/_/g, " ")}
+              </Pill>
+            </div>
+
+            {watching ? (
+              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/80 px-4 py-4 dark:border-emerald-900/50 dark:bg-emerald-950/30">
+                <div className="flex items-center gap-3">
+                  <span className="relative flex h-3 w-3">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-3 w-3 animate-pulse rounded-full bg-emerald-500" />
+                  </span>
+                  <div>
+                    <div className="text-sm font-black uppercase tracking-wide text-emerald-800 dark:text-emerald-200">AI Watching</div>
+                    <div className="text-xs font-semibold text-emerald-700/90 dark:text-emerald-300/90">Exit on data reversal</div>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  <div>
+                    <div className="text-slate-400">Entry</div>
+                    <div className="mt-0.5 text-sm font-black text-slate-800 dark:text-neutral-200">{aiEntryPrice(row)}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400">Stop</div>
+                    <div className="mt-0.5 text-sm font-black text-rose-600">{formatPrice(row.stopLoss)}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400">Target</div>
+                    <div className="mt-0.5 text-sm font-black text-emerald-600">{formatPrice(row.targetPrice)}</div>
+                  </div>
+                </div>
+              </div>
+            ) : expanded ? (
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-3 gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-center dark:border-neutral-800 dark:bg-neutral-950/50">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Entry (AI)</div>
+                    <div className="text-sm font-black text-slate-900 dark:text-neutral-100">{aiEntryPrice(row)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Stop</div>
+                    <div className="text-sm font-black text-rose-600">{formatPrice(row.stopLoss)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Target</div>
+                    <div className="text-sm font-black text-emerald-600">{formatPrice(row.targetPrice)}</div>
+                  </div>
+                </div>
+                <label className="block">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Qty</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={qty}
+                    onChange={(e) => setQtyByKey((prev) => ({ ...prev, [key]: Math.max(1, Math.min(5, Math.floor(Number(e.target.value) || 1))) }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-lg font-black text-slate-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                  />
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedKey(null)}
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-600 dark:border-neutral-700 dark:text-neutral-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmTrade}
+                    disabled={submitting || !liveGateOpen}
+                    className={cn(
+                      "flex-[2] rounded-lg px-3 py-2.5 text-sm font-black uppercase tracking-wide text-white shadow-md disabled:opacity-50",
+                      isSell ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700",
+                    )}
+                  >
+                    {submitting ? (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Sending
+                      </span>
+                    ) : (
+                      `Confirm ${side}`
+                    )}
+                  </button>
+                </div>
+                {!liveGateOpen ? (
+                  <p className="text-center text-[11px] font-semibold text-amber-700 dark:text-amber-300">Live gate closed — review only</p>
+                ) : null}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={openTrade}
+                className={cn(
+                  "mt-4 flex w-full items-center justify-center rounded-xl py-4 text-lg font-black uppercase tracking-wider text-white shadow-lg transition hover:brightness-110 active:scale-[0.99]",
+                  isSell ? "bg-rose-600 shadow-rose-600/25" : "bg-emerald-600 shadow-emerald-600/25",
+                )}
+              >
+                {side}
+              </button>
+            )}
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AdvEnhancedDashboard() {
   const isDark = useUiThemeStore((s) => s.mode === "dark");
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
@@ -440,7 +688,16 @@ export function AdvEnhancedDashboard() {
             </div>
           ) : (
             <>
-              {activeTab === "dashboard" && <DashboardTab rows={topRows} movers={movers} snapshot={snapshot} />}
+              {activeTab === "dashboard" && (
+                <DashboardTab
+                  rows={topRows}
+                  movers={movers}
+                  snapshot={snapshot}
+                  liveGateOpen={Boolean(snapshot?.liveControl?.liveGateOpen)}
+                  openPositions={openPositions}
+                  onRefresh={refreshAll}
+                />
+              )}
               {activeTab === "intelligence" && <IntelligenceTab rows={allRows} blockedRows={blockedRows} />}
               {activeTab === "patterns" && <PatternsTab rows={allRows} sectors={snapshot?.sectors ?? []} />}
               {activeTab === "analytics" && <AnalyticsTab snapshot={snapshot} rows={allRows} pnl={pnl} winRate={winRate} />}
@@ -464,20 +721,47 @@ export function AdvEnhancedDashboard() {
   );
 }
 
-function DashboardTab({ rows, movers, snapshot }: { rows: AdvScannerRow[]; movers: Mover[]; snapshot?: AdvTerminalSnapshot }) {
+function DashboardTab({
+  rows,
+  movers,
+  snapshot,
+  liveGateOpen,
+  openPositions,
+  onRefresh,
+}: {
+  rows: AdvScannerRow[];
+  movers: Mover[];
+  snapshot?: AdvTerminalSnapshot;
+  liveGateOpen: boolean;
+  openPositions: Record<string, unknown>[];
+  onRefresh: () => void;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
   return (
     <div className="space-y-6">
-      <SectionTitle icon={Gauge} title="Live Market Dashboard" subtitle={`Source: ${snapshot?.truthSource ?? "terminal API"} · scan ${snapshot?.scanIntervalSec ?? snapshot?.liveControl?.scanIntervalSec ?? 10}s · AI plans before OMS`} />
+      <SectionTitle icon={Gauge} title="Live Market Dashboard" subtitle={`Source: ${snapshot?.truthSource ?? "terminal API"} · scan ${snapshot?.scanIntervalSec ?? snapshot?.liveControl?.scanIntervalSec ?? 10}s · tap to trade`} />
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h4 className="text-sm font-black text-slate-900 dark:text-neutral-100">Highest Quality Setups</h4>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Pill tone="green">{rows.length} ranked</Pill>
-            <Pill tone="blue">INTELLIGENCE_ONLY = plan only</Pill>
-            <Pill tone="green">EXECUTED = live OMS</Pill>
+            <Pill tone={liveGateOpen ? "green" : "amber"}>{liveGateOpen ? "Gate open" : "Gate closed"}</Pill>
+            <button
+              type="button"
+              onClick={() => setShowDetails((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-600 dark:border-neutral-700 dark:text-neutral-300"
+            >
+              Details
+              <ChevronDown className={cn("h-3.5 w-3.5 transition", showDetails && "rotate-180")} />
+            </button>
           </div>
         </div>
-        <SignalTable rows={rows} showTradePlan />
+        <SmartSetupGrid rows={rows} liveGateOpen={liveGateOpen} openPositions={openPositions} onRefresh={onRefresh} />
+        {showDetails ? (
+          <div className="mt-4">
+            <SignalTable rows={rows} showTradePlan />
+          </div>
+        ) : null}
       </div>
       <div>
         <div className="mb-3 flex items-center justify-between">

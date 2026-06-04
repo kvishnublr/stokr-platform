@@ -21,6 +21,7 @@ import java.util.Set;
  * Exchange-aware market hours gate (IST):
  *   NSE equities / futures : 09:15 – 15:30
  *   MCX commodity futures  : 09:00 – 23:30
+ *   CDS currency pairs     : 09:00 – 17:00
  * Ticks outside the relevant session window are silently dropped.
  */
 @Component
@@ -51,15 +52,30 @@ public class PlatformLiveTickIngestListener {
     @Value("${stokr.marketdata.session.mcx.end:23:30}")
     private LocalTime mcxEnd;
 
+    @Value("${stokr.marketdata.session.cds.start:09:00}")
+    private LocalTime cdsStart;
+
+    @Value("${stokr.marketdata.session.cds.end:17:00}")
+    private LocalTime cdsEnd;
+
     @EventListener
     public void onTick(PlatformLiveTickEvent e) {
         try {
             ZonedDateTime tickIst = e.tickTime().atZone(IST);
             LocalTime lt = tickIst.toLocalTime();
 
-            boolean mcx = isMcxSymbol(e.symbol());
-            LocalTime sessionStart = mcx ? mcxStart : nseStart;
-            LocalTime sessionEnd   = mcx ? mcxEnd   : nseEnd;
+            LocalTime sessionStart;
+            LocalTime sessionEnd;
+            if (CdsMarketSession.isCdsSymbol(e.symbol())) {
+                sessionStart = cdsStart;
+                sessionEnd = cdsEnd;
+            } else if (isMcxSymbol(e.symbol())) {
+                sessionStart = mcxStart;
+                sessionEnd = mcxEnd;
+            } else {
+                sessionStart = nseStart;
+                sessionEnd = nseEnd;
+            }
 
             if (lt.isBefore(sessionStart) || lt.isAfter(sessionEnd)) {
                 log.trace("tick.dropped_outside_session symbol={} time={} session={}-{}",

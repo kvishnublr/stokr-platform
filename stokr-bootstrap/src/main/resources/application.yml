@@ -118,6 +118,16 @@ stokr:
       rejection-dedupe-seconds: ${STOKR_MARKETDATA_INTEGRITY_REJECTION_DEDUPE_SEC:300}
       mid-session-recovery:
         enabled: ${STOKR_MARKETDATA_INTEGRITY_MID_SESSION_RECOVERY:true}
+    session:
+      nse:
+        start: ${STOKR_MARKETDATA_NSE_SESSION_START:09:15}
+        end: ${STOKR_MARKETDATA_NSE_SESSION_END:15:30}
+      mcx:
+        start: ${STOKR_MARKETDATA_MCX_SESSION_START:09:00}
+        end: ${STOKR_MARKETDATA_MCX_SESSION_END:23:30}
+      cds:
+        start: ${STOKR_MARKETDATA_CDS_SESSION_START:09:00}
+        end: ${STOKR_MARKETDATA_CDS_SESSION_END:17:00}
     feed-health:
       poll-ms: ${STOKR_FEED_HEALTH_POLL_MS:${STOKR_MARKETDATA_FEED_HEALTH_POLL_MS:30000}}
       equity-stale-seconds: ${STOKR_FEED_HEALTH_EQUITY_STALE_SEC:${STOKR_MARKETDATA_FEED_HEALTH_EQUITY_STALE_SECONDS:120}}
@@ -442,8 +452,12 @@ stokr:
     zerodha:
       # In-process Kite WebSocket for admin platform feed — persists telemetry to platform_broker_feed_sessions and ingests LTP ticks.
       live-feed-enabled: ${STOKR_PLATFORM_ZERODHA_LIVE_FEED_ENABLED:true}
+      auto-subscribe-cds: ${STOKR_PLATFORM_ZERODHA_AUTO_SUBSCRIBE_CDS:true}
       instrument-tokens: ${STOKR_PLATFORM_ZERODHA_INSTRUMENT_TOKENS:256265}
-      pinned-universe-group-keys: ${STOKR_PLATFORM_ZERODHA_PINNED_GROUPS:NIFTY_50,NIFTY_100}
+      pinned-universe-group-keys: ${STOKR_PLATFORM_ZERODHA_PINNED_GROUPS:NIFTY_50,NIFTY_100,CDS_MAJOR_PAIRS}
+  cds-backfill:
+    enabled: ${STOKR_CDS_BACKFILL_ENABLED:true}
+    lookback-days: ${STOKR_CDS_BACKFILL_LOOKBACK_DAYS:10}
   intraday-gap-fill:
     enabled: ${STOKR_INTRADAY_GAP_FILL_ENABLED:true}
     initial-delay-ms: ${STOKR_INTRADAY_GAP_FILL_INITIAL_DELAY_MS:120000}

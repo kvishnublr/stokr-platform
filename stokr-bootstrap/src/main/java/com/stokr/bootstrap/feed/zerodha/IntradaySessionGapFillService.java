@@ -189,6 +189,9 @@ public class IntradaySessionGapFillService {
         }
         String exchange = normalize(row.getExchange());
         String instrumentType = normalize(row.getInstrumentType());
+        if ("CDS".equals(exchange) && ("CUR".equals(instrumentType) || instrumentType.isBlank())) {
+            return true;
+        }
         return "NSE".equals(exchange) && ("EQ".equals(instrumentType) || instrumentType.isBlank());
     }
 
@@ -215,7 +218,7 @@ public class IntradaySessionGapFillService {
 
     private int gapPriority(String symbol, Instant now) {
         LocalDate sessionDate = now.atZone(IST).toLocalDate();
-        Instant sessionStart = sessionStart(sessionDate);
+        Instant sessionStart = CdsMarketSession.sessionStart(sessionDate, symbol);
         List<MarketdataCandle> bars = candleRepository
                 .findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
                         symbol, TIMEFRAME, sessionStart, now);
@@ -229,7 +232,7 @@ public class IntradaySessionGapFillService {
 
     private boolean needsSessionGapFill(String symbol, Instant now) {
         LocalDate sessionDate = now.atZone(IST).toLocalDate();
-        Instant sessionStart = sessionStart(sessionDate);
+        Instant sessionStart = CdsMarketSession.sessionStart(sessionDate, symbol);
         List<MarketdataCandle> bars = candleRepository
                 .findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
                         symbol, TIMEFRAME, sessionStart, now);
@@ -321,7 +324,7 @@ public class IntradaySessionGapFillService {
 
     private boolean fillSymbolSession(String accessToken, String symbol, int token, Instant now)
             throws InterruptedException {
-        Instant from = sessionStart(now.atZone(IST).toLocalDate());
+        Instant from = CdsMarketSession.sessionStart(now.atZone(IST).toLocalDate(), symbol);
         Instant to = now.atZone(IST).withSecond(0).withNano(0).minusMinutes(1).toInstant();
 
         List<ParsedCandle> parsed = fetchSessionCandles(accessToken, symbol, token, from, to);
@@ -429,7 +432,7 @@ public class IntradaySessionGapFillService {
     }
 
     private static Instant sessionStart(LocalDate sessionDate) {
-        return sessionDate.atTime(9, 15).atZone(IST).toInstant();
+        return CdsMarketSession.sessionStart(sessionDate, null);
     }
 
     private static String normalize(String value) {
@@ -442,7 +445,8 @@ public class IntradaySessionGapFillService {
             return false;
         }
         LocalTime t = zdt.toLocalTime();
-        return !t.isBefore(LocalTime.of(9, 15)) && !t.isAfter(LocalTime.of(15, 30));
+        boolean nse = !t.isBefore(LocalTime.of(9, 15)) && !t.isAfter(LocalTime.of(15, 30));
+        return nse || CdsMarketSession.isCdsMarketHours(now);
     }
 
     private record GapFillTarget(String symbol, int token) {
