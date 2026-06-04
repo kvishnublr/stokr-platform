@@ -37,7 +37,7 @@
                             <exclude>^sun\.reflect\..*\.invoke</exclude>
                             <exclude>^net\.sf\.cglib\.proxy\.MethodProxy\.invoke</exclude>
                             <rootCauseFirst>true</rootCauseFirst>
-                        </ShortenedThrowableConverter>
+                        </throwableConverter>
                     </stackTrace>
                 </providers>
             </encoder>
