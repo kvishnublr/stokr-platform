@@ -81,11 +81,8 @@ public class CdsCurrencyBackfillService {
     }
 
     private void doBackfill(String trigger) {
-        try {
-            platformMarketFeedService.refreshFromKite(VENDOR);
-        } catch (Exception ex) {
-            log.warn("cds_backfill.token_refresh_skipped trigger={} {}", trigger, ex.getMessage());
-        }
+        log.info("cds_backfill.start trigger={}", trigger);
+        platformMarketFeedService.ensureValidPlatformZerodhaToken(java.time.Duration.ofMinutes(30));
         String accessToken = resolveAccessToken();
         if (accessToken == null) {
             log.warn("cds_backfill.skip reason=no_access_token trigger={}", trigger);
