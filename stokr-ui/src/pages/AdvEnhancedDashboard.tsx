@@ -241,83 +241,132 @@ function ErrorBox({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   );
 }
 
-function ExecutionBadge({ row }: { row: AdvScannerRow }) {
+function ExecutionBadge({ row, compact = false }: { row: AdvScannerRow; compact?: boolean }) {
   const st = String(row.executionStatus ?? "").toUpperCase();
-  const label = row.executionLabel ?? row.displayStatus ?? row.executionStatus ?? "-";
   const tone = statusTone(st) as "green" | "amber" | "red" | "blue";
+  const label = st.replace(/_/g, " ") || "-";
+  if (compact) {
+    return <Pill tone={tone}>{label}</Pill>;
+  }
   return (
     <div className="space-y-1">
-      <Pill tone={tone}>{st.replace(/_/g, " ") || "-"}</Pill>
-      <div className="max-w-[200px] text-[10px] font-medium leading-snug text-slate-500 dark:text-neutral-400">{label}</div>
+      <Pill tone={tone}>{label}</Pill>
+      <div className="max-w-[200px] text-[10px] font-medium leading-snug text-slate-500 dark:text-neutral-400">
+        {row.executionLabel ?? row.displayStatus ?? row.executionStatus ?? "-"}
+      </div>
     </div>
   );
 }
 
-function SignalTable({ rows, showTradePlan = false }: { rows: AdvScannerRow[]; showTradePlan?: boolean }) {
+function SignalTable({ rows, showTradePlan = false, compact = false }: { rows: AdvScannerRow[]; showTradePlan?: boolean; compact?: boolean }) {
   if (!rows.length) return <Empty text="No live signals from the pipeline yet." />;
+  const minimal = compact || showTradePlan;
   return (
     <TableShell>
       <table className="min-w-full text-left text-sm">
-        <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-neutral-950 dark:text-neutral-400">
+        <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 dark:bg-neutral-950 dark:text-neutral-400">
           <tr>
-            <th className="px-3 py-2">Rank</th>
-            <th className="px-3 py-2">Symbol</th>
-            <th className="px-3 py-2">Call</th>
-            <th className="px-3 py-2">Score</th>
-            {showTradePlan ? (
+            <th className="px-3 py-2.5">#</th>
+            <th className="px-3 py-2.5">Symbol</th>
+            {!minimal ? <th className="px-3 py-2.5">Call</th> : null}
+            <th className="px-3 py-2.5">Side</th>
+            <th className="px-3 py-2.5">Score</th>
+            {showTradePlan || minimal ? (
               <>
-                <th className="px-3 py-2">Entry zone</th>
-                <th className="px-3 py-2">Stop</th>
-                <th className="px-3 py-2">Target</th>
-                <th className="px-3 py-2">Exit plan</th>
+                <th className="px-3 py-2.5">Entry</th>
+                <th className="px-3 py-2.5">Stop</th>
+                <th className="px-3 py-2.5">Target</th>
               </>
             ) : null}
-            <th className="px-3 py-2">Execution</th>
-            <th className="min-w-[220px] px-3 py-2">Setup reason</th>
+            {!minimal ? <th className="px-3 py-2.5">Exit plan</th> : null}
+            <th className="px-3 py-2.5">Status</th>
+            {!minimal ? <th className="min-w-[220px] px-3 py-2.5">Setup reason</th> : null}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-neutral-800">
-          {rows.map((row, idx) => (
-            <tr key={`${row.signalId ?? row.symbol}-${idx}`} className="bg-white align-top dark:bg-neutral-900">
-              <td className="px-3 py-3 font-semibold text-slate-500">#{row.rank ?? idx + 1}</td>
-              <td className="px-3 py-3">
-                <div className="font-black text-slate-950 dark:text-neutral-100">{row.symbol}</div>
-                <div className="text-xs text-slate-500">{asText(row.setupType ?? row.source, "scanner")}</div>
-                <div className="text-[10px] text-slate-400">{asText(row.strategy, "")}</div>
-              </td>
-              <td className="max-w-[200px] px-3 py-3">
-                <Pill tone={String(row.side).toUpperCase() === "SELL" ? "red" : "green"}>{asText(row.side, "WATCH")}</Pill>
-                <div className="mt-1 text-[11px] font-semibold leading-snug text-slate-700 dark:text-neutral-300">
-                  {asText(row.tradeCall, row.entryTrigger ?? "Awaiting AI plan")}
-                </div>
-              </td>
-              <td className="px-3 py-3">
-                <div className="font-black text-blue-600">{score(row.aiScore)}</div>
-                <div className="text-xs text-slate-500">{pct(row.probability)}</div>
-              </td>
-              {showTradePlan ? (
-                <>
-                  <td className="px-3 py-3">
-                    <div className="font-bold text-slate-800 dark:text-neutral-200">{entryZone(row)}</div>
-                    <div className="mt-0.5 text-[10px] text-slate-500">{asText(row.entryTrigger, "-")}</div>
+          {rows.map((row, idx) => {
+            const isSell = String(row.side).toUpperCase() === "SELL";
+            return (
+              <tr key={`${row.signalId ?? row.symbol}-${idx}`} className="bg-white align-middle dark:bg-neutral-900">
+                <td className="px-3 py-2.5 text-xs font-semibold text-slate-400">{row.rank ?? idx + 1}</td>
+                <td className="px-3 py-2.5">
+                  <div className="font-bold text-slate-950 dark:text-neutral-100">{row.symbol}</div>
+                  {!minimal ? (
+                    <>
+                      <div className="text-xs text-slate-500">{asText(row.setupType ?? row.source, "scanner")}</div>
+                      <div className="text-[10px] text-slate-400">{asText(row.strategy, "")}</div>
+                    </>
+                  ) : (
+                    <div className="text-[10px] text-slate-400">{asText(row.strategy ?? row.setupType, "")}</div>
+                  )}
+                </td>
+                {!minimal ? (
+                  <td className="max-w-[200px] px-3 py-2.5">
+                    <Pill tone={isSell ? "red" : "green"}>{asText(row.side, "WATCH")}</Pill>
+                    <div className="mt-1 text-[11px] font-semibold leading-snug text-slate-700 dark:text-neutral-300">
+                      {asText(row.tradeCall, row.entryTrigger ?? "Awaiting AI plan")}
+                    </div>
                   </td>
-                  <td className="px-3 py-3 font-bold text-rose-600">{formatPrice(row.stopLoss)}</td>
-                  <td className="px-3 py-3 font-bold text-emerald-600">{formatPrice(row.targetPrice)}</td>
-                  <td className="max-w-[260px] px-3 py-3 text-[11px] leading-snug text-slate-600 dark:text-neutral-400">{asText(row.exitPlan, "-")}</td>
-                </>
-              ) : null}
-              <td className="px-3 py-3">
-                <ExecutionBadge row={row} />
-              </td>
-              <td className="max-w-[280px] px-3 py-3 text-xs leading-snug text-slate-500">
-                <div>{asText(row.reason ?? row.rejectionReason ?? row.pipelineStage, "-")}</div>
-                {row.invalidation ? <div className="mt-1 text-[10px] text-rose-600/90">Inv: {row.invalidation}</div> : null}
-              </td>
-            </tr>
-          ))}
+                ) : null}
+                {minimal ? (
+                  <td className="px-3 py-2.5">
+                    <span
+                      className={cn(
+                        "inline-flex rounded-md px-2 py-0.5 text-[11px] font-bold uppercase",
+                        isSell
+                          ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+                          : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+                      )}
+                    >
+                      {asText(row.side, "—")}
+                    </span>
+                  </td>
+                ) : null}
+                <td className="px-3 py-2.5">
+                  <span className="font-bold text-blue-600">{score(row.aiScore)}</span>
+                  {!minimal ? <div className="text-xs text-slate-500">{pct(row.probability)}</div> : null}
+                </td>
+                {showTradePlan || minimal ? (
+                  <>
+                    <td className="px-3 py-2.5 font-medium text-slate-800 dark:text-neutral-200">{entryZone(row)}</td>
+                    <td className="px-3 py-2.5 font-semibold text-rose-600">{formatPrice(row.stopLoss)}</td>
+                    <td className="px-3 py-2.5 font-semibold text-emerald-600">{formatPrice(row.targetPrice)}</td>
+                  </>
+                ) : null}
+                {!minimal ? (
+                  <td className="max-w-[260px] px-3 py-2.5 text-[11px] leading-snug text-slate-600 dark:text-neutral-400">{asText(row.exitPlan, "-")}</td>
+                ) : null}
+                <td className="px-3 py-2.5">
+                  <ExecutionBadge row={row} compact={minimal} />
+                </td>
+                {!minimal ? (
+                  <td className="max-w-[280px] px-3 py-2.5 text-xs leading-snug text-slate-500">
+                    <div>{asText(row.reason ?? row.rejectionReason ?? row.pipelineStage, "-")}</div>
+                    {row.invalidation ? <div className="mt-1 text-[10px] text-rose-600/90">Inv: {row.invalidation}</div> : null}
+                  </td>
+                ) : null}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </TableShell>
+  );
+}
+
+function SetupLevels({ row, className }: { row: AdvScannerRow; className?: string }) {
+  return (
+    <div className={cn("flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500", className)}>
+      <span>
+        Entry <span className="font-semibold text-slate-800 dark:text-neutral-200">{aiEntryPrice(row)}</span>
+      </span>
+      <span>
+        Stop <span className="font-semibold text-rose-600">{formatPrice(row.stopLoss)}</span>
+      </span>
+      <span>
+        Target <span className="font-semibold text-emerald-600">{formatPrice(row.targetPrice)}</span>
+      </span>
+    </div>
   );
 }
 
@@ -374,7 +423,7 @@ function SmartSetupGrid({
   if (!rows.length) return <Empty text="No live signals from the pipeline yet." />;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {rows.map((row, idx) => {
         const key = setupRowKey(row, idx);
         const side = tradeSide(row);
@@ -383,6 +432,7 @@ function SmartSetupGrid({
         const watching = Boolean(localWatching[key]) || hasOpenPosition(openPositions, row.symbol);
         const qty = qtyByKey[key] ?? 1;
         const submitting = pendingKey === key && orderMutation.isPending;
+        const aiScore = asNum(row.aiScore, 0);
 
         const openTrade = () => {
           if (watching) return;
@@ -405,120 +455,93 @@ function SmartSetupGrid({
         };
 
         return (
-          <Card key={key} className={cn("overflow-hidden p-4", watching && "ring-2 ring-emerald-500/40")}>
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-xl font-black tracking-tight text-slate-950 dark:text-neutral-50">{row.symbol}</div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{asText(row.setupType ?? row.strategy, "setup")}</div>
+          <Card
+            key={key}
+            className={cn(
+              "overflow-hidden p-3.5 transition-shadow hover:shadow-md",
+              watching && "ring-1 ring-emerald-500/50",
+              aiScore >= 85 && !watching && "border-blue-200/80 dark:border-blue-900/40",
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-base font-bold tracking-tight text-slate-950 dark:text-neutral-50">{row.symbol}</span>
+                  <span
+                    className={cn(
+                      "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                      isSell
+                        ? "bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300"
+                        : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
+                    )}
+                  >
+                    {side}
+                  </span>
+                </div>
+                <div className="mt-0.5 truncate text-[10px] font-medium text-slate-400">{asText(row.strategy ?? row.setupType, "setup")}</div>
               </div>
-              <div className="text-right">
-                <div className="text-2xl font-black text-blue-600">{score(row.aiScore)}</div>
-                <div className="text-[10px] font-bold text-slate-500">{pct(row.probability)}</div>
+              <div className="shrink-0 rounded-lg bg-blue-50 px-2.5 py-1 text-right dark:bg-blue-950/40">
+                <div className="text-lg font-bold leading-none text-blue-600">{score(row.aiScore)}</div>
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Pill tone={isSell ? "red" : "green"}>{side}</Pill>
-              <Pill tone={statusTone(String(row.executionStatus)) as "green" | "amber" | "red" | "blue"}>
-                {String(row.executionStatus ?? "SIGNAL").replace(/_/g, " ")}
-              </Pill>
-            </div>
+            <SetupLevels row={row} className="mt-2.5 rounded-md bg-slate-50/80 px-2 py-1.5 dark:bg-neutral-950/50" />
 
             {watching ? (
-              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/80 px-4 py-4 dark:border-emerald-900/50 dark:bg-emerald-950/30">
-                <div className="flex items-center gap-3">
-                  <span className="relative flex h-3 w-3">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex h-3 w-3 animate-pulse rounded-full bg-emerald-500" />
-                  </span>
-                  <div>
-                    <div className="text-sm font-black uppercase tracking-wide text-emerald-800 dark:text-emerald-200">AI Watching</div>
-                    <div className="text-xs font-semibold text-emerald-700/90 dark:text-emerald-300/90">Exit on data reversal</div>
-                  </div>
-                </div>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                  <div>
-                    <div className="text-slate-400">Entry</div>
-                    <div className="mt-0.5 text-sm font-black text-slate-800 dark:text-neutral-200">{aiEntryPrice(row)}</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400">Stop</div>
-                    <div className="mt-0.5 text-sm font-black text-rose-600">{formatPrice(row.stopLoss)}</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400">Target</div>
-                    <div className="mt-0.5 text-sm font-black text-emerald-600">{formatPrice(row.targetPrice)}</div>
-                  </div>
-                </div>
+              <div className="mt-2.5 flex items-center gap-2 rounded-md border border-emerald-200/80 bg-emerald-50/60 px-2.5 py-2 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                </span>
+                <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">AI watching</span>
               </div>
             ) : expanded ? (
-              <div className="mt-4 space-y-3">
-                <div className="grid grid-cols-3 gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-center dark:border-neutral-800 dark:bg-neutral-950/50">
-                  <div>
-                    <div className="text-[10px] font-bold uppercase text-slate-400">Entry (AI)</div>
-                    <div className="text-sm font-black text-slate-900 dark:text-neutral-100">{aiEntryPrice(row)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold uppercase text-slate-400">Stop</div>
-                    <div className="text-sm font-black text-rose-600">{formatPrice(row.stopLoss)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold uppercase text-slate-400">Target</div>
-                    <div className="text-sm font-black text-emerald-600">{formatPrice(row.targetPrice)}</div>
-                  </div>
-                </div>
-                <label className="block">
-                  <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Qty</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={qty}
-                    onChange={(e) => setQtyByKey((prev) => ({ ...prev, [key]: Math.max(1, Math.min(5, Math.floor(Number(e.target.value) || 1))) }))}
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-lg font-black text-slate-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-                  />
-                </label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setExpandedKey(null)}
-                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-600 dark:border-neutral-700 dark:text-neutral-300"
-                  >
-                    Cancel
-                  </button>
+              <div className="mt-2.5 space-y-2 rounded-md border border-slate-200 bg-slate-50/50 p-2.5 dark:border-neutral-800 dark:bg-neutral-950/30">
+                <div className="flex items-end gap-2">
+                  <label className="flex-1">
+                    <span className="text-[10px] font-semibold uppercase text-slate-400">Qty</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5}
+                      value={qty}
+                      onChange={(e) => setQtyByKey((prev) => ({ ...prev, [key]: Math.max(1, Math.min(5, Math.floor(Number(e.target.value) || 1))) }))}
+                      className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm font-bold text-slate-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                    />
+                  </label>
                   <button
                     type="button"
                     onClick={confirmTrade}
                     disabled={submitting || !liveGateOpen}
                     className={cn(
-                      "flex-[2] rounded-lg px-3 py-2.5 text-sm font-black uppercase tracking-wide text-white shadow-md disabled:opacity-50",
+                      "rounded-md px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50",
                       isSell ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700",
                     )}
                   >
-                    {submitting ? (
-                      <span className="inline-flex items-center justify-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Sending
-                      </span>
-                    ) : (
-                      `Confirm ${side}`
-                    )}
+                    {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Confirm ${side}`}
                   </button>
                 </div>
-                {!liveGateOpen ? (
-                  <p className="text-center text-[11px] font-semibold text-amber-700 dark:text-amber-300">Live gate closed — review only</p>
-                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setExpandedKey(null)}
+                  className="w-full text-center text-[11px] font-medium text-slate-500 hover:text-slate-700 dark:hover:text-neutral-300"
+                >
+                  Cancel
+                </button>
+                {!liveGateOpen ? <p className="text-center text-[10px] text-amber-700 dark:text-amber-300">Gate closed</p> : null}
               </div>
             ) : (
               <button
                 type="button"
                 onClick={openTrade}
                 className={cn(
-                  "mt-4 flex w-full items-center justify-center rounded-xl py-4 text-lg font-black uppercase tracking-wider text-white shadow-lg transition hover:brightness-110 active:scale-[0.99]",
-                  isSell ? "bg-rose-600 shadow-rose-600/25" : "bg-emerald-600 shadow-emerald-600/25",
+                  "mt-2.5 flex w-full items-center justify-center rounded-md border py-2 text-sm font-semibold transition active:scale-[0.99]",
+                  isSell
+                    ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300 dark:hover:bg-rose-950/50"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50",
                 )}
               >
-                {side}
+                Trade {side}
               </button>
             )}
           </Card>
@@ -759,7 +782,7 @@ function DashboardTab({
         <SmartSetupGrid rows={rows} liveGateOpen={liveGateOpen} openPositions={openPositions} onRefresh={onRefresh} />
         {showDetails ? (
           <div className="mt-4">
-            <SignalTable rows={rows} showTradePlan />
+            <SignalTable rows={rows} showTradePlan compact />
           </div>
         ) : null}
       </div>
