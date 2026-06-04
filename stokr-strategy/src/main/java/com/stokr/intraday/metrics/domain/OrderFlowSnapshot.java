@@ -39,19 +39,19 @@ public class OrderFlowSnapshot {
     @Column(nullable = false)
     private Long bidVolume;
 
-    @Column
+    @Column(name = "bid_level_1")
     private Long bidLevel1;
 
-    @Column
+    @Column(name = "bid_level_2")
     private Long bidLevel2;
 
-    @Column
+    @Column(name = "bid_level_3")
     private Long bidLevel3;
 
-    @Column
+    @Column(name = "bid_level_4")
     private Long bidLevel4;
 
-    @Column
+    @Column(name = "bid_level_5")
     private Long bidLevel5;
 
     @Column(nullable = false, precision = 20, scale = 4)
@@ -60,19 +60,19 @@ public class OrderFlowSnapshot {
     @Column(nullable = false)
     private Long askVolume;
 
-    @Column
+    @Column(name = "ask_level_1")
     private Long askLevel1;
 
-    @Column
+    @Column(name = "ask_level_2")
     private Long askLevel2;
 
-    @Column
+    @Column(name = "ask_level_3")
     private Long askLevel3;
 
-    @Column
+    @Column(name = "ask_level_4")
     private Long askLevel4;
 
-    @Column
+    @Column(name = "ask_level_5")
     private Long askLevel5;
 
     // Calculated Metrics
