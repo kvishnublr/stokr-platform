@@ -479,6 +479,11 @@ public class OrderIntentProcessor {
                 return parseMode(msgMode);
             }
         }
+        if (signal.getReason() != null && signal.getReason().startsWith("ADMIN_REGENERATE:")) {
+            ExecutionMode adminMode = parseMode(msgMode);
+            log.info("signal.mode_admin_regenerate strategyKey={} mode={}", strategyKey, adminMode);
+            return adminMode;
+        }
         try {
             java.util.Optional<StrategyExecutionConfig> cfgOpt =
                     strategyExecutionConfigService.getByStrategyKeyForUser(userId, strategyKey);

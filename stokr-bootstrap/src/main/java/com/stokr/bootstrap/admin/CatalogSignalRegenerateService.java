@@ -1,6 +1,8 @@
 package com.stokr.bootstrap.admin;
 
 import com.stokr.common.exception.NotFoundException;
+import com.stokr.common.pipeline.OmsIntentDispatcher;
+import com.stokr.common.pipeline.messages.SignalPersistedMessage;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.operational.StrategyExecutionMode;
 import com.stokr.strategy.operational.StrategyExecutionModeService;
@@ -14,6 +16,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -31,9 +36,14 @@ public class CatalogSignalRegenerateService {
     private final StrategySignalRepository signalRepository;
     private final StrategySignalPipelineService signalPipelineService;
     private final StrategyExecutionModeService executionModeService;
+    private final OmsIntentDispatcher omsIntentDispatcher;
+    private final PlatformTransactionManager transactionManager;
 
     @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
     private UUID systemUserId;
+
+    @Value("${stokr.strategy.primary-trader-user-id:}")
+    private String primaryTraderUserIdRaw;
 
     public Map<String, Object> regenerate(UUID sourceSignalId, boolean preferLive) {
         StrategySignalEntity source = resolveSource(sourceSignalId);
@@ -49,7 +59,7 @@ public class CatalogSignalRegenerateService {
                 "admin-regenerate:" + source.getId(),
                 executionMode,
                 provenance,
-                false);
+                true);
 
         if (saved == null) {
             throw new IllegalStateException(
@@ -57,8 +67,19 @@ public class CatalogSignalRegenerateService {
                             + strategyKey + " symbol=" + source.getSymbol());
         }
 
-        log.info("catalog_signal.regenerated sourceId={} newId={} strategy={} symbol={} mode={}",
-                source.getId(), saved.getId(), strategyKey, saved.getSymbol(), executionMode);
+        UUID dispatchUserId = resolveDispatchUserId(saved.getUserId(), executionMode);
+        SignalPersistedMessage omsMsg = new SignalPersistedMessage(
+                saved.getId(),
+                dispatchUserId,
+                "admin-regenerate-oms:" + saved.getId(),
+                null,
+                executionMode);
+        TransactionTemplate omsTx = new TransactionTemplate(transactionManager);
+        omsTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        omsTx.executeWithoutResult(status -> omsIntentDispatcher.dispatch(omsMsg, true));
+
+        log.info("catalog_signal.regenerated sourceId={} newId={} strategy={} symbol={} mode={} dispatchUserId={}",
+                source.getId(), saved.getId(), strategyKey, saved.getSymbol(), executionMode, dispatchUserId);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("sourceSignalId", source.getId().toString());
@@ -67,8 +88,26 @@ public class CatalogSignalRegenerateService {
         out.put("symbol", saved.getSymbol());
         out.put("signalType", saved.getSignalType() != null ? saved.getSignalType().name() : null);
         out.put("executionMode", executionMode);
+        out.put("dispatchUserId", dispatchUserId.toString());
         out.put("isTestTrade", Boolean.TRUE.equals(saved.getTestTrade()));
         return out;
+    }
+
+    private UUID resolveDispatchUserId(UUID signalUserId, String executionMode) {
+        if (signalUserId == null || !systemUserId.equals(signalUserId)) {
+            return signalUserId != null ? signalUserId : systemUserId;
+        }
+        if (executionMode == null || !"LIVE".equalsIgnoreCase(executionMode.trim())) {
+            return systemUserId;
+        }
+        if (primaryTraderUserIdRaw == null || primaryTraderUserIdRaw.isBlank()) {
+            return systemUserId;
+        }
+        try {
+            return UUID.fromString(primaryTraderUserIdRaw.trim());
+        } catch (IllegalArgumentException ex) {
+            return systemUserId;
+        }
     }
 
     private StrategySignalEntity resolveSource(UUID sourceSignalId) {
