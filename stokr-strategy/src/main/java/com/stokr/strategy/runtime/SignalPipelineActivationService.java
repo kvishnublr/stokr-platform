@@ -43,6 +43,13 @@ public class SignalPipelineActivationService {
             "COMMODITIES_E2E_TEST"
     );
 
+    private static final List<String> CURRENCY_STRATEGY_KEYS = List.of(
+            "USDINR_MOMENTUM",
+            "EURINR_MEAN_REVERSION"
+    );
+
+    private static final String CDS_UNIVERSE_GROUP_KEY = "CDS_MAJOR_PAIRS";
+
     private static final List<String> WATCHLIST_SYMBOLS = List.of(
             "INFY", "SBIN", "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "ITC", "BHARTIARTL"
     );
@@ -265,6 +272,11 @@ public class SignalPipelineActivationService {
         bindingsEnabled += cashBindingStats[0];
         bindingsCreated += cashBindingStats[1];
 
+        int[] currencyBindingStats = ensureCurrencyStrategyBindings();
+        bindingsEnabled += currencyBindingStats[0];
+        bindingsCreated += currencyBindingStats[1];
+        int currencyBindingsPruned = pruneErroneousCurrencyBindings();
+
         // Only enable bindings for strategies that have implementations
         for (StrategyRuntimeBinding b : bindingRepository.findAll()) {
             boolean hasImpl = strategyRegistry.get(b.getStrategyCatalog().getStrategyKey()) != null;
@@ -296,6 +308,8 @@ public class SignalPipelineActivationService {
         out.put("symbolsSeeded", symbolsSeeded);
         out.put("universesSynced", universesSynced);
         out.put("cashUniverseGroups", CASH_UNIVERSE_GROUP_KEYS);
+        out.put("currencyUniverseGroup", CDS_UNIVERSE_GROUP_KEY);
+        out.put("currencyBindingsPruned", currencyBindingsPruned);
         out.put("defaultUniverseGroup", defaultGroup.map(StrategyUniverseGroup::getGroupKey).orElse(null));
         out.put("activeBindings", bindingRepository.findAllActiveBindings().size());
         out.put("activatedAt", Instant.now().toString());
@@ -383,14 +397,84 @@ public class SignalPipelineActivationService {
         return new int[] {enabled, created};
     }
 
+    private static boolean isCurrencyStrategy(StrategyDefinition def) {
+        if (def == null || def.getStrategyKey() == null) {
+            return false;
+        }
+        if (CURRENCY_STRATEGY_KEYS.contains(def.getStrategyKey())) {
+            return true;
+        }
+        String assetClass = def.getAssetClass();
+        return assetClass != null && "CURRENCY".equalsIgnoreCase(assetClass.trim());
+    }
+
+    /** CDS currency strategies must only bind to CDS_MAJOR_PAIRS (never NIFTY cash universes). */
+    private int[] ensureCurrencyStrategyBindings() {
+        int enabled = 0;
+        int created = 0;
+        Optional<StrategyUniverseGroup> cdsGroup = groupRepository.findByGroupKey(CDS_UNIVERSE_GROUP_KEY);
+        if (cdsGroup.isEmpty()) {
+            return new int[] {0, 0};
+        }
+        for (StrategyDefinition def : definitionRepository.findAll().stream().filter(d -> !d.isDeleted()).toList()) {
+            if (!isCurrencyStrategy(def)) {
+                continue;
+            }
+            Optional<StrategyRuntimeBinding> existing = bindingRepository
+                    .findByStrategyCatalogIdAndUniverseGroupId(def.getId(), cdsGroup.get().getId());
+            if (existing.isPresent()) {
+                StrategyRuntimeBinding b = existing.get();
+                if (!b.isRuntimeEnabled()) {
+                    b.setRuntimeEnabled(true);
+                    bindingRepository.save(b);
+                    enabled++;
+                }
+            } else {
+                StrategyRuntimeBinding b = new StrategyRuntimeBinding();
+                b.setStrategyCatalog(def);
+                b.setUniverseGroup(cdsGroup.get());
+                b.setRuntimeEnabled(true);
+                b.setMaxPositions(2);
+                b.setRiskProfile("MEDIUM");
+                b.setScanIntervalSeconds(fastScanIntervalSeconds);
+                bindingRepository.save(b);
+                created++;
+            }
+        }
+        return new int[] {enabled, created};
+    }
+
+    private int pruneErroneousCurrencyBindings() {
+        int pruned = 0;
+        for (StrategyDefinition def : definitionRepository.findAll().stream().filter(d -> !d.isDeleted()).toList()) {
+            if (!isCurrencyStrategy(def)) {
+                continue;
+            }
+            for (StrategyRuntimeBinding b : bindingRepository.findAllByStrategyCatalogId(def.getId())) {
+                String groupKey = b.getUniverseGroup().getGroupKey();
+                if (CDS_UNIVERSE_GROUP_KEY.equals(groupKey)) {
+                    continue;
+                }
+                bindingRepository.delete(b);
+                pruned++;
+                log.info("signal.pipeline.currency_binding_pruned strategy={} removedGroup={}",
+                        def.getStrategyKey(), groupKey);
+            }
+        }
+        return pruned;
+    }
+
     private static boolean isCashEquityStrategy(StrategyDefinition def) {
+        if (isCurrencyStrategy(def)) {
+            return false;
+        }
         if (COMMODITY_STRATEGY_KEYS.contains(def.getStrategyKey())) {
             return false;
         }
         String assetClass = def.getAssetClass();
         if (assetClass != null) {
             String ac = assetClass.trim().toUpperCase(Locale.ROOT);
-            if ("COMMODITY".equals(ac) || "FUTURES".equals(ac) || "OPTIONS".equals(ac)) {
+            if ("COMMODITY".equals(ac) || "FUTURES".equals(ac) || "OPTIONS".equals(ac) || "CURRENCY".equals(ac)) {
                 return false;
             }
         }

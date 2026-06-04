@@ -3,6 +3,7 @@ package com.stokr.bootstrap.feed.zerodha;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.stokr.common.crypto.FieldCipher;
 import com.stokr.marketdata.repository.MarketdataCandleRepository;
+import com.stokr.user.broker.BrokerExecutionCredentialService;
 import com.stokr.user.broker.PlatformMarketFeedService;
 import com.stokr.user.broker.ZerodhaKiteApiClient;
 import com.stokr.user.config.ZerodhaBrokerProperties;
@@ -43,6 +44,7 @@ public class CdsCurrencyBackfillService {
     private final FieldCipher fieldCipher;
     private final PlatformBrokerFeedSessionRepository sessionRepository;
     private final PlatformMarketFeedService platformMarketFeedService;
+    private final BrokerExecutionCredentialService brokerExecutionCredentialService;
     private final MarketdataCandleRepository candleRepository;
     private final TransactionTemplate txTemplate;
 
@@ -79,6 +81,11 @@ public class CdsCurrencyBackfillService {
     }
 
     private void doBackfill(String trigger) {
+        try {
+            platformMarketFeedService.refreshFromKite(VENDOR);
+        } catch (Exception ex) {
+            log.warn("cds_backfill.token_refresh_skipped trigger={} {}", trigger, ex.getMessage());
+        }
         String accessToken = resolveAccessToken();
         if (accessToken == null) {
             log.warn("cds_backfill.skip reason=no_access_token trigger={}", trigger);
@@ -136,6 +143,9 @@ public class CdsCurrencyBackfillService {
                 platformMarketFeedService.ensureValidPlatformZerodhaToken(java.time.Duration.ofMinutes(30));
                 String refreshed = resolveAccessToken();
                 if (refreshed == null || refreshed.isBlank()) {
+                    refreshed = resolvePrimaryTraderAccessToken();
+                }
+                if (refreshed == null || refreshed.isBlank() || refreshed.equals(accessToken)) {
                     throw ex;
                 }
                 accessToken = refreshed;
@@ -211,14 +221,25 @@ public class CdsCurrencyBackfillService {
             PlatformBrokerFeedSession session = sessionRepository
                     .findByVendorCodeIgnoreCaseAndDeletedFalse(VENDOR).orElse(null);
             if (session == null || session.getAccessTokenEnc() == null) {
-                return null;
+                return resolvePrimaryTraderAccessToken();
             }
             String token = fieldCipher.decrypt(session.getAccessTokenEnc());
-            return (token == null || token.isBlank()) ? null : token;
+            if (token == null || token.isBlank()) {
+                return resolvePrimaryTraderAccessToken();
+            }
+            return token;
         } catch (Exception ex) {
             log.warn("cds_backfill.token_resolve_failed {}", ex.getMessage());
-            return null;
+            return resolvePrimaryTraderAccessToken();
         }
+    }
+
+    private String resolvePrimaryTraderAccessToken() {
+        return brokerExecutionCredentialService.primaryTraderUserId()
+                .flatMap(userId -> brokerExecutionCredentialService.resolve(userId, VENDOR))
+                .map(BrokerExecutionCredentialService.ResolvedCredentials::accessToken)
+                .filter(t -> t != null && !t.isBlank())
+                .orElse(null);
     }
 
     private record ParsedCandle(
