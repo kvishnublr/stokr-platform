@@ -36,18 +36,18 @@ CREATE TABLE IF NOT EXISTS signal_execution_tracks (
 );
 
 -- Indexes for performance
-CREATE INDEX idx_set_signal_id ON signal_execution_tracks(signal_id);
-CREATE INDEX idx_set_user_id ON signal_execution_tracks(user_id);
-CREATE INDEX idx_set_status ON signal_execution_tracks(status);
-CREATE INDEX idx_set_created_at ON signal_execution_tracks(created_at DESC);
-CREATE INDEX idx_set_strategy_key ON signal_execution_tracks(strategy_key);
-CREATE INDEX idx_set_symbol ON signal_execution_tracks(symbol);
-CREATE INDEX idx_set_status_retry ON signal_execution_tracks(status, retry_count) WHERE status IN ('VALIDATION_FAILED', 'SIZING_FAILED', 'RISK_FAILED', 'EXPOSURE_FAILED', 'BROKER_TRUTH_FAILED');
-CREATE INDEX idx_set_user_created ON signal_execution_tracks(user_id, created_at DESC);
-CREATE INDEX idx_set_retry_at ON signal_execution_tracks(last_retry_at) WHERE retry_count < 3 AND status IN ('VALIDATION_FAILED', 'SIZING_FAILED', 'RISK_FAILED');
-CREATE INDEX idx_set_deleted ON signal_execution_tracks(deleted) WHERE deleted = FALSE;
-CREATE INDEX idx_set_filled_at ON signal_execution_tracks(filled_at) WHERE filled_at IS NOT NULL;
-CREATE INDEX idx_set_execution_time ON signal_execution_tracks(execution_time_ms) WHERE execution_time_ms IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_set_signal_id ON signal_execution_tracks(signal_id);
+CREATE INDEX IF NOT EXISTS idx_set_user_id ON signal_execution_tracks(user_id);
+CREATE INDEX IF NOT EXISTS idx_set_status ON signal_execution_tracks(status);
+CREATE INDEX IF NOT EXISTS idx_set_created_at ON signal_execution_tracks(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_set_strategy_key ON signal_execution_tracks(strategy_key);
+CREATE INDEX IF NOT EXISTS idx_set_symbol ON signal_execution_tracks(symbol);
+CREATE INDEX IF NOT EXISTS idx_set_status_retry ON signal_execution_tracks(status, retry_count) WHERE status IN ('VALIDATION_FAILED', 'SIZING_FAILED', 'RISK_FAILED', 'EXPOSURE_FAILED', 'BROKER_TRUTH_FAILED');
+CREATE INDEX IF NOT EXISTS idx_set_user_created ON signal_execution_tracks(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_set_retry_at ON signal_execution_tracks(last_retry_at) WHERE retry_count < 3 AND status IN ('VALIDATION_FAILED', 'SIZING_FAILED', 'RISK_FAILED');
+CREATE INDEX IF NOT EXISTS idx_set_deleted ON signal_execution_tracks(deleted) WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_set_filled_at ON signal_execution_tracks(filled_at) WHERE filled_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_set_execution_time ON signal_execution_tracks(execution_time_ms) WHERE execution_time_ms IS NOT NULL;
 
 -- Grant permissions to stokr_user
 GRANT SELECT, INSERT, UPDATE ON signal_execution_tracks TO stokr_user;
