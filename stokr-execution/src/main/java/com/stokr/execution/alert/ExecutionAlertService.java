@@ -67,7 +67,7 @@ public class ExecutionAlertService {
     @Transactional
     public void onReconciliationAlert(String symbol, BigDecimal brokerQty, BigDecimal internalQty) {
         String text = "RECONCILIATION: " + symbol + " broker=" + brokerQty + " internal=" + internalQty;
-        publish("RECONCILIATION_ALERT", null, symbol, null, text);
+        // DISABLED: publish("RECONCILIATION_ALERT", null, symbol, null, text);
     }
 
     /** Admin Test Signal Lab: persist alert log even when Telegram is disabled for the strategy. */
