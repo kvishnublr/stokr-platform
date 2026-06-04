@@ -67,10 +67,16 @@ public class ZerodhaOAuthCallbackController {
             log.error("zerodha.callback.failed error={} message={}",
                     e.getClass().getSimpleName(), e.getMessage());
             if (platformMarketFeedService.isPlatformOauthState(resolvedState)) {
-                String reason = URLEncoder.encode(e.getClass().getSimpleName(), StandardCharsets.UTF_8);
+                String reasonText = e.getMessage() != null && !e.getMessage().isBlank()
+                        ? e.getMessage()
+                        : e.getClass().getSimpleName();
+                String reason = URLEncoder.encode(reasonText, StandardCharsets.UTF_8);
                 return redirectAdmin("?platform_feed=error&reason=" + reason);
             }
-            return redirect("?zerodha=error&reason=" + URLEncoder.encode(e.getClass().getSimpleName(), StandardCharsets.UTF_8));
+            String reasonText = e.getMessage() != null && !e.getMessage().isBlank()
+                    ? e.getMessage()
+                    : e.getClass().getSimpleName();
+            return redirect("?zerodha=error&reason=" + URLEncoder.encode(reasonText, StandardCharsets.UTF_8));
         }
     }
 

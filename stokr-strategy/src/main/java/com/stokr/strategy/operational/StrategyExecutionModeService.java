@@ -73,6 +73,11 @@ public class StrategyExecutionModeService {
         return Map.copyOf(out);
     }
 
+    /** Strategy keys allowed to run LIVE when {@code stokr.strategy.execution-modes.allow-live} is true. */
+    public Set<String> liveValidatedStrategyKeys() {
+        return Set.copyOf(liveValidated);
+    }
+
     private boolean isLiveValidated(String strategyKey) {
         if (!allowLive) {
             return false;

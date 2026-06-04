@@ -29,4 +29,13 @@ public class StrategyToggleService {
     public void setEnabled(String strategyKey, boolean enabled) {
         redis.opsForValue().set(key(strategyKey), enabled ? "1" : "0");
     }
+
+    /** {@code null} when Redis has no explicit override (defaults apply). */
+    public Boolean redisOverride(String strategyKey) {
+        String v = redis.opsForValue().get(key(strategyKey));
+        if (v == null) {
+            return null;
+        }
+        return "1".equals(v) || Boolean.parseBoolean(v);
+    }
 }

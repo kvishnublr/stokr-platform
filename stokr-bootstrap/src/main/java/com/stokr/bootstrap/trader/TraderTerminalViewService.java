@@ -516,9 +516,9 @@ public class TraderTerminalViewService {
         int openCount = openPositions.size();
         String pnlSource = "OMS";
         if (brokerPnlSource) {
-            BrokerPnlTotals brokerOpenTotals = summarizeBrokerOpenTotals(brokerTruth);
             openCount = openPositions.size();
-            if (brokerOpenTotals.openCount() > 0) {
+            if (openCount > 0) {
+                BrokerPnlTotals brokerOpenTotals = summarizeFromOpenPositionRows(openPositions);
                 totalRealized = brokerOpenTotals.realized();
                 totalUnrealized = brokerOpenTotals.unrealized();
                 pnlSource = "BROKER";
@@ -745,11 +745,15 @@ public class TraderTerminalViewService {
         if (qty == null || qty.compareTo(BigDecimal.ZERO) == 0) {
             return BigDecimal.ZERO;
         }
-        if (truth != null && truth.brokerUnrealizedPnl() != null) {
-            return truth.brokerUnrealizedPnl();
+        BigDecimal brokerUnreal = truth != null ? truth.brokerUnrealizedPnl() : null;
+        if (brokerUnreal != null && brokerUnreal.compareTo(BigDecimal.ZERO) != 0) {
+            return brokerUnreal;
         }
-        if (ltp != null && ltp.compareTo(BigDecimal.ZERO) > 0 && avg != null) {
+        if (ltp != null && ltp.compareTo(BigDecimal.ZERO) > 0 && avg != null && avg.compareTo(BigDecimal.ZERO) > 0) {
             return ltp.subtract(avg).multiply(qty).setScale(8, java.math.RoundingMode.HALF_UP);
+        }
+        if (brokerUnreal != null) {
+            return brokerUnreal;
         }
         return storedUnrealized != null ? storedUnrealized : BigDecimal.ZERO;
     }
@@ -801,6 +805,28 @@ public class TraderTerminalViewService {
     }
 
     /** Header metrics: only open broker legs (qty != 0), not day-flat rows with residual P&L. */
+    private static BrokerPnlTotals summarizeFromOpenPositionRows(List<Map<String, Object>> openPositions) {
+        BigDecimal realized = BigDecimal.ZERO;
+        BigDecimal unrealized = BigDecimal.ZERO;
+        for (Map<String, Object> row : openPositions) {
+            Object r = row.get("realizedPnl");
+            Object u = row.get("unrealizedPnl");
+            if (r instanceof BigDecimal br) {
+                realized = realized.add(br);
+            } else if (r instanceof Number nr) {
+                realized = realized.add(BigDecimal.valueOf(nr.doubleValue()));
+            }
+            if (u instanceof BigDecimal bu) {
+                unrealized = unrealized.add(bu);
+            } else if (u instanceof Number nu) {
+                unrealized = unrealized.add(BigDecimal.valueOf(nu.doubleValue()));
+            }
+        }
+        realized = realized.setScale(8, java.math.RoundingMode.HALF_UP);
+        unrealized = unrealized.setScale(8, java.math.RoundingMode.HALF_UP);
+        return new BrokerPnlTotals(realized, unrealized, realized.add(unrealized), openPositions.size());
+    }
+
     private static BrokerPnlTotals summarizeBrokerOpenTotals(BrokerPositionTruthSnapshot brokerTruth) {
         BigDecimal realized = BigDecimal.ZERO;
         BigDecimal unrealized = BigDecimal.ZERO;
@@ -890,7 +916,7 @@ public class TraderTerminalViewService {
         BigDecimal avg = truth.brokerAvgPrice() != null ? truth.brokerAvgPrice() : BigDecimal.ZERO;
         BigDecimal ltp = lastPrice(symbol);
         BigDecimal realized = truth.brokerRealizedPnl() != null ? truth.brokerRealizedPnl() : BigDecimal.ZERO;
-        BigDecimal unreal = truth.brokerUnrealizedPnl() != null ? truth.brokerUnrealizedPnl() : BigDecimal.ZERO;
+        BigDecimal unreal = resolveUnrealizedPnl(qty, avg, ltp, BigDecimal.ZERO, truth);
 
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("symbol", symbol);

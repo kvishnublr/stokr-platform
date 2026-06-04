@@ -143,6 +143,9 @@ public class PressureSmartExitService {
     }
 
     private boolean isEligible(StrategySignalEntity sig) {
+        if (ExitCategory.isTerminalOutcome(sig.getOutcomeStatus())) {
+            return false;
+        }
         if (sig.getStrategyName() == null || sig.getEntryReferencePrice() == null
                 || sig.getEntryReferencePrice().signum() <= 0
                 || sig.getStopPrice() == null || sig.getTargetPrice() == null) {

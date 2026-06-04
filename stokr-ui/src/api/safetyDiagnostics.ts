@@ -50,6 +50,30 @@ export type StrategyRuntimeHealthRow = {
   lastRejectionReason?: string | null;
 };
 
+export type RedisStrategyToggleWarning = {
+  strategyKey: string;
+  configuredMode: string;
+  redisOverride: string | boolean;
+  impact: string;
+  enablePath: string;
+};
+
+export type PipelineAdminAction = {
+  method: string;
+  path: string;
+  query?: string;
+  description: string;
+};
+
+export type SignalPipelineAdminActions = {
+  regenerateCatalogSignal?: PipelineAdminAction;
+  redispatchOrphanSignals?: PipelineAdminAction;
+  niftyGapFill?: PipelineAdminAction;
+  strategyRedisToggle?: PipelineAdminAction;
+  adminHealth?: PipelineAdminAction;
+  uiPages?: Record<string, string>;
+};
+
 export type OperationalDiagnostics = {
   collectedAt: string;
   feedHealth: Record<string, unknown>;
@@ -61,6 +85,8 @@ export type OperationalDiagnostics = {
   integrityFailuresToday: number;
   activeTrades: number;
   staleSymbols: Array<{ symbol: string; latestOpenTime?: string; lagSeconds?: number }>;
+  redisStrategyToggleWarnings?: RedisStrategyToggleWarning[];
+  signalPipelineAdminActions?: SignalPipelineAdminActions;
 };
 
 export type OmsDiagnostics = {
@@ -78,6 +104,38 @@ export type OmsDiagnostics = {
 
 export async function triggerNiftyGapFill(): Promise<void> {
   await api.post("/api/admin/feed/nifty-gap-fill", {}, { timeout: DIAG_TIMEOUT_MS });
+}
+
+const PIPELINE_TIMEOUT_MS = 300_000;
+
+export async function redispatchOrphanSignals(): Promise<Record<string, unknown>> {
+  const res = await api.post("/api/admin/feed/redispatch-orphan-signals", {}, { timeout: PIPELINE_TIMEOUT_MS });
+  return (res.data?.data ?? {}) as Record<string, unknown>;
+}
+
+export type RegenerateCatalogSignalParams = {
+  signalId?: string;
+  preferLive?: boolean;
+};
+
+export async function regenerateCatalogSignal(
+  params: RegenerateCatalogSignalParams = {},
+): Promise<Record<string, unknown>> {
+  const res = await api.post("/api/admin/feed/regenerate-catalog-signal", null, {
+    params: {
+      preferLive: params.preferLive ?? true,
+      ...(params.signalId ? { signalId: params.signalId } : {}),
+    },
+    timeout: PIPELINE_TIMEOUT_MS,
+  });
+  return (res.data?.data ?? {}) as Record<string, unknown>;
+}
+
+export async function setStrategyRedisToggle(strategyKey: string, enabled: boolean): Promise<void> {
+  await api.post("/api/admin/strategy/toggle", null, {
+    params: { strategyKey, enabled },
+    timeout: DIAG_TIMEOUT_MS,
+  });
 }
 
 export async function fetchOperationalDiagnostics(): Promise<OperationalDiagnostics> {

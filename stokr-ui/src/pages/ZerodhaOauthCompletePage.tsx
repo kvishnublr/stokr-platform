@@ -12,12 +12,14 @@ import {
 export function ZerodhaOauthCompletePage() {
   const [status, setStatus] = useState<"pending" | "ok" | "error">("pending");
   const [context, setContext] = useState<"trader" | "platform_feed">("trader");
+  const [reasonText, setReasonText] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const platformFeed = params.get("platform_feed");
     const trader = params.get("zerodha");
     const reason = params.get("reason");
+    setReasonText(reason);
 
     let messageType = ZERODHA_TRADER_OAUTH_MESSAGE;
     let result: "ok" | "error" = "error";
@@ -64,7 +66,6 @@ export function ZerodhaOauthCompletePage() {
     context === "platform_feed" ? "Platform feed linked successfully" : "Zerodha linked successfully";
   const errTitle =
     context === "platform_feed" ? "Platform feed linking failed" : "Zerodha linking failed";
-
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#070b12] px-6 text-center text-slate-100">
       {status === "pending" && (
@@ -84,6 +85,9 @@ export function ZerodhaOauthCompletePage() {
         <>
           <XCircle className="h-10 w-10 text-rose-400" />
           <p className="text-sm font-medium text-rose-200">{errTitle}</p>
+          {reasonText ? (
+            <p className="max-w-md text-xs leading-5 text-rose-200/80">{reasonText}</p>
+          ) : null}
           <p className="text-xs text-slate-400">Close this window and try Connect again.</p>
         </>
       )}

@@ -14,6 +14,7 @@ import com.stokr.oms.repository.OmsExecutionRepository;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
+import com.stokr.strategy.service.SignalManualExitSuppressionService;
 import com.stokr.user.broker.ZerodhaBrokerOperationsService;
 import com.stokr.user.repository.BrokerAccountRepository;
 import lombok.RequiredArgsConstructor;
@@ -68,6 +69,7 @@ public class BrokerPositionTruthService {
     private final ApplicationEventPublisher eventPublisher;
     private final BrokerAccountRepository brokerAccountRepository;
     private final PortfolioAccountingService portfolioAccountingService;
+    private final SignalManualExitSuppressionService manualExitSuppressionService;
 
     private final ConcurrentHashMap<UUID, BrokerPositionTruthSnapshot> cache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Instant> brokerClosedAt = new ConcurrentHashMap<>();
@@ -359,6 +361,7 @@ public class BrokerPositionTruthService {
         log.warn("broker.truth.external_exit user={} symbol={} internalQty={}", userId, symbol, internalQty);
         persistRecon(userId, symbol, "EXTERNAL_BROKER_EXIT", BigDecimal.ZERO, internalQty);
         reconcilePortfolioGhost(userId, symbol);
+        manualExitSuppressionService.suppressAutoExitForSymbol(userId, symbol, "MANUAL: external_broker_exit");
         haltStrategyRuntimeForSymbol(userId, symbol);
         eventPublisher.publishEvent(new ExecutionAlertEvent(
                 "BROKER_EXTERNAL_EXIT",

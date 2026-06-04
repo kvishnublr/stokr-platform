@@ -98,8 +98,13 @@ public class PlatformMarketFeedService {
                     .retrieve()
                     .body(String.class);
         } catch (Exception e) {
-            log.warn("platform.zerodha.session.exchange_failed: {}", e.getClass().getSimpleName());
-            throw new BadRequestException("Could not complete Zerodha platform login — try again.");
+            String zerodhaMsg = extractZerodhaMessage(e);
+            log.warn("platform.zerodha.session.exchange_failed: {} zerodhaMsg={}",
+                    e.getClass().getSimpleName(), zerodhaMsg);
+            throw new BadRequestException(
+                    zerodhaMsg != null && !zerodhaMsg.isBlank()
+                            ? zerodhaMsg
+                            : "Could not complete Zerodha platform login — try again.");
         }
         try {
             JsonNode root = objectMapper.readTree(sessionBody != null ? sessionBody : "{}");
@@ -142,6 +147,26 @@ public class PlatformMarketFeedService {
             log.warn("platform.zerodha.parse.failed {}", e.getClass().getSimpleName());
             throw new BadRequestException("Invalid Zerodha response");
         }
+    }
+
+    private String extractZerodhaMessage(Exception e) {
+        if (!(e instanceof org.springframework.web.client.RestClientResponseException rce)) {
+            return null;
+        }
+        try {
+            JsonNode errBody = objectMapper.readTree(rce.getResponseBodyAsString());
+            String msg = errBody.path("message").asText(null);
+            if (msg != null && !msg.isBlank()) {
+                return msg;
+            }
+            String errorType = errBody.path("error_type").asText(null);
+            if (errorType != null && !errorType.isBlank()) {
+                return errorType;
+            }
+        } catch (Exception ignored) {
+            // fall through to generic message
+        }
+        return null;
     }
 
     @Transactional

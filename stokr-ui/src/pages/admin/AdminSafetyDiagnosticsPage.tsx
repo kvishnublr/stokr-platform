@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Power, RefreshCw, Shield, ShieldOff } from "lucide-react";
+import { AlertTriangle, ExternalLink, Power, RefreshCw, Shield, ShieldOff } from "lucide-react";
 import { toast } from "sonner";
 import {
   activateKillSwitch,
@@ -11,11 +12,16 @@ import {
   triggerNiftyGapFill,
   fetchStrategyValidationDiagnostics,
   fetchTradeReconciliationDiagnostics,
+  redispatchOrphanSignals,
+  regenerateCatalogSignal,
   safetyDiagnosticsQueryRetry,
   safetyDiagnosticsRetryDelay,
+  setStrategyRedisToggle,
   type KillSwitchStatus,
   type OmsDiagnostics,
   type OperationalDiagnostics,
+  type RedisStrategyToggleWarning,
+  type SignalPipelineAdminActions,
   type StrategyRuntimeHealthRow,
   type TradeReconciliationDiagnostics,
 } from "../../api/safetyDiagnostics";
@@ -46,6 +52,7 @@ function formatBlockReason(code: string): string {
     NIFTY_OPENING_INCOMPLETE: "NIFTY session warming up",
     FEED_STALE: "Market feed stale",
     EXECUTION_MODE_DISABLED: "Strategy disabled",
+    STRATEGY_DISABLED: "Redis strategy toggle off (risk)",
     STARTUP_WARMUP: "Startup warmup",
     FEED_NOT_FRESH: "Feed not fresh",
     INSUFFICIENT_WARMUP_BARS: "Insufficient warmup bars",
@@ -307,16 +314,166 @@ function StrategyHealthTable({
   );
 }
 
+function SignalPipelineToolsPanel({
+  actions,
+  redisWarnings,
+  isLight,
+  onRedispatchOrphans,
+  onRegenerateCatalog,
+  onEnableStrategy,
+  redispatchPending,
+  regeneratePending,
+  enablePending,
+}: {
+  actions?: SignalPipelineAdminActions;
+  redisWarnings: RedisStrategyToggleWarning[];
+  isLight: boolean;
+  onRedispatchOrphans: () => void;
+  onRegenerateCatalog: () => void;
+  onEnableStrategy: (strategyKey: string) => void;
+  redispatchPending: boolean;
+  regeneratePending: boolean;
+  enablePending: boolean;
+}) {
+  const ui = actions?.uiPages ?? {};
+  const apiRows = [
+    actions?.regenerateCatalogSignal,
+    actions?.redispatchOrphanSignals,
+    actions?.niftyGapFill,
+    actions?.strategyRedisToggle,
+    actions?.adminHealth,
+  ].filter(Boolean);
+
+  return (
+    <AdminPanel
+      isLight={isLight}
+      title="Signal pipeline tools"
+      subtitle="Admin APIs for catalog → OMS → broker (not Test Signal Lab). Use after deploy or when recovering orphans."
+    >
+      {redisWarnings.length > 0 ? (
+        <div
+          className={cn(
+            "mb-4 rounded-lg border px-3 py-2",
+            isLight ? "border-rose-300 bg-rose-50" : "border-rose-500/40 bg-rose-500/10",
+          )}
+        >
+          <p className="text-xs font-semibold text-rose-600 dark:text-rose-300">
+            LIVE strategies disabled in Redis — orders will fail risk with &quot;Strategy disabled&quot;
+          </p>
+          <ul className="mt-2 space-y-2">
+            {redisWarnings.map((w) => (
+              <li key={w.strategyKey} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-mono font-semibold">{w.strategyKey}</span>
+                <span className="text-muted-foreground">mode {w.configuredMode} · redis {String(w.redisOverride)}</span>
+                <button
+                  type="button"
+                  disabled={enablePending}
+                  onClick={() => onEnableStrategy(w.strategyKey)}
+                  className="rounded border border-emerald-600/40 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                >
+                  Enable in Redis
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="mb-4 text-xs text-emerald-600 dark:text-emerald-400">
+          All LIVE-validated strategy Redis toggles are on.
+        </p>
+      )}
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onRegenerateCatalog}
+          disabled={regeneratePending}
+          className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-50 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-200"
+        >
+          {regeneratePending ? "Regenerating…" : "Regenerate last catalog signal (LIVE)"}
+        </button>
+        <button
+          type="button"
+          onClick={onRedispatchOrphans}
+          disabled={redispatchPending}
+          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          {redispatchPending ? "Redispatching…" : "Redispatch today's orphan signals"}
+        </button>
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-3 text-xs">
+        {(
+          [
+            ["Safety & diagnostics", ui.safetyDiagnostics],
+            ["Signal monitor", ui.signalMonitor],
+            ["OMS monitor", ui.omsMonitor],
+            ["Test signal lab", ui.testSignalLab],
+            ["Command center", ui.commandCenter],
+          ] as const
+        )
+          .filter((entry): entry is readonly [string, string] => Boolean(entry[1]))
+          .map(([label, path]) => (
+            <Link
+              key={path}
+              to={path}
+              className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline dark:text-blue-400"
+            >
+              {label}
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+          ))}
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border dark:border-neutral-800">
+        <table className="w-full text-left text-[11px]">
+          <thead className={isLight ? "bg-neutral-100" : "bg-neutral-900/80"}>
+            <tr>
+              <th className="px-2 py-1.5 font-semibold">Method</th>
+              <th className="px-2 py-1.5 font-semibold">Path</th>
+              <th className="px-2 py-1.5 font-semibold">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {apiRows.map((row) => (
+              <tr key={row!.path} className="border-t dark:border-neutral-800">
+                <td className="px-2 py-1.5 font-mono">{row!.method}</td>
+                <td className="px-2 py-1.5 font-mono text-blue-700 dark:text-blue-300">
+                  {row!.path}
+                  {row!.query ? `?${row!.query}` : ""}
+                </td>
+                <td className="px-2 py-1.5 text-muted-foreground">{row!.description}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </AdminPanel>
+  );
+}
+
 function OperationalPanel({
   data,
   isLight,
   onNiftyGapFill,
   gapFillPending,
+  onRedispatchOrphans,
+  onRegenerateCatalog,
+  onEnableStrategy,
+  redispatchPending,
+  regeneratePending,
+  enableStrategyPending,
 }: {
   data: OperationalDiagnostics;
   isLight: boolean;
   onNiftyGapFill: () => void;
   gapFillPending: boolean;
+  onRedispatchOrphans: () => void;
+  onRegenerateCatalog: () => void;
+  onEnableStrategy: (strategyKey: string) => void;
+  redispatchPending: boolean;
+  regeneratePending: boolean;
+  enableStrategyPending: boolean;
 }) {
   const feed = data.feedHealth ?? {};
   const integrity = data.marketDataIntegrity ?? {};
@@ -325,9 +482,23 @@ function OperationalPanel({
   const feedWarn = feedLevel !== "OK" && feedLevel !== "IDLE";
   const niftyBlocked = integrity.openingSessionReady === false && integrity.midSessionRecoveryAllowed === false;
 
+  const redisWarnings = data.redisStrategyToggleWarnings ?? [];
+
   return (
     <AdminSection isLight={isLight} title="P2 operational diagnostics" subtitle="Feed health, safe startup gate, strategy runtime health">
       <div className="space-y-4">
+        <SignalPipelineToolsPanel
+          actions={data.signalPipelineAdminActions}
+          redisWarnings={redisWarnings}
+          isLight={isLight}
+          onRedispatchOrphans={onRedispatchOrphans}
+          onRegenerateCatalog={onRegenerateCatalog}
+          onEnableStrategy={onEnableStrategy}
+          redispatchPending={redispatchPending}
+          regeneratePending={regeneratePending}
+          enablePending={enableStrategyPending}
+        />
+
         <AdminPanel isLight={isLight} title="Feed health" subtitle={`Level: ${feedLevel}`}>
           <MetricGrid
             isLight={isLight}
@@ -830,6 +1001,34 @@ export function AdminSafetyDiagnosticsPage() {
     onError: (e) => toast.error(parseAxiosMessage(e)),
   });
 
+  const redispatchOrphansMut = useMutation({
+    mutationFn: redispatchOrphanSignals,
+    onSuccess: (data) => {
+      toast.success(`Orphan redispatch: ${String(data.redispatched ?? 0)} signal(s)`);
+      void qc.invalidateQueries({ queryKey: OPS_QK });
+    },
+    onError: (e) => toast.error(parseAxiosMessage(e)),
+  });
+
+  const regenerateCatalogMut = useMutation({
+    mutationFn: () => regenerateCatalogSignal({ preferLive: true }),
+    onSuccess: (data) => {
+      toast.success(`Regenerated ${data.strategy ?? "signal"} ${data.symbol ?? ""} → ${data.newSignalId ?? ""}`);
+      void qc.invalidateQueries({ queryKey: OPS_QK });
+    },
+    onError: (e) => toast.error(parseAxiosMessage(e)),
+  });
+
+  const enableStrategyMut = useMutation({
+    mutationFn: ({ strategyKey, enabled }: { strategyKey: string; enabled: boolean }) =>
+      setStrategyRedisToggle(strategyKey, enabled),
+    onSuccess: () => {
+      toast.success("Strategy Redis toggle updated");
+      void qc.invalidateQueries({ queryKey: OPS_QK });
+    },
+    onError: (e) => toast.error(parseAxiosMessage(e)),
+  });
+
   const killActive = Boolean(ksQ.data?.active ?? omsQ.data?.killSwitch?.active);
   const blockingLoad =
     !initialGateExpired && !opsQ.data && !omsQ.data && !ksQ.data && (opsQ.isFetching || omsQ.isFetching);
@@ -900,6 +1099,12 @@ export function AdminSafetyDiagnosticsPage() {
             isLight={isLight}
             gapFillPending={niftyGapFillMut.isPending}
             onNiftyGapFill={() => niftyGapFillMut.mutate()}
+            redispatchPending={redispatchOrphansMut.isPending}
+            regeneratePending={regenerateCatalogMut.isPending}
+            enableStrategyPending={enableStrategyMut.isPending}
+            onRedispatchOrphans={() => redispatchOrphansMut.mutate()}
+            onRegenerateCatalog={() => regenerateCatalogMut.mutate()}
+            onEnableStrategy={(strategyKey) => enableStrategyMut.mutate({ strategyKey, enabled: true })}
           />
         ) : null}
 

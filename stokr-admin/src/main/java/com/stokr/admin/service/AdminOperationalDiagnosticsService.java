@@ -13,6 +13,7 @@ import com.stokr.strategy.operational.StrategyRuntimeHealthService;
 import com.stokr.strategy.operational.TradingSafeStartupGateService;
 import com.stokr.strategy.dto.StrategyCatalogSignalStatsDto;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.risk.service.StrategyToggleService;
 import com.stokr.strategy.service.StrategyCatalogSignalStatsService;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +26,9 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -39,6 +42,7 @@ public class AdminOperationalDiagnosticsService {
     private final TradingSafeStartupGateService safeStartupGateService;
     private final StrategySignalRepository signalRepository;
     private final StrategyCatalogSignalStatsService catalogSignalStatsService;
+    private final StrategyToggleService strategyToggleService;
     private final EntityManager entityManager;
 
     public Map<String, Object> liveDiagnostics(Instant now) {
@@ -56,7 +60,80 @@ public class AdminOperationalDiagnosticsService {
         out.put("integrityFailuresToday", integrityFailureCount(now));
         out.put("activeTrades", activeTradeCount());
         out.put("staleSymbols", staleSymbolSample(now));
+        out.put("redisStrategyToggleWarnings", redisStrategyToggleWarnings());
+        out.put("signalPipelineAdminActions", signalPipelineAdminActions());
         return out;
+    }
+
+    /**
+     * LIVE-validated strategies with Redis toggle off block OMS at risk ({@code STRATEGY_DISABLED}).
+     */
+    private List<Map<String, Object>> redisStrategyToggleWarnings() {
+        List<Map<String, Object>> warnings = new ArrayList<>();
+        Set<String> keys = executionModeService.liveValidatedStrategyKeys();
+        for (String strategyKey : keys) {
+            if (strategyToggleService.isEnabled(strategyKey)) {
+                continue;
+            }
+            Boolean redisOverride = strategyToggleService.redisOverride(strategyKey);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("strategyKey", strategyKey);
+            row.put("configuredMode", executionModeService.modeFor(strategyKey).name());
+            row.put("redisOverride", redisOverride != null ? redisOverride : "default");
+            row.put("impact", "Orders rejected at risk: Strategy disabled");
+            row.put("enablePath", "/api/admin/strategy/toggle?strategyKey="
+                    + strategyKey.toUpperCase(Locale.ROOT) + "&enabled=true");
+            warnings.add(row);
+        }
+        return warnings;
+    }
+
+    private Map<String, Object> signalPipelineAdminActions() {
+        Map<String, Object> actions = new LinkedHashMap<>();
+        actions.put("regenerateCatalogSignal", action(
+                "POST",
+                "/api/admin/feed/regenerate-catalog-signal",
+                "preferLive=true&signalId=<optional-uuid>",
+                "Clone last production signal (or by id) and dispatch OMS — not Test Signal Lab"));
+        actions.put("redispatchOrphanSignals", action(
+                "POST",
+                "/api/admin/feed/redispatch-orphan-signals",
+                null,
+                "Re-run OMS for today's signals that have no order"));
+        actions.put("niftyGapFill", action(
+                "POST",
+                "/api/admin/feed/nifty-gap-fill",
+                null,
+                "Backfill NIFTY index candles for integrity gate"));
+        actions.put("strategyRedisToggle", action(
+                "POST",
+                "/api/admin/strategy/toggle",
+                "strategyKey=ADV_CASH&enabled=true",
+                "Enable/disable strategy at risk (Redis)"));
+        actions.put("adminHealth", action(
+                "GET",
+                "/api/admin/health",
+                null,
+                "Kill switch, live armed, queue names"));
+        Map<String, Object> ui = new LinkedHashMap<>();
+        ui.put("safetyDiagnostics", "/admin/safety-diagnostics");
+        ui.put("signalMonitor", "/admin/signals");
+        ui.put("omsMonitor", "/admin/oms");
+        ui.put("testSignalLab", "/admin/test-signal-lab");
+        ui.put("commandCenter", "/admin/command-center");
+        actions.put("uiPages", ui);
+        return actions;
+    }
+
+    private static Map<String, Object> action(String method, String path, String query, String description) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("method", method);
+        row.put("path", path);
+        if (query != null) {
+            row.put("query", query);
+        }
+        row.put("description", description);
+        return row;
     }
 
     private List<Map<String, Object>> runtimeHealthRows(List<StrategyRuntimeHealth> health) {

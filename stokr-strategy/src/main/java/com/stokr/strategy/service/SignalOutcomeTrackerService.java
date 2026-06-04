@@ -265,6 +265,9 @@ public class SignalOutcomeTrackerService {
     }
 
     private boolean evaluateHistorical(StrategySignalEntity sig, Instant now) {
+        if (isTerminalOutcome(sig.getOutcomeStatus())) {
+            return false;
+        }
         BigDecimal entry  = sig.getEntryReferencePrice();
         BigDecimal target = sig.getTargetPrice();
         BigDecimal sl     = sig.getStopPrice();
@@ -330,6 +333,9 @@ public class SignalOutcomeTrackerService {
     }
 
     private boolean evaluate(StrategySignalEntity sig, Instant now) {
+        if (isTerminalOutcome(sig.getOutcomeStatus())) {
+            return false;
+        }
         BigDecimal entry  = sig.getEntryReferencePrice();
         BigDecimal target = sig.getTargetPrice();
         BigDecimal sl     = sig.getStopPrice();

@@ -14,6 +14,7 @@ import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.oms.service.OrderLifecycleService;
 import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
+import com.stokr.strategy.service.SignalManualExitSuppressionService;
 import com.stokr.strategy.service.StrategyInstanceLifecycleService;
 import com.stokr.user.service.TraderExecutionModePreferenceService;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +55,7 @@ public class TraderTerminalControlService {
     private final TraderExecutionModePreferenceService executionModePreferenceService;
     private final OrderPlacementService orderPlacementService;
     private final BrokerPositionTruthService brokerPositionTruthService;
+    private final SignalManualExitSuppressionService manualExitSuppressionService;
 
     private final Map<String, PendingPlan> pendingPlans = new ConcurrentHashMap<>();
 
@@ -311,6 +313,11 @@ public class TraderTerminalControlService {
                     "mode", mode.name(),
                     "product", product != null ? product : ""
             ));
+            int suppressed = manualExitSuppressionService.suppressAutoExitForSymbol(
+                    userId, symbol, "MANUAL: terminal_exit_symbol");
+            if (suppressed > 0) {
+                notes.add("suppressed auto-exit for " + suppressed + " signal(s) on " + symbol);
+            }
             return 1;
         } catch (Exception ex) {
             notes.add("exit failed " + symbol + ": " + ex.getClass().getSimpleName());
@@ -381,6 +388,11 @@ public class TraderTerminalControlService {
                         "mode", mode.name(),
                         "product", target.product() != null ? target.product() : ""
                 ));
+                int suppressed = manualExitSuppressionService.suppressAutoExitForSymbol(
+                        userId, target.symbol(), "MANUAL: terminal_flatten");
+                if (suppressed > 0) {
+                    notes.add("suppressed auto-exit for " + suppressed + " signal(s) on " + target.symbol());
+                }
             } catch (Exception ex) {
                 notes.add("flatten failed " + target.symbol() + ": " + ex.getClass().getSimpleName());
                 flattenResults.add(Map.of(
