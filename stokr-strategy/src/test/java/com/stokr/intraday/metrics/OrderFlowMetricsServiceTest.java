@@ -224,8 +224,8 @@ public class OrderFlowMetricsServiceTest {
         // Assert
         assertEquals("NEUTRAL", signal.getRecommendation());
         assertTrue(signal.isNeutral());
-        assertFalse(signal.shouldEnhanceConfidence);
-        assertFalse(signal.shouldReduceConfidence);
+        assertFalse(signal.getShouldEnhanceConfidence());
+        assertFalse(signal.getShouldReduceConfidence());
     }
 
     // ==================== NO DATA TESTS ====================
@@ -237,8 +237,8 @@ public class OrderFlowMetricsServiceTest {
         OrderFlowSignalEnhancement signal = metricsService.getOrderFlowSignal("NONEXISTENT");
 
         // Assert
-        assertTrue(signal.isError());
-        assertEquals(0, signal.getConfidence());
+        assertTrue(signal.getError());
+        assertEquals(0, signal.getConfidence().intValue());
     }
 
     @Test
@@ -252,7 +252,7 @@ public class OrderFlowMetricsServiceTest {
         OrderFlowSignalEnhancement signal = metricsService.getOrderFlowSignal("SBIN");
 
         // Assert
-        assertTrue(signal.isError());
+        assertTrue(signal.getError());
     }
 
     // ==================== CONFIDENCE MULTIPLIER TESTS ====================
@@ -319,7 +319,7 @@ public class OrderFlowMetricsServiceTest {
     @DisplayName("Should handle zero bid volume gracefully")
     public void testZeroBidVolume() {
         // Arrange
-        testSnapshot.setBidVolume(0);  // No bids!
+        testSnapshot.setBidVolume(0L);  // No bids!
         testSnapshot.setAskVolume(100_000L);
 
         entityManager.persistAndFlush(testSnapshot);
