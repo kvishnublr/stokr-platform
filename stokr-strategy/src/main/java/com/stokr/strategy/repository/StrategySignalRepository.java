@@ -80,6 +80,18 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
     @Query("""
             select s from StrategySignalEntity s
             where s.deleted = false
+              and s.testTrade = false
+              and s.backtestRunId is null
+              and (s.signalSource is null
+                   or s.signalSource in (com.stokr.strategy.signals.SignalProvenance.LIVE,
+                                         com.stokr.strategy.signals.SignalProvenance.PAPER))
+            order by s.createdAt desc
+            """)
+    List<StrategySignalEntity> findLatestProductionSignals(Pageable pageable);
+
+    @Query("""
+            select s from StrategySignalEntity s
+            where s.deleted = false
               and s.backtestRunId is null
               and s.testTrade = false
               and (s.outcomeStatus is null or s.outcomeStatus = 'PENDING')

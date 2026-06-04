@@ -25,6 +25,9 @@ public class SignalEmissionGuardService {
         if (signal == null || Boolean.TRUE.equals(signal.getTestTrade())) {
             return false;
         }
+        if (signal.getReason() != null && signal.getReason().startsWith("ADMIN_REGENERATE:")) {
+            return false;
+        }
         if (signal.getBacktestRunId() != null) {
             return false;
         }
