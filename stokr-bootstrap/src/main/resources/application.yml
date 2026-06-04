@@ -529,6 +529,17 @@ stokr:
     batch-update-enabled: ${STOKR_ORDERFLOW_BATCH_UPDATE_ENABLED:true}
     batch-update-interval: ${STOKR_ORDERFLOW_BATCH_UPDATE_INTERVAL_MS:60000}  # 1 minute
 
+  # ============= CONFIDENCE-BASED DYNAMIC STRATEGY =============
+  confidence-strategy:
+    # Calculate confidence scores for all Nifty 100 every minute
+    calculator-enabled: ${STOKR_CONFIDENCE_CALCULATOR_ENABLED:true}
+    calculator-interval: ${STOKR_CONFIDENCE_CALCULATOR_INTERVAL_MS:60000}  # 1 minute
+
+    # Generate signals based on trader-selected thresholds
+    generator-enabled: ${STOKR_CONFIDENCE_GENERATOR_ENABLED:true}
+    generator-interval: ${STOKR_CONFIDENCE_GENERATOR_INTERVAL_MS:120000}  # 2 minutes
+    generator-initial-delay: ${STOKR_CONFIDENCE_GENERATOR_INITIAL_DELAY_MS:70000}  # 70 seconds
+
 logging:
   level:
     root: INFO
