@@ -149,29 +149,33 @@ public class PositionReconciliationController {
 
         var status = reconciliationService.getReconciliationStatus(userId);
 
-        return Map.of(
-                "timestamp", System.currentTimeMillis(),
-                "userId", userId.toString(),
-                "summary", Map.of(
-                        "openLegs", status.openOmsLegs(),
-                        "ghosts", status.ghostPositions(),
-                        "blocking", status.blockingLive(),
-                        "healthScore", calculateHealthScore(status)
-                ),
-                "broker", Map.of(
-                        "status", status.brokerConnected() ? "CONNECTED" : "DISCONNECTED",
-                        "sync", status.brokerSync()
-                ),
-                "details", Map.of(
-                        "ghosts", status.ghosts(),
-                        "blocking", status.blocking()
-                ),
-                "actions", Map.of(
-                        "clearGhosts", status.ghostPositions() > 0 ? "RECOMMENDED" : "NOT_NEEDED",
-                        "syncBroker", status.blockingLive() > 0 ? "RECOMMENDED" : "CURRENT",
-                        "manualReview", status.ghostPositions() > 2 ? "URGENT" : "OPTIONAL"
-                )
-        );
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("timestamp", System.currentTimeMillis());
+        result.put("userId", userId.toString());
+        result.put("summary", Map.of(
+                "openLegs", status.openOmsLegs(),
+                "ghosts", status.ghostPositions(),
+                "blocking", status.blockingLive(),
+                "healthScore", calculateHealthScore(status)
+        ));
+
+        Map<String, Object> brokerMap = new java.util.LinkedHashMap<>();
+        brokerMap.put("status", status.brokerConnected() ? "CONNECTED" : "DISCONNECTED");
+        brokerMap.put("sync", status.brokerSync());
+        result.put("broker", brokerMap);
+
+        Map<String, Object> detailsMap = new java.util.LinkedHashMap<>();
+        detailsMap.put("ghosts", status.ghosts());
+        detailsMap.put("blocking", status.blocking());
+        result.put("details", detailsMap);
+
+        Map<String, Object> actionsMap = new java.util.LinkedHashMap<>();
+        actionsMap.put("clearGhosts", status.ghostPositions() > 0 ? "RECOMMENDED" : "NOT_NEEDED");
+        actionsMap.put("syncBroker", status.blockingLive() > 0 ? "RECOMMENDED" : "CURRENT");
+        actionsMap.put("manualReview", status.ghostPositions() > 2 ? "URGENT" : "OPTIONAL");
+        result.put("actions", actionsMap);
+
+        return result;
     }
 
     private String calculateHealthScore(PositionReconciliationService.PositionReconciliationStatus status) {

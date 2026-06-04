@@ -90,23 +90,25 @@ public class SignalExecutionDashboardController {
         Page<SignalExecutionTrack> tracks = trackRepository.findUserSignalsRecent(userId, since, pageable);
 
         List<Map<String, Object>> signals = tracks.getContent().stream()
-                .map(track -> Map.of(
-                        "signalId", track.getSignalId().toString(),
-                        "symbol", track.getSymbol(),
-                        "strategyKey", track.getStrategyKey(),
-                        "status", track.getStatus().name(),
-                        "executionMode", track.getExecutionMode() != null ? track.getExecutionMode() : "N/A",
-                        "broker", track.getBrokerVendor() != null ? track.getBrokerVendor() : "PENDING",
-                        "brokerOrderId", track.getBrokerOrderId() != null ? track.getBrokerOrderId() : "N/A",
-                        "side", track.getSide() != null ? track.getSide() : "N/A",
-                        "quantity", track.getQuantity() != null ? track.getQuantity().toPlainString() : "0",
-                        "createdAt", track.getCreatedAt().toString(),
-                        "filledAt", track.getFilledAt() != null ? track.getFilledAt().toString() : null,
-                        "executionTimeMs", track.getExecutionTimeMs() != null ? track.getExecutionTimeMs() : null,
-                        "currentStep", track.getCurrentStep(),
-                        "failureReason", track.getFailureReason(),
-                        "retries", track.getRetryCount()
-                ))
+                .map(track -> {
+                    Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("signalId", track.getSignalId().toString());
+                    m.put("symbol", track.getSymbol());
+                    m.put("strategyKey", track.getStrategyKey());
+                    m.put("status", track.getStatus().name());
+                    m.put("executionMode", track.getExecutionMode() != null ? track.getExecutionMode() : "N/A");
+                    m.put("broker", track.getBrokerVendor() != null ? track.getBrokerVendor() : "PENDING");
+                    m.put("brokerOrderId", track.getBrokerOrderId() != null ? track.getBrokerOrderId() : "N/A");
+                    m.put("side", track.getSide() != null ? track.getSide() : "N/A");
+                    m.put("quantity", track.getQuantity() != null ? track.getQuantity().toPlainString() : "0");
+                    m.put("createdAt", track.getCreatedAt().toString());
+                    m.put("filledAt", track.getFilledAt() != null ? track.getFilledAt().toString() : null);
+                    m.put("executionTimeMs", track.getExecutionTimeMs() != null ? track.getExecutionTimeMs() : null);
+                    m.put("currentStep", track.getCurrentStep());
+                    m.put("failureReason", track.getFailureReason());
+                    m.put("retries", track.getRetryCount());
+                    return m;
+                })
                 .collect(Collectors.toList());
 
         return Map.of(
@@ -185,20 +187,21 @@ public class SignalExecutionDashboardController {
                 strategyKey != null ? strategyKey : "%");
 
         List<Map<String, Object>> signals = pending.stream()
-                .map(track -> Map.of(
-                        "signalId", track.getSignalId().toString(),
-                        "symbol", track.getSymbol(),
-                        "strategyKey", track.getStrategyKey(),
-                        "side", track.getSide() != null ? track.getSide() : "N/A",
-                        "quantity", track.getQuantity() != null ? track.getQuantity().toPlainString() : "0",
-                        "status", track.getStatus().name(),
-                        "currentStep", track.getCurrentStep(),
-                        "executionMode", track.getExecutionMode() != null ? track.getExecutionMode() : "N/A",
-                        "broker", track.getBrokerVendor() != null ? track.getBrokerVendor() : "PENDING",
-                        "createdAt", track.getCreatedAt().toString(),
-                        "waitingTimeMs", java.time.temporal.ChronoUnit.MILLIS.between(
-                                track.getCreatedAt(), Instant.now())
-                ))
+                .map(track -> {
+                    Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("signalId", track.getSignalId().toString());
+                    m.put("symbol", track.getSymbol());
+                    m.put("strategyKey", track.getStrategyKey());
+                    m.put("side", track.getSide() != null ? track.getSide() : "N/A");
+                    m.put("quantity", track.getQuantity() != null ? track.getQuantity().toPlainString() : "0");
+                    m.put("status", track.getStatus().name());
+                    m.put("currentStep", track.getCurrentStep());
+                    m.put("executionMode", track.getExecutionMode() != null ? track.getExecutionMode() : "N/A");
+                    m.put("broker", track.getBrokerVendor() != null ? track.getBrokerVendor() : "PENDING");
+                    m.put("createdAt", track.getCreatedAt().toString());
+                    m.put("waitingTimeMs", java.time.temporal.ChronoUnit.MILLIS.between(track.getCreatedAt(), Instant.now()));
+                    return m;
+                })
                 .collect(Collectors.toList());
 
         return Map.of(
@@ -221,17 +224,19 @@ public class SignalExecutionDashboardController {
 
         List<Map<String, Object>> issues = tracks.getContent().stream()
                 .filter(t -> t.getStatus().name().contains("FAILED"))
-                .map(track -> Map.of(
-                        "signalId", track.getSignalId().toString(),
-                        "symbol", track.getSymbol(),
-                        "strategyKey", track.getStrategyKey(),
-                        "failureReason", track.getFailureReason(),
-                        "errorDetail", track.getLastError() != null ? track.getLastError() : "N/A",
-                        "status", track.getStatus().name(),
-                        "retryCount", track.getRetryCount(),
-                        "suggestion", suggestFix(track.getFailureReason()),
-                        "createdAt", track.getCreatedAt().toString()
-                ))
+                .map(track -> {
+                    Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("signalId", track.getSignalId().toString());
+                    m.put("symbol", track.getSymbol());
+                    m.put("strategyKey", track.getStrategyKey());
+                    m.put("failureReason", track.getFailureReason());
+                    m.put("errorDetail", track.getLastError() != null ? track.getLastError() : "N/A");
+                    m.put("status", track.getStatus().name());
+                    m.put("retryCount", track.getRetryCount());
+                    m.put("suggestion", suggestFix(track.getFailureReason()));
+                    m.put("createdAt", track.getCreatedAt().toString());
+                    return m;
+                })
                 .collect(Collectors.toList());
 
         return Map.of(

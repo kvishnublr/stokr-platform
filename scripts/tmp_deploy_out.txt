@@ -1,0 +1,579 @@
+deploy retry 2
+
+$ cd /opt/stokr/stokr-platform && docker compose --profile app up -d --no-deps ui
+time="2026-06-04T04:09:22+02:00" level=warning msg="Found orphan containers ([stokr-api-new stokr-ui-new stokr-redis-new stokr-rabbit-new stokr-postgres-new]) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container stokr-ui Running 
+
+EXIT=0
+
+$ sleep 15
+
+EXIT=0
+
+$ cd /opt/stokr/stokr-platform && docker compose ps api ui
+NAME        IMAGE                COMMAND                  SERVICE   CREATED          STATUS                    PORTS
+stokr-api   stokr-platform-api   "java -XX:+UseContai…"   api       3 minutes ago    Up 3 minutes (healthy)    0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+stokr-ui    stokr-platform-ui    "/docker-entrypoint.…"   ui        58 seconds ago   Up 54 seconds (healthy)   0.0.0.0:3000->80/tcp, [::]:3000->80/tcp
+
+EXIT=0
+
+$ curl -sf http://127.0.0.1:8080/actuator/health || echo API_HEALTH_FAIL
+{"status":"UP","groups":["liveness","readiness"]}
+EXIT=0
+
+$ docker exec stokr-postgres psql -U postgres -d stokr_platform -c "SELECT symbol, timeframe, COUNT(*) cnt, MAX(open_time) latest FROM marketdata_candles WHERE symbol IN ('USDINR','EURINR') GROUP BY symbol, timeframe ORDER BY symbol;"
+ symbol | timeframe | cnt | latest 
+--------+-----------+-----+--------
+(0 rows)
+
+
+EXIT=0
+
+$ docker logs stokr-api 2>&1 | grep cds_backfill | tail -15
+07:39:45.752 [31mWARN [0;39m [36mc.s.b.f.z.CdsCurrencyBackfillService[0;39m - cds_backfill.failed trigger=startup symbol=EURINR org.springframework.web.client.HttpClientErrorException$Forbidden: 403 Forbidden: "{"status":"error","message":"Incorrect `api_key` or `access_token`.","data":null,"error_type":"TokenException"}"
+07:39:45.905 [31mWARN [0;39m [36mc.s.b.f.z.CdsCurrencyBackfillService[0;39m - cds_backfill.failed trigger=startup symbol=USDINR org.springframework.web.client.HttpClientErrorException$Forbidden: 403 Forbidden: "{"status":"error","message":"Incorrect `api_key` or `access_token`.","data":null,"error_type":"TokenException"}"
+07:39:45.906 [34mINFO [0;39m [36mc.s.b.f.z.CdsCurrencyBackfillService[0;39m - cds_backfill.done trigger=startup pairs=2 filled=0
+
+EXIT=0
+
+$ cd /opt/stokr/stokr-platform && git pull origin Release_v1
+Already up to date.
+From https://github.com/kvishnublr/stokr-platform
+ * branch            Release_v1 -> FETCH_HEAD
+
+EXIT=0
+
+$ cd /opt/stokr/stokr-platform && bash deploy.sh api
+==> Deploy SSH: repo deploy key already authorized
+==> Deploy SSH: server deploy key already authorized
+==> Deploy metadata: branch=Release_v1 commit=6d675a2
+==> [API] Pulling latest code...
+Already up to date.
+==> [API] Ensuring dependencies are running (postgres, redis, rabbitmq, autoheal)...
+==> [API] Waiting for dependencies to be healthy (60 seconds)...
+==> [API] Building Docker image (uses Maven layer cache)...
+#1 [internal] load local bake definitions
+#1 reading from stdin 504B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.36kB 0.0s done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/maven:3.9.9-eclipse-temurin-21-alpine
+#3 DONE 1.3s
+
+#4 [internal] load metadata for docker.io/library/eclipse-temurin:21-jre-alpine
+#4 DONE 1.3s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 137B 0.0s done
+#5 DONE 0.1s
+
+#6 [internal] load build context
+#6 DONE 0.0s
+
+#7 [build  1/19] FROM docker.io/library/maven:3.9.9-eclipse-temurin-21-alpine@sha256:5a8b906c4faa11d33f6c74758f67db8eac25441e14b0729f6d50ff78992be58a
+#7 resolve docker.io/library/maven:3.9.9-eclipse-temurin-21-alpine@sha256:5a8b906c4faa11d33f6c74758f67db8eac25441e14b0729f6d50ff78992be58a 0.1s done
+#7 DONE 0.1s
+
+#8 [stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-alpine@sha256:704db3c40204a44f471191446ddd9cda5d60dab40f0e15c6507b815ed897238b
+#8 resolve docker.io/library/eclipse-temurin:21-jre-alpine@sha256:704db3c40204a44f471191446ddd9cda5d60dab40f0e15c6507b815ed897238b
+#8 resolve docker.io/library/eclipse-temurin:21-jre-alpine@sha256:704db3c40204a44f471191446ddd9cda5d60dab40f0e15c6507b815ed897238b 0.1s done
+#8 DONE 0.1s
+
+#6 [internal] load build context
+#6 transferring context: 201.82kB 0.2s done
+#6 DONE 0.3s
+
+#9 [build 11/19] COPY stokr-backtest/pom.xml stokr-backtest/
+#9 CACHED
+
+#10 [build 15/19] COPY stokr-websocket/pom.xml stokr-websocket/
+#10 CACHED
+
+#11 [build  7/19] COPY stokr-risk/pom.xml stokr-risk/
+#11 CACHED
+
+#12 [build 13/19] COPY stokr-admin/pom.xml stokr-admin/
+#12 CACHED
+
+#13 [build 14/19] COPY stokr-broker/pom.xml stokr-broker/
+#13 CACHED
+
+#14 [build  3/19] COPY pom.xml .
+#14 CACHED
+
+#15 [build  4/19] COPY stokr-common/pom.xml stokr-common/
+#15 CACHED
+
+#16 [build  8/19] COPY stokr-oms/pom.xml stokr-oms/
+#16 CACHED
+
+#17 [build  2/19] WORKDIR /workspace
+#17 CACHED
+
+#18 [build 10/19] COPY stokr-strategy/pom.xml stokr-strategy/
+#18 CACHED
+
+#19 [build  9/19] COPY stokr-marketdata/pom.xml stokr-marketdata/
+#19 CACHED
+
+#20 [build 12/19] COPY stokr-execution/pom.xml stokr-execution/
+#20 CACHED
+
+#21 [build  5/19] COPY stokr-auth/pom.xml stokr-auth/
+#21 CACHED
+
+#22 [build 16/19] COPY stokr-bootstrap/pom.xml stokr-bootstrap/
+#22 CACHED
+
+#23 [build  6/19] COPY stokr-user/pom.xml stokr-user/
+#23 CACHED
+
+#24 [build 17/19] RUN --mount=type=cache,target=/root/.m2     mvn -pl stokr-bootstrap -am dependency:go-offline -q
+#24 CACHED
+
+#25 [build 18/19] COPY . .
+#25 DONE 1.2s
+
+#26 [build 19/19] RUN --mount=type=cache,target=/root/.m2     mvn -pl stokr-bootstrap -am package -DskipTests -Dmaven.test.skip=true
+#26 7.672 [INFO] Scanning for projects...
+#26 9.476 [INFO] ------------------------------------------------------------------------
+#26 9.476 [INFO] Reactor Build Order:
+#26 9.476 [INFO] 
+#26 9.476 [INFO] stokr-platform                                                     [pom]
+#26 9.476 [INFO] stokr-common                                                       [jar]
+#26 9.476 [INFO] stokr-auth                                                         [jar]
+#26 9.476 [INFO] stokr-broker                                                       [jar]
+#26 9.476 [INFO] stokr-marketdata                                                   [jar]
+#26 9.476 [INFO] stokr-oms                                                          [jar]
+#26 9.476 [INFO] stokr-strategy                                                     [jar]
+#26 9.476 [INFO] stokr-user                                                         [jar]
+#26 9.476 [INFO] stokr-risk                                                         [jar]
+#26 9.476 [INFO] stokr-execution                                                    [jar]
+#26 9.476 [INFO] stokr-backtest                                                     [jar]
+#26 9.476 [INFO] stokr-websocket                                                    [jar]
+#26 9.476 [INFO] stokr-admin                                                        [jar]
+#26 9.476 [INFO] stokr-bootstrap                                                    [jar]
+#26 9.516 [INFO] 
+#26 9.516 [INFO] ----------------------< com.stokr:stokr-platform >----------------------
+#26 9.516 [INFO] Building stokr-platform 1.0.0-SNAPSHOT                            [1/14]
+#26 9.517 [INFO]   from pom.xml
+#26 9.517 [INFO] --------------------------------[ pom ]---------------------------------
+#26 9.538 [INFO] 
+#26 9.541 [INFO] -----------------------< com.stokr:stokr-common >-----------------------
+#26 9.541 [INFO] Building stokr-common 1.0.0-SNAPSHOT                              [2/14]
+#26 9.541 [INFO]   from stokr-common/pom.xml
+#26 9.541 [INFO] --------------------------------[ jar ]---------------------------------
+#26 12.10 [INFO] 
+#26 12.11 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-common ---
+#26 12.83 [INFO] skip non existing resourceDirectory /workspace/stokr-common/src/main/resources
+#26 12.83 [INFO] 
+#26 12.84 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-common ---
+#26 13.65 [INFO] Recompiling the module because of changed source code.
+#26 13.69 [INFO] Compiling 54 source files with javac [debug parameters release 21] to target/classes
+#26 27.77 [WARNING] /workspace/stokr-common/src/main/java/com/stokr/common/simulation/SimulationModeService.java:[30,20] deprecated item is not annotated with @Deprecated
+#26 27.77 [INFO] 
+#26 27.77 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-common ---
+#26 27.83 [INFO] Not copying test resources
+#26 27.83 [INFO] 
+#26 27.83 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-common ---
+#26 27.94 [INFO] Not compiling test sources
+#26 27.94 [INFO] 
+#26 27.94 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-common ---
+#26 29.30 [INFO] Tests are skipped.
+#26 29.30 [INFO] 
+#26 29.30 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-common ---
+#26 31.25 [INFO] Building jar: /workspace/stokr-common/target/stokr-common-1.0.0-SNAPSHOT.jar
+#26 31.98 [INFO] 
+#26 31.98 [INFO] ------------------------< com.stokr:stokr-auth >------------------------
+#26 31.98 [INFO] Building stokr-auth 1.0.0-SNAPSHOT                                [3/14]
+#26 31.98 [INFO]   from stokr-auth/pom.xml
+#26 31.98 [INFO] --------------------------------[ jar ]---------------------------------
+#26 32.83 [INFO] 
+#26 32.83 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-auth ---
+#26 32.85 [INFO] skip non existing resourceDirectory /workspace/stokr-auth/src/main/resources
+#26 32.85 [INFO] 
+#26 32.85 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-auth ---
+#26 32.93 [INFO] Recompiling the module because of changed dependency.
+#26 32.93 [INFO] Compiling 29 source files with javac [debug parameters release 21] to target/classes
+#26 39.64 [INFO] 
+#26 39.64 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-auth ---
+#26 39.67 [INFO] Not copying test resources
+#26 39.67 [INFO] 
+#26 39.67 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-auth ---
+#26 39.70 [INFO] Not compiling test sources
+#26 39.70 [INFO] 
+#26 39.70 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-auth ---
+#26 39.73 [INFO] Tests are skipped.
+#26 39.74 [INFO] 
+#26 39.74 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-auth ---
+#26 39.81 [INFO] Building jar: /workspace/stokr-auth/target/stokr-auth-1.0.0-SNAPSHOT.jar
+#26 40.00 [INFO] 
+#26 40.00 [INFO] -----------------------< com.stokr:stokr-broker >-----------------------
+#26 40.00 [INFO] Building stokr-broker 1.0.0-SNAPSHOT                              [4/14]
+#26 40.00 [INFO]   from stokr-broker/pom.xml
+#26 40.00 [INFO] --------------------------------[ jar ]---------------------------------
+#26 40.35 [INFO] 
+#26 40.35 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-broker ---
+#26 40.38 [INFO] skip non existing resourceDirectory /workspace/stokr-broker/src/main/resources
+#26 40.38 [INFO] 
+#26 40.38 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-broker ---
+#26 40.43 [INFO] Recompiling the module because of changed dependency.
+#26 40.43 [INFO] Compiling 17 source files with javac [debug parameters release 21] to target/classes
+#26 46.89 [INFO] 
+#26 46.90 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-broker ---
+#26 46.95 [INFO] Not copying test resources
+#26 46.95 [INFO] 
+#26 46.95 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-broker ---
+#26 46.96 [INFO] Not compiling test sources
+#26 46.98 [INFO] 
+#26 46.98 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-broker ---
+#26 47.02 [INFO] Tests are skipped.
+#26 47.02 [INFO] 
+#26 47.02 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-broker ---
+#26 47.10 [INFO] Building jar: /workspace/stokr-broker/target/stokr-broker-1.0.0-SNAPSHOT.jar
+#26 47.59 [INFO] 
+#26 47.60 [INFO] ---------------------< com.stokr:stokr-marketdata >---------------------
+#26 47.60 [INFO] Building stokr-marketdata 1.0.0-SNAPSHOT                          [5/14]
+#26 47.60 [INFO]   from stokr-marketdata/pom.xml
+#26 47.60 [INFO] --------------------------------[ jar ]---------------------------------
+#26 48.55 [INFO] 
+#26 48.55 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-marketdata ---
+#26 48.59 [INFO] skip non existing resourceDirectory /workspace/stokr-marketdata/src/main/resources
+#26 48.59 [INFO] 
+#26 48.59 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-marketdata ---
+#26 48.75 [INFO] Recompiling the module because of changed dependency.
+#26 48.75 [INFO] Compiling 29 source files with javac [debug parameters release 21] to target/classes
+#26 60.12 [INFO] 
+#26 60.12 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-marketdata ---
+#26 60.13 [INFO] Not copying test resources
+#26 60.13 [INFO] 
+#26 60.13 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-marketdata ---
+#26 60.15 [INFO] Not compiling test sources
+#26 60.16 [INFO] 
+#26 60.16 [INFO] --- surefire:3.5.5:test (default-test) @ stokr-marketdata ---
+#26 60.70 [INFO] Tests are skipped.
+#26 60.70 [INFO] 
+#26 60.70 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-marketdata ---
+#26 60.78 [INFO] Building jar: /workspace/stokr-marketdata/target/stokr-marketdata-1.0.0-SNAPSHOT.jar
+#26 60.92 [INFO] 
+#26 60.92 [INFO] ------------------------< com.stokr:stokr-oms >-------------------------
+#26 60.92 [INFO] Building stokr-oms 1.0.0-SNAPSHOT                                 [6/14]
+#26 60.92 [INFO]   from stokr-oms/pom.xml
+#26 60.92 [INFO] --------------------------------[ jar ]---------------------------------
+#26 61.11 [INFO] 
+#26 61.11 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-oms ---
+#26 61.12 [INFO] skip non existing resourceDirectory /workspace/stokr-oms/src/main/resources
+#26 61.12 [INFO] 
+#26 61.12 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-oms ---
+#26 61.20 [INFO] Recompiling the module because of changed dependency.
+#26 61.20 [INFO] Compiling 64 source files with javac [debug parameters release 21] to target/classes
+#26 69.51 [INFO] 
+#26 69.52 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-oms ---
+#26 69.54 [INFO] Not copying test resources
+#26 69.54 [INFO] 
+#26 69.55 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-oms ---
+#26 69.58 [INFO] Not compiling test sources
+#26 69.58 [INFO] 
+#26 69.58 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-oms ---
+#26 69.61 [INFO] Tests are skipped.
+#26 69.61 [INFO] 
+#26 69.61 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-oms ---
+#26 69.76 [INFO] Building jar: /workspace/stokr-oms/target/stokr-oms-1.0.0-SNAPSHOT.jar
+#26 69.86 [INFO] 
+#26 69.86 [INFO] ----------------------< com.stokr:stokr-strategy >----------------------
+#26 69.86 [INFO] Building stokr-strategy 1.0.0-SNAPSHOT                            [7/14]
+#26 69.86 [INFO]   from stokr-strategy/pom.xml
+#26 69.86 [INFO] --------------------------------[ jar ]---------------------------------
+#26 70.16 [INFO] 
+#26 70.16 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-strategy ---
+#26 70.22 [INFO] Copying 5 resources from src/main/resources to target/classes
+#26 70.26 [INFO] 
+#26 70.26 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-strategy ---
+#26 70.37 [INFO] Recompiling the module because of changed dependency.
+#26 70.38 [INFO] Compiling 216 source files with javac [debug parameters release 21] to target/classes
+#26 115.2 [INFO] /workspace/stokr-strategy/src/main/java/com/stokr/intraday/service/IndexHuntTelegramService.java: Some input files use unchecked or unsafe operations.
+#26 115.2 [INFO] /workspace/stokr-strategy/src/main/java/com/stokr/intraday/service/IndexHuntTelegramService.java: Recompile with -Xlint:unchecked for details.
+#26 115.2 [INFO] 
+#26 115.2 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-strategy ---
+#26 115.2 [INFO] Not copying test resources
+#26 115.2 [INFO] 
+#26 115.2 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-strategy ---
+#26 115.2 [INFO] Not compiling test sources
+#26 115.2 [INFO] 
+#26 115.2 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-strategy ---
+#26 115.2 [INFO] Tests are skipped.
+#26 115.2 [INFO] 
+#26 115.2 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-strategy ---
+#26 115.4 [INFO] Building jar: /workspace/stokr-strategy/target/stokr-strategy-1.0.0-SNAPSHOT.jar
+#26 115.7 [INFO] 
+#26 115.7 [INFO] ------------------------< com.stokr:stokr-user >------------------------
+#26 115.7 [INFO] Building stokr-user 1.0.0-SNAPSHOT                                [8/14]
+#26 115.7 [INFO]   from stokr-user/pom.xml
+#26 115.7 [INFO] --------------------------------[ jar ]---------------------------------
+#26 116.0 [INFO] 
+#26 116.0 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-user ---
+#26 116.0 [INFO] skip non existing resourceDirectory /workspace/stokr-user/src/main/resources
+#26 116.0 [INFO] 
+#26 116.0 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-user ---
+#26 116.0 [INFO] Recompiling the module because of changed dependency.
+#26 116.1 [INFO] Compiling 69 source files with javac [debug parameters release 21] to target/classes
+#26 125.3 [INFO] /workspace/stokr-user/src/main/java/com/stokr/user/broker/ZerodhaKiteApiClient.java: /workspace/stokr-user/src/main/java/com/stokr/user/broker/ZerodhaKiteApiClient.java uses or overrides a deprecated API.
+#26 125.3 [INFO] /workspace/stokr-user/src/main/java/com/stokr/user/broker/ZerodhaKiteApiClient.java: Recompile with -Xlint:deprecation for details.
+#26 125.3 [INFO] 
+#26 125.3 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-user ---
+#26 125.3 [INFO] Not copying test resources
+#26 125.3 [INFO] 
+#26 125.3 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-user ---
+#26 125.4 [INFO] Not compiling test sources
+#26 125.4 [INFO] 
+#26 125.4 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-user ---
+#26 125.4 [INFO] Tests are skipped.
+#26 125.4 [INFO] 
+#26 125.4 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-user ---
+#26 125.5 [INFO] Building jar: /workspace/stokr-user/target/stokr-user-1.0.0-SNAPSHOT.jar
+#26 125.6 [INFO] 
+#26 125.6 [INFO] ------------------------< com.stokr:stokr-risk >------------------------
+#26 125.6 [INFO] Building stokr-risk 1.0.0-SNAPSHOT                                [9/14]
+#26 125.6 [INFO]   from stokr-risk/pom.xml
+#26 125.6 [INFO] --------------------------------[ jar ]---------------------------------
+#26 125.9 [INFO] 
+#26 125.9 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-risk ---
+#26 125.9 [INFO] skip non existing resourceDirectory /workspace/stokr-risk/src/main/resources
+#26 125.9 [INFO] 
+#26 125.9 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-risk ---
+#26 126.0 [INFO] Recompiling the module because of changed dependency.
+#26 126.1 [INFO] Compiling 41 source files with javac [debug parameters release 21] to target/classes
+#26 131.5 [INFO] 
+#26 131.5 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-risk ---
+#26 131.5 [INFO] Not copying test resources
+#26 131.5 [INFO] 
+#26 131.5 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-risk ---
+#26 131.5 [INFO] Not compiling test sources
+#26 131.5 [INFO] 
+#26 131.5 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-risk ---
+#26 131.5 [INFO] Tests are skipped.
+#26 131.5 [INFO] 
+#26 131.6 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-risk ---
+#26 131.6 [INFO] Building jar: /workspace/stokr-risk/target/stokr-risk-1.0.0-SNAPSHOT.jar
+#26 131.8 [INFO] 
+#26 131.8 [INFO] ---------------------< com.stokr:stokr-execution >----------------------
+#26 131.8 [INFO] Building stokr-execution 1.0.0-SNAPSHOT                          [10/14]
+#26 131.8 [INFO]   from stokr-execution/pom.xml
+#26 131.8 [INFO] --------------------------------[ jar ]---------------------------------
+#26 132.0 [INFO] 
+#26 132.0 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-execution ---
+#26 132.1 [INFO] Copying 1 resource from src/main/resources to target/classes
+#26 132.1 [INFO] 
+#26 132.1 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-execution ---
+#26 132.2 [INFO] Recompiling the module because of changed dependency.
+#26 132.2 [INFO] Compiling 130 source files with javac [debug parameters release 21] to target/classes
+#26 145.1 [INFO] 
+#26 145.1 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-execution ---
+#26 145.1 [INFO] Not copying test resources
+#26 145.1 [INFO] 
+#26 145.1 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-execution ---
+#26 145.2 [INFO] Not compiling test sources
+#26 145.2 [INFO] 
+#26 145.2 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-execution ---
+#26 145.2 [INFO] Tests are skipped.
+#26 145.2 [INFO] 
+#26 145.2 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-execution ---
+#26 145.5 [INFO] Building jar: /workspace/stokr-execution/target/stokr-execution-1.0.0-SNAPSHOT.jar
+#26 145.7 [INFO] 
+#26 145.7 [INFO] ----------------------< com.stokr:stokr-backtest >----------------------
+#26 145.7 [INFO] Building stokr-backtest 1.0.0-SNAPSHOT                           [11/14]
+#26 145.7 [INFO]   from stokr-backtest/pom.xml
+#26 145.7 [INFO] --------------------------------[ jar ]---------------------------------
+#26 145.8 [INFO] 
+#26 145.8 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-backtest ---
+#26 145.8 [INFO] skip non existing resourceDirectory /workspace/stokr-backtest/src/main/resources
+#26 145.8 [INFO] 
+#26 145.8 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-backtest ---
+#26 145.9 [INFO] Recompiling the module because of changed dependency.
+#26 145.9 [INFO] Compiling 57 source files with javac [debug parameters release 21] to target/classes
+#26 150.4 [WARNING] /workspace/stokr-backtest/src/main/java/com/stokr/backtest/web/BacktestController.java:[190,47] deprecated item is not annotated with @Deprecated
+#26 150.4 [WARNING] /workspace/stokr-backtest/src/main/java/com/stokr/backtest/web/BacktestController.java:[199,47] deprecated item is not annotated with @Deprecated
+#26 150.4 [INFO] 
+#26 150.4 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-backtest ---
+#26 150.4 [INFO] Not copying test resources
+#26 150.4 [INFO] 
+#26 150.4 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-backtest ---
+#26 150.4 [INFO] Not compiling test sources
+#26 150.4 [INFO] 
+#26 150.4 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-backtest ---
+#26 150.4 [INFO] Tests are skipped.
+#26 150.4 [INFO] 
+#26 150.4 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-backtest ---
+#26 150.5 [INFO] Building jar: /workspace/stokr-backtest/target/stokr-backtest-1.0.0-SNAPSHOT.jar
+#26 150.5 [INFO] 
+#26 150.5 [INFO] ---------------------< com.stokr:stokr-websocket >----------------------
+#26 150.5 [INFO] Building stokr-websocket 1.0.0-SNAPSHOT                          [12/14]
+#26 150.5 [INFO]   from stokr-websocket/pom.xml
+#26 150.5 [INFO] --------------------------------[ jar ]---------------------------------
+#26 150.6 [INFO] 
+#26 150.6 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-websocket ---
+#26 150.6 [INFO] skip non existing resourceDirectory /workspace/stokr-websocket/src/main/resources
+#26 150.6 [INFO] 
+#26 150.6 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-websocket ---
+#26 150.6 [INFO] Recompiling the module because of changed dependency.
+#26 150.6 [INFO] Compiling 7 source files with javac [debug parameters release 21] to target/classes
+#26 152.7 [INFO] 
+#26 152.7 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-websocket ---
+#26 152.7 [INFO] Not copying test resources
+#26 152.7 [INFO] 
+#26 152.7 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-websocket ---
+#26 152.7 [INFO] Not compiling test sources
+#26 152.7 [INFO] 
+#26 152.7 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-websocket ---
+#26 152.7 [INFO] Tests are skipped.
+#26 152.7 [INFO] 
+#26 152.7 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-websocket ---
+#26 152.8 [INFO] Building jar: /workspace/stokr-websocket/target/stokr-websocket-1.0.0-SNAPSHOT.jar
+#26 152.8 [INFO] 
+#26 152.8 [INFO] -----------------------< com.stokr:stokr-admin >------------------------
+#26 152.8 [INFO] Building stokr-admin 1.0.0-SNAPSHOT                              [13/14]
+#26 152.9 [INFO]   from stokr-admin/pom.xml
+#26 152.9 [INFO] --------------------------------[ jar ]---------------------------------
+#26 153.0 [INFO] 
+#26 153.0 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-admin ---
+#26 153.0 [INFO] skip non existing resourceDirectory /workspace/stokr-admin/src/main/resources
+#26 153.0 [INFO] 
+#26 153.0 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-admin ---
+#26 153.1 [INFO] Recompiling the module because of changed dependency.
+#26 153.1 [INFO] Compiling 117 source files with javac [debug parameters release 21] to target/classes
+#26 166.9 [INFO] /workspace/stokr-admin/src/main/java/com/stokr/admin/service/AdminTestSignalLabService.java: /workspace/stokr-admin/src/main/java/com/stokr/admin/service/AdminTestSignalLabService.java uses unchecked or unsafe operations.
+#26 166.9 [INFO] /workspace/stokr-admin/src/main/java/com/stokr/admin/service/AdminTestSignalLabService.java: Recompile with -Xlint:unchecked for details.
+#26 166.9 [INFO] 
+#26 166.9 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-admin ---
+#26 166.9 [INFO] Not copying test resources
+#26 166.9 [INFO] 
+#26 166.9 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-admin ---
+#26 166.9 [INFO] Not compiling test sources
+#26 166.9 [INFO] 
+#26 166.9 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-admin ---
+#26 167.0 [INFO] Tests are skipped.
+#26 167.0 [INFO] 
+#26 167.0 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-admin ---
+#26 167.0 [INFO] Building jar: /workspace/stokr-admin/target/stokr-admin-1.0.0-SNAPSHOT.jar
+#26 167.2 [INFO] 
+#26 167.2 [INFO] ---------------------< com.stokr:stokr-bootstrap >----------------------
+#26 167.2 [INFO] Building stokr-bootstrap 1.0.0-SNAPSHOT                          [14/14]
+#26 167.2 [INFO]   from stokr-bootstrap/pom.xml
+#26 167.2 [INFO] --------------------------------[ jar ]---------------------------------
+#26 168.1 [INFO] 
+#26 168.1 [INFO] --- resources:3.3.1:resources (default-resources) @ stokr-bootstrap ---
+#26 168.1 [INFO] Copying 82 resources from src/main/resources to target/classes
+#26 168.2 [INFO] 
+#26 168.3 [INFO] --- compiler:3.13.0:compile (default-compile) @ stokr-bootstrap ---
+#26 168.3 [INFO] Recompiling the module because of changed dependency.
+#26 168.3 [INFO] Compiling 56 source files with javac [debug parameters release 21] to target/classes
+#26 178.0 [INFO] 
+#26 178.0 [INFO] --- resources:3.3.1:testResources (default-testResources) @ stokr-bootstrap ---
+#26 178.0 [INFO] Not copying test resources
+#26 178.0 [INFO] 
+#26 178.0 [INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ stokr-bootstrap ---
+#26 178.0 [INFO] Not compiling test sources
+#26 178.0 [INFO] 
+#26 178.0 [INFO] --- surefire:3.2.5:test (default-test) @ stokr-bootstrap ---
+#26 178.0 [INFO] Tests are skipped.
+#26 178.0 [INFO] 
+#26 178.0 [INFO] --- jar:3.4.1:jar (default-jar) @ stokr-bootstrap ---
+#26 178.2 [INFO] Building jar: /workspace/stokr-bootstrap/target/stokr-bootstrap-1.0.0-SNAPSHOT.jar
+#26 178.4 [INFO] 
+#26 178.4 [INFO] --- spring-boot:3.4.2:repackage (default) @ stokr-bootstrap ---
+#26 181.9 [INFO] Replacing main artifact /workspace/stokr-bootstrap/target/stokr-bootstrap-1.0.0-SNAPSHOT.jar with repackaged archive, adding nested dependencies in BOOT-INF/.
+#26 181.9 [INFO] The original artifact has been renamed to /workspace/stokr-bootstrap/target/stokr-bootstrap-1.0.0-SNAPSHOT.jar.original
+#26 181.9 [INFO] ------------------------------------------------------------------------
+#26 181.9 [INFO] Reactor Summary for stokr-platform 1.0.0-SNAPSHOT:
+#26 181.9 [INFO] 
+#26 181.9 [INFO] stokr-platform ..................................... SUCCESS [  0.022 s]
+#26 181.9 [INFO] stokr-common ....................................... SUCCESS [ 22.443 s]
+#26 181.9 [INFO] stokr-auth ......................................... SUCCESS [  8.015 s]
+#26 181.9 [INFO] stokr-broker ....................................... SUCCESS [  7.596 s]
+#26 181.9 [INFO] stokr-marketdata ................................... SUCCESS [ 13.328 s]
+#26 181.9 [INFO] stokr-oms .......................................... SUCCESS [  8.938 s]
+#26 181.9 [INFO] stokr-strategy ..................................... SUCCESS [ 45.852 s]
+#26 181.9 [INFO] stokr-user ......................................... SUCCESS [  9.923 s]
+#26 181.9 [INFO] stokr-risk ......................................... SUCCESS [  6.166 s]
+#26 181.9 [INFO] stokr-execution .................................... SUCCESS [ 13.890 s]
+#26 181.9 [INFO] stokr-backtest ..................................... SUCCESS [  4.826 s]
+#26 181.9 [INFO] stokr-websocket .................................... SUCCESS [  2.330 s]
+#26 181.9 [INFO] stokr-admin ........................................ SUCCESS [ 14.377 s]
+#26 181.9 [INFO] stokr-bootstrap .................................... SUCCESS [ 14.640 s]
+#26 181.9 [INFO] ------------------------------------------------------------------------
+#26 181.9 [INFO] BUILD SUCCESS
+#26 181.9 [INFO] ------------------------------------------------------------------------
+#26 181.9 [INFO] Total time:  02:54 min
+#26 181.9 [INFO] Finished at: 2026-06-04T02:16:30Z
+#26 181.9 [INFO] ------------------------------------------------------------------------
+#26 DONE 182.3s
+
+#27 [stage-1 2/4] WORKDIR /app
+#27 CACHED
+
+#28 [stage-1 3/4] RUN addgroup -S stokr && adduser -S stokr -G stokr
+#28 CACHED
+
+#29 [stage-1 4/4] COPY --from=build /workspace/stokr-bootstrap/target/stokr-bootstrap-*.jar /app/stokr-bootstrap.jar
+#29 DONE 0.3s
+
+#30 exporting to image
+#30 exporting layers
+#30 exporting layers 9.0s done
+#30 exporting manifest sha256:4a875f95bd06bd2e28b91627df93fd78d7cf078a2920e3271770a71b1758ccc6 0.1s done
+#30 exporting config sha256:2e49df2cca4f4d485c1e8c2e04747699492dc7bbc005d289fbfa6f0f9376634b 0.0s done
+#30 exporting attestation manifest sha256:78a32010d70e6bc8e64a2bb09b229ff770043972733a46d64f427b6709388563
+#30 exporting attestation manifest sha256:78a32010d70e6bc8e64a2bb09b229ff770043972733a46d64f427b6709388563 0.2s done
+#30 exporting manifest list sha256:d9a6b7c4f953249ca34a42f57069ed2ac68cb2e78869c24c95520ee76fe23549
+#30 exporting manifest list sha256:d9a6b7c4f953249ca34a42f57069ed2ac68cb2e78869c24c95520ee76fe23549 0.1s done
+#30 naming to docker.io/library/stokr-platform-api:latest 0.0s done
+#30 unpacking to docker.io/library/stokr-platform-api:latest
+#30 unpacking to docker.io/library/stokr-platform-api:latest 5.8s done
+#30 DONE 15.4s
+
+#31 resolving provenance for metadata file
+#31 DONE 0.1s
+==> [API] Restarting API container...
+From https://github.com/kvishnublr/stokr-platform
+ * branch            Release_v1 -> FETCH_HEAD
+time="2026-06-04T04:12:24+02:00" level=warning msg="Found orphan containers ([stokr-api-new stokr-ui-new stokr-redis-new stokr-rabbit-new stokr-postgres-new]) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container stokr-redis Running 
+ Container stokr-postgres Running 
+ Container stokr-rabbitmq Running 
+ Container stokr-autoheal Running 
+ Image stokr-platform-api Building 
+ Image stokr-platform-api Built 
+time="2026-06-04T04:16:49+02:00" level=warning msg="Found orphan containers ([stokr-api-new stokr-ui-new stokr-redis-new stokr-rabbit-new stokr-postgres-new]) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container stokr-redis Running 
+ Container stokr-postgres Running 
+ Container stokr-rabbitmq Running 
+ Container stokr-api Recreate 
+ Container stokr-api Error response from daemon: Conflict. The container name "/d20a33d74f8b_stokr-api" is already in use by container "d0e1f050a0aa0cd5e33b273a29aac48c3da87750aad391d62f81d9aa5a9d53e6". You have to remove (or rename) that container to be able to reuse that name. 
+Error response from daemon: Conflict. The container name "/d20a33d74f8b_stokr-api" is already in use by container "d0e1f050a0aa0cd5e33b273a29aac48c3da87750aad391d62f81d9aa5a9d53e6". You have to remove (or rename) that container to be able to reuse that name.
+
+EXIT=1
+
+$ docker exec stokr-postgres psql -U postgres -d stokr_platform -c "SELECT symbol, timeframe, COUNT(*) cnt, MAX(open_time) latest FROM marketdata_candles WHERE symbol IN ('USDINR','EURINR') GROUP BY symbol, timeframe ORDER BY symbol;"
+ symbol | timeframe | cnt | latest 
+--------+-----------+-----+--------
+(0 rows)
+
+
+EXIT=0
+
+$ docker exec stokr-postgres psql -U postgres -d stokr_platform -c "SELECT symbol, instrument_token, trading_symbol FROM strategy_universe_symbols WHERE exchange='CDS';"
+ symbol | instrument_token | trading_symbol 
+--------+------------------+----------------
+ USDINR |                  | USDINR
+ EURINR |                  | EURINR
+(2 rows)
+
+
+EXIT=0
+
+$ docker logs stokr-api 2>&1 | grep -E 'cds_backfill|universe.instrument.enriched exchange=CDS' | tail -20
+
+EXIT=0
