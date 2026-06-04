@@ -164,7 +164,7 @@ export default function AdminSignalTracePage() {
   const { id } = useParams<{ id: string }>();
   const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({});
 
-  const { data, isLoading, error } = useQuery<TraceData>({
+  const { data, isLoading, isFetching, error } = useQuery<TraceData>({
     queryKey: ["signal-pipeline-trace", id],
     queryFn: async () => {
       const res = await api.get(`/api/admin/signals/${id}/pipeline-trace`);
@@ -184,7 +184,7 @@ export default function AdminSignalTracePage() {
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
       <AdminPageShell isLight={false} title="Pipeline Trace" subtitle="Error loading trace">
         <div className="flex flex-col items-center py-20 gap-3">
@@ -216,6 +216,15 @@ export default function AdminSignalTracePage() {
           <span className="text-xs text-zinc-400">
             {new Date(data.createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
           </span>
+          {isFetching && (
+            <>
+              <span className="text-zinc-500">·</span>
+              <span className="inline-flex items-center gap-1 text-[10px] text-amber-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                refreshing
+              </span>
+            </>
+          )}
           <Link to={`/admin/signals`} className="text-blue-400 text-xs hover:underline ml-auto">← Signal Monitor</Link>
         </div>
       }
