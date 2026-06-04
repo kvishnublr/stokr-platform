@@ -21,9 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_confidence_score
     ON confidence_scores(confidence_score DESC);
 CREATE INDEX IF NOT EXISTS idx_confidence_timestamp
     ON confidence_scores(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_confidence_symbol_recent
-    ON confidence_scores(symbol)
-    WHERE timestamp > CURRENT_TIMESTAMP - INTERVAL '1 hour';
+-- Index on symbol alone is covered by idx_confidence_symbol_time
 
 -- 2. Trader configuration for confidence threshold
 CREATE TABLE IF NOT EXISTS confidence_strategy_config (
