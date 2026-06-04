@@ -259,6 +259,7 @@ public class PlatformZerodhaLiveFeedRuntime {
             cachedForToken = accessToken;
             instrumentRegistry.update(cachedSymbolMap);
             universeInstrumentEnrichmentService.enrichMbxUniverseSymbols(instrumentRegistry.getSymbolToToken());
+            universeInstrumentEnrichmentService.enrichCdsUniverseSymbols(instrumentRegistry.getSymbolToToken());
         }
         List<Integer> tokens = new ArrayList<>(cachedSymbolMap.keySet());
         this.subscribedTokens = tokens;

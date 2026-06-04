@@ -126,6 +126,28 @@ public class CdsCurrencyBackfillService {
     private int fetchAndUpsert(
             String apiKey, String accessToken, String symbol, int token, Instant from, Instant to)
             throws InterruptedException {
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                return fetchAndUpsertOnce(apiKey, accessToken, symbol, token, from, to);
+            } catch (org.springframework.web.client.HttpClientErrorException.Forbidden ex) {
+                if (attempt >= 2) {
+                    throw ex;
+                }
+                platformMarketFeedService.ensureValidPlatformZerodhaToken(java.time.Duration.ofMinutes(30));
+                String refreshed = resolveAccessToken();
+                if (refreshed == null || refreshed.isBlank()) {
+                    throw ex;
+                }
+                accessToken = refreshed;
+                log.warn("cds_backfill.retry symbol={} reason=token_forbidden", symbol);
+            }
+        }
+        return 0;
+    }
+
+    private int fetchAndUpsertOnce(
+            String apiKey, String accessToken, String symbol, int token, Instant from, Instant to)
+            throws InterruptedException {
         List<ParsedCandle> parsed = new ArrayList<>();
         Instant chunkStart = from;
         while (chunkStart.isBefore(to)) {
