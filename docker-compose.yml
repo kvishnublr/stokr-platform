@@ -45,6 +45,7 @@ services:
       STOKR_ZERODHA_TEST_ORDER_DRY_RUN: ${STOKR_ZERODHA_TEST_ORDER_DRY_RUN:-true}
       STOKR_REPLAY_SEED_SYNTHETIC: ${STOKR_REPLAY_SEED_SYNTHETIC:-true}
       STOKR_CATALOG_SCAN_POLL_MS: ${STOKR_CATALOG_SCAN_POLL_MS:-60000}
+      SPRING_PROFILES_ACTIVE: prod
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0 -Xms256m}
       STOKR_GITHUB_ENABLED: ${STOKR_GITHUB_ENABLED:-false}
       STOKR_GITHUB_TOKEN: ${STOKR_GITHUB_TOKEN:-}
@@ -157,6 +158,58 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: stokr-loki
+    profiles:
+      - observability
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./config/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/loki-config.yml
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3100/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: stokr-promtail
+    profiles:
+      - observability
+    restart: unless-stopped
+    volumes:
+      - ./config/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/promtail-config.yml
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: stokr-grafana
+    profiles:
+      - observability
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_PATHS_CONFIG: /etc/grafana/grafana.ini
+    volumes:
+      - ./config/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      loki:
+        condition: service_healthy
+
   mailpit:
     image: axllent/mailpit:latest
     container_name: stokr-mailpit
@@ -187,3 +240,5 @@ volumes:
   stokr_redis_data:
   stokr_rabbitmq_data:
   stokr_pgadmin_data:
+  loki_data:
+  grafana_data:

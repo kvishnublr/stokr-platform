@@ -7,14 +7,39 @@
 
     <springProfile name="prod">
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
-                <includeMdc>true</includeMdc>
-                <fieldNames>
-                    <timestamp>@timestamp</timestamp>
-                    <version>[ignore]</version>
-                    <levelValue>[ignore]</levelValue>
-                    <mdc>trading_context</mdc>
-                </fieldNames>
+            <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+                <providers>
+                    <timestamp>
+                        <fieldName>@timestamp</fieldName>
+                    </timestamp>
+                    <version/>
+                    <loggerName/>
+                    <threadName/>
+                    <logLevel>
+                        <fieldName>level</fieldName>
+                    </logLevel>
+                    <logLevelValue>
+                        <fieldName>[ignore]</fieldName>
+                    </logLevelValue>
+                    <callerData/>
+                    <mdc>
+                        <fieldName>trading_context</fieldName>
+                    </mdc>
+                    <pattern>
+                        <pattern>%maskedMsg</pattern>
+                        <fieldName>message</fieldName>
+                    </pattern>
+                    <stackTrace>
+                        <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                            <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                            <maxLength>2048</maxLength>
+                            <shortenedClassNameLength>20</shortenedClassNameLength>
+                            <exclude>^sun\.reflect\..*\.invoke</exclude>
+                            <exclude>^net\.sf\.cglib\.proxy\.MethodProxy\.invoke</exclude>
+                            <rootCauseFirst>true</rootCauseFirst>
+                        </ShortenedThrowableConverter>
+                    </stackTrace>
+                </providers>
             </encoder>
         </appender>
     </springProfile>
