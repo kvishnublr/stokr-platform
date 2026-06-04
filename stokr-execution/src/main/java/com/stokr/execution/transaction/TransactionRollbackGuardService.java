@@ -40,14 +40,8 @@ public class TransactionRollbackGuardService {
 
             @Override
             public void beforeCompletion() {
-                // Check if transaction is marked rollback-only BEFORE commit
-                if (TransactionSynchronizationManager.isCurrentTransactionMarkedForRollback()) {
-                    log.error("transaction.marked_rollback signalId={} userId={}", signalId, userId);
-                    trackingService.recordFailure(signalId, userId,
-                            SignalExecutionTrack.SignalExecutionStatus.REJECTED,
-                            "TRANSACTION_ROLLBACK",
-                            "Transaction marked as rollback-only before commit");
-                }
+                // Pre-completion hook for additional checks if needed
+                log.debug("transaction.before_completion signalId={}", signalId);
             }
         });
     }
@@ -88,16 +82,6 @@ public class TransactionRollbackGuardService {
             trackingService.recordFailure(signalId, userId,
                     SignalExecutionTrack.SignalExecutionStatus.REJECTED,
                     "NO_ACTIVE_TRANSACTION",
-                    error);
-            throw new IllegalStateException(error);
-        }
-
-        if (TransactionSynchronizationManager.isCurrentTransactionMarkedForRollback()) {
-            String error = "Current transaction is marked for rollback";
-            log.error("transaction.marked_rollback signalId={} error={}", signalId, error);
-            trackingService.recordFailure(signalId, userId,
-                    SignalExecutionTrack.SignalExecutionStatus.REJECTED,
-                    "TRANSACTION_ROLLBACK",
                     error);
             throw new IllegalStateException(error);
         }

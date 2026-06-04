@@ -87,7 +87,7 @@ public class PositionReconciliationService {
                         symbol,
                         omsQty,
                         brokerQty,
-                        omsPos.getAverageCost(),
+                        omsPos.getAvgPrice(),
                         omsPos.getId(),
                         "OMS-Broker mismatch: OMS=" + omsQty + ", Broker=" + brokerQty,
                         omsQty.signum() == 0 ? "ZERO_PRICE_GHOST" : "QUANTITY_MISMATCH"
@@ -97,12 +97,12 @@ public class PositionReconciliationService {
             }
 
             // Check for zero-price positions
-            if (omsPos.getAverageCost() == null || omsPos.getAverageCost().signum() == 0) {
+            if (omsPos.getAvgPrice() == null || omsPos.getAvgPrice().signum() == 0) {
                 ghosts.add(new GhostPosition(
                         symbol,
                         omsQty,
                         brokerQty,
-                        omsPos.getAverageCost(),
+                        omsPos.getAvgPrice(),
                         omsPos.getId(),
                         "Zero-price position in OMS (likely from failed fill)",
                         "ZERO_PRICE_GHOST"
@@ -135,7 +135,7 @@ public class PositionReconciliationService {
             String reason = null;
             if (ghostSymbols.contains(pos.getSymbol())) {
                 reason = "Ghost position blocking LIVE entries";
-            } else if (pos.getAverageCost() != null && pos.getAverageCost().signum() == 0) {
+            } else if (pos.getAvgPrice() != null && pos.getAvgPrice().signum() == 0) {
                 reason = "Zero-price position blocking LIVE entries";
             }
 
@@ -143,7 +143,7 @@ public class PositionReconciliationService {
                 blocking.add(new BlockingPosition(
                         pos.getSymbol(),
                         pos.getQuantity(),
-                        pos.getAverageCost(),
+                        pos.getAvgPrice(),
                         pos.getId(),
                         reason,
                         true
@@ -171,7 +171,7 @@ public class PositionReconciliationService {
 
         for (PortfolioPosition pos : positions) {
             // Only clear zero-price OR zero-quantity positions
-            boolean isZeroPrice = pos.getAverageCost() == null || pos.getAverageCost().signum() == 0;
+            boolean isZeroPrice = pos.getAvgPrice() == null || pos.getAvgPrice().signum() == 0;
             boolean isZeroQty = pos.getQuantity() == null || pos.getQuantity().signum() == 0;
 
             if (isZeroPrice || isZeroQty) {
@@ -271,7 +271,7 @@ public class PositionReconciliationService {
         return new PositionReconcileDetail(
                 symbol,
                 omsQty,
-                omsPos != null ? omsPos.getAverageCost() : null,
+                omsPos != null ? omsPos.getAvgPrice() : null,
                 brokerQty,
                 brokerPos != null ? brokerPos.product() : null,
                 isMatched,
