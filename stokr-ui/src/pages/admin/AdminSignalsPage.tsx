@@ -17,7 +17,7 @@ import { SignalLifecycleTimeline, StrategyPerformanceHeatmap } from "../../compo
 import { resolveProvenance } from "../../components/admin/institutional/experience/provenanceTheme";
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, Download, X,
-  ChevronRight, AlertTriangle, Target,
+  ChevronRight, AlertTriangle, Target, GitBranch,
   Activity, BarChart3, Zap, Timer, Calendar,
 } from "lucide-react";
 
@@ -222,10 +222,17 @@ function SignalDetailDrawer({ id, onClose }: { id: string; onClose: () => void }
             </div>
             <div className="mt-1 font-mono text-[11px] text-slate-400">{id.slice(0, 20)}…</div>
           </div>
-          <button type="button" onClick={onClose}
-            className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <Link to={`/admin/signals/${id}/pipeline-trace`}
+              className="rounded-lg px-3 py-1.5 text-[11px] font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors flex items-center gap-1.5">
+              <GitBranch className="h-3 w-3" />
+              Pipeline Trace
+            </Link>
+            <button type="button" onClick={onClose}
+              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">

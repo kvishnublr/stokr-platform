@@ -10,6 +10,7 @@ import {
   Database,
   FileBarChart,
   Gauge,
+  GitBranch,
   LayoutDashboard,
   Radar,
   Radio,
@@ -136,6 +137,15 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         icon: Zap,
         tier: "critical",
         keywords: ["signals", "live", "stream"],
+      },
+      {
+        to: "/admin/signals/:id/pipeline-trace",
+        label: "Pipeline Trace",
+        description: "Per-signal end-to-end pipeline trace with per-user breakdown",
+        icon: GitBranch,
+        tier: "critical",
+        matchPrefix: "/admin/signals/",
+        keywords: ["trace", "pipeline", "debug", "failure"],
       },
       {
         to: "/admin/signal-lab",

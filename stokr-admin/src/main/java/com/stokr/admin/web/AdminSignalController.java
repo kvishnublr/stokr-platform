@@ -12,6 +12,8 @@ import com.stokr.admin.signal.AdminSignalQuantValidationService;
 import com.stokr.admin.signal.AdminSignalQueryService;
 import com.stokr.admin.signal.AdminSignalStatsDto;
 import com.stokr.admin.signal.AdminSignalStrategyStatsDto;
+import com.stokr.admin.signal.SignalPipelineTraceDto;
+import com.stokr.admin.signal.SignalPipelineTraceService;
 import com.stokr.auth.repository.AuthUserRepository;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.risk.service.LiveTradingArmingService;
@@ -86,6 +88,7 @@ public class AdminSignalController {
     private final ObjectProvider<CatalogDrivenScanScheduler> catalogDrivenScanScheduler;
     private final ReplayEquityCandleSeedService replayEquityCandleSeedService;
     private final StrategyUniverseResolverService universeResolverService;
+    private final SignalPipelineTraceService signalPipelineTraceService;
 
     private static final List<String> REPLAY_SEED_GROUP_KEYS = List.of("NIFTY_50", "NIFTY_100");
     private static final List<String> REPLAY_SEED_EXTRA_SYMBOLS = List.of("NIFTY_FUT");
@@ -210,6 +213,16 @@ public class AdminSignalController {
     @Operation(summary = "Signal detail with linked orders and execution timeline")
     public ApiResponse<AdminSignalDetailDto> detail(@PathVariable UUID id) {
         return ApiResponse.ok(queryService.detail(id), CorrelationIdHolder.get());
+    }
+
+    @GetMapping("/{id}/pipeline-trace")
+    @Operation(summary = "Full signal pipeline trace: application-level stages + per-user execution trace")
+    public ApiResponse<SignalPipelineTraceDto> pipelineTrace(@PathVariable UUID id) {
+        SignalPipelineTraceDto trace = signalPipelineTraceService.buildTrace(id);
+        if (trace == null) {
+            throw new com.stokr.common.exception.NotFoundException("Signal not found: " + id);
+        }
+        return ApiResponse.ok(trace, CorrelationIdHolder.get());
     }
 
     @PostMapping("/activate-live-single")

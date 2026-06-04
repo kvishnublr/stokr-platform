@@ -12,4 +12,8 @@ public interface SignalPipelineAuditRepository extends JpaRepository<SignalPipel
     List<SignalPipelineAudit> findByCreatedAtAfterOrderByCreatedAtDesc(Instant since, Pageable pageable);
 
     List<SignalPipelineAudit> findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(UUID userId, Instant since, Pageable pageable);
+
+    List<SignalPipelineAudit> findBySignalIdOrderByCreatedAtAsc(UUID signalId);
+
+    List<SignalPipelineAudit> findBySignalIdAndUserIdOrderByCreatedAtAsc(UUID signalId, UUID userId);
 }

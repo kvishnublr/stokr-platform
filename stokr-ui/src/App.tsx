@@ -49,6 +49,7 @@ import { AdminReplayInfraPage } from "./pages/admin/AdminReplayInfraPage";
 import { AdminSignalsPage } from "./pages/admin/AdminSignalsPage";
 import { AdminSignalReplayPage } from "./pages/admin/AdminSignalReplayPage";
 import { AdminSignalLabPage } from "./pages/admin/AdminSignalLabPage";
+import AdminSignalTracePage from "./pages/admin/AdminSignalTracePage";
 import { AdminTraderHealthPage } from "./pages/admin/AdminTraderHealthPage";
 import { AdminStrategyCatalogPage } from "./pages/admin/AdminStrategyCatalogPage";
 import { AdminUniverseGroupsPage } from "./pages/admin/AdminUniverseGroupsPage";
@@ -271,6 +272,7 @@ export default function App() {
               />
               <Route path="replay" element={<AdminReplayInfraPage />} />
               <Route path="signals" element={<AdminSignalsPage />} />
+              <Route path="signals/:id/pipeline-trace" element={<AdminSignalTracePage />} />
               <Route path="signal-replay" element={<AdminSignalReplayPage />} />
               <Route path="signal-lab" element={<AdminSignalLabPage />} />
               <Route path="research-lab" element={<AdminResearchLabPage />} />
