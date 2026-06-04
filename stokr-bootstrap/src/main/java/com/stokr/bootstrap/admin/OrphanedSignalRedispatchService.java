@@ -10,8 +10,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -31,6 +32,7 @@ public class OrphanedSignalRedispatchService {
     private final OmsOrderRepository orderRepository;
     private final OmsIntentDispatcher omsIntentDispatcher;
     private final StrategyExecutionModeService executionModeService;
+    private final PlatformTransactionManager transactionManager;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
@@ -38,7 +40,6 @@ public class OrphanedSignalRedispatchService {
     @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
     private UUID systemUserId;
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Map<String, Object> redispatchSessionOrphans(Instant anchor) {
         Instant now = anchor != null ? anchor : Instant.now();
         LocalDate session = now.atZone(zone).toLocalDate();
@@ -70,6 +71,9 @@ public class OrphanedSignalRedispatchService {
         List<Map<String, Object>> redispatched = new ArrayList<>();
         int skipped = 0;
 
+        TransactionTemplate perSignalTx = new TransactionTemplate(transactionManager);
+        perSignalTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
         for (StrategySignalEntity signal : candidates) {
             if (!orderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(signal.getId()).isEmpty()) {
                 skipped++;
@@ -86,7 +90,7 @@ public class OrphanedSignalRedispatchService {
                     mode
             );
             try {
-                omsIntentDispatcher.dispatch(msg, true);
+                perSignalTx.executeWithoutResult(status -> omsIntentDispatcher.dispatch(msg, true));
                 redispatched.add(Map.of(
                         "signalId", signal.getId().toString(),
                         "strategy", strategyKey,

@@ -646,6 +646,8 @@ public class OrderIntentProcessor {
         OmsOrder liveOrder = null;
         if (gate.allowed()) {
             OmsOrder liveDraft = buildDraftFromSignal(signal, ExecutionMode.LIVE, userId, sizing);
+            // Paper leg retains signal_id for idempotency/reconciliation; live leg is paired separately.
+            liveDraft.setSignalId(null);
             liveOrder = orderLifecycleService.createOrGetIdempotent(
                     userId, baseIdempotencyKey + ":LIVE", liveDraft);
         } else {
