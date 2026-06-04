@@ -117,4 +117,18 @@ public interface OrderFlowSnapshotRepository extends JpaRepository<OrderFlowSnap
      * Count total valid snapshots for a symbol
      */
     long countBySymbolAndIsValidTrue(String symbol);
+
+    /**
+     * Find all distinct symbols with valid snapshots after a timestamp
+     */
+    @Query("SELECT DISTINCT o.symbol FROM OrderFlowSnapshot o WHERE o.isValid = true " +
+           "AND o.timestamp > :since ORDER BY o.symbol")
+    List<String> findDistinctSymbolsWithValidSnapshots(@Param("since") Instant since);
+
+    /**
+     * Count distinct symbols with valid recent snapshots
+     */
+    @Query("SELECT COUNT(DISTINCT o.symbol) FROM OrderFlowSnapshot o WHERE o.isValid = true " +
+           "AND o.timestamp > :since")
+    long countDistinctSymbolsWithValidSnapshots(@Param("since") Instant since);
 }

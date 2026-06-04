@@ -525,6 +525,10 @@ stokr:
       debug-enabled: ${STOKR_ORDERFLOW_DEBUG:false}
       trace-enabled: ${STOKR_ORDERFLOW_TRACE:false}
 
+    # Batch intelligence update
+    batch-update-enabled: ${STOKR_ORDERFLOW_BATCH_UPDATE_ENABLED:true}
+    batch-update-interval: ${STOKR_ORDERFLOW_BATCH_UPDATE_INTERVAL_MS:60000}  # 1 minute
+
 logging:
   level:
     root: INFO
