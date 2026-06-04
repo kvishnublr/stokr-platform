@@ -3,8 +3,10 @@ package com.stokr.bootstrap.admin;
 import com.stokr.common.pipeline.OmsIntentDispatcher;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
 import com.stokr.oms.repository.OmsOrderRepository;
+import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.operational.StrategyExecutionModeService;
+import com.stokr.strategy.repository.StrategyInstanceRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +22,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -33,12 +36,16 @@ public class OrphanedSignalRedispatchService {
     private final OmsIntentDispatcher omsIntentDispatcher;
     private final StrategyExecutionModeService executionModeService;
     private final PlatformTransactionManager transactionManager;
+    private final StrategyInstanceRepository strategyInstanceRepository;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
 
     @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
     private UUID systemUserId;
+
+    @Value("${stokr.strategy.primary-trader-user-id:}")
+    private String primaryTraderUserIdRaw;
 
     public Map<String, Object> redispatchSessionOrphans(Instant anchor) {
         Instant now = anchor != null ? anchor : Instant.now();
@@ -81,7 +88,7 @@ public class OrphanedSignalRedispatchService {
             }
             String strategyKey = signal.getStrategyName() != null ? signal.getStrategyName() : "UNKNOWN";
             String mode = executionModeService.modeFor(strategyKey).name();
-            UUID userId = signal.getUserId() != null ? signal.getUserId() : systemUserId;
+            UUID userId = resolveDispatchUserId(signal.getUserId(), mode, strategyKey);
             SignalPersistedMessage msg = new SignalPersistedMessage(
                     signal.getId(),
                     userId,
@@ -95,10 +102,11 @@ public class OrphanedSignalRedispatchService {
                         "signalId", signal.getId().toString(),
                         "strategy", strategyKey,
                         "symbol", signal.getSymbol(),
-                        "mode", mode
+                        "mode", mode,
+                        "dispatchUserId", userId.toString()
                 ));
-                log.info("orphan_signal.redispatched signalId={} strategy={} symbol={} mode={}",
-                        signal.getId(), strategyKey, signal.getSymbol(), mode);
+                log.info("orphan_signal.redispatched signalId={} strategy={} symbol={} mode={} dispatchUserId={}",
+                        signal.getId(), strategyKey, signal.getSymbol(), mode, userId);
             } catch (Exception ex) {
                 log.warn("orphan_signal.redispatch_failed signalId={} {}", signal.getId(), ex.toString());
             }
@@ -111,5 +119,43 @@ public class OrphanedSignalRedispatchService {
         out.put("redispatched", redispatched.size());
         out.put("details", redispatched);
         return out;
+    }
+
+    private UUID resolveDispatchUserId(UUID signalUserId, String executionMode, String strategyKey) {
+        if (signalUserId == null || !systemUserId.equals(signalUserId)) {
+            return signalUserId != null ? signalUserId : systemUserId;
+        }
+        if (!requiresLiveTraderAccount(executionMode)) {
+            return systemUserId;
+        }
+        UUID primaryTrader = parsePrimaryTraderUserId();
+        if (primaryTrader != null) {
+            return primaryTrader;
+        }
+        List<StrategyInstance> running = strategyInstanceRepository.findAllRunningByStrategyKey(strategyKey);
+        if (!running.isEmpty() && running.get(0).getUserId() != null) {
+            return running.get(0).getUserId();
+        }
+        return systemUserId;
+    }
+
+    private boolean requiresLiveTraderAccount(String executionMode) {
+        if (executionMode == null || executionMode.isBlank()) {
+            return false;
+        }
+        String mode = executionMode.trim().toUpperCase(Locale.ROOT);
+        return "LIVE".equals(mode) || "BOTH".equals(mode);
+    }
+
+    private UUID parsePrimaryTraderUserId() {
+        if (primaryTraderUserIdRaw == null || primaryTraderUserIdRaw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(primaryTraderUserIdRaw.trim());
+        } catch (IllegalArgumentException ex) {
+            log.warn("orphan_signal.invalid_primary_trader_user_id value={}", primaryTraderUserIdRaw);
+            return null;
+        }
     }
 }

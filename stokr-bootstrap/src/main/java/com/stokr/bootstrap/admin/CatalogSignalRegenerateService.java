@@ -8,6 +8,8 @@ import com.stokr.strategy.operational.StrategyExecutionMode;
 import com.stokr.strategy.operational.StrategyExecutionModeService;
 import com.stokr.strategy.pipeline.StrategySignalPipelineService;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.strategy.domain.StrategyInstance;
+import com.stokr.strategy.repository.StrategyInstanceRepository;
 import com.stokr.strategy.signals.SignalOwnerType;
 import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
@@ -24,7 +26,9 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -38,6 +42,7 @@ public class CatalogSignalRegenerateService {
     private final StrategyExecutionModeService executionModeService;
     private final OmsIntentDispatcher omsIntentDispatcher;
     private final PlatformTransactionManager transactionManager;
+    private final StrategyInstanceRepository strategyInstanceRepository;
 
     @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
     private UUID systemUserId;
@@ -67,7 +72,7 @@ public class CatalogSignalRegenerateService {
                             + strategyKey + " symbol=" + source.getSymbol());
         }
 
-        UUID dispatchUserId = resolveDispatchUserId(saved.getUserId(), executionMode);
+        UUID dispatchUserId = resolveDispatchUserId(saved.getUserId(), executionMode, strategyKey);
         SignalPersistedMessage omsMsg = new SignalPersistedMessage(
                 saved.getId(),
                 dispatchUserId,
@@ -93,15 +98,35 @@ public class CatalogSignalRegenerateService {
         return out;
     }
 
-    private UUID resolveDispatchUserId(UUID signalUserId, String executionMode) {
+    private UUID resolveDispatchUserId(UUID signalUserId, String executionMode, String strategyKey) {
         if (signalUserId == null || !systemUserId.equals(signalUserId)) {
             return signalUserId != null ? signalUserId : systemUserId;
         }
-        if (executionMode == null || !"LIVE".equalsIgnoreCase(executionMode.trim())) {
+        if (!requiresLiveTraderAccount(executionMode)) {
             return systemUserId;
         }
+        UUID primaryTrader = parsePrimaryTraderUserId();
+        if (primaryTrader != null) {
+            return primaryTrader;
+        }
+        List<StrategyInstance> running = strategyInstanceRepository.findAllRunningByStrategyKey(strategyKey);
+        if (!running.isEmpty() && running.get(0).getUserId() != null) {
+            return running.get(0).getUserId();
+        }
+        return systemUserId;
+    }
+
+    private boolean requiresLiveTraderAccount(String executionMode) {
+        if (executionMode == null || executionMode.isBlank()) {
+            return false;
+        }
+        String mode = executionMode.trim().toUpperCase(Locale.ROOT);
+        return "LIVE".equals(mode) || "BOTH".equals(mode);
+    }
+
+    private UUID parsePrimaryTraderUserId() {
         if (primaryTraderUserIdRaw == null || primaryTraderUserIdRaw.isBlank()) {
-            return systemUserId;
+            return null;
         }
         try {
             return UUID.fromString(primaryTraderUserIdRaw.trim());
@@ -173,3 +198,4 @@ public class CatalogSignalRegenerateService {
         return clone;
     }
 }
+
