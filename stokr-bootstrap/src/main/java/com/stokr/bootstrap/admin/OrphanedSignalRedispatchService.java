@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -37,7 +38,7 @@ public class OrphanedSignalRedispatchService {
     @Value("${stokr.strategy.system-user-id:33333333-3333-3333-3333-333333333333}")
     private UUID systemUserId;
 
-    @Transactional(readOnly = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Map<String, Object> redispatchSessionOrphans(Instant anchor) {
         Instant now = anchor != null ? anchor : Instant.now();
         LocalDate session = now.atZone(zone).toLocalDate();
@@ -48,7 +49,7 @@ public class OrphanedSignalRedispatchService {
                 select s.id from strategy_signals s
                 where s.deleted = false
                   and s.created_at >= :sessionStart
-                  and coalesce(s.test_trade, false) = false
+                  and coalesce(s.is_test_trade, false) = false
                   and s.signal_type is not null
                   and s.signal_type <> 'HOLD'
                   and not exists (
