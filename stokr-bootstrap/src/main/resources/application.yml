@@ -63,6 +63,7 @@ spring:
   flyway:
     enabled: true
     out-of-order: ${STOKR_FLYWAY_OUT_OF_ORDER:true}
+    validate-on-migrate: ${STOKR_FLYWAY_VALIDATE_ON_MIGRATE:false}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
