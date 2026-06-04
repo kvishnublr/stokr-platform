@@ -61,6 +61,7 @@ spring:
         jdbc:
           time_zone: Asia/Kolkata
   flyway:
+    validate-on-migrate: false
     enabled: true
     out-of-order: ${STOKR_FLYWAY_OUT_OF_ORDER:true}
   data:
