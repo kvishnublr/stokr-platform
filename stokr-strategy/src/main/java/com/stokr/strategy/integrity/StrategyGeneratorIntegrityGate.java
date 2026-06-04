@@ -50,6 +50,17 @@ public class StrategyGeneratorIntegrityGate {
         return false;
     }
 
+    public String scanBlockReason(String strategyKey, Instant asOf) {
+        if (isStrategyScanAllowed(strategyKey, asOf)) {
+            return "OK";
+        }
+        StrategyIntegrityProfile profile = StrategyIntegrityProfile.forStrategy(strategyKey);
+        if (profile.requiresNiftyOpeningSession()) {
+            return "NIFTY_OPENING_INCOMPLETE";
+        }
+        return "INTEGRITY_BLOCKED";
+    }
+
     public boolean passPreEvaluate(String strategyKey, String symbol, Instant asOf) {
         if (simulationModeService.bypassIntegrityGate()) {
             return true;

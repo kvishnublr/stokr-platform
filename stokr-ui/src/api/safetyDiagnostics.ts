@@ -53,6 +53,7 @@ export type StrategyRuntimeHealthRow = {
 export type OperationalDiagnostics = {
   collectedAt: string;
   feedHealth: Record<string, unknown>;
+  marketDataIntegrity?: Record<string, unknown>;
   safeStartup: Record<string, unknown>;
   strategyModes: Record<string, string>;
   strategyRuntimeHealth: StrategyRuntimeHealthRow[];
@@ -74,6 +75,10 @@ export type OmsDiagnostics = {
   duplicatePrevention: { dedupeWindowSeconds: number; activeKeysTracked: number };
   executionLatency: { avgAckLatencyMsLast24h: number; telemetryEventsLast24h: number };
 };
+
+export async function triggerNiftyGapFill(): Promise<void> {
+  await api.post("/api/admin/feed/nifty-gap-fill", {}, { timeout: DIAG_TIMEOUT_MS });
+}
 
 export async function fetchOperationalDiagnostics(): Promise<OperationalDiagnostics> {
   const res = await api.get("/api/admin/operations/diagnostics", { timeout: DIAG_TIMEOUT_MS });

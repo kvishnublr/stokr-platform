@@ -1,8 +1,11 @@
 package com.stokr.admin.service;
 
 import com.stokr.common.market.NseMarketSession;
+import com.stokr.marketdata.integrity.MarketDataIntegrityService;
 import com.stokr.marketdata.monitor.FeedHealthMonitorService;
 import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.integrity.StrategyIntegrityProfile;
 import com.stokr.strategy.operational.StrategyExecutionMode;
 import com.stokr.strategy.operational.StrategyExecutionModeService;
 import com.stokr.strategy.operational.StrategyRuntimeHealth;
@@ -29,6 +32,8 @@ import java.util.Map;
 public class AdminOperationalDiagnosticsService {
 
     private final FeedHealthMonitorService feedHealthMonitorService;
+    private final MarketDataIntegrityService marketDataIntegrityService;
+    private final StrategyGeneratorIntegrityGate strategyIntegrityGate;
     private final StrategyExecutionModeService executionModeService;
     private final StrategyRuntimeHealthService runtimeHealthService;
     private final TradingSafeStartupGateService safeStartupGateService;
@@ -40,6 +45,7 @@ public class AdminOperationalDiagnosticsService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("collectedAt", now.toString());
         out.put("feedHealth", feedHealthMonitorService.snapshotMap(now));
+        out.put("marketDataIntegrity", marketDataIntegrityService.diagnosticsSnapshot(now));
         out.put("safeStartup", safeStartupGateService.snapshot(now));
         out.put("strategyModes", executionModeService.allModes());
 
@@ -81,6 +87,7 @@ public class AdminOperationalDiagnosticsService {
 
     private List<Map<String, Object>> blockedStrategies(List<StrategyRuntimeHealth> health, Instant now) {
         boolean sessionOpen = NseMarketSession.isRegularSessionOpen(now);
+        boolean feedHealthy = feedHealthMonitorService.isHealthyForLiveExecution(now);
         List<Map<String, Object>> blocked = new ArrayList<>();
         for (StrategyRuntimeHealth row : health) {
             StrategyExecutionMode mode = StrategyExecutionMode.parse(row.getExecutionMode());
@@ -88,15 +95,9 @@ public class AdminOperationalDiagnosticsService {
                 blocked.add(Map.of(
                         "strategyName", row.getStrategyName(),
                         "reason", "EXECUTION_MODE_DISABLED"));
-            } else if (sessionOpen) {
-                if (row.getScansBlockedFeed() > 0) {
-                    String reason = row.getLastRejectionReason() != null ? row.getLastRejectionReason() : "FEED_STALE";
-                    blocked.add(Map.of("strategyName", row.getStrategyName(), "reason", reason));
-                } else if (row.getLastRejectionReason() != null && row.getScansBlockedIntegrity() > 0) {
-                    blocked.add(Map.of(
-                            "strategyName", row.getStrategyName(),
-                            "reason", row.getLastRejectionReason()));
-                }
+            } else if (sessionOpen && isStrategyCurrentlyBlocked(row, now, feedHealthy)) {
+                String reason = resolveLiveBlockReason(row, now, feedHealthy);
+                blocked.add(Map.of("strategyName", row.getStrategyName(), "reason", reason));
             }
         }
         for (var entry : executionModeService.allModes().entrySet()) {
@@ -108,6 +109,33 @@ public class AdminOperationalDiagnosticsService {
             }
         }
         return blocked;
+    }
+
+    private boolean isStrategyCurrentlyBlocked(
+            StrategyRuntimeHealth row, Instant now, boolean feedHealthy) {
+        String strategyKey = row.getStrategyName();
+        if (StrategyExecutionMode.parse(row.getExecutionMode()) == StrategyExecutionMode.DISABLED) {
+            return true;
+        }
+        if (!feedHealthy) {
+            return true;
+        }
+        if (StrategyIntegrityProfile.forStrategy(strategyKey).requiresNiftyOpeningSession()) {
+            return !strategyIntegrityGate.isStrategyScanAllowed(strategyKey, now);
+        }
+        return row.getLastRejectionReason() != null
+                && (row.getScansBlockedIntegrity() > 0 || row.getScansBlockedFeed() > 0);
+    }
+
+    private String resolveLiveBlockReason(StrategyRuntimeHealth row, Instant now, boolean feedHealthy) {
+        if (!feedHealthy) {
+            return row.getLastRejectionReason() != null ? row.getLastRejectionReason() : "FEED_STALE";
+        }
+        String live = strategyIntegrityGate.scanBlockReason(row.getStrategyName(), now);
+        if (live != null && !"OK".equals(live)) {
+            return live;
+        }
+        return row.getLastRejectionReason() != null ? row.getLastRejectionReason() : "BLOCKED";
     }
 
     private long integrityFailureCount(Instant now) {

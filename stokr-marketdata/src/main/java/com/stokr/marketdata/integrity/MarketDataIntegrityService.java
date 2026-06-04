@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -36,7 +37,8 @@ public class MarketDataIntegrityService {
     private static final String TIMEFRAME_1M = "1m";
     private static final LocalTime SESSION_OPEN = LocalTime.of(9, 15);
     private static final Duration NIFTY_BAR_GAP_TOLERANCE = Duration.ofMinutes(2);
-    private static final int MIN_NIFTY_MID_SESSION_BARS = 30;
+    @Value("${stokr.marketdata.integrity.mid-session-min-bars:20}")
+    private int minNiftyMidSessionBars;
 
     private final MarketdataCandleRepository candleRepository;
     private final MarketDataIntegrityRejectionRepository rejectionRepository;
@@ -185,11 +187,31 @@ public class MarketDataIntegrityService {
         if (anchor.atZone(zone).toLocalTime().isBefore(LocalTime.of(9, 30))) {
             return false;
         }
-        if (countSessionNiftyBars(anchor) < MIN_NIFTY_MID_SESSION_BARS) {
+        LocalDate sessionDate = sessionDate(anchor);
+        Instant sessionStart = sessionStartInstant(sessionDate);
+        List<MarketdataCandle> sessionBars = candleRepository
+                .findBySymbolAndTimeframeAndOpenTimeBetweenAndDeletedFalseOrderByOpenTimeAsc(
+                        NIFTY_50_SYMBOL, TIMEFRAME_1M, sessionStart, anchor);
+        List<MarketdataCandle> tail = contiguousSessionTail(
+                sessionBars, NIFTY_BAR_GAP_TOLERANCE, Math.max(10, minNiftyMidSessionBars));
+        if (tail.size() < Math.max(10, minNiftyMidSessionBars)) {
             return false;
         }
         return isCandleFreshInternal(
-                NIFTY_50_SYMBOL, anchor, indexCandleMaxAge(), sessionDate(anchor), true);
+                NIFTY_50_SYMBOL, anchor, indexCandleMaxAge(), sessionDate, true);
+    }
+
+    /** Live diagnostics for admin safety panel. */
+    public Map<String, Object> diagnosticsSnapshot(Instant asOf) {
+        Instant anchor = asOf != null ? asOf : Instant.now();
+        Map<String, Object> m = new java.util.LinkedHashMap<>(); // LinkedHashMap for stable JSON field order
+        m.put("openingSessionReady", isNiftyOpeningSessionReady(anchor));
+        m.put("midSessionRecoveryAllowed", isNiftyMidSessionRecoveryAllowed(anchor));
+        m.put("sessionBarCount", countSessionNiftyBars(anchor));
+        m.put("midSessionMinBars", Math.max(10, minNiftyMidSessionBars));
+        m.put("enabled", enabled);
+        m.put("midSessionRecoveryEnabled", midSessionRecoveryEnabled);
+        return m;
     }
 
     /**

@@ -140,10 +140,13 @@ public class CatalogDrivenScanScheduler {
             }
 
             if (!integrityGate.isStrategyScanAllowed(strategyKey, tick)) {
-                runtimeHealthService.recordScanBlockedIntegrity(strategyKey, "NIFTY_OPENING_INCOMPLETE", tick);
+                runtimeHealthService.recordScanBlockedIntegrity(
+                        strategyKey, integrityGate.scanBlockReason(strategyKey, tick), tick);
                 log.warn("catalog.scan.integrity_blocked strategyKey={}", strategyKey);
                 continue;
             }
+
+            runtimeHealthService.recordScanAllowed(strategyKey, tick);
 
             List<StrategyUniverseSymbol> symbols =
                     resolverService.resolveSymbolEntitiesForGroup(binding.getUniverseGroup().getId());

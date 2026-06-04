@@ -45,6 +45,15 @@ public class StrategyRuntimeHealthService {
     }
 
     @Transactional
+    public void recordScanAllowed(String strategyKey, Instant at) {
+        StrategyRuntimeHealth row = getOrCreate(strategyKey, at);
+        row.setLastRejectionReason(null);
+        row.setLastScanTime(at);
+        row.setUpdatedAt(at);
+        repository.save(row);
+    }
+
+    @Transactional
     public void recordScanBlockedFeed(String strategyKey, String reason, Instant at) {
         StrategyRuntimeHealth row = getOrCreate(strategyKey, at);
         row.setScansBlockedFeed(row.getScansBlockedFeed() + 1);

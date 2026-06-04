@@ -8,6 +8,7 @@ import {
   fetchKillSwitchStatus,
   fetchOmsDiagnostics,
   fetchOperationalDiagnostics,
+  triggerNiftyGapFill,
   fetchStrategyValidationDiagnostics,
   fetchTradeReconciliationDiagnostics,
   safetyDiagnosticsQueryRetry,
@@ -39,6 +40,18 @@ const OPS_QK = ["admin-operational-diagnostics"] as const;
 const POSITION_RECON_QK = ["admin-position-reconciliation"] as const;
 const OMS_QK = ["admin-oms-diagnostics"] as const;
 const KS_QK = ["admin-kill-switch-status"] as const;
+
+function formatBlockReason(code: string): string {
+  const labels: Record<string, string> = {
+    NIFTY_OPENING_INCOMPLETE: "NIFTY session warming up",
+    FEED_STALE: "Market feed stale",
+    EXECUTION_MODE_DISABLED: "Strategy disabled",
+    STARTUP_WARMUP: "Startup warmup",
+    FEED_NOT_FRESH: "Feed not fresh",
+    INSUFFICIENT_WARMUP_BARS: "Insufficient warmup bars",
+  };
+  return labels[code] ?? code.replace(/_/g, " ").toLowerCase();
+}
 
 function fmtVal(v: unknown): string {
   if (v == null) return "—";
@@ -294,11 +307,23 @@ function StrategyHealthTable({
   );
 }
 
-function OperationalPanel({ data, isLight }: { data: OperationalDiagnostics; isLight: boolean }) {
+function OperationalPanel({
+  data,
+  isLight,
+  onNiftyGapFill,
+  gapFillPending,
+}: {
+  data: OperationalDiagnostics;
+  isLight: boolean;
+  onNiftyGapFill: () => void;
+  gapFillPending: boolean;
+}) {
   const feed = data.feedHealth ?? {};
+  const integrity = data.marketDataIntegrity ?? {};
   const startup = data.safeStartup ?? {};
   const feedLevel = String(feed.level ?? "UNKNOWN");
   const feedWarn = feedLevel !== "OK" && feedLevel !== "IDLE";
+  const niftyBlocked = integrity.openingSessionReady === false && integrity.midSessionRecoveryAllowed === false;
 
   return (
     <AdminSection isLight={isLight} title="P2 operational diagnostics" subtitle="Feed health, safe startup gate, strategy runtime health">
@@ -317,6 +342,32 @@ function OperationalPanel({ data, isLight }: { data: OperationalDiagnostics; isL
               { label: "Level", value: feedLevel, warn: feedWarn },
             ]}
           />
+        </AdminPanel>
+
+        <AdminPanel
+          isLight={isLight}
+          title="NIFTY session integrity"
+          subtitle={niftyBlocked ? "Index strategies may be blocked until bars recover" : "Opening or mid-session recovery active"}
+        >
+          <MetricGrid
+            isLight={isLight}
+            items={[
+              { label: "Opening ready", value: integrity.openingSessionReady, warn: integrity.openingSessionReady === false },
+              { label: "Mid-session OK", value: integrity.midSessionRecoveryAllowed, warn: integrity.midSessionRecoveryAllowed === false },
+              { label: "Session bars", value: integrity.sessionBarCount },
+              { label: "Min bars needed", value: integrity.midSessionMinBars },
+            ]}
+          />
+          {niftyBlocked ? (
+            <button
+              type="button"
+              onClick={onNiftyGapFill}
+              disabled={gapFillPending}
+              className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-300"
+            >
+              {gapFillPending ? "Filling…" : "Fill NIFTY gaps now"}
+            </button>
+          ) : null}
         </AdminPanel>
 
         <AdminPanel isLight={isLight} title="Safe startup gate">
@@ -342,18 +393,23 @@ function OperationalPanel({ data, isLight }: { data: OperationalDiagnostics; isL
               ]}
             />
           </AdminPanel>
-          <AdminPanel isLight={isLight} title="Blocked strategies" className="md:col-span-2">
+          <AdminPanel isLight={isLight} title="Blocked now" className="md:col-span-2" subtitle="Live gate — clears when feed and NIFTY session recover">
             {data.blockedStrategies.length ? (
-              <ul className="space-y-1 text-xs">
+              <ul className="space-y-1.5 text-xs">
                 {data.blockedStrategies.map((b) => (
-                  <li key={`${b.strategyName}-${b.reason}`} className="rounded border px-2 py-1 dark:border-neutral-800">
-                    <span className="font-semibold">{b.strategyName}</span>
-                    <span className="text-muted-foreground"> — {b.reason}</span>
+                  <li
+                    key={`${b.strategyName}-${b.reason}`}
+                    className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 dark:border-neutral-800"
+                  >
+                    <span className="font-semibold">{b.strategyName.replace(/_/g, " ")}</span>
+                    <span className="rounded bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                      {formatBlockReason(b.reason)}
+                    </span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">No blocked strategies.</p>
+              <p className="text-sm text-muted-foreground">All strategies clear to scan.</p>
             )}
           </AdminPanel>
         </div>
@@ -765,6 +821,15 @@ export function AdminSafetyDiagnosticsPage() {
     onError: () => { toast.error("Failed to deactivate kill switch"); },
   });
 
+  const niftyGapFillMut = useMutation({
+    mutationFn: triggerNiftyGapFill,
+    onSuccess: () => {
+      toast.success("NIFTY gap fill triggered");
+      void qc.invalidateQueries({ queryKey: OPS_QK });
+    },
+    onError: (e) => toast.error(parseAxiosMessage(e)),
+  });
+
   const killActive = Boolean(ksQ.data?.active ?? omsQ.data?.killSwitch?.active);
   const blockingLoad =
     !initialGateExpired && !opsQ.data && !omsQ.data && !ksQ.data && (opsQ.isFetching || omsQ.isFetching);
@@ -829,7 +894,14 @@ export function AdminSafetyDiagnosticsPage() {
         {opsQ.isError && !opsQ.data ? (
           <PanelLoadError label="Operational diagnostics" error={opsQ.error} onRetry={() => void opsQ.refetch()} isLight={isLight} />
         ) : null}
-        {opsQ.data ? <OperationalPanel data={opsQ.data} isLight={isLight} /> : null}
+        {opsQ.data ? (
+          <OperationalPanel
+            data={opsQ.data}
+            isLight={isLight}
+            gapFillPending={niftyGapFillMut.isPending}
+            onNiftyGapFill={() => niftyGapFillMut.mutate()}
+          />
+        ) : null}
 
         {omsQ.isError && !omsQ.data ? (
           <PanelLoadError label="OMS diagnostics" error={omsQ.error} onRetry={() => void omsQ.refetch()} isLight={isLight} />

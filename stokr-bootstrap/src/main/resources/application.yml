@@ -118,6 +118,7 @@ stokr:
       rejection-dedupe-seconds: ${STOKR_MARKETDATA_INTEGRITY_REJECTION_DEDUPE_SEC:300}
       mid-session-recovery:
         enabled: ${STOKR_MARKETDATA_INTEGRITY_MID_SESSION_RECOVERY:true}
+      mid-session-min-bars: ${STOKR_INTEGRITY_MID_SESSION_MIN_BARS:20}
     session:
       nse:
         start: ${STOKR_MARKETDATA_NSE_SESSION_START:09:15}
