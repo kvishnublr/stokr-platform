@@ -134,8 +134,8 @@ public class PlatformZerodhaFeedTelemetryService {
         feedHealthWebSocketState.recordTickNow();
         if (attempts > 0) {
             log.info("feed.health.websocket_reconnected vendor={} reconnectAttempts={}", vendor, attempts);
-            brokerDisconnectProtectionService.ifAvailable(BrokerDisconnectProtectionService::onBrokerRecovered);
         }
+        brokerDisconnectProtectionService.ifAvailable(BrokerDisconnectProtectionService::onBrokerRecovered);
     }
 
     @Transactional
