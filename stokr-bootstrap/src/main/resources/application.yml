@@ -480,6 +480,51 @@ stokr:
     default-execution-mode: PAPER
     system-user-id: "33333333-3333-3333-3333-333333333333"
 
+  # ============= PHASE 1: ORDER FLOW ANALYSIS =============
+  orderflow:
+    # Main feature flag - starts DISABLED
+    collection-enabled: ${STOKR_ORDERFLOW_COLLECTION_ENABLED:false}
+
+    # When enabled, adjust quality scores based on order flow
+    enhancement-enabled: ${STOKR_ORDERFLOW_ENHANCEMENT_ENABLED:false}
+
+    # How much to weight order flow confidence (0.0 = ignore, 1.0 = full weight)
+    confidence-adjustment-factor: ${STOKR_ORDERFLOW_CONFIDENCE_ADJUSTMENT:0.5}
+
+    # Data source configuration
+    datasource:
+      type: ${STOKR_ORDERFLOW_DATASOURCE_TYPE:NSE_FEED}  # NSE_FEED, SIMULATED
+      poll-interval-ms: ${STOKR_ORDERFLOW_POLL_INTERVAL_MS:100}  # 10x per second
+      buffer-size: ${STOKR_ORDERFLOW_BUFFER_SIZE:1000}
+
+    # Redis caching for real-time access
+    redis-cache-enabled: ${STOKR_ORDERFLOW_REDIS_ENABLED:true}
+    redis-cache-ttl-seconds: ${STOKR_ORDERFLOW_REDIS_TTL:2}
+
+    # Feature flags for individual metrics
+    metrics:
+      buyerpressure-enabled: ${STOKR_ORDERFLOW_BUYER_PRESSURE_ENABLED:true}
+      spread-analysis-enabled: ${STOKR_ORDERFLOW_SPREAD_ANALYSIS_ENABLED:true}
+      liquidity-analysis-enabled: ${STOKR_ORDERFLOW_LIQUIDITY_ANALYSIS_ENABLED:true}
+      depth-analysis-enabled: ${STOKR_ORDERFLOW_DEPTH_ANALYSIS_ENABLED:true}
+
+    # Thresholds for signal recommendations
+    thresholds:
+      min-buyer-pressure-for-buy: ${STOKR_ORDERFLOW_MIN_BUYER_PRESSURE:55}
+      min-seller-pressure-for-sell: ${STOKR_ORDERFLOW_MIN_SELLER_PRESSURE:55}
+      min-liquidity-for-trade: ${STOKR_ORDERFLOW_MIN_LIQUIDITY:50}
+      max-spread-pct-for-trade: ${STOKR_ORDERFLOW_MAX_SPREAD_PCT:0.3}
+
+    # Database retention
+    retention:
+      keep-days: ${STOKR_ORDERFLOW_RETENTION_DAYS:30}
+      archive-enabled: ${STOKR_ORDERFLOW_ARCHIVE_ENABLED:false}
+
+    # Logging
+    logging:
+      debug-enabled: ${STOKR_ORDERFLOW_DEBUG:false}
+      trace-enabled: ${STOKR_ORDERFLOW_TRACE:false}
+
 logging:
   level:
     root: INFO
