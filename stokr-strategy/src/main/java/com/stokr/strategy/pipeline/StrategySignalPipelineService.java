@@ -262,8 +262,7 @@ public class StrategySignalPipelineService {
             boolean skipBrokerExecution,
             long dispatchLatencyStartNanos
     ) {
-        rabbitTemplate.convertAndSend(PipelineQueues.STRATEGY_SIGNAL, systemMsg);
-
+        // OMS first: a failed telemetry broadcast must not block order creation (prod had signals with 0 orders).
         if (saved.getSignalSource() == SignalProvenance.REPLAY && !replayDispatchToOms) {
             log.info("signal.replay.skip_oms signalId={} strategy={} symbol={}",
                     saved.getId(), sk, saved.getSymbol());
@@ -333,6 +332,13 @@ public class StrategySignalPipelineService {
         )));
         eventPublisher.publishEvent(new SignalPublishedEvent(saved.getId(), saved.getUserId(), saved.getSymbol(), sk));
         signalDistributionTelemetryService.recordPipelineDispatchNanos(System.nanoTime() - dispatchLatencyStartNanos);
+
+        try {
+            rabbitTemplate.convertAndSend(PipelineQueues.STRATEGY_SIGNAL, systemMsg);
+        } catch (Exception ex) {
+            log.warn("signal.broadcast.failed signalId={} strategy={} — OMS path already dispatched: {}",
+                    saved.getId(), sk, ex.toString());
+        }
     }
 
     /**

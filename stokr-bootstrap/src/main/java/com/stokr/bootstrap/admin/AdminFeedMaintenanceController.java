@@ -17,11 +17,19 @@ import java.util.Map;
 public class AdminFeedMaintenanceController {
 
     private final IntradaySessionGapFillService intradaySessionGapFillService;
+    private final OrphanedSignalRedispatchService orphanedSignalRedispatchService;
 
     @PostMapping("/nifty-gap-fill")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<Map<String, String>> triggerNiftyGapFill() {
         intradaySessionGapFillService.fillNiftySessionGapsIfNeeded("admin");
         return ApiResponse.ok(Map.of("status", "triggered"), CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/redispatch-orphan-signals")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<Map<String, Object>> redispatchOrphanSignals() {
+        return ApiResponse.ok(orphanedSignalRedispatchService.redispatchSessionOrphans(java.time.Instant.now()),
+                CorrelationIdHolder.get());
     }
 }

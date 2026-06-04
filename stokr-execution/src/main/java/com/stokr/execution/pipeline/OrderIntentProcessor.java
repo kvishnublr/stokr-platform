@@ -171,11 +171,10 @@ public class OrderIntentProcessor {
                             liveTradingTraderEligibilityService.evaluateForCatalogSystemLive(
                                     strategyKey, "ZERODHA");
                     if (!platformGate.allowed()) {
-                        log.warn("live.order.blocked.platform signalId={} catalogDispatch={} reason={}",
+                        log.warn("live.order.blocked.platform signalId={} catalogDispatch={} reason={} — downgrading to PAPER",
                                 signal.getId(), catalogPrimaryTraderDispatch, platformGate.reasonCode());
                         riskEventRecorder.record(userId, null, platformGate.reasonCode(), "REJECT", platformGate.message());
-                        signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), "LIVE_PLATFORM_GATE");
-                        return;
+                        mode = ExecutionMode.PAPER;
                     }
                 }
             } else {

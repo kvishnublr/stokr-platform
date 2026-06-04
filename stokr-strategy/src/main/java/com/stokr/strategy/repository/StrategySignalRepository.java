@@ -22,6 +22,8 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
 
     long countByCreatedAtAfterAndDeletedFalse(Instant since);
 
+    List<StrategySignalEntity> findByCreatedAtAfterAndDeletedFalseOrderByCreatedAtAsc(Instant since);
+
     List<StrategySignalEntity> findTop200ByDeletedFalseOrderByCreatedAtDesc();
 
     List<StrategySignalEntity> findBySimulationRunIdAndDeletedFalseOrderByCreatedAtDesc(UUID simulationRunId);
