@@ -5,11 +5,10 @@ import com.stokr.common.pipeline.messages.SignalPersistedMessage;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.operational.StrategyExecutionModeService;
-import com.stokr.strategy.repository.StrategySignalRepository;
-import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,7 +26,7 @@ import java.util.UUID;
 @Slf4j
 public class OrphanedSignalRedispatchService {
 
-    private final StrategySignalRepository signalRepository;
+    private final EntityManager entityManager;
     private final OmsOrderRepository orderRepository;
     private final OmsIntentDispatcher omsIntentDispatcher;
     private final StrategyExecutionModeService executionModeService;
@@ -44,11 +43,27 @@ public class OrphanedSignalRedispatchService {
         LocalDate session = now.atZone(zone).toLocalDate();
         Instant sessionStart = session.atStartOfDay(zone).toInstant();
 
-        List<StrategySignalEntity> candidates = signalRepository
-                .findByCreatedAtAfterAndDeletedFalseOrderByCreatedAtAsc(sessionStart)
-                .stream()
-                .filter(s -> s.getSignalType() != null && s.getSignalType() != SignalType.HOLD)
-                .filter(s -> !Boolean.TRUE.equals(s.getTestTrade()))
+        @SuppressWarnings("unchecked")
+        List<UUID> orphanIds = entityManager.createNativeQuery("""
+                select s.id from strategy_signals s
+                where s.deleted = false
+                  and s.created_at >= :sessionStart
+                  and coalesce(s.test_trade, false) = false
+                  and s.signal_type is not null
+                  and s.signal_type <> 'HOLD'
+                  and not exists (
+                    select 1 from oms_orders o
+                    where o.deleted = false and o.signal_id = s.id
+                  )
+                order by s.created_at asc
+                limit 50
+                """)
+                .setParameter("sessionStart", sessionStart)
+                .getResultList();
+
+        List<StrategySignalEntity> candidates = orphanIds.stream()
+                .map(id -> entityManager.find(StrategySignalEntity.class, id))
+                .filter(s -> s != null)
                 .toList();
 
         List<Map<String, Object>> redispatched = new ArrayList<>();
