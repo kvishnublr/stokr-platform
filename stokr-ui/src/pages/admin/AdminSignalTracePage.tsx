@@ -176,7 +176,7 @@ export default function AdminSignalTracePage() {
 
   if (isLoading) {
     return (
-      <AdminPageShell title="Pipeline Trace" subtitle="Loading signal trace...">
+      <AdminPageShell isLight={false} title="Pipeline Trace" subtitle="Loading signal trace...">
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-zinc-500" />
         </div>
@@ -186,7 +186,7 @@ export default function AdminSignalTracePage() {
 
   if (error || !data) {
     return (
-      <AdminPageShell title="Pipeline Trace" subtitle="Error loading trace">
+      <AdminPageShell isLight={false} title="Pipeline Trace" subtitle="Error loading trace">
         <div className="flex flex-col items-center py-20 gap-3">
           <AlertTriangle className="w-10 h-10 text-red-400" />
           <p className="text-zinc-400 text-sm">Failed to load pipeline trace for signal {id}</p>
@@ -197,7 +197,7 @@ export default function AdminSignalTracePage() {
   }
 
   return (
-    <AdminPageShell
+    <AdminPageShell isLight={false}
       title={`Pipeline Trace: ${data.symbol}`}
       subtitle={
         <div className="flex items-center gap-3 flex-wrap">
