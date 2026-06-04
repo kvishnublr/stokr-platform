@@ -62,6 +62,7 @@ spring:
           time_zone: Asia/Kolkata
   flyway:
     enabled: true
+    out-of-order: ${STOKR_FLYWAY_OUT_OF_ORDER:true}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
