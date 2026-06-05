@@ -12,8 +12,10 @@ import com.stokr.common.exception.NotFoundException;
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
+import com.stokr.common.market.MarketHoursEnforcementService;
 import com.stokr.oms.execution.OrderStateMachine;
 import com.stokr.oms.repository.OmsOrderRepository;
+import com.stokr.common.exception.BadRequestException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,6 +42,7 @@ public class OrderLifecycleService {
     private final BrokerAdapterRegistry brokerAdapterRegistry;
     private final SimulationModeService simulationModeService;
     private final BrokerLiveOrderGuard brokerLiveOrderGuard;
+    private final MarketHoursEnforcementService marketHoursEnforcement;
 
     @Transactional
     public OmsOrder createOrGetIdempotent(UUID userId, String idempotencyKey, OmsOrder draft) {
@@ -54,6 +57,19 @@ public class OrderLifecycleService {
     }
 
     private OmsOrder persistNew(UUID userId, String idempotencyKey, OmsOrder draft) {
+        // Check market hours for live non-exit orders
+        if (draft.getExecutionMode() == ExecutionMode.LIVE &&
+            !simulationModeService.isSimulationEnabled() &&
+            !isExitOrder(draft)) {
+            String segment = extractSegmentFromSymbol(draft.getSymbol());
+            if (!marketHoursEnforcement.isOrderSubmissionAllowed(segment)) {
+                String reason = marketHoursEnforcement.getMarketClosureReason(segment);
+                log.error("oms.order_rejected_market_closed symbol={} segment={} reason={}",
+                          draft.getSymbol(), segment, reason);
+                throw new BadRequestException("Market is closed: " + reason);
+            }
+        }
+
         draft.setUserId(userId);
         draft.setIdempotencyKey(idempotencyKey);
         draft.setCorrelationId(CorrelationIdHolder.get());
@@ -61,6 +77,18 @@ public class OrderLifecycleService {
             draft.setState(OrderState.CREATED);
         }
         return orderRepository.save(draft);
+    }
+
+    private boolean isExitOrder(OmsOrder order) {
+        // Exit orders are allowed at any time (for emergency closes)
+        return order.getOrderType() != null && order.getOrderType().toLowerCase().contains("exit");
+    }
+
+    private String extractSegmentFromSymbol(String symbol) {
+        if (symbol == null) return "NSE";
+        if (symbol.contains("MCX")) return "MCX";
+        if (symbol.contains("NCDEX")) return "NCDEX";
+        return "NSE";
     }
 
     @Transactional(readOnly = true)
