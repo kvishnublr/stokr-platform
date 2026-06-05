@@ -121,4 +121,17 @@ public interface OmsExecutionRepository extends JpaRepository<OmsExecution, UUID
                 ), 0) <> 0
             """, nativeQuery = true)
     List<Object[]> computeLiveNetQtyBySymbol(@Param("userId") UUID userId);
+
+    @Query("""
+            select e.avgPrice from OmsExecution e
+            where e.order.id in (
+                select id from OmsOrder where id in (
+                    select order_id from OmsExecution where id = :positionId
+                )
+            )
+            and e.deleted = false
+            order by e.createdAt desc
+            limit 1
+            """)
+    Optional<BigDecimal> findLatestExecutionPriceForPosition(@Param("positionId") UUID positionId);
 }

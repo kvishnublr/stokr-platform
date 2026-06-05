@@ -381,6 +381,14 @@ stokr:
       mcx-flatten-end: ${STOKR_OMS_MCX_FLATTEN_END:23:55}
       mcx-flatten-cron: ${STOKR_OMS_MCX_FLATTEN_CRON:0 50 23 * * MON-FRI}
       force-close-stale-positions: ${STOKR_OMS_FORCE_CLOSE_STALE:true}
+  execution:
+    target-profit:
+      enabled: ${STOKR_TARGET_PROFIT_MONITORING_ENABLED:true}
+      percent: ${STOKR_TARGET_PROFIT_PERCENT:0.45}
+      monitor-interval-ms: ${STOKR_TARGET_PROFIT_MONITOR_INTERVAL_MS:15000}
+    stop-loss:
+      enabled: ${STOKR_STOP_LOSS_MONITORING_ENABLED:true}
+      percent: ${STOKR_STOP_LOSS_PERCENT:0.25}
   strategy:
     market-close:
       nse-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_NSE_EXIT_CRON:0 55 14 * * MON-FRI}
