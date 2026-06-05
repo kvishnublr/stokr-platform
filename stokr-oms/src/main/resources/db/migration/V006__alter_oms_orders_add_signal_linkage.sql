@@ -4,8 +4,8 @@
 
 ALTER TABLE oms_orders ADD COLUMN (
     -- CRITICAL: Every LIVE order must have signal_id
-    signal_id UUID UNIQUE,
-        -- REQUIRED for LIVE execution mode
+    signal_id UUID,
+        -- REQUIRED for LIVE execution mode (NOT unique - retries allowed)
 
     execution_mode_confirmed VARCHAR(32),
         -- Must match execution_mode: LIVE, PAPER, SIMULATION
