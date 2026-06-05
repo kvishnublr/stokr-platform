@@ -8,6 +8,7 @@ import com.stokr.intraday.metrics.dto.ConfidenceThresholdRequest;
 import com.stokr.intraday.metrics.dto.SignalCountByThreshold;
 import com.stokr.intraday.metrics.repository.ConfidenceScoreRepository;
 import com.stokr.intraday.metrics.repository.ConfidenceStrategyConfigRepository;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -31,7 +32,7 @@ public class ConfidenceStrategyController {
 
     @PostMapping("/config")
     public ResponseEntity<ConfidenceStrategyConfig> setConfidenceThreshold(
-            @RequestBody ConfidenceThresholdRequest request) {
+            @Valid @RequestBody ConfidenceThresholdRequest request) {
 
         try {
             // Check if strategy already exists for this trader

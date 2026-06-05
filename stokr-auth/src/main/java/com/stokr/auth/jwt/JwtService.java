@@ -33,6 +33,9 @@ public class JwtService {
     }
 
     public String createAccessToken(UUID userId, String email, String scope) {
+        if (userId == null) {
+            throw new IllegalArgumentException("userId cannot be null when creating access token");
+        }
         Instant now = Instant.now();
         Instant exp = now.plusSeconds(accessTtlSeconds);
         return Jwts.builder()
