@@ -594,6 +594,11 @@ public class OrderIntentProcessor {
     }
 
     private PositionSizingResult resolveSizing(StrategySignalEntity signal, UUID userId, ExecutionMode mode) {
+        // EXIT signals bypass position sizing - they're closing positions, not opening new ones
+        if (signal.getSignalType() == SignalType.EXIT) {
+            return PositionSizingResult.acceptedForExit(signal.getSuggestedQty());
+        }
+
         String strategyKey = signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
         PositionSizingRequest req = new PositionSizingRequest(
                 strategyKey,

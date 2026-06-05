@@ -65,4 +65,21 @@ public record PositionSizingResult(
                 snapshot,
                 brokerNote);
     }
+
+    public static PositionSizingResult acceptedForExit(BigDecimal qty) {
+        return new PositionSizingResult(
+                true,
+                qty,
+                qty,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                SizingMode.FIXED_QUANTITY,
+                null,
+                "exit_signal",
+                Map.of("signalType", "EXIT"),
+                "exit_bypass");
+    }
 }
