@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -35,7 +36,7 @@ public class EventJournalService {
         this.deterministicMapper = new ObjectMapper().configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public EventStoreEntry append(
             String streamType,
             String streamKey,
@@ -86,7 +87,7 @@ public class EventJournalService {
     }
 
     /** Convenience for ORDER stream keyed by order id. */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public EventStoreEntry appendOrderEvent(UUID orderId, String eventType, Map<String, Object> payload, UUID userId) {
         Map<String, Object> body = new LinkedHashMap<>(payload);
         body.put("orderId", orderId.toString());
