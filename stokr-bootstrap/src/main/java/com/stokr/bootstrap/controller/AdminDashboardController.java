@@ -14,8 +14,14 @@ public class AdminDashboardController {
         return "forward:/admin-dashboard.html";
     }
 
+    @GetMapping("/admin/dashboard-v2")
+    public String dashboardV2() {
+        log.info("Admin dashboard V2 (new) accessed");
+        return "forward:/admin-dashboard-v2.html";
+    }
+
     @GetMapping("/")
     public String redirectToDashboard() {
-        return "redirect:/admin/dashboard";
+        return "redirect:/admin/dashboard-v2";
     }
 }
