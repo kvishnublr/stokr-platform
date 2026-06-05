@@ -132,14 +132,19 @@ spring:
       time-to-live: ${CACHE_TTL_MS:1800000}  # 30 minutes default
       cache-null-values: false
     cache-names:
-      - user_profile
-      - user_session
-      - strategy_config
-      - universe_symbols
-      - execution_config
-      - risk_limits
-      - market_data
-      - broker_account
+      - user_profile          # User profile data (30 min TTL)
+      - user_session          # Session data (120 min TTL)
+      - strategy_config       # Strategy configurations (30 min TTL)
+      - universe_symbols      # Symbol lists per universe (30 min TTL)
+      - execution_config      # Execution parameters (30 min TTL)
+      - risk_limits          # User risk limits (60 min TTL)
+      - market_data          # Market snapshots (1 min TTL)
+      - broker_account       # Broker connection status (5 min TTL)
+      - portfolio_exposure   # Portfolio exposure summaries (5 min TTL)
+      - position_summary     # Position summaries by user (10 min TTL)
+      - broker_status        # Real-time broker connectivity (5 min TTL)
+      - signal_confidence    # Signal confidence scores (2 min TTL)
+      - execution_status     # Order execution status (2 min TTL)
 
   # ===== RABBITMQ CONFIGURATION =====
   rabbitmq:
