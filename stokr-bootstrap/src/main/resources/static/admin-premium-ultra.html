@@ -1,0 +1,1478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stokr Admin - Premium Ultra</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+        :root {
+            --primary: #5b63f5;
+            --primary-light: #818cf8;
+            --secondary: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --light-bg: #f8fafc;
+            --lighter-bg: #ffffff;
+            --text-dark: #0f1419;
+            --text-light: #64748b;
+            --text-muted: #94a3b8;
+            --border-light: #e2e8f0;
+            --border-lighter: #f1f5f9;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #f0f4f9 0%, #f8fafc 50%, #fef5ff 100%);
+            color: var(--text-dark);
+            min-height: 100vh;
+            display: flex;
+        }
+
+        /* SIDEBAR */
+        .sidebar {
+            width: 260px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            border-right: 1px solid var(--border-light);
+            padding: 24px 16px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 32px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-light);
+            animation: slideInDown 0.6s ease-out;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #5b63f5 0%, #7c3aed 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 900;
+            color: white;
+            box-shadow: 0 4px 12px rgba(91, 99, 245, 0.3);
+        }
+
+        .sidebar-header h2 {
+            font-size: 16px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #5b63f5, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .sidebar-header p {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 700;
+        }
+
+        .sidebar-section {
+            margin-bottom: 28px;
+            animation: slideInUp 0.6s ease-out backwards;
+        }
+
+        .sidebar-section-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            font-weight: 800;
+            margin-bottom: 12px;
+            letter-spacing: 0.6px;
+        }
+
+        .nav-item {
+            padding: 12px 14px;
+            margin-bottom: 6px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-light);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            position: relative;
+        }
+
+        .nav-item:hover {
+            background: linear-gradient(135deg, rgba(91, 99, 245, 0.08) 0%, rgba(124, 58, 237, 0.08) 100%);
+            color: var(--primary);
+            transform: translateX(4px);
+        }
+
+        .nav-item.active {
+            background: linear-gradient(135deg, #5b63f5 0%, #7c3aed 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(91, 99, 245, 0.3);
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .status-indicator.active {
+            background: #10b981;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+        }
+
+        .status-indicator.warning {
+            background: #f59e0b;
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        @keyframes slideInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes slideInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* MAIN CONTENT */
+        .main {
+            margin-left: 260px;
+            flex: 1;
+            overflow-y: auto;
+            padding: 40px;
+        }
+
+        /* HEADER */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 50px;
+            flex-wrap: wrap;
+            gap: 20px;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        .header-left h1 {
+            font-size: 40px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #5b63f5 0%, #7c3aed 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .header-left p {
+            color: var(--text-light);
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 13px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #5b63f5 0%, #7c3aed 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(91, 99, 245, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(91, 99, 245, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
+        }
+
+        /* STATUS BANNER */
+        .status-banner {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0.04) 100%);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 14px;
+            padding: 18px 24px;
+            margin-bottom: 40px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            animation: slideUp 0.6s ease-out;
+            backdrop-filter: blur(10px);
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            background: #10b981;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.7);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .status-banner p {
+            font-size: 13px;
+            color: #047857;
+            font-weight: 700;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* GRID */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        /* CARDS */
+        .card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            padding: 28px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            animation: cardSlideUp 0.6s ease-out both;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(91, 99, 245, 0.05) 0%, transparent 100%);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            pointer-events: none;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        @keyframes cardSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .card:hover {
+            border-color: #5b63f5;
+            box-shadow: 0 12px 40px rgba(91, 99, 245, 0.15);
+            transform: translateY(-8px);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .card-title {
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--text-dark);
+        }
+
+        .card-icon {
+            font-size: 24px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+
+        .metric-value {
+            font-size: 42px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #5b63f5 0%, #7c3aed 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 16px 0;
+            position: relative;
+            z-index: 1;
+            animation: numberCountUp 0.8s ease-out;
+        }
+
+        @keyframes numberCountUp {
+            from { opacity: 0; transform: scale(0.8); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+            font-weight: 700;
+            position: relative;
+            z-index: 1;
+        }
+
+        .metric-change {
+            font-size: 12px;
+            padding: 8px 14px;
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
+            color: #047857;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 8px;
+            display: inline-block;
+            margin-top: 10px;
+            font-weight: 700;
+            position: relative;
+            z-index: 1;
+            animation: fadeInUp 0.6s ease-out 0.2s backwards;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .metric-change.negative {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
+            color: #991b1b;
+            border-color: rgba(239, 68, 68, 0.2);
+        }
+
+        /* PROGRESS BAR */
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 100%);
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 14px 0;
+            position: relative;
+            z-index: 1;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #5b63f5 0%, #7c3aed 100%);
+            border-radius: 4px;
+            animation: slideRight 1s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 12px rgba(91, 99, 245, 0.4);
+        }
+
+        @keyframes slideRight {
+            from { width: 0; box-shadow: 0 0 0 rgba(91, 99, 245, 0); }
+        }
+
+        /* CONTROL PANEL */
+        .control-panel {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.06) 0%, rgba(239, 68, 68, 0.02) 100%);
+            border: 1px solid rgba(239, 68, 68, 0.15);
+            border-radius: 16px;
+            padding: 28px;
+            margin-bottom: 40px;
+            animation: slideUp 0.6s ease-out;
+            backdrop-filter: blur(10px);
+        }
+
+        .control-title {
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: #991b1b;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            letter-spacing: 0.6px;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+
+        .control-btn {
+            padding: 14px 24px;
+            border: 2px solid;
+            border-radius: 10px;
+            background: white;
+            cursor: pointer;
+            font-weight: 800;
+            font-size: 13px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .control-btn.kill {
+            border-color: #ef4444;
+            color: #ef4444;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+        }
+
+        .control-btn.kill:hover {
+            background: #ef4444;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
+        }
+
+        .control-btn.p2 {
+            border-color: #f59e0b;
+            color: #f59e0b;
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+        }
+
+        .control-btn.p2:hover {
+            background: #f59e0b;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
+        }
+
+        .control-btn.p3 {
+            border-color: #5b63f5;
+            color: #5b63f5;
+            box-shadow: 0 4px 12px rgba(91, 99, 245, 0.2);
+        }
+
+        .control-btn.p3:hover {
+            background: #5b63f5;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(91, 99, 245, 0.4);
+        }
+
+        /* OPERATIONS BOX */
+        .ops-box {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid var(--border-light);
+            border-radius: 14px;
+            padding: 22px;
+            margin-bottom: 18px;
+            animation: fadeInUp 0.6s ease-out both;
+            transition: all 0.3s ease;
+        }
+
+        .ops-box:hover {
+            border-color: #5b63f5;
+            box-shadow: 0 8px 20px rgba(91, 99, 245, 0.1);
+            transform: translateY(-4px);
+        }
+
+        .ops-box-title {
+            font-size: 13px;
+            font-weight: 800;
+            color: var(--text-dark);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .ops-box-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 14px;
+            font-weight: 600;
+        }
+
+        .ops-sub-items {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .ops-sub-item {
+            padding: 12px 14px;
+            background: linear-gradient(135deg, rgba(91, 99, 245, 0.06) 0%, rgba(124, 58, 237, 0.04) 100%);
+            border-left: 3px solid #5b63f5;
+            border-radius: 8px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+
+        .ops-sub-item:hover {
+            background: linear-gradient(135deg, rgba(91, 99, 245, 0.12) 0%, rgba(124, 58, 237, 0.08) 100%);
+            padding-left: 18px;
+            box-shadow: 0 4px 12px rgba(91, 99, 245, 0.15);
+        }
+
+        /* TABLE */
+        .table-container {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 40px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+            animation: slideUp 0.6s ease-out;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: linear-gradient(135deg, rgba(91, 99, 245, 0.05) 0%, rgba(124, 58, 237, 0.03) 100%);
+            padding: 18px 20px;
+            text-align: left;
+            font-weight: 800;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--text-dark);
+            border-bottom: 1px solid var(--border-light);
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-lighter);
+            font-size: 13px;
+            color: var(--text-dark);
+            font-weight: 500;
+        }
+
+        tr:hover {
+            background: linear-gradient(135deg, rgba(91, 99, 245, 0.03) 0%, rgba(124, 58, 237, 0.02) 100%);
+        }
+
+        /* BADGES */
+        .badge {
+            display: inline-block;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-success {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.08) 100%);
+            color: #047857;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .badge-warning {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.08) 100%);
+            color: #92400e;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        .badge-danger {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.08) 100%);
+            color: #991b1b;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        /* SECTION TITLE */
+        .section-title {
+            font-size: 20px;
+            font-weight: 900;
+            margin: 50px 0 28px 0;
+            color: var(--text-dark);
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            animation: slideInLeft 0.6s ease-out;
+        }
+
+        @keyframes slideInLeft {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .section-divider {
+            width: 4px;
+            height: 28px;
+            background: linear-gradient(135deg, #5b63f5 0%, #7c3aed 100%);
+            border-radius: 2px;
+            box-shadow: 0 4px 12px rgba(91, 99, 245, 0.3);
+        }
+
+        /* PINNED ITEMS */
+        .pinned-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 40px;
+        }
+
+        .pinned-item {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid var(--border-light);
+            border-radius: 14px;
+            padding: 18px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: bounceIn 0.6s ease-out both;
+        }
+
+        @keyframes bounceIn {
+            0% { opacity: 0; transform: scale(0.8); }
+            50% { transform: scale(1.05); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .pinned-item:hover {
+            border-color: #5b63f5;
+            box-shadow: 0 8px 20px rgba(91, 99, 245, 0.2);
+            transform: translateY(-4px);
+        }
+
+        .pinned-icon {
+            font-size: 24px;
+        }
+
+        .pinned-content {
+            flex: 1;
+        }
+
+        .pinned-title {
+            font-size: 13px;
+            font-weight: 800;
+            color: var(--text-dark);
+        }
+
+        .pinned-status {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            font-weight: 600;
+        }
+
+        .section {
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        .section.hidden {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+                border-right: none;
+                border-bottom: 1px solid var(--border-light);
+                margin-bottom: 20px;
+                padding: 20px 16px;
+            }
+
+            .main {
+                margin-left: 0;
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 28px;
+            }
+
+            .grid, .grid-3 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo-icon">⚡</div>
+            <div>
+                <h2>Stokr</h2>
+                <p>Platform</p>
+            </div>
+        </div>
+
+        <!-- ADMIN OPS -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">Admin Ops</div>
+            <div class="nav-item active" onclick="showSection('safety')">
+                🛡️ Safety & Diagnostics
+                <div class="status-indicator active"></div>
+            </div>
+        </div>
+
+        <!-- PINNED MONITORS -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">Pinned</div>
+            <div class="nav-item" onclick="showSection('command')">
+                🎮 Command Center
+                <div class="status-indicator active"></div>
+            </div>
+            <div class="nav-item" onclick="showSection('signals')">
+                📡 Signal Monitor
+                <div class="status-indicator active"></div>
+            </div>
+            <div class="nav-item" onclick="showSection('oms')">
+                🏭 OMS Monitor
+                <div class="status-indicator active"></div>
+            </div>
+            <div class="nav-item" onclick="showSection('risk')">
+                ⚠️ Risk Terminal
+                <div class="status-indicator warning"></div>
+            </div>
+        </div>
+
+        <!-- COMMAND CENTER -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">Command Center</div>
+            <div class="nav-item">
+                🎙️ War Room & Pulse
+                <div class="status-indicator active"></div>
+            </div>
+            <div class="nav-item">
+                🔍 Platform Overview
+                <div class="status-indicator active"></div>
+            </div>
+            <div class="nav-item">
+                🔗 Pipeline Health
+                <div class="status-indicator active"></div>
+            </div>
+        </div>
+
+        <!-- TRADING OPS -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">Trading Operations</div>
+            <div class="nav-item" onclick="showSection('livedesk')">
+                💹 Live Desk & Intraday
+                <div class="status-indicator active"></div>
+            </div>
+        </div>
+
+        <!-- SIGNALS -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">Strategies & Signals</div>
+            <div class="nav-item" onclick="showSection('strategies')">
+                🧠 Signal Intelligence
+                <div class="status-indicator active"></div>
+            </div>
+        </div>
+
+        <!-- EXECUTION -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">Execution & OMS</div>
+            <div class="nav-item" onclick="showSection('execution')">
+                🛡️ Guard Rails & Harness
+                <div class="status-indicator active"></div>
+            </div>
+        </div>
+
+        <!-- MARKET -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">Market Intelligence</div>
+            <div class="nav-item" onclick="showSection('market')">
+                📊 Tape & Freshness
+                <div class="status-indicator active"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="main">
+        <!-- HEADER -->
+        <div class="header">
+            <div class="header-left">
+                <h1>Admin Console</h1>
+                <p>Real-time platform operations dashboard</p>
+            </div>
+            <div class="header-right">
+                <button class="btn btn-primary">📊 Reports</button>
+                <button class="btn btn-primary">⚙️ Settings</button>
+            </div>
+        </div>
+
+        <!-- STATUS BANNER -->
+        <div class="status-banner">
+            <div class="status-dot"></div>
+            <p>✓ All systems operational • No critical alerts • Market LIVE</p>
+        </div>
+
+        <!-- SAFETY & DIAGNOSTICS SECTION -->
+        <div id="safety" class="section">
+            <div class="section-title">
+                <div class="section-divider"></div>
+                Safety & Diagnostics
+            </div>
+
+            <!-- KILL SWITCH & CONTROLS -->
+            <div class="control-panel">
+                <div class="control-title">⚠️ Emergency Controls</div>
+                <div class="control-buttons">
+                    <button class="control-btn kill">🔴 KILL ON</button>
+                    <button class="control-btn p2">P2</button>
+                    <button class="control-btn p3">P3</button>
+                </div>
+            </div>
+
+            <!-- KEY METRICS -->
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">System Uptime</div>
+                        <div class="card-icon">🟢</div>
+                    </div>
+                    <div class="metric-value">99.97%</div>
+                    <div class="metric-label">Last 30 Days</div>
+                    <div class="metric-change">↑ 0.05% improvement</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Active Traders</div>
+                        <div class="card-icon">👥</div>
+                    </div>
+                    <div class="metric-value">2,847</div>
+                    <div class="metric-label">Trading Right Now</div>
+                    <div class="metric-change">↑ 256 today</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Platform Health</div>
+                        <div class="card-icon">❤️</div>
+                    </div>
+                    <div class="metric-value">98.5%</div>
+                    <div class="metric-label">Overall Score</div>
+                    <div class="metric-change">↑ All subsystems green</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Latency (p99)</div>
+                        <div class="card-icon">⚡</div>
+                    </div>
+                    <div class="metric-value">145ms</div>
+                    <div class="metric-label">Order to Fill</div>
+                    <div class="metric-change">↓ 12ms improvement</div>
+                </div>
+            </div>
+
+            <!-- INFRASTRUCTURE STATUS -->
+            <div class="section-title">
+                <div class="section-divider"></div>
+                Infrastructure Health
+            </div>
+            <div class="grid-3">
+                <div class="card">
+                    <div class="card-title">Redis Cache</div>
+                    <div style="margin-top: 20px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                            <span>Latency</span>
+                            <strong style="color: #047857;">15ms</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 15%;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 16px; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                            <span>Hit Rate</span>
+                            <strong style="color: #047857;">94.2%</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 94%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">PostgreSQL DB</div>
+                    <div style="margin-top: 20px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                            <span>Response</span>
+                            <strong style="color: #047857;">8ms</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 8%;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 16px; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                            <span>Connections</span>
+                            <strong style="color: #047857;">45/100</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 45%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Zerodha API</div>
+                    <div style="margin-top: 20px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                            <span>Latency</span>
+                            <strong style="color: #047857;">45ms</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 45%;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 16px; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                            <span>Error Rate</span>
+                            <strong style="color: #047857;">0.1%</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 10%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- COMMAND CENTER SECTION -->
+        <div id="command" class="section hidden">
+            <div class="section-title">
+                <div class="section-divider"></div>
+                Command Center
+            </div>
+            <p style="color: var(--text-muted); margin-bottom: 24px; font-weight: 600;">War room & platform pulse</p>
+
+            <div class="ops-box">
+                <div class="ops-box-title">🎙️ War Room Live</div>
+                <div class="ops-box-desc">Real-time platform operations monitoring</div>
+                <div class="ops-sub-items">
+                    <div class="ops-sub-item">📊 Current Market Status: OPEN (NSE/MCX/CDS)</div>
+                    <div class="ops-sub-item">🔄 Active Signals/Minute: 34.2</div>
+                    <div class="ops-sub-item">📈 Orders Executed/Min: 28.7</div>
+                    <div class="ops-sub-item">💰 Total P&L (Today): +₹87.5Cr</div>
+                </div>
+            </div>
+
+            <div class="ops-box">
+                <div class="ops-box-title">🔍 Platform Overview</div>
+                <div class="ops-box-desc">System health and critical metrics</div>
+                <div class="ops-sub-items">
+                    <div class="ops-sub-item">✓ API Gateway: HEALTHY</div>
+                    <div class="ops-sub-item">✓ WebSocket Connections: 2,847 active</div>
+                    <div class="ops-sub-item">✓ Database Replication: SYNCED</div>
+                    <div class="ops-sub-item">⚠️ Cache Pressure: 78% (watch level)</div>
+                </div>
+            </div>
+
+            <div class="ops-box">
+                <div class="ops-box-title">🔗 Pipeline Health</div>
+                <div class="ops-box-desc">End-to-end signal processing pipeline</div>
+                <div class="ops-sub-items">
+                    <div class="ops-sub-item">Signal Generation → Validation: 99.8%</div>
+                    <div class="ops-sub-item">Validation → Order Creation: 78.2%</div>
+                    <div class="ops-sub-item">Order → Broker Submission: 99.95%</div>
+                    <div class="ops-sub-item">Broker → Fill Completion: 98.3%</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SIGNAL MONITOR SECTION -->
+        <div id="signals" class="section hidden">
+            <div class="section-title">
+                <div class="section-divider"></div>
+                Signal Monitor
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Signals Generated</div>
+                        <div class="card-icon">📡</div>
+                    </div>
+                    <div class="metric-value">1,247</div>
+                    <div class="metric-label">Today</div>
+                    <div class="metric-change">+34 per minute avg</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Win Rate</div>
+                        <div class="card-icon">✅</div>
+                    </div>
+                    <div class="metric-value">71.3%</div>
+                    <div class="metric-label">Overall</div>
+                    <div class="metric-change">↑ 2.1% from yesterday</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Conversion Rate</div>
+                        <div class="card-icon">🔄</div>
+                    </div>
+                    <div class="metric-value">78.5%</div>
+                    <div class="metric-label">Signal to Order</div>
+                    <div class="metric-change">↑ 3.2% improvement</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Avg P&L/Signal</div>
+                        <div class="card-icon">💰</div>
+                    </div>
+                    <div class="metric-value">+₹70K</div>
+                    <div class="metric-label">Per signal</div>
+                    <div class="metric-change">Total: +₹87.5Cr</div>
+                </div>
+            </div>
+
+            <div class="section-title">
+                <div class="section-divider"></div>
+                Top Strategies
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Strategy</th>
+                            <th>Signals</th>
+                            <th>Win Rate</th>
+                            <th>P&L</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>NSE_SPIKE_v1.0</strong></td>
+                            <td>342</td>
+                            <td>76%</td>
+                            <td style="color: #047857; font-weight: 700;">+₹45.3Cr</td>
+                            <td><span class="badge badge-success">LIVE</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>MCX_SWING_v1.0</strong></td>
+                            <td>298</td>
+                            <td>68%</td>
+                            <td style="color: #047857; font-weight: 700;">+₹32.1Cr</td>
+                            <td><span class="badge badge-success">LIVE</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>CDS_CARRY_v1.0</strong></td>
+                            <td>156</td>
+                            <td>65%</td>
+                            <td style="color: #047857; font-weight: 700;">+₹15.2Cr</td>
+                            <td><span class="badge badge-warning">BETA</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- OMS MONITOR SECTION -->
+        <div id="oms" class="section hidden">
+            <div class="section-title">
+                <div class="section-divider"></div>
+                OMS Monitor
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Orders Today</div>
+                        <div class="card-icon">📋</div>
+                    </div>
+                    <div class="metric-value">2,856</div>
+                    <div class="metric-label">Total Submitted</div>
+                    <div class="metric-change">2,821 filled (98.8%)</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Fill Rate</div>
+                        <div class="card-icon">✅</div>
+                    </div>
+                    <div class="metric-value">98.8%</div>
+                    <div class="metric-label">Broker Success</div>
+                    <div class="metric-change">35 partial fills</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Avg Latency</div>
+                        <div class="card-icon">⚡</div>
+                    </div>
+                    <div class="metric-value">145ms</div>
+                    <div class="metric-label">Order to Fill</div>
+                    <div class="metric-change">↓ 12ms vs avg</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Avg Slippage</div>
+                        <div class="card-icon">📉</div>
+                    </div>
+                    <div class="metric-value">2.3 pips</div>
+                    <div class="metric-label">Market Slippage</div>
+                    <div class="metric-change">Within acceptable range</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RISK TERMINAL SECTION -->
+        <div id="risk" class="section hidden">
+            <div class="section-title">
+                <div class="section-divider"></div>
+                Risk Terminal
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Daily Loss Limit</div>
+                        <div class="card-icon">🚨</div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                            <span>Current Loss</span>
+                            <strong style="color: #ef4444;">-₹2.3L</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 46%; background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);"></div>
+                        </div>
+                        <p style="margin-top: 10px; font-size: 11px; color: var(--text-muted); font-weight: 600;">Limit: ₹5L | 46% used</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Exposure</div>
+                        <div class="card-icon">📊</div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                            <span>Current Notional</span>
+                            <strong>₹45.2Cr</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 60%;"></div>
+                        </div>
+                        <p style="margin-top: 10px; font-size: 11px; color: var(--text-muted); font-weight: 600;">Max: ₹75Cr | 60% used</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- LIVE DESK SECTION -->
+        <div id="livedesk" class="section hidden">
+            <div class="section-title">
+                <div class="section-divider"></div>
+                Live Desk & Intraday
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Market Status</div>
+                        <div class="card-icon">🏛️</div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <div style="padding: 14px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%); border-radius: 8px; margin-bottom: 10px; border: 1px solid rgba(16, 185, 129, 0.2);">
+                            <div style="color: #047857; font-weight: 800; font-size: 13px;">NSE: OPEN</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 600;">9:15 - 15:30 IST</div>
+                        </div>
+                        <div style="padding: 14px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%); border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.2);">
+                            <div style="color: #047857; font-weight: 800; font-size: 13px;">MCX: OPEN</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 600;">9:00 - 23:30 IST</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Trading Activity</div>
+                        <div class="card-icon">📈</div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <div style="margin-bottom: 18px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                                <span>NSE Volume</span>
+                                <strong style="color: #047857;">₹128.4Cr</strong>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 85%;"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                                <span>MCX Volume</span>
+                                <strong style="color: #047857;">₹42.8Cr</strong>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 45%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STRATEGIES SECTION -->
+        <div id="strategies" class="section hidden">
+            <div class="section-title">
+                <div class="section-divider"></div>
+                Signal Intelligence Pipeline
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Strategy</th>
+                            <th>Universe</th>
+                            <th>Daily Signals</th>
+                            <th>Win %</th>
+                            <th>Monthly P&L</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>NSE_SPIKE_v1.0</strong></td>
+                            <td>Top 100 stocks</td>
+                            <td>342</td>
+                            <td style="color: #047857; font-weight: 700;">76%</td>
+                            <td style="color: #047857; font-weight: 700;">+₹45.3Cr</td>
+                            <td><span class="badge badge-success">LIVE</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>MCX_SWING_v1.0</strong></td>
+                            <td>Gold/Crude</td>
+                            <td>298</td>
+                            <td style="color: #047857; font-weight: 700;">68%</td>
+                            <td style="color: #047857; font-weight: 700;">+₹32.1Cr</td>
+                            <td><span class="badge badge-success">LIVE</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>CDS_CARRY_v1.0</strong></td>
+                            <td>USD/INR Pairs</td>
+                            <td>156</td>
+                            <td style="color: #047857; font-weight: 700;">65%</td>
+                            <td style="color: #047857; font-weight: 700;">+₹15.2Cr</td>
+                            <td><span class="badge badge-warning">BETA</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>NFO_OPTION_v1.0</strong></td>
+                            <td>Top Options</td>
+                            <td>89</td>
+                            <td style="color: #047857; font-weight: 700;">72%</td>
+                            <td style="color: #047857; font-weight: 700;">+₹8.9Cr</td>
+                            <td><span class="badge badge-danger">DEV</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- EXECUTION SECTION -->
+        <div id="execution" class="section hidden">
+            <div class="section-title">
+                <div class="section-divider"></div>
+                Guard Rails & Test Harness
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Guard Rails Active</div>
+                        <div class="card-icon">🛡️</div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <div style="padding: 12px 14px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%); border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #10b981;">
+                            <div style="color: #047857; font-weight: 800; font-size: 13px;">✓ Max Order Size Guard</div>
+                        </div>
+                        <div style="padding: 12px 14px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%); border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #10b981;">
+                            <div style="color: #047857; font-weight: 800; font-size: 13px;">✓ Daily Loss Limit</div>
+                        </div>
+                        <div style="padding: 12px 14px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%); border-radius: 8px; border-left: 3px solid #10b981;">
+                            <div style="color: #047857; font-weight: 800; font-size: 13px;">✓ Position Concentration</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Test Results</div>
+                        <div class="card-icon">🧪</div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <div style="margin-bottom: 18px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                                <span>API Tests</span>
+                                <strong style="color: #047857;">245/245 ✓</strong>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 100%;"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                                <span>Integration Tests</span>
+                                <strong style="color: #047857;">128/128 ✓</strong>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 100%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MARKET INTELLIGENCE SECTION -->
+        <div id="market" class="section hidden">
+            <div class="section-title">
+                <div class="section-divider"></div>
+                Tape & Market Intelligence
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Data Freshness</div>
+                        <div class="card-icon">⏱️</div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <div style="margin-bottom: 18px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                                <span>NSE Quotes</span>
+                                <strong style="color: #047857;">45ms</strong>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 45%;"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; font-weight: 600;">
+                                <span>MCX Quotes</span>
+                                <strong style="color: #047857;">68ms</strong>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 68%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Backfill Status</div>
+                        <div class="card-icon">📊</div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <div style="padding: 14px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%); border-radius: 8px; margin-bottom: 10px; border: 1px solid rgba(16, 185, 129, 0.2);">
+                            <div style="color: #047857; font-weight: 800; font-size: 13px;">NSE: Complete</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 600;">Last 2 years history</div>
+                        </div>
+                        <div style="padding: 14px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%); border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.2);">
+                            <div style="color: #92400e; font-weight: 800; font-size: 13px;">MCX: 98% Complete</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 600;">1.8 years of 2 years</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showSection(sectionId) {
+            document.querySelectorAll('.section').forEach(el => el.classList.add('hidden'));
+            document.getElementById(sectionId).classList.remove('hidden');
+
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            event.target.closest('.nav-item').classList.add('active');
+        }
+    </script>
+</body>
+</html>

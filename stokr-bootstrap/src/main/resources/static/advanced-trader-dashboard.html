@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stokr Advanced Trading Terminal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0e27;
+            color: #00ff00;
+            min-height: 100vh;
+            padding: 10px;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(to right, #1a1f3a, #2d1b4e);
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border-left: 4px solid #00ff00;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            animation: glow 2s infinite;
+        }
+
+        @keyframes glow {
+            0%, 100% { box-shadow: 0 0 5px rgba(0, 255, 0, 0.3); }
+            50% { box-shadow: 0 0 15px rgba(0, 255, 0, 0.6); }
+        }
+
+        .header h1 {
+            font-size: 20px;
+            color: #00ff00;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+
+        .header-info {
+            display: flex;
+            gap: 30px;
+        }
+
+        .header-stat {
+            padding: 10px 15px;
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+        }
+
+        .header-stat-label {
+            font-size: 10px;
+            color: #00aa00;
+            text-transform: uppercase;
+            margin-bottom: 3px;
+        }
+
+        .header-stat-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #00ff00;
+        }
+
+        .header-stat-value.positive {
+            color: #00ff00;
+            text-shadow: 0 0 5px rgba(0, 255, 0, 0.7);
+        }
+
+        .header-stat-value.negative {
+            color: #ff0000;
+            text-shadow: 0 0 5px rgba(255, 0, 0, 0.7);
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .panel {
+            background: linear-gradient(to bottom, #1a1f3a, #0f1628);
+            border: 1px solid #00aa00;
+            border-radius: 4px;
+            padding: 15px;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            background: rgba(0, 255, 0, 0.1);
+            padding: 8px 12px;
+            margin: -15px -15px 12px -15px;
+            border-bottom: 1px solid #00aa00;
+            font-weight: bold;
+            color: #00ff00;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00ff00;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .ticker {
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid #004400;
+            border-radius: 2px;
+            margin-bottom: 10px;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .ticker:hover {
+            background: rgba(0, 255, 0, 0.1);
+            border-color: #00ff00;
+        }
+
+        .ticker-name {
+            font-weight: bold;
+            color: #00ff00;
+            min-width: 100px;
+        }
+
+        .ticker-price {
+            color: #00ff00;
+            margin: 0 15px;
+            min-width: 80px;
+            text-align: right;
+        }
+
+        .ticker-change {
+            color: #00ff00;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .ticker-change.positive {
+            color: #00ff00;
+        }
+
+        .ticker-change.negative {
+            color: #ff0000;
+        }
+
+        .chart-container {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid #004400;
+            border-radius: 2px;
+            padding: 10px;
+            height: 250px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .candle {
+            width: 3px;
+            background: #00ff00;
+            margin: 0 2px;
+            border-radius: 1px;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+
+        .table th {
+            background: rgba(0, 255, 0, 0.1);
+            color: #00ff00;
+            padding: 6px;
+            text-align: left;
+            border-bottom: 1px solid #00aa00;
+        }
+
+        .table td {
+            padding: 6px;
+            border-bottom: 1px solid #004400;
+            color: #00ff00;
+        }
+
+        .table tr:hover {
+            background: rgba(0, 255, 0, 0.05);
+        }
+
+        .positive {
+            color: #00ff00 !important;
+        }
+
+        .negative {
+            color: #ff0000 !important;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #004400;
+        }
+
+        .tab-button {
+            padding: 8px 15px;
+            background: rgba(0, 255, 0, 0.05);
+            color: #00aa00;
+            border: 1px solid #004400;
+            border-bottom: none;
+            border-radius: 2px 2px 0 0;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .tab-button.active {
+            background: rgba(0, 255, 0, 0.2);
+            color: #00ff00;
+            border-color: #00ff00;
+        }
+
+        .tab-button:hover {
+            background: rgba(0, 255, 0, 0.15);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .order-form {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid #004400;
+            padding: 10px;
+            border-radius: 2px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            font-size: 10px;
+            color: #00aa00;
+            margin-bottom: 3px;
+            text-transform: uppercase;
+        }
+
+        .form-group input,
+        .form-group select {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #004400;
+            color: #00ff00;
+            padding: 6px;
+            border-radius: 2px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #00ff00;
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+        }
+
+        .btn {
+            padding: 8px 15px;
+            background: #004400;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            border-radius: 2px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            font-size: 11px;
+        }
+
+        .btn:hover {
+            background: #00ff00;
+            color: #000;
+            text-shadow: 0 0 5px rgba(0, 255, 0, 0.7);
+        }
+
+        .btn-sell {
+            background: #440000;
+            color: #ff0000;
+            border-color: #ff0000;
+        }
+
+        .btn-sell:hover {
+            background: #ff0000;
+            color: #000;
+        }
+
+        .alert {
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 8px 10px;
+            border-radius: 2px;
+            margin-bottom: 10px;
+            font-size: 12px;
+        }
+
+        .alert-warning {
+            background: rgba(255, 170, 0, 0.1);
+            border-color: #ffaa00;
+            color: #ffaa00;
+        }
+
+        .alert-danger {
+            background: rgba(255, 0, 0, 0.1);
+            border-color: #ff0000;
+            color: #ff0000;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .stat-box {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid #004400;
+            padding: 10px;
+            border-radius: 2px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #00ff00;
+            margin: 5px 0;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            color: #00aa00;
+            text-transform: uppercase;
+        }
+
+        .position-row {
+            background: rgba(0, 0, 0, 0.3);
+            border-left: 3px solid #00ff00;
+            padding: 8px;
+            margin-bottom: 8px;
+            border-radius: 2px;
+        }
+
+        .position-row.negative {
+            border-left-color: #ff0000;
+        }
+
+        .position-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .position-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 8px;
+            font-size: 11px;
+        }
+
+        .heatmap {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+            gap: 5px;
+        }
+
+        .heatmap-item {
+            aspect-ratio: 1;
+            background: rgba(0, 255, 0, 0.2);
+            border: 1px solid #004400;
+            border-radius: 2px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .heatmap-item:hover {
+            border-color: #00ff00;
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .heatmap-item.positive {
+            background: rgba(0, 255, 0, 0.3);
+            color: #00ff00;
+        }
+
+        .heatmap-item.negative {
+            background: rgba(255, 0, 0, 0.3);
+            color: #ff0000;
+        }
+
+        .watchlist-item {
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid #004400;
+            margin-bottom: 6px;
+            border-radius: 2px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .watchlist-item:hover {
+            background: rgba(0, 255, 0, 0.1);
+            border-color: #00ff00;
+        }
+
+        .scroll {
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .scroll::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .scroll::-webkit-scrollbar-thumb {
+            background: #00aa00;
+            border-radius: 3px;
+        }
+
+        .status-online {
+            color: #00ff00;
+        }
+
+        .status-warning {
+            color: #ffaa00;
+        }
+
+        .status-offline {
+            color: #ff0000;
+        }
+
+        @media (max-width: 1400px) {
+            .dashboard {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div>
+                <h1>⚡ STOKR ADVANCED TRADING TERMINAL v4.2</h1>
+            </div>
+            <div class="header-info">
+                <div class="header-stat">
+                    <div class="header-stat-label">Portfolio</div>
+                    <div class="header-stat-value positive">₹50,45,234</div>
+                </div>
+                <div class="header-stat">
+                    <div class="header-stat-label">Today P&L</div>
+                    <div class="header-stat-value positive">+₹2,34,500</div>
+                </div>
+                <div class="header-stat">
+                    <div class="header-stat-label">Open</div>
+                    <div class="header-stat-value">3</div>
+                </div>
+                <div class="header-stat">
+                    <div class="header-stat-label">Status</div>
+                    <div class="header-stat-value status-online">🟢 LIVE</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('trading')">📊 TRADING TERMINAL</button>
+            <button class="tab-button" onclick="switchTab('watchlist')">👁️ WATCHLIST</button>
+            <button class="tab-button" onclick="switchTab('heat')">🔥 HEATMAP</button>
+            <button class="tab-button" onclick="switchTab('orders')">📋 ORDERS & POSITIONS</button>
+            <button class="tab-button" onclick="switchTab('analytics')">📈 ADVANCED ANALYTICS</button>
+            <button class="tab-button" onclick="switchTab('alerts')">🔔 ALERTS & SIGNALS</button>
+        </div>
+
+        <!-- TAB 1: TRADING TERMINAL -->
+        <div id="trading" class="tab-content active">
+            <div class="grid-2">
+                <!-- Left: Price Chart & Order Ticket -->
+                <div>
+                    <div class="panel">
+                        <div class="panel-header">
+                            NIFTYPE25JAN | 4H CHART
+                            <div class="panel-status"></div>
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <button class="tab-button" style="margin-right: 5px;">1m</button>
+                            <button class="tab-button active" style="margin-right: 5px;">5m</button>
+                            <button class="tab-button" style="margin-right: 5px;">15m</button>
+                            <button class="tab-button" style="margin-right: 5px;">1h</button>
+                            <button class="tab-button">4h</button>
+                        </div>
+                        <div class="chart-container">
+                            <div style="display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 100%;">
+                                <div class="candle" style="height: 20%;"></div>
+                                <div class="candle" style="height: 35%;"></div>
+                                <div class="candle" style="height: 50%;"></div>
+                                <div class="candle" style="height: 65%;"></div>
+                                <div class="candle" style="height: 45%;"></div>
+                                <div class="candle" style="height: 70%;"></div>
+                                <div class="candle" style="height: 55%;"></div>
+                                <div class="candle" style="height: 80%;"></div>
+                                <div class="candle" style="height: 60%;"></div>
+                                <div class="candle" style="height: 90%;"></div>
+                            </div>
+                        </div>
+                        <div style="font-size: 11px; color: #00aa00; margin-top: 10px;">
+                            Current: ₹26,650 | High: ₹26,800 | Low: ₹26,400 | Vol: 2.34M
+                        </div>
+                    </div>
+
+                    <!-- Order Entry Form -->
+                    <div class="panel" style="margin-top: 15px;">
+                        <div class="panel-header">
+                            NEW ORDER
+                            <div class="panel-status"></div>
+                        </div>
+                        <div class="order-form">
+                            <div class="alert">⚠️ LIVE TRADING ACTIVE - All orders go to broker</div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Symbol</label>
+                                    <select>
+                                        <option>NIFTYPE25JAN</option>
+                                        <option>BANKNIFTY</option>
+                                        <option>NIFTY50</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Side</label>
+                                    <select>
+                                        <option>BUY</option>
+                                        <option>SELL</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Quantity</label>
+                                    <input type="number" value="100" min="1">
+                                </div>
+                                <div class="form-group">
+                                    <label>Order Type</label>
+                                    <select>
+                                        <option>MARKET</option>
+                                        <option>LIMIT</option>
+                                        <option>STOP</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Price</label>
+                                    <input type="number" value="26650" step="0.01">
+                                </div>
+                                <div class="form-group">
+                                    <label>Target</label>
+                                    <input type="number" value="26800" step="0.01">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Stop Loss</label>
+                                    <input type="number" value="26400" step="0.01">
+                                </div>
+                                <div class="form-group">
+                                    <label>Validity</label>
+                                    <select>
+                                        <option>DAY</option>
+                                        <option>GTC</option>
+                                        <option>IOC</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style="display: flex; gap: 8px; margin-top: 10px;">
+                                <button class="btn" style="flex: 1;">✓ BUY</button>
+                                <button class="btn btn-sell" style="flex: 1;">✗ SELL</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Market Scanner -->
+                <div>
+                    <div class="panel">
+                        <div class="panel-header">
+                            MARKET SCANNER - TOP MOVERS
+                            <div class="panel-status"></div>
+                        </div>
+                        <div class="scroll">
+                            <div class="ticker">
+                                <div class="ticker-name">NIFTYPE25J</div>
+                                <div class="ticker-price">26650</div>
+                                <div class="ticker-change positive">+2.3%</div>
+                            </div>
+                            <div class="ticker">
+                                <div class="ticker-name">BANKNIFTY</div>
+                                <div class="ticker-price">48100</div>
+                                <div class="ticker-change positive">+1.8%</div>
+                            </div>
+                            <div class="ticker">
+                                <div class="ticker-name">NIFTY50</div>
+                                <div class="ticker-price">25920</div>
+                                <div class="ticker-change positive">+4.6%</div>
+                            </div>
+                            <div class="ticker">
+                                <div class="ticker-name">FINNIFTY</div>
+                                <div class="ticker-price">24650</div>
+                                <div class="ticker-change negative">-1.2%</div>
+                            </div>
+                            <div class="ticker">
+                                <div class="ticker-name">MIDCPNIFTY</div>
+                                <div class="ticker-price">30450</div>
+                                <div class="ticker-change positive">+0.8%</div>
+                            </div>
+                            <div class="ticker">
+                                <div class="ticker-name">GOLDMIC25J</div>
+                                <div class="ticker-price">7280</div>
+                                <div class="ticker-change positive">+3.1%</div>
+                            </div>
+                            <div class="ticker">
+                                <div class="ticker-name">SILVERMIC25</div>
+                                <div class="ticker-price">28450</div>
+                                <div class="ticker-change negative">-2.5%</div>
+                            </div>
+                            <div class="ticker">
+                                <div class="ticker-name">CRUDE25JAN</div>
+                                <div class="ticker-price">6850</div>
+                                <div class="ticker-change positive">+1.5%</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel" style="margin-top: 15px;">
+                        <div class="panel-header">
+                            TECHNICAL INDICATORS (NIFTYPE25J)
+                            <div class="panel-status"></div>
+                        </div>
+                        <table class="table">
+                            <tr>
+                                <td>RSI(14)</td>
+                                <td class="positive">72.5</td>
+                                <td style="color: #ffaa00;">⚠ Overbought</td>
+                            </tr>
+                            <tr>
+                                <td>MACD</td>
+                                <td class="positive">34.2</td>
+                                <td class="positive">↑ Bullish</td>
+                            </tr>
+                            <tr>
+                                <td>VWAP</td>
+                                <td class="positive">26,520</td>
+                                <td class="positive">Above</td>
+                            </tr>
+                            <tr>
+                                <td>ATR(14)</td>
+                                <td class="positive">125.3</td>
+                                <td class="positive">High Vol</td>
+                            </tr>
+                            <tr>
+                                <td>Bollinger</td>
+                                <td class="positive">Upper Band</td>
+                                <td class="positive">Near Top</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: WATCHLIST -->
+        <div id="watchlist" class="tab-content">
+            <div class="grid-3">
+                <div class="panel">
+                    <div class="panel-header">
+                        INDICES
+                        <div class="panel-status"></div>
+                    </div>
+                    <div class="scroll">
+                        <div class="watchlist-item">
+                            <span>NIFTY50</span>
+                            <span class="positive">25920 <strong>+4.6%</strong></span>
+                        </div>
+                        <div class="watchlist-item">
+                            <span>BANKNIFTY</span>
+                            <span class="positive">48100 <strong>+1.8%</strong></span>
+                        </div>
+                        <div class="watchlist-item">
+                            <span>FINNIFTY</span>
+                            <span class="negative">24650 <strong>-1.2%</strong></span>
+                        </div>
+                        <div class="watchlist-item">
+                            <span>MIDCPNIFTY</span>
+                            <span class="positive">30450 <strong>+0.8%</strong></span>
+                        </div>
+                        <div class="watchlist-item">
+                            <span>SENSEX</span>
+                            <span class="positive">82340 <strong>+3.2%</strong></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        COMMODITIES
+                        <div class="panel-status"></div>
+                    </div>
+                    <div class="scroll">
+                        <div class="watchlist-item">
+                            <span>GOLDMIC25J</span>
+                            <span class="positive">7280 <strong>+3.1%</strong></span>
+                        </div>
+                        <div class="watchlist-item">
+                            <span>SILVERMIC25</span>
+                            <span class="negative">28450 <strong>-2.5%</strong></span>
+                        </div>
+                        <div class="watchlist-item">
+                            <span>CRUDE25JAN</span>
+                            <span class="positive">6850 <strong>+1.5%</strong></span>
+                        </div>
+                        <div class="watchlist-item">
+                            <span>NATURALGAS</span>
+                            <span class="positive">245.5 <strong>+2.1%</strong></span>
+                        </div>
+                        <div class="watchlist-item">
+                            <span>COPPERMIC25</span>
+                            <span class="positive">850.2 <strong>+1.3%</strong></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        CURRENCIES
+                        <div class="panel-status"></div>
+                    </div>
+                    <div class="scroll">
+                        <div class="watchlist-item">
+                            <span>USDINR25JAN</span>
+                            <span class="negative">83.45 <strong>-0.8%</strong></span>
+                        </div>
+                        <div class="watchlist-item">
+                            <span>EURINR25JAN</span>
+                            <span class="positive">90.23 <strong>+1.2%</strong></span>
+                        </div>
+                        <div class="watchlist-item">
+                            <span>GBPINR25JAN</span>
+                            <span class="positive">104.56 <strong>+0.5%</strong></span>
+                        </div>
+                        <div class="watchlist-item">
+                            <span>JPYINR25JAN</span>
+                            <span class="negative">0.5623 <strong>-1.1%</strong></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: HEATMAP -->
+        <div id="heat" class="tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    SECTOR PERFORMANCE HEATMAP
+                    <div class="panel-status"></div>
+                </div>
+                <div class="heatmap">
+                    <div class="heatmap-item positive">
+                        <div style="font-weight: bold;">IT</div>
+                        <div>+5.2%</div>
+                    </div>
+                    <div class="heatmap-item positive">
+                        <div style="font-weight: bold;">FINANCE</div>
+                        <div>+3.8%</div>
+                    </div>
+                    <div class="heatmap-item positive">
+                        <div style="font-weight: bold;">PHARMA</div>
+                        <div>+2.1%</div>
+                    </div>
+                    <div class="heatmap-item positive">
+                        <div style="font-weight: bold;">AUTO</div>
+                        <div>+1.5%</div>
+                    </div>
+                    <div class="heatmap-item positive">
+                        <div style="font-weight: bold;">ENERGY</div>
+                        <div>+2.3%</div>
+                    </div>
+                    <div class="heatmap-item negative">
+                        <div style="font-weight: bold;">METAL</div>
+                        <div>-1.2%</div>
+                    </div>
+                    <div class="heatmap-item positive">
+                        <div style="font-weight: bold;">REALTY</div>
+                        <div>+0.8%</div>
+                    </div>
+                    <div class="heatmap-item positive">
+                        <div style="font-weight: bold;">UTILITIES</div>
+                        <div>+1.3%</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-2" style="margin-top: 15px;">
+                <div class="panel">
+                    <div class="panel-header">
+                        GAINERS (Top 10)
+                        <div class="panel-status"></div>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Change</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>TCS</td>
+                                <td class="positive">+6.8%</td>
+                            </tr>
+                            <tr>
+                                <td>INFY</td>
+                                <td class="positive">+5.2%</td>
+                            </tr>
+                            <tr>
+                                <td>WIPRO</td>
+                                <td class="positive">+4.5%</td>
+                            </tr>
+                            <tr>
+                                <td>HDFCBANK</td>
+                                <td class="positive">+3.9%</td>
+                            </tr>
+                            <tr>
+                                <td>ICICIBANK</td>
+                                <td class="positive">+3.2%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        LOSERS (Top 10)
+                        <div class="panel-status"></div>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Change</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>TATASTEEL</td>
+                                <td class="negative">-3.2%</td>
+                            </tr>
+                            <tr>
+                                <td>VEDL</td>
+                                <td class="negative">-2.8%</td>
+                            </tr>
+                            <tr>
+                                <td>COALINDIA</td>
+                                <td class="negative">-1.9%</td>
+                            </tr>
+                            <tr>
+                                <td>GAIL</td>
+                                <td class="negative">-1.5%</td>
+                            </tr>
+                            <tr>
+                                <td>POWERGRID</td>
+                                <td class="negative">-0.8%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: ORDERS & POSITIONS -->
+        <div id="orders" class="tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    OPEN POSITIONS (3)
+                    <div class="panel-status"></div>
+                </div>
+                <div class="scroll">
+                    <div class="position-row">
+                        <div class="position-header">
+                            <span>NIFTYPE25J | 100 BUY @ 26,500</span>
+                            <span class="positive">+15,000 (+2.3%)</span>
+                        </div>
+                        <div class="position-details">
+                            <div>Current: 26,650</div>
+                            <div>Target: 26,800</div>
+                            <div>Stop: 26,350</div>
+                            <div>Time: 2h 15m</div>
+                        </div>
+                    </div>
+
+                    <div class="position-row negative">
+                        <div class="position-header">
+                            <span>BANKNIFTY | 75 BUY @ 48,200</span>
+                            <span class="negative">-7,500 (-1.6%)</span>
+                        </div>
+                        <div class="position-details">
+                            <div>Current: 48,100</div>
+                            <div>Target: 48,500</div>
+                            <div>Stop: 47,900</div>
+                            <div>Time: 45m</div>
+                        </div>
+                    </div>
+
+                    <div class="position-row">
+                        <div class="position-header">
+                            <span>NIFTY50 | 200 BUY @ 25,800</span>
+                            <span class="positive">+24,000 (+4.6%)</span>
+                        </div>
+                        <div class="position-details">
+                            <div>Current: 25,920</div>
+                            <div>Target: 26,100</div>
+                            <div>Stop: 25,600</div>
+                            <div>Time: 45m</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-2" style="margin-top: 15px;">
+                <div class="panel">
+                    <div class="panel-header">
+                        OPEN ORDERS (2)
+                        <div class="panel-status"></div>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>NIFTYPE25J</td>
+                                <td>BUY LIMIT</td>
+                                <td>50</td>
+                                <td>26,400</td>
+                            </tr>
+                            <tr>
+                                <td>GOLDMIC25J</td>
+                                <td>SELL LIMIT</td>
+                                <td>25</td>
+                                <td>7,350</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        FILLED ORDERS (Today)
+                        <div class="panel-status"></div>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>NIFTYPE25J</td>
+                                <td>BUY</td>
+                                <td>100</td>
+                                <td>26,500</td>
+                            </tr>
+                            <tr>
+                                <td>BANKNIFTY</td>
+                                <td>BUY</td>
+                                <td>75</td>
+                                <td>48,200</td>
+                            </tr>
+                            <tr>
+                                <td>NIFTY50</td>
+                                <td>BUY</td>
+                                <td>200</td>
+                                <td>25,800</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: ADVANCED ANALYTICS -->
+        <div id="analytics" class="tab-content">
+            <div class="grid-3">
+                <div class="stat-box">
+                    <div class="stat-label">Win Rate</div>
+                    <div class="stat-value positive">71.4%</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Profit Factor</div>
+                    <div class="stat-value positive">2.45x</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Sharpe Ratio</div>
+                    <div class="stat-value positive">1.85</div>
+                </div>
+            </div>
+
+            <div class="grid-2" style="margin-top: 15px;">
+                <div class="panel">
+                    <div class="panel-header">
+                        DAILY STATS
+                        <div class="panel-status"></div>
+                    </div>
+                    <table class="table">
+                        <tr>
+                            <td>Total Trades</td>
+                            <td class="positive">7</td>
+                        </tr>
+                        <tr>
+                            <td>Winning Trades</td>
+                            <td class="positive">5 (71.4%)</td>
+                        </tr>
+                        <tr>
+                            <td>Losing Trades</td>
+                            <td class="negative">2 (28.6%)</td>
+                        </tr>
+                        <tr>
+                            <td>Avg Win</td>
+                            <td class="positive">+₹45,230</td>
+                        </tr>
+                        <tr>
+                            <td>Avg Loss</td>
+                            <td class="negative">-₹18,500</td>
+                        </tr>
+                        <tr>
+                            <td>Daily P&L</td>
+                            <td class="positive">+₹2,34,500</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        STRATEGY STATS
+                        <div class="panel-status"></div>
+                    </div>
+                    <table class="table">
+                        <tr>
+                            <td>NSE_SPIKE v1.0</td>
+                            <td class="positive">+8,45,000</td>
+                        </tr>
+                        <tr>
+                            <td>MCX_SWING v1.0</td>
+                            <td class="positive">+3,45,000</td>
+                        </tr>
+                        <tr>
+                            <td>Manual Trades</td>
+                            <td class="negative">-₹56,000</td>
+                        </tr>
+                        <tr>
+                            <td>Best Day</td>
+                            <td class="positive">+₹5,67,890</td>
+                        </tr>
+                        <tr>
+                            <td>Worst Day</td>
+                            <td class="negative">-₹1,23,450</td>
+                        </tr>
+                        <tr>
+                            <td>Consecutive Wins</td>
+                            <td class="positive">12 trades</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top: 15px;">
+                <div class="panel-header">
+                    PERFORMANCE CHART (Last 30 Days)
+                    <div class="panel-status"></div>
+                </div>
+                <div class="chart-container">
+                    Chart: Equity Curve showing growth from ₹50,00,000 to ₹50,45,234
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 6: ALERTS & SIGNALS -->
+        <div id="alerts" class="tab-content">
+            <div class="alert">
+                🔔 3 new signals received • 2 alerts triggered • System: ACTIVE
+            </div>
+
+            <div class="grid-2">
+                <div class="panel">
+                    <div class="panel-header">
+                        ACTIVE SIGNALS
+                        <div class="panel-status"></div>
+                    </div>
+                    <div class="scroll">
+                        <div style="padding: 8px; background: rgba(0, 255, 0, 0.1); margin-bottom: 6px; border-radius: 2px; border-left: 3px solid #00ff00;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                                <span style="font-weight: bold;">NSE_SPIKE_v1.0</span>
+                                <span class="positive">⚡ NEW</span>
+                            </div>
+                            <div style="font-size: 11px;">NIFTYPE25J | BUY @ 26,500 | Conf: 88%</div>
+                        </div>
+                        <div style="padding: 8px; background: rgba(0, 255, 0, 0.1); margin-bottom: 6px; border-radius: 2px; border-left: 3px solid #00ff00;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                                <span style="font-weight: bold;">NSE_SPIKE_v1.0</span>
+                                <span class="positive">⚡ NEW</span>
+                            </div>
+                            <div style="font-size: 11px;">NIFTY50 | BUY @ 25,800 | Conf: 91%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        ACTIVE ALERTS
+                        <div class="panel-status"></div>
+                    </div>
+                    <div class="scroll">
+                        <div style="padding: 8px; background: rgba(0, 255, 0, 0.1); margin-bottom: 6px; border-radius: 2px; border-left: 3px solid #00ff00;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                                <span style="font-weight: bold;">Target Hit</span>
+                                <span class="positive">✓</span>
+                            </div>
+                            <div style="font-size: 11px;">GOLDMIC25J reached ₹7,280 target</div>
+                        </div>
+                        <div style="padding: 8px; background: rgba(255, 170, 0, 0.1); margin-bottom: 6px; border-radius: 2px; border-left: 3px solid #ffaa00;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                                <span style="font-weight: bold;">Margin Warning</span>
+                                <span style="color: #ffaa00;">⚠</span>
+                            </div>
+                            <div style="font-size: 11px;">Usage at 30.9%, threshold 40%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top: 15px;">
+                <div class="panel-header">
+                    SIGNAL HISTORY (Last 24 Hours)
+                    <div class="panel-status"></div>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Strategy</th>
+                            <th>Symbol</th>
+                            <th>Type</th>
+                            <th>Conf</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>13:45</td>
+                            <td>NSE_SPIKE_v1</td>
+                            <td>NIFTYPE25J</td>
+                            <td>BUY</td>
+                            <td class="positive">88%</td>
+                            <td class="positive">Converted</td>
+                        </tr>
+                        <tr>
+                            <td>13:30</td>
+                            <td>NSE_SPIKE_v1</td>
+                            <td>NIFTY50</td>
+                            <td>BUY</td>
+                            <td class="positive">91%</td>
+                            <td class="positive">Converted</td>
+                        </tr>
+                        <tr>
+                            <td>12:15</td>
+                            <td>MCX_SWING_v1</td>
+                            <td>GOLDMIC25J</td>
+                            <td>BUY</td>
+                            <td class="positive">72%</td>
+                            <td class="positive">Converted</td>
+                        </tr>
+                        <tr>
+                            <td>11:00</td>
+                            <td>NSE_SPIKE_v1</td>
+                            <td>BANKNIFTY</td>
+                            <td>BUY</td>
+                            <td class="positive">65%</td>
+                            <td class="positive">Converted</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabName) {
+            const tabs = document.querySelectorAll('.tab-content');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+
+            const buttons = document.querySelectorAll('.tabs .tab-button');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        // Simulate live updates
+        setInterval(() => {
+            // Simulate price updates (would be real WebSocket in production)
+        }, 1000);
+    </script>
+</body>
+</html>
