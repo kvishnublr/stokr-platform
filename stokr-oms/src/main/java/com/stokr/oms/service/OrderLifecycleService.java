@@ -59,7 +59,7 @@ public class OrderLifecycleService {
     private OmsOrder persistNew(UUID userId, String idempotencyKey, OmsOrder draft) {
         // Check market hours for live non-exit orders
         if (draft.getExecutionMode() == ExecutionMode.LIVE &&
-            !simulationModeService.isSimulationEnabled() &&
+            !simulationModeService.isActive() &&
             !isExitOrder(draft)) {
             String segment = extractSegmentFromSymbol(draft.getSymbol());
             if (!marketHoursEnforcement.isOrderSubmissionAllowed(segment)) {
