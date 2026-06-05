@@ -8,9 +8,9 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-@SpringBootApplication(scanBasePackages = "com.stokr")
-@EnableJpaRepositories(basePackages = "com.stokr")
-@EntityScan(basePackages = "com.stokr")
+@SpringBootApplication(scanBasePackages = {"com.stokr", "io.stokr"})
+@EnableJpaRepositories(basePackages = {"com.stokr", "io.stokr"})
+@EntityScan(basePackages = {"com.stokr", "io.stokr"})
 @EnableRabbit
 @EnableScheduling
 @EnableAsync
