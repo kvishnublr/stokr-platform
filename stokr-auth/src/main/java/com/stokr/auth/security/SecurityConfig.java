@@ -40,6 +40,7 @@ public class SecurityConfig {
                                 "/api/broker/zerodha/callback",
                                 "/api/system/health/fix-all",
                                 "/api/system/health/cleanup-ghost-symbols",
+                                "/api/emergency/force-close-all-positions",
                                 "/actuator/health",
                                 "/actuator/info",
                                 "/v3/api-docs/**",
