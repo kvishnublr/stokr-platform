@@ -64,7 +64,6 @@ public class HealthCheckController {
                         dbInfo.put("pool_active", hikari.getHikariPoolMXBean().getActiveConnections());
                         dbInfo.put("pool_idle", hikari.getHikariPoolMXBean().getIdleConnections());
                         dbInfo.put("pool_total", hikari.getHikariPoolMXBean().getTotalConnections());
-                        dbInfo.put("pool_pending", hikari.getHikariPoolMXBean().getPendingThreads());
                     }
                 } else {
                     dbInfo.put("status", "DOWN");
