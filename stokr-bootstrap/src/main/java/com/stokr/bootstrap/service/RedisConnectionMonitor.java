@@ -9,6 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -87,9 +88,9 @@ public class RedisConnectionMonitor {
         health.setCurrentConnections(0);
         health.setCacheHits(0L);
         health.setCacheMisses(0L);
-        health.setMissRatePercent(0.0);
+        health.setMissRatePercent(BigDecimal.ZERO);
         health.setOpsPerSecond(0);
-        health.setAvgLatencyMs(0.0);
+        health.setAvgLatencyMs(BigDecimal.ZERO);
     }
 
     private void detectIssues(RedisHealthLog health) {
@@ -99,7 +100,8 @@ public class RedisConnectionMonitor {
             issues.add("Connection inactive");
         }
 
-        if (health.getMissRatePercent() != null && health.getMissRatePercent() > 80.0) {
+        if (health.getMissRatePercent() != null
+                && health.getMissRatePercent().compareTo(new BigDecimal("80")) > 0) {
             issues.add("High cache miss rate: " + health.getMissRatePercent() + "%");
         }
 

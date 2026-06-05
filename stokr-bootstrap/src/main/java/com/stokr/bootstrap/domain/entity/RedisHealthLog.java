@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.GenericGenerator;
 
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -45,10 +46,10 @@ public class RedisHealthLog {
     private Integer currentConnections;
 
     @Column(name = "memory_used_mb")
-    private Double memoryUsedMb;
+    private BigDecimal memoryUsedMb;
 
     @Column(name = "memory_peak_mb")
-    private Double memoryPeakMb;
+    private BigDecimal memoryPeakMb;
 
     @Column(name = "cache_hits")
     private Long cacheHits;
@@ -57,13 +58,13 @@ public class RedisHealthLog {
     private Long cacheMisses;
 
     @Column(name = "miss_rate_percent")
-    private Double missRatePercent;
+    private BigDecimal missRatePercent;
 
     @Column(name = "ops_per_second")
     private Integer opsPerSecond;
 
     @Column(name = "avg_latency_ms")
-    private Double avgLatencyMs;
+    private BigDecimal avgLatencyMs;
 
     @Column(name = "has_issues")
     private Boolean hasIssues;
