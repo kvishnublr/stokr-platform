@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import org.springframework.data.jpa.repository.Modifying;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collection;
@@ -252,4 +253,13 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
     BigDecimal sumPendingNotionalByStrategy(
             @Param("strategyKey") String strategyKey,
             @Param("states") Collection<OrderState> states);
+
+    @Modifying
+    @Query("""
+            update OmsOrder o set o.deleted = true
+            where o.userId = :userId and o.symbol = :symbol and o.deleted = false
+            """)
+    void softDeleteGhostOrders(
+            @Param("userId") UUID userId,
+            @Param("symbol") String symbol);
 }

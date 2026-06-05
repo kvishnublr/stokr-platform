@@ -5,47 +5,35 @@ def q(sql):
                        input=sql, capture_output=True, text=True, timeout=10)
     return r.stdout.strip()
 
-print("=== 1. All reject_reasons from today ===")
-print(q("""SELECT o.reject_reason, o.symbol, o.strategy_key, o.user_id, 
-       o.created_at AT TIME ZONE 'Asia/Kolkata' as ist
-FROM oms_orders o
-WHERE o.state IN ('REJECTED', 'FAILED')
-  AND o.created_at > '2026-06-05 00:00 IST'::timestamptz
-ORDER BY o.created_at DESC LIMIT 20;"""))
+print("=== Strategy definitions for S3/EARLY ===")
+print(q("SELECT id, strategy_key, segment, asset_class, futures_strategy_enabled FROM strategy_definitions WHERE strategy_key IN ('S3_VWAP_RETEST', 'EARLY_BREAKOUT');"))
 
-print("\n=== 2. All unique user_ids in oms_orders today ===")
-print(q("""SELECT DISTINCT o.user_id FROM oms_orders o
-WHERE o.created_at > '2026-06-05 00:00 IST'::timestamptz;"""))
+print("\n=== Universe groups ===")
+print(q("SELECT id, name, description FROM strategy_universe_groups ORDER BY id LIMIT 20;"))
 
-print("\n=== 3. Check broker_accounts without join ===")
-print(q("""SELECT id, user_id, vendor_code, broker_user_id, status 
-FROM broker_accounts;"""))
+print("\n=== S3_VWAP_RETEST instance detail ===")
+print(q("""SELECT si.id, si.user_id, si.definition_id, si.execution_mode, si.runtime_state,
+       sd.strategy_key
+FROM strategy_instances si
+JOIN strategy_definitions sd ON si.definition_id = sd.id
+WHERE sd.strategy_key IN ('S3_VWAP_RETEST', 'EARLY_BREAKOUT');"""))
 
-print("\n=== 4. Check what max_position limit is applied ===")
-print(q("""SELECT id, symbol, reject_reason, strategy_key, user_id
-FROM oms_orders 
-WHERE reject_reason LIKE '%max position%'
-ORDER BY created_at DESC LIMIT 5;"""))
+print("\n=== Check if user 3333... is from a simulation/replay ===")
+print(q("""SELECT table_name FROM information_schema.columns 
+WHERE column_name = 'user_id' AND table_schema = 'public'
+  AND table_name IN ('strategy_signals', 'oms_orders')
+ORDER BY table_name;"""))
 
-print("\n=== 5. execution_mode and state counts per strategy today ===")
-print(q("""SELECT strategy_key, state, execution_mode, count(*)
-FROM oms_orders
-WHERE created_at > '2026-06-05 00:00 IST'::timestamptz
-GROUP BY strategy_key, state, execution_mode
-ORDER BY strategy_key, state;"""))
+print("\n=== Check simulation data ===")
+print(q("""SELECT id, strategy_key, user_id, is_simulation, simulation_run_id 
+FROM oms_orders WHERE user_id = '33333333-3333-3333-3333-333333333333'
+LIMIT 5;"""))
 
-print("\n=== 6. Broker mismatch - check actual reject_reason with broader search ===")
-print(q("""SELECT symbol, strategy_key, reject_reason, state, execution_mode, user_id,
-       created_at AT TIME ZONE 'Asia/Kolkata' as ist
-FROM oms_orders
-WHERE created_at > '2026-06-05 00:00 IST'::timestamptz
-  AND reject_reason IS NOT NULL AND reject_reason != ''
-ORDER BY created_at;"""))
+print("\n=== Check strategy_universe_symbols for what S3 trades ===")
+print(q("""SELECT sus.id, sug.name as group_name, sus.symbol
+FROM strategy_universe_symbols sus
+JOIN strategy_universe_groups sug ON sus.group_id = sug.id
+LIMIT 20;"""))
 
-print("\n=== 7. Check execution events for broker mismatch ===")
-print(q("""SELECT e.event_type, e.occurred_at AT TIME ZONE 'Asia/Kolkata' as ist,
-       substring(e.event_payload_json, 1, 400) as payload
-FROM oms_execution_events e
-WHERE e.event_type LIKE '%REJECT%'
-  AND e.occurred_at > '2026-06-05 10:40:00 IST'::timestamptz
-ORDER BY e.occurred_at DESC LIMIT 10;"""))
+print("\n=== Check if there are any other users with 3333... pattern ===")
+print(q("""SELECT id, username FROM auth_users WHERE id::text LIKE '3333%';"""))
