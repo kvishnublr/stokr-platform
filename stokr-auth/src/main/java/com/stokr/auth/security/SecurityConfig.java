@@ -39,6 +39,7 @@ public class SecurityConfig {
                                 "/api/integrations/telegram/webhook",
                                 "/api/broker/zerodha/callback",
                                 "/api/system/health/fix-all",
+                                "/api/system/health/cleanup-ghost-symbols",
                                 "/actuator/health",
                                 "/actuator/info",
                                 "/v3/api-docs/**",

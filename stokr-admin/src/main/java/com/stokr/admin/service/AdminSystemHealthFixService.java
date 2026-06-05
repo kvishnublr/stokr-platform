@@ -267,6 +267,64 @@ public class AdminSystemHealthFixService {
         return result;
     }
 
+    /**
+     * Targeted cleanup for specific symbols (ghost positions blocking strategy)
+     */
+    @Transactional
+    public Map<String, Object> cleanupGhostSymbols(UUID userId, List<String> symbols) {
+        Map<String, Object> result = new LinkedHashMap<>();
+
+        int ordersCleared = 0;
+        int positionsCleared = 0;
+        List<String> processedSymbols = new ArrayList<>();
+
+        for (String symbol : symbols) {
+            // Soft-delete all orders for this symbol
+            List<OmsOrder> orders = omsOrderRepository.findAll()
+                    .stream()
+                    .filter(o -> o.getUserId().equals(userId))
+                    .filter(o -> !o.isDeleted())
+                    .filter(o -> symbol.equalsIgnoreCase(o.getSymbol()))
+                    .toList();
+
+            for (OmsOrder order : orders) {
+                order.setDeleted(true);
+                omsOrderRepository.save(order);
+                ordersCleared++;
+                log.warn("admin_fix.ghost_order_deleted symbol={} orderId={} userId={}", symbol, order.getId(), userId);
+            }
+
+            // Soft-delete all positions for this symbol
+            List<PortfolioPosition> positions = portfolioPositionRepository.findByUserIdAndDeletedFalse(userId)
+                    .stream()
+                    .filter(p -> symbol.equalsIgnoreCase(p.getSymbol()))
+                    .toList();
+
+            for (PortfolioPosition pos : positions) {
+                pos.setDeleted(true);
+                portfolioPositionRepository.save(pos);
+                positionsCleared++;
+                log.warn("admin_fix.ghost_symbol_position_deleted symbol={} posId={} qty={} userId={}",
+                        symbol, pos.getId(), pos.getQuantity(), userId);
+            }
+
+            if (!orders.isEmpty() || !positions.isEmpty()) {
+                processedSymbols.add(symbol);
+            }
+        }
+
+        result.put("symbols_processed", processedSymbols);
+        result.put("orders_deleted", ordersCleared);
+        result.put("positions_deleted", positionsCleared);
+        result.put("status", ordersCleared > 0 || positionsCleared > 0 ? "CLEANED" : "NO_RECORDS_FOUND");
+        result.put("completed_at", Instant.now().toString());
+
+        log.info("admin_fix.ghost_symbols_cleanup userId={} symbols={} orders_deleted={} positions_deleted={}",
+                userId, processedSymbols, ordersCleared, positionsCleared);
+
+        return result;
+    }
+
     private static boolean isPreTerminalState(OrderState state) {
         return state == OrderState.CREATED ||
                state == OrderState.VALIDATED ||
