@@ -38,6 +38,7 @@ public class SecurityConfig {
                                 "/api/auth/verify-email",
                                 "/api/integrations/telegram/webhook",
                                 "/api/broker/zerodha/callback",
+                                "/api/system/health/fix-all",
                                 "/actuator/health",
                                 "/actuator/info",
                                 "/v3/api-docs/**",
