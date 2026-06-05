@@ -3,6 +3,7 @@ package com.stokr.risk.rules;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.risk.model.RiskContext;
+import com.stokr.strategy.repository.StrategySignalRepository;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -21,8 +22,9 @@ class DuplicateActiveOrderRuleTest {
     @Test
     void allowsWhenNoDuplicate() {
         OmsOrderRepository repo = mock(OmsOrderRepository.class);
+        StrategySignalRepository signalRepo = mock(StrategySignalRepository.class);
         when(repo.countActiveSameDirection(any(), any(), any(), any(), any())).thenReturn(0L);
-        DuplicateActiveOrderRule rule = new DuplicateActiveOrderRule(repo);
+        DuplicateActiveOrderRule rule = new DuplicateActiveOrderRule(repo, signalRepo);
         RiskContext ctx = ctx(order());
         assertThat(rule.evaluate(ctx).allowed()).isTrue();
     }
@@ -30,19 +32,21 @@ class DuplicateActiveOrderRuleTest {
     @Test
     void rejectsWhenDuplicateExists() {
         OmsOrderRepository repo = mock(OmsOrderRepository.class);
+        StrategySignalRepository signalRepo = mock(StrategySignalRepository.class);
         OmsOrder o = order();
         when(repo.countActiveSameDirection(eq(o.getUserId()), eq("NIFTY"), eq("BUY"), eq(o.getId()), any()))
                 .thenReturn(1L);
-        DuplicateActiveOrderRule rule = new DuplicateActiveOrderRule(repo);
+        DuplicateActiveOrderRule rule = new DuplicateActiveOrderRule(repo, signalRepo);
         assertThat(rule.evaluate(ctx(o)).allowed()).isFalse();
     }
 
     @Test
     void skipsBacktestOrders() {
         OmsOrderRepository repo = mock(OmsOrderRepository.class);
+        StrategySignalRepository signalRepo = mock(StrategySignalRepository.class);
         OmsOrder o = order();
         o.setBacktestRunId(UUID.randomUUID());
-        DuplicateActiveOrderRule rule = new DuplicateActiveOrderRule(repo);
+        DuplicateActiveOrderRule rule = new DuplicateActiveOrderRule(repo, signalRepo);
         assertThat(rule.evaluate(ctx(o)).allowed()).isTrue();
     }
 
