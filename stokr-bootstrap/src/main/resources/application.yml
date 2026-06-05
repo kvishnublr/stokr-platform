@@ -381,6 +381,10 @@ stokr:
       mcx-flatten-end: ${STOKR_OMS_MCX_FLATTEN_END:23:55}
       mcx-flatten-cron: ${STOKR_OMS_MCX_FLATTEN_CRON:0 50 23 * * MON-FRI}
       force-close-stale-positions: ${STOKR_OMS_FORCE_CLOSE_STALE:true}
+  strategy:
+    market-close:
+      nse-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_NSE_EXIT_CRON:0 55 14 * * MON-FRI}
+      mcx-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_MCX_EXIT_CRON:0 45 23 * * MON-FRI}
     broker-disconnect:
       block-live: ${STOKR_OMS_BROKER_DISCONNECT_BLOCK:true}
       auto-heal-before-block: ${STOKR_OMS_BROKER_AUTO_HEAL_BEFORE_BLOCK:true}
