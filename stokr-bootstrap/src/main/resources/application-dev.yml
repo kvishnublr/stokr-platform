@@ -1,0 +1,49 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:stokr_dev
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+  h2:
+    console:
+      enabled: true
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8080
+
+server:
+  port: 8080
+  servlet:
+    session:
+      cookie:
+        secure: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+stokr:
+  dev-mode: true
+
+logging:
+  level:
+    root: WARN
+    com.stokr: INFO
+    org.springframework.security: WARN

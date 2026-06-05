@@ -12,15 +12,12 @@ import java.util.UUID;
 @Repository
 public interface RedisHealthLogRepository extends JpaRepository<RedisHealthLog, UUID> {
 
-    @Query("SELECT rhl FROM RedisHealthLog rhl ORDER BY rhl.checkTime DESC LIMIT 1")
-    RedisHealthLog findMostRecent();
+    RedisHealthLog findFirstByOrderByCheckTimeDesc();
 
-    @Query("SELECT rhl FROM RedisHealthLog rhl WHERE rhl.isHealthy = false ORDER BY rhl.checkTime DESC LIMIT 10")
-    List<RedisHealthLog> findRecentIssues();
+    List<RedisHealthLog> findTop10ByIsHealthyFalseOrderByCheckTimeDesc();
 
     @Query("SELECT rhl FROM RedisHealthLog rhl WHERE rhl.hasIssues = true AND rhl.checkTime > ?1")
     List<RedisHealthLog> findIssuesSince(LocalDateTime since);
 
-    @Query("SELECT rhl FROM RedisHealthLog rhl WHERE rhl.autoRecoveryAttempted = true ORDER BY rhl.checkTime DESC")
-    List<RedisHealthLog> findRecoveryAttempts();
+    List<RedisHealthLog> findByAutoRecoveryAttemptedTrueOrderByCheckTimeDesc();
 }

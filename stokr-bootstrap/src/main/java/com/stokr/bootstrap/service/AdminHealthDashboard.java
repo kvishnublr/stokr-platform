@@ -122,7 +122,7 @@ public class AdminHealthDashboard {
         List<String> recommendations = new ArrayList<>();
 
         if ("REDIS".equals(issueType)) {
-            var redisIssues = redisHealthLog.findRecentIssues();
+            var redisIssues = redisHealthLog.findTop10ByIsHealthyFalseOrderByCheckTimeDesc();
             for (var log : redisIssues) {
                 if (log.getCheckTime().isBefore(when.plusMinutes(5)) &&
                     log.getCheckTime().isAfter(when.minusMinutes(5))) {
@@ -179,7 +179,7 @@ public class AdminHealthDashboard {
         Map<String, HealthStatus> status = new LinkedHashMap<>();
 
         // Redis health
-        var latestRedisLog = redisHealthLog.findMostRecent();
+        var latestRedisLog = redisHealthLog.findFirstByOrderByCheckTimeDesc();
         status.put("Redis", HealthStatus.builder()
             .component("Redis Connection Pool")
             .status(latestRedisLog != null && latestRedisLog.getIsHealthy() ? "HEALTHY" : "CRITICAL")
@@ -223,7 +223,7 @@ public class AdminHealthDashboard {
         List<String> preventionMeasures = new ArrayList<>();
 
         // Check Redis failures in timeframe
-        var redisIssues = redisHealthLog.findRecentIssues();
+        var redisIssues = redisHealthLog.findTop10ByIsHealthyFalseOrderByCheckTimeDesc();
         boolean redisFailure = redisIssues.stream()
             .anyMatch(log -> log.getCheckTime().isAfter(startTime) && log.getCheckTime().isBefore(endTime));
 
@@ -280,7 +280,7 @@ public class AdminHealthDashboard {
     // ============ HELPER METHODS ============
 
     private ComponentHealth getRedisHealth() {
-        var latest = redisHealthLog.findMostRecent();
+        var latest = redisHealthLog.findFirstByOrderByCheckTimeDesc();
         if (latest == null) {
             return ComponentHealth.builder()
                 .component("Redis")
@@ -336,8 +336,8 @@ public class AdminHealthDashboard {
     }
 
     private String calculateOverallStatus() {
-        var redisOk = redisHealthLog.findMostRecent() != null &&
-                     redisHealthLog.findMostRecent().getIsHealthy();
+        var redisOk = redisHealthLog.findFirstByOrderByCheckTimeDesc() != null &&
+                     redisHealthLog.findFirstByOrderByCheckTimeDesc().getIsHealthy();
         var noStaleFeeds = stalenessLog.findByIsStaleTrue().isEmpty();
         var noHighDrifts = driftLog.findHighSeverityDrifts().isEmpty();
         var noOrphans = orphanLog.findUnresolvedOrphans().isEmpty();

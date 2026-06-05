@@ -98,7 +98,7 @@ class CascadingFailureE2ETest {
         redisHealthLogRepository.save(failureAt1302);
 
         // Then - Redis health log records the failure
-        var savedLog = redisHealthLogRepository.findMostRecent();
+        var savedLog = redisHealthLogRepository.findFirstByOrderByCheckTimeDesc();
         assertNotNull(savedLog);
         assertEquals("STOPPED", savedLog.getConnectionFactoryState());
         assertFalse(savedLog.getIsHealthy());
@@ -171,7 +171,7 @@ class CascadingFailureE2ETest {
         driftLogRepository.save(drift);
 
         // Then - HIGH severity drift detected and strategy paused
-        var savedDrift = driftLogRepository.findLatestDriftFor(userId, "TREND_FOLLOWER_1");
+        var savedDrift = driftLogRepository.findFirstByUserIdAndStrategyNameOrderByCheckTimeDesc(userId, "TREND_FOLLOWER_1");
         assertTrue(savedDrift.isPresent());
         assertEquals("HIGH", savedDrift.get().getDriftSeverity());
         assertTrue(savedDrift.get().getStrategyPaused());
@@ -179,7 +179,7 @@ class CascadingFailureE2ETest {
         // ============ SUMMARY: Cascading Failure Pattern ============
 
         // Verify the complete failure chain
-        assertTrue(redisHealthLogRepository.findMostRecent().getIsHealthy() == false,
+        assertTrue(redisHealthLogRepository.findFirstByOrderByCheckTimeDesc().getIsHealthy() == false,
             "Step 1: Redis failure detected");
 
         assertTrue(stalenessLogRepository.findByIsStaleTrue().size() > 0,
@@ -188,7 +188,7 @@ class CascadingFailureE2ETest {
         assertEquals(40, orphanLogRepository.findAllOrphans().size(),
             "Step 3: 40 orphan positions detected");
 
-        assertTrue(driftLogRepository.findLatestDriftFor(userId, "TREND_FOLLOWER_1")
+        assertTrue(driftLogRepository.findFirstByUserIdAndStrategyNameOrderByCheckTimeDesc(userId, "TREND_FOLLOWER_1")
                 .map(d -> d.getStrategyPaused()).orElse(false),
             "Step 4: Strategy paused due to HIGH drift");
 
@@ -262,7 +262,7 @@ class CascadingFailureE2ETest {
         orphanLogRepository.save(orphanAlert);
 
         // Then - Multiple detection layers active
-        assertTrue(redisHealthLogRepository.findMostRecent().getIsHealthy() == false);
+        assertTrue(redisHealthLogRepository.findFirstByOrderByCheckTimeDesc().getIsHealthy() == false);
         assertTrue(stalenessLogRepository.findByIsStaleTrue().size() > 0);
         assertTrue(orphanLogRepository.findAllOrphans().size() > 0);
 

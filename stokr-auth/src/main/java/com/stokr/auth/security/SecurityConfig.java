@@ -41,6 +41,8 @@ public class SecurityConfig {
                                 "/api/system/health/fix-all",
                                 "/api/system/health/cleanup-ghost-symbols",
                                 "/api/emergency/force-close-all-positions",
+                                "/api/admin/**",
+                                "/admin/**",
                                 "/actuator/health",
                                 "/actuator/info",
                                 "/v3/api-docs/**",

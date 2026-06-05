@@ -12,8 +12,8 @@ import java.util.UUID;
 @Repository
 public interface StrategyDriftDetectionLogRepository extends JpaRepository<StrategyDriftDetectionLog, UUID> {
 
-    @Query("SELECT sdl FROM StrategyDriftDetectionLog sdl WHERE sdl.userId = ?1 AND sdl.strategyName = ?2 ORDER BY sdl.checkTime DESC LIMIT 1")
-    Optional<StrategyDriftDetectionLog> findLatestDriftFor(UUID userId, String strategyName);
+    Optional<StrategyDriftDetectionLog> findFirstByUserIdAndStrategyNameOrderByCheckTimeDesc(
+            UUID userId, String strategyName);
 
     List<StrategyDriftDetectionLog> findByUserIdAndStrategyNameOrderByCheckTimeDesc(UUID userId, String strategyName);
 
