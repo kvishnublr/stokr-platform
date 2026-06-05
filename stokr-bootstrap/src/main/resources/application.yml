@@ -337,6 +337,16 @@ stokr:
         VWAP_BOUNCE: ${STOKR_VWAPBOUNCE_DAILY_CAP:25}
         GAP_FILL: ${STOKR_GAPFILL_DAILY_CAP:30}
         SECTOR_LAGGARD: ${STOKR_SECTOR_LAGGARD_DAILY_CAP:30}
+    market-close:
+      nse-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_NSE_EXIT_CRON:0 55 14 * * MON-FRI}
+      mcx-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_MCX_EXIT_CRON:0 45 23 * * MON-FRI}
+    broker-disconnect:
+      block-live: ${STOKR_OMS_BROKER_DISCONNECT_BLOCK:true}
+      auto-heal-before-block: ${STOKR_OMS_BROKER_AUTO_HEAL_BEFORE_BLOCK:true}
+      flatten-on-disconnect: ${STOKR_OMS_BROKER_DISCONNECT_FLATTEN:false}
+      halt-ttl-hours: ${STOKR_OMS_BROKER_HALT_TTL_HOURS:4}
+    live-rollout:
+      default-live-qty: ${STOKR_OMS_LIVE_DEFAULT_QTY:1}
   simulation:
     candle-timeframe: ${STOKR_SIM_TF:1m}
     latency-ms: ${STOKR_SIM_LATENCY_MS:1500}
@@ -388,17 +398,6 @@ stokr:
       mcx-flatten-end: ${STOKR_OMS_MCX_FLATTEN_END:23:55}
       mcx-flatten-cron: ${STOKR_OMS_MCX_FLATTEN_CRON:0 50 23 * * MON-FRI}
       force-close-stale-positions: ${STOKR_OMS_FORCE_CLOSE_STALE:true}
-  strategy:
-    market-close:
-      nse-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_NSE_EXIT_CRON:0 55 14 * * MON-FRI}
-      mcx-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_MCX_EXIT_CRON:0 45 23 * * MON-FRI}
-    broker-disconnect:
-      block-live: ${STOKR_OMS_BROKER_DISCONNECT_BLOCK:true}
-      auto-heal-before-block: ${STOKR_OMS_BROKER_AUTO_HEAL_BEFORE_BLOCK:true}
-      flatten-on-disconnect: ${STOKR_OMS_BROKER_DISCONNECT_FLATTEN:false}
-      halt-ttl-hours: ${STOKR_OMS_BROKER_HALT_TTL_HOURS:4}
-    live-rollout:
-      default-live-qty: ${STOKR_OMS_LIVE_DEFAULT_QTY:1}
   reconciliation:
     interval-ms: ${STOKR_RECONCILIATION_INTERVAL_MS:30000}
   signal:
