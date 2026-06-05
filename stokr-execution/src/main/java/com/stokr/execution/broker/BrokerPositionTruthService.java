@@ -361,18 +361,16 @@ public class BrokerPositionTruthService {
         log.warn("broker.truth.external_exit user={} symbol={} internalQty={}", userId, symbol, internalQty);
         persistRecon(userId, symbol, "EXTERNAL_BROKER_EXIT", BigDecimal.ZERO, internalQty);
         reconcilePortfolioGhost(userId, symbol);
-
-        // Auto-reconcile ghost positions (OMS believes position open, but broker says closed)
-        // This prevents strategy halts for positions that were never actually entered
-        try {
-            omsOrderRepository.softDeleteGhostOrders(userId, symbol);
-            log.info("broker.truth.ghost_cleared user={} symbol={}", userId, symbol);
-        } catch (Exception ex) {
-            log.warn("broker.truth.ghost_clear_failed user={} symbol={} {}", userId, symbol, ex.getMessage());
-            // Fall back to suppression if cleanup fails
-            manualExitSuppressionService.suppressAutoExitForSymbol(userId, symbol, "MANUAL: external_broker_exit");
-            haltStrategyRuntimeForSymbol(userId, symbol);
-        }
+        manualExitSuppressionService.suppressAutoExitForSymbol(userId, symbol, "MANUAL: external_broker_exit");
+        haltStrategyRuntimeForSymbol(userId, symbol);
+        eventPublisher.publishEvent(new ExecutionAlertEvent(
+                "BROKER_EXTERNAL_EXIT",
+                null,
+                symbol,
+                null,
+                userId,
+                "Position " + symbol + " closed at broker; strategy runtime halted"
+        ));
     }
 
     private void haltStrategyRuntimeForSymbol(UUID userId, String symbol) {
