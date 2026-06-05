@@ -36,7 +36,7 @@ public class MarketDataStalenessMonitor {
 
     @Transactional
     public void recordStaleness(String symbol, String feedSource, int ageSeconds, boolean isStale) {
-        var log = MarketDataStalenessLog.builder()
+        var stalenessLog = MarketDataStalenessLog.builder()
             .id(UUID.randomUUID())
             .symbol(symbol)
             .feedSource(feedSource)
@@ -47,7 +47,7 @@ public class MarketDataStalenessMonitor {
             .alertSent(isStale)
             .build();
 
-        sealenessLogRepository.save(log);
+        sealenessLogRepository.save(stalenessLog);
 
         if (isStale) {
             log.error("MARKET_DATA_STALE: {} from {} is {} seconds old (threshold: {})",
