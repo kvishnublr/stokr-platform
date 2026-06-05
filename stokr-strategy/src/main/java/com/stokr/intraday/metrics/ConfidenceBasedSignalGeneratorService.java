@@ -4,6 +4,9 @@ import com.stokr.intraday.metrics.domain.ConfidenceScore;
 import com.stokr.intraday.metrics.domain.ConfidenceStrategyConfig;
 import com.stokr.intraday.metrics.repository.ConfidenceScoreRepository;
 import com.stokr.intraday.metrics.repository.ConfidenceStrategyConfigRepository;
+import com.stokr.strategy.domain.StrategySignalEntity;
+import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -11,6 +14,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +32,7 @@ public class ConfidenceBasedSignalGeneratorService {
 
     private final ConfidenceScoreRepository scoreRepository;
     private final ConfidenceStrategyConfigRepository configRepository;
+    private final StrategySignalRepository signalRepository;
 
     // Run every 2 minutes (after confidence calculation)
     @Scheduled(fixedRateString = "${stokr.confidence-strategy.generator-interval:120000}",
@@ -84,14 +89,23 @@ public class ConfidenceBasedSignalGeneratorService {
                 highConfidenceScores.size(), threshold, config.getStrategyName());
 
             for (ConfidenceScore score : highConfidenceScores) {
-                // In a real implementation, here we would:
-                // 1. Check if signal already exists
-                // 2. Create new StrategySignal record
-                // 3. Calculate entry/target/SL based on price + confidence
-                // 4. Store in strategy_signals table
+                // Create and persist StrategySignal record
+                StrategySignalEntity signal = new StrategySignalEntity();
+                signal.setSymbol(score.getSymbol());
+                signal.setSignalType(SignalType.BUY);
+                signal.setStrategyName(config.getStrategyName());
+                signal.setStrategyVersion("1.0");
+                signal.setCandleTimestamp(score.getTimestamp());
+                signal.setConfidenceScore(BigDecimal.valueOf(score.getConfidenceScore()));
+                signal.setReason(String.format("Confidence %.1f > threshold %d. Buyer pressure: %d%%, Liquidity: %d%%",
+                    score.getConfidenceScore(), threshold,
+                    score.getBuyerPressure() != null ? score.getBuyerPressure() : 0,
+                    score.getLiquidityScore() != null ? score.getLiquidityScore() : 0));
+                signal.setSimulation(false);
 
-                // For now, just log the potential signal
-                log.debug("  ✅ Signal candidate: {} at {} confidence",
+                signalRepository.save(signal);
+
+                log.debug("  ✅ Signal persisted: {} at {} confidence",
                     score.getSymbol(), score.getConfidenceScore());
 
                 signalsGenerated++;
