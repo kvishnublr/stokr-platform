@@ -1,9 +1,12 @@
 package io.stokr.bootstrap.domain.entity;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.hibernate.annotations.GenericGenerator;
 
-import javax.persistence.*;
+import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -75,5 +78,5 @@ public class RedisHealthLog {
     private Boolean recoverySuccessful;
 
     @Transient
-    private Boolean isSynthetic = false;  // For testing
+    private Boolean isSynthetic = false;
 }

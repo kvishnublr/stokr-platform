@@ -1,9 +1,11 @@
 package io.stokr.oms.domain.entity;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.hibernate.annotations.GenericGenerator;
 
-import javax.persistence.*;
+import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -37,11 +39,9 @@ public class PositionLifecycleAudit {
 
     @Column(name = "owner_type")
     private String ownerType;
-        // STRATEGY, MANUAL, BROKER, RISK, KILLSWITCH
 
     @Column(name = "exit_source")
     private String exitSource;
-        // STRATEGY_SIGNAL, MANUAL_BROKER, MANUAL_TERMINAL, BROKER_LIQUIDATION, RISK_CIRCUIT, KILL_SWITCH
 
     @Column(name = "triggered_by")
     private String triggeredBy;
@@ -86,6 +86,9 @@ public class PositionLifecycleAudit {
     public void prePersist() {
         if (recordedAt == null) {
             recordedAt = LocalDateTime.now();
+        }
+        if (occurredAt == null) {
+            occurredAt = LocalDateTime.now();
         }
     }
 }

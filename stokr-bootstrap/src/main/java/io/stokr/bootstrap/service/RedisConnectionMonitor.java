@@ -41,11 +41,10 @@ public class RedisConnectionMonitor {
     }
 
     private RedisHealthLog performHealthCheck() {
-        var health = RedisHealthLog.builder()
-            .id(UUID.randomUUID())
-            .isHealthy(true)
-            .hasIssues(false)
-            .build();
+        var health = new RedisHealthLog();
+        health.setId(UUID.randomUUID());
+        health.setIsHealthy(true);
+        health.setHasIssues(false);
 
         try {
             // Check connection factory state
@@ -142,14 +141,13 @@ public class RedisConnectionMonitor {
     }
 
     private void recordFailedHealthCheck(Exception e) {
-        var failureLog = RedisHealthLog.builder()
-            .id(UUID.randomUUID())
-            .isHealthy(false)
-            .hasIssues(true)
-            .connectionFactoryState("UNKNOWN")
-            .isSynthetic(true)
-            .issuesJson("[\"Health check exception: " + e.getMessage() + "\"]")
-            .build();
+        var failureLog = new RedisHealthLog();
+        failureLog.setId(UUID.randomUUID());
+        failureLog.setIsHealthy(false);
+        failureLog.setHasIssues(true);
+        failureLog.setConnectionFactoryState("UNKNOWN");
+        failureLog.setIsSynthetic(true);
+        failureLog.setIssuesJson("[\"Health check exception: " + e.getMessage() + "\"]");
 
         healthLogRepository.save(failureLog);
     }

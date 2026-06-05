@@ -1,9 +1,11 @@
 package io.stokr.oms.domain.entity;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.hibernate.annotations.GenericGenerator;
 
-import javax.persistence.*;
+import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -31,7 +33,6 @@ public class ManualExitSuppression {
     @Column(name = "symbol", nullable = false)
     private String symbol;
 
-    // Suppression flags (what NOT to do after manual exit)
     @Column(name = "suppress_sl_exit")
     private Boolean suppressSlExit = true;
 
@@ -50,10 +51,8 @@ public class ManualExitSuppression {
     @Column(name = "suppress_all_exits")
     private Boolean suppressAllExits = true;
 
-    // Manual exit details
     @Column(name = "manual_exit_source")
     private String manualExitSource;
-        // ZERODHA_APP, KITE_WEB, BROKER_API, TRADER_TERMINAL
 
     @Column(name = "manual_exit_time")
     private LocalDateTime manualExitTime;
@@ -66,7 +65,6 @@ public class ManualExitSuppression {
 
     @Column(name = "manual_exit_reference")
     private String manualExitReference;
-        // Broker order ID or trader note
 
     @Column(name = "is_partial_exit")
     private Boolean isPartialExit;

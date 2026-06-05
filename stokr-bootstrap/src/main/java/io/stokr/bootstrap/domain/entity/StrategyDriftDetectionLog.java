@@ -1,9 +1,12 @@
 package io.stokr.bootstrap.domain.entity;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.hibernate.annotations.GenericGenerator;
 
-import javax.persistence.*;
+import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -57,7 +60,7 @@ public class StrategyDriftDetectionLog {
     private Integer positionDelta;
 
     @Column(name = "drift_severity")
-    private String driftSeverity;  // LOW, MEDIUM, HIGH
+    private String driftSeverity;
 
     @Column(name = "alert_sent")
     private Boolean alertSent;
