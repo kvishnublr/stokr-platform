@@ -24,6 +24,7 @@ import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
 import com.stokr.oms.trace.ExecutionTraceService;
+import com.stokr.execution.validation.PreFlightValidationService;
 import com.stokr.oms.service.OrderLifecycleService;
 import com.stokr.risk.model.RiskContext;
 import com.stokr.risk.model.RiskDecision;
@@ -83,6 +84,8 @@ public class OrderIntentProcessor {
     private final TraderExecutionModePreferenceService traderExecutionModePreferenceService;
     private final OmsSafetyGateService omsSafetyGateService;
     private final SimulationModeService simulationModeService;
+    private final LinkedExecutionService linkedExecutionService;
+    private final PreFlightValidationService preFlightValidationService;
 
     @Value("${stokr.risk.zone:Asia/Kolkata}")
     private String riskZone;
@@ -660,10 +663,10 @@ public class OrderIntentProcessor {
             riskEventRecorder.record(userId, null, gate.reasonCode(), "REJECT", gate.message());
         }
 
-        // Link pairs and record comparison stub
+        // LINKED EXECUTION: Link LIVE and PAPER orders for synchronized execution
+        // If LIVE fails, PAPER should NOT execute. Both must share the same entry price.
         if (liveOrder != null) {
-            paperOrder.setPairedOrderId(liveOrder.getId());
-            liveOrder.setPairedOrderId(paperOrder.getId());
+            linkedExecutionService.linkOrdersForSynchronizedExecution(liveOrder, paperOrder, signal.getId());
             executionComparisonService.recordPairDispatched(
                     signal.getId(), liveOrder.getId(), paperOrder.getId(), strategyKey, signal.getSymbol(),
                     sizing.normalizedQuantity(), sizing.normalizedQuantity());
@@ -677,27 +680,66 @@ public class OrderIntentProcessor {
         long fillKey = fillDeterminismKey(signal);
         Instant anchor = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
 
-        // Transition and dispatch PAPER
-        if (paperOrder.getState() == OrderState.CREATED) {
-            paperOrder = advanceOrderForDispatch(paperOrder, signal, userId, ExecutionMode.PAPER);
-            if (paperOrder.getState() == OrderState.PENDING_SUBMISSION) {
-                executionService.dispatch(new ExecutionDispatchMessage(
-                        paperOrder.getId(), userId, signal.getId(), "SIM", 0,
-                        signal.getBacktestRunId(), "PAPER", fillKey, anchor), synchronousExecution);
-            }
-        }
-
-        // Transition and dispatch LIVE
+        // Dispatch LIVE FIRST with pre-flight validation
         if (liveOrder != null && liveOrder.getState() == OrderState.CREATED) {
+            // Pre-flight validation before sending to broker
+            PreFlightValidationService.PreFlightValidationResult validation =
+                    preFlightValidationService.validate(liveOrder, userId);
+
+            if (validation.isFail()) {
+                log.warn("both_mode.live_preflight_rejected signalId={} liveOrderId={} code={} reason={}",
+                        signal.getId(), liveOrder.getId(), validation.getCode(), validation.getMessage());
+
+                // Reject LIVE order
+                liveOrder = orderLifecycleService.transition(liveOrder.getId(), OrderState.REJECTED,
+                        "PRE-FLIGHT_VALIDATION_FAILED: " + validation.getMessage());
+                executionTraceService.trace(liveOrder, ExecutionEventType.EXECUTION_REJECTED, Map.of(
+                        "phase", "PRE_FLIGHT",
+                        "code", validation.getCode(),
+                        "reason", validation.getMessage()
+                ));
+
+                // Reject paired PAPER order too (no execution since LIVE failed)
+                linkedExecutionService.recordLiveExecutionFailure(liveOrder, validation.getMessage());
+
+                signalDistributionTelemetryService.recordGateRejected(userId, signal.getId(), validation.getCode());
+                log.info("both_mode.execution_blocked signalId={} reason={}",
+                        signal.getId(), validation.getMessage());
+                return;
+            }
+
+            if (validation.isWarning()) {
+                log.warn("both_mode.live_margin_warning signalId={} {}",
+                        signal.getId(), validation.getMessage());
+                // Continue anyway (warning, not fatal)
+            }
+
+            // Advance LIVE order through validation/risk checks
             liveOrder = advanceOrderForDispatch(liveOrder, signal, userId, ExecutionMode.LIVE);
             if (liveOrder.getState() == OrderState.PENDING_SUBMISSION) {
+                // Dispatch LIVE order to broker
                 executionService.dispatch(new ExecutionDispatchMessage(
                         liveOrder.getId(), userId, signal.getId(), "ZERODHA", 0,
                         signal.getBacktestRunId(), "LIVE", fillKey, anchor), synchronousExecution);
+                log.info("both_mode.live_dispatched signalId={} liveOrderId={}", signal.getId(), liveOrder.getId());
             }
         }
 
-        log.info("both_mode.dispatched signalId={} paper={} live={}",
+        // Dispatch PAPER only after LIVE (will be gated by LIVE execution result)
+        if (paperOrder.getState() == OrderState.CREATED) {
+            paperOrder = advanceOrderForDispatch(paperOrder, signal, userId, ExecutionMode.PAPER);
+            if (paperOrder.getState() == OrderState.PENDING_SUBMISSION) {
+                // PAPER order is marked as "gated by LIVE" - execution service will wait for LIVE fill
+                executionService.dispatch(new ExecutionDispatchMessage(
+                        paperOrder.getId(), userId, signal.getId(), "SIM", 0,
+                        signal.getBacktestRunId(), "PAPER", fillKey, anchor), synchronousExecution);
+                log.info("both_mode.paper_dispatched_gated_by_live signalId={} paperOrderId={} liveOrderId={}",
+                        signal.getId(), paperOrder.getId(),
+                        liveOrder != null ? liveOrder.getId() : "NONE");
+            }
+        }
+
+        log.info("both_mode.dispatched_linked signalId={} paper={} live={} linkage=PAPER_GATED_BY_LIVE",
                 signal.getId(), paperOrder.getId(), liveOrder != null ? liveOrder.getId() : "BLOCKED");
     }
 

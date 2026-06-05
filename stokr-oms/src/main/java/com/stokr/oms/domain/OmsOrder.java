@@ -105,4 +105,10 @@ public class OmsOrder extends BaseEntity {
 
     @Column(name = "simulation_scenario", length = 64)
     private String simulationScenario;
+
+    @Column(name = "execution_linkage", length = 32)
+    private String executionLinkage;
+
+    @Column(name = "execution_linkage_reason", length = 256)
+    private String executionLinkageReason;
 }
