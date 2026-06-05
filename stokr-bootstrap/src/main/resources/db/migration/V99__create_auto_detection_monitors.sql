@@ -50,7 +50,7 @@ CREATE TABLE strategy_drift_detection_log (
     strategy_paused BOOLEAN DEFAULT FALSE,
     pause_reason VARCHAR(255),
 
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES auth_users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE position_orphan_detection_log (
@@ -76,7 +76,7 @@ CREATE TABLE position_orphan_detection_log (
     synthetic_exit_id UUID,
     ghost_removed BOOLEAN DEFAULT FALSE,
 
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES auth_users(id) ON DELETE CASCADE,
     FOREIGN KEY (position_id) REFERENCES portfolio_positions(id) ON DELETE SET NULL,
     FOREIGN KEY (synthetic_exit_id) REFERENCES oms_executions(id) ON DELETE SET NULL
 );
