@@ -1,0 +1,447 @@
+# ========================================
+# RELEASE_V2 OPTIMIZED CONFIGURATION
+# Advanced 100-Trader Concurrent System
+# ========================================
+
+server:
+  port: 8080
+  forward-headers-strategy: framework
+  compression:
+    enabled: true
+    min-response-size: 1024
+  tomcat:
+    threads:
+      max: 100  # OPTIMIZED: Was 30, now 100 for concurrent requests
+      min-spare: 20
+    accept-count: 100  # Queue size when thread pool full
+    remoteip:
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
+    # Connection pooling optimization
+    min-spare-threads: 20
+    max-threads: 100
+    max-connections: 1000
+    keep-alive-timeout: 60000  # 60 seconds
+    connection-timeout: 20000  # 20 seconds
+
+spring:
+  application:
+    name: stokr-platform-v2
+  jackson:
+    time-zone: Asia/Kolkata
+    serialization:
+      write-dates-as-timestamps: false
+      indent-output: false  # Compact JSON
+    deserialization:
+      fail-on-unknown-properties: false
+  mail:
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SPRING_MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${SPRING_MAIL_SMTP_STARTTLS:true}
+          connectiontimeout: ${SPRING_MAIL_SMTP_CONNECTION_TIMEOUT_MS:10000}
+          timeout: ${SPRING_MAIL_SMTP_TIMEOUT_MS:10000}
+          writetimeout: ${SPRING_MAIL_SMTP_WRITE_TIMEOUT_MS:10000}
+  config:
+    import: optional:file:../.env[.properties],optional:file:./.env[.properties]
+
+  # ===== DATASOURCE OPTIMIZATION =====
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:stokr_platform}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:root}
+    hikari:
+      # OPTIMIZED: 20 → 60 for 100 concurrent traders
+      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:60}
+      minimum-idle: ${HIKARI_MIN_IDLE:15}
+      connection-timeout: ${HIKARI_CONNECTION_TIMEOUT_MS:15000}  # Reduced from 30s
+      idle-timeout: ${HIKARI_IDLE_TIMEOUT_MS:180000}  # 3 minutes
+      max-lifetime: ${HIKARI_MAX_LIFETIME_MS:600000}  # 10 minutes
+      keepalive-time: ${HIKARI_KEEPALIVE_TIME_MS:30000}  # 30 seconds
+      leak-detection-threshold: ${HIKARI_LEAK_DETECTION_MS:30000}  # Increased from 60s
+      auto-commit: true
+      # Prepared statement caching
+      data-source-properties:
+        cachePreparedStatements: true
+        preparedStatementCacheSize: 500
+        preparedStatementCacheSqlLimit: 2048
+        # PostgreSQL specific optimizations
+        logSlowQueries: true
+        slowQueryThresholdInMillis: 1000
+        useServerPreparedStatements: true
+
+  # ===== JPA/HIBERNATE OPTIMIZATION =====
+  jpa:
+    hibernate:
+      ddl-auto: validate  # Never auto-generate schema in production
+    open-in-view: false  # CRITICAL: Prevents N+1 queries
+    properties:
+      hibernate:
+        # Batch processing
+        jdbc:
+          fetch_size: 50  # Fetch 50 rows at a time
+          batch_size: 20  # Batch 20 updates together
+          time_zone: Asia/Kolkata
+        # Query optimization
+        default_batch_fetch_size: 20
+        # Second-level caching
+        cache:
+          use_second_level_cache: true
+          provider: org.hibernate.cache.jcache.JCacheRegionFactory
+          region:
+            factory_class: org.hibernate.cache.jcache.JCacheRegionFactory
+        # Statistics (for monitoring)
+        generate_statistics: false  # Disable in production
+        # Connection pooling
+        connection:
+          provider_class: org.hibernate.engine.jdbc.connections.internal.DatasourceConnectionProviderImpl
+
+  # ===== FLYWAY DATABASE MIGRATIONS =====
+  flyway:
+    validate-on-migrate: false
+    enabled: true
+    out-of-order: ${STOKR_FLYWAY_OUT_OF_ORDER:true}
+    baselineOnMigrate: false
+    locations:
+      - classpath:db/migration
+
+  # ===== REDIS CACHE CONFIGURATION =====
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000  # 2 second timeout
+      # Connection pooling
+      jedis:
+        pool:
+          max-active: 50  # Max connections
+          max-idle: 25    # Max idle connections
+          min-idle: 10    # Min idle connections
+          max-wait: -1ms  # Wait indefinitely
+      # SSL if needed
+      ssl: ${REDIS_SSL:false}
+  cache:
+    type: redis
+    redis:
+      time-to-live: ${CACHE_TTL_MS:1800000}  # 30 minutes default
+      cache-null-values: false
+    cache-names:
+      - user_profile
+      - user_session
+      - strategy_config
+      - universe_symbols
+      - execution_config
+      - risk_limits
+      - market_data
+      - broker_account
+
+  # ===== RABBITMQ CONFIGURATION =====
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: /
+    connection-timeout: 30000  # 30 seconds
+    # Listener configuration
+    listener:
+      simple:
+        # OPTIMIZED: Worker threads for async processing
+        concurrency: 5  # Min consumers
+        max-concurrency: 20  # Max consumers (scales based on load)
+        prefetch: 10  # Prefetch 10 messages per consumer
+        # Error handling
+        default-requeue-rejected: false  # Don't requeue on error
+        acknowledge-mode: AUTO
+        # Request handling
+        transaction-size: 5
+        # Idle timeout
+        idle-event-interval: 30000
+      direct:
+        auto-startup: ${STOKR_RABBIT_LISTENERS_ENABLED:true}
+    # Publisher confirmation
+    publisher-confirm-type: CORRELATED
+    publisher-returns: true
+    # Retry configuration
+    template:
+      retry:
+        enabled: true
+        initial-interval: 1000  # 1 second
+        max-interval: 10000     # 10 seconds
+        multiplier: 2.0
+        max-attempts: 3
+
+# ===== JVM OPTIMIZATION =====
+# Add to JVM args: -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+ParallelRefProcEnabled
+# Add to JVM args: -Xms2g -Xmx4g (for production)
+
+# ===== MANAGEMENT & MONITORING =====
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers,threaddump,heapdump
+      base-path: /actuator
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always  # Change to when-authorized in production
+    metrics:
+      enabled: true
+  metrics:
+    distribution:
+      percentiles-histogram:
+        # Track percentiles for latency analysis
+        http.server.requests: true
+      slo:
+        http.server.requests: 50ms,100ms,200ms,500ms
+    tags:
+      application: ${spring.application.name}
+      environment: ${ENVIRONMENT:v2-staging}
+  health:
+    rabbit:
+      enabled: ${STOKR_RABBIT_HEALTH_ENABLED:true}
+    mail:
+      enabled: ${STOKR_MAIL_HEALTH_ENABLED:false}
+    diskspace:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 0.1  # Sample 10% of requests for tracing
+    exporter:
+      otlp:
+        endpoint: ${JAEGER_ENDPOINT:http://localhost:4317}
+
+# ===== SPRINGDOC OPENAPI (SWAGGER) =====
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui
+  show-actuator: true
+
+# ===== STOKR PLATFORM CONFIGURATION =====
+stokr:
+  deploy:
+    git-commit: ${STOKR_GIT_COMMIT:unknown}
+    branch: ${STOKR_DEPLOY_BRANCH:Release_v2}
+    version: 2.0.0
+    deployment-date: 2026-06-05
+
+  # ===== RATE LIMITING =====
+  rate-limiting:
+    enabled: true
+    redis-backed: true
+    default-limit-per-minute: 200
+    endpoints:
+      /api/orders:
+        limit-per-minute: 100
+      /api/signals:
+        limit-per-minute: 50
+      /api/portfolio:
+        limit-per-minute: 200
+      /api/positions:
+        limit-per-minute: 150
+
+  # ===== USER MANAGEMENT =====
+  user:
+    session:
+      max-concurrent-sessions: 1  # One active session per user
+      session-timeout-minutes: 120
+      cache-enabled: true
+    quotas:
+      enabled: true
+      default-daily-signals: 1000
+      default-daily-orders: 500
+      default-max-positions: 50
+    activity-audit:
+      enabled: true
+      async: true
+      retention-days: 90
+    notification-preferences:
+      enabled: true
+
+  # ===== MARKET DATA =====
+  marketdata:
+    integrity:
+      enabled: ${STOKR_MARKETDATA_INTEGRITY_ENABLED:true}
+      equity-candle-max-age-seconds: ${STOKR_MARKETDATA_INTEGRITY_EQUITY_CANDLE_MAX_AGE_SEC:300}
+      index-candle-max-age-seconds: ${STOKR_MARKETDATA_INTEGRITY_INDEX_CANDLE_MAX_AGE_SEC:300}
+      tick-max-age-seconds: ${STOKR_MARKETDATA_INTEGRITY_TICK_MAX_AGE_SEC:90}
+      use-live-tick-proxy-for-candle-freshness: ${STOKR_MARKETDATA_INTEGRITY_USE_LIVE_TICK_PROXY:true}
+      rejection-dedupe-seconds: ${STOKR_MARKETDATA_INTEGRITY_REJECTION_DEDUPE_SEC:300}
+      mid-session-recovery:
+        enabled: ${STOKR_MARKETDATA_INTEGRITY_MID_SESSION_RECOVERY:true}
+      mid-session-min-bars: ${STOKR_INTEGRITY_MID_SESSION_MIN_BARS:20}
+    session:
+      nse:
+        start: ${STOKR_MARKETDATA_NSE_SESSION_START:09:15}
+        end: ${STOKR_MARKETDATA_NSE_SESSION_END:15:30}
+      mcx:
+        start: ${STOKR_MARKETDATA_MCX_SESSION_START:09:00}
+        end: ${STOKR_MARKETDATA_MCX_SESSION_END:23:30}
+      cds:
+        start: ${STOKR_MARKETDATA_CDS_SESSION_START:09:00}
+        end: ${STOKR_MARKETDATA_CDS_SESSION_END:17:00}
+    feed-health:
+      poll-ms: ${STOKR_FEED_HEALTH_POLL_MS:30000}
+      equity-stale-seconds: ${STOKR_FEED_HEALTH_EQUITY_STALE_SEC:120}
+      index-stale-seconds: ${STOKR_FEED_HEALTH_INDEX_STALE_SEC:120}
+      tick-stale-seconds: ${STOKR_FEED_HEALTH_TICK_STALE_SEC:60}
+      outage-error-seconds: ${STOKR_FEED_HEALTH_OUTAGE_ERROR_SEC:900}
+      session-warmup-seconds: ${STOKR_FEED_HEALTH_SESSION_WARMUP_SEC:180}
+
+  # ===== STRATEGY EXECUTION =====
+  strategy:
+    # Threading optimization
+    thread-pool:
+      core-size: 10
+      max-size: 30
+      queue-capacity: 500
+      keep-alive-seconds: 60
+    # Symbol evaluation batching
+    batch:
+      symbol-batch-size: 100
+      confidence-batch-size: 50
+      outcome-batch-size: 100
+      outcome-batch-window-ms: 500
+    # Catalog scanning
+    catalog:
+      scan:
+        enabled: ${STOKR_CATALOG_SCAN_ENABLED:true}
+        poll-ms: ${STOKR_CATALOG_SCAN_POLL_MS:5000}  # Every 5 seconds
+      universe-cache-seconds: ${STOKR_CATALOG_UNIVERSE_CACHE_SECONDS:300}
+    # Daily caps
+    daily-cap:
+      enabled: ${STOKR_STRATEGY_DAILY_CAP_ENABLED:true}
+      default: ${STOKR_STRATEGY_DAILY_CAP_DEFAULT:120}
+      per-strategy:
+        NSE_SPIKE_DETECTION: ${STOKR_SPIKE_DAILY_CAP:80}
+        EARLY_BREAKOUT: ${STOKR_EARLYBREAKOUT_DAILY_CAP:40}
+        VWAP_BOUNCE: ${STOKR_VWAPBOUNCE_DAILY_CAP:25}
+    # Execution configuration
+    execution-modes:
+      allow-live: ${STOKR_EXECUTION_MODES_ALLOW_LIVE:true}
+      live-validated: ${STOKR_EXECUTION_MODES_LIVE_VALIDATED:GAP_FILL,NSE_SPIKE_DETECTION,VWAP_BOUNCE,SECTOR_LAGGARD,ADV_CASH,INDEX_HUNT}
+
+  # ===== ORDER EXECUTION =====
+  execution:
+    signal-order-quantity: ${STOKR_SIGNAL_ORDER_QTY:1}
+    max-attempts: ${STOKR_EXECUTION_MAX_ATTEMPTS:5}
+    live-trading-enabled: ${STOKR_LIVE_TRADING_ENABLED:false}
+    # Batching configuration
+    batch:
+      order-state-batch-size: 50
+      order-state-batch-window-ms: 100
+      fill-sync-interval-seconds: 10
+      outcome-batch-size: 100
+      outcome-batch-window-ms: 500
+    broker-fill-sync:
+      enabled: ${STOKR_BROKER_FILL_SYNC_ENABLED:true}
+      interval-ms: ${STOKR_BROKER_FILL_SYNC_MS:10000}  # Every 10 seconds
+    # Async broker submission
+    broker-submission:
+      queue-enabled: true
+      worker-threads: 5
+      prefetch: 10
+
+  # ===== OMS & RISK =====
+  oms:
+    kill-switch:
+      config-enabled: ${STOKR_OMS_KILL_SWITCH_CONFIG:false}
+      flatten-on-activate: ${STOKR_OMS_KILL_SWITCH_FLATTEN:false}
+    dedupe:
+      window-seconds: ${STOKR_OMS_DEDUPE_WINDOW_SEC:300}
+    exposure:
+      max-daily-loss: ${STOKR_OMS_MAX_DAILY_LOSS:50000}
+      max-loss-per-strategy: ${STOKR_OMS_MAX_STRATEGY_LOSS:20000}
+      max-concurrent-positions: ${STOKR_OMS_MAX_CONCURRENT_POSITIONS:10}
+      max-exposure-per-symbol: ${STOKR_OMS_MAX_EXPOSURE_SYMBOL:100000}
+      max-exposure-per-strategy: ${STOKR_OMS_MAX_EXPOSURE_STRATEGY:150000}
+      max-total-capital-deployed: ${STOKR_OMS_MAX_TOTAL_CAPITAL:500000}
+      max-orders-per-minute: ${STOKR_OMS_MAX_ORDERS_PER_MIN:20}
+  risk:
+    zone: ${STOKR_RISK_ZONE:Asia/Kolkata}
+    max-order-qty: ${STOKR_RISK_MAX_ORDER_QTY:100000}
+    max-order-notional: ${STOKR_RISK_MAX_ORDER_NOTIONAL:50000000}
+    max-open-positions: ${STOKR_RISK_MAX_OPEN_POSITIONS:100}
+    order-cooldown-ms: ${STOKR_RISK_ORDER_COOLDOWN_MS:0}
+    max-trades-per-day: ${STOKR_RISK_MAX_TRADES_PER_DAY:200}
+
+  # ===== BROKER INTEGRATION =====
+  broker:
+    zerodha:
+      api-key: ${STOKR_ZERODHA_API_KEY:}
+      api-secret: ${STOKR_ZERODHA_API_SECRET:}
+      redirect-url: ${STOKR_ZERODHA_REDIRECT_URL:http://localhost:8080/api/broker/zerodha/callback}
+      sync-enabled: ${STOKR_ZERODHA_SYNC_ENABLED:true}
+      sync-ms: ${STOKR_ZERODHA_SYNC_MS:300000}
+      token-refresh-enabled: ${STOKR_ZERODHA_TOKEN_REFRESH_ENABLED:true}
+
+  # ===== CORS CONFIGURATION =====
+  cors:
+    allowed-origins: ${STOKR_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175}
+
+  # ===== AUTH CONFIGURATION =====
+  auth:
+    login:
+      max-failed-attempts: ${STOKR_AUTH_MAX_FAILED:5}
+      lock-duration-minutes: ${STOKR_AUTH_LOCK_MINUTES:15}
+      password-reset-hours-valid: ${STOKR_AUTH_PW_RESET_HOURS:1}
+    email-verification-base-url: ${STOKR_EMAIL_VERIFY_BASE_URL:http://localhost:5173}
+    verification-resend-cooldown-seconds: ${STOKR_AUTH_VERIFY_RESEND_COOLDOWN:0}
+  security:
+    jwt:
+      secret: ${JWT_SECRET:change-me-use-long-random-secret-for-development-only}
+      access-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:900}
+    refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS:1209600}
+
+# ===== LOGGING CONFIGURATION =====
+logging:
+  level:
+    root: INFO
+    com.stokr: INFO
+    org.springframework.web: WARN
+    org.springframework.security: WARN
+    org.hibernate: WARN
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [%X{correlationId}] %logger{36} - %msg%n"
+  file:
+    name: logs/stokr-v2.log
+    max-size: 100MB
+    max-history: 30
+
+# ===== ENVIRONMENT-SPECIFIC OVERRIDES =====
+---
+spring:
+  config:
+    activate:
+      on-profile: v2-prod
+
+  datasource:
+    hikari:
+      maximum-pool-size: 80  # Even higher for production
+
+management:
+  tracing:
+    sampling:
+      probability: 0.01  # Only 1% sampling in production (vs 10% in staging)
+
+stokr:
+  auth:
+    verification-resend-cooldown-seconds: 60  # 60 seconds between resends
+
+logging:
+  level:
+    root: WARN
+    com.stokr: INFO
+
