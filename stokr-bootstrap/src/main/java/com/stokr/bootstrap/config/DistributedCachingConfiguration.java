@@ -1,0 +1,273 @@
+package com.stokr.bootstrap.config;
+
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.CaffeineCacheManager;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.cache.CacheManager;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.cache.RedisCacheManager;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Release_v2 Phase 2: Distributed Caching Configuration
+ *
+ * Implements two-level caching architecture:
+ * - L1: Caffeine (local JVM cache) - Very fast, single JVM only
+ * - L2: Redis Cluster (distributed) - Slower, cluster-wide
+ *
+ * Cache Hierarchy:
+ * 1. Check L1 (Caffeine) - < 1ms hit time
+ * 2. If miss, check L2 (Redis) - < 5ms hit time
+ * 3. If miss, query database
+ * 4. Store result in both L1 and L2
+ *
+ * Expected Hit Rates:
+ * - L1 hit rate: 95%+ (same JVM, same trader)
+ * - L2 hit rate: 85%+ (across cluster, different nodes)
+ * - Combined: 99%+ (few database hits)
+ *
+ * Cache Sizes:
+ * - L1: 10K entries per JVM (~50MB for user profiles)
+ * - L2: 1M entries across cluster (~2GB for Redis)
+ *
+ * @since Release_v2 Phase 2
+ */
+@Slf4j
+@Configuration
+@ConditionalOnProperty(
+    name = "caching.distributed.enabled",
+    havingValue = "true",
+    matchIfMissing = false
+)
+public class DistributedCachingConfiguration {
+
+    /**
+     * L1 Cache: Caffeine (local JVM)
+     *
+     * Ultra-fast local cache for hot data.
+     * Each JVM instance maintains its own L1 cache.
+     * Data is not shared across nodes (that's L2's job).
+     *
+     * Caffeine is faster than other caches:
+     * - ConcurrentHashMap: baseline
+     * - Guava Cache: older, slower
+     * - Caffeine: newest, fastest (2-3x faster than Guava)
+     */
+    @Bean
+    public CaffeineCacheManager caffeineCacheManager() {
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager(
+            "user_profile",
+            "user_session",
+            "strategy_config",
+            "risk_limits"
+        );
+
+        cacheManager.setCaffeine(Caffeine.newBuilder()
+            // Size limits
+            .maximumSize(10000)                    // Max 10K entries per JVM
+            .maximumWeight(100_000_000)            // Max 100MB per JVM
+            .weigher((key, value) -> estimateWeight(value))
+
+            // Time-based expiration
+            .expireAfterWrite(30, TimeUnit.MINUTES)  // Shorter than L2 TTL
+            .refreshAfterWrite(10, TimeUnit.MINUTES) // Auto-refresh before expire
+
+            // Statistics
+            .recordStats()
+
+            // Removal listener
+            .removalListener((key, value, cause) ->
+                log.debug("Caffeine eviction: {} ({})", key, cause)
+            )
+
+            .build());
+
+        log.info("Caffeine L1 cache manager configured");
+        return cacheManager;
+    }
+
+    /**
+     * L2 Cache: Redis Cluster (distributed)
+     *
+     * Shared cache across all cluster nodes.
+     * Data survives node failure (replicated).
+     * Slower than L1 but cluster-wide.
+     *
+     * Redis advantages:
+     * - Persistence (survives restart)
+     * - Replication (high availability)
+     * - Cluster (horizontal scaling)
+     * - Pub/Sub (invalidation notifications)
+     */
+    @Bean
+    public CacheManager redisCacheManager(RedisConnectionFactory connectionFactory) {
+        return RedisCacheManager.create(connectionFactory);
+    }
+
+    /**
+     * Primary cache manager: Uses L1 first, falls back to L2
+     *
+     * Transparent to application code:
+     * 1. Try L1 (Caffeine)
+     * 2. If miss → Try L2 (Redis)
+     * 3. If miss → Load from source
+     * 4. Store in both L1 and L2
+     */
+    @Bean
+    @Primary
+    public CacheManager distributedCacheManager(
+            CaffeineCacheManager caffeineManager,
+            CacheManager redisManager) {
+
+        return new HybridCacheManager(caffeineManager, redisManager);
+    }
+
+    /**
+     * Hybrid cache manager implementation
+     * Coordinates L1 (Caffeine) and L2 (Redis)
+     */
+    public static class HybridCacheManager implements CacheManager {
+
+        private final CaffeineCacheManager l1;
+        private final CacheManager l2;
+
+        public HybridCacheManager(CaffeineCacheManager l1, CacheManager l2) {
+            this.l1 = l1;
+            this.l2 = l2;
+        }
+
+        @Override
+        public org.springframework.cache.Cache getCache(String name) {
+            // Return wrapper that uses L1 + L2
+            return new HybridCache(
+                l1.getCache(name),
+                l2.getCache(name),
+                name
+            );
+        }
+
+        @Override
+        public java.util.Collection<String> getCacheNames() {
+            return l1.getCacheNames();
+        }
+    }
+
+    /**
+     * Hybrid cache wrapper
+     * Implements L1 + L2 cache-aside pattern
+     */
+    public static class HybridCache implements org.springframework.cache.Cache {
+
+        private final org.springframework.cache.Cache l1;
+        private final org.springframework.cache.Cache l2;
+        private final String name;
+
+        public HybridCache(
+                org.springframework.cache.Cache l1,
+                org.springframework.cache.Cache l2,
+                String name) {
+            this.l1 = l1;
+            this.l2 = l2;
+            this.name = name;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+
+        @Override
+        public Object getNativeCache() {
+            return l1.getNativeCache();  // Return L1 as primary
+        }
+
+        @Override
+        public ValueWrapper get(Object key) {
+            // Try L1 first (< 1ms)
+            ValueWrapper value = l1.get(key);
+            if (value != null) {
+                log.debug("Cache L1 HIT: {}", key);
+                return value;
+            }
+
+            // Try L2 (< 5ms)
+            value = l2.get(key);
+            if (value != null) {
+                log.debug("Cache L2 HIT: {}", key);
+                // Populate L1 from L2
+                if (value.get() != null) {
+                    l1.put(key, value.get());
+                }
+                return value;
+            }
+
+            // Miss in both L1 and L2
+            log.debug("Cache MISS: {}", key);
+            return null;
+        }
+
+        @Override
+        public <T> T get(Object key, java.util.concurrent.Callable<T> valueLoader) {
+            // Try L1 first
+            ValueWrapper value = l1.get(key);
+            if (value != null) {
+                return (T) value.get();
+            }
+
+            // Try L2
+            value = l2.get(key);
+            if (value != null) {
+                l1.put(key, value.get());  // Backfill L1
+                return (T) value.get();
+            }
+
+            // Load from source
+            try {
+                T result = valueLoader.call();
+                put(key, result);
+                return result;
+            } catch (Exception e) {
+                throw new org.springframework.cache.Cache.ValueRetrievalException(key, valueLoader, e);
+            }
+        }
+
+        @Override
+        public void put(Object key, Object value) {
+            // Store in both L1 and L2
+            l1.put(key, value);
+            l2.put(key, value);
+        }
+
+        @Override
+        public void evict(Object key) {
+            // Evict from both L1 and L2
+            l1.evict(key);
+            l2.evict(key);
+        }
+
+        @Override
+        public void clear() {
+            // Clear both L1 and L2
+            l1.clear();
+            l2.clear();
+        }
+    }
+
+    /**
+     * Estimate object weight for Caffeine size calculation
+     */
+    private static int estimateWeight(Object value) {
+        if (value == null) return 0;
+
+        // Rough estimates (in bytes)
+        if (value instanceof String) {
+            return 100 + ((String) value).length();
+        }
+        return 1000;  // Default estimate
+    }
+}
