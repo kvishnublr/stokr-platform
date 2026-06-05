@@ -1,0 +1,145 @@
+﻿
+============================================================
+terminal_posts
+============================================================
+{"@timestamp":"2026-06-05T15:20:00.005563616+05:30","message":"oms.market_close.flatten_trigger segment=NSE at=2026-06-05T15:20:00.004197017+05:30[Asia/Kolkata]","logger_name":"com.stokr.execution.safety.OmsSafetyScheduler","thread_name":"stokr-scheduled-1","level":"WARN"}
+{"@timestamp":"2026-06-05T15:20:00.037720305+05:30","message":"oms.kill_switch.ACTIVATED source=MARKET_CLOSE reason=Scheduled NSE market-close flatten flatten=true actor=scheduler","logger_name":"com.stokr.execution.safety.TradingKillSwitchService","thread_name":"stokr-scheduled-1","level":"ERROR"}
+{"@timestamp":"2026-06-05T15:20:00.043954444+05:30","message":"oms.kill_switch.flatten stoppedInstances=11","logger_name":"com.stokr.execution.safety.TradingKillSwitchService","thread_name":"stokr-scheduled-1","level":"WARN"}
+
+
+============================================================
+suppression_logs
+============================================================
+0
+
+
+============================================================
+external_exit_logs
+============================================================
+{"@timestamp":"2026-06-05T12:00:03.537101201+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:HINDUNILVR internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-6","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:03.582851445+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:ICICIBANK internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-6","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:03.598389988+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=M&M internalQty=-1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-6","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:07.281018552+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:HINDUNILVR internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-4","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:07.317330773+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:ICICIBANK internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-4","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:07.345411293+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=M&M internalQty=-1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-4","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:10.933033782+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:HINDUNILVR internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-6","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:10.96314793+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:ICICIBANK internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-6","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:10.986931909+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=M&M internalQty=-1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-6","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:14.595514429+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:HINDUNILVR internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-1","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:14.674889515+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:ICICIBANK internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-1","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:14.73087132+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=M&M internalQty=-1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-1","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:18.352832479+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:HINDUNILVR internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-1","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:18.369723306+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:ICICIBANK internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-1","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:18.378024295+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=M&M internalQty=-1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-1","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:21.929354967+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:HINDUNILVR internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-4","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:21.948683084+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:ICICIBANK internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-4","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:21.95850323+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=M&M internalQty=-1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-4","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:25.512979525+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:HINDUNILVR internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-4","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:25.541193224+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:ICICIBANK internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-4","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:25.579881289+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=M&M internalQty=-1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-4","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:29.201478486+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:HINDUNILVR internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-1","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:29.228541596+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:ICICIBANK internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-1","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:29.238090775+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=M&M internalQty=-1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-1","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:32.79732736+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:HINDUNILVR internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-6","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:32.820848355+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:ICICIBANK internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-6","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:32.832128146+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=M&M internalQty=-1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-6","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:36.378979888+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:HINDUNILVR internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-5","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:36.391782022+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=NSE:ICICIBANK internalQty=1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-5","level":"WARN"}
+{"@timestamp":"2026-06-05T12:00:36.398167543+05:30","message":"broker.truth.external_exit user=6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4 symbol=M&M internalQty=-1.00000000","logger_name":"com.stokr.execution.broker.BrokerPositionTruthService","thread_name":"stokr-scheduled-5","level":"WARN"}
+
+
+============================================================
+active_order_count
+============================================================
+0
+
+
+============================================================
+trader_not_found_count
+============================================================
+0
+
+
+============================================================
+live_net_ledger
+============================================================
+   symbol   |   net_qty   | filled_cnt 
+------------+-------------+------------
+ AXISBANK   |  1.00000000 |          1
+ BAJFINANCE |  1.00000000 |          1
+ CASTROLIND | -1.00000000 |          1
+ DRREDDY    | -1.00000000 |          1
+ HDFCLIFE   | -1.00000000 |          1
+ TATASTEEL  | -1.00000000 |          1
+ TITAN      | -1.00000000 |          1
+ WIPRO      |  1.00000000 |          1
+(8 rows)
+
+
+
+============================================================
+live_orders_all
+============================================================
+   ist    |   symbol   | side |  state   |  strategy_key   |                      reject_reason                      | signal_id 
+----------+------------+------+----------+-----------------+---------------------------------------------------------+-----------
+ 10:02:01 | TATASTEEL  | SELL | FILLED   | PRE_OPEN_GAP_OI |                                                         | 
+ 10:02:05 | CASTROLIND | SELL | FILLED   | GAP_FILL        |                                                         | 
+ 10:02:07 | DRREDDY    | SELL | FILLED   | GAP_FILL        |                                                         | 
+ 10:02:09 | TATASTEEL  | SELL | REJECTED | ADV_CASH        | An active order already exists for this symbol and side | 
+ 10:02:10 | TITAN      | SELL | FILLED   | GAP_FILL        |                                                         | 
+ 10:02:12 | HDFCLIFE   | SELL | FILLED   | GAP_FILL        |                                                         | 
+ 10:02:14 | TITAN      | SELL | REJECTED | ADV_CASH        | An active order already exists for this symbol and side | 
+ 10:41:32 | BAJFINANCE | BUY  | FILLED   | ADV_CASH        |                                                         | 
+ 10:41:34 | WIPRO      | BUY  | FILLED   | INDEX_HUNT      |                                                         | 
+ 10:41:37 | AXISBANK   | BUY  | FILLED   | INDEX_HUNT      |                                                         | 
+ 12:42:51 | COALINDIA  | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 12:42:53 | COALINDIA  | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 12:42:54 | ADANIPORTS | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:03:23 | LT         | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:03:26 | GRASIM     | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:11:53 | POWERGRID  | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:13:08 | BPCL       | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:13:12 | KOTAKBANK  | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:14:48 | HDFCLIFE   | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:14:50 | ADANIPORTS | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:20:41 | COALINDIA  | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:23:31 | HEROMOTOCO | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:23:33 | ASIANPAINT | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:27:07 | RELIANCE   | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:27:09 | TITAN      | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:27:11 | CIPLA      | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 13:52:58 | TATASTEEL  | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 14:21:22 | INFY       | SELL | REJECTED | ADV_CASH        | An active order already exists for this symbol and side | 
+ 14:21:22 | BPCL       | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 14:21:23 | LT         | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 15:07:20 | DRREDDY    | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 15:07:20 | SBIN       | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 15:07:21 | BAJAJFINSV | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 15:07:21 | BAJFINANCE | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 15:10:23 | JSWSTEEL   | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 15:10:24 | TATASTEEL  | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 15:10:24 | ICICIBANK  | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 15:15:16 | HCLTECH    | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 15:15:17 | WIPRO      | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 15:19:17 | TECHM      | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+ 15:19:17 | M&M        | BUY  | REJECTED | INDEX_HUNT      | An active order already exists for this symbol and side | 
+(41 rows)
+
+
+
+============================================================
+signals_live_symbols
+============================================================
+python : Traceback (most recent call last):
+At C:\WINDOWS\TEMP\ps-script-da97af67-18f6-479e-9243-c9358064d781.ps1:75 char:54
++ ... _new\stokr-platform"; python scripts/tmp_audit_phase3.py 2>&1 | Out-F ...
++                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\itsvi\Desktop\work_new\stokr-platform\scripts\tmp_audit_phase3.py", line 58, in <module>
+    print((o.read() + e.read()).decode("utf-8", errors="replace"))
+  File "C:\Users\itsvi\AppData\Local\Programs\Python\Python312\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 880: character maps to <undefined>
