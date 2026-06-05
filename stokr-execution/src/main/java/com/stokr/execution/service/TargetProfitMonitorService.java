@@ -1,7 +1,6 @@
 package com.stokr.execution.service;
 
 import com.stokr.oms.domain.ExecutionMode;
-import com.stokr.oms.repository.OmsExecutionRepository;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
@@ -29,7 +28,6 @@ public class TargetProfitMonitorService {
     private final PortfolioPositionRepository portfolioPositionRepository;
     private final StrategySignalRepository signalRepository;
     private final PositionPnLCalculatorService pnlCalculator;
-    private final OmsExecutionRepository executionRepository;
 
     @Value("${stokr.execution.target-profit.enabled:true}")
     private boolean profitTargetMonitoringEnabled;
@@ -61,11 +59,8 @@ public class TargetProfitMonitorService {
                     continue; // Skip zero positions
                 }
 
-                // For now, use last execution price as "current price"
-                // In production, would use live market price from Zerodha
-                BigDecimal currentPrice = executionRepository
-                        .findLatestExecutionPriceForPosition(position.getId())
-                        .orElse(position.getAvgPrice());
+                // Use position average price until live market price wiring is available.
+                BigDecimal currentPrice = position.getAvgPrice();
 
                 if (currentPrice == null) {
                     continue;
