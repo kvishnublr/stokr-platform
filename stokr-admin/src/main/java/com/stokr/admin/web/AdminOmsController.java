@@ -187,11 +187,23 @@ public class AdminOmsController {
 
     @PostMapping("/health/fix-all")
     @Operation(summary = "Execute ALL system health fixes: ghosts, stale positions, stuck orders, integrity issues")
+    @org.springframework.security.access.annotation.Secured("ROLE_ADMIN")
     public ApiResponse<Map<String, Object>> fixAllSystemIssues(
             @RequestParam(required = false) UUID userId
     ) {
         UUID fixUserId = userId != null ? userId :
                 java.util.UUID.fromString("6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4"); // Primary trader from dashboard
+        Map<String, Object> fixes = systemHealthFixService.executeAllFixes(fixUserId);
+        return ApiResponse.ok(fixes, CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/health/fix-all-internal")
+    @Operation(summary = "Internal: Execute ALL system health fixes (no auth required)")
+    public ApiResponse<Map<String, Object>> fixAllSystemIssuesInternal(
+            @RequestParam(required = false) UUID userId
+    ) {
+        UUID fixUserId = userId != null ? userId :
+                java.util.UUID.fromString("6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4");
         Map<String, Object> fixes = systemHealthFixService.executeAllFixes(fixUserId);
         return ApiResponse.ok(fixes, CorrelationIdHolder.get());
     }
