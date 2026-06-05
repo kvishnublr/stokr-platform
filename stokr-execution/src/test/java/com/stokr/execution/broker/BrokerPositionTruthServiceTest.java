@@ -7,6 +7,7 @@ import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.reconciliation.ReconciliationEventRepository;
 import com.stokr.oms.reconciliation.BrokerReconciliationService;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
+import com.stokr.strategy.service.SignalManualExitSuppressionService;
 import com.stokr.user.broker.ZerodhaBrokerOperationsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,6 +50,8 @@ class BrokerPositionTruthServiceTest {
     private BrokerReconciliationService brokerReconciliationService;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private SignalManualExitSuppressionService manualExitSuppressionService;
 
     @InjectMocks
     private BrokerPositionTruthService service;
@@ -56,6 +62,7 @@ class BrokerPositionTruthServiceTest {
     void setup() {
         ReflectionTestUtils.setField(service, "staleMs", 60_000L);
         ReflectionTestUtils.setField(service, "blockExitMinutes", 30L);
+        ReflectionTestUtils.setField(service, "externalExitConfirmSeconds", 60L);
     }
 
     @Test
@@ -98,5 +105,32 @@ class BrokerPositionTruthServiceTest {
                 userId, "NSE:INFY", "BUY", ExecutionGuardMode.EXIT_SAFE, Instant.now());
 
         assertThat(violations).anyMatch(v -> "DUPLICATE_EXIT".equals(v.code()));
+    }
+
+    @Test
+    void brokerExitRequiresRepeatConfirmationBeforeSafetyActions() {
+        when(zerodhaBrokerOperationsService.status(userId)).thenReturn(
+                new ZerodhaBrokerOperationsService.BrokerStatusDto(
+                        true, "Zerodha", true, Instant.now(), "DS8838",
+                        "tester", "tester@example.com", "{}", "HEALTHY", true, false, null
+                )
+        );
+        when(zerodhaBrokerOperationsService.fetchBrokerPositionDetails(userId)).thenReturn(List.of());
+        when(omsExecutionRepository.computeLiveNetQtyBySymbol(userId)).thenReturn(
+                List.<Object[]>of(new Object[]{"NSE:INFY", new BigDecimal("1")})
+        );
+        when(strategyInstanceRepository.findAllForUserWithDefinition(userId)).thenReturn(List.of());
+
+        service.syncUser(userId);
+        verify(manualExitSuppressionService, never()).suppressAutoExitForSymbol(eq(userId), eq("NSE:INFY"), any());
+
+        @SuppressWarnings("unchecked")
+        ConcurrentHashMap<String, Instant> pending =
+                (ConcurrentHashMap<String, Instant>) ReflectionTestUtils.getField(service, "pendingExternalBrokerExits");
+        pending.put(userId + ":NSE:INFY", Instant.now().minusSeconds(120));
+
+        service.syncUser(userId);
+
+        verify(manualExitSuppressionService).suppressAutoExitForSymbol(eq(userId), eq("NSE:INFY"), any());
     }
 }

@@ -7,7 +7,6 @@ import com.stokr.execution.guard.ExecutionGuardMode;
 import com.stokr.execution.guard.ExecutionGuardSeverity;
 import com.stokr.execution.guard.ExecutionGuardViolation;
 import com.stokr.oms.domain.OrderState;
-import com.stokr.oms.portfolio.PortfolioAccountingService;
 import com.stokr.oms.reconciliation.BrokerReconciliationService;
 import com.stokr.oms.reconciliation.ReconciliationEventRepository;
 import com.stokr.oms.repository.OmsExecutionRepository;
@@ -68,10 +67,10 @@ public class BrokerPositionTruthService {
     private final BrokerReconciliationService brokerReconciliationService;
     private final ApplicationEventPublisher eventPublisher;
     private final BrokerAccountRepository brokerAccountRepository;
-    private final PortfolioAccountingService portfolioAccountingService;
     private final SignalManualExitSuppressionService manualExitSuppressionService;
 
     private final ConcurrentHashMap<UUID, BrokerPositionTruthSnapshot> cache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Instant> pendingExternalBrokerExits = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Instant> brokerClosedAt = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, String> lastPublishedFingerprint = new ConcurrentHashMap<>();
 
@@ -80,6 +79,9 @@ public class BrokerPositionTruthService {
 
     @Value("${stokr.broker-truth.block-exit-minutes:30}")
     private long blockExitMinutes;
+
+    @Value("${stokr.broker-truth.external-exit-confirm-seconds:60}")
+    private long externalExitConfirmSeconds;
 
     public BrokerPositionTruthSnapshot snapshot(UUID userId) {
         BrokerPositionTruthSnapshot snap = cache.get(userId);
@@ -154,10 +156,16 @@ public class BrokerPositionTruthService {
             if (bQty.compareTo(BigDecimal.ZERO) == 0) {
                 mismatches.add(new BrokerPositionTruthSnapshot.BrokerTruthMismatch(
                         symbol, "GHOST_INTERNAL_POSITION", bQty, iQty, Instant.now()));
-                handleExternalBrokerExit(userId, symbol, iQty);
-                brokerClosed.add(symbol);
-                if (isWithinExitBlockWindow(userId, symbol, Instant.now())) {
-                    blocked.add(symbol);
+                blocked.add(symbol);
+                if (shouldConfirmExternalBrokerExit(userId, symbol, Instant.now())) {
+                    handleExternalBrokerExit(userId, symbol, iQty);
+                    brokerClosed.add(symbol);
+                    if (isWithinExitBlockWindow(userId, symbol, Instant.now())) {
+                        blocked.add(symbol);
+                    }
+                } else {
+                    log.warn("broker.truth.external_exit_pending user={} symbol={} internalQty={}",
+                            userId, symbol, iQty);
                 }
             } else if (bQty.compareTo(iQty) != 0) {
                 mismatches.add(new BrokerPositionTruthSnapshot.BrokerTruthMismatch(
@@ -167,6 +175,9 @@ public class BrokerPositionTruthService {
                 mismatches.add(new BrokerPositionTruthSnapshot.BrokerTruthMismatch(
                         symbol, "BROKER_CONFLICT", bQty, iQty, Instant.now()));
                 blocked.add(symbol);
+            }
+            if (bQty.compareTo(BigDecimal.ZERO) != 0) {
+                clearExternalBrokerExitConfirmation(userId, symbol);
             }
         }
 
@@ -360,7 +371,6 @@ public class BrokerPositionTruthService {
         }
         log.warn("broker.truth.external_exit user={} symbol={} internalQty={}", userId, symbol, internalQty);
         persistRecon(userId, symbol, "EXTERNAL_BROKER_EXIT", BigDecimal.ZERO, internalQty);
-        reconcilePortfolioGhost(userId, symbol);
         manualExitSuppressionService.suppressAutoExitForSymbol(userId, symbol, "MANUAL: external_broker_exit");
         haltStrategyRuntimeForSymbol(userId, symbol);
         eventPublisher.publishEvent(new ExecutionAlertEvent(
@@ -393,20 +403,26 @@ public class BrokerPositionTruthService {
         }
     }
 
-    private void reconcilePortfolioGhost(UUID userId, String symbol) {
-        try {
-            portfolioAccountingService.clearStaleOpenPosition(userId, displaySymbolForLedger(symbol));
-        } catch (Exception ex) {
-            log.warn("broker.truth.portfolio_reconcile_failed user={} symbol={} {}", userId, symbol, ex.getMessage());
+    private boolean shouldConfirmExternalBrokerExit(UUID userId, String symbol, Instant now) {
+        if (externalExitConfirmSeconds <= 0) {
+            return true;
         }
+        String key = userId + ":" + normalizeSymbol(symbol);
+        Instant firstSeen = pendingExternalBrokerExits.putIfAbsent(key, now);
+        if (firstSeen == null) {
+            return false;
+        }
+        if (Duration.between(firstSeen, now).getSeconds() < externalExitConfirmSeconds) {
+            return false;
+        }
+        pendingExternalBrokerExits.remove(key, firstSeen);
+        return true;
     }
 
-    private static String displaySymbolForLedger(String normalizedSymbol) {
-        if (normalizedSymbol == null || normalizedSymbol.isBlank()) {
-            return normalizedSymbol;
-        }
-        int idx = normalizedSymbol.indexOf(':');
-        return idx >= 0 ? normalizedSymbol.substring(idx + 1) : normalizedSymbol;
+    private void clearExternalBrokerExitConfirmation(UUID userId, String symbol) {
+        String key = userId + ":" + normalizeSymbol(symbol);
+        pendingExternalBrokerExits.remove(key);
+        brokerClosedAt.remove(key);
     }
 
     private void persistRecon(UUID userId, String symbol, String kind, BigDecimal brokerQty, BigDecimal internalQty) {
