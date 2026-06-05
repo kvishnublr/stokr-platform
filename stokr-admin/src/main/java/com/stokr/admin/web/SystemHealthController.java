@@ -25,12 +25,21 @@ public class SystemHealthController {
     private final AdminSystemHealthFixService systemHealthFixService;
 
     @PostMapping("/health/fix-all")
-    @Operation(summary = "Execute ALL system health fixes")
+    @Operation(summary = "Execute ALL system health fixes, optionally targeting specific symbols")
     public ApiResponse<Map<String, Object>> fixAllSystemIssues(
-            @RequestParam(required = false) UUID userId
+            @RequestParam(required = false) UUID userId,
+            @RequestParam(required = false) String symbols
     ) {
         UUID fixUserId = userId != null ? userId :
                 java.util.UUID.fromString("6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4");
+
+        // If specific symbols provided, do targeted cleanup instead
+        if (symbols != null && !symbols.isBlank()) {
+            List<String> symbolList = Arrays.asList(symbols.split(","));
+            Map<String, Object> result = systemHealthFixService.cleanupGhostSymbols(fixUserId, symbolList);
+            return ApiResponse.ok(result, CorrelationIdHolder.get());
+        }
+
         Map<String, Object> fixes = systemHealthFixService.executeAllFixes(fixUserId);
         return ApiResponse.ok(fixes, CorrelationIdHolder.get());
     }
