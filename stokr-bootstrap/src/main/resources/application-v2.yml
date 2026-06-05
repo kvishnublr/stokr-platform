@@ -146,6 +146,20 @@ spring:
       - signal_confidence    # Signal confidence scores (2 min TTL)
       - execution_status     # Order execution status (2 min TTL)
 
+  # ===== DISTRIBUTED SESSION MANAGEMENT (PHASE 2) =====
+  session:
+    store-type: redis
+    redis:
+      namespace: stokr:session
+      flush-mode: on_save
+    timeout: 120m
+    cookie:
+      name: STOKR_SESSION
+      secure: ${SESSION_SECURE:true}
+      http-only: true
+      same-site: strict
+      path: /
+
   # ===== RABBITMQ CONFIGURATION =====
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
