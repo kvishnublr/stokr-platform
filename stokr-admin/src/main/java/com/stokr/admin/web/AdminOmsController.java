@@ -1,6 +1,7 @@
 package com.stokr.admin.web;
 
 import com.stokr.admin.service.AdminPositionReconciliationService;
+import com.stokr.admin.service.AdminSystemHealthFixService;
 import com.stokr.admin.signal.AdminOmsStatsDto;
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.api.PageResponse;
@@ -49,6 +50,7 @@ public class AdminOmsController {
     private final OmsOrderRepository omsOrderRepository;
     private final OrderLifecycleService orderLifecycleService;
     private final AdminPositionReconciliationService positionReconciliationService;
+    private final AdminSystemHealthFixService systemHealthFixService;
 
     @GetMapping("/stats")
     @Operation(summary = "Aggregate OMS stats for today or custom window")
@@ -181,6 +183,17 @@ public class AdminOmsController {
     @Operation(summary = "Soft-delete zero-price ghost portfolio rows (auto-heal)")
     public ApiResponse<Map<String, Object>> clearGhostPositions() {
         return ApiResponse.ok(positionReconciliationService.clearGhostPositions(), CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/health/fix-all")
+    @Operation(summary = "Execute ALL system health fixes: ghosts, stale positions, stuck orders, integrity issues")
+    public ApiResponse<Map<String, Object>> fixAllSystemIssues(
+            @RequestParam(required = false) UUID userId
+    ) {
+        UUID fixUserId = userId != null ? userId :
+                java.util.UUID.fromString("6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4"); // Primary trader from dashboard
+        Map<String, Object> fixes = systemHealthFixService.executeAllFixes(fixUserId);
+        return ApiResponse.ok(fixes, CorrelationIdHolder.get());
     }
 
     @GetMapping("/summary")
