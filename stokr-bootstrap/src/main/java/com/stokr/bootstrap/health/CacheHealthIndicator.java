@@ -5,9 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.cache.CacheManager;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.stereotype.Component;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -32,7 +31,7 @@ import java.util.Map;
 public class CacheHealthIndicator implements HealthIndicator {
 
     private final CacheManager cacheManager;
-    private final JedisPool jedisPool;
+    private final RedisConnectionFactory connectionFactory;
 
     @Override
     public Health health() {
@@ -65,12 +64,20 @@ public class CacheHealthIndicator implements HealthIndicator {
     }
 
     /**
-     * Check Redis connectivity with PING
+     * Check Redis connectivity
      */
     private boolean checkRedisHealth() {
-        try (Jedis jedis = jedisPool.getResource()) {
-            String pong = jedis.ping();
-            return "PONG".equals(pong);
+        try {
+            var connection = connectionFactory.getConnection();
+            if (connection != null) {
+                try {
+                    connection.ping();
+                    return true;
+                } finally {
+                    connection.close();
+                }
+            }
+            return false;
         } catch (Exception e) {
             log.warn("Redis health check failed", e);
             return false;
@@ -78,39 +85,15 @@ public class CacheHealthIndicator implements HealthIndicator {
     }
 
     /**
-     * Get cache statistics from Jedis
+     * Get cache statistics
      */
     private Map<String, Object> getCacheStatistics() {
         Map<String, Object> stats = new HashMap<>();
 
-        try (Jedis jedis = jedisPool.getResource()) {
-            // Get Redis INFO stats
-            String info = jedis.info("memory");
-            if (info != null && !info.isEmpty()) {
-                String[] lines = info.split("\r\n");
-                for (String line : lines) {
-                    if (line.startsWith("used_memory_human")) {
-                        stats.put("memory_used", line.split(":")[1]);
-                    }
-                    if (line.startsWith("maxmemory_human")) {
-                        stats.put("memory_max", line.split(":")[1]);
-                    }
-                }
-            }
-
-            // Get connected clients
-            String clientInfo = jedis.info("clients");
-            if (clientInfo != null && !clientInfo.isEmpty()) {
-                String[] lines = clientInfo.split("\r\n");
-                for (String line : lines) {
-                    if (line.startsWith("connected_clients")) {
-                        stats.put("connected_clients", line.split(":")[1]);
-                    }
-                }
-            }
-
+        try {
             stats.put("cache_managers", cacheManager.getCacheNames().size());
             stats.put("cache_names", cacheManager.getCacheNames());
+            stats.put("connection_factory", connectionFactory.getClass().getSimpleName());
         } catch (Exception e) {
             log.warn("Could not retrieve cache statistics", e);
             stats.put("error", "Statistics unavailable: " + e.getMessage());
