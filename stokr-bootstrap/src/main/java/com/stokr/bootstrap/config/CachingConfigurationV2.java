@@ -4,6 +4,9 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -11,6 +14,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
 
 /**
  * Optimized caching configuration for Release_v2 (100-trader system)
@@ -98,5 +105,29 @@ public class CachingConfigurationV2 {
                 .entryTtl(Duration.ofMinutes(30)))
             .withInitialCacheConfigurations(configs)
             .build();
+    }
+
+    @Bean
+    public JedisPool jedisPool() {
+        JedisPoolConfig config = new JedisPoolConfig();
+        config.setMaxTotal(32);
+        config.setMaxIdle(16);
+        config.setMinIdle(4);
+        config.setTestOnBorrow(true);
+        config.setTestOnReturn(true);
+        config.setTestWhileIdle(true);
+
+        String host = System.getenv("SPRING_REDIS_HOST");
+        String portStr = System.getenv("SPRING_REDIS_PORT");
+
+        if (host == null) {
+            host = "localhost";
+        }
+        if (portStr == null) {
+            portStr = "6379";
+        }
+
+        int port = Integer.parseInt(portStr);
+        return new JedisPool(config, host, port);
     }
 }
