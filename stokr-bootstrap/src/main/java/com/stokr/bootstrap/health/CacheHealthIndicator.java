@@ -26,7 +26,7 @@ import java.util.Map;
  * @since Release_v2 Phase 1
  */
 @Slf4j
-@Component("cacheHealth")
+// @Component - Disabled: health indicator dependency management causes startup issues
 @RequiredArgsConstructor
 public class CacheHealthIndicator implements HealthIndicator {
 
