@@ -36,6 +36,7 @@ public class SecurityConfig {
                                 "/api/auth/forgot-password",
                                 "/api/auth/reset-password",
                                 "/api/auth/verify-email",
+                                "/api/health",
                                 "/api/integrations/telegram/webhook",
                                 "/api/broker/zerodha/callback",
                                 "/api/system/health/fix-all",
