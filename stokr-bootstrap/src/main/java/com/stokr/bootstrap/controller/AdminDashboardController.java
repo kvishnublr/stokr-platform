@@ -1,12 +1,13 @@
 package com.stokr.bootstrap.controller;
 
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 
 @Controller
-@Slf4j
 public class AdminDashboardController {
+    private static final Logger log = LoggerFactory.getLogger(AdminDashboardController.class);
 
     // ========== ELITE DASHBOARD (NEW - WORLD-CLASS DESIGN WITH PREMIUM ANIMATIONS) ==========
     @GetMapping("/admin/elite")
