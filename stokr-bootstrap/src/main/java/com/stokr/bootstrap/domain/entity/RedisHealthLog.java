@@ -80,4 +80,12 @@ public class RedisHealthLog {
 
     @Transient
     private Boolean isSynthetic = false;
+
+    // Explicit getters (Lombok @Data not generating due to processor issue)
+    public LocalDateTime getCheckTime() { return this.checkTime; }
+    public Boolean getIsHealthy() { return this.isHealthy; }
+    public String getConnectionFactoryState() { return this.connectionFactoryState; }
+    public String getIssuesJson() { return this.issuesJson; }
+    public Boolean getAutoRecoveryAttempted() { return this.autoRecoveryAttempted; }
+    public Boolean getRecoverySuccessful() { return this.recoverySuccessful; }
 }

@@ -1,5 +1,10 @@
 package com.stokr.bootstrap.config;
 
+// DISABLED: Requires advanced Spring Data Redis configuration
+// This configuration is optional for Release_v2 Phase 2
+// Uncomment when full Redis/Caffeine setup is configured
+
+/*
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.CaffeineCacheManager;
 import lombok.extern.slf4j.Slf4j;
@@ -10,10 +15,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+*/
 
-import java.util.concurrent.TimeUnit;
+// import java.util.concurrent.TimeUnit;
 
-/**
+/*
+ * DISABLED: Requires advanced Spring Data Redis configuration
+ *
  * Release_v2 Phase 2: Distributed Caching Configuration
  *
  * Implements two-level caching architecture:
@@ -36,7 +44,7 @@ import java.util.concurrent.TimeUnit;
  * - L2: 1M entries across cluster (~2GB for Redis)
  *
  * @since Release_v2 Phase 2
- */
+
 @Slf4j
 @Configuration
 @ConditionalOnProperty(

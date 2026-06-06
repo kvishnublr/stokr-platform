@@ -52,4 +52,9 @@ public class MarketDataStalenessLog {
 
     @Column(name = "feed_restored_at")
     private LocalDateTime feedRestoredAt;
+
+    // Explicit getters (Lombok @Data not generating due to processor issue)
+    public LocalDateTime getCheckTime() { return this.checkTime; }
+    public String getSymbol() { return this.symbol; }
+    public Boolean getIsStale() { return this.isStale; }
 }

@@ -113,16 +113,42 @@ public class AdminDiagnosticsController {
 
     @lombok.Data
     @lombok.Builder
+    @lombok.NoArgsConstructor
+    @lombok.AllArgsConstructor
     public static class QuickSummary {
         private LocalDateTime timestamp;
         private String overallStatus;
         private int activeIssues;
         private int criticalIssues;
         private Map<String, AdminHealthDashboard.HealthStatus> components;
+
+        // Explicit builder method (Lombok not generating)
+        public static QuickSummaryBuilder builder() {
+            return new QuickSummaryBuilder();
+        }
+
+        public static class QuickSummaryBuilder {
+            private LocalDateTime timestamp;
+            private String overallStatus;
+            private int activeIssues;
+            private int criticalIssues;
+            private Map<String, AdminHealthDashboard.HealthStatus> components;
+
+            public QuickSummaryBuilder timestamp(LocalDateTime timestamp) { this.timestamp = timestamp; return this; }
+            public QuickSummaryBuilder overallStatus(String overallStatus) { this.overallStatus = overallStatus; return this; }
+            public QuickSummaryBuilder activeIssues(int activeIssues) { this.activeIssues = activeIssues; return this; }
+            public QuickSummaryBuilder criticalIssues(int criticalIssues) { this.criticalIssues = criticalIssues; return this; }
+            public QuickSummaryBuilder components(Map<String, AdminHealthDashboard.HealthStatus> components) { this.components = components; return this; }
+            public QuickSummary build() {
+                return new QuickSummary(timestamp, overallStatus, activeIssues, criticalIssues, components);
+            }
+        }
     }
 
     @lombok.Data
     @lombok.Builder
+    @lombok.NoArgsConstructor
+    @lombok.AllArgsConstructor
     public static class AlertSummary {
         private String timeRange;
         private int totalIssues;
@@ -130,5 +156,29 @@ public class AdminDiagnosticsController {
         private Map<String, Long> issuesBySeverity;
         private int autoFixedCount;
         private AdminHealthDashboard.IssueTimeline topIssue;
+
+        // Explicit builder method (Lombok not generating)
+        public static AlertSummaryBuilder builder() {
+            return new AlertSummaryBuilder();
+        }
+
+        public static class AlertSummaryBuilder {
+            private String timeRange;
+            private int totalIssues;
+            private Map<String, Long> issuesByCategory;
+            private Map<String, Long> issuesBySeverity;
+            private int autoFixedCount;
+            private AdminHealthDashboard.IssueTimeline topIssue;
+
+            public AlertSummaryBuilder timeRange(String timeRange) { this.timeRange = timeRange; return this; }
+            public AlertSummaryBuilder totalIssues(int totalIssues) { this.totalIssues = totalIssues; return this; }
+            public AlertSummaryBuilder issuesByCategory(Map<String, Long> issuesByCategory) { this.issuesByCategory = issuesByCategory; return this; }
+            public AlertSummaryBuilder issuesBySeverity(Map<String, Long> issuesBySeverity) { this.issuesBySeverity = issuesBySeverity; return this; }
+            public AlertSummaryBuilder autoFixedCount(int autoFixedCount) { this.autoFixedCount = autoFixedCount; return this; }
+            public AlertSummaryBuilder topIssue(AdminHealthDashboard.IssueTimeline topIssue) { this.topIssue = topIssue; return this; }
+            public AlertSummary build() {
+                return new AlertSummary(timeRange, totalIssues, issuesByCategory, issuesBySeverity, autoFixedCount, topIssue);
+            }
+        }
     }
 }

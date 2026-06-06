@@ -2,9 +2,7 @@ package com.stokr.bootstrap.service;
 
 import com.stokr.bootstrap.domain.entity.*;
 import com.stokr.bootstrap.repository.*;
-import lombok.Builder;
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -371,6 +369,56 @@ public class AdminHealthDashboard {
         private ComponentHealth strategyHealth;
         private ComponentHealth positionHealth;
         private String overallStatus;
+
+        // Constructors
+        public SystemHealthSnapshot() {}
+        public SystemHealthSnapshot(LocalDateTime timestamp, ComponentHealth redisHealth, ComponentHealth marketDataHealth,
+                                   ComponentHealth strategyHealth, ComponentHealth positionHealth, String overallStatus) {
+            this.timestamp = timestamp;
+            this.redisHealth = redisHealth;
+            this.marketDataHealth = marketDataHealth;
+            this.strategyHealth = strategyHealth;
+            this.positionHealth = positionHealth;
+            this.overallStatus = overallStatus;
+        }
+
+        // Getters & Setters
+        public LocalDateTime getTimestamp() { return this.timestamp; }
+        public void setTimestamp(LocalDateTime timestamp) { this.timestamp = timestamp; }
+        public ComponentHealth getRedisHealth() { return this.redisHealth; }
+        public void setRedisHealth(ComponentHealth redisHealth) { this.redisHealth = redisHealth; }
+        public ComponentHealth getMarketDataHealth() { return this.marketDataHealth; }
+        public void setMarketDataHealth(ComponentHealth marketDataHealth) { this.marketDataHealth = marketDataHealth; }
+        public ComponentHealth getStrategyHealth() { return this.strategyHealth; }
+        public void setStrategyHealth(ComponentHealth strategyHealth) { this.strategyHealth = strategyHealth; }
+        public ComponentHealth getPositionHealth() { return this.positionHealth; }
+        public void setPositionHealth(ComponentHealth positionHealth) { this.positionHealth = positionHealth; }
+        public String getOverallStatus() { return this.overallStatus; }
+        public void setOverallStatus(String overallStatus) { this.overallStatus = overallStatus; }
+
+        // Builder
+        public static SystemHealthSnapshotBuilder builder() {
+            return new SystemHealthSnapshotBuilder();
+        }
+
+        public static class SystemHealthSnapshotBuilder {
+            private LocalDateTime timestamp;
+            private ComponentHealth redisHealth;
+            private ComponentHealth marketDataHealth;
+            private ComponentHealth strategyHealth;
+            private ComponentHealth positionHealth;
+            private String overallStatus;
+
+            public SystemHealthSnapshotBuilder timestamp(LocalDateTime timestamp) { this.timestamp = timestamp; return this; }
+            public SystemHealthSnapshotBuilder redisHealth(ComponentHealth redisHealth) { this.redisHealth = redisHealth; return this; }
+            public SystemHealthSnapshotBuilder marketDataHealth(ComponentHealth marketDataHealth) { this.marketDataHealth = marketDataHealth; return this; }
+            public SystemHealthSnapshotBuilder strategyHealth(ComponentHealth strategyHealth) { this.strategyHealth = strategyHealth; return this; }
+            public SystemHealthSnapshotBuilder positionHealth(ComponentHealth positionHealth) { this.positionHealth = positionHealth; return this; }
+            public SystemHealthSnapshotBuilder overallStatus(String overallStatus) { this.overallStatus = overallStatus; return this; }
+            public SystemHealthSnapshot build() {
+                return new SystemHealthSnapshot(timestamp, redisHealth, marketDataHealth, strategyHealth, positionHealth, overallStatus);
+            }
+        }
     }
 
     @Data
@@ -391,6 +439,12 @@ public class AdminHealthDashboard {
         private String description;
         private Boolean hasAutoFix;
         private Boolean autoFixSuccessful;
+
+        // Explicit getters (Lombok not generating)
+        public String getSeverity() { return this.severity; }
+        public String getCategory() { return this.category; }
+        public Boolean getHasAutoFix() { return this.hasAutoFix; }
+        public Boolean getAutoFixSuccessful() { return this.autoFixSuccessful; }
     }
 
     @Data

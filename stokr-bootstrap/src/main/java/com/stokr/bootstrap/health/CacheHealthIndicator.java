@@ -50,7 +50,7 @@ public class CacheHealthIndicator implements HealthIndicator {
                     .build();
             } else {
                 cacheStats.put("redis_status", "DEGRADED");
-                return Health.degraded()
+                return Health.status("DEGRADED")
                     .withDetails(cacheStats)
                     .withDetail("warning", "Redis connection unstable - using fallback (database)")
                     .build();
