@@ -74,7 +74,7 @@ import { PageSkeleton } from "./components/ds/SkeletonLoader";
 import { ErrorBoundary } from "./components/ds/ErrorBoundary";
 import { ThemeHtmlSync } from "./components/theme/ThemeHtmlSync";
 import { SyncedToaster } from "./components/theme/SyncedToaster";
-import { AdvDashboardPage } from "./pages/AdvDashboardPage";
+import AdvDashboardPage from "./pages/AdvDashboardPage";
 import { AdvEnhancedDashboardPage } from "./pages/AdvEnhancedDashboardPage";
 import { TraderDashboard } from "./pages/trader/TraderDashboard";
 import { AdminOverviewPage } from "./pages/AdminOverviewPage";
