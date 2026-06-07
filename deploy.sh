@@ -51,14 +51,18 @@ record_deploy_sha() {
 
 export_deploy_metadata() {
     export STOKR_GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-    export STOKR_DEPLOY_BRANCH="${STOKR_DEPLOY_BRANCH:-Release_v1}"
+    export STOKR_DEPLOY_BRANCH="${STOKR_DEPLOY_BRANCH:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo Release_v1)}"
     echo "==> Deploy metadata: branch=$STOKR_DEPLOY_BRANCH commit=$STOKR_GIT_COMMIT"
+}
+
+git_pull_deploy_branch() {
+    git pull origin "$STOKR_DEPLOY_BRANCH"
 }
 
 deploy_api_docker() {
     export_deploy_metadata
     echo "==> [API] Pulling latest code..."
-    git pull origin Release_v1
+    git_pull_deploy_branch
 
     echo "==> [API] Ensuring dependencies are running (postgres, redis, rabbitmq, autoheal)..."
     docker compose --profile app up -d postgres redis rabbitmq autoheal
@@ -79,7 +83,7 @@ deploy_api_docker() {
 deploy_ui_docker() {
     export_deploy_metadata
     echo "==> [UI] Pulling latest code..."
-    git pull origin Release_v1
+    git_pull_deploy_branch
 
     echo "==> [UI] Ensuring API is running and healthy..."
     if ! curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1; then
@@ -100,8 +104,9 @@ deploy_ui_docker() {
 }
 
 deploy_jar() {
+    export_deploy_metadata
     echo "==> [JAR] Pulling latest code..."
-    git pull origin Release_v1
+    git_pull_deploy_branch
 
     echo "==> [JAR] Ensuring dependencies are running (postgres, redis, rabbitmq, autoheal)..."
     docker compose --profile app up -d postgres redis rabbitmq autoheal
@@ -147,8 +152,9 @@ fi
 TARGETS=("$@")
 
 if [ ${#TARGETS[@]} -eq 0 ]; then
+    export_deploy_metadata
     echo "==> Auto-detecting changes..."
-    git pull origin Release_v1
+    git_pull_deploy_branch
     detect_changes
     if $CHANGED_API; then TARGETS+=("api"); fi
     if $CHANGED_UI;  then TARGETS+=("ui");  fi
