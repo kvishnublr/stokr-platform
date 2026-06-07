@@ -1,6 +1,5 @@
 import type { Transition, Variants } from "framer-motion";
 
-/** Shared easing — institutional / premium feel */
 export const motionEase = [0.22, 1, 0.36, 1] as const;
 
 export const fadeUp: Variants = {
@@ -24,13 +23,13 @@ export const staggerFast: Variants = {
 };
 
 export const pageEnter = {
-  initial: { opacity: 0, y: 10, filter: "blur(4px)" },
+  initial: { opacity: 0, y: 8, filter: "blur(4px)" },
   animate: { opacity: 1, y: 0, filter: "blur(0px)" },
-  exit: { opacity: 0, y: -6, filter: "blur(2px)" },
+  exit: { opacity: 0, y: -4, filter: "blur(2px)" },
 };
 
 export const pageTransition: Transition = {
-  duration: 0.32,
+  duration: 0.3,
   ease: motionEase,
 };
 
@@ -50,6 +49,25 @@ export const hoverLift = {
   whileHover: { y: -2, scale: 1.01 },
   whileTap: { scale: 0.99 },
   transition: { type: "spring" as const, stiffness: 420, damping: 28 },
+};
+
+export const blurReveal = {
+  initial: { opacity: 0, filter: "blur(8px)" },
+  animate: { opacity: 1, filter: "blur(0px)" },
+  exit: { opacity: 0, filter: "blur(4px)" },
+};
+
+export const containerSlide = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.05, delayChildren: 0.05 },
+  },
+};
+
+export const itemSlide = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: motionEase } },
 };
 
 export function reducedMotionPageEnter(prefersReduced: boolean | null) {
