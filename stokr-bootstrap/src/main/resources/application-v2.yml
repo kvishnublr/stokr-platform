@@ -125,7 +125,8 @@ spring:
           min-idle: 10    # Min idle connections
           max-wait: -1ms  # Wait indefinitely
       # SSL if needed
-      ssl: ${REDIS_SSL:false}
+      ssl:
+        enabled: ${REDIS_SSL:false}
   cache:
     type: redis
     redis:

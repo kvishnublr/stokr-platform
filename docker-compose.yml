@@ -25,6 +25,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      SPRING_PROFILES_ACTIVE: prod,v2
       # Compose stack includes RabbitMQ — consumers must run unless explicitly disabled.
       STOKR_RABBIT_LISTENERS_ENABLED: ${STOKR_RABBIT_LISTENERS_ENABLED:-true}
       JWT_SECRET: ${JWT_SECRET:-change-me-use-long-random-secret-for-development-only}
@@ -45,7 +46,6 @@ services:
       STOKR_ZERODHA_TEST_ORDER_DRY_RUN: ${STOKR_ZERODHA_TEST_ORDER_DRY_RUN:-true}
       STOKR_REPLAY_SEED_SYNTHETIC: ${STOKR_REPLAY_SEED_SYNTHETIC:-true}
       STOKR_CATALOG_SCAN_POLL_MS: ${STOKR_CATALOG_SCAN_POLL_MS:-60000}
-      SPRING_PROFILES_ACTIVE: prod
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0 -Xms256m}
       STOKR_GITHUB_ENABLED: ${STOKR_GITHUB_ENABLED:-false}
       STOKR_GITHUB_TOKEN: ${STOKR_GITHUB_TOKEN:-}
@@ -53,7 +53,7 @@ services:
       STOKR_GITHUB_REPO: ${STOKR_GITHUB_REPO:-}
       STOKR_GITHUB_BRANCH: ${STOKR_GITHUB_BRANCH:-main}
       STOKR_GIT_COMMIT: ${STOKR_GIT_COMMIT:-unknown}
-      STOKR_DEPLOY_BRANCH: ${STOKR_DEPLOY_BRANCH:-Release_v1}
+      STOKR_DEPLOY_BRANCH: ${STOKR_DEPLOY_BRANCH:-Release_v2}
     ports:
       - "${API_PORT:-8080}:8080"
     depends_on:
@@ -64,10 +64,10 @@ services:
       rabbitmq:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- --timeout=12 http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      test: ["CMD-SHELL", "curl -sf --max-time 10 http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
       interval: 30s
-      timeout: 15s
-      retries: 8
+      timeout: 10s
+      retries: 5
       start_period: 240s
 
   ui:
@@ -154,61 +154,8 @@ services:
       AUTOHEAL_CONTAINER_LABEL: autoheal
       AUTOHEAL_INTERVAL: 30
       AUTOHEAL_START_PERIOD: 300
-      AUTOHEAL_DEFAULT_STOP_TIMEOUT: 30
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-
-  loki:
-    image: grafana/loki:3.4.2
-    container_name: stokr-loki
-    profiles:
-      - observability
-    restart: unless-stopped
-    ports:
-      - "${LOKI_PORT:-3100}:3100"
-    volumes:
-      - ./config/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
-      - loki_data:/loki
-    command: -config.file=/etc/loki/loki-config.yml
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3100/ready"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  promtail:
-    image: grafana/promtail:3.4.2
-    container_name: stokr-promtail
-    profiles:
-      - observability
-    restart: unless-stopped
-    volumes:
-      - ./config/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: -config.file=/etc/promtail/promtail-config.yml
-    depends_on:
-      loki:
-        condition: service_healthy
-
-  grafana:
-    image: grafana/grafana:11.5.2
-    container_name: stokr-grafana
-    profiles:
-      - observability
-    restart: unless-stopped
-    ports:
-      - "${GRAFANA_PORT:-3001}:3000"
-    environment:
-      GF_PATHS_CONFIG: /etc/grafana/grafana.ini
-    volumes:
-      - ./config/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
-      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - grafana_data:/var/lib/grafana
-    depends_on:
-      loki:
-        condition: service_healthy
 
   mailpit:
     image: axllent/mailpit:latest
@@ -240,5 +187,3 @@ volumes:
   stokr_redis_data:
   stokr_rabbitmq_data:
   stokr_pgadmin_data:
-  loki_data:
-  grafana_data:
