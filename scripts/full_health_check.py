@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """Comprehensive system health check for live trading readiness."""
-import urllib.request, json, sys, urllib.error
+import json
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.request
 
-BASE = "http://localhost:8080"
+BASE = os.environ.get("STOKR_API_BASE", "http://localhost:8080")
+ADMIN_USER = os.environ.get("STOKR_OPS_ADMIN_USER", "admin@stokr.local")
+ADMIN_PASS = os.environ.get("STOKR_OPS_ADMIN_PASS", "admin123")
 PASS, FAIL = 0, 0
+
 
 def check(desc, ok, detail=""):
     global PASS, FAIL
@@ -14,6 +22,7 @@ def check(desc, ok, detail=""):
         print(f"  \033[91mFAIL\033[0m {desc} {detail}")
         FAIL += 1
 
+
 def api(path):
     try:
         req = urllib.request.Request(BASE + path)
@@ -22,27 +31,43 @@ def api(path):
     except Exception as e:
         return {"error": str(e)}
 
-# Login
-data = json.dumps({"principal": "admin", "password": "admin123"}).encode()
-req = urllib.request.Request(BASE + "/api/auth/login", data=data, headers={"Content-Type": "application/json"})
-resp = json.load(urllib.request.urlopen(req))
-token = resp["data"]["accessToken"]
+
+data = json.dumps({"principal": ADMIN_USER, "password": ADMIN_PASS}).encode()
+req = urllib.request.Request(
+    BASE + "/api/auth/login",
+    data=data,
+    headers={"Content-Type": "application/json"},
+)
+try:
+    resp = json.load(urllib.request.urlopen(req, timeout=10))
+    token = resp["data"]["accessToken"]
+except Exception as e:
+    print(f"  \033[91mFAIL\033[0m admin login {e}")
+    sys.exit(1)
+
 headers = {"Authorization": "Bearer " + token}
 
-def authed(path):
+
+def authed(path, method="GET", body=None):
     try:
-        req = urllib.request.Request(BASE + path, headers=headers)
-        resp = json.load(urllib.request.urlopen(req, timeout=10))
+        req = urllib.request.Request(BASE + path, headers=headers, method=method)
+        if body is not None:
+            req.data = json.dumps(body).encode()
+            req.add_header("Content-Type", "application/json")
+        resp = json.load(urllib.request.urlopen(req, timeout=30))
         return resp
     except urllib.error.HTTPError as e:
         return {"error": e.code, "body": e.read().decode()[:300]}
     except Exception as e:
         return {"error": str(e)}
 
+
 print("=== Docker Containers ===")
 try:
-    import subprocess
-    out = subprocess.check_output(["docker", "ps", "--format", "{{.Names}}\t{{.Status}}"], timeout=10).decode()
+    out = subprocess.check_output(
+        ["docker", "ps", "--format", "{{.Names}}\t{{.Status}}"],
+        timeout=10,
+    ).decode()
     for line in out.strip().split("\n"):
         parts = line.split("\t")
         if len(parts) == 2:
@@ -52,8 +77,25 @@ except Exception as e:
     check("docker ps", False, str(e))
 
 print("\n=== API Health ===")
-h = api("/api/admin/health")
-check("health endpoint", "error" not in h, str(h.get("status", h))[:100])
+h = api("/actuator/health")
+check("actuator health", "error" not in h and h.get("status") == "UP", str(h.get("status", h))[:100])
+
+print("\n=== Automation Health Report ===")
+report = authed("/api/admin/operations/automation/health-report", method="POST")
+if isinstance(report, dict) and "error" not in report:
+    payload = report.get("data", report)
+    healthy = payload.get("healthy", False)
+    oauth = payload.get("oauthRequired", False)
+    blockers = payload.get("readinessBlockers", [])
+    check("automation health-report", healthy, f"blockers={blockers[:3]}")
+    if oauth:
+        check("oauth not required", False, "human Zerodha OAuth needed when refresh token missing")
+    else:
+        check("oauth not required", True)
+else:
+    check("automation health-report", False, str(report)[:200])
+    h = api("/api/admin/health")
+    check("health endpoint fallback", "error" not in h, str(h.get("status", h))[:100])
 
 print("\n=== Database ===")
 r = authed("/api/admin/readiness")
