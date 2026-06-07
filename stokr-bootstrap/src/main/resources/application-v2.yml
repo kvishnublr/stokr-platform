@@ -125,9 +125,9 @@ spring:
           max-idle: 25    # Max idle connections
           min-idle: 10    # Min idle connections
           max-wait: -1ms  # Wait indefinitely
-      # SSL if needed
+      # SSL disabled for local/docker Redis; do not bind REDIS_SSL env (breaks Spring Ssl object mapping)
       ssl:
-        enabled: ${REDIS_SSL:false}
+        enabled: false
   cache:
     type: redis
     redis:

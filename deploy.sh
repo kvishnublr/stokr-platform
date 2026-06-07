@@ -72,8 +72,8 @@ deploy_api_docker() {
     echo "==> [API] Building Docker image (uses Maven layer cache)..."
     docker compose --profile app build api
 
-    echo "==> [API] Restarting API container..."
-    docker compose --profile app up -d api
+    echo "==> [API] Restarting API container (without recreating postgres/redis)..."
+    docker compose --profile app up -d --no-deps --force-recreate api
 
     echo "==> [API] Waiting for health check..."
     sleep 15
@@ -90,7 +90,7 @@ deploy_ui_docker() {
         echo "==> [UI] API is not healthy. Restarting API first..."
         docker compose --profile app up -d postgres redis rabbitmq autoheal
         sleep 60
-        docker compose --profile app up -d api
+        docker compose --profile app up -d --no-deps --force-recreate api
         echo "==> [UI] Waiting for API to be ready..."
         sleep 15
     fi
@@ -98,8 +98,8 @@ deploy_ui_docker() {
     echo "==> [UI] Building Docker image..."
     docker compose --profile app build ui
 
-    echo "==> [UI] Restarting UI container..."
-    docker compose --profile app up -d ui
+    echo "==> [UI] Restarting UI container (without recreating dependencies)..."
+    docker compose --profile app up -d --no-deps --force-recreate ui
     echo "==> [UI] Done."
 }
 
