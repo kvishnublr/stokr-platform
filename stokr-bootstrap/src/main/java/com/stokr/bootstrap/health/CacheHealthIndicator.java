@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.cache.CacheManager;
+import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.stereotype.Component;
 
@@ -26,7 +27,8 @@ import java.util.Map;
  * @since Release_v2 Phase 1
  */
 @Slf4j
-// @Component - Disabled: health indicator dependency management causes startup issues
+@Component
+@Profile("v2")
 @RequiredArgsConstructor
 public class CacheHealthIndicator implements HealthIndicator {
 

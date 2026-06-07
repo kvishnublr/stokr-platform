@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import com.stokr.oms.domain.PortfolioPosition;
 import com.stokr.oms.dto.PortfolioExposureDto;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
+@Profile("v2")
 @RequiredArgsConstructor
 public class CachedPortfolioSummaryService {
 

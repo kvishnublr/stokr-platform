@@ -3,7 +3,9 @@ package com.stokr.bootstrap.config;
 import com.stokr.bootstrap.web.RateLimitingInterceptor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -35,6 +37,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  */
 @Slf4j
 @Configuration
+@Profile("v2")
+@ConditionalOnProperty(name = "stokr.rate-limiting.enabled", havingValue = "true", matchIfMissing = true)
 @RequiredArgsConstructor
 public class WebMvcConfig implements WebMvcConfigurer {
 

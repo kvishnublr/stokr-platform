@@ -4,6 +4,8 @@ import com.stokr.bootstrap.domain.entity.PositionOrphanDetectionLog;
 import com.stokr.bootstrap.repository.PositionOrphanDetectionLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,6 +15,8 @@ import java.util.UUID;
 
 @Service
 @Slf4j
+@Profile("v2")
+@ConditionalOnProperty(name = "stokr.monitoring.position-orphan.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class PositionOrphanMonitor {
 

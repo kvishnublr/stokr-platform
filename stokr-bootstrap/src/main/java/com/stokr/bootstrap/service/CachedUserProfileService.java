@@ -1,39 +1,49 @@
 package com.stokr.bootstrap.service;
 
+import com.stokr.auth.domain.AuthUser;
+import com.stokr.auth.repository.AuthUserRepository;
+import com.stokr.user.broker.ZerodhaBrokerOperationsService;
+import com.stokr.user.dto.UserProfileDto;
+import com.stokr.user.service.UserProfileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
  * Release_v2 Phase 1 Optimization: Cached User Profile Service
  *
- * Provides cached access to user profiles with minimal DB queries.
- * Reduces database load by 85% for user profile lookups.
- *
- * Cache Strategy:
- * - TTL: 30 minutes (user_profile cache)
- * - Invalidates when: Profile updated, preferences changed
- * - Hit Rate Target: 95%+ (same user trading for entire session)
- *
- * Expected Performance:
- * - Cache hit: ~2ms
- * - Cache miss: ~20-30ms
- *
  * @since Release_v2
  */
 @Slf4j
 @Service
+@Profile("v2")
 @RequiredArgsConstructor
 public class CachedUserProfileService {
 
-    /**
-     * Simulated user profile data structure
-     * In production, fetch from auth or user service
-     */
+    private final AuthUserRepository authUserRepository;
+    private final UserProfileService userProfileService;
+    private final ZerodhaBrokerOperationsService zerodhaBrokerOperationsService;
+
+    @Value("${stokr.oms.exposure.max-daily-loss:50000}")
+    private BigDecimal defaultDailyLossLimit;
+
+    @Value("${stokr.risk.max-order-notional:50000000}")
+    private BigDecimal defaultMaxOrderNotional;
+
+    @Value("${stokr.risk.max-open-positions:100}")
+    private int defaultMaxOpenPositions;
+
+    @Value("${stokr.oms.exposure.max-concurrent-positions:10}")
+    private int defaultMaxConcurrentOrders;
+
     public static class UserProfile {
         public UUID userId;
         public String email;
@@ -43,97 +53,86 @@ public class CachedUserProfileService {
         public long createdAt;
         public long lastLoginAt;
         public boolean riskLimitsEnabled;
-        public java.math.BigDecimal dailyLossLimit;
+        public BigDecimal dailyLossLimit;
     }
 
-    /**
-     * Get cached user profile
-     *
-     * First call fetches from DB, subsequent calls within 30 min TTL
-     * return from Redis cache.
-     *
-     * Performance:
-     * - Cache hit: ~2ms (Redis)
-     * - Cache miss: ~20-30ms (DB)
-     * - Expected hit rate: 95%+ (same user throughout session)
-     *
-     * @param userId User identifier
-     * @return Cached user profile
-     */
     @Cacheable(value = "user_profile", key = "#userId", unless = "#result == null")
+    @Transactional(readOnly = true)
     public UserProfile getProfile(UUID userId) {
         log.debug("Fetching user profile for userId: {}", userId);
 
-        // In production, this would call the user service/repository
-        // For now, return a mock profile
+        AuthUser authUser = authUserRepository.findById(userId).orElse(null);
+        if (authUser == null || authUser.isDeleted()) {
+            return null;
+        }
+
+        UserProfileDto profileDto = userProfileService.ensureProfile(userId);
+        var brokerStatus = zerodhaBrokerOperationsService.status(userId);
+
         UserProfile profile = new UserProfile();
         profile.userId = userId;
-        profile.email = "user@example.com";
-        profile.name = "Trader Name";
-        profile.brokerVendor = "ZERODHA";
-        profile.brokerConnected = true;
-        profile.createdAt = System.currentTimeMillis();
-        profile.lastLoginAt = System.currentTimeMillis();
-        profile.riskLimitsEnabled = true;
-        profile.dailyLossLimit = java.math.BigDecimal.valueOf(-50000);
+        profile.email = authUser.getEmail();
+        profile.name = firstNonBlank(
+                profileDto.displayName(),
+                authUser.getDisplayName(),
+                authUser.getUsername()
+        );
+        profile.brokerVendor = brokerStatus.brokerName();
+        profile.brokerConnected = brokerStatus.connected() && brokerStatus.tokenValid();
+        profile.createdAt = authUser.getCreatedAt() != null ? authUser.getCreatedAt().toEpochMilli() : 0L;
+        profile.lastLoginAt = authUser.getLastLoginAt() != null ? authUser.getLastLoginAt().toEpochMilli() : 0L;
+        profile.riskLimitsEnabled = profileDto.riskProfile() != null;
+        profile.dailyLossLimit = defaultDailyLossLimit.negate();
 
         return profile;
     }
 
-    /**
-     * Invalidate user profile cache when profile updated
-     *
-     * Called when user updates their profile settings.
-     *
-     * @param userId User identifier
-     */
     @CacheEvict(value = "user_profile", key = "#userId")
     public void invalidateProfile(UUID userId) {
         log.debug("Invalidating user profile cache for userId: {}", userId);
     }
 
-    /**
-     * Get user risk limits (separate 60-min cache)
-     *
-     * Risk limits change less frequently than profile,
-     * so longer TTL is appropriate.
-     *
-     * @param userId User identifier
-     * @return Risk limits configuration
-     */
     @Cacheable(value = "risk_limits", key = "#userId", unless = "#result == null")
+    @Transactional(readOnly = true)
     public UserRiskLimits getRiskLimits(UUID userId) {
         log.debug("Fetching risk limits for userId: {}", userId);
 
+        if (!authUserRepository.existsById(userId)) {
+            return null;
+        }
+
         UserRiskLimits limits = new UserRiskLimits();
         limits.userId = userId;
-        limits.dailyLossLimit = java.math.BigDecimal.valueOf(-50000);
-        limits.maxPositionSize = java.math.BigDecimal.valueOf(1000000);
-        limits.maxOrderValue = java.math.BigDecimal.valueOf(100000);
-        limits.maxConcurrentOrders = 10;
+        limits.dailyLossLimit = defaultDailyLossLimit.negate();
+        limits.maxPositionSize = defaultMaxOrderNotional;
+        limits.maxOrderValue = defaultMaxOrderNotional;
+        limits.maxConcurrentOrders = defaultMaxConcurrentOrders;
 
         return limits;
     }
 
-    /**
-     * Invalidate risk limits cache when limits updated
-     * Usually by compliance/admin team
-     *
-     * @param userId User identifier
-     */
     @CacheEvict(value = "risk_limits", key = "#userId")
     public void invalidateRiskLimits(UUID userId) {
         log.debug("Invalidating risk limits cache for userId: {}", userId);
     }
 
-    /**
-     * Risk limits DTO
-     */
     public static class UserRiskLimits {
         public UUID userId;
-        public java.math.BigDecimal dailyLossLimit;
-        public java.math.BigDecimal maxPositionSize;
-        public java.math.BigDecimal maxOrderValue;
+        public BigDecimal dailyLossLimit;
+        public BigDecimal maxPositionSize;
+        public BigDecimal maxOrderValue;
         public int maxConcurrentOrders;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 }

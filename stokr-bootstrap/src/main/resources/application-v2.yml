@@ -89,12 +89,9 @@ spring:
           time_zone: Asia/Kolkata
         # Query optimization
         default_batch_fetch_size: 20
-        # Second-level caching
+        # Second-level cache disabled until a JCache provider (e.g. Ehcache) is configured
         cache:
-          use_second_level_cache: true
-          provider: org.hibernate.cache.jcache.JCacheRegionFactory
-          region:
-            factory_class: org.hibernate.cache.jcache.JCacheRegionFactory
+          use_second_level_cache: false
         # Statistics (for monitoring)
         generate_statistics: false  # Disable in production
         # Connection pooling
@@ -255,6 +252,16 @@ stokr:
     branch: ${STOKR_DEPLOY_BRANCH:Release_v2}
     version: 2.0.0
     deployment-date: 2026-06-05
+
+  monitoring:
+    redis-health:
+      interval-ms: 60000
+    market-data-staleness:
+      enabled: false
+    strategy-drift:
+      enabled: false
+    position-orphan:
+      enabled: false
 
   # ===== RATE LIMITING =====
   rate-limiting:
@@ -432,8 +439,8 @@ logging:
     org.springframework.web: WARN
     org.springframework.security: WARN
     org.hibernate: WARN
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
   pattern:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [%X{correlationId}] %logger{36} - %msg%n"
   file:

@@ -4,7 +4,6 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.GenericGenerator;
 
 import jakarta.persistence.*;
 import java.math.BigDecimal;
@@ -20,8 +19,7 @@ import java.util.UUID;
 public class RedisHealthLog {
 
     @Id
-    @GeneratedValue(generator = "UUID")
-    @GenericGenerator(name = "UUID", strategy = "org.hibernate.id.UUIDGenerator")
+    @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
     @Column(name = "check_time")
@@ -80,6 +78,16 @@ public class RedisHealthLog {
 
     @Transient
     private Boolean isSynthetic = false;
+
+    @PrePersist
+    void assignDefaults() {
+        if (id == null) {
+            id = UUID.randomUUID();
+        }
+        if (checkTime == null) {
+            checkTime = LocalDateTime.now();
+        }
+    }
 
     // Explicit getters (Lombok @Data not generating due to processor issue)
     public LocalDateTime getCheckTime() { return this.checkTime; }
