@@ -220,6 +220,10 @@ public class PlatformZerodhaLiveFeedRuntime {
         // Auto-refresh platform token shortly before expiry to avoid daily manual admin auth.
         boolean tokenUsable = platformMarketFeedService.ensureValidPlatformZerodhaToken(Duration.ofMinutes(30));
         if (!tokenUsable) {
+            platformMarketFeedService.ensureSessionFromTraderFallback(VENDOR);
+            tokenUsable = platformMarketFeedService.ensureValidPlatformZerodhaToken(Duration.ofMinutes(30));
+        }
+        if (!tokenUsable) {
             closeActive("token_expired_or_refresh_failed");
             return;
         }

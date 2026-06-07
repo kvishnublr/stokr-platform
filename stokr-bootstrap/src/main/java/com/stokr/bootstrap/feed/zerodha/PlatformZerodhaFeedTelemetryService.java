@@ -102,7 +102,29 @@ public class PlatformZerodhaFeedTelemetryService {
             sessionRepository.save(s);
         });
         feedHealthWebSocketState.markDisconnected(reason);
-        brokerDisconnectProtectionService.ifAvailable(svc -> svc.onBrokerDisconnected(reason));
+        if (shouldTriggerBrokerDisconnectProtection(reason)) {
+            brokerDisconnectProtectionService.ifAvailable(svc -> svc.onBrokerDisconnected(reason));
+        } else {
+            log.warn("platform.ws.closed_without_global_halt vendor={} reason={}", vendor, reason);
+        }
+    }
+
+    private static boolean shouldTriggerBrokerDisconnectProtection(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return true;
+        }
+        return switch (reason) {
+            case "token_expired",
+                 "token_expired_or_refresh_failed",
+                 "no_access_token",
+                 "token_decrypt_empty",
+                 "no_platform_session",
+                 "zerodha_api_not_configured",
+                 "live_feed_disabled",
+                 "ingestion_paused",
+                 "shutdown" -> false;
+            default -> true;
+        };
     }
 
     @Transactional

@@ -73,7 +73,7 @@ deploy_api_docker() {
     docker compose --profile app build api
 
     echo "==> [API] Restarting API container (without recreating postgres/redis)..."
-    docker compose --profile app up -d --no-deps --force-recreate api
+    docker compose --profile app --profile v2-ui up -d --no-deps --force-recreate api
 
     echo "==> [API] Waiting for health check..."
     sleep 15
@@ -95,11 +95,11 @@ deploy_ui_docker() {
         sleep 15
     fi
 
-    echo "==> [UI] Building Docker image..."
-    docker compose --profile app build ui
+    echo "==> [UI] Building Docker images..."
+    docker compose --profile app --profile v2-ui build ui ui-v2
 
-    echo "==> [UI] Restarting UI container (without recreating dependencies)..."
-    docker compose --profile app up -d --no-deps --force-recreate ui
+    echo "==> [UI] Restarting UI containers (without recreating dependencies)..."
+    docker compose --profile app --profile v2-ui up -d --no-deps --force-recreate ui ui-v2
     echo "==> [UI] Done."
 }
 
