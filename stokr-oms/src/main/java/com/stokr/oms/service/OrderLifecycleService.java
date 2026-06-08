@@ -60,7 +60,7 @@ public class OrderLifecycleService {
         // Check market hours for live non-exit orders
         if (draft.getExecutionMode() == ExecutionMode.LIVE &&
             !simulationModeService.isActive() &&
-            !isExitOrder(draft)) {
+            !isExitOrder(draft, idempotencyKey)) {
             String segment = extractSegmentFromSymbol(draft.getSymbol());
             if (!marketHoursEnforcement.isOrderSubmissionAllowed(segment)) {
                 String reason = marketHoursEnforcement.getMarketClosureReason(segment);
@@ -79,8 +79,10 @@ public class OrderLifecycleService {
         return orderRepository.save(draft);
     }
 
-    private boolean isExitOrder(OmsOrder order) {
-        // Exit orders are allowed at any time (for emergency closes)
+    private boolean isExitOrder(OmsOrder order, String idempotencyKey) {
+        if (idempotencyKey != null && idempotencyKey.startsWith("outcome-exit:")) {
+            return true;
+        }
         return order.getOrderType() != null && order.getOrderType().toLowerCase().contains("exit");
     }
 

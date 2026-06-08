@@ -1,6 +1,6 @@
 package com.stokr.strategy.service;
 
-import com.stokr.common.events.OperationalRealtimeEvent;
+import com.stokr.common.events.SignalOutcomeEvents;
 import com.stokr.common.events.SignalPublishedEvent;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
@@ -21,8 +21,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -575,32 +573,17 @@ public class SignalOutcomeTrackerService {
 
     private void broadcastOutcomeChange(StrategySignalEntity sig) {
         try {
-            String userId = sig.getUserId() != null ? sig.getUserId().toString() : "system";
             SignalPublishedEvent signalEvt = new SignalPublishedEvent(
                     sig.getId(), sig.getUserId(), sig.getSymbol(), sig.getStrategyName());
-            OperationalRealtimeEvent opsEvt = new OperationalRealtimeEvent(
-                    "signal_outcome",
-                    Map.of(
-                            "signalId", sig.getId().toString(),
-                            "symbol", sig.getSymbol() != null ? sig.getSymbol() : "",
-                            "strategyKey", sig.getStrategyName() != null ? sig.getStrategyName() : "",
-                            "outcomeStatus", sig.getOutcomeStatus(),
-                            "realizedPnl", sig.getRealizedPnl() != null ? sig.getRealizedPnl().toPlainString() : "0",
-                            "userId", userId
-                    )
-            );
-            if (TransactionSynchronizationManager.isActualTransactionActive()) {
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        eventPublisher.publishEvent(signalEvt);
-                        eventPublisher.publishEvent(opsEvt);
-                    }
-                });
-            } else {
-                eventPublisher.publishEvent(signalEvt);
-                eventPublisher.publishEvent(opsEvt);
-            }
+            eventPublisher.publishEvent(signalEvt);
+            eventPublisher.publishEvent(SignalOutcomeEvents.outcome(
+                    sig.getId(),
+                    sig.getSymbol(),
+                    sig.getStrategyName(),
+                    sig.getOutcomeStatus(),
+                    sig.getUserId(),
+                    sig.getRealizedPnl() != null ? sig.getRealizedPnl().toPlainString() : "0"
+            ));
         } catch (Exception ex) {
             log.debug("signal.outcome.broadcast_error signalId={}", sig.getId(), ex);
         }

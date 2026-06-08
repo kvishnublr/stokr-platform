@@ -16,11 +16,13 @@ import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,7 +59,7 @@ public class SignalOutcomeExitService {
     @Value("${stokr.strategy.exit.auto-exit-on-breakeven:true}")
     private boolean autoExitOnBreakeven;
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     @Transactional
     public void onSignalOutcome(OperationalRealtimeEvent event) {
         if (!autoExitEnabled || event == null || !"signal_outcome".equals(event.topic())) {
@@ -74,12 +76,15 @@ public class SignalOutcomeExitService {
         if ("BREAKEVEN_EXIT".equals(outcomeStatus) && !autoExitOnBreakeven) {
             return;
         }
-
         UUID signalId = parseUuid(payload.get("signalId"));
         if (signalId == null) {
             return;
         }
+        dispatchForSignal(signalId, outcomeStatus);
+    }
 
+    @Transactional
+    public void dispatchForSignal(UUID signalId, String outcomeStatus) {
         StrategySignalEntity signal = signalRepository.findById(signalId).orElse(null);
         if (signal == null || signal.isDeleted()) {
             return;
@@ -92,11 +97,14 @@ public class SignalOutcomeExitService {
             return;
         }
 
-        List<OmsOrder> entryOrders = omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(signalId);
+        List<OmsOrder> entryOrders = resolveEntryOrders(signalId);
         if (entryOrders.isEmpty()) {
-            log.debug("signal.outcome_exit.no_entry_orders signalId={} outcome={}", signalId, outcomeStatus);
+            log.info("signal.outcome_exit.no_entry_orders signalId={} outcome={}", signalId, outcomeStatus);
             return;
         }
+
+        log.info("signal.outcome_exit.dispatch signalId={} outcome={} entryLegs={}",
+                signalId, outcomeStatus, entryOrders.size());
 
         for (OmsOrder entry : entryOrders) {
             if (entry.getUserId() == null || entry.getSide() == null) {
@@ -117,6 +125,26 @@ public class SignalOutcomeExitService {
         }
     }
 
+    /**
+     * BOTH-mode LIVE legs omit signal_id (ux_oms_orders_user_signal); include paired LIVE entries.
+     */
+    private List<OmsOrder> resolveEntryOrders(UUID signalId) {
+        List<OmsOrder> direct = omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(signalId);
+        Map<UUID, OmsOrder> merged = new LinkedHashMap<>();
+        for (OmsOrder order : direct) {
+            if (order.getId() != null) {
+                merged.put(order.getId(), order);
+            }
+            UUID pairedId = order.getPairedOrderId();
+            if (pairedId != null) {
+                omsOrderRepository.findById(pairedId)
+                        .filter(o -> !o.isDeleted())
+                        .ifPresent(paired -> merged.putIfAbsent(paired.getId(), paired));
+            }
+        }
+        return List.copyOf(merged.values());
+    }
+
     private void placeExitForEntry(OmsOrder entry, StrategySignalEntity signal, String outcomeStatus) {
         UUID userId = entry.getUserId();
         String symbol = entry.getSymbol();
@@ -131,7 +159,7 @@ public class SignalOutcomeExitService {
         ExecutionMode mode = entry.getExecutionMode() != null ? entry.getExecutionMode() : ExecutionMode.PAPER;
         String broker = mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM";
         String strategyKey = entry.getStrategyKey() != null ? entry.getStrategyKey() : signal.getStrategyName();
-        String idempotencyKey = "outcome-exit:" + signal.getId() + ":" + userId + ":" + outcomeStatus;
+        String idempotencyKey = "outcome-exit:" + signal.getId() + ":" + entry.getId() + ":" + outcomeStatus;
 
         OmsOrder exit = orderPlacementService.place(userId, new CreateOrderRequest(
                 symbol,

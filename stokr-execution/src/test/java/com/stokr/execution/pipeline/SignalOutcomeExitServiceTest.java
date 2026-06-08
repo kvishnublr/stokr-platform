@@ -138,6 +138,49 @@ class SignalOutcomeExitServiceTest {
     }
 
     @Test
+    void placesExitForPairedLiveLegWithoutSignalId() {
+        StrategySignalEntity signal = liveSignal();
+        when(signalRepository.findById(signalId)).thenReturn(Optional.of(signal));
+
+        UUID liveOrderId = UUID.randomUUID();
+        OmsOrder paper = new OmsOrder();
+        paper.setId(UUID.randomUUID());
+        paper.setUserId(userId);
+        paper.setSymbol("NSE:INFY");
+        paper.setSide("BUY");
+        paper.setQuantity(BigDecimal.ONE);
+        paper.setState(OrderState.FILLED);
+        paper.setExecutionMode(ExecutionMode.PAPER);
+        paper.setPairedOrderId(liveOrderId);
+
+        OmsOrder live = new OmsOrder();
+        live.setId(liveOrderId);
+        live.setUserId(userId);
+        live.setSymbol("NSE:INFY");
+        live.setSide("BUY");
+        live.setQuantity(BigDecimal.ONE);
+        live.setState(OrderState.FILLED);
+        live.setExecutionMode(ExecutionMode.LIVE);
+        live.setStrategyKey("INDEX_HUNT");
+
+        when(omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(signalId))
+                .thenReturn(List.of(paper));
+        when(omsOrderRepository.findById(liveOrderId)).thenReturn(Optional.of(live));
+
+        when(brokerPositionTruthService.snapshot(userId)).thenReturn(snapshotWithQty("NSE:INFY", BigDecimal.ONE));
+
+        OmsOrder exit = new OmsOrder();
+        exit.setId(UUID.randomUUID());
+        exit.setState(OrderState.PENDING_SUBMISSION);
+        when(orderPlacementService.place(eq(userId), any(CreateOrderRequest.class))).thenReturn(exit);
+
+        service.dispatchForSignal(signalId, "PRESSURE_EXIT");
+
+        verify(orderPlacementService, org.mockito.Mockito.times(2))
+                .place(eq(userId), any(CreateOrderRequest.class));
+    }
+
+    @Test
     void skipsReplaySignals() {
         StrategySignalEntity signal = liveSignal();
         signal.setSignalSource(SignalProvenance.REPLAY);
