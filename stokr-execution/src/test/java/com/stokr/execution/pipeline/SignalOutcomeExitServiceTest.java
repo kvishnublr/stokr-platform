@@ -97,6 +97,8 @@ class SignalOutcomeExitServiceTest {
         verify(orderPlacementService).place(eq(userId), captor.capture());
         CreateOrderRequest req = captor.getValue();
         assertThat(req.side()).isEqualTo("SELL");
+        assertThat(req.executionMode()).isEqualTo(ExecutionMode.LIVE);
+        assertThat(req.brokerVendor()).isEqualTo("ZERODHA");
         assertThat(req.exitOrder()).isTrue();
         assertThat(req.guardMode()).isEqualTo("EXIT_SAFE");
         assertThat(req.signalId()).isNull();

@@ -194,27 +194,24 @@ public class SignalOutcomeExitService {
     private void placeExitForEntry(OmsOrder entry, StrategySignalEntity signal, String outcomeStatus) {
         UUID userId = entry.getUserId();
         String symbol = entry.getSymbol();
-        BigDecimal qty = resolveExitQty(userId, symbol, entry);
-        if (qty == null || qty.signum() <= 0) {
+        ExitResolution exit = resolveExit(userId, symbol, entry);
+        if (exit == null) {
             log.debug("signal.outcome_exit.skip_flat userId={} symbol={} signalId={}",
                     userId, symbol, signal.getId());
             return;
         }
 
-        String exitSide = "BUY".equalsIgnoreCase(entry.getSide()) ? "SELL" : "BUY";
-        ExecutionMode mode = entry.getExecutionMode() != null ? entry.getExecutionMode() : ExecutionMode.PAPER;
-        String broker = mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM";
         String strategyKey = entry.getStrategyKey() != null ? entry.getStrategyKey() : signal.getStrategyName();
         String idempotencyKey = "outcome-exit:" + signal.getId() + ":" + entry.getId() + ":" + outcomeStatus;
 
-        OmsOrder exit = orderPlacementService.place(userId, new CreateOrderRequest(
+        OmsOrder placed = orderPlacementService.place(userId, new CreateOrderRequest(
                 symbol,
-                exitSide,
+                exit.side(),
                 "MARKET",
-                qty,
+                exit.qty(),
                 null,
-                mode,
-                broker,
+                exit.mode(),
+                exit.broker(),
                 strategyKey,
                 idempotencyKey,
                 null,
@@ -227,24 +224,35 @@ public class SignalOutcomeExitService {
                 null
         ));
 
-        log.info("signal.outcome_exit.placed signalId={} outcome={} userId={} symbol={} side={} qty={} orderId={} state={}",
-                signal.getId(), outcomeStatus, userId, symbol, exitSide, qty.toPlainString(),
-                exit.getId(), exit.getState());
+        log.info("signal.outcome_exit.placed signalId={} outcome={} userId={} symbol={} side={} qty={} mode={} orderId={} state={}",
+                signal.getId(), outcomeStatus, userId, symbol, exit.side(), exit.qty().toPlainString(), exit.mode(),
+                placed.getId(), placed.getState());
     }
 
-    private BigDecimal resolveExitQty(UUID userId, String symbol, OmsOrder entry) {
+    /**
+     * When Zerodha still holds qty, always place a LIVE exit — PAPER-filled entry legs are not sufficient.
+     */
+    private ExitResolution resolveExit(UUID userId, String symbol, OmsOrder entry) {
         brokerPositionTruthService.syncUser(userId);
         BrokerPositionTruthSnapshot snap = brokerPositionTruthService.snapshot(userId);
         String norm = BrokerPositionTruthService.normalizeSymbol(symbol);
         for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : snap.positions()) {
             if (norm.equals(row.symbol()) && row.brokerQty() != null && row.brokerQty().signum() != 0) {
-                return row.brokerQty().abs();
+                BigDecimal brokerQty = row.brokerQty();
+                String side = brokerQty.signum() > 0 ? "SELL" : "BUY";
+                return new ExitResolution(brokerQty.abs(), side, ExecutionMode.LIVE, "ZERODHA");
             }
         }
         if (entry.getQuantity() != null && entry.getQuantity().signum() > 0) {
-            return entry.getQuantity();
+            String side = "BUY".equalsIgnoreCase(entry.getSide()) ? "SELL" : "BUY";
+            ExecutionMode mode = entry.getExecutionMode() != null ? entry.getExecutionMode() : ExecutionMode.PAPER;
+            String broker = mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM";
+            return new ExitResolution(entry.getQuantity(), side, mode, broker);
         }
         return null;
+    }
+
+    private record ExitResolution(BigDecimal qty, String side, ExecutionMode mode, String broker) {
     }
 
     private static String stringVal(Object v) {
