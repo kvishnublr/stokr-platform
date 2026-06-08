@@ -71,9 +71,8 @@ public class ClusterDetectionRule implements RiskRule {
                 Instant.now()
         );
 
-        int entryCount = (int) recentOrderTimes.stream()
-                .filter(t -> t.isAfter(windowStart))
-                .count();
+        // Query already filters by time window, so count all returned entries
+        int entryCount = recentOrderTimes.size();
 
         // Reject if count exceeds maximum (allow up to maxEntriesInWindow, reject on maxEntriesInWindow+1)
         if (entryCount > maxEntriesInWindow) {
