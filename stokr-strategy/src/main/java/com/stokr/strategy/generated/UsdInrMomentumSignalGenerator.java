@@ -91,7 +91,7 @@ public class UsdInrMomentumSignalGenerator extends BaseGeneratedStrategy impleme
             double target = currentPrice * (1.0 + profitTargetPct / 100.0);
             log.info("usdinr_momentum.buy symbol={} mom3={} mom6={} entry={} sl={} target={}",
                 symbol, mom3, mom6, currentPrice, stopLoss, target);
-            return bullishSignal(context, "USDINR momentum continuation", stopLoss, target);
+            return bullishSignal(context, String.format("USDINR momentum continuation (SL:%.2f, Target:%.2f)", stopLoss, target));
         }
         if (mom3 < -minMomentumPct && mom6 < 0 && lastVol >= avgVol * 0.8) {
             lastEmitBySymbol.put(symbol, asOf);
@@ -100,7 +100,7 @@ public class UsdInrMomentumSignalGenerator extends BaseGeneratedStrategy impleme
             double target = currentPrice * (1.0 - profitTargetPct / 100.0);
             log.info("usdinr_momentum.sell symbol={} mom3={} mom6={} entry={} sl={} target={}",
                 symbol, mom3, mom6, currentPrice, stopLoss, target);
-            return bearishSignal(context, "USDINR momentum breakdown", stopLoss, target);
+            return bearishSignal(context, String.format("USDINR momentum breakdown (SL:%.2f, Target:%.2f)", stopLoss, target));
         }
         return hold(context);
     }

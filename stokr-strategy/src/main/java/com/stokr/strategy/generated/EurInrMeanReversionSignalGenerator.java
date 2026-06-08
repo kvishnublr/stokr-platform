@@ -95,7 +95,7 @@ public class EurInrMeanReversionSignalGenerator extends BaseGeneratedStrategy im
             double target = currentPrice * (1.0 + profitTargetPct / 100.0);
             log.info("eurinr_mean_reversion.buy symbol={} dev={} rsi={} entry={} sl={} target={}",
                 symbol, deviationPct, rsi, currentPrice, stopLoss, target);
-            return bullishSignal(context, "EURINR oversold mean reversion", stopLoss, target);
+            return bullishSignal(context, String.format("EURINR oversold mean reversion (SL:%.2f, Target:%.2f)", stopLoss, target));
         }
         if (deviationPct >= stretchPct && rsi > 65) {
             lastEmitBySymbol.put(symbol, asOf);
@@ -104,7 +104,7 @@ public class EurInrMeanReversionSignalGenerator extends BaseGeneratedStrategy im
             double target = currentPrice * (1.0 - profitTargetPct / 100.0);
             log.info("eurinr_mean_reversion.sell symbol={} dev={} rsi={} entry={} sl={} target={}",
                 symbol, deviationPct, rsi, currentPrice, stopLoss, target);
-            return bearishSignal(context, "EURINR overbought mean reversion", stopLoss, target);
+            return bearishSignal(context, String.format("EURINR overbought mean reversion (SL:%.2f, Target:%.2f)", stopLoss, target));
         }
         return hold(context);
     }
