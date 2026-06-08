@@ -42,6 +42,12 @@ public class EurInrMeanReversionSignalGenerator extends BaseGeneratedStrategy im
     @Value("${stokr.strategy.eurinr-mean-reversion.stretch-pct:0.06}")
     private double stretchPct;
 
+    @Value("${stokr.strategy.eurinr-mean-reversion.stop-loss-pct:0.80}")
+    private double stopLossPct;  // 0.80% SL for tight risk control
+
+    @Value("${stokr.strategy.eurinr-mean-reversion.profit-target-pct:1.50}")
+    private double profitTargetPct;  // 1.50% target (RR = 1.88×)
+
     @Value("${stokr.strategy.eurinr-mean-reversion.cooldown-seconds:900}")
     private int cooldownSeconds;
 
@@ -84,13 +90,21 @@ public class EurInrMeanReversionSignalGenerator extends BaseGeneratedStrategy im
 
         if (deviationPct <= -stretchPct && rsi < 35) {
             lastEmitBySymbol.put(symbol, asOf);
-            log.info("eurinr_mean_reversion.buy symbol={} dev={} rsi={}", symbol, deviationPct, rsi);
-            return bullishSignal(context, "EURINR oversold mean reversion");
+            double currentPrice = lastClose;
+            double stopLoss = currentPrice * (1.0 - stopLossPct / 100.0);
+            double target = currentPrice * (1.0 + profitTargetPct / 100.0);
+            log.info("eurinr_mean_reversion.buy symbol={} dev={} rsi={} entry={} sl={} target={}",
+                symbol, deviationPct, rsi, currentPrice, stopLoss, target);
+            return bullishSignal(context, "EURINR oversold mean reversion", stopLoss, target);
         }
         if (deviationPct >= stretchPct && rsi > 65) {
             lastEmitBySymbol.put(symbol, asOf);
-            log.info("eurinr_mean_reversion.sell symbol={} dev={} rsi={}", symbol, deviationPct, rsi);
-            return bearishSignal(context, "EURINR overbought mean reversion");
+            double currentPrice = lastClose;
+            double stopLoss = currentPrice * (1.0 + stopLossPct / 100.0);
+            double target = currentPrice * (1.0 - profitTargetPct / 100.0);
+            log.info("eurinr_mean_reversion.sell symbol={} dev={} rsi={} entry={} sl={} target={}",
+                symbol, deviationPct, rsi, currentPrice, stopLoss, target);
+            return bearishSignal(context, "EURINR overbought mean reversion", stopLoss, target);
         }
         return hold(context);
     }
