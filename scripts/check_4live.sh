@@ -1,0 +1,12 @@
+#!/bin/bash
+echo "=== EXIT MONITOR: FIND THE 4 LIVE ENTRY LEGS ==="
+docker exec -i stokr-postgres psql -U postgres stokr_platform -t -c "SELECT o.symbol, o.side, o.execution_mode, o.strategy_key, o.state, o.created_at AT TIME ZONE 'Asia/Kolkata' as ist, o.signal_id, o.reject_reason FROM oms_orders o WHERE o.state='FILLED' AND o.paired_order_id IS NULL ORDER BY o.created_at DESC LIMIT 10;"
+echo ""
+echo "=== ALL ORDERS WITH PAIRED_ORDER_ID NOT NULL (exited positions) ==="
+docker exec -i stokr-postgres psql -U postgres stokr_platform -t -c "SELECT o.symbol, o.side, o.execution_mode, o.strategy_key, o.state, o.created_at AT TIME ZONE 'Asia/Kolkata' as ist FROM oms_orders o WHERE o.paired_order_id IS NOT NULL ORDER BY o.created_at DESC LIMIT 10;"
+echo ""
+echo "=== VERIFY DEPLOYED LOOKBACK in jar ==="
+docker exec stokr-api sh -c "apk add --no-cache binutils 2>/dev/null; cd /tmp && jar xf /app/stokr-bootstrap.jar 2>/dev/null; jar xf BOOT-INF/lib/stokr-strategy-1.0.0-SNAPSHOT.jar 2>/dev/null; strings com/stokr/strategy/service/PressureSmartExitService.class | grep -E 'LOOKBACK|72|HOURS'"
+echo ""
+echo "=== GIT DIFF ==="
+ssh root@173.249.55.84 "cd /opt/stokr/stokr-platform && git log --oneline -1 && git diff HEAD~1 --stat"

@@ -1,5 +1,7 @@
 package com.stokr.bootstrap.trading;
 
+import com.stokr.execution.service.PositionExitOrchestratorService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -31,7 +33,12 @@ import java.time.ZonedDateTime;
     havingValue = "true",
     matchIfMissing = false
 )
+@RequiredArgsConstructor
 public class ConfidenceSignalExitService {
+
+    private static final java.util.UUID PRIMARY_TRADER_ID = java.util.UUID.fromString("6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4");
+
+    private final PositionExitOrchestratorService positionExitOrchestratorService;
 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private String marketZone;
@@ -58,39 +65,30 @@ public class ConfidenceSignalExitService {
     private double stopLossLow; // 2% SL for confidence < 70
 
     /**
-     * Runs every minute to check for positions that should be closed
-     *
-     * Checks:
-     * 1. Profit targets hit
-     * 2. Stop losses hit
-     * 3. Market close (15:30 IST)
+     * Runs every minute to check for positions that should be closed.
      */
     @Scheduled(fixedRateString = "${stokr.confidence-strategy.exit.check-interval-ms:60000}",
                initialDelayString = "${stokr.confidence-strategy.exit.initial-delay-ms:10000}")
     @Transactional
     public void checkAndClosePositions() {
         try {
-            log.debug("🔍 Exit service running - checking for positions to close");
+            log.debug("Exit service running - checking for positions to close");
 
-            // Check if market is about to close
             boolean nearMarketClose = isNearMarketClose();
             if (nearMarketClose) {
-                log.info("🕐 Approaching market close (15:20-15:30 IST)");
+                var result = positionExitOrchestratorService.flattenAll(
+                        PRIMARY_TRADER_ID,
+                        "CONFIDENCE_MARKET_CLOSE",
+                        "CONFIDENCE_EXIT: Market close safeguard"
+                );
+                log.info("confidence_exit.market_close_flatten ordersCreated={} notes={}",
+                        result.get("ordersCreated"), result.get("notes"));
             }
 
-            // TODO: Implement actual position closure logic
-            // This requires OMS repository integration:
-            // 1. Query open confidence-based orders
-            // 2. Get current prices for each
-            // 3. Calculate P&L
-            // 4. Check if profit target or stop loss hit
-            // 5. Create exit orders
-            // 6. Track exit reasons
-
-            log.debug("✅ Exit check complete");
+            log.debug("Exit check complete");
 
         } catch (Exception e) {
-            log.error("💥 Fatal error in exit service: {}", e.getMessage(), e);
+            log.error("Fatal error in exit service: {}", e.getMessage(), e);
         }
     }
 
@@ -120,7 +118,8 @@ public class ConfidenceSignalExitService {
     }
 
     /**
-     * Determine profit target based on confidence level
+     * Determine profit target based on confidence level.
+     * Kept for config parity, though the live exit now routes through the real flatten path.
      */
     private double determineProfitTarget(double confidence) {
         if (confidence >= 80) {
@@ -133,7 +132,8 @@ public class ConfidenceSignalExitService {
     }
 
     /**
-     * Determine stop loss based on confidence level
+     * Determine stop loss based on confidence level.
+     * Kept for config parity, though the live exit now routes through the real flatten path.
      */
     private double determineStopLoss(double confidence) {
         if (confidence >= 80) {

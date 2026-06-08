@@ -4,6 +4,8 @@ import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.strategy.signals.SignalOwnerType;
+import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +29,7 @@ public class TargetProfitMonitorService {
 
     private final PortfolioPositionRepository portfolioPositionRepository;
     private final StrategySignalRepository signalRepository;
+    private final PositionExitOrchestratorService positionExitOrchestratorService;
     private final PositionPnLCalculatorService pnlCalculator;
 
     @Value("${stokr.execution.target-profit.enabled:true}")
@@ -92,19 +95,27 @@ public class TargetProfitMonitorService {
             exitSignal.setSymbol(symbol);
             exitSignal.setSuggestedQty(quantity.abs()); // Close full position
             exitSignal.setReason("Profit target reached (" + defaultTargetProfitPercent + "%)");
-            exitSignal.setStrategyName("TARGET_PROFIT_EXIT");
-            exitSignal.setStrategyVersion("1.0");
-            exitSignal.setPipeline("HYBRID_EXIT");
-            exitSignal.setTestTrade(false);
-            exitSignal.setSimulation(false);
+                    exitSignal.setStrategyName("TARGET_PROFIT_EXIT");
+                    exitSignal.setStrategyVersion("1.0");
+                    exitSignal.setPipeline("HYBRID_EXIT");
+                    exitSignal.setOwnerType(SignalOwnerType.AUTO_TRADE);
+                    exitSignal.setSignalSource(SignalProvenance.LIVE);
+                    exitSignal.setTestTrade(false);
+                    exitSignal.setSimulation(false);
 
-            signalRepository.save(exitSignal);
+                    signalRepository.save(exitSignal);
+                    var result = positionExitOrchestratorService.flattenSymbol(
+                            PRIMARY_TRADER_ID,
+                            position.getSymbol(),
+                            "TARGET_PROFIT_EXIT",
+                            exitSignal.getReason()
+                    );
 
-            log.warn("target_profit.exit_signal_created positionId={} symbol={} qty={} signalId={}",
-                    positionId, symbol, quantity, exitSignal.getId());
-        } catch (Exception e) {
-            log.error("target_profit.exit_signal_failed positionId={} symbol={} error={}",
-                    positionId, symbol, e.getMessage());
-        }
-    }
+                    log.warn("target_profit.exit_signal_created positionId={} symbol={} qty={} signalId={} ordersCreated={} notes={}",
+                            positionId, symbol, quantity, exitSignal.getId(), result.get("ordersCreated"), result.get("notes"));
+                } catch (Exception e) {
+                    log.error("target_profit.exit_signal_failed positionId={} symbol={} error={}",
+                            positionId, symbol, e.getMessage());
+                }
+            }
 }

@@ -2,10 +2,11 @@ package com.stokr.execution.controller;
 
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
-import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.strategy.signals.SignalOwnerType;
+import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class EmergencyExitController {
 
     private final PortfolioPositionRepository positionRepository;
     private final StrategySignalRepository signalRepository;
+    private final PositionExitOrchestratorService positionExitOrchestratorService;
     private static final UUID PRIMARY_TRADER_ID = UUID.fromString("6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4");
 
     @PostMapping("/force-close-all-positions")
@@ -55,14 +57,23 @@ public class EmergencyExitController {
                     exitSignal.setStrategyName("EMERGENCY_EXIT");
                     exitSignal.setStrategyVersion("1.0");
                     exitSignal.setPipeline("EMERGENCY");
+                    exitSignal.setOwnerType(SignalOwnerType.SYSTEM);
+                    exitSignal.setSignalSource(SignalProvenance.LIVE);
                     exitSignal.setTestTrade(false);
                     exitSignal.setSimulation(false);
 
                     signalRepository.save(exitSignal);
+                    var result = positionExitOrchestratorService.flattenSymbol(
+                            PRIMARY_TRADER_ID,
+                            position.getSymbol(),
+                            "EMERGENCY_EXIT",
+                            exitSignal.getReason()
+                    );
                     closedCount++;
 
-                    log.error("emergency.force_close symbol={} qty={} signalId={}",
-                            position.getSymbol(), position.getQuantity(), exitSignal.getId());
+                    log.error("emergency.force_close symbol={} qty={} signalId={} ordersCreated={} notes={}",
+                            position.getSymbol(), position.getQuantity(), exitSignal.getId(),
+                            result.get("ordersCreated"), result.get("notes"));
                 }
             }
 
