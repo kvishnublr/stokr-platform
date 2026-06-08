@@ -55,48 +55,48 @@ public class PressureSmartExitService {
     private final SignalOutcomeTrackerService signalOutcomeTrackerService;
     private final InstrumentNormalizationService instrumentNormalizationService;
 
-    @Value("${stokr.strategy.smart-exit.pressure-reversal-buy:0.43}")
+    @Value("${stokr.strategy.smart-exit.pressure-reversal-buy:0.35}")
     private double pressureReversalBuyThreshold;
 
-    @Value("${stokr.strategy.smart-exit.pressure-reversal-sell:0.57}")
+    @Value("${stokr.strategy.smart-exit.pressure-reversal-sell:0.65}")
     private double pressureReversalSellThreshold;
 
-    @Value("${stokr.strategy.smart-exit.exhaustion-consistency:0.35}")
+    @Value("${stokr.strategy.smart-exit.exhaustion-consistency:0.30}")
     private double exhaustionConsistency;
 
     @Value("${stokr.strategy.smart-exit.pressure-lookback:60}")
     private int pressureLookback;
 
-    @Value("${stokr.strategy.smart-exit.trailing-mfe-ratio:0.40}")
+    @Value("${stokr.strategy.smart-exit.trailing-mfe-ratio:0.25}")
     private double trailingMfeRatio;
 
-    @Value("${stokr.strategy.smart-exit.min-progress-pct:20}")
+    @Value("${stokr.strategy.smart-exit.min-progress-pct:10}")
     private double minProgressPct;
 
-    @Value("${stokr.strategy.smart-exit.counter-candle-body-ratio:0.55}")
+    @Value("${stokr.strategy.smart-exit.counter-candle-body-ratio:0.60}")
     private double counterCandleBodyRatio;
 
     @Value("${stokr.strategy.smart-exit.enabled:true}")
     private boolean enabled;
 
     /** Min-hold pressure path: bar-range % vs mid on latest 1m candle (not bid-ask spread). */
-    @Value("${stokr.strategy.lifecycle.emergency.spread-pct:0.50}")
+    @Value("${stokr.strategy.lifecycle.emergency.spread-pct:0.80}")
     private double emergencySpreadPct;
 
     /**
      * Emergency liquidity exit: same bar-range proxy but higher threshold so normal 1m volatility
      * does not instantly close every signal before target/SL tracking can run.
      */
-    @Value("${stokr.strategy.lifecycle.emergency.bar-range-pct:2.5}")
+    @Value("${stokr.strategy.lifecycle.emergency.bar-range-pct:3.5}")
     private double emergencyBarRangePct;
 
-    @Value("${stokr.strategy.lifecycle.emergency.candle-stale-seconds:120}")
+    @Value("${stokr.strategy.lifecycle.emergency.candle-stale-seconds:180}")
     private long emergencyCandleStaleSeconds;
 
-    @Value("${stokr.strategy.lifecycle.emergency.volume-vacuum-ratio:0.10}")
+    @Value("${stokr.strategy.lifecycle.emergency.volume-vacuum-ratio:0.05}")
     private double emergencyVolumeVacuumRatio;
 
-    @Value("${stokr.strategy.lifecycle.emergency.min-hold-seconds:180}")
+    @Value("${stokr.strategy.lifecycle.emergency.min-hold-seconds:300}")
     private long emergencyMinHoldSeconds;
 
     @Value("${stokr.strategy.lifecycle.emergency.current-bar-min-age-seconds:55}")

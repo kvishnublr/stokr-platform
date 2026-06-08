@@ -20,7 +20,7 @@ public record StrategyLifecycleProfile(
             Map.entry("GAP_FILL", new StrategyLifecycleProfile(900, true, 20, false, 1)),
             Map.entry("SECTOR_LAGGARD", new StrategyLifecycleProfile(600, true, 20, true, 10)),
             Map.entry("ADV_CASH", new StrategyLifecycleProfile(480, true, 20, true, 10)),
-            Map.entry("INDEX_HUNT", new StrategyLifecycleProfile(300, true, 20, true, 10)),
+            Map.entry("INDEX_HUNT", new StrategyLifecycleProfile(600, true, 45, true, 10)),
             Map.entry("NSE_SPIKE_DETECTION", new StrategyLifecycleProfile(0, true, 15, true, 10)),
             Map.entry("EARLY_BREAKOUT", new StrategyLifecycleProfile(300, true, 20, true, 10)),
             Map.entry("VWAP_BOUNCE", new StrategyLifecycleProfile(480, true, 20, true, 10)),

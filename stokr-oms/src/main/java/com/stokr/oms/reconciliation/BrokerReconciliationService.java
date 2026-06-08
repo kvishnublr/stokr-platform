@@ -9,6 +9,7 @@ import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
 import com.stokr.oms.repository.OmsExecutionRepository;
 import com.stokr.oms.repository.OmsOrderRepository;
+import com.stokr.oms.util.OmsSymbolNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -77,10 +78,13 @@ public class BrokerReconciliationService {
         }
 
         Map<String, BigDecimal> brokerBySymbol = brokerPositions.stream()
-                .collect(Collectors.toMap(BrokerPosition::symbol, BrokerPosition::quantity, BigDecimal::add));
+                .collect(Collectors.toMap(
+                        p -> OmsSymbolNormalizer.normalize(p.symbol()),
+                        BrokerPosition::quantity,
+                        BigDecimal::add));
         Map<String, BigDecimal> internalBySymbol = omsExecutionRepository.computeLiveNetQtyBySymbol(userId).stream()
                 .collect(Collectors.toMap(
-                        row -> String.valueOf(row[0]),
+                        row -> OmsSymbolNormalizer.normalize(String.valueOf(row[0])),
                         row -> (BigDecimal) row[1]
                 ));
 
