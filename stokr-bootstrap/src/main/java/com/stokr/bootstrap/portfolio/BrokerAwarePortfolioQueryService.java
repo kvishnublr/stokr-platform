@@ -9,7 +9,6 @@ import com.stokr.oms.repository.PortfolioDailySummaryRepository;
 import com.stokr.oms.repository.PortfolioPnlSnapshotRepository;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.oms.service.PortfolioQueryService;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
@@ -49,7 +48,6 @@ public class BrokerAwarePortfolioQueryService extends PortfolioQueryService {
     }
 
     @Override
-    @Cacheable(value = "portfolio_exposure", key = "#userId", unless = "#result == null")
     public PortfolioExposureDto exposure(UUID userId) {
         BrokerPositionTruthSnapshot snap = brokerPositionTruthService.snapshot(userId);
         if (!snap.brokerConnected() || snap.lastSyncAt() == null) {

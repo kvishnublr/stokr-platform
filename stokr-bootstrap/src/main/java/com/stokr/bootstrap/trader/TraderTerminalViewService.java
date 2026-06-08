@@ -18,6 +18,7 @@ import com.stokr.oms.domain.PortfolioPosition;
 import com.stokr.oms.dto.OmsExecutionRowDto;
 import com.stokr.oms.dto.OmsOrderSummaryDto;
 import com.stokr.oms.dto.PortfolioOverviewDto;
+import com.stokr.oms.dto.PortfolioExposureDto;
 import com.stokr.oms.query.OmsReadParams;
 import com.stokr.oms.query.PipelineMode;
 import com.stokr.oms.repository.OmsExecutionRepository;
@@ -364,7 +365,7 @@ public class TraderTerminalViewService {
         }
 
         PortfolioOverviewDto overview = portfolioQueryService.overview(userId);
-        var exposure = portfolioQueryService.exposure(userId);
+        PortfolioExposureDto exposure = safeExposure(userId);
         var recon = omsReconciliationService.reconcileUser(userId);
         var broker = zerodhaBrokerOperationsService.status(userId);
         TraderExecutionModePreferenceDto mode = traderExecutionModePreferenceService.get(userId);
@@ -610,6 +611,15 @@ public class TraderTerminalViewService {
         } catch (Exception ex) {
             log.warn("terminal.workstation.broker_truth_sync_failed user={} {}", userId, ex.toString());
             return brokerPositionTruthService.snapshot(userId);
+        }
+    }
+
+    private PortfolioExposureDto safeExposure(UUID userId) {
+        try {
+            return portfolioQueryService.exposure(userId);
+        } catch (Exception ex) {
+            log.warn("terminal.workstation.exposure_failed user={} {}", userId, ex.toString());
+            return new PortfolioExposureDto(List.of(), List.of());
         }
     }
 
