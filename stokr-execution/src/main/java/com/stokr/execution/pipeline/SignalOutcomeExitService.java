@@ -22,6 +22,8 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -80,6 +82,51 @@ public class SignalOutcomeExitService {
             return;
         }
         dispatchForSignal(signalId, outcomeStatus);
+    }
+
+    /**
+     * One-off / admin repair: place missing exit OMS legs for signals that already have terminal outcomes.
+     */
+    public Map<String, Object> backfillMissingOutcomeExits(Instant since, int maxSignals) {
+        List<StrategySignalEntity> signals = signalRepository.findTerminalOutcomesSince(
+                since,
+                EXIT_OUTCOMES,
+                List.of(SignalProvenance.REPLAY, SignalProvenance.LAB));
+        int examined = 0;
+        int dispatched = 0;
+        int skipped = 0;
+        int failed = 0;
+        List<String> dispatchedIds = new ArrayList<>();
+        for (StrategySignalEntity signal : signals) {
+            if (examined >= maxSignals) {
+                break;
+            }
+            examined++;
+            String prefix = "outcome-exit:" + signal.getId() + ":";
+            if (omsOrderRepository.existsByDeletedFalseAndIdempotencyKeyStartingWith(prefix)) {
+                skipped++;
+                continue;
+            }
+            try {
+                dispatchForSignal(signal.getId(), signal.getOutcomeStatus());
+                dispatched++;
+                dispatchedIds.add(signal.getId().toString());
+            } catch (Exception ex) {
+                failed++;
+                log.warn("signal.outcome_exit.backfill_failed signalId={} err={}",
+                        signal.getId(), ex.getMessage());
+            }
+        }
+        log.info("signal.outcome_exit.backfill examined={} dispatched={} skipped={} failed={} since={}",
+                examined, dispatched, skipped, failed, since);
+        return Map.of(
+                "examined", examined,
+                "dispatched", dispatched,
+                "skipped", skipped,
+                "failed", failed,
+                "since", since.toString(),
+                "signalIds", dispatchedIds
+        );
     }
 
     @Transactional

@@ -50,7 +50,7 @@ public class SignalOutcomeTrackerService {
     private static final String STATUS_TIME_EXIT   = "TIME_EXIT";
     private static final String STATUS_BREAKEVEN   = "BREAKEVEN_EXIT";
 
-    private static final int EXPIRY_HOURS     = 8;
+    private static final int EXPIRY_HOURS     = 72;
     private static final int BATCH_SIZE       = 200;
     private static final int FAST_BATCH_SIZE  = 50;
     private static final int OPEN_POSITION_LOOKBACK_DAYS = 14;

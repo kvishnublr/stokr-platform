@@ -44,6 +44,13 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
 
     Optional<OmsOrder> findByUserIdAndIdempotencyKeyAndDeletedFalse(UUID userId, String idempotencyKey);
 
+    @Query("""
+            select case when count(o) > 0 then true else false end
+            from OmsOrder o
+            where o.deleted = false and o.idempotencyKey like concat(:prefix, '%')
+            """)
+    boolean existsByDeletedFalseAndIdempotencyKeyStartingWith(@Param("prefix") String prefix);
+
     long countByUserIdAndDeletedFalse(UUID userId);
 
     long countByUserIdAndDeletedFalseAndState(UUID userId, OrderState state);

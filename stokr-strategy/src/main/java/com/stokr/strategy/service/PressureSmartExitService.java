@@ -45,7 +45,7 @@ public class PressureSmartExitService {
 
     private static final String STATUS_RUNNING = "RUNNING";
     private static final int MAX_SIGNALS_PER_SCAN = 100;
-    private static final int LOOKBACK_HOURS = 8;
+    private static final int LOOKBACK_HOURS = 72;
 
     private final StrategySignalRepository signalRepository;
     private final OrderBookPressureTracker pressureTracker;

@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -178,6 +179,52 @@ class SignalOutcomeExitServiceTest {
 
         verify(orderPlacementService, org.mockito.Mockito.times(2))
                 .place(eq(userId), any(CreateOrderRequest.class));
+    }
+
+    @Test
+    void backfillDispatchesOnlyWhenOutcomeExitMissing() {
+        StrategySignalEntity signal = liveSignal();
+        signal.setOutcomeStatus("PRESSURE_EXIT");
+        signal.setOutcomeTime(Instant.now());
+        when(signalRepository.findTerminalOutcomesSince(any(), any(), any())).thenReturn(List.of(signal));
+        when(omsOrderRepository.existsByDeletedFalseAndIdempotencyKeyStartingWith("outcome-exit:" + signalId + ":"))
+                .thenReturn(false);
+
+        OmsOrder entry = new OmsOrder();
+        entry.setId(UUID.randomUUID());
+        entry.setUserId(userId);
+        entry.setSymbol("NSE:INFY");
+        entry.setSide("BUY");
+        entry.setQuantity(BigDecimal.ONE);
+        entry.setState(OrderState.FILLED);
+        entry.setExecutionMode(ExecutionMode.PAPER);
+        when(omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(signalId))
+                .thenReturn(List.of(entry));
+        when(brokerPositionTruthService.snapshot(userId)).thenReturn(snapshotWithQty("NSE:INFY", BigDecimal.ONE));
+        when(orderPlacementService.place(eq(userId), any(CreateOrderRequest.class)))
+                .thenReturn(new OmsOrder());
+
+        Map<String, Object> result = service.backfillMissingOutcomeExits(Instant.now().minusSeconds(3600), 10);
+
+        assertThat(result.get("dispatched")).isEqualTo(1);
+        assertThat(result.get("skipped")).isEqualTo(0);
+        verify(orderPlacementService).place(eq(userId), any(CreateOrderRequest.class));
+    }
+
+    @Test
+    void backfillSkipsSignalsThatAlreadyHaveOutcomeExit() {
+        StrategySignalEntity signal = liveSignal();
+        signal.setOutcomeStatus("STOPLOSS_HIT");
+        signal.setOutcomeTime(Instant.now());
+        when(signalRepository.findTerminalOutcomesSince(any(), any(), any())).thenReturn(List.of(signal));
+        when(omsOrderRepository.existsByDeletedFalseAndIdempotencyKeyStartingWith("outcome-exit:" + signalId + ":"))
+                .thenReturn(true);
+
+        Map<String, Object> result = service.backfillMissingOutcomeExits(Instant.now().minusSeconds(3600), 10);
+
+        assertThat(result.get("skipped")).isEqualTo(1);
+        assertThat(result.get("dispatched")).isEqualTo(0);
+        verify(orderPlacementService, never()).place(any(), any());
     }
 
     @Test

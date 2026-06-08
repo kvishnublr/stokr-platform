@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -292,4 +293,18 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             @Param("toExclusive") Instant toExclusive,
             @Param("strategyName") String strategyName,
             @Param("includeReplayAndLab") boolean includeReplayAndLab);
+
+    @Query("""
+            select s from StrategySignalEntity s
+            where s.deleted = false
+              and s.outcomeTime >= :since
+              and s.outcomeStatus in :outcomes
+              and (s.testTrade = false or s.testTrade is null)
+              and (s.signalSource is null or s.signalSource not in :excludedSources)
+            order by s.outcomeTime asc
+            """)
+    List<StrategySignalEntity> findTerminalOutcomesSince(
+            @Param("since") Instant since,
+            @Param("outcomes") Collection<String> outcomes,
+            @Param("excludedSources") Collection<SignalProvenance> excludedSources);
 }
