@@ -53,6 +53,10 @@
         </dependency>
         <dependency>
             <groupId>com.stokr</groupId>
+            <artifactId>stokr-execution</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.stokr</groupId>
             <artifactId>stokr-auth</artifactId>
         </dependency>
         <dependency>
