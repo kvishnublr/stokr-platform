@@ -4,7 +4,9 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -29,8 +31,14 @@ public class CachingConfigurationV2 {
 
     @Bean
     public CacheManager cacheManager(RedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
+        ObjectMapper cacheMapper = objectMapper.copy();
+        cacheMapper.activateDefaultTyping(
+                BasicPolymorphicTypeValidator.builder().allowIfSubType(Object.class).build(),
+                ObjectMapper.DefaultTyping.NON_FINAL,
+                JsonTypeInfo.As.PROPERTY);
+
         GenericJackson2JsonRedisSerializer valueSerializer =
-                new GenericJackson2JsonRedisSerializer(objectMapper.copy());
+                new GenericJackson2JsonRedisSerializer(cacheMapper);
 
         RedisCacheConfiguration defaults = baseConfig(Duration.ofMinutes(30), valueSerializer);
 
