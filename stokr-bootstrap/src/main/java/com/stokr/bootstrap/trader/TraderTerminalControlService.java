@@ -9,6 +9,8 @@ import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
 import com.stokr.oms.domain.PortfolioPosition;
+import com.stokr.oms.reconciliation.ReconciliationEvent;
+import com.stokr.oms.reconciliation.ReconciliationEventRepository;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.oms.service.OrderLifecycleService;
@@ -18,6 +20,7 @@ import com.stokr.strategy.service.SignalManualExitSuppressionService;
 import com.stokr.strategy.service.StrategyInstanceLifecycleService;
 import com.stokr.user.service.TraderExecutionModePreferenceService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,9 +37,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TraderTerminalControlService {
 
     private static final Duration TOKEN_TTL = Duration.ofMinutes(2);
+    private static final Duration ORPHAN_RECON_FALLBACK = Duration.ofHours(2);
     private static final Collection<OrderState> CANCELLABLE = List.of(
             OrderState.CREATED,
             OrderState.VALIDATED,
@@ -56,6 +61,7 @@ public class TraderTerminalControlService {
     private final OrderPlacementService orderPlacementService;
     private final BrokerPositionTruthService brokerPositionTruthService;
     private final SignalManualExitSuppressionService manualExitSuppressionService;
+    private final ReconciliationEventRepository reconciliationEventRepository;
 
     private final Map<String, PendingPlan> pendingPlans = new ConcurrentHashMap<>();
 
@@ -372,6 +378,9 @@ public class TraderTerminalControlService {
                 }
             }
         }
+        if (targets.isEmpty()) {
+            targets.addAll(orphanReconciliationTargets(userId, notes));
+        }
 
         for (FlattenTarget target : targets) {
             BigDecimal qty = target.qty().abs();
@@ -430,6 +439,23 @@ public class TraderTerminalControlService {
             }
         }
         return created;
+    }
+
+    private List<FlattenTarget> orphanReconciliationTargets(UUID userId, List<String> notes) {
+        Instant since = Instant.now().minus(ORPHAN_RECON_FALLBACK);
+        Map<String, FlattenTarget> bySymbol = new LinkedHashMap<>();
+        for (ReconciliationEvent event : reconciliationEventRepository.findRecentOrphanBrokerPositions(userId, since)) {
+            if (event.getSymbol() == null || event.getBrokerQty() == null || event.getBrokerQty().signum() == 0) {
+                continue;
+            }
+            String symbol = BrokerPositionTruthService.normalizeSymbol(event.getSymbol());
+            bySymbol.putIfAbsent(symbol, new FlattenTarget(symbol, event.getBrokerQty(), null, true));
+        }
+        if (!bySymbol.isEmpty()) {
+            notes.add("using " + bySymbol.size() + " orphan broker position(s) from reconciliation fallback");
+            log.warn("terminal.flatten.recon_fallback user={} symbols={}", userId, bySymbol.size());
+        }
+        return List.copyOf(bySymbol.values());
     }
 
     private record FlattenTarget(String symbol, java.math.BigDecimal qty, String product, boolean fromBroker) {}

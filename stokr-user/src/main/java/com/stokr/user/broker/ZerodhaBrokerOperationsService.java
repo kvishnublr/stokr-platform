@@ -244,8 +244,12 @@ public class ZerodhaBrokerOperationsService {
     public List<BrokerPositionDetail> fetchBrokerPositionDetails(UUID userId) {
         Session s = requireSession(userId);
         JsonNode payload = kiteApiClient.getPositions(s.apiKey(), s.accessToken(), s.outboundIp());
+        if (payload != null && !"success".equalsIgnoreCase(payload.path("status").asText(""))) {
+            log.warn("zerodha.positions.api_error user={} status={} message={}",
+                    userId, payload.path("status").asText(""), payload.path("message").asText(""));
+        }
         List<BrokerPositionDetail> positions = ZerodhaKitePositionsParser.parseDetails(payload);
-        log.debug("zerodha.positions.fetched user={} count={}", userId, positions.size());
+        log.info("zerodha.positions.fetched user={} count={}", userId, positions.size());
         return positions;
     }
 
