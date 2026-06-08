@@ -127,10 +127,38 @@ public class ConfidenceSignalToOrderService {
 
             for (ConfidenceScore score : recentScores) {
                 try {
+                    // RISK GATE 1: Check daily signal cap
+                    if (isDailySignalCapExceeded(config.getTraderId())) {
+                        log.warn("⛔ Daily signal cap exceeded for trader {}. Skipping signal.",
+                            config.getTraderId());
+                        continue;
+                    }
+
+                    // RISK GATE 2: Check max open positions
+                    if (isMaxPositionsExceeded(config.getTraderId())) {
+                        log.warn("⛔ Max open positions exceeded for trader {}. Skipping signal.",
+                            config.getTraderId());
+                        continue;
+                    }
+
+                    // RISK GATE 3: Check daily loss limit
+                    if (isDailyLossLimitExceeded(config.getTraderId())) {
+                        log.warn("⛔ Daily loss limit exceeded for trader {}. Stopping all trades.",
+                            config.getTraderId());
+                        continue;
+                    }
+
                     // Check if order already exists for this signal
                     if (orderAlreadyPlaced(score.getSymbol(), config.getTraderId())) {
                         log.debug("⏭️  Order already placed for {} by trader {}",
                             score.getSymbol(), config.getTraderId());
+                        continue;
+                    }
+
+                    // RISK GATE 4: Validate symbol and price
+                    if (!isValidSymbolAndPrice(score)) {
+                        log.warn("⛔ Invalid symbol or price for {}: {}",
+                            score.getSymbol(), score.getLiquidityScore());
                         continue;
                     }
 
@@ -265,5 +293,103 @@ public class ConfidenceSignalToOrderService {
             // If we can't determine, assume market is open (fail safe)
             return true;
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // RISK GATE VALIDATION METHODS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private boolean isDailySignalCapExceeded(UUID traderId) {
+        try {
+            // Get today's signal count from database
+            int todaysSignals = getTodaysSignalCount(traderId);
+            int maxDailySignals = 50; // Configurable, default 50
+
+            if (todaysSignals >= maxDailySignals) {
+                log.warn("Daily signal cap reached: {}/{}", todaysSignals, maxDailySignals);
+                return true;
+            }
+            return false;
+
+        } catch (Exception e) {
+            log.debug("Error checking daily signal cap: {}", e.getMessage());
+            return false; // Don't block on error
+        }
+    }
+
+    private boolean isMaxPositionsExceeded(UUID traderId) {
+        try {
+            // Get open positions count from OMS
+            int openPositions = getOpenPositionsCount(traderId);
+            int maxPositions = 10; // Configurable, default 10
+
+            if (openPositions >= maxPositions) {
+                log.warn("Max open positions reached: {}/{}", openPositions, maxPositions);
+                return true;
+            }
+            return false;
+
+        } catch (Exception e) {
+            log.debug("Error checking max positions: {}", e.getMessage());
+            return false; // Don't block on error
+        }
+    }
+
+    private boolean isDailyLossLimitExceeded(UUID traderId) {
+        try {
+            // Get today's P&L from OMS
+            BigDecimal dailyPnl = getTodaysPnL(traderId);
+            BigDecimal maxDailyLoss = BigDecimal.valueOf(-5000); // Configurable, default -5000 INR
+
+            if (dailyPnl.compareTo(maxDailyLoss) < 0) {
+                log.warn("Daily loss limit exceeded: {} < {}", dailyPnl, maxDailyLoss);
+                return true;
+            }
+            return false;
+
+        } catch (Exception e) {
+            log.debug("Error checking daily loss limit: {}", e.getMessage());
+            return false; // Don't block on error
+        }
+    }
+
+    private boolean isValidSymbolAndPrice(ConfidenceScore score) {
+        try {
+            // Validate symbol exists
+            if (score.getSymbol() == null || score.getSymbol().isEmpty()) {
+                return false;
+            }
+
+            // Validate price is reasonable (not 0 or extreme)
+            Double price = score.getLiquidityScore();
+            if (price == null || price <= 0 || price > 100000) {
+                return false;
+            }
+
+            return true;
+
+        } catch (Exception e) {
+            log.debug("Error validating symbol/price: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    // Helper methods - these would call actual OMS/database repositories
+    private int getTodaysSignalCount(UUID traderId) {
+        // TODO: Query OMS for today's signals placed by this trader
+        // For now, return 0 (no limit applied)
+        return 0;
+    }
+
+    private int getOpenPositionsCount(UUID traderId) {
+        // TODO: Query OMS for open positions count
+        // For now, return 0 (no limit applied)
+        return 0;
+    }
+
+    private BigDecimal getTodaysPnL(UUID traderId) {
+        // TODO: Query OMS for today's P&L
+        // For now, return 0 (no loss limit applied)
+        return BigDecimal.ZERO;
     }
 }

@@ -575,6 +575,19 @@ stokr:
       high-confidence-quantity: ${STOKR_CONFIDENCE_AUTO_TRADE_HIGH_CONF_QTY:2}  # 2 lots for high confidence
       confidence-threshold: ${STOKR_CONFIDENCE_AUTO_TRADE_CONF_THRESHOLD:75}  # Score >= 75 = high confidence
 
+    # AUTO-EXIT: Close positions based on profit/loss targets (NEW)
+    exit:
+      check-interval-ms: ${STOKR_CONFIDENCE_EXIT_CHECK_INTERVAL_MS:60000}  # Check every 1 minute
+      initial-delay-ms: ${STOKR_CONFIDENCE_EXIT_INITIAL_DELAY_MS:10000}  # 10 sec initial delay
+      # Profit targets based on confidence level
+      profit-target-high: ${STOKR_CONFIDENCE_EXIT_PROFIT_TARGET_HIGH:2.0}  # 2% for confidence >= 80
+      profit-target-medium: ${STOKR_CONFIDENCE_EXIT_PROFIT_TARGET_MEDIUM:1.5}  # 1.5% for confidence 70-80
+      profit-target-low: ${STOKR_CONFIDENCE_EXIT_PROFIT_TARGET_LOW:1.0}  # 1% for confidence < 70
+      # Stop loss based on confidence level
+      stop-loss-high: ${STOKR_CONFIDENCE_EXIT_STOP_LOSS_HIGH:1.0}  # 1% SL for confidence >= 80
+      stop-loss-medium: ${STOKR_CONFIDENCE_EXIT_STOP_LOSS_MEDIUM:1.5}  # 1.5% SL for confidence 70-80
+      stop-loss-low: ${STOKR_CONFIDENCE_EXIT_STOP_LOSS_LOW:2.0}  # 2% SL for confidence < 70
+
 logging:
   level:
     root: INFO
