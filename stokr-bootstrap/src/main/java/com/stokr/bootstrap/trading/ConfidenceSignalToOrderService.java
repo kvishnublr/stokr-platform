@@ -136,7 +136,7 @@ public class ConfidenceSignalToOrderService {
 
                     // Determine order parameters
                     String side = determineSide(score);
-                    int quantity = determineQuantity(score);
+                    BigDecimal quantity = BigDecimal.valueOf(determineQuantity(score));
                     String orderType = determineOrderType(score);
                     BigDecimal limitPrice = determineLimitPrice(score);
 
@@ -144,19 +144,13 @@ public class ConfidenceSignalToOrderService {
                     CreateOrderRequest request = new CreateOrderRequest(
                         score.getSymbol(),
                         side,
-                        quantity,
                         orderType,
+                        quantity,
                         limitPrice,
-                        "CONFIDENCE_BASED_" + threshold,
-                        UUID.randomUUID(), // signalId
-                        score.getConfidenceScore(),
-                        null, // signalGeneratedAt
-                        "5m", // timeframe
-                        null, // idempotencyKey
-                        null, // testTrade
-                        null, // testRunId
                         ExecutionMode.valueOf(executionMode),
-                        null  // brokerVendor - defaults to ZERODHA for LIVE, SIM for SIMULATED
+                        null, // brokerVendor - defaults to ZERODHA for LIVE, SIM for SIMULATED
+                        "CONFIDENCE_BASED_" + threshold, // strategyKey
+                        null  // idempotencyKey
                     );
 
                     // Place order
