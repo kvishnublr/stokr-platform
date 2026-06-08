@@ -23,8 +23,9 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.math.BigDecimal;
-import java.time.ChronoUnit;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -72,7 +73,8 @@ public class SignalOutcomeExitService {
         if (!autoExitEnabled) {
             return;
         }
-        Instant since = Instant.now().minus(168, ChronoUnit.HOURS);
+        // Backfill for last 7 days (168 hours = 7 days * 24 hours/day)
+        Instant since = Instant.now().minus(java.time.Duration.ofHours(168));
         List<StrategySignalEntity> signals = signalRepository.findTerminalOutcomesSince(
                 since, EXIT_OUTCOMES, List.of());
         int dispatched = 0;
