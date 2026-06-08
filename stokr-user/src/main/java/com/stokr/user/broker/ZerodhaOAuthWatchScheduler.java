@@ -16,7 +16,9 @@ public class ZerodhaOAuthWatchScheduler {
 
     @Scheduled(fixedDelayString = "${stokr.broker.zerodha.oauth-alert-poll-ms:900000}")
     public void watchPlatformOAuth() {
-        if (!zerodhaBrokerProperties.isOauthAlertEnabled() || !zerodhaBrokerProperties.isConfigured()) {
+        if (!zerodhaBrokerProperties.isOauthReconnectAlertEnabled()
+                || !zerodhaBrokerProperties.isOauthAlertEnabled()
+                || !zerodhaBrokerProperties.isConfigured()) {
             return;
         }
         oauthTelegramAlertService.pollAndAlertIfNeeded();

@@ -34,6 +34,7 @@ public class TelegramVerificationService {
 
     private final AuthTelegramVerificationTokenRepository tokenRepository;
     private final AuthUserRepository authUserRepository;
+    private final TelegramBotClient telegramBotClient;
     private final TelegramBotProperties telegramBotProperties;
     private final ApplicationEventPublisher eventPublisher;
     private final TraderOnboardingService traderOnboardingService;
@@ -79,6 +80,8 @@ public class TelegramVerificationService {
         }
         String arg = text.length() > 6 ? text.substring(6).trim() : "";
         if (arg.isEmpty()) {
+            telegramBotClient.sendMessage(Long.toString(chatId),
+                    "Open Stokr trader profile → Link Telegram → tap the verification link, then return here.");
             return;
         }
         AuthTelegramVerificationToken token = tokenRepository
@@ -95,6 +98,8 @@ public class TelegramVerificationService {
         user.setTelegramChatId(Long.toString(chatId));
         authUserRepository.save(user);
         eventPublisher.publishEvent(new AuthAuditEvents.TelegramVerified(user.getId(), user.getTelegramChatId(), Instant.now()));
+        telegramBotClient.sendMessage(Long.toString(chatId),
+                "✅ Telegram linked to your Stokr account.\nYou will receive entry and exit alerts when trades fill.");
     }
 
     private static String generateRawToken() {

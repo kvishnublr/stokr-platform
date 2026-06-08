@@ -26,6 +26,12 @@ public class ZerodhaBrokerProperties {
     /** Send operator Telegram with Kite login link when platform OAuth is required. */
     private boolean oauthAlertEnabled = true;
 
+    /** When false, skip reconnect/reminder Telegrams (success-only mode). */
+    private boolean oauthReconnectAlertEnabled = false;
+
+    /** Send success Telegram after platform Zerodha OAuth completes. */
+    private boolean oauthSuccessAlertEnabled = true;
+
     /** Minimum minutes between repeated OAuth Telegram alerts. */
     private long oauthAlertCooldownMinutes = 240;
 
@@ -79,6 +85,22 @@ public class ZerodhaBrokerProperties {
 
     public void setOauthAlertEnabled(boolean oauthAlertEnabled) {
         this.oauthAlertEnabled = oauthAlertEnabled;
+    }
+
+    public boolean isOauthReconnectAlertEnabled() {
+        return oauthReconnectAlertEnabled;
+    }
+
+    public void setOauthReconnectAlertEnabled(boolean oauthReconnectAlertEnabled) {
+        this.oauthReconnectAlertEnabled = oauthReconnectAlertEnabled;
+    }
+
+    public boolean isOauthSuccessAlertEnabled() {
+        return oauthSuccessAlertEnabled;
+    }
+
+    public void setOauthSuccessAlertEnabled(boolean oauthSuccessAlertEnabled) {
+        this.oauthSuccessAlertEnabled = oauthSuccessAlertEnabled;
     }
 
     public long getOauthAlertCooldownMinutes() {

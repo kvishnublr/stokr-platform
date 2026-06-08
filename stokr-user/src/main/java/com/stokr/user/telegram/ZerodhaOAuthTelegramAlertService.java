@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Sends operator Telegram alerts with a mobile-friendly Kite login link when platform Zerodha OAuth is required.
+ * Operator Telegram for platform Zerodha OAuth — reconnect alerts optional; success alert on by default.
  */
 @Service
 @RequiredArgsConstructor
@@ -34,7 +34,11 @@ public class ZerodhaOAuthTelegramAlertService {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOAuthRequired(PlatformZerodhaOAuthRequiredEvent event) {
-        if (!zerodhaBrokerProperties.isOauthAlertEnabled()) {
+        if (!zerodhaBrokerProperties.isOauthAlertEnabled()
+                || !zerodhaBrokerProperties.isOauthReconnectAlertEnabled()) {
+            return;
+        }
+        if (!telegramBotProperties.isOperatorAlertsEnabled()) {
             return;
         }
         if (!zerodhaBrokerProperties.isConfigured()) {
@@ -42,14 +46,12 @@ public class ZerodhaOAuthTelegramAlertService {
         }
         String chatId = telegramBotProperties.getOperatorChatId();
         if (chatId == null || chatId.isBlank()) {
-            log.debug("zerodha.oauth_alert skipped reason=no_operator_chat_id");
             return;
         }
         if (!platformMarketFeedService.platformSessionRequiresOAuth()) {
             return;
         }
         if (!cooldownElapsed(lastOAuthAlertAt, zerodhaBrokerProperties.getOauthAlertCooldownMinutes())) {
-            log.debug("zerodha.oauth_alert skipped reason=cooldown");
             return;
         }
 
@@ -59,35 +61,36 @@ public class ZerodhaOAuthTelegramAlertService {
         String html = """
                 🔐 <b>Zerodha reconnect required</b>
 
-                Platform market feed needs login. Tap the link below on your phone — after Kite login, tokens refresh automatically (no admin UI needed).
+                Tap to log in on Kite from your phone — tokens save automatically after login.
 
                 <a href="%s">Connect Zerodha on Kite</a>
 
                 Reason: %s
                 """.formatted(escapeHtml(authorizeUrl), escapeHtml(reason));
 
-        boolean sent = telegramBotClient.sendHtmlMessage(chatId, html);
-        if (sent) {
+        if (telegramBotClient.sendHtmlMessage(chatId, html)) {
             lastOAuthAlertAt.set(Instant.now());
             log.info("zerodha.oauth_alert.sent reason={}", reason);
-        } else {
-            log.warn("zerodha.oauth_alert.failed reason={}", reason);
         }
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOAuthResolved(PlatformZerodhaOAuthResolvedEvent event) {
-        if (!zerodhaBrokerProperties.isOauthAlertEnabled()) {
+        if (!zerodhaBrokerProperties.isOauthAlertEnabled()
+                || !zerodhaBrokerProperties.isOauthSuccessAlertEnabled()) {
+            return;
+        }
+        if (!telegramBotProperties.isOperatorAlertsEnabled()) {
             return;
         }
         String chatId = telegramBotProperties.getOperatorChatId();
         if (chatId == null || chatId.isBlank()) {
             return;
         }
-        if (!cooldownElapsed(lastResolvedAlertAt, 30)) {
+        if (!cooldownElapsed(lastResolvedAlertAt, 5)) {
             return;
         }
-        String html = "✅ <b>Zerodha connected</b>\n\nPlatform feed tokens saved. Market data should resume shortly.";
+        String html = "✅ <b>Zerodha connected</b>\n\nPlatform feed tokens saved. Live market data should resume.";
         if (telegramBotClient.sendHtmlMessage(chatId, html)) {
             lastResolvedAlertAt.set(Instant.now());
             lastOAuthAlertAt.set(null);
@@ -95,9 +98,8 @@ public class ZerodhaOAuthTelegramAlertService {
         }
     }
 
-    /** Periodic safety net — catches AUTH_EXPIRED without a recent refresh attempt. */
     public void pollAndAlertIfNeeded() {
-        if (!zerodhaBrokerProperties.isOauthAlertEnabled() || !zerodhaBrokerProperties.isConfigured()) {
+        if (!zerodhaBrokerProperties.isOauthReconnectAlertEnabled()) {
             return;
         }
         if (!platformMarketFeedService.platformSessionRequiresOAuth()) {

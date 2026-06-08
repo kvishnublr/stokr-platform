@@ -34,6 +34,7 @@ public class PlatformAutomationService {
     private final OperationalRecoveryContextCollector contextCollector;
     private final OperationalFailureClassifier classifier;
     private final AdminOperationalSnapshotService snapshotService;
+    private final AdminReadinessTelegramService readinessTelegramService;
 
     private final ConcurrentHashMap<String, Map<String, Object>> lastRuns = new ConcurrentHashMap<>();
 
@@ -56,6 +57,7 @@ public class PlatformAutomationService {
             out.put("readinessBlockers", readinessBlockers(ctx));
             out.put("oauthRequired", ctx.requiresUserOAuth());
             out.put("healthy", classifier.isHealthy(ctx));
+            readinessTelegramService.notifyReadiness("pre-market", ctx, readinessBlockers(ctx));
         } catch (Exception ex) {
             out.put("error", ex.toString());
             log.warn("platform.automation pre_market_failed {}", ex.toString());
@@ -81,6 +83,7 @@ public class PlatformAutomationService {
             out.put("readinessBlockers", readinessBlockers(ctx));
             out.put("oauthRequired", ctx.requiresUserOAuth());
             out.put("healthy", classifier.isHealthy(ctx));
+            readinessTelegramService.notifyReadiness("pre-open", ctx, readinessBlockers(ctx));
         } catch (Exception ex) {
             out.put("error", ex.toString());
             log.warn("platform.automation pre_open_failed {}", ex.toString());
