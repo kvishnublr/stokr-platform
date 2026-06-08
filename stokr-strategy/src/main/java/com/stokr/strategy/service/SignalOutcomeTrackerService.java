@@ -564,7 +564,9 @@ public class SignalOutcomeTrackerService {
         SignalLifecycleService.updateOutcome(sig,category.outcomeStatus());
         sig.setOutcomeTime(now);
         sig.setExpiryReason(category.name() + ": " + reason);
-        exitTelemetryService.recordExit(sig, category, reason, now, null, trigger, minHoldBypassed);
+        if (sig.getSymbol() != null) {
+            exitTelemetryService.recordExit(sig, category, reason, now, null, trigger, minHoldBypassed);
+        }
     }
 
     private static boolean isTerminalOutcome(String status) {

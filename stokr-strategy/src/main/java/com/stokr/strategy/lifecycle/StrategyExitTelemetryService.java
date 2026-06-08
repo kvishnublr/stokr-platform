@@ -5,6 +5,7 @@ import com.stokr.strategy.operational.StrategyRuntimeHealthService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -19,7 +20,7 @@ public class StrategyExitTelemetryService {
     private final StrategyExitTelemetryRepository repository;
     private final StrategyRuntimeHealthService runtimeHealthService;
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordExit(
             StrategySignalEntity signal,
             ExitCategory category,
@@ -29,6 +30,11 @@ public class StrategyExitTelemetryService {
             PressureExitTrigger pressureTrigger,
             boolean minHoldBypassed) {
         if (signal == null || category == null || exitTime == null) {
+            return;
+        }
+        if (signal.getSymbol() == null) {
+            log.warn("strategy.exit.telemetry.skip_null_symbol signalId={} strategy={}",
+                    signal.getId(), signal.getStrategyName());
             return;
         }
 

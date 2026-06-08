@@ -16,12 +16,14 @@ import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.math.BigDecimal;
+import java.time.ChronoUnit;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -60,6 +62,43 @@ public class SignalOutcomeExitService {
 
     @Value("${stokr.strategy.exit.auto-exit-on-breakeven:true}")
     private boolean autoExitOnBreakeven;
+
+    /**
+     * Scheduled fail-safe: scans for signals with terminal outcomes that have no exit orders placed.
+     * Catches events lost during restarts (in-memory events are not persisted).
+     */
+    @Scheduled(fixedDelayString = "${stokr.strategy.exit.backfill-interval-ms:300000}")
+    public void scheduledBackfill() {
+        if (!autoExitEnabled) {
+            return;
+        }
+        Instant since = Instant.now().minus(168, ChronoUnit.HOURS);
+        List<StrategySignalEntity> signals = signalRepository.findTerminalOutcomesSince(
+                since, EXIT_OUTCOMES, List.of());
+        int dispatched = 0;
+        for (StrategySignalEntity signal : signals) {
+            if (dispatched >= 20) {
+                break;
+            }
+            if (signal.getSymbol() == null) {
+                continue;
+            }
+            String prefix = "outcome-exit:" + signal.getId() + ":";
+            if (omsOrderRepository.existsByDeletedFalseAndIdempotencyKeyStartingWith(prefix)) {
+                continue;
+            }
+            try {
+                dispatchForSignal(signal.getId(), signal.getOutcomeStatus(), true);
+                dispatched++;
+            } catch (Exception ex) {
+                log.warn("signal.outcome_exit.scheduled_backfill_failed signalId={} err={}",
+                        signal.getId(), ex.getMessage());
+            }
+        }
+        if (dispatched > 0) {
+            log.info("signal.outcome_exit.scheduled_backfill_dispatched count={}", dispatched);
+        }
+    }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onSignalOutcome(OperationalRealtimeEvent event) {
@@ -131,6 +170,11 @@ public class SignalOutcomeExitService {
 
     @Transactional
     public void dispatchForSignal(UUID signalId, String outcomeStatus) {
+        dispatchForSignal(signalId, outcomeStatus, false);
+    }
+
+    @Transactional
+    public void dispatchForSignal(UUID signalId, String outcomeStatus, boolean includeAllSources) {
         StrategySignalEntity signal = signalRepository.findById(signalId).orElse(null);
         if (signal == null || signal.isDeleted()) {
             return;
@@ -138,9 +182,11 @@ public class SignalOutcomeExitService {
         if (Boolean.TRUE.equals(signal.getTestTrade())) {
             return;
         }
-        SignalProvenance source = signal.getSignalSource();
-        if (source == SignalProvenance.REPLAY || source == SignalProvenance.LAB) {
-            return;
+        if (!includeAllSources) {
+            SignalProvenance source = signal.getSignalSource();
+            if (source == SignalProvenance.REPLAY || source == SignalProvenance.LAB) {
+                return;
+            }
         }
 
         List<OmsOrder> entryOrders = resolveEntryOrders(signalId);

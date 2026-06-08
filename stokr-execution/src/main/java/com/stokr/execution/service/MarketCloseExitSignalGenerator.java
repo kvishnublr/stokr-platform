@@ -55,6 +55,8 @@ public class MarketCloseExitSignalGenerator {
             signal.setPipeline("SYSTEM");
             signal.setTestTrade(false);
             signal.setSimulation(false);
+            signal.setOutcomeStatus("TIME_EXIT");
+            signal.setOutcomeTime(Instant.now());
 
             signalRepository.save(signal);
             log.warn("market_close.auto_exit_signal_created segment={} time={}", segment, now);
