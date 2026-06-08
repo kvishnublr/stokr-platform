@@ -307,4 +307,28 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             @Param("since") Instant since,
             @Param("outcomes") Collection<String> outcomes,
             @Param("excludedSources") Collection<SignalProvenance> excludedSources);
+
+    // ===== Position Sweeper queries =====
+
+    @Query("""
+            select s from StrategySignalEntity s
+            where s.deleted = false
+              and s.outcomeStatus in ('RUNNING', 'PENDING')
+              and s.testTrade = false
+              and s.createdAt < :maxCreatedAt
+            order by s.createdAt asc
+            """)
+    List<StrategySignalEntity> findRunningSignalsCreatedBefore(@Param("maxCreatedAt") Instant maxCreatedAt);
+
+    @Query("""
+            select s from StrategySignalEntity s
+            where s.deleted = false
+              and s.testTrade = false
+              and (s.outcomeStatus is null or s.outcomeStatus not in :terminalOutcomes)
+              and s.createdAt < :maxCreatedAt
+            order by s.createdAt asc
+            """)
+    List<StrategySignalEntity> findNonTerminalSignalsCreatedBefore(
+            @Param("maxCreatedAt") Instant maxCreatedAt,
+            @Param("terminalOutcomes") Collection<String> terminalOutcomes);
 }

@@ -146,6 +146,9 @@ public class StrategySignalEntity extends BaseEntity {
     @Column(name = "exit_price", precision = 24, scale = 8)
     private BigDecimal exitPrice;
 
+    @Column(name = "outcome_comment", length = 500)
+    private String outcomeComment;
+
     @Column(name = "realized_pnl", precision = 24, scale = 8)
     private BigDecimal realizedPnl;
 

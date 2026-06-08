@@ -312,4 +312,58 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
     Page<OmsOrder> findByStrategyKeyPageable(
             @Param("strategyKey") String strategyKey,
             Pageable pageable);
+
+    // ===== Position Sweeper queries =====
+
+    @Query("""
+            select o from OmsOrder o
+            where o.deleted = false
+              and o.state = 'FILLED'
+              and o.signalId is null
+              and o.idempotencyKey not like 'outcome-exit:%'
+              and o.createdAt < :maxCreatedAt
+            order by o.createdAt asc
+            """)
+    List<OmsOrder> findFilledOrdersWithNullSignalId(@Param("maxCreatedAt") Instant maxCreatedAt);
+
+    @Query("""
+            select o from OmsOrder o
+            where o.deleted = false
+              and o.state = 'FILLED'
+              and o.signalId is not null
+              and o.idempotencyKey not like 'outcome-exit:%'
+              and o.createdAt < :maxCreatedAt
+            order by o.createdAt asc
+            """)
+    List<OmsOrder> findFilledOrdersWithSignalId(@Param("maxCreatedAt") Instant maxCreatedAt);
+
+    @Query(value = """
+            select o.* from oms_orders o
+            where o.deleted = false
+              and o.state = 'FILLED'
+              and o.signal_id is not null
+              and o.idempotency_key not like 'outcome-exit:' || '%'
+              and o.created_at < :maxCreatedAt
+              and exists (
+                select 1 from strategy_signals s
+                where s.id = o.signal_id
+                  and s.deleted = false
+                  and s.outcome_status in (:terminalOutcomes)
+                  and s.outcome_time > :outcomeSince
+              )
+              and not exists (
+                select 1 from oms_orders x
+                where x.deleted = false
+                  and x.symbol = o.symbol
+                  and x.user_id = o.user_id
+                  and x.idempotency_key like 'outcome-exit:' || '%'
+                  and x.created_at > o.created_at
+              )
+            order by o.created_at asc
+            limit 200
+            """, nativeQuery = true)
+    List<OmsOrder> findFilledOrdersWithTerminatedSignalNoExit(
+            @Param("maxCreatedAt") Instant maxCreatedAt,
+            @Param("terminalOutcomes") List<String> terminalOutcomes,
+            @Param("outcomeSince") Instant outcomeSince);
 }
