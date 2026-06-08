@@ -22,6 +22,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -393,13 +395,14 @@ public class BrokerPositionTruthService {
 
     private void updateSignalOutcomeForManualExit(UUID userId, String symbol) {
         try {
-            // Find all RUNNING signals for this user + symbol and mark them as manually closed
-            // Use a simpler JPA approach with Specification or manual query
+            // Find all RUNNING signals for this user + symbol created in past 60 minutes and mark them as manually closed
             String normalizedSymbol = normalizeSymbol(symbol);
 
-            // Get all signals (we'll filter in code to be safe)
+            // Get all recent signals (created within past 60 minutes) with RUNNING status
+            // Use pagination to be safe with large result sets
+            Pageable pageRequest = PageRequest.of(0, 1000);
             List<StrategySignalEntity> recentSignals = strategySignalRepository
-                    .findRunningSignalsCreatedBefore(Instant.now().minus(Duration.ofMinutes(60)));
+                    .findRunningSignalsSince(Instant.now().minus(Duration.ofMinutes(60)), pageRequest);
 
             for (StrategySignalEntity signal : recentSignals) {
                 // Check if this signal matches our criteria

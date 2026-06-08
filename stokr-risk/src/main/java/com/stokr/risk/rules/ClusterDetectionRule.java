@@ -75,13 +75,14 @@ public class ClusterDetectionRule implements RiskRule {
                 .filter(t -> t.isAfter(windowStart))
                 .count();
 
-        if (entryCount >= maxEntriesInWindow) {
-            log.warn("cluster.detection.triggered user={} entryCount={} windowMinutes={} threshold={}",
+        // Reject if count exceeds maximum (allow up to maxEntriesInWindow, reject on maxEntriesInWindow+1)
+        if (entryCount > maxEntriesInWindow) {
+            log.warn("cluster.detection.triggered user={} entryCount={} windowMinutes={} maxAllowed={}",
                     context.userId(), entryCount, detectionWindowMinutes, maxEntriesInWindow);
             return RiskDecision.reject(
                     code(),
                     String.format(
-                            "Cluster detected: %d entries in %d min (max %d). Pause to avoid batch correlation.",
+                            "Cluster detected: %d entries in %d min (max %d allowed). Pause to avoid batch correlation.",
                             entryCount, detectionWindowMinutes, maxEntriesInWindow
                     )
             );
