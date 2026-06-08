@@ -60,7 +60,6 @@ public class SignalOutcomeExitService {
     private boolean autoExitOnBreakeven;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-    @Transactional
     public void onSignalOutcome(OperationalRealtimeEvent event) {
         if (!autoExitEnabled || event == null || !"signal_outcome".equals(event.topic())) {
             return;
