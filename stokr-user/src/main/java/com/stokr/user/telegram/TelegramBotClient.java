@@ -25,8 +25,16 @@ public class TelegramBotClient {
      * @return true if Telegram accepted the message (or dry-run).
      */
     public boolean sendMessage(String chatId, String text) {
+        return sendMessage(chatId, text, null);
+    }
+
+    public boolean sendHtmlMessage(String chatId, String html) {
+        return sendMessage(chatId, html, "HTML");
+    }
+
+    private boolean sendMessage(String chatId, String text, String parseMode) {
         if (properties.isDryRun()) {
-            log.info("[telegram-dry-run] chatId={} text={}", chatId, text);
+            log.info("[telegram-dry-run] chatId={} parseMode={} text={}", chatId, parseMode, text);
             return true;
         }
         if (properties.getBotToken() == null || properties.getBotToken().isBlank()) {
@@ -35,14 +43,17 @@ public class TelegramBotClient {
         }
         try {
             String url = "https://api.telegram.org/bot" + properties.getBotToken() + "/sendMessage";
+            java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("chat_id", chatId);
+            payload.put("text", text);
+            payload.put("disable_web_page_preview", true);
+            if (parseMode != null && !parseMode.isBlank()) {
+                payload.put("parse_mode", parseMode);
+            }
             String body = http.post()
                     .uri(url)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(objectMapper.writeValueAsString(java.util.Map.of(
-                            "chat_id", chatId,
-                            "text", text,
-                            "disable_web_page_preview", true
-                    )))
+                    .body(objectMapper.writeValueAsString(payload))
                     .retrieve()
                     .body(String.class);
             JsonNode root = objectMapper.readTree(body != null ? body : "{}");

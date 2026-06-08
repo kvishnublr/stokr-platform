@@ -416,6 +416,7 @@ stokr:
     bot-username: ${STOKR_TELEGRAM_BOT_USERNAME:}
     webhook-secret: ${STOKR_TELEGRAM_WEBHOOK_SECRET:}
     dry-run: ${STOKR_TELEGRAM_DRY_RUN:true}
+    operator-chat-id: ${STOKR_TELEGRAM_OPERATOR_CHAT_ID:}
   broker:
     zerodha:
       api-key: ${STOKR_ZERODHA_API_KEY:}
@@ -428,6 +429,9 @@ stokr:
       token-refresh-before-hours: ${STOKR_ZERODHA_TOKEN_REFRESH_BEFORE_HOURS:4}
       token-refresh-interval-ms: ${STOKR_ZERODHA_TOKEN_REFRESH_INTERVAL_MS:1800000}
       token-refresh-daily-cron: ${STOKR_ZERODHA_TOKEN_REFRESH_DAILY_CRON:0 45 5 * * *}
+      oauth-alert-enabled: ${STOKR_ZERODHA_OAUTH_ALERT_ENABLED:true}
+      oauth-alert-cooldown-minutes: ${STOKR_ZERODHA_OAUTH_ALERT_COOLDOWN_MINUTES:240}
+      oauth-alert-poll-ms: ${STOKR_ZERODHA_OAUTH_ALERT_POLL_MS:900000}
       test-order-enabled: ${STOKR_ZERODHA_TEST_ORDER_ENABLED:false}
       test-order-dry-run: ${STOKR_ZERODHA_TEST_ORDER_DRY_RUN:true}
   ui:

@@ -23,6 +23,12 @@ public class ZerodhaBrokerProperties {
      */
     private boolean testOrderDryRun = true;
 
+    /** Send operator Telegram with Kite login link when platform OAuth is required. */
+    private boolean oauthAlertEnabled = true;
+
+    /** Minimum minutes between repeated OAuth Telegram alerts. */
+    private long oauthAlertCooldownMinutes = 240;
+
     public String getApiKey() {
         return apiKey;
     }
@@ -65,5 +71,21 @@ public class ZerodhaBrokerProperties {
 
     public void setTestOrderDryRun(boolean testOrderDryRun) {
         this.testOrderDryRun = testOrderDryRun;
+    }
+
+    public boolean isOauthAlertEnabled() {
+        return oauthAlertEnabled;
+    }
+
+    public void setOauthAlertEnabled(boolean oauthAlertEnabled) {
+        this.oauthAlertEnabled = oauthAlertEnabled;
+    }
+
+    public long getOauthAlertCooldownMinutes() {
+        return oauthAlertCooldownMinutes;
+    }
+
+    public void setOauthAlertCooldownMinutes(long oauthAlertCooldownMinutes) {
+        this.oauthAlertCooldownMinutes = oauthAlertCooldownMinutes;
     }
 }
