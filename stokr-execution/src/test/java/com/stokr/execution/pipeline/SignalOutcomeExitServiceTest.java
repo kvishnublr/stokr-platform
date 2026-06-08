@@ -187,6 +187,7 @@ class SignalOutcomeExitServiceTest {
         signal.setOutcomeStatus("PRESSURE_EXIT");
         signal.setOutcomeTime(Instant.now());
         when(signalRepository.findTerminalOutcomesSince(any(), any(), any())).thenReturn(List.of(signal));
+        when(signalRepository.findById(signalId)).thenReturn(Optional.of(signal));
         when(omsOrderRepository.existsByDeletedFalseAndIdempotencyKeyStartingWith("outcome-exit:" + signalId + ":"))
                 .thenReturn(false);
 
