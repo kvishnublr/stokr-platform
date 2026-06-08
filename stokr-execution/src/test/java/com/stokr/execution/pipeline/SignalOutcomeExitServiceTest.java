@@ -101,7 +101,7 @@ class SignalOutcomeExitServiceTest {
         assertThat(req.brokerVendor()).isEqualTo("ZERODHA");
         assertThat(req.exitOrder()).isTrue();
         assertThat(req.guardMode()).isEqualTo("EXIT_SAFE");
-        assertThat(req.signalId()).isNull();
+        assertThat(req.signalId()).isEqualTo(signalId);
         assertThat(req.idempotencyKey()).contains("outcome-exit:" + signalId);
     }
 

@@ -177,7 +177,10 @@ stokr:
     max-order-qty: ${STOKR_RISK_MAX_ORDER_QTY:100000}
     max-order-notional: ${STOKR_RISK_MAX_ORDER_NOTIONAL:50000000}
     max-open-positions: ${STOKR_RISK_MAX_OPEN_POSITIONS:100}
-    order-cooldown-ms: ${STOKR_RISK_ORDER_COOLDOWN_MS:0}
+    order-cooldown-ms: ${STOKR_RISK_ORDER_COOLDOWN_MS:30000}
+    cluster-detection-enabled: ${STOKR_RISK_CLUSTER_DETECTION_ENABLED:true}
+    cluster-max-entries: ${STOKR_RISK_CLUSTER_MAX_ENTRIES:2}
+    cluster-detection-window-minutes: ${STOKR_RISK_CLUSTER_DETECTION_WINDOW_MINUTES:2}
     max-trades-per-day: ${STOKR_RISK_MAX_TRADES_PER_DAY:200}
     max-daily-loss-amount: ${STOKR_RISK_MAX_DAILY_LOSS_AMOUNT:0}
     max-portfolio-drawdown-pct: ${STOKR_RISK_MAX_PORTFOLIO_DRAWDOWN_PCT:0}

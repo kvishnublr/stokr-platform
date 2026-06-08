@@ -95,27 +95,27 @@ public class TargetProfitMonitorService {
             exitSignal.setSymbol(symbol);
             exitSignal.setSuggestedQty(quantity.abs()); // Close full position
             exitSignal.setReason("Profit target reached (" + defaultTargetProfitPercent + "%)");
-                    exitSignal.setStrategyName("TARGET_PROFIT_EXIT");
-                    exitSignal.setStrategyVersion("1.0");
-                    exitSignal.setPipeline("HYBRID_EXIT");
-                    exitSignal.setOwnerType(SignalOwnerType.AUTO_TRADE);
-                    exitSignal.setSignalSource(SignalProvenance.LIVE);
-                    exitSignal.setTestTrade(false);
-                    exitSignal.setSimulation(false);
+            exitSignal.setStrategyName("TARGET_PROFIT_EXIT");
+            exitSignal.setStrategyVersion("1.0");
+            exitSignal.setPipeline("HYBRID_EXIT");
+            exitSignal.setOwnerType(SignalOwnerType.AUTO_TRADE);
+            exitSignal.setSignalSource(SignalProvenance.LIVE);
+            exitSignal.setTestTrade(false);
+            exitSignal.setSimulation(false);
 
-                    signalRepository.save(exitSignal);
-                    var result = positionExitOrchestratorService.flattenSymbol(
-                            PRIMARY_TRADER_ID,
-                            position.getSymbol(),
-                            "TARGET_PROFIT_EXIT",
-                            exitSignal.getReason()
-                    );
+            signalRepository.save(exitSignal);
+            var exitResult = positionExitOrchestratorService.flattenSymbol(
+                    PRIMARY_TRADER_ID,
+                    symbol,
+                    "TARGET_PROFIT_EXIT",
+                    exitSignal.getReason()
+            );
 
-                    log.warn("target_profit.exit_signal_created positionId={} symbol={} qty={} signalId={} ordersCreated={} notes={}",
-                            positionId, symbol, quantity, exitSignal.getId(), result.get("ordersCreated"), result.get("notes"));
-                } catch (Exception e) {
-                    log.error("target_profit.exit_signal_failed positionId={} symbol={} error={}",
-                            positionId, symbol, e.getMessage());
-                }
-            }
+            log.warn("target_profit.exit_signal_created positionId={} symbol={} qty={} signalId={} ordersCreated={} notes={}",
+                    positionId, symbol, quantity, exitSignal.getId(), exitResult.get("ordersCreated"), exitResult.get("notes"));
+        } catch (Exception e) {
+            log.error("target_profit.exit_signal_failed positionId={} symbol={} error={}",
+                    positionId, symbol, e.getMessage(), e);
+        }
+    }
 }

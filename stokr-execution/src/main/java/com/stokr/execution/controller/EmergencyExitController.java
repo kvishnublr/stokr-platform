@@ -2,6 +2,7 @@ package com.stokr.execution.controller;
 
 import com.stokr.common.api.ApiResponse;
 import com.stokr.common.correlation.CorrelationIdHolder;
+import com.stokr.execution.service.PositionExitOrchestratorService;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
@@ -63,7 +64,7 @@ public class EmergencyExitController {
                     exitSignal.setSimulation(false);
 
                     signalRepository.save(exitSignal);
-                    var result = positionExitOrchestratorService.flattenSymbol(
+                    var exitResult = positionExitOrchestratorService.flattenSymbol(
                             PRIMARY_TRADER_ID,
                             position.getSymbol(),
                             "EMERGENCY_EXIT",
@@ -73,7 +74,7 @@ public class EmergencyExitController {
 
                     log.error("emergency.force_close symbol={} qty={} signalId={} ordersCreated={} notes={}",
                             position.getSymbol(), position.getQuantity(), exitSignal.getId(),
-                            result.get("ordersCreated"), result.get("notes"));
+                            exitResult.get("ordersCreated"), exitResult.get("notes"));
                 }
             }
 

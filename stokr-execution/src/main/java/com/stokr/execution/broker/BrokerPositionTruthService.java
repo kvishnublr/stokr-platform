@@ -12,7 +12,9 @@ import com.stokr.oms.reconciliation.ReconciliationEventRepository;
 import com.stokr.oms.repository.OmsExecutionRepository;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.strategy.domain.StrategyInstance;
+import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
+import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.service.SignalManualExitSuppressionService;
 import com.stokr.user.broker.ZerodhaBrokerOperationsService;
 import com.stokr.user.repository.BrokerAccountRepository;
@@ -26,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Set;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -64,6 +67,7 @@ public class BrokerPositionTruthService {
     private final OmsOrderRepository omsOrderRepository;
     private final ReconciliationEventRepository reconciliationEventRepository;
     private final StrategyInstanceRepository strategyInstanceRepository;
+    private final StrategySignalRepository strategySignalRepository;
     private final BrokerReconciliationService brokerReconciliationService;
     private final ApplicationEventPublisher eventPublisher;
     private final BrokerAccountRepository brokerAccountRepository;
@@ -373,6 +377,10 @@ public class BrokerPositionTruthService {
         persistRecon(userId, symbol, "EXTERNAL_BROKER_EXIT", BigDecimal.ZERO, internalQty);
         manualExitSuppressionService.suppressAutoExitForSymbol(userId, symbol, "MANUAL: external_broker_exit");
         haltStrategyRuntimeForSymbol(userId, symbol);
+
+        // Auto-update signal outcome for manual broker exit (FIX #2)
+        updateSignalOutcomeForManualExit(userId, symbol);
+
         eventPublisher.publishEvent(new ExecutionAlertEvent(
                 "BROKER_EXTERNAL_EXIT",
                 null,
@@ -381,6 +389,38 @@ public class BrokerPositionTruthService {
                 userId,
                 "Position " + symbol + " closed at broker; strategy runtime halted"
         ));
+    }
+
+    private void updateSignalOutcomeForManualExit(UUID userId, String symbol) {
+        try {
+            // Find all RUNNING signals for this user + symbol and mark them as manually closed
+            // Use a simpler JPA approach with Specification or manual query
+            String normalizedSymbol = normalizeSymbol(symbol);
+
+            // Get all signals (we'll filter in code to be safe)
+            List<StrategySignalEntity> recentSignals = strategySignalRepository
+                    .findRunningSignalsCreatedBefore(Instant.now().minus(Duration.ofMinutes(60)));
+
+            for (StrategySignalEntity signal : recentSignals) {
+                // Check if this signal matches our criteria
+                if (signal.getUserId() != null && signal.getUserId().equals(userId)
+                        && signal.getSymbol() != null
+                        && normalizeSymbol(signal.getSymbol()).equalsIgnoreCase(normalizedSymbol)
+                        && "RUNNING".equalsIgnoreCase(signal.getOutcomeStatus())) {
+
+                    signal.setOutcomeStatus("CLOSED");
+                    signal.setOutcomeComment("Position manually closed at broker (MANUAL_BROKER_EXIT)");
+                    signal.setOutcomeTime(Instant.now());
+                    signal.setUpdatedAt(Instant.now());
+                    strategySignalRepository.save(signal);
+                    log.info("signal.outcome.auto_updated signalId={} reason=MANUAL_BROKER_EXIT symbol={}",
+                            signal.getId(), symbol);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("signal.outcome.auto_update_failed symbol={} error={}", symbol, e.getMessage());
+            // Don't fail the entire manual exit handling if signal update fails
+        }
     }
 
     private void haltStrategyRuntimeForSymbol(UUID userId, String symbol) {

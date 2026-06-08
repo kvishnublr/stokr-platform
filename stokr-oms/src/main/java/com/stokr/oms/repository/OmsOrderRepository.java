@@ -138,6 +138,21 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
             Pageable pageable);
 
     @Query("""
+            select o.createdAt from OmsOrder o
+            where o.deleted = false
+              and o.userId = :userId
+              and o.side in ('BUY', 'LONG')
+              and o.backtestRunId is null
+              and o.createdAt >= :since
+              and o.createdAt <= :until
+            order by o.createdAt asc
+            """)
+    List<Instant> findRecentOrderTimesForUser(
+            @Param("userId") UUID userId,
+            @Param("since") Instant since,
+            @Param("until") Instant until);
+
+    @Query("""
             select case when count(o) > 0 then true else false end
             from OmsOrder o
             where o.deleted = false

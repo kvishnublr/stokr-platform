@@ -211,11 +211,11 @@ public class PositionExitOrchestratorService {
                 if (row.brokerQty() == null || row.brokerQty().signum() == 0) {
                     continue;
                 }
-                if (!matchesSegment(segment, row.exchange(), row.symbol())) {
+                if (!matchesSegment(segment, row.symbol())) {
                     continue;
                 }
                 String norm = BrokerPositionTruthService.normalizeSymbol(row.symbol());
-                bySymbol.putIfAbsent(norm, new FlattenTarget(norm, row.brokerQty(), row.exchange(), row.product(), true));
+                bySymbol.putIfAbsent(norm, new FlattenTarget(norm, row.brokerQty(), null, row.product(), true));
             }
         }
 
@@ -225,7 +225,7 @@ public class PositionExitOrchestratorService {
                     continue;
                 }
                 String norm = BrokerPositionTruthService.normalizeSymbol(p.getSymbol());
-                if (!matchesSegment(segment, null, norm)) {
+                if (!matchesSegment(segment, norm)) {
                     continue;
                 }
                 bySymbol.putIfAbsent(norm, new FlattenTarget(norm, p.getQuantity(), null, null, false));
@@ -247,8 +247,8 @@ public class PositionExitOrchestratorService {
                 if (symbol.equalsIgnoreCase(rowSymbol)
                         && row.brokerQty() != null
                         && row.brokerQty().signum() != 0
-                        && matchesSegment(segment, row.exchange(), rowSymbol)) {
-                    return new FlattenTarget(rowSymbol, row.brokerQty(), row.exchange(), row.product(), true);
+                        && matchesSegment(segment, rowSymbol)) {
+                    return new FlattenTarget(rowSymbol, row.brokerQty(), null, row.product(), true);
                 }
             }
         }
@@ -257,7 +257,7 @@ public class PositionExitOrchestratorService {
             if (symbol.equalsIgnoreCase(rowSymbol)
                     && p.getQuantity() != null
                     && p.getQuantity().signum() != 0
-                    && matchesSegment(segment, null, rowSymbol)) {
+                    && matchesSegment(segment, rowSymbol)) {
                 return new FlattenTarget(rowSymbol, p.getQuantity(), null, null, false);
             }
         }
@@ -272,7 +272,7 @@ public class PositionExitOrchestratorService {
                 continue;
             }
             String symbol = BrokerPositionTruthService.normalizeSymbol(event.getSymbol());
-            if (!matchesSegment(segment, null, symbol)) {
+            if (!matchesSegment(segment, symbol)) {
                 continue;
             }
             bySymbol.putIfAbsent(symbol, new FlattenTarget(symbol, event.getBrokerQty(), null, null, true));
@@ -321,27 +321,27 @@ public class PositionExitOrchestratorService {
         return ExecutionMode.SIMULATED;
     }
 
-    private static boolean matchesSegment(String segment, String exchange, String symbol) {
+    private static boolean matchesSegment(String segment, String symbol) {
         if (segment == null || segment.isBlank()) {
             return true;
         }
         String seg = segment.trim().toUpperCase(Locale.ROOT);
-        String ex = exchange == null ? "" : exchange.trim().toUpperCase(Locale.ROOT);
         String sym = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
         if ("MCX".equals(seg)) {
-            return ex.contains("MCX") || isMcxSymbol(sym);
+            return isMcxSymbol(sym);
         }
         if ("NSE".equals(seg)) {
-            return ex.isEmpty() || ex.contains("NSE") || ex.contains("BSE") || !isMcxSymbol(sym);
+            return !isMcxSymbol(sym)
+                    && !isCurrencySymbol(sym);
         }
         if ("BSE".equals(seg)) {
-            return ex.contains("BSE");
+            return !isMcxSymbol(sym) && !isCurrencySymbol(sym);
         }
         if ("CDS".equals(seg) || "CURRENCY".equals(seg)) {
-            return ex.contains("CDS") || ex.contains("CUR") || sym.contains("USD") || sym.contains("EUR")
+            return sym.contains("USD") || sym.contains("EUR")
                     || sym.contains("JPY") || sym.contains("GBP");
         }
-        return ex.contains(seg);
+        return true;
     }
 
     private static boolean isMcxSymbol(String symbol) {
@@ -362,6 +362,23 @@ public class PositionExitOrchestratorService {
                 || s.startsWith("MENTHAOIL")
                 || s.startsWith("COTTON")
                 || s.startsWith("CARDAMOM");
+    }
+
+    private static boolean isCurrencySymbol(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return false;
+        }
+        String s = symbol.trim().toUpperCase(Locale.ROOT);
+        return s.contains("USDINR")
+                || s.contains("EURINR")
+                || s.contains("GBPINR")
+                || s.contains("JPYINR")
+                || s.contains("AUDINR")
+                || s.contains("CADINR")
+                || s.contains("CHFINR")
+                || s.contains("SGDINR")
+                || s.contains("NZDINR")
+                || s.contains("HKDINR");
     }
 
     private record FlattenTarget(String symbol, BigDecimal qty, String exchange, String product, boolean fromBroker) {}

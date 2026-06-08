@@ -34,6 +34,9 @@ public class SignalQualityGateService {
         if (!enabled || signal == null || Boolean.TRUE.equals(signal.getTestTrade())) {
             return null;
         }
+        if (signal.getSignalType() == SignalType.EXIT) {
+            return null;
+        }
         if (signal.getBacktestRunId() != null) {
             return null;
         }
