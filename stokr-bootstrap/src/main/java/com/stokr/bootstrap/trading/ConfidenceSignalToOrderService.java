@@ -361,8 +361,14 @@ public class ConfidenceSignalToOrderService {
             }
 
             // Validate price is reasonable (not 0 or extreme)
-            Double price = score.getLiquidityScore();
-            if (price == null || price <= 0 || price > 100000) {
+            Object liquidityObj = score.getLiquidityScore();
+            if (liquidityObj == null) {
+                return false;
+            }
+            double price = liquidityObj instanceof Double ?
+                (Double) liquidityObj :
+                ((Number) liquidityObj).doubleValue();
+            if (price <= 0 || price > 100000) {
                 return false;
             }
 
