@@ -41,6 +41,17 @@ class DuplicateActiveOrderRuleTest {
     }
 
     @Test
+    void allowsTerminalFlattenDespiteDuplicate() {
+        OmsOrderRepository repo = mock(OmsOrderRepository.class);
+        StrategySignalRepository signalRepo = mock(StrategySignalRepository.class);
+        OmsOrder o = order();
+        o.setStrategyKey("TERMINAL_FLATTEN");
+        when(repo.countActiveSameDirection(any(), any(), any(), any(), any())).thenReturn(1L);
+        DuplicateActiveOrderRule rule = new DuplicateActiveOrderRule(repo, signalRepo);
+        assertThat(rule.evaluate(ctx(o)).allowed()).isTrue();
+    }
+
+    @Test
     void skipsBacktestOrders() {
         OmsOrderRepository repo = mock(OmsOrderRepository.class);
         StrategySignalRepository signalRepo = mock(StrategySignalRepository.class);

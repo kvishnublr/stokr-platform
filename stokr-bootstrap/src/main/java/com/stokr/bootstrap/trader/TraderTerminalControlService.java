@@ -163,7 +163,6 @@ public class TraderTerminalControlService {
     }
 
     /** Admin / ops: square off all open Zerodha legs for a user (ignores PAPER execution preference). */
-    @Transactional
     public Map<String, Object> flattenBrokerPositions(UUID userId) {
         List<String> notes = new ArrayList<>();
         List<Map<String, Object>> flattenResults = new ArrayList<>();
@@ -409,10 +408,15 @@ public class TraderTerminalControlService {
                         "mode", exitMode.name(),
                         "product", target.product() != null ? target.product() : ""
                 ));
-                int suppressed = manualExitSuppressionService.suppressAutoExitForSymbol(
-                        userId, target.symbol(), "MANUAL: terminal_flatten");
-                if (suppressed > 0) {
-                    notes.add("suppressed auto-exit for " + suppressed + " signal(s) on " + target.symbol());
+                try {
+                    int suppressed = manualExitSuppressionService.suppressAutoExitForSymbol(
+                            userId, target.symbol(), "MANUAL: terminal_flatten");
+                    if (suppressed > 0) {
+                        notes.add("suppressed auto-exit for " + suppressed + " signal(s) on " + target.symbol());
+                    }
+                } catch (Exception suppressEx) {
+                    notes.add("suppress auto-exit failed " + target.symbol() + ": "
+                            + suppressEx.getClass().getSimpleName());
                 }
             } catch (Exception ex) {
                 notes.add("flatten failed " + target.symbol() + ": " + ex.getClass().getSimpleName());
