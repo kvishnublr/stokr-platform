@@ -80,7 +80,15 @@ public class OrderLifecycleService {
     }
 
     private boolean isExitOrder(OmsOrder order, String idempotencyKey) {
-        if (idempotencyKey != null && idempotencyKey.startsWith("outcome-exit:")) {
+        if (idempotencyKey != null) {
+            String key = idempotencyKey.toLowerCase();
+            if (key.startsWith("outcome-exit:") || key.startsWith("terminal:flatten:")
+                    || key.startsWith("terminal:exit:")) {
+                return true;
+            }
+        }
+        if (order.getStrategyKey() != null
+                && order.getStrategyKey().trim().toUpperCase().startsWith("TERMINAL_")) {
             return true;
         }
         return order.getOrderType() != null && order.getOrderType().toLowerCase().contains("exit");
