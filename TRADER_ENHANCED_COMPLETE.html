@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKR Trader - Neural AI Intelligence</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        @keyframes glow { 0%, 100% { box-shadow: 0 0 10px rgba(100, 50, 255, 0.3); } 50% { box-shadow: 0 0 30px rgba(100, 50, 255, 0.6); } }
+        @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
+        @keyframes slide { from { opacity: 0; transform: translateX(-30px); } to { opacity: 1; transform: translateX(0); } }
+
+        body {
+            font-family: '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            color: #e0e0ff;
+            min-height: 100vh;
+            display: flex;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: linear-gradient(180deg, #1a1a3e 0%, #16213e 100%);
+            border-right: 2px solid #6432ff;
+            padding: 24px 16px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 20;
+            box-shadow: 0 0 40px rgba(100, 50, 255, 0.2);
+        }
+
+        .logo {
+            font-size: 32px;
+            font-weight: 900;
+            margin-bottom: 32px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #6432ff;
+            background: linear-gradient(135deg, #6432ff 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: slide 0.6s ease-out;
+        }
+
+        .menu-group {
+            margin-bottom: 24px;
+        }
+
+        .menu-group-title {
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #a78bfa;
+            margin-bottom: 12px;
+            padding: 8px;
+            background: rgba(100, 50, 255, 0.1);
+            border-radius: 6px;
+            border-left: 3px solid #6432ff;
+        }
+
+        .menu-item {
+            padding: 12px 12px;
+            margin-bottom: 6px;
+            background: transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.3s;
+            color: #b0b0d9;
+            border-left: 3px solid transparent;
+            font-weight: 600;
+            border: none;
+            width: 100%;
+            text-align: left;
+        }
+
+        .menu-item:hover {
+            background: rgba(100, 50, 255, 0.2);
+            color: #e0e0ff;
+            border-left-color: #6432ff;
+            transform: translateX(6px);
+        }
+
+        .menu-item.active {
+            background: rgba(100, 50, 255, 0.3);
+            color: #e0e0ff;
+            border-left-color: #6432ff;
+            animation: glow 2s ease-in-out infinite;
+        }
+
+        .main-content {
+            margin-left: 300px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .top-bar {
+            background: rgba(20, 20, 50, 0.8);
+            border-bottom: 2px solid #6432ff;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 0 30px rgba(100, 50, 255, 0.1);
+        }
+
+        .breadcrumb {
+            font-size: 12px;
+            background: linear-gradient(90deg, #6432ff, #8b5cf6, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(100, 50, 255, 0.1);
+            padding: 8px 14px;
+            border-radius: 20px;
+            color: #a78bfa;
+            font-weight: 700;
+            font-size: 11px;
+            text-transform: uppercase;
+            border: 1px solid #6432ff;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        .content-area {
+            flex: 1;
+            padding: 32px;
+            overflow-y: auto;
+            animation: slide 0.8s ease-out;
+        }
+
+        .page-title {
+            font-size: 42px;
+            font-weight: 900;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #6432ff 0%, #8b5cf6 50%, #a78bfa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .page-subtitle {
+            font-size: 14px;
+            color: #a78bfa;
+            margin-bottom: 32px;
+            font-weight: 700;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .card {
+            background: linear-gradient(135deg, rgba(100, 50, 255, 0.1), rgba(139, 92, 246, 0.05));
+            border: 2px solid #6432ff;
+            border-radius: 16px;
+            padding: 24px;
+            transition: all 0.5s;
+            box-shadow: 0 0 20px rgba(100, 50, 255, 0.1);
+            animation: float 3s ease-in-out infinite;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, transparent, rgba(100, 50, 255, 0.1), transparent);
+            animation: float 4s ease-in-out infinite;
+        }
+
+        .card-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .card:hover {
+            transform: translateY(-10px);
+            border-color: #8b5cf6;
+            box-shadow: 0 0 40px rgba(100, 50, 255, 0.3);
+        }
+
+        .card-title {
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #6432ff;
+            background: linear-gradient(135deg, #6432ff, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(100, 50, 255, 0.2);
+        }
+
+        .metric:last-child { border-bottom: none; }
+
+        .metric-label {
+            font-size: 12px;
+            color: #a78bfa;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-value {
+            font-size: 16px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #6432ff, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .metric-value.positive {
+            background: linear-gradient(135deg, #10b981, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(100, 50, 255, 0.2);
+            color: #e0e0ff;
+        }
+
+        th {
+            background: rgba(100, 50, 255, 0.1);
+            border-bottom: 2px solid #6432ff;
+            font-weight: 800;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #a78bfa;
+        }
+
+        tr:hover {
+            background: rgba(100, 50, 255, 0.1);
+        }
+
+        .neural-viz {
+            background: linear-gradient(135deg, rgba(100, 50, 255, 0.1), rgba(139, 92, 246, 0.05));
+            border: 2px solid #6432ff;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 32px;
+            box-shadow: 0 0 20px rgba(100, 50, 255, 0.1);
+        }
+
+        .neural-viz h3 {
+            background: linear-gradient(135deg, #6432ff, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 20px;
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .neural-nodes {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .node {
+            padding: 16px;
+            background: rgba(100, 50, 255, 0.1);
+            border: 2px solid #6432ff;
+            border-radius: 12px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .node:hover {
+            background: rgba(100, 50, 255, 0.2);
+            box-shadow: 0 0 20px rgba(100, 50, 255, 0.3);
+            transform: scale(1.05);
+        }
+
+        .node-label {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: #a78bfa;
+            margin-bottom: 8px;
+        }
+
+        .node-value {
+            font-size: 18px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #6432ff, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logout-btn {
+            background: linear-gradient(135deg, #dc2626, #991b1b);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 11px;
+            transition: all 0.3s;
+            text-transform: uppercase;
+        }
+
+        .logout-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 20px rgba(220, 38, 38, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">⚡ STOKR</div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">📊 Command Center</div>
+            <button class="menu-item active" onclick="loadPage('dashboard')">Command Center</button>
+            <button class="menu-item" onclick="loadPage('overview')">Platform Overview</button>
+            <button class="menu-item" onclick="loadPage('health')">Pipeline Health</button>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">🔄 Trading Operations</div>
+            <button class="menu-item" onclick="loadPage('oms')">OMS Monitor</button>
+            <button class="menu-item" onclick="loadPage('intraday')">Intraday Ops</button>
+            <button class="menu-item" onclick="loadPage('trader')">Trader Health</button>
+            <button class="menu-item" onclick="loadPage('execution')">Execution Controls</button>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">🎯 Strategies & Signals</div>
+            <button class="menu-item" onclick="loadPage('signals')">Signal Monitor</button>
+            <button class="menu-item" onclick="loadPage('catalog')">Strategy Catalog</button>
+            <button class="menu-item" onclick="loadPage('performance')">Performance Analytics</button>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">⚙️ System</div>
+            <button class="menu-item" onclick="loadPage('settings')">Settings</button>
+            <button class="menu-item logout-btn" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="breadcrumb">Admin / Command Center / Neural AI Intelligence</div>
+            <div style="display: flex; gap: 16px;">
+                <div class="status-item"><div class="status-dot"></div>Broker: Connected</div>
+                <div class="status-item"><div class="status-dot"></div>API: Live</div>
+                <div class="status-item"><div class="status-dot"></div>AI: Learning</div>
+            </div>
+        </div>
+
+        <div class="content-area" id="contentArea">
+            <div class="page-title">Neural AI Intelligence</div>
+            <div class="page-subtitle">Real-time neural network visualization with intelligent data flow</div>
+
+            <div class="neural-viz">
+                <h3>Neural Network Data Flow Visualization</h3>
+                <div class="neural-nodes">
+                    <div class="node">
+                        <div class="node-label">Risk</div>
+                        <div class="node-value">✓</div>
+                    </div>
+                    <div class="node">
+                        <div class="node-label">Portfolio</div>
+                        <div class="node-value">847</div>
+                    </div>
+                    <div class="node">
+                        <div class="node-label">Signals</div>
+                        <div class="node-value">↑12</div>
+                    </div>
+                    <div class="node">
+                        <div class="node-label">Core</div>
+                        <div class="node-value">✓</div>
+                    </div>
+                    <div class="node">
+                        <div class="node-label">Trades</div>
+                        <div class="node-value">2.8K</div>
+                    </div>
+                    <div class="node">
+                        <div class="node-label">Alerts</div>
+                        <div class="node-value">42</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-grid">
+                <div class="card">
+                    <div class="card-content">
+                        <div class="card-title">💰 Portfolio Health</div>
+                        <div class="metric">
+                            <span class="metric-label">Total Equity</span>
+                            <span class="metric-value">45.2 Cr</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Today P&L</span>
+                            <span class="metric-value positive">+8.34 Cr</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Positions</span>
+                            <span class="metric-value">847</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-content">
+                        <div class="card-title">📊 Trading Status</div>
+                        <div class="metric">
+                            <span class="metric-label">Win Rate</span>
+                            <span class="metric-value">73.2%</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Trades Today</span>
+                            <span class="metric-value">2,847</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Avg Trade</span>
+                            <span class="metric-value">30.1K</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-content">
+                        <div class="card-title">🏥 System Health</div>
+                        <div class="metric">
+                            <span class="metric-label">API Latency</span>
+                            <span class="metric-value">24ms</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">DB Health</span>
+                            <span class="metric-value positive">99.9%</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Uptime</span>
+                            <span class="metric-value">45 Days</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-content">
+                    <div class="card-title">📈 Top Positions</div>
+                    <table>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Current</th>
+                            <th>P&L</th>
+                            <th>%</th>
+                        </tr>
+                        <tr>
+                            <td>INFY</td>
+                            <td>100</td>
+                            <td>1234</td>
+                            <td>1256</td>
+                            <td style="color: #10b981;">+2.2K</td>
+                            <td style="color: #10b981;">+1.78%</td>
+                        </tr>
+                        <tr>
+                            <td>TCS</td>
+                            <td>50</td>
+                            <td>3800</td>
+                            <td>3850</td>
+                            <td style="color: #10b981;">+2.5K</td>
+                            <td style="color: #10b981;">+1.31%</td>
+                        </tr>
+                        <tr>
+                            <td>WIPRO</td>
+                            <td>150</td>
+                            <td>420</td>
+                            <td>435</td>
+                            <td style="color: #10b981;">+2.25K</td>
+                            <td style="color: #10b981;">+3.57%</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auth check
+        window.addEventListener('load', () => {
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                window.location.href = '/login.html';
+            }
+        });
+
+        const pages = {
+            dashboard: {
+                title: 'Neural AI Intelligence',
+                subtitle: 'Real-time neural network visualization with intelligent data flow',
+                content: `<div class="neural-viz">
+                    <h3>Neural Network Data Flow Visualization</h3>
+                    <div class="neural-nodes">
+                        <div class="node"><div class="node-label">Risk</div><div class="node-value">✓</div></div>
+                        <div class="node"><div class="node-label">Portfolio</div><div class="node-value">847</div></div>
+                        <div class="node"><div class="node-label">Signals</div><div class="node-value">↑12</div></div>
+                        <div class="node"><div class="node-label">Core</div><div class="node-value">✓</div></div>
+                        <div class="node"><div class="node-label">Trades</div><div class="node-value">2.8K</div></div>
+                        <div class="node"><div class="node-label">Alerts</div><div class="node-value">42</div></div>
+                    </div>
+                </div>
+                <div class="dashboard-grid">
+                    <div class="card"><div class="card-content"><div class="card-title">💰 Portfolio</div>
+                    <div class="metric"><span class="metric-label">Equity</span><span class="metric-value">45.2 Cr</span></div>
+                    <div class="metric"><span class="metric-label">P&L</span><span class="metric-value positive">+8.34 Cr</span></div>
+                    <div class="metric"><span class="metric-label">Positions</span><span class="metric-value">847</span></div></div></div>
+                    <div class="card"><div class="card-content"><div class="card-title">📊 Trading</div>
+                    <div class="metric"><span class="metric-label">Win Rate</span><span class="metric-value">73.2%</span></div>
+                    <div class="metric"><span class="metric-label">Daily Trades</span><span class="metric-value">2,847</span></div>
+                    <div class="metric"><span class="metric-label">Volume</span><span class="metric-value">856 Cr</span></div></div></div>
+                    <div class="card"><div class="card-content"><div class="card-title">🏥 System</div>
+                    <div class="metric"><span class="metric-label">Latency</span><span class="metric-value">24ms</span></div>
+                    <div class="metric"><span class="metric-label">DB</span><span class="metric-value positive">99.9%</span></div>
+                    <div class="metric"><span class="metric-label">Uptime</span><span class="metric-value">45 Days</span></div></div></div>
+                </div>`
+            },
+            overview: {
+                title: 'Platform Overview',
+                subtitle: 'Complete system analytics and performance metrics',
+                content: `<div class="dashboard-grid">
+                    <div class="card"><div class="card-content"><div class="card-title">📈 Metrics</div>
+                    <div class="metric"><span class="metric-label">Users</span><span class="metric-value">847</span></div>
+                    <div class="metric"><span class="metric-label">AUM</span><span class="metric-value">450 Cr</span></div>
+                    <div class="metric"><span class="metric-label">Revenue</span><span class="metric-value">24.5L</span></div></div></div>
+                </div>`
+            },
+            oms: {
+                title: 'OMS Monitor',
+                subtitle: 'Order Management System real-time monitoring',
+                content: `<div class="card"><div class="card-content"><div class="card-title">📋 Active Orders</div>
+                    <table>
+                    <tr><th>ID</th><th>Symbol</th><th>Type</th><th>Qty</th><th>Status</th></tr>
+                    <tr><td>ORD001</td><td>INFY</td><td>BUY</td><td>100</td><td>Pending</td></tr>
+                    <tr><td>ORD002</td><td>TCS</td><td>SELL</td><td>50</td><td>Executed</td></tr>
+                    </table></div></div>`
+            },
+            signals: {
+                title: 'Signal Monitor',
+                subtitle: 'Real-time trading signals and alerts',
+                content: `<div class="card"><div class="card-content"><div class="card-title">📡 Signals</div>
+                    <table>
+                    <tr><th>Time</th><th>Symbol</th><th>Signal</th><th>Confidence</th></tr>
+                    <tr><td>14:30</td><td>INFY</td><td>BUY</td><td>85%</td></tr>
+                    <tr><td>13:45</td><td>TCS</td><td>SELL</td><td>78%</td></tr>
+                    </table></div></div>`
+            },
+            settings: {
+                title: 'Settings',
+                subtitle: 'System configuration',
+                content: `<div class="card"><div class="card-content"><div class="card-title">⚙️ Preferences</div>
+                    <div class="metric"><span class="metric-label">Theme</span><span class="metric-value">Neural AI</span></div>
+                    <div class="metric"><span class="metric-label">Status</span><span class="metric-value positive">Active</span></div>
+                    </div></div>`
+            }
+        };
+
+        function loadPage(pageName) {
+            const page = pages[pageName] || pages.dashboard;
+            const contentArea = document.getElementById('contentArea');
+
+            contentArea.innerHTML = `
+                <div class="page-title">${page.title}</div>
+                <div class="page-subtitle">${page.subtitle}</div>
+                ${page.content}
+            `;
+
+            document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            window.location.href = '/login.html';
+        }
+    </script>
+</body>
+</html>

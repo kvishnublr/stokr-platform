@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKR Trader - Brutalism Bold</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #000000;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Top Header */
+        .top-header {
+            background: #000000;
+            border-bottom: 4px solid #FF00FF;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #FF00FF;
+        }
+
+        .top-metrics {
+            display: flex;
+            gap: 32px;
+            font-weight: bold;
+        }
+
+        .metric-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 12px;
+        }
+
+        .metric-label {
+            color: #00FFFF;
+        }
+
+        .metric-value {
+            font-size: 16px;
+            color: #FF00FF;
+        }
+
+        .metric-value.positive {
+            color: #00FF00;
+        }
+
+        /* Navigation Tabs */
+        .nav-tabs {
+            background: #000000;
+            border-bottom: 2px solid #FF00FF;
+            padding: 0;
+            display: flex;
+            gap: 0;
+        }
+
+        .tab {
+            padding: 12px 20px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: #ffffff;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 13px;
+            border-right: 3px solid #333333;
+            transition: all 0.15s;
+        }
+
+        .tab:hover {
+            background: #FF00FF;
+            color: #000000;
+        }
+
+        .tab.active {
+            background: #00FFFF;
+            color: #000000;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            padding: 32px;
+            background: #000000;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-size: 24px;
+            font-weight: 900;
+            margin-bottom: 24px;
+            color: #FF00FF;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .card {
+            background: #000000;
+            border: 4px solid;
+            padding: 24px;
+            transition: all 0.15s;
+        }
+
+        .card:nth-child(1) { border-color: #FF0066; }
+        .card:nth-child(2) { border-color: #00CCFF; }
+        .card:nth-child(3) { border-color: #00FF88; }
+        .card:nth-child(4) { border-color: #FF9900; }
+
+        .card:hover {
+            transform: translate(-4px, -4px);
+            box-shadow: 8px 8px 0px rgba(255, 0, 255, 0.4);
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 3px solid;
+        }
+
+        .card:nth-child(1) .card-title { border-bottom-color: #FF0066; color: #FF0066; }
+        .card:nth-child(2) .card-title { border-bottom-color: #00CCFF; color: #00CCFF; }
+        .card:nth-child(3) .card-title { border-bottom-color: #00FF88; color: #00FF88; }
+        .card:nth-child(4) .card-title { border-bottom-color: #FF9900; color: #FF9900; }
+
+        .card-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 2px solid #333333;
+            font-weight: bold;
+        }
+
+        .card-item:last-child {
+            border-bottom: none;
+        }
+
+        .card-label {
+            font-size: 12px;
+            color: #aaaaaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .card-value {
+            font-size: 16px;
+            color: #00FF00;
+        }
+
+        .card-value.warning {
+            color: #FF9900;
+        }
+
+        table {
+            width: 100%;
+            border: 4px solid #FF00FF;
+            border-collapse: collapse;
+            margin-top: 24px;
+        }
+
+        th {
+            padding: 12px;
+            background: #1a1a1a;
+            border-bottom: 3px solid #FF00FF;
+            color: #FF00FF;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 12px;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 2px solid #333333;
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        tr:hover {
+            background: #1a1a1a;
+        }
+
+        .status-active {
+            color: #00FF00;
+        }
+
+        .status-inactive {
+            color: #FF0066;
+        }
+
+        ::-webkit-scrollbar {
+            width: 12px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #000000;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #FF00FF;
+            border: 2px solid #000000;
+        }
+    </style>
+</head>
+<body>
+    <div class="top-header">
+        <div class="logo">⚡ STOKR TRADER</div>
+        <div class="top-metrics">
+            <div class="metric-item">
+                <span class="metric-label">Account Value</span>
+                <span class="metric-value">₹45.2 Cr</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label">Today P&L</span>
+                <span class="metric-value positive">+₹2.14 Cr</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label">Open Positions</span>
+                <span class="metric-value">23</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label">Margin Used</span>
+                <span class="metric-value warning">68%</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="nav-tabs">
+        <button class="tab active">📊 MAIN DASHBOARD</button>
+        <button class="tab">📈 INTRADAY TERMINAL</button>
+        <button class="tab">📍 POSITIONS</button>
+        <button class="tab">🎯 STRATEGIES</button>
+        <button class="tab">⚙️ SETTINGS</button>
+    </div>
+
+    <div class="main-content">
+        <div class="section-title">TRADER DASHBOARD</div>
+
+        <div class="grid">
+            <div class="card">
+                <div class="card-title">💰 Portfolio</div>
+                <div class="card-item">
+                    <span class="card-label">Equity</span>
+                    <span class="card-value">₹45.2Cr</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Cash</span>
+                    <span class="card-value">₹14.5Cr</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Holdings</span>
+                    <span class="card-value">₹30.7Cr</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Return</span>
+                    <span class="card-value positive">+18.4%</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">📊 Today Performance</div>
+                <div class="card-item">
+                    <span class="card-label">P&L</span>
+                    <span class="card-value positive">+₹2.14Cr</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Win Rate</span>
+                    <span class="card-value">73.2%</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Trades</span>
+                    <span class="card-value">14</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Avg Trade</span>
+                    <span class="card-value">₹15.3K</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">📈 Open Positions</div>
+                <div class="card-item">
+                    <span class="card-label">Long</span>
+                    <span class="card-value">17</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Short</span>
+                    <span class="card-value">6</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Unrealised P&L</span>
+                    <span class="card-value positive">+₹342K</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Avg Hold</span>
+                    <span class="card-value">2h 23m</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">⚠️ Risk Metrics</div>
+                <div class="card-item">
+                    <span class="card-label">Margin Used</span>
+                    <span class="card-value warning">68%</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Max Drawdown</span>
+                    <span class="card-value">-₹847K</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Risk/Reward</span>
+                    <span class="card-value">1:2.3</span>
+                </div>
+                <div class="card-item">
+                    <span class="card-label">Heat Rating</span>
+                    <span class="card-value warning">MEDIUM</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section-title">RECENT TRADES</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>TIME</th>
+                    <th>INSTRUMENT</th>
+                    <th>TYPE</th>
+                    <th>QTY</th>
+                    <th>ENTRY</th>
+                    <th>EXIT</th>
+                    <th>P&L</th>
+                    <th>STATUS</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>14:32:45</td>
+                    <td style="font-weight: 900;">INFY</td>
+                    <td style="color: #00FF00;">LONG</td>
+                    <td>100</td>
+                    <td>₹1,234</td>
+                    <td>₹1,256</td>
+                    <td style="color: #00FF00; font-weight: 900;">+₹2.2K</td>
+                    <td class="status-active">✓ CLOSED</td>
+                </tr>
+                <tr>
+                    <td>13:45:12</td>
+                    <td style="font-weight: 900;">SBIN</td>
+                    <td style="color: #FF0066;">SHORT</td>
+                    <td>50</td>
+                    <td>₹567</td>
+                    <td>₹554</td>
+                    <td style="color: #00FF00; font-weight: 900;">+₹650K</td>
+                    <td class="status-active">✓ CLOSED</td>
+                </tr>
+                <tr>
+                    <td>12:15:33</td>
+                    <td style="font-weight: 900;">TCS</td>
+                    <td style="color: #00FF00;">LONG</td>
+                    <td>25</td>
+                    <td>₹3,850</td>
+                    <td>—</td>
+                    <td style="color: #00CCFF; font-weight: 900;">+₹425K</td>
+                    <td class="status-inactive">⏳ OPEN</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

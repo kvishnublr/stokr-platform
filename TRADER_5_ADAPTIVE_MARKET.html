@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKR - Adaptive Market Reactive UI</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+            transition: background 1s ease;
+        }
+
+        /* Dynamic backgrounds based on market conditions */
+        body.volatile {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        body.trending {
+            background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+        }
+
+        body.calm {
+            background: linear-gradient(135deg, #1a472a 0%, #2d5a3d 100%);
+        }
+
+        .adaptive-dashboard {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+
+        .market-status {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            padding: 20px;
+            border-radius: 16px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-icon {
+            font-size: 32px;
+        }
+
+        .status-text h2 {
+            font-size: 22px;
+            margin-bottom: 4px;
+        }
+
+        .status-text p {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        .volatility-indicator {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .vol-bar {
+            width: 20px;
+            height: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .vol-fill {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background: linear-gradient(180deg, #64ffc8, #667eea);
+            animation: volatility 1.5s ease-in-out infinite;
+        }
+
+        @keyframes volatility {
+            0%, 100% { height: 30%; }
+            50% { height: 85%; }
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(20px);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            opacity: 0.9;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+
+        .metric-label {
+            opacity: 0.7;
+        }
+
+        .metric-value {
+            font-weight: 600;
+        }
+
+        .action-zone {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .action-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .action-btn {
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .action-btn:hover {
+            background: rgba(255, 255, 255, 0.25);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .action-btn.primary {
+            background: linear-gradient(135deg, #64ffc8, #64c8ff);
+            color: #000;
+            border: none;
+        }
+
+        .action-btn.primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(100, 255, 200, 0.3);
+        }
+
+        .action-btn.danger {
+            background: rgba(255, 107, 107, 0.2);
+            border-color: rgba(255, 107, 107, 0.5);
+            color: #ffb3b3;
+        }
+
+        .adaptive-content {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(20px);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .content-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+
+        .content-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            border-left: 3px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .content-item.alert {
+            border-left-color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.1);
+        }
+
+        .content-item.success {
+            border-left-color: #64ffc8;
+            background: rgba(100, 255, 200, 0.1);
+        }
+    </style>
+</head>
+<body class="volatile">
+    <div class="adaptive-dashboard">
+        <!-- Market Status (Changes based on conditions) -->
+        <div class="market-status">
+            <div class="status-info">
+                <div class="status-icon">📊</div>
+                <div class="status-text">
+                    <h2>HIGH VOLATILITY MODE</h2>
+                    <p>Market Volatility: 68% | Trending: DOWN | Risk Level: HIGH</p>
+                </div>
+            </div>
+            <div class="volatility-indicator">
+                <div class="vol-bar"><div class="vol-fill"></div></div>
+                <div class="vol-bar" style="animation-delay: 0.2s;"><div class="vol-fill"></div></div>
+                <div class="vol-bar" style="animation-delay: 0.4s;"><div class="vol-fill"></div></div>
+                <div class="vol-bar" style="animation-delay: 0.6s;"><div class="vol-fill"></div></div>
+                <div class="vol-bar" style="animation-delay: 0.8s;"><div class="vol-fill"></div></div>
+            </div>
+        </div>
+
+        <!-- Adaptive Dashboard - Context-Aware Widgets -->
+        <div class="dashboard-grid">
+            <!-- During Volatility: Risk Focus -->
+            <div class="card">
+                <div class="card-title">🚨 Risk Management (Priority in Volatility)</div>
+                <div class="metric">
+                    <span class="metric-label">Portfolio Heat</span>
+                    <span class="metric-value" style="color: #ff6b6b;">65% / 75%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Max Drawdown</span>
+                    <span class="metric-value" style="color: #ff6b6b;">-8.2%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Correlation</span>
+                    <span class="metric-value">HIGH (-0.82)</span>
+                </div>
+                <div style="margin-top: 12px; padding: 8px; background: rgba(255, 107, 107, 0.15); border-radius: 6px; font-size: 11px;">
+                    ⚠️ Reduce leverage immediately
+                </div>
+            </div>
+
+            <!-- Real-time P&L -->
+            <div class="card">
+                <div class="card-title">💰 Real-Time P&L</div>
+                <div class="metric">
+                    <span class="metric-label">Today's P&L</span>
+                    <span class="metric-value" style="color: #64ffc8;">+₹8.34Cr</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Unrealized</span>
+                    <span class="metric-value" style="color: #64ffc8;">+₹3.21Cr</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Win Rate</span>
+                    <span class="metric-value">73.2%</span>
+                </div>
+                <div style="height: 40px; background: rgba(100, 255, 200, 0.1); border-radius: 6px; margin-top: 12px; display: flex; align-items: center; padding: 0 8px;">
+                    <div style="flex: 1; height: 6px; background: linear-gradient(90deg, #64ffc8, #64c8ff); border-radius: 3px;"></div>
+                </div>
+            </div>
+
+            <!-- Quick Actions - Adaptive based on market -->
+            <div class="card">
+                <div class="card-title">⚡ Suggested Actions</div>
+                <div class="content-item alert">
+                    ⛔ Pause new entries (Volatility: HIGH)
+                </div>
+                <div class="content-item alert">
+                    🔻 Reduce position sizes
+                </div>
+                <div class="content-item success">
+                    ✓ Exit COALINDIA (loss trend)
+                </div>
+                <div class="content-item success">
+                    ✓ Hold SBIN (strong momentum)
+                </div>
+            </div>
+        </div>
+
+        <!-- Adaptive Action Zone -->
+        <div class="action-zone">
+            <div class="action-title">
+                🎯 Market-Aware Actions (Volatility Mode)
+            </div>
+            <div class="action-buttons">
+                <button class="action-btn primary">🛡️ Reduce Risk 15%</button>
+                <button class="action-btn">📊 View Correlations</button>
+                <button class="action-btn danger">🚨 Emergency Stop</button>
+                <button class="action-btn">💡 Safe Entry Signals Only</button>
+            </div>
+        </div>
+
+        <!-- Contextual Content Changes with Market -->
+        <div class="adaptive-content">
+            <div class="content-title">
+                📈 Market-Specific Insights (Dynamically Updating)
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
+                <div>
+                    <div style="font-size: 12px; font-weight: 600; margin-bottom: 12px; opacity: 0.8;">When Volatility is HIGH:</div>
+                    <div class="content-item alert">
+                        Focus on risk management, not gains
+                    </div>
+                    <div class="content-item alert">
+                        Reduce position sizes by 20-30%
+                    </div>
+                    <div class="content-item alert">
+                        Tighten stop-losses
+                    </div>
+                    <div class="content-item alert">
+                        Avoid cluster entries
+                    </div>
+                </div>
+
+                <div>
+                    <div style="font-size: 12px; font-weight: 600; margin-bottom: 12px; opacity: 0.8;">When Trending (Calm):</div>
+                    <div class="content-item success">
+                        Follow trend direction
+                    </div>
+                    <div class="content-item success">
+                        Increase position sizes
+                    </div>
+                    <div class="content-item success">
+                        Use wider stops
+                    </div>
+                    <div class="content-item success">
+                        Take more entries
+                    </div>
+                </div>
+
+                <div>
+                    <div style="font-size: 12px; font-weight: 600; margin-bottom: 12px; opacity: 0.8;">Smart Adaption in Real-Time:</div>
+                    <div class="content-item">
+                        UI color scheme matches market (Volatile = Purple, Calm = Green, Trending = Blue)
+                    </div>
+                    <div class="content-item">
+                        Dashboard cards reorganize by importance
+                    </div>
+                    <div class="content-item">
+                        Action buttons change based on market state
+                    </div>
+                    <div class="content-item">
+                        Recommendations update automatically
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simulate market condition changes
+        const conditions = ['volatile', 'trending', 'calm'];
+        const icons = ['📊 HIGH VOLATILITY MODE', '📈 STRONG TREND MODE', '🟢 CALM MARKET MODE'];
+        let index = 0;
+
+        setInterval(() => {
+            document.body.className = conditions[index % 3];
+            document.querySelector('.status-text h2').textContent = icons[index % 3];
+            index++;
+        }, 8000);
+    </script>
+</body>
+</html>

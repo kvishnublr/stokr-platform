@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKR - Bold Swiss Minimalist</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', 'Arial', sans-serif;
+            background: #ffffff;
+            color: #000;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 60px 80px;
+        }
+
+        /* Header */
+        .header {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 60px;
+            margin-bottom: 100px;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 72px;
+            font-weight: 900;
+            letter-spacing: -3px;
+            line-height: 1;
+            color: #000;
+        }
+
+        .status {
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #666;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 40px;
+            margin-bottom: 80px;
+            border-bottom: 2px solid #000;
+            padding-bottom: 20px;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            font-size: 16px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #999;
+            cursor: pointer;
+            padding: 0;
+            transition: color 0.3s ease;
+            position: relative;
+            font-family: 'Helvetica Neue', sans-serif;
+        }
+
+        .tab-btn:hover {
+            color: #000;
+        }
+
+        .tab-btn.active {
+            color: #000;
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -22px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: #000;
+        }
+
+        /* Tab Content */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Main Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 80px;
+            margin-bottom: 100px;
+        }
+
+        .section {
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+        }
+
+        /* Large Numbers */
+        .stat-block {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #666;
+        }
+
+        .stat-value {
+            font-size: 68px;
+            font-weight: 900;
+            line-height: 1;
+            letter-spacing: -2px;
+            color: #000;
+        }
+
+        .stat-sub {
+            font-size: 13px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        /* Color Blocks */
+        .color-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .color-block {
+            aspect-ratio: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 30px;
+            border-radius: 0;
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .color-block::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            transition: left 0.6s ease;
+            z-index: 0;
+        }
+
+        .color-block:hover {
+            transform: scale(1.05);
+        }
+
+        .color-block:hover::before {
+            left: 100%;
+        }
+
+        .color-block.block-1 {
+            background: linear-gradient(135deg, #FF6B35 0%, #FF8C00 100%);
+            color: white;
+        }
+
+        .color-block.block-2 {
+            background: linear-gradient(135deg, #004E89 0%, #1B6DB8 100%);
+            color: white;
+        }
+
+        .color-block.block-3 {
+            background: linear-gradient(135deg, #13A538 0%, #2ECC71 100%);
+            color: white;
+        }
+
+        .color-block.block-4 {
+            background: linear-gradient(135deg, #EB1D36 0%, #FF3860 100%);
+            color: white;
+        }
+
+        .block-label {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .block-value {
+            font-size: 48px;
+            font-weight: 900;
+            line-height: 1;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Table */
+        .table-section {
+            margin-bottom: 80px;
+        }
+
+        .table-section h3 {
+            font-size: 32px;
+            font-weight: 900;
+            letter-spacing: -1px;
+            margin-bottom: 40px;
+            text-transform: uppercase;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            border-top: 2px solid #000;
+            border-bottom: 2px solid #000;
+        }
+
+        th {
+            padding: 20px 0;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-align: left;
+            color: #666;
+        }
+
+        td {
+            padding: 16px 0;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+            color: #000;
+        }
+
+        tr:hover {
+            background: #f9f9f9;
+        }
+
+        /* Divider */
+        .divider {
+            width: 100%;
+            height: 2px;
+            background: #000;
+            margin: 80px 0;
+        }
+
+        /* Row Layout */
+        .row-layout {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 60px;
+            margin-bottom: 60px;
+        }
+
+        .col {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Button */
+        .btn {
+            background: #000;
+            color: white;
+            border: none;
+            padding: 18px 40px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            font-family: 'Helvetica Neue', sans-serif;
+        }
+
+        .btn:hover {
+            transform: scale(1.02);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+            .row-layout {
+                grid-template-columns: 1fr;
+            }
+            .header {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">STOKR</div>
+            <div class="status">TRADER DASHBOARD • LIVE</div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab(event, 'dashboard')">Dashboard</button>
+            <button class="tab-btn" onclick="switchTab(event, 'positions')">Positions</button>
+            <button class="tab-btn" onclick="switchTab(event, 'orders')">Orders</button>
+            <button class="tab-btn" onclick="switchTab(event, 'analytics')">Analytics</button>
+            <button class="tab-btn" onclick="switchTab(event, 'alerts')">Alerts</button>
+            <button class="tab-btn" onclick="switchTab(event, 'settings')">Settings</button>
+        </div>
+
+        <!-- Dashboard -->
+        <div id="dashboard" class="tab-content active">
+            <div class="main-grid">
+                <div class="section">
+                    <div class="stat-block">
+                        <div class="stat-label">Portfolio Value</div>
+                        <div class="stat-value">₹2.46M</div>
+                        <div class="stat-sub">↑ +3.24% today</div>
+                    </div>
+                    <div class="stat-block">
+                        <div class="stat-label">Available Cash</div>
+                        <div class="stat-value">₹89.2K</div>
+                        <div class="stat-sub">45% margin used</div>
+                    </div>
+                </div>
+                <div class="section">
+                    <div class="color-grid">
+                        <div class="color-block block-1">
+                            <div class="block-label">Open P&L</div>
+                            <div class="block-value">₹12.4K</div>
+                        </div>
+                        <div class="color-block block-2">
+                            <div class="block-label">Win Rate</div>
+                            <div class="block-value">75%</div>
+                        </div>
+                        <div class="color-block block-3">
+                            <div class="block-label">Today</div>
+                            <div class="block-value">8</div>
+                        </div>
+                        <div class="color-block block-4">
+                            <div class="block-label">Max Loss</div>
+                            <div class="block-value">-₹2.9K</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="table-section">
+                <h3>Active Positions</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Quantity</th>
+                            <th>Entry</th>
+                            <th>Current</th>
+                            <th>P&L</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>SBIN</strong></td>
+                            <td>100</td>
+                            <td>₹580.50</td>
+                            <td>₹598.20</td>
+                            <td style="color: #13A538;"><strong>+₹1,770</strong></td>
+                            <td>RUNNING</td>
+                        </tr>
+                        <tr>
+                            <td><strong>INFY</strong></td>
+                            <td>50</td>
+                            <td>₹1,620</td>
+                            <td>₹1,645.50</td>
+                            <td style="color: #13A538;"><strong>+₹1,275</strong></td>
+                            <td>RUNNING</td>
+                        </tr>
+                        <tr>
+                            <td><strong>HCLTECH</strong></td>
+                            <td>75</td>
+                            <td>₹1,520</td>
+                            <td>₹1,480.50</td>
+                            <td style="color: #EB1D36;"><strong>-₹2,962</strong></td>
+                            <td>AT RISK</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Positions -->
+        <div id="positions" class="tab-content">
+            <div class="table-section">
+                <h3>Open Positions</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Qty</th>
+                            <th>Entry</th>
+                            <th>Current</th>
+                            <th>P&L</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>SBIN</strong></td>
+                            <td>100</td>
+                            <td>₹580.50</td>
+                            <td>₹598.20</td>
+                            <td style="color: #13A538;">+₹1,770</td>
+                            <td>RUNNING</td>
+                        </tr>
+                        <tr>
+                            <td><strong>INFY</strong></td>
+                            <td>50</td>
+                            <td>₹1,620</td>
+                            <td>₹1,645.50</td>
+                            <td style="color: #13A538;">+₹1,275</td>
+                            <td>RUNNING</td>
+                        </tr>
+                        <tr>
+                            <td><strong>HCLTECH</strong></td>
+                            <td>75</td>
+                            <td>₹1,520</td>
+                            <td>₹1,480.50</td>
+                            <td style="color: #EB1D36;">-₹2,962</td>
+                            <td>AT RISK</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Orders -->
+        <div id="orders" class="tab-content">
+            <div class="table-section">
+                <h3>Order History</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order ID</th>
+                            <th>Symbol</th>
+                            <th>Type</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Status</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>#ORD001</td>
+                            <td>SBIN</td>
+                            <td>BUY</td>
+                            <td>100</td>
+                            <td>₹580.50</td>
+                            <td>FILLED</td>
+                            <td>09:32:15</td>
+                        </tr>
+                        <tr>
+                            <td>#ORD002</td>
+                            <td>INFY</td>
+                            <td>BUY</td>
+                            <td>50</td>
+                            <td>₹1,620</td>
+                            <td>FILLED</td>
+                            <td>10:15:42</td>
+                        </tr>
+                        <tr>
+                            <td>#ORD003</td>
+                            <td>HCLTECH</td>
+                            <td>BUY</td>
+                            <td>75</td>
+                            <td>₹1,520</td>
+                            <td>FILLED</td>
+                            <td>11:20:09</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Analytics -->
+        <div id="analytics" class="tab-content">
+            <div class="row-layout">
+                <div class="col">
+                    <div class="stat-label">Total Trades</div>
+                    <div class="stat-value">24</div>
+                </div>
+                <div class="col">
+                    <div class="stat-label">Win Rate</div>
+                    <div class="stat-value">75%</div>
+                </div>
+                <div class="col">
+                    <div class="stat-label">Avg Win</div>
+                    <div class="stat-value">₹1.2K</div>
+                </div>
+                <div class="col">
+                    <div class="stat-label">Max Loss</div>
+                    <div class="stat-value">-₹3.2K</div>
+                </div>
+                <div class="col">
+                    <div class="stat-label">Profit Factor</div>
+                    <div class="stat-value">2.45</div>
+                </div>
+                <div class="col">
+                    <div class="stat-label">Sharpe Ratio</div>
+                    <div class="stat-value">1.82</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alerts -->
+        <div id="alerts" class="tab-content">
+            <div class="table-section">
+                <h3>Active Alerts</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Alert Type</th>
+                            <th>Symbol</th>
+                            <th>Condition</th>
+                            <th>Status</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Price Alert</td>
+                            <td>SBIN</td>
+                            <td>Price > ₹600</td>
+                            <td>PENDING</td>
+                            <td>14:32:10</td>
+                        </tr>
+                        <tr>
+                            <td>P&L Alert</td>
+                            <td>INFY</td>
+                            <td>Profit > ₹2000</td>
+                            <td>TRIGGERED</td>
+                            <td>14:25:44</td>
+                        </tr>
+                        <tr>
+                            <td>Stop Loss</td>
+                            <td>HCLTECH</td>
+                            <td>Loss > 5%</td>
+                            <td>ACTIVE</td>
+                            <td>14:12:33</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Settings -->
+        <div id="settings" class="tab-content">
+            <div class="row-layout">
+                <div>
+                    <div class="stat-label">Max Position</div>
+                    <div class="stat-value">₹5M</div>
+                    <button class="btn">Edit Setting</button>
+                </div>
+                <div>
+                    <div class="stat-label">Daily Loss</div>
+                    <div class="stat-value">₹50K</div>
+                    <button class="btn">Edit Setting</button>
+                </div>
+                <div>
+                    <div class="stat-label">Stop Loss %</div>
+                    <div class="stat-value">2.5%</div>
+                    <button class="btn">Edit Setting</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(event, tabName) {
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => content.classList.remove('active'));
+
+            const buttons = document.querySelectorAll('.tab-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>

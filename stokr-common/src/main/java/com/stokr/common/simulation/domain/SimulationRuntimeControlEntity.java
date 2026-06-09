@@ -27,4 +27,37 @@ public class SimulationRuntimeControlEntity {
 
     @Column(name = "enabled_by")
     private UUID enabledBy;
+
+    // Explicit methods to ensure compilation works
+    public boolean isRuntimeEnabled() {
+        return runtimeEnabled;
+    }
+
+    public void setRuntimeEnabled(boolean runtimeEnabled) {
+        this.runtimeEnabled = runtimeEnabled;
+    }
+
+    public Short getId() {
+        return id;
+    }
+
+    public void setId(Short id) {
+        this.id = id;
+    }
+
+    public Instant getEnabledAt() {
+        return enabledAt;
+    }
+
+    public void setEnabledAt(Instant enabledAt) {
+        this.enabledAt = enabledAt;
+    }
+
+    public UUID getEnabledBy() {
+        return enabledBy;
+    }
+
+    public void setEnabledBy(UUID enabledBy) {
+        this.enabledBy = enabledBy;
+    }
 }

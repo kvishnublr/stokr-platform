@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKR - Neomorphic Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+            background: linear-gradient(135deg, #e0e5ec 0%, #f8f9fa 100%);
+            color: #4a5568;
+            min-height: 100vh;
+        }
+
+        .dashboard-wrapper {
+            padding: 40px;
+        }
+
+        .header {
+            margin-bottom: 40px;
+        }
+
+        .header-title {
+            font-size: 36px;
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .header-subtitle {
+            font-size: 14px;
+            color: #718096;
+        }
+
+        /* Neomorphic Card */
+        .neo-card {
+            background: linear-gradient(145deg, #f0f3f7, #ffffff);
+            border-radius: 20px;
+            padding: 32px;
+            box-shadow:
+                8px 8px 16px rgba(0, 0, 0, 0.08),
+                -8px -8px 16px rgba(255, 255, 255, 0.8),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+            margin-bottom: 24px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .neo-card:hover {
+            box-shadow:
+                12px 12px 24px rgba(0, 0, 0, 0.1),
+                -12px -12px 24px rgba(255, 255, 255, 0.8),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+        }
+
+        /* Neo Grid */
+        .neo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .neo-stat {
+            background: linear-gradient(145deg, #f0f3f7, #ffffff);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow:
+                6px 6px 12px rgba(0, 0, 0, 0.06),
+                -6px -6px 12px rgba(255, 255, 255, 0.7),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .neo-stat:hover {
+            box-shadow:
+                10px 10px 20px rgba(0, 0, 0, 0.08),
+                -10px -10px 20px rgba(255, 255, 255, 0.7),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+            transform: translateY(-4px);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #718096;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .stat-change {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .stat-change.positive {
+            color: #48bb78;
+        }
+
+        .stat-change.negative {
+            color: #f56565;
+        }
+
+        /* Neo Button */
+        .neo-btn {
+            background: linear-gradient(145deg, #f0f3f7, #ffffff);
+            border: none;
+            border-radius: 12px;
+            padding: 12px 24px;
+            font-weight: 600;
+            font-size: 13px;
+            color: #4a5568;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow:
+                4px 4px 8px rgba(0, 0, 0, 0.06),
+                -4px -4px 8px rgba(255, 255, 255, 0.7);
+        }
+
+        .neo-btn:hover {
+            box-shadow:
+                6px 6px 12px rgba(0, 0, 0, 0.08),
+                -6px -6px 12px rgba(255, 255, 255, 0.8);
+            transform: translateY(-2px);
+        }
+
+        .neo-btn:active {
+            box-shadow:
+                inset 4px 4px 8px rgba(0, 0, 0, 0.08),
+                inset -4px -4px 8px rgba(255, 255, 255, 0.7);
+        }
+
+        .neo-btn-primary {
+            background: linear-gradient(145deg, #667eea, #764ba2);
+            color: white;
+            box-shadow:
+                8px 8px 16px rgba(102, 126, 234, 0.3),
+                -8px -8px 16px rgba(255, 255, 255, 0.5);
+        }
+
+        .neo-btn-primary:hover {
+            box-shadow:
+                10px 10px 20px rgba(102, 126, 234, 0.4),
+                -10px -10px 20px rgba(255, 255, 255, 0.5);
+        }
+
+        /* Position Cards */
+        .positions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .pos-card {
+            background: linear-gradient(145deg, #f0f3f7, #ffffff);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow:
+                8px 8px 16px rgba(0, 0, 0, 0.08),
+                -8px -8px 16px rgba(255, 255, 255, 0.8);
+        }
+
+        .pos-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .pos-symbol {
+            font-size: 18px;
+            font-weight: 700;
+            color: #2d3748;
+        }
+
+        .pos-status {
+            font-size: 11px;
+            padding: 6px 12px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .status-active {
+            background: linear-gradient(145deg, #c6f6d5, #e6fffa);
+            color: #22543d;
+            box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.05), inset -2px -2px 4px rgba(255, 255, 255, 0.5);
+        }
+
+        .status-atrisk {
+            background: linear-gradient(145deg, #fed7d7, #fef5e7);
+            color: #742a2a;
+            box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.05), inset -2px -2px 4px rgba(255, 255, 255, 0.5);
+        }
+
+        .pos-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 13px;
+            color: #718096;
+        }
+
+        .pos-value {
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .pos-divider {
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+            margin: 16px 0;
+        }
+
+        .pos-pnl {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .pnl-positive {
+            color: #48bb78;
+        }
+
+        .pnl-negative {
+            color: #f56565;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 24px;
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-wrapper">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-title">Dashboard</div>
+            <div class="header-subtitle">Welcome back to your trading environment</div>
+        </div>
+
+        <!-- Top Actions -->
+        <div style="display: flex; gap: 12px; margin-bottom: 40px;">
+            <button class="neo-btn">Refresh</button>
+            <button class="neo-btn neo-btn-primary">New Order</button>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="neo-grid">
+            <div class="neo-stat">
+                <div class="stat-label">Portfolio Value</div>
+                <div class="stat-value">₹2,45,680</div>
+                <div class="stat-change positive">↑ +3.24%</div>
+            </div>
+            <div class="neo-stat">
+                <div class="stat-label">Open P&L</div>
+                <div class="stat-value">₹12,450</div>
+                <div class="stat-change positive">↑ +5.08%</div>
+            </div>
+            <div class="neo-stat">
+                <div class="stat-label">Win Rate</div>
+                <div class="stat-value">75%</div>
+                <div class="stat-change">6 of 8 trades</div>
+            </div>
+            <div class="neo-stat">
+                <div class="stat-label">Available Cash</div>
+                <div class="stat-value">₹89,230</div>
+                <div class="stat-change">Margin: 45%</div>
+            </div>
+        </div>
+
+        <!-- Summary Card -->
+        <div class="neo-card">
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 40px;">
+                <div>
+                    <div class="stat-label">Today's Trades</div>
+                    <div style="font-size: 32px; font-weight: 700; color: #2d3748; margin-top: 8px;">8</div>
+                    <div style="font-size: 13px; color: #718096; margin-top: 8px;">Started today</div>
+                </div>
+                <div>
+                    <div class="stat-label">Closed Positions</div>
+                    <div style="font-size: 32px; font-weight: 700; color: #2d3748; margin-top: 8px;">6</div>
+                    <div style="font-size: 13px; color: #718096; margin-top: 8px;">5 profits, 1 loss</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Positions -->
+        <div class="section-title">Active Positions</div>
+        <div class="positions-grid">
+            <div class="pos-card">
+                <div class="pos-header">
+                    <div class="pos-symbol">SBIN</div>
+                    <div class="pos-status status-active">RUNNING</div>
+                </div>
+                <div class="pos-row">
+                    <span>Qty:</span>
+                    <span class="pos-value">100</span>
+                </div>
+                <div class="pos-row">
+                    <span>Entry:</span>
+                    <span class="pos-value">₹580.50</span>
+                </div>
+                <div class="pos-row">
+                    <span>Current:</span>
+                    <span class="pos-value">₹598.20</span>
+                </div>
+                <div class="pos-divider"></div>
+                <div class="pos-pnl pnl-positive">+₹1,770 (+3.04%)</div>
+            </div>
+
+            <div class="pos-card">
+                <div class="pos-header">
+                    <div class="pos-symbol">INFY</div>
+                    <div class="pos-status status-active">RUNNING</div>
+                </div>
+                <div class="pos-row">
+                    <span>Qty:</span>
+                    <span class="pos-value">50</span>
+                </div>
+                <div class="pos-row">
+                    <span>Entry:</span>
+                    <span class="pos-value">₹1,620.00</span>
+                </div>
+                <div class="pos-row">
+                    <span>Current:</span>
+                    <span class="pos-value">₹1,645.50</span>
+                </div>
+                <div class="pos-divider"></div>
+                <div class="pos-pnl pnl-positive">+₹1,275 (+1.57%)</div>
+            </div>
+
+            <div class="pos-card">
+                <div class="pos-header">
+                    <div class="pos-symbol">HCLTECH</div>
+                    <div class="pos-status status-atrisk">AT RISK</div>
+                </div>
+                <div class="pos-row">
+                    <span>Qty:</span>
+                    <span class="pos-value">75</span>
+                </div>
+                <div class="pos-row">
+                    <span>Entry:</span>
+                    <span class="pos-value">₹1,520.00</span>
+                </div>
+                <div class="pos-row">
+                    <span>Current:</span>
+                    <span class="pos-value">₹1,480.50</span>
+                </div>
+                <div class="pos-divider"></div>
+                <div class="pos-pnl pnl-negative">-₹2,962 (-1.95%)</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
