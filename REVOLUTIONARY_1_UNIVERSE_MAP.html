@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKR - Market Universe Map</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(ellipse at center, #0a1428 0%, #020816 100%);
+            color: #fff;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .universe-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Background stars */
+        .star-field {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-image:
+                radial-gradient(2px 2px at 20px 30px, #eee, rgba(0, 0, 0, 0)),
+                radial-gradient(2px 2px at 60px 70px, #fff, rgba(0, 0, 0, 0)),
+                radial-gradient(1px 1px at 50px 50px, #fff, rgba(0, 0, 0, 0)),
+                radial-gradient(1px 1px at 130px 80px, #fff, rgba(0, 0, 0, 0));
+            background-repeat: repeat;
+            background-size: 200px 200px;
+            opacity: 0.3;
+            z-index: 0;
+        }
+
+        /* SVG Canvas for universe */
+        .universe-canvas {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* Stocks as glowing dots */
+        .stock-dot {
+            position: absolute;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .stock-dot:hover {
+            filter: brightness(1.5);
+            transform: scale(1.3);
+        }
+
+        .stock-dot.winning {
+            background: radial-gradient(circle at 30% 30%, #a8ff60, #00ff88);
+            box-shadow: 0 0 20px #a8ff60, inset 0 0 10px rgba(255,255,255,0.3);
+        }
+
+        .stock-dot.losing {
+            background: radial-gradient(circle at 30% 30%, #ff6b6b, #ff0080);
+            box-shadow: 0 0 20px #ff6b6b, inset 0 0 10px rgba(255,255,255,0.1);
+        }
+
+        .stock-dot.neutral {
+            background: radial-gradient(circle at 30% 30%, #64c8ff, #4db8ff);
+            box-shadow: 0 0 15px #64c8ff;
+        }
+
+        .stock-label {
+            position: absolute;
+            font-size: 10px;
+            font-weight: bold;
+            white-space: nowrap;
+            pointer-events: none;
+            text-shadow: 0 0 10px rgba(0,0,0,0.8);
+        }
+
+        /* HUD - Top Left */
+        .hud-top-left {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            font-size: 14px;
+        }
+
+        .hud-title {
+            font-size: 24px;
+            font-weight: 900;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, #a8ff60, #64c8ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 20px rgba(168, 255, 96, 0.3);
+        }
+
+        .hud-stat {
+            font-size: 12px;
+            opacity: 0.8;
+            margin: 4px 0;
+        }
+
+        /* HUD - Top Right */
+        .hud-top-right {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 10;
+            text-align: right;
+            font-size: 12px;
+        }
+
+        .portfolio-value {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #a8ff60;
+        }
+
+        .portfolio-stat {
+            opacity: 0.7;
+            margin: 4px 0;
+        }
+
+        /* HUD - Bottom */
+        .hud-bottom {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .zoom-btn {
+            background: rgba(100, 200, 255, 0.2);
+            border: 1px solid rgba(100, 200, 255, 0.5);
+            color: #64c8ff;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .zoom-btn:hover {
+            background: rgba(100, 200, 255, 0.4);
+            border-color: rgba(100, 200, 255, 0.8);
+        }
+
+        /* Info Box */
+        .info-box {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid #a8ff60;
+            border-radius: 8px;
+            padding: 16px;
+            min-width: 250px;
+            z-index: 20;
+            display: none;
+            pointer-events: none;
+        }
+
+        .info-box.active {
+            display: block;
+        }
+
+        .info-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #a8ff60;
+            margin-bottom: 8px;
+        }
+
+        .info-stat {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            margin: 4px 0;
+            opacity: 0.9;
+        }
+
+        .info-label {
+            opacity: 0.6;
+        }
+
+        /* Animation for pulses */
+        @keyframes pulse {
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.2); }
+        }
+
+        .stock-dot.pulse {
+            animation: pulse 1s infinite;
+        }
+
+        /* Legend */
+        .legend {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+            padding: 12px 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 11px;
+            z-index: 10;
+            display: flex;
+            gap: 20px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.win { background: #a8ff60; box-shadow: 0 0 10px #a8ff60; }
+        .legend-dot.loss { background: #ff6b6b; box-shadow: 0 0 10px #ff6b6b; }
+        .legend-dot.neutral { background: #64c8ff; box-shadow: 0 0 10px #64c8ff; }
+    </style>
+</head>
+<body>
+    <div class="universe-container">
+        <!-- Star field background -->
+        <div class="star-field"></div>
+
+        <!-- SVG for connections -->
+        <svg class="universe-canvas" id="universeCanvas"></svg>
+
+        <!-- Top Left HUD -->
+        <div class="hud-top-left">
+            <div class="hud-title">📡 Market Universe</div>
+            <div class="hud-stat">● LIVE NSE</div>
+            <div class="hud-stat">Stocks: 500+</div>
+            <div class="hud-stat">Your Holdings: 4</div>
+        </div>
+
+        <!-- Top Center Legend -->
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-dot win"></div>
+                <span>Winners</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot loss"></div>
+                <span>Losers</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot neutral"></div>
+                <span>Neutral</span>
+            </div>
+        </div>
+
+        <!-- Top Right Portfolio -->
+        <div class="hud-top-right">
+            <div class="portfolio-value">₹45.2Cr</div>
+            <div class="portfolio-stat">Today: +₹8.34Cr</div>
+            <div class="portfolio-stat">P&L: +18.4%</div>
+        </div>
+
+        <!-- Bottom Center Info -->
+        <div class="hud-bottom">
+            💡 Click any dot for details | Drag to pan | Scroll to zoom | Red = High correlation
+        </div>
+
+        <!-- Zoom Controls -->
+        <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomIn()">+</button>
+            <button class="zoom-btn" onclick="zoomOut()">−</button>
+            <button class="zoom-btn" onclick="resetZoom()">⟲</button>
+        </div>
+
+        <!-- Info Box -->
+        <div class="info-box" id="infoBox">
+            <div class="info-title" id="infoTitle">SBIN</div>
+            <div class="info-stat">
+                <span class="info-label">Price:</span>
+                <span id="infoPrice">₹598.20</span>
+            </div>
+            <div class="info-stat">
+                <span class="info-label">Change:</span>
+                <span id="infoChange">+1.2%</span>
+            </div>
+            <div class="info-stat">
+                <span class="info-label">Volume:</span>
+                <span id="infoVolume">45.2M</span>
+            </div>
+            <div class="info-stat">
+                <span class="info-label">Your Qty:</span>
+                <span id="infoQty">100</span>
+            </div>
+            <div class="info-stat">
+                <span class="info-label">P&L:</span>
+                <span id="infoPnL" style="color: #a8ff60;">+₹1,770</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Stock data with universe positions
+        const stocks = [
+            { symbol: 'SBIN', price: 598.20, change: 1.2, volume: 45.2, x: 300, y: 200, qty: 100, pnl: 1770 },
+            { symbol: 'INFY', price: 1645.50, change: 2.4, volume: 32.1, x: 600, y: 180, qty: 50, pnl: 1275 },
+            { symbol: 'TCS', price: 1480.50, change: -0.8, volume: 28.3, x: 900, y: 250, qty: 0, pnl: 0 },
+            { symbol: 'HCLTECH', price: 1480.50, change: -1.5, volume: 18.5, x: 400, y: 450, qty: 75, pnl: -2962 },
+            { symbol: 'KOTAKBANK', price: 385.20, change: 0.5, volume: 38.2, x: 700, y: 350, qty: 120, pnl: 1014 },
+            { symbol: 'ASIANPAINT', price: 2657.50, change: 1.8, volume: 22.1, x: 800, y: 500, qty: 0, pnl: 0 },
+            { symbol: 'TATACONSUM', price: 1107.50, change: 0.3, volume: 15.5, x: 500, y: 550, qty: 0, pnl: 0 },
+            { symbol: 'COALINDIA', price: 245.80, change: -2.1, volume: 52.1, x: 350, y: 350, qty: 0, pnl: 0 },
+            { symbol: 'NESTLEIND', price: 1396.70, change: 0.9, volume: 8.2, x: 600, y: 450, qty: 0, pnl: 0 },
+            { symbol: 'HEROMOTOCO', price: 4772.50, change: 1.2, volume: 5.3, x: 450, y: 200, qty: 0, pnl: 0 },
+            { symbol: 'RELIANCE', price: 1262.80, change: 0.7, volume: 42.5, x: 750, y: 200, qty: 0, pnl: 0 },
+            { symbol: 'WIPRO', price: 342.85, change: -0.5, volume: 24.1, x: 320, y: 500, qty: 0, pnl: 0 },
+        ];
+
+        let scale = 1;
+        let panX = 0;
+        let panY = 0;
+
+        function renderUniverse() {
+            const container = document.querySelector('.universe-container');
+
+            // Clear existing dots
+            document.querySelectorAll('.stock-dot, .stock-label').forEach(el => el.remove());
+
+            stocks.forEach(stock => {
+                // Create dot
+                const dot = document.createElement('div');
+                dot.className = 'stock-dot';
+
+                // Determine size and status
+                const size = 15 + (stock.volume / 52.1) * 20;
+                const status = stock.change > 0.5 ? 'winning' : stock.change < -0.5 ? 'losing' : 'neutral';
+
+                dot.classList.add(status);
+                if (stock.qty > 0) dot.classList.add('pulse');
+
+                dot.style.width = size + 'px';
+                dot.style.height = size + 'px';
+                dot.style.left = (stock.x * scale + panX) + 'px';
+                dot.style.top = (stock.y * scale + panY) + 'px';
+                dot.style.transform = 'translate(-50%, -50%)';
+
+                dot.onclick = () => showInfo(stock);
+                dot.onmouseover = () => dot.classList.add('pulse');
+
+                container.appendChild(dot);
+
+                // Create label
+                const label = document.createElement('div');
+                label.className = 'stock-label';
+                label.textContent = stock.symbol;
+                label.style.left = (stock.x * scale + panX) + 'px';
+                label.style.top = (stock.y * scale + panY + size/2 + 12) + 'px';
+                label.style.transform = 'translateX(-50%)';
+                label.style.fontSize = (10 + scale * 3) + 'px';
+
+                container.appendChild(label);
+            });
+        }
+
+        function showInfo(stock) {
+            const infoBox = document.getElementById('infoBox');
+            document.getElementById('infoTitle').textContent = stock.symbol;
+            document.getElementById('infoPrice').textContent = '₹' + stock.price.toFixed(2);
+            document.getElementById('infoChange').textContent = (stock.change > 0 ? '+' : '') + stock.change.toFixed(2) + '%';
+            document.getElementById('infoVolume').textContent = stock.volume.toFixed(1) + 'M';
+            document.getElementById('infoQty').textContent = stock.qty;
+            document.getElementById('infoPnL').textContent = (stock.pnl > 0 ? '+' : '') + '₹' + stock.pnl.toLocaleString();
+
+            const rect = event.target.getBoundingClientRect();
+            infoBox.style.left = (rect.left + 30) + 'px';
+            infoBox.style.top = (rect.top) + 'px';
+            infoBox.classList.add('active');
+        }
+
+        function zoomIn() {
+            scale = Math.min(scale + 0.2, 3);
+            renderUniverse();
+        }
+
+        function zoomOut() {
+            scale = Math.max(scale - 0.2, 0.5);
+            renderUniverse();
+        }
+
+        function resetZoom() {
+            scale = 1;
+            panX = 0;
+            panY = 0;
+            renderUniverse();
+        }
+
+        // Initial render
+        renderUniverse();
+
+        // Pan on drag
+        document.querySelector('.universe-container').addEventListener('mousemove', (e) => {
+            if (e.buttons === 1) {
+                panX += e.movementX;
+                panY += e.movementY;
+                renderUniverse();
+            }
+        });
+
+        // Hide info box on click elsewhere
+        document.addEventListener('click', (e) => {
+            if (!e.target.classList.contains('stock-dot')) {
+                document.getElementById('infoBox').classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html>

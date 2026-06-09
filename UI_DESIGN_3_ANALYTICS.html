@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKR - Analytics Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            background: #f8fafb;
+            color: #1a202c;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+            border-right: 1px solid #e2e8f0;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        .brand {
+            font-size: 20px;
+            font-weight: 800;
+            color: #0f4c81;
+        }
+
+        .nav-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .nav-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #94a3b8;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-link {
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #475569;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-left: 2px solid transparent;
+        }
+
+        .nav-link:hover {
+            background: #f0f4f8;
+            color: #0f4c81;
+        }
+
+        .nav-link.active {
+            background: #e8f2f9;
+            border-left-color: #0f4c81;
+            color: #0f4c81;
+            font-weight: 600;
+        }
+
+        /* Main Content */
+        .main {
+            padding: 32px;
+            overflow-y: auto;
+        }
+
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+        }
+
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a202c;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary {
+            background: #f0f4f8;
+            color: #475569;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+
+        .btn-primary {
+            background: #0f4c81;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0a3155;
+        }
+
+        /* Dashboard Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .grid-item {
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .grid-item:hover {
+            border-color: #cbd5e1;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .grid-item-1 { grid-column: span 3; }
+        .grid-item-2 { grid-column: span 3; }
+        .grid-item-3 { grid-column: span 3; }
+        .grid-item-4 { grid-column: span 3; }
+        .grid-item-5 { grid-column: span 6; }
+        .grid-item-6 { grid-column: span 6; }
+
+        .metric {
+            margin-bottom: 12px;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: #94a3b8;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a202c;
+        }
+
+        .metric-subtext {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+
+        .chart {
+            height: 200px;
+            background: linear-gradient(135deg, rgba(15, 76, 129, 0.05), rgba(15, 76, 129, 0.02));
+            border-radius: 6px;
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-around;
+            padding: 20px;
+            gap: 8px;
+        }
+
+        .chart-bar {
+            width: 100%;
+            background: linear-gradient(180deg, #0f4c81 0%, #1e7bb8 100%);
+            border-radius: 4px 4px 0 0;
+            transition: all 0.3s ease;
+        }
+
+        .chart-bar:hover {
+            opacity: 0.8;
+        }
+
+        /* Table */
+        .table-header {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #1a202c;
+        }
+
+        .table-wrap {
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            overflow: hidden;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #f8fafb;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 13px;
+            color: #475569;
+        }
+
+        tr:hover {
+            background: #f8fafb;
+        }
+
+        .symbol-badge {
+            font-weight: 600;
+            color: #0f4c81;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .status-running {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-atrisk {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        @media (max-width: 1200px) {
+            .grid-item-1 { grid-column: span 6; }
+            .grid-item-2 { grid-column: span 6; }
+            .grid-item-3 { grid-column: span 6; }
+            .grid-item-4 { grid-column: span 6; }
+            .grid-item-5 { grid-column: span 12; }
+            .grid-item-6 { grid-column: span 12; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="brand">STOKR</div>
+
+            <div>
+                <div class="nav-group">
+                    <div class="nav-label">Main</div>
+                    <div class="nav-link active">Dashboard</div>
+                    <div class="nav-link">Positions</div>
+                    <div class="nav-link">Orders</div>
+                </div>
+                <div class="nav-group" style="margin-top: 16px;">
+                    <div class="nav-label">Analysis</div>
+                    <div class="nav-link">Performance</div>
+                    <div class="nav-link">Analytics</div>
+                    <div class="nav-link">Reports</div>
+                </div>
+                <div class="nav-group" style="margin-top: 16px;">
+                    <div class="nav-label">Account</div>
+                    <div class="nav-link">Settings</div>
+                    <div class="nav-link">Profile</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main -->
+        <div class="main">
+            <div class="page-header">
+                <div>
+                    <div class="page-title">Trading Dashboard</div>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary">Export</button>
+                    <button class="btn btn-primary">New Order</button>
+                </div>
+            </div>
+
+            <!-- Metrics Grid -->
+            <div class="dashboard-grid">
+                <div class="grid-item grid-item-1">
+                    <div class="metric">
+                        <div class="metric-label">Portfolio Value</div>
+                        <div class="metric-value">₹2,45,680</div>
+                        <div class="metric-subtext">+3.24% today</div>
+                    </div>
+                </div>
+
+                <div class="grid-item grid-item-2">
+                    <div class="metric">
+                        <div class="metric-label">Open P&L</div>
+                        <div class="metric-value">₹12,450</div>
+                        <div class="metric-subtext">+5.08% ROI</div>
+                    </div>
+                </div>
+
+                <div class="grid-item grid-item-3">
+                    <div class="metric">
+                        <div class="metric-label">Win Rate</div>
+                        <div class="metric-value">75%</div>
+                        <div class="metric-subtext">6 of 8 trades</div>
+                    </div>
+                </div>
+
+                <div class="grid-item grid-item-4">
+                    <div class="metric">
+                        <div class="metric-label">Available Cash</div>
+                        <div class="metric-value">₹89,230</div>
+                        <div class="metric-subtext">45% margin used</div>
+                    </div>
+                </div>
+
+                <div class="grid-item grid-item-5">
+                    <div class="metric">
+                        <div class="metric-label">Daily Performance</div>
+                        <div class="chart">
+                            <div class="chart-bar" style="height: 60%;"></div>
+                            <div class="chart-bar" style="height: 80%;"></div>
+                            <div class="chart-bar" style="height: 45%;"></div>
+                            <div class="chart-bar" style="height: 90%;"></div>
+                            <div class="chart-bar" style="height: 70%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-item grid-item-6">
+                    <div class="metric">
+                        <div class="metric-label">Today's Summary</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
+                            <div>
+                                <div style="font-size: 12px; color: #94a3b8;">Profit Trades</div>
+                                <div style="font-size: 20px; font-weight: 700; color: #16a34a;">6</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: #94a3b8;">Loss Trades</div>
+                                <div style="font-size: 20px; font-weight: 700; color: #dc2626;">2</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Positions Table -->
+            <h3 class="table-header">Active Positions</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Qty</th>
+                            <th>Entry Price</th>
+                            <th>Current Price</th>
+                            <th>P&L</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="symbol-badge">SBIN</span></td>
+                            <td>100</td>
+                            <td>₹580.50</td>
+                            <td>₹598.20</td>
+                            <td style="color: #16a34a; font-weight: 600;">+₹1,770</td>
+                            <td><span class="status-badge status-running">RUNNING</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="symbol-badge">INFY</span></td>
+                            <td>50</td>
+                            <td>₹1,620.00</td>
+                            <td>₹1,645.50</td>
+                            <td style="color: #16a34a; font-weight: 600;">+₹1,275</td>
+                            <td><span class="status-badge status-running">RUNNING</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="symbol-badge">HCLTECH</span></td>
+                            <td>75</td>
+                            <td>₹1,520.00</td>
+                            <td>₹1,480.50</td>
+                            <td style="color: #dc2626; font-weight: 600;">-₹2,962</td>
+                            <td><span class="status-badge status-atrisk">AT RISK</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

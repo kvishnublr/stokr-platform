@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKR Trader Terminal - Nature Organic</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @keyframes organicWave { 0%, 100% { transform: translateY(0px) translateX(0px); } 25% { transform: translateY(-8px) translateX(5px); } 50% { transform: translateY(0px) translateX(10px); } 75% { transform: translateY(8px) translateX(5px); } }
+        @keyframes growthPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.06); opacity: 0.8; } }
+        @keyframes slideInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+
+        body {
+            font-family: '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', sans-serif;
+            background: linear-gradient(-45deg, #f5faf8, #f0f8f2, #faf5f0, #f8f0f5);
+            background-size: 400% 400%;
+            animation: organicWave 30s ease infinite;
+            color: #2d5a4a;
+            min-height: 100vh;
+            display: flex;
+        }
+
+        .sidebar {
+            width: 280px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8faf8 100%);
+            border-right: 2px solid #d4a574;
+            padding: 24px 16px;
+            overflow-y: auto;
+            position: fixed;
+            height: 100vh;
+            left: 0;
+            top: 0;
+            z-index: 20;
+            box-shadow: 0 8px 32px rgba(45, 106, 79, 0.1);
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: 900;
+            margin-bottom: 32px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #d4a574;
+            background: linear-gradient(135deg, #2d6a4f 0%, #386395 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .menu-group {
+            margin-bottom: 24px;
+        }
+
+        .menu-group-title {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #2d6a4f;
+            margin-bottom: 12px;
+            padding: 8px;
+            background: rgba(45, 106, 79, 0.08);
+            border-radius: 6px;
+            border-left: 3px solid #2d6a4f;
+        }
+
+        .menu-item {
+            padding: 10px 12px;
+            margin-bottom: 4px;
+            background: transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.4s;
+            color: #5a7a6a;
+            border-left: 3px solid transparent;
+            font-weight: 600;
+            border: none;
+            width: 100%;
+            text-align: left;
+        }
+
+        .menu-item:hover {
+            background: linear-gradient(90deg, rgba(45, 106, 79, 0.12), rgba(156, 175, 136, 0.1));
+            color: #2d6a4f;
+            border-left-color: #2d6a4f;
+            transform: translateX(6px);
+        }
+
+        .menu-item.active {
+            background: linear-gradient(90deg, rgba(45, 106, 79, 0.18), rgba(212, 165, 116, 0.12));
+            color: #2d6a4f;
+            border-left-color: #2d6a4f;
+            animation: growthPulse 3s ease-in-out infinite;
+        }
+
+        .main-content {
+            margin-left: 280px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .top-bar {
+            background: rgba(255, 255, 255, 0.85);
+            border-bottom: 2px solid #d4a574;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 8px 32px rgba(45, 106, 79, 0.08);
+        }
+
+        .breadcrumb {
+            font-size: 13px;
+            background: linear-gradient(90deg, #2d6a4f, #386395, #d4a574);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, rgba(45, 106, 79, 0.12), rgba(56, 99, 149, 0.1));
+            padding: 8px 14px;
+            border-radius: 20px;
+            color: #2d6a4f;
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        .content-area {
+            flex: 1;
+            padding: 32px;
+            overflow-y: auto;
+            animation: slideInUp 0.6s ease-out;
+        }
+
+        .page-title {
+            font-size: 40px;
+            font-weight: 900;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #2d6a4f 0%, #386395 50%, #d4a574 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .page-subtitle {
+            font-size: 15px;
+            background: linear-gradient(90deg, #386395, #9caf88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 32px;
+            font-weight: 700;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 248, 0.95));
+            border: 2px solid #d4a574;
+            border-radius: 16px;
+            padding: 28px;
+            transition: all 0.5s;
+            box-shadow: 0 10px 40px rgba(45, 106, 79, 0.08);
+            animation: slideInUp 0.8s ease-out;
+        }
+
+        .card:hover {
+            transform: translateY(-10px);
+            border-color: #2d6a4f;
+            box-shadow: 0 30px 80px rgba(45, 106, 79, 0.15);
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #d4a574;
+            background: linear-gradient(135deg, #2d6a4f, #386395);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .metric:last-child { border-bottom: none; }
+
+        .metric-label {
+            font-size: 13px;
+            color: #6a8a7a;
+            font-weight: 700;
+        }
+
+        .metric-value {
+            font-size: 16px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #2d6a4f, #386395);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        th {
+            background: linear-gradient(90deg, rgba(45, 106, 79, 0.08), rgba(56, 99, 149, 0.08));
+            border-bottom: 2px solid #d4a574;
+            font-weight: 800;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        tr:hover {
+            background: linear-gradient(90deg, rgba(45, 106, 79, 0.05), rgba(56, 99, 149, 0.05));
+        }
+
+        .tab-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 24px;
+            border-bottom: 2px solid #d4a574;
+        }
+
+        .tab-btn {
+            padding: 12px 20px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: #6a8a7a;
+            font-weight: 700;
+            font-size: 12px;
+            text-transform: uppercase;
+            border-bottom: 3px solid transparent;
+            transition: all 0.4s;
+        }
+
+        .tab-btn.active {
+            color: #2d6a4f;
+            border-bottom-color: #2d6a4f;
+        }
+
+        .hidden { display: none; }
+
+        .chart-container {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 248, 0.95));
+            border: 2px solid #d4a574;
+            border-radius: 20px;
+            padding: 32px;
+            margin-bottom: 32px;
+            box-shadow: 0 20px 60px rgba(45, 106, 79, 0.1);
+        }
+
+        .chart-container h3 {
+            background: linear-gradient(135deg, #2d6a4f, #386395);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 24px;
+            font-size: 18px;
+            font-weight: 800;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 350px;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">🌿 STOKR</div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">📊 Dashboard</div>
+            <button class="menu-item active" onclick="loadPage('dashboard')">Main Dashboard</button>
+            <button class="menu-item" onclick="loadPage('overview')">Portfolio Overview</button>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">🔄 Trading</div>
+            <button class="menu-item" onclick="loadPage('terminal')">Intraday Terminal</button>
+            <button class="menu-item" onclick="loadPage('positions')">Open Positions</button>
+            <button class="menu-item" onclick="loadPage('orders')">Orders</button>
+            <button class="menu-item" onclick="loadPage('executions')">Executions</button>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">🎯 Strategies</div>
+            <button class="menu-item" onclick="loadPage('watchlist')">Watchlist</button>
+            <button class="menu-item" onclick="loadPage('strategies')">Strategy Manager</button>
+            <button class="menu-item" onclick="loadPage('signals')">Signal Monitor</button>
+            <button class="menu-item" onclick="loadPage('backtests')">Backtests</button>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">⚙️ Settings</div>
+            <button class="menu-item" onclick="loadPage('broker')">Broker Connect</button>
+            <button class="menu-item" onclick="loadPage('settings')">Preferences</button>
+            <button class="menu-item" onclick="loadPage('profile')">Profile</button>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="breadcrumb">🌿 NATURE INSPIRED ORGANIC TRADER TERMINAL 🌿</div>
+            <div style="display: flex; gap: 16px;">
+                <div class="status-item"><span style="width: 10px; height: 10px; background: #2d6a4f; border-radius: 50%; box-shadow: 0 0 10px rgba(45, 106, 79, 0.5);"></span>Broker Live</div>
+                <div class="status-item"><span style="width: 10px; height: 10px; background: #386395; border-radius: 50%; box-shadow: 0 0 10px rgba(56, 99, 149, 0.5);"></span>API Active</div>
+            </div>
+        </div>
+
+        <div class="content-area" id="contentArea">
+            <!-- Content loads here -->
+        </div>
+    </div>
+
+    <script>
+        const pages = {
+            dashboard: {
+                title: 'Trading Dashboard',
+                subtitle: 'Real-time portfolio and performance analytics',
+                content: `
+                    <div class="dashboard-grid">
+                        <div class="card">
+                            <div class="card-title">💰 Portfolio</div>
+                            <div class="metric"><span class="metric-label">Total Equity</span><span class="metric-value">45.2 Cr</span></div>
+                            <div class="metric"><span class="metric-label">Cash</span><span class="metric-value">14.5 Cr</span></div>
+                            <div class="metric"><span class="metric-label">Holdings</span><span class="metric-value">30.7 Cr</span></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">📊 Trading</div>
+                            <div class="metric"><span class="metric-label">Win Rate</span><span class="metric-value">73.2%</span></div>
+                            <div class="metric"><span class="metric-label">Trades Today</span><span class="metric-value">14</span></div>
+                            <div class="metric"><span class="metric-label">Avg Profit</span><span class="metric-value">15.3K</span></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">🏥 System</div>
+                            <div class="metric"><span class="metric-label">API Latency</span><span class="metric-value">24ms</span></div>
+                            <div class="metric"><span class="metric-label">DB Health</span><span class="metric-value">99.9%</span></div>
+                            <div class="metric"><span class="metric-label">Uptime</span><span class="metric-value">45 Days</span></div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Portfolio Performance</h3>
+                        <div class="chart-wrapper"><canvas id="chartCanvas"></canvas></div>
+                    </div>
+                `
+            },
+            overview: {
+                title: 'Portfolio Overview',
+                subtitle: 'Complete portfolio analysis and breakdown',
+                content: `
+                    <div class="dashboard-grid">
+                        <div class="card">
+                            <div class="card-title">📈 Holdings Breakdown</div>
+                            <div class="metric"><span class="metric-label">Equities</span><span class="metric-value">28.5 Cr</span></div>
+                            <div class="metric"><span class="metric-label">Futures</span><span class="metric-value">8.2 Cr</span></div>
+                            <div class="metric"><span class="metric-label">Options</span><span class="metric-value">3.5 Cr</span></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">🎯 Sector Allocation</div>
+                            <div class="metric"><span class="metric-label">IT</span><span class="metric-value">35%</span></div>
+                            <div class="metric"><span class="metric-label">Financials</span><span class="metric-value">28%</span></div>
+                            <div class="metric"><span class="metric-label">Pharma</span><span class="metric-value">20%</span></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">📊 Risk Metrics</div>
+                            <div class="metric"><span class="metric-label">Beta</span><span class="metric-value">1.2</span></div>
+                            <div class="metric"><span class="metric-label">Volatility</span><span class="metric-value">18.5%</span></div>
+                            <div class="metric"><span class="metric-label">Max Drawdown</span><span class="metric-value">-8.3%</span></div>
+                        </div>
+                    </div>
+                `
+            },
+            terminal: {
+                title: 'Intraday Terminal',
+                subtitle: 'Real-time trading execution platform',
+                content: `
+                    <div class="tab-container">
+                        <button class="tab-btn active" onclick="switchTab('orders-tab')">Orders</button>
+                        <button class="tab-btn" onclick="switchTab('positions-tab')">Positions</button>
+                        <button class="tab-btn" onclick="switchTab('execution-tab')">Executions</button>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">📋 Active Orders</div>
+                        <table>
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th>Status</th>
+                            </tr>
+                            <tr>
+                                <td>#ORD001</td>
+                                <td>INFY</td>
+                                <td>BUY</td>
+                                <td>100</td>
+                                <td>1250</td>
+                                <td>Pending</td>
+                            </tr>
+                            <tr>
+                                <td>#ORD002</td>
+                                <td>TCS</td>
+                                <td>SELL</td>
+                                <td>50</td>
+                                <td>3850</td>
+                                <td>Executed</td>
+                            </tr>
+                        </table>
+                    </div>
+                `
+            },
+            positions: {
+                title: 'Open Positions',
+                subtitle: 'Currently held positions',
+                content: `
+                    <div class="card">
+                        <div class="card-title">📍 Position Details</div>
+                        <table>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Qty</th>
+                                <th>Avg Price</th>
+                                <th>Current</th>
+                                <th>P&L</th>
+                                <th>%</th>
+                            </tr>
+                            <tr>
+                                <td>INFY</td>
+                                <td>100</td>
+                                <td>1234</td>
+                                <td>1256</td>
+                                <td style="color: green;">+2200</td>
+                                <td>+1.78%</td>
+                            </tr>
+                            <tr>
+                                <td>TCS</td>
+                                <td>50</td>
+                                <td>3800</td>
+                                <td>3850</td>
+                                <td style="color: green;">+2500</td>
+                                <td>+1.31%</td>
+                            </tr>
+                        </table>
+                    </div>
+                `
+            },
+            orders: {
+                title: 'Orders',
+                subtitle: 'Order history and management',
+                content: `
+                    <div class="card">
+                        <div class="card-title">📋 Order History</div>
+                        <table>
+                            <tr>
+                                <th>Time</th>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th>Status</th>
+                            </tr>
+                            <tr>
+                                <td>14:32:45</td>
+                                <td>INFY</td>
+                                <td>BUY</td>
+                                <td>100</td>
+                                <td>1250</td>
+                                <td>Executed</td>
+                            </tr>
+                            <tr>
+                                <td>13:45:20</td>
+                                <td>TCS</td>
+                                <td>SELL</td>
+                                <td>50</td>
+                                <td>3850</td>
+                                <td>Executed</td>
+                            </tr>
+                        </table>
+                    </div>
+                `
+            },
+            executions: {
+                title: 'Executions',
+                subtitle: 'Trade execution details',
+                content: `
+                    <div class="card">
+                        <div class="card-title">🚀 Execution History</div>
+                        <table>
+                            <tr>
+                                <th>Time</th>
+                                <th>Symbol</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th>Value</th>
+                                <th>Commission</th>
+                            </tr>
+                            <tr>
+                                <td>14:32:45</td>
+                                <td>INFY</td>
+                                <td>100</td>
+                                <td>1250</td>
+                                <td>125,000</td>
+                                <td>250</td>
+                            </tr>
+                        </table>
+                    </div>
+                `
+            },
+            watchlist: {
+                title: 'Watchlist',
+                subtitle: 'Monitored securities and prices',
+                content: `
+                    <div class="card">
+                        <div class="card-title">👁️ Watched Symbols</div>
+                        <table>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Price</th>
+                                <th>Change</th>
+                                <th>Volume</th>
+                                <th>PE Ratio</th>
+                            </tr>
+                            <tr>
+                                <td>INFY</td>
+                                <td>1256</td>
+                                <td style="color: green;">+1.5%</td>
+                                <td>2.5M</td>
+                                <td>24.5</td>
+                            </tr>
+                            <tr>
+                                <td>TCS</td>
+                                <td>3850</td>
+                                <td style="color: green;">+0.8%</td>
+                                <td>1.8M</td>
+                                <td>22.3</td>
+                            </tr>
+                        </table>
+                    </div>
+                `
+            },
+            strategies: {
+                title: 'Strategy Manager',
+                subtitle: 'Active and managed strategies',
+                content: `
+                    <div class="dashboard-grid">
+                        <div class="card">
+                            <div class="card-title">Strategy 1</div>
+                            <div class="metric"><span class="metric-label">Status</span><span class="metric-value" style="color: green;">Active</span></div>
+                            <div class="metric"><span class="metric-label">Win Rate</span><span class="metric-value">72%</span></div>
+                            <div class="metric"><span class="metric-label">P&L</span><span class="metric-value">2.5L</span></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">Strategy 2</div>
+                            <div class="metric"><span class="metric-label">Status</span><span class="metric-value" style="color: green;">Active</span></div>
+                            <div class="metric"><span class="metric-label">Win Rate</span><span class="metric-value">68%</span></div>
+                            <div class="metric"><span class="metric-label">P&L</span><span class="metric-value">1.8L</span></div>
+                        </div>
+                    </div>
+                `
+            },
+            signals: {
+                title: 'Signal Monitor',
+                subtitle: 'Real-time signal generation and tracking',
+                content: `
+                    <div class="card">
+                        <div class="card-title">📡 Recent Signals</div>
+                        <table>
+                            <tr>
+                                <th>Time</th>
+                                <th>Symbol</th>
+                                <th>Signal</th>
+                                <th>Confidence</th>
+                                <th>Status</th>
+                            </tr>
+                            <tr>
+                                <td>14:30:12</td>
+                                <td>INFY</td>
+                                <td>BUY</td>
+                                <td>85%</td>
+                                <td>Executed</td>
+                            </tr>
+                            <tr>
+                                <td>13:45:00</td>
+                                <td>TCS</td>
+                                <td>SELL</td>
+                                <td>78%</td>
+                                <td>Executed</td>
+                            </tr>
+                        </table>
+                    </div>
+                `
+            },
+            backtests: {
+                title: 'Backtests',
+                subtitle: 'Historical strategy performance',
+                content: `
+                    <div class="card">
+                        <div class="card-title">📊 Backtest Results</div>
+                        <table>
+                            <tr>
+                                <th>Strategy</th>
+                                <th>Period</th>
+                                <th>Win Rate</th>
+                                <th>Total P&L</th>
+                                <th>Sharpe Ratio</th>
+                            </tr>
+                            <tr>
+                                <td>Momentum</td>
+                                <td>1Y</td>
+                                <td>75%</td>
+                                <td>45L</td>
+                                <td>1.85</td>
+                            </tr>
+                            <tr>
+                                <td>Mean Reversion</td>
+                                <td>1Y</td>
+                                <td>68%</td>
+                                <td>32L</td>
+                                <td>1.52</td>
+                            </tr>
+                        </table>
+                    </div>
+                `
+            },
+            broker: {
+                title: 'Broker Connection',
+                subtitle: 'Broker account and API status',
+                content: `
+                    <div class="dashboard-grid">
+                        <div class="card">
+                            <div class="card-title">Broker Status</div>
+                            <div class="metric"><span class="metric-label">Broker</span><span class="metric-value">Zerodha</span></div>
+                            <div class="metric"><span class="metric-label">Status</span><span class="metric-value" style="color: green;">Connected</span></div>
+                            <div class="metric"><span class="metric-label">Account</span><span class="metric-value">Active</span></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">API Details</div>
+                            <div class="metric"><span class="metric-label">API Key</span><span class="metric-value">●●●●●●●8</span></div>
+                            <div class="metric"><span class="metric-label">Endpoint</span><span class="metric-value">173.249.55.84:8080</span></div>
+                            <div class="metric"><span class="metric-label">Latency</span><span class="metric-value">24ms</span></div>
+                        </div>
+                    </div>
+                `
+            },
+            settings: {
+                title: 'Preferences',
+                subtitle: 'User settings and configuration',
+                content: `
+                    <div class="card">
+                        <div class="card-title">⚙️ Settings</div>
+                        <div class="metric"><span class="metric-label">Theme</span><span class="metric-value">Nature Organic</span></div>
+                        <div class="metric"><span class="metric-label">Language</span><span class="metric-value">English</span></div>
+                        <div class="metric"><span class="metric-label">Notifications</span><span class="metric-value">Enabled</span></div>
+                    </div>
+                `
+            },
+            profile: {
+                title: 'Profile',
+                subtitle: 'User account information',
+                content: `
+                    <div class="card">
+                        <div class="card-title">👤 Profile Info</div>
+                        <div class="metric"><span class="metric-label">Name</span><span class="metric-value">Trader</span></div>
+                        <div class="metric"><span class="metric-label">Email</span><span class="metric-value">trader@stokr.in</span></div>
+                        <div class="metric"><span class="metric-label">Member Since</span><span class="metric-value">2023</span></div>
+                    </div>
+                `
+            }
+        };
+
+        function loadPage(pageName) {
+            const page = pages[pageName];
+            const contentArea = document.getElementById('contentArea');
+
+            contentArea.innerHTML = `
+                <div class="page-title">${page.title}</div>
+                <div class="page-subtitle">${page.subtitle}</div>
+                ${page.content}
+            `;
+
+            // Update active menu item
+            document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Create chart if on dashboard
+            if (pageName === 'dashboard') {
+                setTimeout(() => createChart(), 100);
+            }
+        }
+
+        function createChart() {
+            const canvas = document.getElementById('chartCanvas');
+            if (canvas) {
+                new Chart(canvas, {
+                    type: 'line',
+                    data: {
+                        labels: ['9:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00'],
+                        datasets: [{
+                            label: 'Portfolio Value (Cr)',
+                            data: [44.8, 44.92, 45.05, 45.15, 45.08, 45.22, 45.18, 45.35, 45.28, 45.40, 45.38, 45.20],
+                            borderColor: '#2d6a4f',
+                            backgroundColor: 'rgba(45, 106, 79, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointBackgroundColor: '#386395'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { labels: { color: '#2d6a4f', font: { weight: 'bold' } } }
+                        },
+                        scales: {
+                            y: { ticks: { color: '#6a8a7a' }, grid: { color: 'rgba(45, 106, 79, 0.08)' } },
+                            x: { ticks: { color: '#6a8a7a' }, grid: { color: 'rgba(45, 106, 79, 0.08)' } }
+                        }
+                    }
+                });
+            }
+        }
+
+        function switchTab(tabName) {
+            // Tab switching logic
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        // Load dashboard on init
+        window.addEventListener('load', () => loadPage('dashboard'));
+    </script>
+</body>
+</html>

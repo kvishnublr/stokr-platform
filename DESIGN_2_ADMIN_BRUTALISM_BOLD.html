@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKR Admin - Brutalism Bold</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #000000;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            background: #000000;
+            border-right: 4px solid #FF00FF;
+            padding: 32px 20px;
+            overflow-y: auto;
+            position: fixed;
+            height: 100vh;
+            left: 0;
+            top: 0;
+        }
+
+        .logo {
+            font-size: 32px;
+            font-weight: 900;
+            margin-bottom: 40px;
+            padding-bottom: 24px;
+            border-bottom: 4px solid #FF00FF;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: #FF00FF;
+        }
+
+        .menu-group {
+            margin-bottom: 32px;
+        }
+
+        .menu-group-title {
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #00FFFF;
+            margin-bottom: 16px;
+            padding: 8px;
+            border: 2px solid #00FFFF;
+        }
+
+        .menu-item {
+            padding: 12px 8px;
+            margin-bottom: 6px;
+            background: transparent;
+            border-radius: 0px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.15s;
+            color: #ffffff;
+            border-left: 4px solid transparent;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .menu-item:hover {
+            background: #FF00FF;
+            color: #000000;
+            border-left-color: #00FFFF;
+        }
+
+        .menu-item.active {
+            background: #00FFFF;
+            color: #000000;
+            font-weight: 900;
+            border-left: 4px solid #FF00FF;
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: 300px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #000000;
+        }
+
+        .top-bar {
+            background: #000000;
+            border-bottom: 4px solid #FF00FF;
+            padding: 20px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .breadcrumb {
+            font-size: 14px;
+            color: #00FFFF;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .system-status {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 2px solid #FF00FF;
+            padding: 6px 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: #00FF00;
+        }
+
+        .content-area {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+            background: #000000;
+        }
+
+        .page-title {
+            font-size: 48px;
+            font-weight: 900;
+            margin-bottom: 12px;
+            color: #FF00FF;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .page-subtitle {
+            font-size: 16px;
+            color: #00FFFF;
+            margin-bottom: 40px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: bold;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        .card {
+            background: #000000;
+            border: 4px solid;
+            padding: 32px;
+            transition: all 0.15s;
+        }
+
+        .card:nth-child(1) {
+            border-color: #FF0066;
+        }
+
+        .card:nth-child(2) {
+            border-color: #FF9900;
+        }
+
+        .card:nth-child(3) {
+            border-color: #FFFF00;
+        }
+
+        .card:nth-child(4) {
+            border-color: #00CCFF;
+        }
+
+        .card:nth-child(5) {
+            border-color: #00FF88;
+        }
+
+        .card:nth-child(6) {
+            border-color: #FF00FF;
+        }
+
+        .card:hover {
+            transform: translate(-4px, -4px);
+            box-shadow: 8px 8px 0px rgba(255, 0, 255, 0.4);
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 3px solid;
+        }
+
+        .card:nth-child(1) .card-title { border-bottom-color: #FF0066; color: #FF0066; }
+        .card:nth-child(2) .card-title { border-bottom-color: #FF9900; color: #FF9900; }
+        .card:nth-child(3) .card-title { border-bottom-color: #FFFF00; color: #FFFF00; }
+        .card:nth-child(4) .card-title { border-bottom-color: #00CCFF; color: #00CCFF; }
+        .card:nth-child(5) .card-title { border-bottom-color: #00FF88; color: #00FF88; }
+        .card:nth-child(6) .card-title { border-bottom-color: #FF00FF; color: #FF00FF; }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            border-bottom: 2px solid #333333;
+            font-weight: bold;
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            font-size: 14px;
+            color: #aaaaaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .metric-value {
+            font-size: 18px;
+            font-weight: 900;
+            color: #00FF00;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .metric-value.warning {
+            color: #FF9900;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 24px;
+            border: 4px solid #FF00FF;
+        }
+
+        th {
+            padding: 16px;
+            text-align: left;
+            background: #1a1a1a;
+            border-bottom: 3px solid #FF00FF;
+            font-weight: 900;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #FF00FF;
+        }
+
+        td {
+            padding: 16px;
+            border-bottom: 2px solid #333333;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        tr:hover {
+            background: #1a1a1a;
+        }
+
+        ::-webkit-scrollbar {
+            width: 12px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #000000;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #FF00FF;
+            border: 2px solid #000000;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00FFFF;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">⚡ STOKR</div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">📊 Command Center</div>
+            <div class="menu-item active">Command Center</div>
+            <div class="menu-item">Platform Overview</div>
+            <div class="menu-item">Pipeline Health</div>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">🔄 Trading Operations</div>
+            <div class="menu-item">OMS Monitor</div>
+            <div class="menu-item">Intraday Ops</div>
+            <div class="menu-item">Trader Health</div>
+            <div class="menu-item">Execution Controls</div>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">🎯 Strategies & Signals</div>
+            <div class="menu-item">Signal Monitor</div>
+            <div class="menu-item">Pipeline Trace</div>
+            <div class="menu-item">Signal Lab</div>
+            <div class="menu-item">Strategy Diagnostics</div>
+            <div class="menu-item">Strategy Effectiveness</div>
+            <div class="menu-item">Strategy Catalog</div>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">⚙️ Execution & OMS</div>
+            <div class="menu-item">Execution Guard</div>
+            <div class="menu-item">Test Signal Lab</div>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">🌍 Market Intelligence</div>
+            <div class="menu-item">Market Feed</div>
+            <div class="menu-item">Market Backfill</div>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">⚠️ Risk & Exposure</div>
+            <div class="menu-item">Risk Terminal</div>
+            <div class="menu-item">Capital Allocation</div>
+        </div>
+
+        <div class="menu-group">
+            <div class="menu-group-title">🔧 Infrastructure</div>
+            <div class="menu-item">Health Center</div>
+            <div class="menu-item">Live Logs</div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="breadcrumb">⚡ ADMIN / COMMAND CENTER</div>
+            <div class="system-status">
+                <div class="status-item">
+                    <div class="status-dot"></div>
+                    BROKER: LIVE
+                </div>
+                <div class="status-item">
+                    <div class="status-dot"></div>
+                    API: ACTIVE
+                </div>
+            </div>
+        </div>
+
+        <div class="content-area">
+            <div class="page-title">COMMAND CENTER</div>
+            <div class="page-subtitle">REAL-TIME PLATFORM METRICS • BRUTALISM DESIGN</div>
+
+            <div class="dashboard-grid">
+                <div class="card">
+                    <div class="card-title">💰 Portfolio Health</div>
+                    <div class="metric">
+                        <span class="metric-label">Total Equity</span>
+                        <span class="metric-value">₹45.2Cr</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">P&L Today</span>
+                        <span class="metric-value">+₹8.34Cr</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Risk Level</span>
+                        <span class="metric-value warning">65%</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Active Positions</span>
+                        <span class="metric-value">847</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">📈 Trading Status</div>
+                    <div class="metric">
+                        <span class="metric-label">Win Rate</span>
+                        <span class="metric-value">73.2%</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Trades Today</span>
+                        <span class="metric-value">342</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Rejections</span>
+                        <span class="metric-value warning">18.3%</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Avg Trade</span>
+                        <span class="metric-value">₹14.7K</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">🏥 System Health</div>
+                    <div class="metric">
+                        <span class="metric-label">API Latency</span>
+                        <span class="metric-value">24ms</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">DB Health</span>
+                        <span class="metric-value">99.9%</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Cache Hit</span>
+                        <span class="metric-value">96.2%</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Uptime</span>
+                        <span class="metric-value">45d 12h</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">🔌 Broker Status</div>
+                    <div class="metric">
+                        <span class="metric-label">Zerodha</span>
+                        <span class="metric-value">CONNECTED</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">ICICI Direct</span>
+                        <span class="metric-value">CONNECTED</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Angel Broking</span>
+                        <span class="metric-value">CONNECTED</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Margin Used</span>
+                        <span class="metric-value warning">82%</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">🎯 Signal Pipeline</div>
+                    <div class="metric">
+                        <span class="metric-label">Signals/Min</span>
+                        <span class="metric-value">847</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Pending</span>
+                        <span class="metric-value">342</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Running</span>
+                        <span class="metric-value">156</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Avg Exec</span>
+                        <span class="metric-value">189ms</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">👥 Active Traders</div>
+                    <div class="metric">
+                        <span class="metric-label">Online</span>
+                        <span class="metric-value">12</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Total</span>
+                        <span class="metric-value">15</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">New Today</span>
+                        <span class="metric-value">2</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Avg Profit</span>
+                        <span class="metric-value">+₹85K</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="border-color: #FF00FF; margin-top: 0;">
+                <div class="card-title" style="color: #FF00FF; border-bottom-color: #FF00FF;">📊 TOP TRADERS LEADERBOARD</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>RANK</th>
+                            <th>TRADER</th>
+                            <th>P&L TODAY</th>
+                            <th>WIN RATE</th>
+                            <th>TRADES</th>
+                            <th>STATUS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="color: #FFD700;">🥇 #1</td>
+                            <td style="color: #00FF00; font-weight: 900;">VISHNU.ALGO</td>
+                            <td style="color: #00FF00; font-weight: 900;">+₹3.2Cr</td>
+                            <td>84%</td>
+                            <td>42</td>
+                            <td style="color: #00FF00;">⚡ ONLINE</td>
+                        </tr>
+                        <tr>
+                            <td style="color: #C0C0C0;">🥈 #2</td>
+                            <td style="color: #00CCFF;">ALGO_BOT_V3</td>
+                            <td style="color: #00CCFF;">+₹2.8Cr</td>
+                            <td>78%</td>
+                            <td>156</td>
+                            <td style="color: #FF9900;">⏸ OFFLINE</td>
+                        </tr>
+                        <tr>
+                            <td style="color: #CD7F32;">🥉 #3</td>
+                            <td style="color: #FF00FF;">EXPERT_V5</td>
+                            <td style="color: #FF00FF;">+₹1.9Cr</td>
+                            <td>71%</td>
+                            <td>38</td>
+                            <td style="color: #FF9900;">⏸ OFFLINE</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.querySelectorAll('.menu-item').forEach(item => {
+            item.addEventListener('click', function() {
+                document.querySelectorAll('.menu-item').forEach(i => i.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html>

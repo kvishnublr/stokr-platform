@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOKR Admin - Risk Terminal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'IBM Plex Mono', 'Courier New', monospace;
+            background: #0a0e27;
+            color: #00ff88;
+            min-height: 100vh;
+            padding: 16px;
+            line-height: 1.4;
+        }
+
+        .risk-terminal {
+            max-width: 1900px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: auto auto 1fr;
+            gap: 12px;
+            height: 100vh;
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            background: linear-gradient(90deg, #ff0080 0%, #00ff88 100%);
+            padding: 12px 16px;
+            color: #000;
+            font-weight: bold;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-title {
+            font-size: 16px;
+            letter-spacing: 2px;
+        }
+
+        .header-info {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+        }
+
+        .panel {
+            background: linear-gradient(135deg, #0f1419 0%, #1a1f2e 100%);
+            border: 1px solid #00ff88;
+            border-radius: 4px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-title {
+            font-size: 11px;
+            color: #ff0080;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(0, 255, 136, 0.2);
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            font-size: 11px;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0, 255, 136, 0.1);
+        }
+
+        .metric-row:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            color: #666;
+        }
+
+        .metric-value {
+            color: #00ff88;
+            font-weight: bold;
+            min-width: 100px;
+            text-align: right;
+        }
+
+        .metric-value.critical {
+            color: #ff0080;
+        }
+
+        .metric-value.warning {
+            color: #ffaa00;
+        }
+
+        /* Risk Gauge */
+        .risk-gauge {
+            background: rgba(0, 255, 136, 0.05);
+            border: 1px solid rgba(0, 255, 136, 0.2);
+            border-radius: 4px;
+            padding: 12px;
+            margin: 12px 0;
+        }
+
+        .gauge-label {
+            font-size: 10px;
+            color: #ff0080;
+            margin-bottom: 8px;
+        }
+
+        .gauge-bar {
+            height: 20px;
+            background: rgba(0, 255, 136, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 4px;
+        }
+
+        .gauge-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88 0%, #ffaa00 50%, #ff0080 100%);
+            width: 65%;
+        }
+
+        .gauge-text {
+            font-size: 9px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Heatmap */
+        .heatmap {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 4px;
+            margin: 12px 0;
+        }
+
+        .heat-cell {
+            aspect-ratio: 1;
+            background: rgba(0, 255, 136, 0.2);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: bold;
+        }
+
+        .heat-cell.hot {
+            background: rgba(255, 0, 128, 0.4);
+            border-color: #ff0080;
+            color: #ff0080;
+        }
+
+        .heat-cell.warm {
+            background: rgba(255, 170, 0, 0.3);
+            border-color: #ffaa00;
+            color: #ffaa00;
+        }
+
+        /* Alert */
+        .alert {
+            background: rgba(255, 0, 128, 0.1);
+            border: 1px solid #ff0080;
+            border-radius: 3px;
+            padding: 8px;
+            margin: 8px 0;
+            font-size: 10px;
+            color: #ff0080;
+        }
+
+        .alert.warning {
+            background: rgba(255, 170, 0, 0.1);
+            border-color: #ffaa00;
+            color: #ffaa00;
+        }
+
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+        }
+
+        th {
+            padding: 6px;
+            text-align: left;
+            color: #ff0080;
+            border-bottom: 1px solid rgba(0, 255, 136, 0.2);
+            text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        td {
+            padding: 6px;
+            border-bottom: 1px solid rgba(0, 255, 136, 0.1);
+            color: #00ff88;
+        }
+
+        tr:hover {
+            background: rgba(0, 255, 136, 0.08);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 255, 136, 0.05);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 136, 0.3);
+            border-radius: 2px;
+        }
+
+        /* Grid positioning */
+        .alerts { grid-column: 1; grid-row: 2 / 4; }
+        .portfolio { grid-column: 2; grid-row: 2 / 4; }
+        .positions { grid-column: 3; grid-row: 2 / 4; }
+        .risk-exposure { grid-column: 1 / 2; grid-row: 4; }
+        .trader-heat { grid-column: 2 / 3; grid-row: 4; }
+        .correlation { grid-column: 3; grid-row: 4; }
+    </style>
+</head>
+<body>
+    <div class="risk-terminal">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-title">⚠️ RISK TERMINAL</div>
+            <div class="header-info">
+                <div>Portfolio Risk: 65% | Threshold: 75%</div>
+                <div>Margin: ₹18.5Cr (82%) | Available: ₹4.0Cr</div>
+                <div>Active Positions: 847 | Win Rate: 73.2%</div>
+            </div>
+        </div>
+
+        <!-- Alerts Panel -->
+        <div class="panel alerts">
+            <div class="panel-title">🚨 Active Alerts</div>
+            <div class="panel-content">
+                <div class="alert">
+                    ⚠️ Cluster Risk: 4 entries in 2min window detected
+                </div>
+                <div class="alert warning">
+                    📊 Volatility Spike: COALINDIA -2.8% in 5min
+                </div>
+                <div class="alert warning">
+                    💰 Margin Warning: Approaching 85% usage limit
+                </div>
+                <div class="alert warning">
+                    📉 Correlation Alert: INFY/KOTAKBANK at -0.82
+                </div>
+                <div class="metric-row" style="margin-top: 12px;">
+                    <span class="metric-label">Total Alerts</span>
+                    <span class="metric-value critical">8</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Critical</span>
+                    <span class="metric-value critical">3</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Warning</span>
+                    <span class="metric-value warning">5</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Portfolio Health -->
+        <div class="panel portfolio">
+            <div class="panel-title">📊 Portfolio Health</div>
+            <div class="panel-content">
+                <div class="metric-row">
+                    <span class="metric-label">Total Equity</span>
+                    <span class="metric-value">₹45.2Cr</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Today P&L</span>
+                    <span class="metric-value">₹12.45Cr</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Daily Drawdown</span>
+                    <span class="metric-value critical">-8.2%</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Max Drawdown</span>
+                    <span class="metric-value">-15.3%</span>
+                </div>
+
+                <div class="risk-gauge">
+                    <div class="gauge-label">Portfolio Risk Exposure</div>
+                    <div class="gauge-bar">
+                        <div class="gauge-fill"></div>
+                    </div>
+                    <div class="gauge-text">
+                        <span>0%</span>
+                        <span>65%</span>
+                        <span>100%</span>
+                    </div>
+                </div>
+
+                <div class="metric-row" style="margin-top: 12px;">
+                    <span class="metric-label">Sharpe Ratio</span>
+                    <span class="metric-value">2.34</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Win Rate</span>
+                    <span class="metric-value">73.2%</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Profit Factor</span>
+                    <span class="metric-value">3.21</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Positions by Risk -->
+        <div class="panel positions">
+            <div class="panel-title">📈 Top Positions (by Risk)</div>
+            <div class="panel-content">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Exp</th>
+                            <th>Risk</th>
+                            <th>P&L</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>SBIN</td>
+                            <td>₹3.2Cr</td>
+                            <td style="color: #00ff88;">LOW</td>
+                            <td>+₹45K</td>
+                        </tr>
+                        <tr>
+                            <td>INFY</td>
+                            <td>₹4.1Cr</td>
+                            <td style="color: #00ff88;">LOW</td>
+                            <td>+₹87K</td>
+                        </tr>
+                        <tr>
+                            <td>COALINDIA</td>
+                            <td>₹2.8Cr</td>
+                            <td style="color: #ff0080;">HIGH</td>
+                            <td>-₹124K</td>
+                        </tr>
+                        <tr>
+                            <td>HCLTECH</td>
+                            <td>₹1.8Cr</td>
+                            <td style="color: #ffaa00;">MED</td>
+                            <td>-₹156K</td>
+                        </tr>
+                        <tr>
+                            <td>KOTAKBANK</td>
+                            <td>₹2.2Cr</td>
+                            <td style="color: #00ff88;">LOW</td>
+                            <td>+₹98K</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Risk Exposure Breakdown -->
+        <div class="panel risk-exposure">
+            <div class="panel-title">📊 Risk by Asset Class</div>
+            <div class="panel-content">
+                <div class="metric-row">
+                    <span class="metric-label">Equity Exposure</span>
+                    <span class="metric-value">₹38.2Cr (84%)</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Futures</span>
+                    <span class="metric-value">₹4.5Cr (10%)</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Options</span>
+                    <span class="metric-value">₹2.5Cr (6%)</span>
+                </div>
+                <div class="metric-row" style="padding-top: 12px; border-top: 1px solid rgba(0, 255, 136, 0.2);">
+                    <span class="metric-label">Leverage Used</span>
+                    <span class="metric-value warning">2.1x</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Available</span>
+                    <span class="metric-value">₹4.0Cr</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trader Performance Heat Map -->
+        <div class="panel trader-heat">
+            <div class="panel-title">🔥 Trader Risk Heatmap</div>
+            <div class="panel-content">
+                <div style="margin-bottom: 12px;">
+                    <div style="font-size: 9px; color: #ff0080; margin-bottom: 4px;">Performance Status</div>
+                    <div class="heatmap">
+                        <div class="heat-cell hot">V1</div>
+                        <div class="heat-cell warm">V2</div>
+                        <div class="heat-cell">V3</div>
+                        <div class="heat-cell hot">V4</div>
+                        <div class="heat-cell">V5</div>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Trader</th>
+                            <th>P&L</th>
+                            <th>Risk</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>V1</td>
+                            <td style="color: #ff0080;">-8.2%</td>
+                            <td style="color: #ff0080;">HIGH</td>
+                        </tr>
+                        <tr>
+                            <td>V2</td>
+                            <td>+3.1%</td>
+                            <td>OK</td>
+                        </tr>
+                        <tr>
+                            <td>V3</td>
+                            <td>+1.2%</td>
+                            <td>OK</td>
+                        </tr>
+                        <tr>
+                            <td>V4</td>
+                            <td style="color: #ff0080;">-5.6%</td>
+                            <td style="color: #ffaa00;">MED</td>
+                        </tr>
+                        <tr>
+                            <td>V5</td>
+                            <td>+2.4%</td>
+                            <td>OK</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Correlation Matrix -->
+        <div class="panel correlation">
+            <div class="panel-title">🔗 Asset Correlation</div>
+            <div class="panel-content">
+                <table>
+                    <thead>
+                        <tr>
+                            <th colspan="3">Top Correlations</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>INFY</td>
+                            <td>↔</td>
+                            <td style="color: #ff0080;">-0.82</td>
+                        </tr>
+                        <tr>
+                            <td>SBIN</td>
+                            <td>↔</td>
+                            <td>+0.71</td>
+                        </tr>
+                        <tr>
+                            <td>ASIANPAINT</td>
+                            <td>↔</td>
+                            <td>+0.65</td>
+                        </tr>
+                        <tr>
+                            <td>HCLTECH</td>
+                            <td>↔</td>
+                            <td style="color: #ff0080;">-0.58</td>
+                        </tr>
+                        <tr>
+                            <td>COALINDIA</td>
+                            <td>↔</td>
+                            <td>+0.42</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="alert warning" style="margin-top: 12px;">
+                    High negative correlation detected. Diversification risk.
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
