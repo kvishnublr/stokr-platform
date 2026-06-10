@@ -13,10 +13,12 @@ import {
   LineChart,
   Loader2,
   Lock,
+  Moon,
   Radio,
   RefreshCw,
   ShieldCheck,
   Sparkles,
+  Sun,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -656,6 +658,14 @@ export function AdvEnhancedDashboard() {
                   <div className="text-xs font-bold uppercase text-slate-500">IST Time</div>
                   <div className="text-sm font-black text-slate-900 dark:text-neutral-100">{snapshot?.istTime ?? new Date().toLocaleTimeString("en-IN")}</div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => useUiThemeStore.getState().toggle()}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-200"
+                  title="Toggle light/dark theme"
+                >
+                  {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                </button>
                 <button
                   type="button"
                   onClick={refreshAll}
