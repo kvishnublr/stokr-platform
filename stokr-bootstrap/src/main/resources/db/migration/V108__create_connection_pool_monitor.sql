@@ -1,7 +1,7 @@
--- V100: Create connection_pool_monitor table
+-- V108: Create connection_pool_monitor table
 -- Purpose: Monitor and log connection pool state (WS 11 - Redis Resilience)
 
-CREATE TABLE connection_pool_monitor (
+CREATE TABLE IF NOT EXISTS connection_pool_monitor (
     id UUID PRIMARY KEY,
     monitor_time TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 
@@ -41,11 +41,11 @@ CREATE TABLE connection_pool_monitor (
         -- RESTART_REQUESTED, FALLBACK_ENABLED, NONE
 );
 
-CREATE INDEX idx_pool_monitor_pool_name ON connection_pool_monitor(pool_name);
-CREATE INDEX idx_pool_monitor_time ON connection_pool_monitor(monitor_time DESC);
-CREATE INDEX idx_pool_monitor_state ON connection_pool_monitor(pool_state);
-CREATE INDEX idx_pool_monitor_operational ON connection_pool_monitor(is_operational);
-CREATE INDEX idx_pool_monitor_severity ON connection_pool_monitor(severity);
+CREATE INDEX IF NOT EXISTS idx_pool_monitor_pool_name ON connection_pool_monitor(pool_name);
+CREATE INDEX IF NOT EXISTS idx_pool_monitor_time ON connection_pool_monitor(monitor_time DESC);
+CREATE INDEX IF NOT EXISTS idx_pool_monitor_state ON connection_pool_monitor(pool_state);
+CREATE INDEX IF NOT EXISTS idx_pool_monitor_operational ON connection_pool_monitor(is_operational);
+CREATE INDEX IF NOT EXISTS idx_pool_monitor_severity ON connection_pool_monitor(severity);
 
 COMMENT ON TABLE connection_pool_monitor IS 'Monitor all database and broker connection pools (WS11)';
 COMMENT ON COLUMN connection_pool_monitor.pool_name IS 'Which pool: REDIS_LETTUCE, POSTGRES_HIKARI, BROKER_API';

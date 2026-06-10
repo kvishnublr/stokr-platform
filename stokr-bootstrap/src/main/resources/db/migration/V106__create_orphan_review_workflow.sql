@@ -28,14 +28,14 @@ CREATE TABLE IF NOT EXISTS orphan_review_tasks (
 
     CONSTRAINT fk_review_orphan FOREIGN KEY (orphan_id) REFERENCES orphan_detected_positions(id),
     CONSTRAINT fk_review_classification FOREIGN KEY (classification_id) REFERENCES orphan_classification_results(id),
-    CONSTRAINT fk_review_operator FOREIGN KEY (assigned_operator_id) REFERENCES users(id)
+    CONSTRAINT fk_review_operator FOREIGN KEY (assigned_operator_id) REFERENCES auth_users(id)
 );
 
-CREATE INDEX idx_review_status ON orphan_review_tasks(status);
-CREATE INDEX idx_review_assigned ON orphan_review_tasks(assigned_operator_id);
-CREATE INDEX idx_review_due_date ON orphan_review_tasks(due_date);
-CREATE INDEX idx_review_priority ON orphan_review_tasks(priority DESC);
-CREATE INDEX idx_review_do_not_touch ON orphan_review_tasks(status) WHERE status = 'DO_NOT_TOUCH';
+CREATE INDEX IF NOT EXISTS idx_review_status ON orphan_review_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_review_assigned ON orphan_review_tasks(assigned_operator_id);
+CREATE INDEX IF NOT EXISTS idx_review_due_date ON orphan_review_tasks(due_date);
+CREATE INDEX IF NOT EXISTS idx_review_priority ON orphan_review_tasks(priority DESC);
+CREATE INDEX IF NOT EXISTS idx_review_do_not_touch ON orphan_review_tasks(status) WHERE status = 'DO_NOT_TOUCH';
 
 CREATE TABLE IF NOT EXISTS orphan_review_approvals (
     id UUID PRIMARY KEY,
@@ -58,9 +58,9 @@ CREATE TABLE IF NOT EXISTS orphan_review_approvals (
 
     CONSTRAINT fk_approval_orphan FOREIGN KEY (orphan_id) REFERENCES orphan_detected_positions(id),
     CONSTRAINT fk_approval_task FOREIGN KEY (review_task_id) REFERENCES orphan_review_tasks(id),
-    CONSTRAINT fk_approval_operator FOREIGN KEY (operator_id) REFERENCES users(id)
+    CONSTRAINT fk_approval_operator FOREIGN KEY (operator_id) REFERENCES auth_users(id)
 );
 
-CREATE INDEX idx_approval_operator ON orphan_review_approvals(operator_id);
-CREATE INDEX idx_approval_date ON orphan_review_approvals(decision_timestamp DESC);
-CREATE INDEX idx_approval_orphan ON orphan_review_approvals(orphan_id);
+CREATE INDEX IF NOT EXISTS idx_approval_operator ON orphan_review_approvals(operator_id);
+CREATE INDEX IF NOT EXISTS idx_approval_date ON orphan_review_approvals(decision_timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_approval_orphan ON orphan_review_approvals(orphan_id);
