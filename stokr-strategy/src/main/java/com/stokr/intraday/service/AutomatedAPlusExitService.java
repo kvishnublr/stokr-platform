@@ -81,14 +81,22 @@ public class AutomatedAPlusExitService {
             }
 
             // Check AI score drop (exit when drops below threshold)
-            if (trade.getEntryAiScore() >= config.getEntryAiScoreMin()
-                    && currentAiScore != null
-                    && currentAiScore < config.getExitAiScoreThreshold()) {
-                exitTrade(trade, "AI_SCORE_DROP", null,
-                        String.format("aiScore dropped from %d to %d (threshold: %d)",
-                                trade.getEntryAiScore(), currentAiScore, config.getExitAiScoreThreshold()));
-                trade.setAiScoreDropReason(true);
-                return;
+            if (currentAiScore != null) {
+                int scoreDecay = trade.getEntryAiScore() - currentAiScore;
+                log.debug("A+ Monitor: {} aiScore: {} → {} (decay: {}, threshold: {})",
+                        trade.getSymbol(), trade.getEntryAiScore(), currentAiScore, scoreDecay,
+                        config.getExitAiScoreThreshold());
+
+                if (currentAiScore < config.getExitAiScoreThreshold()) {
+                    exitTrade(trade, "AI_SCORE_DROP", null,
+                            String.format("✅ AI_SCORE_DROP: aiScore %.0f→%.0f (below threshold %d)",
+                                    (float)trade.getEntryAiScore(), (float)currentAiScore,
+                                    config.getExitAiScoreThreshold()));
+                    trade.setAiScoreDropReason(true);
+                    return;
+                }
+            } else {
+                log.debug("A+ Monitor: {} aiScore not found in current terminal", trade.getSymbol());
             }
 
             // Check opposite signal

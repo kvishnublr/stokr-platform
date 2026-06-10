@@ -63,8 +63,21 @@ public class AutomatedAPlusScannerService {
             List<Map<String, Object>> rows = (List<Map<String, Object>>) terminal.get("scannerRows");
 
             if (rows == null || rows.isEmpty()) {
+                log.debug("A+ Scanner: No scanner rows found in terminal");
                 return;
             }
+
+            log.info("A+ Scanner: Found {} total rows to scan", rows.size());
+
+            // Count A+ setups in this scan
+            int aplusCount = 0;
+            for (Map<String, Object> row : rows) {
+                int aiScore = (Integer) row.getOrDefault("aiScore", 0);
+                if (aiScore >= config.getEntryAiScoreMin()) {
+                    aplusCount++;
+                }
+            }
+            log.info("A+ Scanner: {} A+ setups detected (threshold: {})", aplusCount, config.getEntryAiScoreMin());
 
             int entriesCreated = 0;
             for (Map<String, Object> row : rows) {
