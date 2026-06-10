@@ -86,6 +86,11 @@ export function SignalLifecyclePanel() {
     <section className="rounded-2xl border border-gray-200 bg-white p-6">
       <h3 className="mb-4 text-lg font-bold text-gray-900">Signal Lifecycle Tracking</h3>
 
+      <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm">
+        <div className="font-semibold text-amber-900">⚠️ DEMO MODE</div>
+        <div className="mt-1 text-amber-800">Data is mocked for testing UI/UX. Real monitoring data available 2026-06-17</div>
+      </div>
+
       {/* Search Input */}
       <div className="mb-6 flex gap-2">
         <input

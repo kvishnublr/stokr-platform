@@ -92,6 +92,10 @@ export function QueueMonitoringPanel() {
     return (
       <section className="rounded-2xl border border-gray-200 bg-white p-6">
         <h3 className="mb-4 text-lg font-bold text-gray-900">Queue Monitoring</h3>
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm">
+          <div className="font-semibold text-amber-900">⚠️ DEMO MODE</div>
+          <div className="mt-1 text-amber-800">Data is mocked for testing UI/UX. Real monitoring data available 2026-06-17</div>
+        </div>
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           Unable to load queue status: {error}
         </div>
@@ -101,6 +105,10 @@ export function QueueMonitoringPanel() {
 
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-6">
+      <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm">
+        <div className="font-semibold text-amber-900">⚠️ DEMO MODE</div>
+        <div className="mt-1 text-amber-800">Data is mocked for testing UI/UX. Real monitoring data available 2026-06-17</div>
+      </div>
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-bold text-gray-900">RabbitMQ Queue Status</h3>
         <div className="text-xs text-gray-500">
