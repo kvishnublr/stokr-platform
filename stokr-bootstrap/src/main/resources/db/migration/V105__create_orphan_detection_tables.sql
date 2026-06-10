@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS broker_position_observations (
     notes TEXT,
 
     CONSTRAINT fk_obs_user FOREIGN KEY (user_id) REFERENCES auth_users(id)
-) PARTITION BY RANGE (observation_time);
+);
 
 CREATE INDEX IF NOT EXISTS idx_obs_user_symbol_time ON broker_position_observations(user_id, symbol, observation_time DESC);
 CREATE INDEX IF NOT EXISTS idx_obs_is_orphaned ON broker_position_observations(is_orphaned, observation_time DESC);
