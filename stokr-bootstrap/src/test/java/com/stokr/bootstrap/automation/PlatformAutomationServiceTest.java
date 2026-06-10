@@ -9,6 +9,7 @@ import com.stokr.bootstrap.recovery.OperationalRecoveryContextCollector;
 import com.stokr.bootstrap.recovery.PlatformRecoveryProperties;
 import com.stokr.bootstrap.recovery.RankedRecoveryOrchestrator;
 import com.stokr.user.broker.PlatformMarketFeedService;
+import com.stokr.bootstrap.automation.AdminReadinessTelegramService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,6 +44,8 @@ class PlatformAutomationServiceTest {
     private OperationalFailureClassifier classifier;
     @Mock
     private AdminOperationalSnapshotService snapshotService;
+    @Mock
+    private AdminReadinessTelegramService readinessTelegramService;
 
     private PlatformAutomationProperties properties;
     private PlatformRecoveryProperties recoveryProperties;
@@ -61,7 +64,8 @@ class PlatformAutomationServiceTest {
                 orchestrator,
                 contextCollector,
                 classifier,
-                snapshotService
+                snapshotService,
+                readinessTelegramService
         );
     }
 

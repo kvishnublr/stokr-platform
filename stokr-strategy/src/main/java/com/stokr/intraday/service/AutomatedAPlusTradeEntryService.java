@@ -44,8 +44,8 @@ public class AutomatedAPlusTradeEntryService {
                     .build();
 
             trade = tradeRepository.save(trade);
-            log.info("Trade created: {} {} qty={} @ {} (id={})",
-                    side, symbol, config.getPositionSizeQty(), entryPrice, trade.getId());
+            log.info("✅ A+ ENTRY: {} {} qty={} @ {} (aiScore: {}, Trade ID: {})",
+                    side, symbol, config.getPositionSizeQty(), entryPrice, aiScore, trade.getId());
             return trade;
 
         } catch (Exception e) {
