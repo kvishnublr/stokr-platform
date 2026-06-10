@@ -103,6 +103,20 @@ public class ConfidenceBasedSignalGeneratorService {
                     score.getLiquidityScore() != null ? score.getLiquidityScore() : 0));
                 signal.setSimulation(false);
 
+                // RUNTIME INSTRUMENTATION: Trace all signals created by this service
+                StringBuilder stackTrace = new StringBuilder();
+                for (StackTraceElement ste : Thread.currentThread().getStackTrace()) {
+                    if (ste.getClassName().contains("com.stokr")) {
+                        stackTrace.append(ste.getClassName()).append(".").append(ste.getMethodName())
+                            .append(":").append(ste.getLineNumber()).append("\n");
+                    }
+                }
+                log.warn("CONFIDENCE_SIGNAL_PERSIST_TRACE");
+                log.warn("FROM_CONFIDENCE_SERVICE strategy={} symbol={} confidence={} pipeline={} thread={}",
+                    config.getStrategyName(), score.getSymbol(), score.getConfidenceScore(),
+                    signal.getPipeline(), Thread.currentThread().getName());
+                log.warn("CALLER_STACK:\n{}", stackTrace);
+
                 signalRepository.save(signal);
 
                 log.debug("  ✅ Signal persisted: {} at {} confidence",

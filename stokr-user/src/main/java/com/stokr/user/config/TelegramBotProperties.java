@@ -10,6 +10,8 @@ public class TelegramBotProperties {
     private String webhookSecret = "";
     private boolean dryRun = true;
     private String operatorChatId = "";
+    private String traderChatId = "";
+    private String adminChatId = "";
 
     /** Master switch for operator (admin) Telegram alerts. */
     private boolean operatorAlertsEnabled = true;
@@ -82,5 +84,21 @@ public class TelegramBotProperties {
 
     public void setOperatorReadinessAlertsEnabled(boolean operatorReadinessAlertsEnabled) {
         this.operatorReadinessAlertsEnabled = operatorReadinessAlertsEnabled;
+    }
+
+    public String getTraderChatId() {
+        return traderChatId;
+    }
+
+    public void setTraderChatId(String traderChatId) {
+        this.traderChatId = traderChatId;
+    }
+
+    public String getAdminChatId() {
+        return adminChatId;
+    }
+
+    public void setAdminChatId(String adminChatId) {
+        this.adminChatId = adminChatId;
     }
 }

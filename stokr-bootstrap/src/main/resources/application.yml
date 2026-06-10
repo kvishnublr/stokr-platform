@@ -420,6 +420,8 @@ stokr:
     webhook-secret: ${STOKR_TELEGRAM_WEBHOOK_SECRET:}
     dry-run: ${STOKR_TELEGRAM_DRY_RUN:true}
     operator-chat-id: ${STOKR_TELEGRAM_OPERATOR_CHAT_ID:}
+    trader-chat-id: ${STOKR_TELEGRAM_TRADER_CHAT_ID:}
+    admin-chat-id: ${STOKR_TELEGRAM_ADMIN_CHAT_ID:}
     operator-alerts-enabled: ${STOKR_TELEGRAM_OPERATOR_ALERTS_ENABLED:true}
     trader-fill-alerts-enabled: ${STOKR_TELEGRAM_TRADER_FILL_ALERTS_ENABLED:true}
     operator-readiness-alerts-enabled: ${STOKR_TELEGRAM_OPERATOR_READINESS_ALERTS_ENABLED:true}

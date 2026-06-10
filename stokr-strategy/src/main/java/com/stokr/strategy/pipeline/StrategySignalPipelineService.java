@@ -208,6 +208,24 @@ public class StrategySignalPipelineService {
         if (replaySignal && (signal.getLifecycleStatus() == null || signal.getLifecycleStatus().isBlank())) {
             SignalLifecycleService.applyInitial(signal, "PENDING");
         }
+
+        // RUNTIME INSTRUMENTATION: Trace LIVE signals with NULL confidence
+        if (signal.getConfidenceScore() == null || "LIVE".equals(signal.getPipeline())) {
+            StringBuilder stackTrace = new StringBuilder();
+            for (StackTraceElement ste : Thread.currentThread().getStackTrace()) {
+                if (ste.getClassName().contains("com.stokr")) {
+                    stackTrace.append(ste.getClassName()).append(".").append(ste.getMethodName())
+                        .append(":").append(ste.getLineNumber()).append("\n");
+                }
+            }
+            log.warn("SIGNAL_PERSIST_TRACE_START");
+            log.warn("signalId={} strategy={} symbol={} pipeline={} confidence={} quality={} thread={}",
+                signal.getId(), signal.getStrategyName(), signal.getSymbol(), signal.getPipeline(),
+                signal.getConfidenceScore(), signal.getTradeQuality(), Thread.currentThread().getName());
+            log.warn("CALLER_STACK:\n{}", stackTrace);
+            log.warn("SIGNAL_PERSIST_TRACE_END");
+        }
+
         StrategySignalEntity saved = signalRepository.save(signal);
 
         String cid = (correlationId == null || correlationId.isBlank()) ? UUID.randomUUID().toString() : correlationId;
