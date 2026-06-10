@@ -57,6 +57,12 @@ public class APlusStrategyConfig {
     @Column(nullable = false)
     private Integer marketCloseMinute = 30;
 
+    @Column(columnDefinition = "uuid")
+    private java.util.UUID traderId;
+
+    @Column(length = 50)
+    private String executionMode = "BOTH"; // LIVE, PAPER, or BOTH
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 

@@ -57,15 +57,18 @@ CREATE TABLE IF NOT EXISTS a_plus_strategy_config (
     auto_close_market_end BOOLEAN DEFAULT TRUE,
     market_close_hour INTEGER DEFAULT 15,
     market_close_minute INTEGER DEFAULT 30,
+    trader_id UUID,
+    execution_mode VARCHAR(50) DEFAULT 'BOTH',
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Insert default configuration
+-- Insert default configuration for VISHNUALGO (BOTH mode)
 INSERT INTO a_plus_strategy_config (id, enabled, entry_ai_score_min, exit_ai_score_threshold,
-    hard_sl_pct, hard_tp_pct, position_size_qty, universe_group, scan_interval_sec)
-VALUES (1, TRUE, 85, 70, 1.50, 3.00, 1, 'NIFTY_100', 30)
+    hard_sl_pct, hard_tp_pct, position_size_qty, universe_group, scan_interval_sec,
+    execution_mode)
+VALUES (1, TRUE, 85, 70, 1.50, 3.00, 1, 'NIFTY_100', 30, 'BOTH')
 ON CONFLICT (id) DO NOTHING;
 
 -- Trade audit log
