@@ -3,6 +3,9 @@ package com.stokr.bootstrap.health;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -23,6 +26,15 @@ import java.util.*;
 public class RealServiceHealthChecker {
 
     private final RestTemplate restTemplate;
+
+    @Configuration
+    public static class RestTemplateConfig {
+        @Bean
+        @ConditionalOnMissingBean
+        public RestTemplate restTemplate() {
+            return new RestTemplate();
+        }
+    }
 
     @Value("${strategy.service.url:http://localhost:8081}")
     private String strategyServiceUrl;
