@@ -3,7 +3,7 @@ package com.stokr.execution.orphan.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -23,7 +23,7 @@ public class OrphanAuditLog {
     private Long id;
 
     @Column(name = "created_at", nullable = false)
-    private OffsetDateTime createdAt;
+    private Instant createdAt;
 
     @Column(name = "orphan_id", nullable = false)
     private UUID orphanId;
@@ -53,5 +53,5 @@ public class OrphanAuditLog {
     private String classificationType;
 
     @Column(name = "retention_date")
-    private OffsetDateTime retentionDate;
+    private Instant retentionDate;
 }

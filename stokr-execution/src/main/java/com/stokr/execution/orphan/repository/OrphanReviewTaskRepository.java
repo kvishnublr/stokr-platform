@@ -4,7 +4,7 @@ import com.stokr.execution.orphan.domain.OrphanReviewTask;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,7 +25,7 @@ public interface OrphanReviewTaskRepository extends JpaRepository<OrphanReviewTa
 
     @Query("SELECT t FROM OrphanReviewTask t WHERE t.status IN ('PENDING_REVIEW', 'DO_NOT_TOUCH') " +
            "AND t.dueDate < ?1 ORDER BY t.dueDate ASC")
-    List<OrphanReviewTask> findStaleTasks(OffsetDateTime threshold);
+    List<OrphanReviewTask> findStaleTasks(Instant threshold);
 
     Optional<OrphanReviewTask> findByOrphanId(UUID orphanId);
 }

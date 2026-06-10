@@ -4,7 +4,7 @@ import com.stokr.execution.orphan.domain.DetectedOrphanPosition;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,7 +23,7 @@ public interface DetectedOrphanPositionRepository extends JpaRepository<Detected
     @Query("SELECT d FROM DetectedOrphanPosition d WHERE d.status = 'DO_NOT_TOUCH' ORDER BY d.detectionTimestamp DESC")
     List<DetectedOrphanPosition> findDoNotTouchPositions();
 
-    List<DetectedOrphanPosition> findByDetectionTimestampAfter(OffsetDateTime timestamp);
+    List<DetectedOrphanPosition> findByDetectionTimestampAfter(Instant timestamp);
 
-    Optional<DetectedOrphanPosition> findByUserIdAndSymbolAndBrokerEntryTime(UUID userId, String symbol, OffsetDateTime brokerEntryTime);
+    Optional<DetectedOrphanPosition> findByUserIdAndSymbolAndBrokerEntryTime(UUID userId, String symbol, Instant brokerEntryTime);
 }

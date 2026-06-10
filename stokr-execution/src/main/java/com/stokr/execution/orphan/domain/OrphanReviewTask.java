@@ -5,7 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -36,10 +36,10 @@ public class OrphanReviewTask extends BaseEntity {
     private String priority;
 
     @Column(name = "due_date", nullable = false)
-    private OffsetDateTime dueDate;
+    private Instant dueDate;
 
     @Column(name = "completed_at")
-    private OffsetDateTime completedAt;
+    private Instant completedAt;
 
     @Column(name = "symbol", nullable = false, length = 64)
     private String symbol;

@@ -5,7 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -29,7 +29,7 @@ public class DetectedOrphanPosition extends BaseEntity {
     private BigDecimal quantity;
 
     @Column(name = "broker_entry_time", nullable = false)
-    private OffsetDateTime brokerEntryTime;
+    private Instant brokerEntryTime;
 
     @Column(name = "broker_entry_price", precision = 24, scale = 8)
     private BigDecimal brokerEntryPrice;
@@ -38,7 +38,7 @@ public class DetectedOrphanPosition extends BaseEntity {
     private BigDecimal currentValue;
 
     @Column(name = "detection_timestamp", nullable = false)
-    private OffsetDateTime detectionTimestamp;
+    private Instant detectionTimestamp;
 
     @Column(name = "detection_source", length = 64)
     private String detectionSource;

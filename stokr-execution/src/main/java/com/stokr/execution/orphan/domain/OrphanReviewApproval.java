@@ -4,7 +4,7 @@ import com.stokr.common.domain.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -33,7 +33,7 @@ public class OrphanReviewApproval extends BaseEntity {
     private String operatorNotes;
 
     @Column(name = "decision_timestamp", nullable = false)
-    private OffsetDateTime decisionTimestamp;
+    private Instant decisionTimestamp;
 
     @Column(name = "classification_before", length = 32)
     private String classificationBefore;

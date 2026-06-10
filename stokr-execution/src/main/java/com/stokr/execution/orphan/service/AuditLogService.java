@@ -6,7 +6,7 @@ import com.stokr.execution.orphan.repository.OrphanAuditLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,7 +81,7 @@ public class AuditLogService {
         return auditLogRepository.findByOrphanIdOrderByCreatedAtAsc(orphanId);
     }
 
-    public List<OrphanAuditLog> getOperatorDecisions(UUID operatorId, OffsetDateTime from, OffsetDateTime to) {
+    public List<OrphanAuditLog> getOperatorDecisions(UUID operatorId, Instant from, Instant to) {
         return auditLogRepository.findOperatorDecisions(operatorId, from, to);
     }
 
@@ -89,7 +89,7 @@ public class AuditLogService {
                          UUID userId, String symbol, String classificationType, Map<String, Object> details) {
         try {
             OrphanAuditLog log = new OrphanAuditLog();
-            log.setCreatedAt(OffsetDateTime.now());
+            log.setCreatedAt(Instant.now());
             log.setOrphanId(orphanId);
             log.setEventType(eventType);
             log.setEventSource(eventSource);
@@ -99,7 +99,7 @@ public class AuditLogService {
             log.setSymbol(symbol);
             log.setClassificationType(classificationType);
             log.setEventDetails(objectMapper.writeValueAsString(details));
-            log.setRetentionDate(OffsetDateTime.now().plusYears(2));
+            log.setRetentionDate(Instant.now().plus(2));
 
             auditLogRepository.save(log);
             log.info("audit.logged event_type={} orphan_id={} actor_type={}", eventType, orphanId, actorType);

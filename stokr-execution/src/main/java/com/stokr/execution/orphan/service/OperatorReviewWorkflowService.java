@@ -7,7 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.*;
 
 @Slf4j
@@ -29,8 +29,8 @@ public class OperatorReviewWorkflowService {
 
         OrphanReviewTask task = new OrphanReviewTask();
         task.setId(UUID.randomUUID());
-        task.setCreatedAt(OffsetDateTime.now());
-        task.setUpdatedAt(OffsetDateTime.now());
+        task.setCreatedAt(Instant.now());
+        task.setUpdatedAt(Instant.now());
         task.setVersion(0L);
         task.setOrphanId(classification.getOrphanId());
         task.setClassificationId(classification.getId());
@@ -53,7 +53,7 @@ public class OperatorReviewWorkflowService {
             task.setPriority("MEDIUM");
         }
 
-        task.setDueDate(OffsetDateTime.now().plusHours(24));
+        task.setDueDate(Instant.now().plusSeconds(24));
 
         reviewTaskRepository.save(task);
         auditLogService.logReviewTaskCreated(task);
@@ -70,7 +70,7 @@ public class OperatorReviewWorkflowService {
                 .orElseThrow(() -> new IllegalArgumentException("Task not found"));
 
         task.setAssignedOperatorId(operatorId);
-        task.setUpdatedAt(OffsetDateTime.now());
+        task.setUpdatedAt(Instant.now());
 
         reviewTaskRepository.save(task);
         log.info("review.task.assigned task_id={} operator_id={}", taskId, operatorId);
@@ -88,13 +88,13 @@ public class OperatorReviewWorkflowService {
         // Create approval record
         OrphanReviewApproval approval = new OrphanReviewApproval();
         approval.setId(UUID.randomUUID());
-        approval.setCreatedAt(OffsetDateTime.now());
+        approval.setCreatedAt(Instant.now());
         approval.setOrphanId(task.getOrphanId());
         approval.setReviewTaskId(taskId);
         approval.setOperatorId(operatorId);
         approval.setApprovedClassification(classification);
         approval.setOperatorNotes(notes);
-        approval.setDecisionTimestamp(OffsetDateTime.now());
+        approval.setDecisionTimestamp(Instant.now());
         approval.setClassificationBefore(currentClassification.getClassificationType());
         approval.setEvidenceScoreBefore(currentClassification.getEvidenceScore());
         approval.setClassificationAfter(classification);
@@ -104,7 +104,7 @@ public class OperatorReviewWorkflowService {
 
         // Update task
         task.setStatus("APPROVED");
-        task.setCompletedAt(OffsetDateTime.now());
+        task.setCompletedAt(Instant.now());
         reviewTaskRepository.save(task);
 
         // Update orphan
@@ -128,7 +128,7 @@ public class OperatorReviewWorkflowService {
                 .orElseThrow(() -> new IllegalArgumentException("Task not found"));
 
         task.setStatus("REJECTED");
-        task.setCompletedAt(OffsetDateTime.now());
+        task.setCompletedAt(Instant.now());
         reviewTaskRepository.save(task);
 
         auditLogService.logReviewRejection(task.getOrphanId(), taskId, operatorId, reason);

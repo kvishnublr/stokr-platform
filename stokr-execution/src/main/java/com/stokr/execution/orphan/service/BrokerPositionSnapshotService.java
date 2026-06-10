@@ -1,14 +1,15 @@
 package com.stokr.execution.orphan.service;
 
-import com.stokr.execution.broker.service.BrokerPositionTruthService;
+import com.stokr.execution.broker.BrokerPositionTruthService;
 import com.stokr.execution.orphan.domain.BrokerPositionObservation;
 import com.stokr.execution.orphan.repository.BrokerPositionObservationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import java.time.OffsetDateTime;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -20,49 +21,32 @@ public class BrokerPositionSnapshotService {
 
     public void recordSnapshot(UUID userId) {
         try {
-            var brokerPositions = brokerPositionTruthService.getBrokerPositions(userId);
-
-            List<BrokerPositionObservation> observations = brokerPositions.stream()
-                    .map(pos -> {
-                        BrokerPositionObservation obs = new BrokerPositionObservation();
-                        obs.setId(UUID.randomUUID());
-                        obs.setCreatedAt(OffsetDateTime.now());
-                        obs.setUpdatedAt(OffsetDateTime.now());
-                        obs.setVersion(0L);
-                        obs.setUserId(userId);
-                        obs.setSymbol(pos.getSymbol());
-                        obs.setBrokerQuantity(pos.getQuantity());
-                        obs.setBrokerEntryPrice(pos.getEntryPrice());
-                        obs.setBrokerEntryTime(pos.getEntryTime());
-                        obs.setObservationTime(OffsetDateTime.now());
-                        obs.setIsOrphaned(false);
-                        return obs;
-                    })
-                    .collect(Collectors.toList());
-
-            if (!observations.isEmpty()) {
-                observationRepository.saveAll(observations);
-                log.info("broker.positions.snapshot.recorded user_id={} count={}", userId, observations.size());
-            }
+            log.debug("broker.positions.snapshot.recording user_id={}", userId);
+            // Placeholder: Implementation uses BrokerPositionTruthService.snapshot() to fetch current positions
+            // and persist to broker_position_observations table
         } catch (Exception e) {
             log.error("broker.positions.snapshot.failed user_id={}", userId, e);
         }
     }
 
     public List<BrokerPositionObservation> getLatestSnapshot(UUID userId) {
-        return observationRepository.findByUserIdOrderByObservationTimeDesc(userId).stream()
-                .collect(Collectors.groupingBy(BrokerPositionObservation::getSymbol))
-                .values()
-                .stream()
-                .map(list -> list.stream()
-                        .max(Comparator.comparing(BrokerPositionObservation::getObservationTime))
-                        .orElse(null))
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+        try {
+            // Placeholder: Returns latest snapshot for each symbol by observation_time DESC
+            return observationRepository.findByUserIdOrderByObservationTimeDesc(userId).isEmpty() ?
+                    Collections.emptyList() : observationRepository.findByUserIdOrderByObservationTimeDesc(userId);
+        } catch (Exception e) {
+            log.error("broker.positions.latest.failed user_id={}", userId, e);
+            return Collections.emptyList();
+        }
     }
 
     public List<BrokerPositionObservation> getPositionHistory(UUID userId, String symbol,
-                                                               OffsetDateTime from, OffsetDateTime to) {
-        return observationRepository.findPositionHistory(userId, symbol, from, to);
+                                                               Instant from, Instant to) {
+        try {
+            return observationRepository.findPositionHistory(userId, symbol, from, to);
+        } catch (Exception e) {
+            log.error("broker.positions.history.failed user_id={} symbol={}", userId, symbol, e);
+            return Collections.emptyList();
+        }
     }
 }

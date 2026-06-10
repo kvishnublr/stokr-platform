@@ -5,7 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -31,10 +31,10 @@ public class BrokerPositionObservation extends BaseEntity {
     private BigDecimal brokerEntryPrice;
 
     @Column(name = "broker_entry_time")
-    private OffsetDateTime brokerEntryTime;
+    private Instant brokerEntryTime;
 
     @Column(name = "observation_time", nullable = false)
-    private OffsetDateTime observationTime;
+    private Instant observationTime;
 
     @Column(name = "broker_order_id", length = 64)
     private String brokerOrderId;
