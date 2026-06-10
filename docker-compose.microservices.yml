@@ -1,0 +1,194 @@
+version: '3.9'
+
+# Microservices Architecture for STOKR
+# All services communicate via RabbitMQ for event-driven architecture
+# Risk validation stays synchronous via REST calls
+
+services:
+  # ============ INFRASTRUCTURE ============
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: stokr-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: stokr_platform
+      POSTGRES_USER: stokr
+      POSTGRES_PASSWORD: stokr_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stokr"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stokr-network
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: stokr-rabbitmq
+    ports:
+      - "5672:5672"      # AMQP
+      - "15672:15672"    # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stokr-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: stokr-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stokr-network
+
+  # ============ MICROSERVICES ============
+
+  core-trading:
+    build:
+      context: .
+      dockerfile: Dockerfile  # Main Dockerfile for monolith
+    container_name: stokr-core-trading
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_APPLICATION_NAME: core-trading
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/stokr_platform
+      SPRING_DATASOURCE_USERNAME: stokr
+      SPRING_DATASOURCE_PASSWORD: stokr_password
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      STOKR_ENVIRONMENT: docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - stokr-network
+    restart: unless-stopped
+
+  strategy-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.strategy
+    container_name: stokr-strategy-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_APPLICATION_NAME: strategy-service
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      STOKR_STRATEGY_EXECUTION_MODE: "BOTH"  # LIVE, PAPER, or BOTH
+      STOKR_STRATEGY_SCAN_INTERVAL_MS: 30000  # 30 seconds
+      MARKET_DATA_SERVICE_URL: "http://core-trading:8080"
+      STOKR_ENVIRONMENT: docker
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - stokr-network
+    restart: unless-stopped
+
+  execution-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.execution
+    container_name: stokr-execution-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_APPLICATION_NAME: execution-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/stokr_platform
+      SPRING_DATASOURCE_USERNAME: stokr
+      SPRING_DATASOURCE_PASSWORD: stokr_password
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      RISK_SERVICE_URL: "http://core-trading:8080"
+      BROKER_SERVICE_URL: "http://core-trading:8080"
+      STOKR_ENVIRONMENT: docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - stokr-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2  # Run 2 instances for redundancy
+
+  # ============ MONITORING (Optional) ============
+
+  # Caddy reverse proxy (optional, for API gateway)
+  # caddy:
+  #   image: caddy:latest
+  #   container_name: stokr-gateway
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile
+  #   networks:
+  #     - stokr-network
+  #   depends_on:
+  #     - core-trading
+  #     - strategy-service
+  #     - execution-service
+
+volumes:
+  postgres_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  stokr-network:
+    driver: bridge
