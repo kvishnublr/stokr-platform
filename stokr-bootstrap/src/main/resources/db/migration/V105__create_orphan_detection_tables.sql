@@ -26,15 +26,11 @@ CREATE TABLE IF NOT EXISTS broker_position_observations (
     notes TEXT,
 
     CONSTRAINT fk_obs_user FOREIGN KEY (user_id) REFERENCES auth_users(id)
-);
+) PARTITION BY RANGE (observation_time);
 
-CREATE INDEX idx_obs_user_symbol_time ON broker_position_observations(user_id, symbol, observation_time DESC);
-CREATE INDEX idx_obs_is_orphaned ON broker_position_observations(is_orphaned, observation_time DESC);
-CREATE INDEX idx_obs_time ON broker_position_observations(observation_time DESC);
-
--- Partition broker_position_observations by month for performance
-CREATE TABLE broker_position_observations_2026_06 PARTITION OF broker_position_observations
-    FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
+CREATE INDEX IF NOT EXISTS idx_obs_user_symbol_time ON broker_position_observations(user_id, symbol, observation_time DESC);
+CREATE INDEX IF NOT EXISTS idx_obs_is_orphaned ON broker_position_observations(is_orphaned, observation_time DESC);
+CREATE INDEX IF NOT EXISTS idx_obs_time ON broker_position_observations(observation_time DESC);
 
 CREATE TABLE IF NOT EXISTS orphan_detected_positions (
     id UUID PRIMARY KEY,
@@ -59,10 +55,10 @@ CREATE TABLE IF NOT EXISTS orphan_detected_positions (
     CONSTRAINT fk_orphan_user FOREIGN KEY (user_id) REFERENCES auth_users(id)
 );
 
-CREATE INDEX idx_orphan_user_symbol ON orphan_detected_positions(user_id, symbol);
-CREATE INDEX idx_orphan_detected_time ON orphan_detected_positions(detection_timestamp DESC);
-CREATE INDEX idx_orphan_status ON orphan_detected_positions(status);
-CREATE INDEX idx_orphan_do_not_touch ON orphan_detected_positions(status) WHERE status = 'DO_NOT_TOUCH';
+CREATE INDEX IF NOT EXISTS idx_orphan_user_symbol ON orphan_detected_positions(user_id, symbol);
+CREATE INDEX IF NOT EXISTS idx_orphan_detected_time ON orphan_detected_positions(detection_timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_orphan_status ON orphan_detected_positions(status);
+CREATE INDEX IF NOT EXISTS idx_orphan_do_not_touch ON orphan_detected_positions(status) WHERE status = 'DO_NOT_TOUCH';
 
 CREATE TABLE IF NOT EXISTS orphan_classification_results (
     id UUID PRIMARY KEY,
@@ -90,11 +86,11 @@ CREATE TABLE IF NOT EXISTS orphan_classification_results (
     status VARCHAR(32) NOT NULL,
 
     CONSTRAINT fk_classification_orphan FOREIGN KEY (orphan_id) REFERENCES orphan_detected_positions(id),
-    CONSTRAINT fk_classification_signal FOREIGN KEY (matched_signal_id) REFERENCES strategy_signal(id)
+    CONSTRAINT fk_classification_signal FOREIGN KEY (matched_signal_id) REFERENCES strategy_signals(id)
 );
 
-CREATE INDEX idx_classification_orphan ON orphan_classification_results(orphan_id);
-CREATE INDEX idx_classification_type ON orphan_classification_results(classification_type);
-CREATE INDEX idx_classification_score ON orphan_classification_results(evidence_score DESC);
-CREATE INDEX idx_classification_status ON orphan_classification_results(status);
-CREATE INDEX idx_classification_do_not_touch ON orphan_classification_results(status) WHERE status = 'DO_NOT_TOUCH';
+CREATE INDEX IF NOT EXISTS idx_classification_orphan ON orphan_classification_results(orphan_id);
+CREATE INDEX IF NOT EXISTS idx_classification_type ON orphan_classification_results(classification_type);
+CREATE INDEX IF NOT EXISTS idx_classification_score ON orphan_classification_results(evidence_score DESC);
+CREATE INDEX IF NOT EXISTS idx_classification_status ON orphan_classification_results(status);
+CREATE INDEX IF NOT EXISTS idx_classification_do_not_touch ON orphan_classification_results(status) WHERE status = 'DO_NOT_TOUCH';
