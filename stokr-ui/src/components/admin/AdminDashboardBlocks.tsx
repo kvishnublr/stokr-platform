@@ -3,6 +3,9 @@ import type { AdminDashboardData } from "../../services/dashboard/types";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useSessionStore } from "../../state/session";
+import { ServiceHealthPanel } from "./ServiceHealthPanel";
+import { QueueMonitoringPanel } from "./QueueMonitoringPanel";
+import { SignalLifecyclePanel } from "./SignalLifecyclePanel";
 
 const nav = ["Dashboard", "Users", "Analytics", "Backtests", "Settings", "Security", "Reports", "Alerts"];
 
@@ -120,6 +123,12 @@ export function AdminMain({ data }: { data: AdminDashboardData }) {
           </div>
         ))}
       </div>
+
+      {/* NEW: Microservices Monitoring Panels */}
+      <ServiceHealthPanel />
+      <QueueMonitoringPanel />
+      <SignalLifecyclePanel />
+
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <section className="rounded-2xl border border-gray-200 bg-white p-6">
           <h3 className="mb-4 text-lg font-bold text-gray-900">Runtime Metrics</h3>
