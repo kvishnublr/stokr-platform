@@ -69,9 +69,6 @@ public class RabbitMQManagementClient {
             }
 
             // Parse response
-            Integer backingUpCount = (Integer) response.getOrDefault("messages_details", Map.of())
-                    .getClass().getSimpleName().equals("LinkedHashMap") ? 0 : 0;
-
             int pending = ((Number) response.getOrDefault("messages", 0)).intValue();
             int consumerCount = ((Number) response.getOrDefault("consumers", 0)).intValue();
 
