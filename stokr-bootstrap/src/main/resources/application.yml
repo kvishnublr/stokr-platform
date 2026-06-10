@@ -403,6 +403,32 @@ stokr:
       force-close-stale-positions: ${STOKR_OMS_FORCE_CLOSE_STALE:true}
   reconciliation:
     interval-ms: ${STOKR_RECONCILIATION_INTERVAL_MS:30000}
+  orphan:
+    monitor:
+      enabled: ${STOKR_ORPHAN_MONITOR_ENABLED:true}
+      cron: ${STOKR_ORPHAN_MONITOR_CRON:0 * * * * *}
+      timezone: ${STOKR_ORPHAN_MONITOR_TIMEZONE:Asia/Kolkata}
+    classification:
+      time-window-minutes: ${STOKR_ORPHAN_TIME_WINDOW_MINUTES:5}
+      evidence-score-threshold: ${STOKR_ORPHAN_EVIDENCE_THRESHOLD:50}
+      confidence-minimum: ${STOKR_ORPHAN_CONFIDENCE_MIN:UNKNOWN}
+      default-classification: ${STOKR_ORPHAN_DEFAULT_CLASS:UNKNOWN_ORIGIN}
+    review:
+      task-due-hours: ${STOKR_ORPHAN_REVIEW_DUE_HOURS:24}
+      enabled: ${STOKR_ORPHAN_REVIEW_ENABLED:true}
+      do-not-touch-priority: ${STOKR_ORPHAN_DO_NOT_TOUCH_PRIORITY:CRITICAL}
+    cleanup:
+      enabled: ${STOKR_ORPHAN_CLEANUP_ENABLED:true}
+      cron: ${STOKR_ORPHAN_CLEANUP_CRON:0 0 1 * * *}
+      archive-cron: ${STOKR_ORPHAN_ARCHIVE_CRON:0 0 0 * * SUN}
+    audit:
+      retention-days: ${STOKR_ORPHAN_AUDIT_RETENTION_DAYS:730}
+      partitioning: ${STOKR_ORPHAN_AUDIT_PARTITIONING:monthly}
+    notifications:
+      enabled: ${STOKR_ORPHAN_NOTIFICATIONS_ENABLED:true}
+      new-orphan-alert: ${STOKR_ORPHAN_NEW_ALERT:true}
+      do-not-touch-alert: ${STOKR_ORPHAN_DO_NOT_TOUCH_ALERT:true}
+      review-task-alert: ${STOKR_ORPHAN_REVIEW_ALERT:true}
   signal:
     outcome-track-ms: ${STOKR_SIGNAL_OUTCOME_TRACK_MS:300000}
     outcome-fast-track-ms: ${STOKR_SIGNAL_OUTCOME_FAST_TRACK_MS:30000}
