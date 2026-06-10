@@ -25,4 +25,7 @@ public interface OrphanAuditLogRepository extends JpaRepository<OrphanAuditLog, 
 
     @Query("SELECT COUNT(a) FROM OrphanAuditLog a WHERE a.eventType = ?1")
     long countEventsByType(String eventType);
+
+    @Query("SELECT a FROM OrphanAuditLog a WHERE a.eventType = 'OPERATOR_APPROVAL' AND a.actorId = ?1 AND a.createdAt BETWEEN ?2 AND ?3 ORDER BY a.createdAt DESC")
+    List<OrphanAuditLog> findOperatorDecisions(UUID operatorId, Instant from, Instant to);
 }

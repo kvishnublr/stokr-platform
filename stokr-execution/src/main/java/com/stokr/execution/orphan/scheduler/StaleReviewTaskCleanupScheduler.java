@@ -7,7 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @Slf4j
@@ -23,7 +23,7 @@ public class StaleReviewTaskCleanupScheduler {
         log.info("stale_review_cleanup.started");
 
         try {
-            OffsetDateTime threshold = OffsetDateTime.now();
+            Instant threshold = Instant.now();
             List<OrphanReviewTask> staleTasks = reviewTaskRepository.findStaleTasks(threshold);
 
             int expiredCount = 0;

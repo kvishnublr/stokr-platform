@@ -6,6 +6,7 @@ import com.stokr.execution.orphan.repository.OrphanAuditLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -88,20 +89,20 @@ public class AuditLogService {
     private void logEvent(UUID orphanId, String eventType, String eventSource, UUID actorId, String actorType,
                          UUID userId, String symbol, String classificationType, Map<String, Object> details) {
         try {
-            OrphanAuditLog log = new OrphanAuditLog();
-            log.setCreatedAt(Instant.now());
-            log.setOrphanId(orphanId);
-            log.setEventType(eventType);
-            log.setEventSource(eventSource);
-            log.setActorId(actorId);
-            log.setActorType(actorType);
-            log.setUserId(userId);
-            log.setSymbol(symbol);
-            log.setClassificationType(classificationType);
-            log.setEventDetails(objectMapper.writeValueAsString(details));
-            log.setRetentionDate(Instant.now().plus(2));
+            OrphanAuditLog auditLog = new OrphanAuditLog();
+            auditLog.setCreatedAt(Instant.now());
+            auditLog.setOrphanId(orphanId);
+            auditLog.setEventType(eventType);
+            auditLog.setEventSource(eventSource);
+            auditLog.setActorId(actorId);
+            auditLog.setActorType(actorType);
+            auditLog.setUserId(userId);
+            auditLog.setSymbol(symbol);
+            auditLog.setClassificationType(classificationType);
+            auditLog.setEventDetails(objectMapper.writeValueAsString(details));
+            auditLog.setRetentionDate(Instant.now().plus(Duration.ofDays(730)));
 
-            auditLogRepository.save(log);
+            auditLogRepository.save(auditLog);
             log.info("audit.logged event_type={} orphan_id={} actor_type={}", eventType, orphanId, actorType);
         } catch (Exception e) {
             log.error("audit.log.failed event_type={} orphan_id={}", eventType, orphanId, e);

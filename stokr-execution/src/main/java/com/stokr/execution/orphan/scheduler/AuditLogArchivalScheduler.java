@@ -7,7 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @Slf4j
@@ -23,13 +23,13 @@ public class AuditLogArchivalScheduler {
         log.info("audit_archival.started");
 
         try {
-            OffsetDateTime retentionThreshold = OffsetDateTime.now().minusYears(2);
+            Instant retentionThreshold = Instant.now().minusSeconds(730 * 24 * 60 * 60L);
             List<OrphanAuditLog> expiredLogs = auditLogRepository.findExpiredLogs(retentionThreshold);
 
             int archivedCount = 0;
-            for (OrphanAuditLog log : expiredLogs) {
+            for (OrphanAuditLog auditLog : expiredLogs) {
                 // In production, export to archive storage first
-                auditLogRepository.delete(log);
+                auditLogRepository.delete(auditLog);
                 archivedCount++;
             }
 
