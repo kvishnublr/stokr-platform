@@ -60,7 +60,7 @@ public class ConfidenceScore {
     }
 
     public boolean isVeryHighConfidence() {
-        return confidenceScore != null && confidenceScore >= 90;
+        return confidenceScore != null && confidenceScore >= 80;  // Lowered from 90 to 80 for real data deployment
     }
 
     @Override

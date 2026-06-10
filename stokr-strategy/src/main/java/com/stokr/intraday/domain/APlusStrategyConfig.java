@@ -25,13 +25,13 @@ public class APlusStrategyConfig {
     private Boolean enabled = true;
 
     @Column(nullable = false)
-    private Integer entryAiScoreMin = 85;
+    private Integer entryAiScoreMin = 80;  // Lowered from 85 to 80 for real data deployment
 
     @Column(nullable = false)
     private Integer exitAiScoreThreshold = 70;
 
     @Column(precision = 10, scale = 4, nullable = false)
-    private BigDecimal hardSlPct = BigDecimal.valueOf(1.50);
+    private BigDecimal hardSlPct = BigDecimal.valueOf(0.50);  // Tightened from 1.50% to 0.50% (50 bps) for real data deployment
 
     @Column(precision = 10, scale = 4, nullable = false)
     private BigDecimal hardTpPct = BigDecimal.valueOf(3.00);
