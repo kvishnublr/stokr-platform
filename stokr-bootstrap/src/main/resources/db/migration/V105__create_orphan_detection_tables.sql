@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS broker_position_observations (
 
     notes TEXT,
 
-    CONSTRAINT fk_obs_user FOREIGN KEY (user_id) REFERENCES users(id)
+    CONSTRAINT fk_obs_user FOREIGN KEY (user_id) REFERENCES auth_users(id)
 );
 
 CREATE INDEX idx_obs_user_symbol_time ON broker_position_observations(user_id, symbol, observation_time DESC);
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS orphan_detected_positions (
     status VARCHAR(32) NOT NULL,
     notes TEXT,
 
-    CONSTRAINT fk_orphan_user FOREIGN KEY (user_id) REFERENCES users(id)
+    CONSTRAINT fk_orphan_user FOREIGN KEY (user_id) REFERENCES auth_users(id)
 );
 
 CREATE INDEX idx_orphan_user_symbol ON orphan_detected_positions(user_id, symbol);
