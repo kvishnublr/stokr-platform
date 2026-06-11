@@ -23,6 +23,8 @@ public record StrategyIntegrityProfile(
             Map.entry("S3_VWAP_RETEST", new StrategyIntegrityProfile(false, false, false, true)),
             Map.entry("S7_RANGE_FADE", new StrategyIntegrityProfile(false, false, false, true)),
             Map.entry("PRE_OPEN_GAP_OI", new StrategyIntegrityProfile(false, false, true, true)),
+            Map.entry("USDINR_MOMENTUM", new StrategyIntegrityProfile(false, false, true, false)),
+            Map.entry("EURINR_MEAN_REVERSION", new StrategyIntegrityProfile(false, false, true, false)),
             Map.entry("COMMODITIES_E2E_TEST", new StrategyIntegrityProfile(false, false, true, false))
     );
 

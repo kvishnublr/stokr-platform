@@ -6,12 +6,14 @@ import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -95,7 +97,15 @@ public class EurInrMeanReversionSignalGenerator extends BaseGeneratedStrategy im
             double target = currentPrice * (1.0 + profitTargetPct / 100.0);
             log.info("eurinr_mean_reversion.buy symbol={} dev={} rsi={} entry={} sl={} target={}",
                 symbol, deviationPct, rsi, currentPrice, stopLoss, target);
-            return bullishSignal(context, String.format("EURINR oversold mean reversion (SL:%.2f, Target:%.2f)", stopLoss, target));
+            return new StrategySignal(
+                    SignalType.BUY,
+                    symbol,
+                    BigDecimal.ONE,
+                    String.format("EURINR oversold mean reversion (SL:%.2f, Target:%.2f)", stopLoss, target),
+                    BigDecimal.valueOf(currentPrice),
+                    BigDecimal.valueOf(stopLoss),
+                    BigDecimal.valueOf(target)
+            );
         }
         if (deviationPct >= stretchPct && rsi > 65) {
             lastEmitBySymbol.put(symbol, asOf);
@@ -104,7 +114,15 @@ public class EurInrMeanReversionSignalGenerator extends BaseGeneratedStrategy im
             double target = currentPrice * (1.0 - profitTargetPct / 100.0);
             log.info("eurinr_mean_reversion.sell symbol={} dev={} rsi={} entry={} sl={} target={}",
                 symbol, deviationPct, rsi, currentPrice, stopLoss, target);
-            return bearishSignal(context, String.format("EURINR overbought mean reversion (SL:%.2f, Target:%.2f)", stopLoss, target));
+            return new StrategySignal(
+                    SignalType.SELL,
+                    symbol,
+                    BigDecimal.ONE,
+                    String.format("EURINR overbought mean reversion (SL:%.2f, Target:%.2f)", stopLoss, target),
+                    BigDecimal.valueOf(currentPrice),
+                    BigDecimal.valueOf(stopLoss),
+                    BigDecimal.valueOf(target)
+            );
         }
         return hold(context);
     }

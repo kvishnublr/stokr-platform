@@ -6,12 +6,14 @@ import com.stokr.strategy.catalog.GeneratedStrategy;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.engine.TradingStrategy;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
+import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -91,7 +93,15 @@ public class UsdInrMomentumSignalGenerator extends BaseGeneratedStrategy impleme
             double target = currentPrice * (1.0 + profitTargetPct / 100.0);
             log.info("usdinr_momentum.buy symbol={} mom3={} mom6={} entry={} sl={} target={}",
                 symbol, mom3, mom6, currentPrice, stopLoss, target);
-            return bullishSignal(context, String.format("USDINR momentum continuation (SL:%.2f, Target:%.2f)", stopLoss, target));
+            return new StrategySignal(
+                    SignalType.BUY,
+                    symbol,
+                    BigDecimal.ONE,
+                    String.format("USDINR momentum continuation (SL:%.2f, Target:%.2f)", stopLoss, target),
+                    BigDecimal.valueOf(currentPrice),
+                    BigDecimal.valueOf(stopLoss),
+                    BigDecimal.valueOf(target)
+            );
         }
         if (mom3 < -minMomentumPct && mom6 < 0 && lastVol >= avgVol * 0.8) {
             lastEmitBySymbol.put(symbol, asOf);
@@ -100,7 +110,15 @@ public class UsdInrMomentumSignalGenerator extends BaseGeneratedStrategy impleme
             double target = currentPrice * (1.0 - profitTargetPct / 100.0);
             log.info("usdinr_momentum.sell symbol={} mom3={} mom6={} entry={} sl={} target={}",
                 symbol, mom3, mom6, currentPrice, stopLoss, target);
-            return bearishSignal(context, String.format("USDINR momentum breakdown (SL:%.2f, Target:%.2f)", stopLoss, target));
+            return new StrategySignal(
+                    SignalType.SELL,
+                    symbol,
+                    BigDecimal.ONE,
+                    String.format("USDINR momentum breakdown (SL:%.2f, Target:%.2f)", stopLoss, target),
+                    BigDecimal.valueOf(currentPrice),
+                    BigDecimal.valueOf(stopLoss),
+                    BigDecimal.valueOf(target)
+            );
         }
         return hold(context);
     }

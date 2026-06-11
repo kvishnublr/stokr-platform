@@ -25,6 +25,7 @@ import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.integrity.StrategyGeneratorIntegrityGate;
 import com.stokr.strategy.lifecycle.StrategySessionEntryGuardService;
+import com.stokr.strategy.telemetry.ScannerExecutionTelemetryService;
 import com.stokr.marketdata.monitor.FeedHealthMonitorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -66,6 +67,7 @@ public class CatalogDrivenScanScheduler {
     private final FeedHealthMonitorService feedHealthMonitorService;
     private final ObjectProvider<LiveMarketPathOperationalGate> liveMarketPathOperationalGate;
     private final SignalPipelineAuditService signalPipelineAuditService;
+    private final ScannerExecutionTelemetryService scannerTelemetryService;
 
     @Value("${stokr.catalog.scan.require-operational-path:false}")
     private boolean requireOperationalLivePath;
@@ -76,10 +78,13 @@ public class CatalogDrivenScanScheduler {
     @Scheduled(fixedDelayString = "${stokr.catalog.scan.poll-ms:60000}")
     public void scan() {
         Instant tick = Instant.now();
+        long startedNanos = System.nanoTime();
 
         if (!safeStartupGateService.isTradingReady(tick)) {
+            String reason = String.valueOf(safeStartupGateService.snapshot(tick).get("blockReason"));
+            scannerTelemetryService.recordPollSkipped(tick, "SAFE_STARTUP:" + reason);
             log.warn("catalog.scan.blocked_safe_startup reason={}",
-                    safeStartupGateService.snapshot(tick).get("blockReason"));
+                    reason);
             return;
         }
 
@@ -87,6 +92,7 @@ public class CatalogDrivenScanScheduler {
         if (requireOperationalLivePath && gate != null) {
             var assessment = gate.assess(tick);
             if (!assessment.operational()) {
+                scannerTelemetryService.recordPollSkipped(tick, "LIVE_PATH:" + assessment.reason());
                 log.debug("catalog.scan.skipped_live_path_not_operational reason={}", assessment.reason());
                 return;
             }
@@ -101,6 +107,8 @@ public class CatalogDrivenScanScheduler {
 
         List<StrategyRuntimeBinding> activeBindings = resolverService.resolveActiveBindings();
         if (activeBindings.isEmpty()) {
+            scannerTelemetryService.recordPollCycleFinished(
+                    Instant.now(), 0, 0, 0, System.nanoTime() - startedNanos);
             log.debug("catalog.scan.no_active_bindings");
             return;
         }
@@ -109,6 +117,7 @@ public class CatalogDrivenScanScheduler {
         int totalSymbols = 0;
         int totalSignals = 0;
         int totalSkipped = 0;
+        int totalFailures = 0;
 
         for (StrategyRuntimeBinding binding : activeBindings) {
             if (!bindingScanThrottleService.shouldScan(binding, tick)) {
@@ -210,6 +219,7 @@ public class CatalogDrivenScanScheduler {
                     }
                     totalSymbols++;
                 } catch (Exception ex) {
+                    totalFailures++;
                     log.warn("catalog.scan.eval_failed strategyKey={} symbol={}",
                             strategyKey, sym.getSymbol(), ex);
                 }
@@ -222,6 +232,8 @@ public class CatalogDrivenScanScheduler {
 
         log.info("catalog.scan.cycle_done bindings={} symbols={} signals={} skipped={}",
                 activeBindings.size(), totalSymbols, totalSignals, totalSkipped);
+        scannerTelemetryService.recordPollCycleFinished(
+                Instant.now(), totalSymbols, totalSignals, totalFailures, System.nanoTime() - startedNanos);
     }
 
     private void persistSignal(
