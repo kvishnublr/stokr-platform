@@ -1,6 +1,7 @@
 package com.stokr.oms.repository;
 
 import com.stokr.common.simulation.AnalyticsDataScope;
+import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
 import org.springframework.data.domain.Page;
@@ -90,13 +91,14 @@ public interface OmsOrderRepository extends JpaRepository<OmsOrder, UUID>, JpaSp
 
     @Query("""
             select count(o) from OmsOrder o
-            where o.userId = :userId and o.symbol = :symbol and o.side = :side and o.deleted = false
-            and o.backtestRunId is null and o.id <> :excludeId and o.state in :states
+            where o.userId = :userId and o.symbol = :symbol and o.side = :side and o.executionMode = :executionMode
+            and o.deleted = false and o.backtestRunId is null and o.id <> :excludeId and o.state in :states
             """)
     long countActiveSameDirection(
             @Param("userId") UUID userId,
             @Param("symbol") String symbol,
             @Param("side") String side,
+            @Param("executionMode") ExecutionMode executionMode,
             @Param("excludeId") UUID excludeId,
             @Param("states") Collection<OrderState> states
     );

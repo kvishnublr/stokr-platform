@@ -72,6 +72,7 @@ public class DuplicateActiveOrderRule implements RiskRule {
                 context.userId(),
                 o.getSymbol(),
                 o.getSide(),
+                o.getExecutionMode(),
                 o.getId(),
                 DUPLICATE_STATES
         );

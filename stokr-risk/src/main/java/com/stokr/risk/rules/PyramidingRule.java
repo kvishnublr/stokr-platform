@@ -44,7 +44,7 @@ public class PyramidingRule implements RiskRule {
         if (strategyKey == null || symbol == null || side == null) return RiskDecision.ok();
 
         long existing = omsOrderRepository.countActiveSameDirection(
-                context.userId(), symbol, side, context.order().getId(), OPEN_STATES);
+                context.userId(), symbol, side, context.order().getExecutionMode(), context.order().getId(), OPEN_STATES);
         if (existing > 0) {
             return RiskDecision.reject(code(),
                     "Pyramiding blocked: existing open " + side + " order for " + symbol + " in strategy " + strategyKey);
