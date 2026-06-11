@@ -65,6 +65,7 @@ import { AdminSafetyDiagnosticsPage } from "./pages/admin/AdminSafetyDiagnostics
 import { AdminProtectionDiagnosticsPage } from "./pages/admin/AdminProtectionDiagnosticsPage";
 import { AdminStrategyDiagnosticsPage } from "./pages/admin/AdminStrategyDiagnosticsPage";
 import { AdminStrategyEffectivenessPage } from "./pages/admin/AdminStrategyEffectivenessPage";
+import { PerformanceDashboard } from "./components/admin/PerformanceDashboard";
 import { useSessionStore } from "./state/session";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { OnboardingWizardPage } from "./pages/OnboardingWizardPage";
@@ -262,6 +263,7 @@ export default function App() {
               <Route path="broker-infrastructure" element={<AdminBrokerInfrastructurePage />} />
               <Route path="market-connectivity" element={<Navigate to="../broker-infrastructure" replace />} />
               <Route path="market" element={<AdminMarketIntelPage />} />
+              <Route path="performance" element={<PerformanceDashboard />} />
               <Route
                 path="intraday/*"
                 element={
