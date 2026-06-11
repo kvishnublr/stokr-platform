@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Input } from '../ui/input';
+import { ModernInput } from '../modern/ModernInput';
 import { Button } from '../ui/button';
 import { AlertCircle, Save, Plus, Trash2 } from 'lucide-react';
 
@@ -40,7 +40,11 @@ export function CapitalAllocationManager() {
     return Math.floor(perTrade);
   };
 
-  const updateAllocation = (assetClass: 'CASH' | 'F&O' | 'CURRENCY' | 'MCX', field: keyof AssetClassAllocation, value: any) => {
+  const updateAllocation = (
+    assetClass: 'CASH' | 'F&O' | 'CURRENCY' | 'MCX',
+    field: keyof AssetClassAllocation,
+    value: string | number | boolean,
+  ) => {
     setConfig(prev => ({
       ...prev,
       allocations: prev.allocations.map(a =>
@@ -160,11 +164,13 @@ export function CapitalAllocationManager() {
                     Allocated Capital
                   </label>
                   {isEditing ? (
-                    <Input
+                    <ModernInput
                       type="number"
                       value={allocation.allocatedCapital}
-                      onChange={(e) => updateAllocation(allocation.assetClass, 'allocatedCapital', parseInt(e.target.value))}
-                      className="font-mono text-lg"
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        updateAllocation(allocation.assetClass, 'allocatedCapital', Number.parseInt(e.target.value, 10))
+                      }
+                      className="font-mono text-lg text-black bg-white border border-gray-300"
                     />
                   ) : (
                     <p className="text-2xl font-bold text-gray-900">₹{allocation.allocatedCapital.toLocaleString()}</p>
@@ -176,11 +182,17 @@ export function CapitalAllocationManager() {
                     Max Concurrent Positions
                   </label>
                   {isEditing ? (
-                    <Input
+                    <ModernInput
                       type="number"
                       value={allocation.maxConcurrentPositions}
-                      onChange={(e) => updateAllocation(allocation.assetClass, 'maxConcurrentPositions', parseInt(e.target.value))}
-                      className="font-mono text-lg"
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        updateAllocation(
+                          allocation.assetClass,
+                          'maxConcurrentPositions',
+                          Number.parseInt(e.target.value, 10),
+                        )
+                      }
+                      className="font-mono text-lg text-black bg-white border border-gray-300"
                     />
                   ) : (
                     <p className="text-2xl font-bold text-gray-900">{allocation.maxConcurrentPositions}</p>
