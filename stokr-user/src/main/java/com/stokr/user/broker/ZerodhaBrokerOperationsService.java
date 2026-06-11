@@ -694,8 +694,23 @@ public class ZerodhaBrokerOperationsService {
         if (a.getAccessTokenEnc() == null || a.getAccessTokenEnc().isBlank()) {
             throw new BadRequestException("Missing broker session");
         }
-        String accessToken = fieldCipher.decrypt(a.getAccessTokenEnc());
+        String accessToken = decodeStoredBrokerToken(a.getAccessTokenEnc());
+        if (accessToken == null || accessToken.isBlank()) {
+            throw new BadRequestException("Missing broker session");
+        }
         return new Session(zerodhaBrokerProperties.getApiKey(), accessToken, a, a.getOutboundIp());
+    }
+
+    private String decodeStoredBrokerToken(String stored) {
+        try {
+            return fieldCipher.decrypt(stored);
+        } catch (RuntimeException ex) {
+            String trimmed = stored == null ? "" : stored.trim();
+            int colon = trimmed.indexOf(':');
+            return colon >= 0 && colon + 1 < trimmed.length()
+                    ? trimmed.substring(colon + 1).trim()
+                    : trimmed;
+        }
     }
 
     private record Session(String apiKey, String accessToken, BrokerAccount account, String outboundIp) {

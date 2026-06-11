@@ -367,12 +367,24 @@ public class ExecutionSimulator {
                 log.warn("execution.live.no_access_token userId={}", userId);
                 return new String[]{null, null};
             }
-            String accessToken = fieldCipher.decrypt(account.getAccessTokenEnc());
+            String accessToken = decodeStoredBrokerToken(account.getAccessTokenEnc());
             String apiKey = zerodhaBrokerProperties.getApiKey();
             return new String[]{apiKey, accessToken};
         } catch (Exception ex) {
             log.error("execution.live.cred_resolve_failed userId={} {}", userId, ex.getMessage(), ex);
             return new String[]{null, null};
+        }
+    }
+
+    private String decodeStoredBrokerToken(String stored) {
+        try {
+            return fieldCipher.decrypt(stored);
+        } catch (RuntimeException ex) {
+            String trimmed = stored == null ? "" : stored.trim();
+            int colon = trimmed.indexOf(':');
+            return colon >= 0 && colon + 1 < trimmed.length()
+                    ? trimmed.substring(colon + 1).trim()
+                    : trimmed;
         }
     }
 

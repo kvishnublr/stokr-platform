@@ -697,10 +697,17 @@ public class PlatformMarketFeedService {
         if (trader == null || trader.getAccessTokenEnc() == null || trader.getAccessTokenEnc().isBlank()) {
             return false;
         }
+        String accessToken = decodeStoredBrokerToken(trader.getAccessTokenEnc());
+        if (accessToken == null || accessToken.isBlank()) {
+            log.warn("platform.feed.session_bootstrap_from_trader_skipped vendor={} brokerUserId={} reason=token_decode_failed",
+                    normalized, trader.getBrokerUserId());
+            return false;
+        }
+        String refreshToken = decodeStoredBrokerToken(trader.getRefreshTokenEnc());
         PlatformBrokerFeedSession target = existing != null ? existing : new PlatformBrokerFeedSession();
         target.setVendorCode(normalized);
-        target.setAccessTokenEnc(trader.getAccessTokenEnc());
-        target.setRefreshTokenEnc(trader.getRefreshTokenEnc());
+        target.setAccessTokenEnc(fieldCipher.encrypt(accessToken));
+        target.setRefreshTokenEnc(refreshToken == null || refreshToken.isBlank() ? null : fieldCipher.encrypt(refreshToken));
         target.setTokenExpiresAt(trader.getTokenExpiresAt());
         target.setConnectionState("CONNECTED");
         target.setWebsocketState("CLOSED");
@@ -711,6 +718,21 @@ public class PlatformMarketFeedService {
         log.info("platform.feed.session_bootstrap_from_trader vendor={} brokerUserId={} force={} reason={}",
                 normalized, trader.getBrokerUserId(), force, reason);
         return true;
+    }
+
+    private String decodeStoredBrokerToken(String stored) {
+        if (stored == null || stored.isBlank()) {
+            return null;
+        }
+        try {
+            return fieldCipher.decrypt(stored);
+        } catch (RuntimeException ex) {
+            String trimmed = stored.trim();
+            int colon = trimmed.indexOf(':');
+            return colon >= 0 && colon + 1 < trimmed.length()
+                    ? trimmed.substring(colon + 1).trim()
+                    : trimmed;
+        }
     }
 
     private void overlayDecodedTelemetry(Map<String, Object> m, String telemetryJson) {
