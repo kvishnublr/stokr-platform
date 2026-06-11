@@ -107,6 +107,14 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         keywords: ["intraday", "setups"],
       },
       {
+        to: "/intraday-dashboard",
+        label: "Intraday Dashboard",
+        description: "Live intraday P&L, capital, hit rate, and risk",
+        icon: BarChart3,
+        tier: "frequent",
+        keywords: ["intraday", "dashboard", "pnl", "risk", "capital"],
+      },
+      {
         to: "/admin/traders-health",
         label: "Trader Health",
         description: "Per-trader execution health from ops snapshot",
