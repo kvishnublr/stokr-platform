@@ -296,6 +296,15 @@ public class PlatformZerodhaLiveFeedRuntime {
                 if (err != null) {
                     log.warn("platform.ws.connect_failed {}", err.toString());
                     telemetryService.markWebsocketClosed(VENDOR, "connect_failed: " + err.getClass().getSimpleName());
+                    boolean refreshed = platformMarketFeedService.forceSessionFromTraderFallback(
+                            VENDOR,
+                            "websocket_connect_failed:" + err.getClass().getSimpleName()
+                    );
+                    if (refreshed) {
+                        cachedForToken = null;
+                        cachedSymbolMap = null;
+                        log.info("platform.ws.token_recovered_from_trader reason=connect_failed");
+                    }
                     wsOpen.set(false);
                     return;
                 }

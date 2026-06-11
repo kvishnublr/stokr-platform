@@ -665,6 +665,19 @@ public class PlatformMarketFeedService {
 
     @Transactional
     public boolean ensureSessionFromTraderFallback(String vendor) {
+        return syncSessionFromTraderFallback(vendor, false, "missing_platform_token");
+    }
+
+    /**
+     * Replaces the platform feed token from the latest connected trader token after
+     * Zerodha rejects the current platform credentials.
+     */
+    @Transactional
+    public boolean forceSessionFromTraderFallback(String vendor, String reason) {
+        return syncSessionFromTraderFallback(vendor, true, reason);
+    }
+
+    private boolean syncSessionFromTraderFallback(String vendor, boolean force, String reason) {
         String normalized = normalizeVendor(vendor);
         if (!"ZERODHA".equals(normalized)) {
             return false;
@@ -672,7 +685,7 @@ public class PlatformMarketFeedService {
         PlatformBrokerFeedSession existing = sessionRepository
                 .findFirstByVendorCodeIgnoreCaseAndDeletedFalseOrderByUpdatedAtDesc(normalized)
                 .orElse(null);
-        if (existing != null && existing.getAccessTokenEnc() != null && !existing.getAccessTokenEnc().isBlank()) {
+        if (!force && existing != null && existing.getAccessTokenEnc() != null && !existing.getAccessTokenEnc().isBlank()) {
             return false;
         }
         BrokerAccount trader = brokerAccountRepository
@@ -692,9 +705,11 @@ public class PlatformMarketFeedService {
         target.setConnectionState("CONNECTED");
         target.setWebsocketState("CLOSED");
         target.setInstrumentSyncState("UNKNOWN");
+        target.setDisconnectReason(null);
         target.setLastSyncAt(Instant.now());
         sessionRepository.save(target);
-        log.info("platform.feed.session_bootstrap_from_trader vendor={} brokerUserId={}", normalized, trader.getBrokerUserId());
+        log.info("platform.feed.session_bootstrap_from_trader vendor={} brokerUserId={} force={} reason={}",
+                normalized, trader.getBrokerUserId(), force, reason);
         return true;
     }
 

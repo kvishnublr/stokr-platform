@@ -82,6 +82,7 @@ public class OrderFlowMetricsService {
                 .shouldReduceConfidence(shouldReduceConfidence(latest))
                 .shouldSkip(shouldSkip(latest))
                 .isValid(true)
+                .error(false)
                 .build();
 
         } catch (Exception ex) {
@@ -136,6 +137,7 @@ public class OrderFlowMetricsService {
                 .shouldReduceConfidence(false)
                 .shouldSkip(false)
                 .isValid(true)
+                .error(false)
                 .build();
         } catch (Exception ex) {
             log.error("synthetic.signal_failed symbol={}", symbol, ex);
