@@ -113,17 +113,17 @@ function MetricCard({
   icon: ComponentType<{ className?: string }>;
 }) {
   return (
-    <Card className="p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
-          <div className={cn("mt-2 text-2xl font-black tracking-tight", tone === "green" ? "text-emerald-700" : tone === "red" ? "text-rose-700" : tone === "amber" ? "text-amber-700" : tone === "slate" ? "text-slate-900" : "text-blue-700")}>
+    <Card className="p-3 sm:p-4 md:p-5">
+      <div className="flex items-start justify-between gap-2 sm:gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 sm:text-[11px]">{label}</div>
+          <div className={cn("mt-1 text-lg font-black tracking-tight sm:mt-2 sm:text-2xl", tone === "green" ? "text-emerald-700" : tone === "red" ? "text-rose-700" : tone === "amber" ? "text-amber-700" : tone === "slate" ? "text-slate-900" : "text-blue-700")}>
             {value}
           </div>
           {hint ? <div className="mt-1 text-xs font-medium text-slate-500">{hint}</div> : null}
         </div>
-        <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl border", toneClass(tone))}>
-          <Icon className="h-5 w-5" />
+        <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border sm:h-10 sm:w-10", toneClass(tone))}>
+          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
         </div>
       </div>
     </Card>
@@ -298,17 +298,17 @@ export function ModernDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto max-w-7xl space-y-6 px-6 py-6">
+      <div className="mx-auto max-w-7xl space-y-6 px-4 py-4 sm:px-5 md:px-6 lg:px-8">
         <Card className="overflow-hidden">
-          <div className="border-b border-slate-200 bg-white px-6 py-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex items-start gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-sm">
-                  <Zap className="h-7 w-7" />
+          <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-5 md:px-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3 sm:gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-sm sm:h-14 sm:w-14">
+                  <Zap className="h-6 w-6 sm:h-7 sm:w-7" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-black uppercase tracking-[0.24em] text-blue-600">ADV Dashboard</div>
-                  <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950">Trading Dashboard</h1>
+                  <div className="text-[10px] font-black uppercase tracking-[0.24em] text-blue-600 sm:text-[11px]">ADV Dashboard</div>
+                  <h1 className="mt-1 text-xl font-black tracking-tight text-slate-950 sm:text-2xl md:text-3xl">Trading Dashboard</h1>
                   <p className="mt-1 max-w-2xl text-sm font-medium text-slate-500">
                     Live terminal, movers, workstation, and execution data refreshed continuously from the trading pipeline.
                   </p>
@@ -345,7 +345,7 @@ export function ModernDashboard() {
             </div>
           </div>
 
-          <div className="grid gap-3 p-6 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 p-4 sm:p-5 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 md:gap-4">
             <MetricCard label="Market Regime" value={asText(snapshot?.marketRegime, "Loading")} hint={asText(snapshot?.regimeNarrative, "Waiting for live snapshot")} tone="slate" icon={BarChart3} />
             <MetricCard label="Active Signals" value={String(allRows.length)} hint={`${executableRows.length} executable`} tone="green" icon={Sparkles} />
             <MetricCard label="Blocked / Cooldown" value={String(blockedRows.length)} hint="Rejected or cooling setups" tone={blockedRows.length ? "amber" : "green"} icon={AlertTriangle} />
@@ -368,20 +368,20 @@ export function ModernDashboard() {
           </Card>
         ) : null}
 
-        <div className="grid gap-6 xl:grid-cols-3">
-          <Card className="xl:col-span-2">
-            <div className="border-b border-slate-200 px-5 py-4">
+        <div className="grid grid-cols-1 gap-4 sm:gap-5 md:gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <Card className="md:col-span-2">
+            <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
               <SectionTitle icon={Activity} title="Live Signals" subtitle="Fresh scanner output from the current pipeline snapshot" />
             </div>
-            <div className="p-5">
+            <div className="overflow-x-auto p-4 sm:p-5">
               {terminalQ.isLoading && !snapshot ? (
-                <div className="flex min-h-[220px] items-center justify-center gap-2 text-sm font-semibold text-slate-500">
+                <div className="flex min-h-[220px] items-center justify-center gap-2 text-xs sm:text-sm font-semibold text-slate-500">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading terminal data
                 </div>
               ) : liveRows.length ? (
                 <TableShell>
-                  <table className="min-w-full text-left text-sm">
+                  <table className="min-w-full text-left text-xs sm:text-sm">
                     <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="px-3 py-2.5">#</th>
@@ -470,12 +470,12 @@ export function ModernDashboard() {
           </Card>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:gap-5 md:gap-6 md:grid-cols-2 lg:grid-cols-3">
           <Card>
-            <div className="border-b border-slate-200 px-5 py-4">
+            <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
               <SectionTitle icon={BriefcaseBusiness} title="Open Positions" subtitle="Positions currently held by the workstation" />
             </div>
-            <div className="p-5">
+            <div className="p-4 sm:p-5">
               {openPositions.length ? (
                 <div className="space-y-3">
                   {openPositions.slice(0, 6).map((pos, idx) => (
@@ -505,11 +505,11 @@ export function ModernDashboard() {
           </Card>
 
           <Card>
-            <div className="border-b border-slate-200 px-5 py-4">
+            <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
               <SectionTitle icon={Clock3} title="Execution Snapshot" subtitle="Orders and fills from the workstation payload" />
             </div>
-            <div className="p-5 space-y-4">
-              <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-4 p-4 sm:p-5">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
                 {[
                   { label: "Orders", value: String(orders.length), tone: "blue" as const },
                   { label: "Executions", value: String(executions.length), tone: "green" as const },
@@ -531,10 +531,10 @@ export function ModernDashboard() {
           </Card>
 
           <Card>
-            <div className="border-b border-slate-200 px-5 py-4">
+            <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
               <SectionTitle icon={ShieldCheck} title="Confidence / Quality" subtitle="From the current execution summary and terminal snapshot" />
             </div>
-            <div className="p-5 space-y-3">
+            <div className="space-y-3 p-4 sm:p-5">
               {[
                 { label: "Win rate", value: winRate ? `${Math.round(winRate)}%` : "-" },
                 { label: "Execution gate", value: liveControl.liveGateOpen ? "Live orders are permitted" : "Live orders are blocked" },
