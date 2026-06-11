@@ -82,6 +82,7 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     private static final BigDecimal T1_PCT  = BigDecimal.valueOf(0.007);   // 0.7%
     private static final BigDecimal T2_PCT  = BigDecimal.valueOf(0.014);   // 1.4%
     private static final double OBI_SLOPE_MIN = 0.015;
+    private static final int OBI_HISTORY_FOR_SLOPE = 6;
 
     // Step 1: TOP 25 liquid stocks (exact match from Python)
     private static final Set<String> TOP25 = Set.of(
@@ -112,6 +113,7 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     private final StrategyMarketIndicatorService marketIndicatorService;
     private final KnnPatternEntryRepository knnPatternRepository;
     private final ConcurrentHashMap<String, Instant> lastEmitBySymbol = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Instant> lastCandidateLogBySymbol = new ConcurrentHashMap<>();
 
     // OBI history per symbol for slope calculation (8-tick linear regression)
     private final ConcurrentHashMap<String, Deque<Double>> obiHistory = new ConcurrentHashMap<>();
@@ -125,6 +127,18 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
 
     @Value("${stokr.advcash.cooldown-seconds:900}")
     private int cooldownSeconds;
+
+    @Value("${stokr.advcash.min-consensus:3}")
+    private int minConsensus;
+
+    @Value("${stokr.advcash.candidate-min-consensus:2}")
+    private int candidateMinConsensus;
+
+    @Value("${stokr.advcash.candidate-log-cooldown-seconds:300}")
+    private int candidateLogCooldownSeconds;
+
+    @Value("${stokr.advcash.min-composite-score:50.0}")
+    private double minCompositeScore;
 
     public AdvCashEquitySignalGenerator(OrderBookPressureTracker pressureTracker,
                                         StrategyGeneratorIntegrityGate integrityGate,
@@ -163,14 +177,14 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
         Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
 
         if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) {
-            return hold(context);
+            return hold(context, "ADV_CASH_HOLD integrity_precheck_failed");
         }
 
         // ─── STEP 1: Top 25 liquid stocks only ───
         // Python: if not is_top25(sym): return None
         String cleanSymbol = symbol.replace("NSE:", "").replace("BSE:", "").toUpperCase();
         if (!TOP25.contains(cleanSymbol)) {
-            return hold(context);
+            return hold(context, "ADV_CASH_HOLD not_top25 symbol=" + cleanSymbol);
         }
 
         // ─── Time computation ───
@@ -186,30 +200,30 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
         // ─── STEP 8: First candle gate — skip 9:15-9:17 ───
         // Python: if hh == 9 and 15 <= mm <= 17: return False
         if (now.getHour() == 9 && now.getMinute() >= 15 && now.getMinute() <= 17) {
-            return hold(context);
+            return hold(context, "ADV_CASH_HOLD first_candle_gate time=" + timeStr);
         }
 
         // ─── STEP 2: Time window check — skip DEAD_ZONE and OTHER ───
         // Python: classify_window(t) not in ('DEAD_ZONE', 'OTHER')
         String window = classifyWindow(timeStr);
         if ("DEAD_ZONE".equals(window) || "OTHER".equals(window)) {
-            return hold(context);
+            return hold(context, "ADV_CASH_HOLD time_window window=" + window + " time=" + timeStr);
         }
 
         // ─── Load candle data (same-session only) ───
         var barsOpt = integrityGate.sessionBars(
                 key(), symbol, TIMEFRAME, BARS_FETCH, 5, LookbackWindow.FIVE_MINUTE, context);
         if (barsOpt.isEmpty()) {
-            return hold(context);
+            return hold(context, "ADV_CASH_HOLD bars_unavailable");
         }
         List<MarketdataCandle> bars = barsOpt.get();
         if (bars.size() < 6) {
-            return hold(context);
+            return hold(context, "ADV_CASH_HOLD insufficient_bars count=" + bars.size());
         }
         int n = bars.size();
         BigDecimal currentPrice = bars.get(n - 1).getClosePrice();
         if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            return hold(context);
+            return hold(context, "ADV_CASH_HOLD bad_price");
         }
 
         // ─── Compute OBI score from pressure tracker ───
@@ -228,7 +242,7 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
                     .doubleValue() * 100.0;  // scale to make comparable
                 obiScore = Math.max(-1.0, Math.min(1.0, obiScore / 0.5));
             } else {
-                return hold(context);
+                return hold(context, "ADV_CASH_HOLD no_pressure_proxy");
             }
         }
 
@@ -281,7 +295,7 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
         signals.put("obi_slope", Math.abs(slopeVal) >= OBI_SLOPE_MIN);
 
         // Signal 2: OBI level strength — not neutral
-        signals.put("obi_strength", "STRONG".equals(obiLv) || "VERY_STRONG".equals(obiLv) || "WEAK".equals(obiLv));
+        signals.put("obi_strength", !"NEUTRAL".equals(obiLv));
 
         // Signal 3: Time window not dead zone
         signals.put("time_window", !"DEAD_ZONE".equals(window));
@@ -289,10 +303,10 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
         // Signal 4: VIX regime favorable
         signals.put("vix_regime", vix < 25.0);
 
-        // Python: count >= 4
         int signalCount = (int) signals.values().stream().filter(v -> v).count();
-        if (signalCount < 4) {
-            return hold(context);
+        if (!signals.get("vix_regime")) {
+            return hold(context, String.format(Locale.ROOT,
+                    "ADV_CASH_HOLD vix_regime vix=%.1f consensus=%d/4", vix, signalCount));
         }
 
         // ─── STEP 3: VIX size multiplier ───
@@ -322,16 +336,26 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
         // Python: (|obi|/1.0)*40 + (max(0, slope/0.05))*30 + (vol_mult/1.0)*20 + ((30-vix)/30)*10
         double compositeScore =
             (Math.abs(obiScore) / 1.0) * 40.0 +
-            (Math.max(0.0, slopeVal / 0.05)) * 30.0 +
+            (Math.max(0.0, Math.abs(slopeVal) / 0.05)) * 30.0 +
             (volMult / 1.0) * 20.0 +
             ((30.0 - vix) / 30.0) * 10.0;
         compositeScore = Math.min(100.0, Math.max(0.0, compositeScore));
 
-        // ─── Cooldown ───
         Instant evalTime = context.asOf() != null ? context.asOf() : Instant.now();
+        if (signalCount < minConsensus || compositeScore < minCompositeScore) {
+            String reason = String.format(Locale.ROOT,
+                    "ADV_CASH_CANDIDATE symbol=%s obi=%.4f slope=%.4f history=%d obi_lv=%s vol=%.2f vix=%.1f consensus=%d/4 minConsensus=%d composite=%.1f minComposite=%.1f window=%s gates=%s",
+                    symbol, obiScore, slopeVal, history.size(), obiLv, volMult, vix,
+                    signalCount, minConsensus, compositeScore, minCompositeScore, window, signals);
+            logCandidate(symbol, evalTime, signalCount, reason);
+            return hold(context, reason);
+        }
+
+        // ─── Cooldown ───
         Instant lastEmit = lastEmitBySymbol.get(symbol);
         if (lastEmit != null && Duration.between(lastEmit, evalTime).getSeconds() < cooldownSeconds) {
-            return hold(context);
+            long remaining = Math.max(0, cooldownSeconds - Duration.between(lastEmit, evalTime).getSeconds());
+            return hold(context, "ADV_CASH_HOLD cooldown remainingSeconds=" + remaining);
         }
 
         // ─── Entry/Exit Levels (EXACT Python: _levels_from_entry) ───
@@ -355,10 +379,10 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
         String knnInfo = knnProb != null ? String.format(" knn=%.3f", knnProb) : "";
         String reason = String.format(
             "ADV_CASH %s: obi=%.4f slope=%.4f obi_lv=%s vol=%.2f vix=%.1f " +
-            "consensus=%d/4 composite=%.1f window=%s size=%.2f%s " +
+            "consensus=%d/4 minConsensus=%d composite=%.1f window=%s size=%.2f%s " +
             "entry=%.2f t1=%.2f t2=%.2f sl=%.2f",
             direction, obiScore, slopeVal, obiLv, volMult, vix,
-            signalCount, compositeScore, window, sizeMult, knnInfo,
+            signalCount, minConsensus, compositeScore, window, sizeMult, knnInfo,
             entryLevel, target1, target2, stopLoss
         );
 
@@ -394,7 +418,7 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
         double abs = Math.abs(score);
         if (abs < 0.2) return "NEUTRAL";
         if (abs < 0.4) return "WEAK";
-        if (abs < 0.6) return "NEUTRAL";
+        if (abs < 0.6) return "MODERATE";
         if (abs < 0.8) return "STRONG";
         return "VERY_STRONG";
     }
@@ -404,7 +428,7 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
      * Uses last 8 values (min 6), computes slope via least-squares.
      */
     private double computeObiSlope(List<Double> history) {
-        if (history.size() < 6) {
+        if (history.size() < OBI_HISTORY_FOR_SLOPE) {
             return 0.0;
         }
         // Take last 8 (or fewer if < 8)
@@ -490,6 +514,22 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     /**
      * Add outcome to KNN memory — NOW PERSISTED to DB.
      */
+    private StrategySignal hold(StrategyContext context, String reason) {
+        return new StrategySignal(SignalType.HOLD, context.symbol(), null, reason);
+    }
+
+    private void logCandidate(String symbol, Instant now, int signalCount, String reason) {
+        if (signalCount < candidateMinConsensus) {
+            return;
+        }
+        Instant last = lastCandidateLogBySymbol.get(symbol);
+        if (last != null && Duration.between(last, now).getSeconds() < candidateLogCooldownSeconds) {
+            return;
+        }
+        lastCandidateLogBySymbol.put(symbol, now);
+        log.info("adv_cash.candidate {}", reason);
+    }
+
     public void addKnnOutcome(String symbol, double obi, double slope, double vol, double vix,
                               int timeMin, int direction, boolean win) {
         double[] features = knnFeature(obi, slope, vol, vix, timeMin, direction);
