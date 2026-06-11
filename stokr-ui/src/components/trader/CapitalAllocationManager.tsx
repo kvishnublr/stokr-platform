@@ -11,6 +11,8 @@ interface AssetClassAllocation {
   perTradeLimitAmount: number;
   perTradeMinQty: number;
   enabled: boolean;
+  dailyLossLimit?: number;
+  dailyLossLimitEnabled?: boolean;
 }
 
 interface CapitalAllocationConfig {
@@ -23,10 +25,10 @@ export function CapitalAllocationManager() {
   const [config, setConfig] = useState<CapitalAllocationConfig>({
     totalCapital: 100000,
     allocations: [
-      { assetClass: 'CASH', allocatedCapital: 50000, maxConcurrentPositions: 10, perTradeLimitAmount: 5000, perTradeMinQty: 0, enabled: true },
-      { assetClass: 'F&O', allocatedCapital: 30000, maxConcurrentPositions: 5, perTradeLimitAmount: 6000, perTradeMinQty: 0, enabled: true },
-      { assetClass: 'CURRENCY', allocatedCapital: 15000, maxConcurrentPositions: 3, perTradeLimitAmount: 5000, perTradeMinQty: 0, enabled: true },
-      { assetClass: 'MCX', allocatedCapital: 5000, maxConcurrentPositions: 2, perTradeLimitAmount: 2500, perTradeMinQty: 0, enabled: false },
+      { assetClass: 'CASH', allocatedCapital: 50000, maxConcurrentPositions: 10, perTradeLimitAmount: 5000, perTradeMinQty: 0, enabled: true, dailyLossLimit: 5000, dailyLossLimitEnabled: true },
+      { assetClass: 'F&O', allocatedCapital: 30000, maxConcurrentPositions: 5, perTradeLimitAmount: 6000, perTradeMinQty: 0, enabled: true, dailyLossLimit: 3000, dailyLossLimitEnabled: true },
+      { assetClass: 'CURRENCY', allocatedCapital: 15000, maxConcurrentPositions: 3, perTradeLimitAmount: 5000, perTradeMinQty: 0, enabled: true, dailyLossLimit: 1500, dailyLossLimitEnabled: false },
+      { assetClass: 'MCX', allocatedCapital: 5000, maxConcurrentPositions: 2, perTradeLimitAmount: 2500, perTradeMinQty: 0, enabled: false, dailyLossLimit: 500, dailyLossLimitEnabled: false },
     ],
     lastUpdated: new Date().toISOString(),
   });
@@ -231,6 +233,66 @@ export function CapitalAllocationManager() {
                 </div>
               </div>
 
+              {/* Daily Loss Limit (Optional) */}
+              <div className="bg-red-50 p-4 rounded-lg border-2 border-red-200">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-semibold text-red-900 flex items-center gap-2">
+                    🛑 Max Daily Loss Limit (Optional)
+                  </label>
+                  {isEditing ? (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={allocation.dailyLossLimitEnabled || false}
+                        onChange={(e) =>
+                          updateAllocation(allocation.assetClass, 'dailyLossLimitEnabled', e.target.checked)
+                        }
+                        className="w-4 h-4"
+                      />
+                      <span className="text-xs font-semibold text-red-700">
+                        {allocation.dailyLossLimitEnabled ? 'Enabled' : 'Disabled'}
+                      </span>
+                    </label>
+                  ) : (
+                    <span className={`text-xs font-semibold px-2 py-1 rounded ${
+                      allocation.dailyLossLimitEnabled ? 'bg-red-200 text-red-800' : 'bg-gray-200 text-gray-700'
+                    }`}>
+                      {allocation.dailyLossLimitEnabled ? '✅ Enabled' : '⏸️ Disabled'}
+                    </span>
+                  )}
+                </div>
+
+                {allocation.dailyLossLimitEnabled && (
+                  <div className="text-sm text-red-700 mb-3 p-2 bg-white rounded border border-red-200">
+                    <p className="font-semibold">⚠️ Stop trading when daily loss reaches:</p>
+                    {isEditing ? (
+                      <div className="mt-2">
+                        <ModernInput
+                          type="number"
+                          value={allocation.dailyLossLimit || 0}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                            updateAllocation(allocation.assetClass, 'dailyLossLimit', Number.parseInt(e.target.value, 10))
+                          }
+                          className="font-mono text-lg text-black bg-white border border-red-300 w-full"
+                          placeholder="Enter max loss amount"
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-lg font-bold text-red-600 mt-1">₹{(allocation.dailyLossLimit || 0).toLocaleString()}</p>
+                    )}
+                    {allocation.dailyLossLimit && (
+                      <p className="text-xs text-red-600 mt-2">
+                        Loss limit as % of allocation: {Math.round((allocation.dailyLossLimit / allocation.allocatedCapital) * 100)}%
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {!allocation.dailyLossLimitEnabled && (
+                  <p className="text-xs text-gray-600 italic">Daily loss limit is optional. Enable to activate automatic stop-loss at daily level.</p>
+                )}
+              </div>
+
               {/* Enable/Disable Toggle */}
               {isEditing && (
                 <button
@@ -263,6 +325,7 @@ export function CapitalAllocationManager() {
                   <th className="px-4 py-3 text-right font-bold">Allocated</th>
                   <th className="px-4 py-3 text-right font-bold">Max Positions</th>
                   <th className="px-4 py-3 text-right font-bold">Per Trade Amount</th>
+                  <th className="px-4 py-3 text-right font-bold">Daily Loss Limit</th>
                   <th className="px-4 py-3 text-center font-bold">Status</th>
                 </tr>
               </thead>
@@ -273,6 +336,13 @@ export function CapitalAllocationManager() {
                     <td className="px-4 py-3 text-right">₹{a.allocatedCapital.toLocaleString()}</td>
                     <td className="px-4 py-3 text-right font-bold">{a.maxConcurrentPositions}</td>
                     <td className="px-4 py-3 text-right text-green-600 font-bold">₹{a.perTradeLimitAmount.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right">
+                      {a.dailyLossLimitEnabled ? (
+                        <span className="text-red-600 font-bold">₹{(a.dailyLossLimit || 0).toLocaleString()}</span>
+                      ) : (
+                        <span className="text-gray-500 text-xs italic">Not set</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-center">
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${a.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                         {a.enabled ? '✅ Active' : '⏸️ Paused'}
