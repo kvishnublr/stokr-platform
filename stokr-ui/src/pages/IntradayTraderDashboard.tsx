@@ -80,7 +80,7 @@ export function IntradayTraderDashboard() {
         return null;
       }
     },
-    refetchInterval,
+    refetchInterval: refreshInterval,
     enabled: !!token,
   });
 
