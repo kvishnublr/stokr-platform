@@ -115,7 +115,7 @@ deploy_jar() {
 
     # Detect which modules changed since last deploy
     CHANGED_MODULES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null \
-        | grep -oE '^stokr-[a-z]+' | sort -u | tr '\n' ',' | sed 's/,$//')
+        | grep -oE '^stokr-[a-z]+' | sort -u | tr '\n' ',' | sed 's/,$//' || true)
 
     if [ -z "$CHANGED_MODULES" ]; then
         CHANGED_MODULES="stokr-bootstrap"
