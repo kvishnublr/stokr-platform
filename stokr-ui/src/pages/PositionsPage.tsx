@@ -236,7 +236,7 @@ export function PositionsPage(props?: { embedded?: boolean }) {
 
   const content = (
     <>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
         <PnlSourceBadge source={accountPnl.source} brokerConnected={brokerConnected} />
         {brokerConnected ? (
           <span
