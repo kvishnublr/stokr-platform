@@ -115,6 +115,14 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         keywords: ["traders", "health"],
       },
       {
+        to: "/admin/performance",
+        label: "Performance Dashboard",
+        description: "Signal execution metrics by confidence bracket, targets hit, SL hit rates, PnL tracking",
+        icon: TrendingUp,
+        tier: "critical",
+        keywords: ["performance", "metrics", "signals", "pnl", "hit rate"],
+      },
+      {
         to: "/admin/ops",
         matchPrefix: "/admin/ops",
         label: "Execution Controls",
