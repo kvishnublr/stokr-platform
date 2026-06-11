@@ -67,19 +67,19 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
 
-    @Value("${stokr.sectorlaggard.min-sector-move-pct:0.35}")
+    @Value("${stokr.sectorlaggard.min-sector-move-pct:0.20}")
     private double minSectorMovePct;
 
-    @Value("${stokr.sectorlaggard.min-divergence-pct:0.40}")
+    @Value("${stokr.sectorlaggard.min-divergence-pct:0.20}")
     private double minDivergencePct;
 
-    @Value("${stokr.sectorlaggard.max-counter-move-pct:0.60}")
+    @Value("${stokr.sectorlaggard.max-counter-move-pct:0.90}")
     private double maxCounterMovePct;
 
-    @Value("${stokr.sectorlaggard.min-reversal-body-ratio:0.45}")
+    @Value("${stokr.sectorlaggard.min-reversal-body-ratio:0.25}")
     private double minReversalBodyRatio;
 
-    @Value("${stokr.sectorlaggard.min-volume-rise:1.2}")
+    @Value("${stokr.sectorlaggard.min-volume-rise:0.9}")
     private double minVolumeRise;
 
     @Value("${stokr.sectorlaggard.target-capture-ratio:0.50}")
@@ -91,7 +91,7 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
     @Value("${stokr.sectorlaggard.cooldown-seconds:900}")
     private int cooldownSeconds;
 
-    @Value("${stokr.sectorlaggard.min-risk-reward:1.2}")
+    @Value("${stokr.sectorlaggard.min-risk-reward:1.0}")
     private double minRiskReward;
 
     @Override
@@ -110,7 +110,7 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
         // 1. SESSION: 10:00-14:45 IST (need time for divergence to develop)
         if (context.asOf() != null) {
             LocalTime lt = context.asOf().atZone(zone).toLocalTime();
-            if (lt.isBefore(LocalTime.of(10, 0)) || lt.isAfter(LocalTime.of(14, 45))) {
+            if (lt.isBefore(LocalTime.of(10, 0)) || lt.isAfter(LocalTime.of(15, 15))) {
                 return hold(context);
             }
         }
@@ -184,8 +184,8 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
         PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
         if (snapshot != null) {
             double ratio = snapshot.imbalanceRatio();
-            if (sectorBullish && ratio < 0.52) return hold(context);  // No buy pressure for bullish catch-up
-            if (!sectorBullish && ratio > 0.48) return hold(context); // No sell pressure for bearish catch-up
+            if (sectorBullish && ratio < 0.50) return hold(context);  // No buy pressure for bullish catch-up
+            if (!sectorBullish && ratio > 0.50) return hold(context); // No sell pressure for bearish catch-up
         }
 
         // 7. REVERSAL CONFIRMATION — last bar must show movement in catch-up direction
@@ -210,8 +210,9 @@ public class SectorLaggardSignalGenerator extends BaseGeneratedStrategy implemen
             MarketdataCandle prevBar = stockBars.get(stkN - 2);
             double prevClose = toDouble(prevBar.getClosePrice());
             double prevOpen = toDouble(prevBar.getOpenPrice());
-            if (sectorBullish && prevClose < prevOpen) return hold(context); // Previous bar red in bullish catch-up
-            if (!sectorBullish && prevClose > prevOpen) return hold(context);
+            double prevBodyPct = prevOpen > 0 ? Math.abs(prevClose - prevOpen) / prevOpen * 100.0 : 0.0;
+            if (sectorBullish && prevClose < prevOpen && prevBodyPct > 0.08) return hold(context);
+            if (!sectorBullish && prevClose > prevOpen && prevBodyPct > 0.08) return hold(context);
         }
 
         // 9. VOLUME RISING

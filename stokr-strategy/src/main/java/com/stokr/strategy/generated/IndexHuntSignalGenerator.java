@@ -94,20 +94,20 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
 
     // Trend gates
     private static final double TREND_AGAINST_PCT = 0.16;
-    private static final double TREND_SUPPORT_MIN_PCT = 0.10;
-    private static final double PRECISION_MIN_TREND_SUP = 0.14;
+    private static final double TREND_SUPPORT_MIN_PCT = 0.06;
+    private static final double PRECISION_MIN_TREND_SUP = 0.08;
 
     // PCR gates
     private static final double PCR_CE_MIN = 1.02;
-    private static final double PCR_PE_MIN = 1.32;
-    private static final double PE_MAX_NIFTY_CHG = 0.06;
+    private static final double PCR_PE_MIN = 1.15;
+    private static final double PE_MAX_NIFTY_CHG = 0.12;
 
     // VIX gates (FIXED - tightened to prevent poor entries in high volatility)
     // Raised from 28.0→20.0 to skip entries when market is volatile
     // This prevents cluster failures like 04:58:03 event on 2026-06-08
-    private static final double VIX_BLOCK_ABOVE = 20.0;  // Previously 28.0, now stricter
-    private static final double VIX_SKIP_CE_ABOVE = 18.5;  // Previously 20.75, now stricter
-    private static final double VIX_SOFT_SKIPS_MD_CE = 15.5;  // Previously 16.5, now stricter
+    private static final double VIX_BLOCK_ABOVE = 24.0;
+    private static final double VIX_SKIP_CE_ABOVE = 21.0;
+    private static final double VIX_SOFT_SKIPS_MD_CE = 18.0;
 
     // Anti-chase
     private static final int ANTI_CHASE_SEC = 180;
@@ -128,7 +128,7 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
 
     // Dedup (FIXED - increased to prevent cluster re-entries)
     // Raised from 30→45 min to prevent rapid re-entry after SL hit
-    private static final int DEDUP_MINUTES = 45;  // Previously 30, now prevents rapid re-entries
+    private static final int DEDUP_MINUTES = 20;
 
     // 15m hunt confluence
     private static final int HUNT_15M_SEC = 900;
@@ -136,8 +136,8 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
 
     // Quality (FIXED - increased to reduce poor entry signals)
     // Raised from 68→75 to prevent cluster failures like 04:58:03 event on 2026-06-08
-    private static final int QUALITY_FLOOR = 75;  // Previously 68, now stricter
-    private static final int PRECISION_MIN_QUALITY = 76;
+    private static final int QUALITY_FLOOR = 68;
+    private static final int PRECISION_MIN_QUALITY = 70;
 
     // Warmup
     private static final int MIN_HIST_SAMPLES = 6;

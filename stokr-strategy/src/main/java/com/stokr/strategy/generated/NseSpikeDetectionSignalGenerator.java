@@ -83,19 +83,19 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     // ═══════════════════════════════════════════════════════════════════════════
 
     /** Order book imbalance threshold for buy pressure (buyQty / total > this) */
-    @Value("${stokr.strategy.spike.buy-pressure-threshold:0.60}")
+    @Value("${stokr.strategy.spike.buy-pressure-threshold:0.56}")
     private double buyPressureThreshold;
 
     /** Order book imbalance threshold for sell pressure (buyQty / total < this) */
-    @Value("${stokr.strategy.spike.sell-pressure-threshold:0.40}")
+    @Value("${stokr.strategy.spike.sell-pressure-threshold:0.44}")
     private double sellPressureThreshold;
 
     /** Minimum pressure consistency: fraction of recent ticks with consistent direction */
-    @Value("${stokr.strategy.spike.min-pressure-consistency:0.70}")
+    @Value("${stokr.strategy.spike.min-pressure-consistency:0.55}")
     private double minPressureConsistency;
 
     /** Lookback ticks for pressure analysis (at ~1 tick/sec, 120 = ~2 min) */
-    @Value("${stokr.strategy.spike.pressure-lookback-ticks:120}")
+    @Value("${stokr.strategy.spike.pressure-lookback-ticks:30}")
     private int pressureLookbackTicks;
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -103,15 +103,15 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     // ═══════════════════════════════════════════════════════════════════════════
 
     /** Minimum cumulative % move over 3 bars to confirm momentum */
-    @Value("${stokr.strategy.spike.min-momentum-pct:0.12}")
+    @Value("${stokr.strategy.spike.min-momentum-pct:0.08}")
     private double minMomentumPct;
 
     /** Minimum volume multiple vs average for current bar */
-    @Value("${stokr.strategy.spike.min-volume-multiple:1.5}")
+    @Value("${stokr.strategy.spike.min-volume-multiple:1.1}")
     private double minVolumeMultiple;
 
     /** Maximum wick % before rejecting bar quality */
-    @Value("${stokr.strategy.spike.max-wick-pct:0.50}")
+    @Value("${stokr.strategy.spike.max-wick-pct:0.65}")
     private double maxWickPct;
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -119,7 +119,7 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     // ═══════════════════════════════════════════════════════════════════════════
 
     /** Minimum composite score to fire */
-    @Value("${stokr.strategy.spike.min-composite-score:82.0}")
+    @Value("${stokr.strategy.spike.min-composite-score:68.0}")
     private double minCompositeScore;
 
     /** Risk-reward multiplier for target calculation (lowered for higher hit rate) */
@@ -127,7 +127,7 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
     private double targetRrMultiple;
 
     /** Minimum R:R to emit signal */
-    @Value("${stokr.strategy.spike.min-risk-reward:1.3}")
+    @Value("${stokr.strategy.spike.min-risk-reward:1.1}")
     private double minRiskReward;
 
     /** SL buffer beyond swing point (%) */
@@ -237,9 +237,9 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         }
 
         // HARD GATE: raised from 40 → 55
-        if (imbalanceScore < 55) {
+        if (imbalanceScore < 45) {
             gateTelemetry.infoNearMiss(key(), symbol, "IMBALANCE_GATE",
-                    "imbScore=%.0f need>=55 ratio=%.2f consist=%.0f%%",
+                    "imbScore=%.0f need>=45 ratio=%.2f consist=%.0f%%",
                     imbalanceScore, ratio, consistency * 100);
             return hold(context);
         }
@@ -250,11 +250,11 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         //    SELL needs NIFTY red (niftyTrendScore < -40)
         //    Neutral NIFTY = no trade
         // ─────────────────────────────────────────────────────────────────────
-        if (pressureBuy && niftyTrendScore < 40) {
+        if (pressureBuy && niftyTrendScore < 20) {
             log.debug("spike.nifty_against_buy symbol={} niftyScore={}", symbol, niftyTrendScore);
             return hold(context);
         }
-        if (!pressureBuy && niftyTrendScore > -40) {
+        if (!pressureBuy && niftyTrendScore > -20) {
             log.debug("spike.nifty_against_sell symbol={} niftyScore={}", symbol, niftyTrendScore);
             return hold(context);
         }
@@ -266,7 +266,7 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         // ─────────────────────────────────────────────────────────────────────
         double momentumScore = calculateMomentumScore(bars, n, pressureBuy);
 
-        if (momentumScore < 40) {
+        if (momentumScore < 30) {
             return hold(context);
         }
 
@@ -277,7 +277,7 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         // ─────────────────────────────────────────────────────────────────────
         double volumeAccelScore = calculateVolumeAccelerationScore(bars, n);
 
-        if (volumeAccelScore < 30) {
+        if (volumeAccelScore < 20) {
             return hold(context);  // NEW: reject low-volume setups entirely
         }
 
@@ -288,7 +288,7 @@ public class NseSpikeDetectionSignalGenerator extends BaseGeneratedStrategy impl
         // ─────────────────────────────────────────────────────────────────────
         double barQualityScore = calculateBarQualityScore(bars.get(n - 1), pressureBuy);
 
-        if (barQualityScore < 40) {
+        if (barQualityScore < 30) {
             return hold(context);  // NEW: reject weak/rejection candles entirely
         }
 
