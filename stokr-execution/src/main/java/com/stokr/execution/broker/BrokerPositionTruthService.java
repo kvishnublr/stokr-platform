@@ -58,6 +58,7 @@ public class BrokerPositionTruthService {
 
     private static final String EXTERNAL_EXIT_STRATEGY = "EXTERNAL_BROKER_EXIT";
     private static final String EXTERNAL_EXIT_LINKAGE = "EXTERNAL_BROKER_EXIT";
+    private static final String EXTERNAL_EXIT_EXECUTION_KIND = "EXTERNAL_EXIT";
 
     private static final Collection<OrderState> ACTIVE_ORDER_STATES = List.of(
             OrderState.CREATED, OrderState.VALIDATED, OrderState.RISK_CHECK,
@@ -437,7 +438,7 @@ public class BrokerPositionTruthService {
                 null,
                 qty,
                 anchor.price(),
-                EXTERNAL_EXIT_LINKAGE,
+                EXTERNAL_EXIT_EXECUTION_KIND,
                 Instant.now(),
                 0L,
                 BigDecimal.ZERO,
