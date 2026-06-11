@@ -459,6 +459,12 @@ public class BrokerPositionTruthService {
             if (execution == null || execution.getId() == null) {
                 continue;
             }
+            OmsOrder order = execution.getOrder();
+            if (order != null
+                    && (EXTERNAL_EXIT_STRATEGY.equalsIgnoreCase(order.getStrategyKey())
+                    || EXTERNAL_EXIT_LINKAGE.equalsIgnoreCase(order.getExecutionLinkage()))) {
+                continue;
+            }
             BigDecimal price = execution.getAvgPrice();
             if (price == null || price.compareTo(BigDecimal.ZERO) < 0) {
                 price = BigDecimal.ZERO;
