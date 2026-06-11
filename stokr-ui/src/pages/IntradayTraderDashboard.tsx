@@ -317,7 +317,7 @@ export function IntradayTraderDashboard() {
 
   if (initialLoading) {
     return (
-      <div className={cn("min-h-screen p-6", isLight ? "bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100" : "bg-neutral-950")}>
+      <div className={cn("min-h-screen p-4 sm:p-6", isLight ? "bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100" : "bg-neutral-950")}>
         <div className="mx-auto max-w-7xl">
           <div className={cn("rounded-2xl border p-8 text-center shadow-sm", isLight ? "border-slate-200 bg-white" : "border-neutral-800 bg-neutral-950 text-neutral-100")}>
             <div className="flex items-center justify-center gap-3">
@@ -333,9 +333,9 @@ export function IntradayTraderDashboard() {
   return (
     <div className={cn("min-h-screen p-4 sm:p-6", isLight ? "bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100" : "bg-neutral-950")}>
       <div className="mx-auto max-w-7xl space-y-6">
-        <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-start justify-between gap-4">
+        <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
-            <h1 className={cn("text-3xl font-black", isLight ? "text-slate-950" : "text-neutral-50")}>Intraday Trader Dashboard</h1>
+            <h1 className={cn("text-xl font-black sm:text-2xl md:text-3xl", isLight ? "text-slate-950" : "text-neutral-50")}>Intraday Trader Dashboard</h1>
             <p className={cn("text-sm", isLight ? "text-slate-600" : "text-neutral-400")}>
               Real-time position tracking, broker readiness, and execution health.
             </p>
@@ -376,15 +376,15 @@ export function IntradayTraderDashboard() {
 
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 }} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100 p-4 shadow-sm">
-            <div className="flex items-start justify-between">
-              <div>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Capital Allocated</p>
-                <p className="mt-2 text-2xl font-black text-emerald-900">{rupee.format(totalCapitalAllocated)}</p>
+                <p className="mt-2 text-lg font-black text-emerald-900 sm:text-2xl">{rupee.format(totalCapitalAllocated)}</p>
                 <p className="mt-1 text-xs text-emerald-700">
                   Used: {rupee.format(capitalUsed)} ({capitalUtilization.toFixed(1)}%)
                 </p>
               </div>
-              <DollarSign className="h-8 w-8 text-emerald-600" />
+              <DollarSign className="h-6 w-6 shrink-0 text-emerald-600 sm:h-8 sm:w-8" />
             </div>
             <div className="mt-3 h-1.5 w-full rounded-full bg-emerald-200">
               <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${capitalUtilization}%` }} />
@@ -392,15 +392,15 @@ export function IntradayTraderDashboard() {
           </div>
 
           <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 p-4 shadow-sm">
-            <div className="flex items-start justify-between">
-              <div>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold uppercase tracking-wide text-blue-700">Active Positions</p>
-                <p className="mt-2 text-2xl font-black text-blue-900">
+                <p className="mt-2 text-lg font-black text-blue-900 sm:text-2xl">
                   {openPositionRows.length}/{maxPositions}
                 </p>
                 <p className="mt-1 text-xs text-blue-700">{Math.max(maxPositions - openPositionRows.length, 0)} slots available</p>
               </div>
-              <Activity className="h-8 w-8 text-blue-600" />
+              <Activity className="h-6 w-6 shrink-0 text-blue-600 sm:h-8 sm:w-8" />
             </div>
             <div className="mt-3 h-1.5 w-full rounded-full bg-blue-200">
               <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${positionUtilization}%` }} />
@@ -414,10 +414,10 @@ export function IntradayTraderDashboard() {
                 : "border-red-200 bg-gradient-to-br from-red-50 to-red-100"
             }`}
           >
-            <div className="flex items-start justify-between">
-              <div>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Unrealized P&L</p>
-                <p className={`mt-2 text-2xl font-black ${totalUnrealizedPnL >= 0 ? "text-green-900" : "text-red-900"}`}>
+                <p className={`mt-2 text-lg font-black sm:text-2xl ${totalUnrealizedPnL >= 0 ? "text-green-900" : "text-red-900"}`}>
                   {formatPnlDisplay(totalUnrealizedPnL)}
                 </p>
                 <p className={`mt-1 text-xs ${totalUnrealizedPnL >= 0 ? "text-green-700" : "text-red-700"}`}>
@@ -425,33 +425,33 @@ export function IntradayTraderDashboard() {
                   {pct.format(totalUnrealizedPnLPct / 100)}
                 </p>
               </div>
-              {totalUnrealizedPnL >= 0 ? <TrendingUp className="h-8 w-8 text-green-600" /> : <TrendingDown className="h-8 w-8 text-red-600" />}
+              {totalUnrealizedPnL >= 0 ? <TrendingUp className="h-6 w-6 shrink-0 text-green-600 sm:h-8 sm:w-8" /> : <TrendingDown className="h-6 w-6 shrink-0 text-red-600 sm:h-8 sm:w-8" />}
             </div>
           </div>
 
           <div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100 p-4 shadow-sm">
-            <div className="flex items-start justify-between">
-              <div>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold uppercase tracking-wide text-purple-700">Hit Rate</p>
-                <p className="mt-2 text-2xl font-black text-purple-900">{hitRate.toFixed(1)}%</p>
+                <p className="mt-2 text-lg font-black text-purple-900 sm:text-2xl">{hitRate.toFixed(1)}%</p>
                 <p className="mt-1 text-xs text-purple-700">
                   {targetsHit} targets / {slHit} SL
                 </p>
               </div>
-              <Percent className="h-8 w-8 text-purple-600" />
+              <Percent className="h-6 w-6 shrink-0 text-purple-600 sm:h-8 sm:w-8" />
             </div>
           </div>
         </motion.div>
 
         {showDetails && openPositionRows.length > 0 ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}>
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-slate-900">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
+              <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-900 sm:text-xl">
                 <Zap className="h-5 w-5 text-blue-600" />
                 Active Positions ({openPositionRows.length})
               </h2>
 
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {openPositionRows.map((position, idx) => (
                   <motion.div
                     key={`${position.symbol}-${idx}`}
@@ -554,11 +554,11 @@ export function IntradayTraderDashboard() {
             </div>
           </motion.div>
         ) : showDetails ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-slate-600 shadow-sm">No active positions loaded yet.</div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 text-center text-sm sm:text-base text-slate-600 shadow-sm">No active positions loaded yet.</div>
         ) : null}
 
         {showDetails && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="grid gap-4 sm:grid-cols-3">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
             <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100 p-4 shadow-sm">
               <div className="flex items-start justify-between">
                 <div>
@@ -595,13 +595,13 @@ export function IntradayTraderDashboard() {
         )}
 
         {showDetails && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-900">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
+            <h3 className="mb-4 flex items-center gap-2 text-base font-bold text-slate-900 sm:text-lg">
               <Shield className="h-5 w-5 text-blue-600" />
               Dashboard Settings
             </h3>
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-2 lg:grid-cols-3">
               <div>
                 <label className="block text-sm font-semibold text-slate-700">Auto-Refresh Interval</label>
                 <select
