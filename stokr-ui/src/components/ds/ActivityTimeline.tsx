@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import type { FeedEvent } from "../../state/notifications";
+import { fmtTime } from "../../lib/dateUtils";
 import { cn } from "../../lib/utils";
 
 export function ActivityTimeline({
@@ -47,9 +48,7 @@ export function ActivityTimeline({
             <div className="truncate text-[13px] font-medium text-neutral-100">{e.title}</div>
             {e.detail ? <div className="truncate text-[11px] text-neutral-500">{e.detail}</div> : null}
             <div className="mt-1 text-[10px] font-mono text-neutral-600">
-              {new Date(e.ts).toLocaleTimeString("en-IN", {
-                hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: "Asia/Kolkata",
-              })}
+              {fmtTime(e.ts)}
             </div>
           </div>
         </motion.div>

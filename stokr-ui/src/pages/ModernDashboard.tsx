@@ -24,6 +24,7 @@ import {
   type AdvScannerRow,
 } from "../api/advDashboard";
 import { parseAxiosMessage } from "../api/client";
+import { fmtTime } from "../lib/dateUtils";
 import { cn } from "../lib/utils";
 
 type Workstation = {
@@ -279,7 +280,7 @@ export function ModernDashboard() {
   const feedStatus = asText(liveControl.feedStatus, "UNKNOWN");
   const feedStale = Boolean(liveControl.feedEquityStale || liveControl.feedIndexStale || feedStatus === "STALE");
   const marketOpen = Boolean(snapshot?.marketOpen ?? liveControl.marketOpen);
-  const lastSynced = terminalQ.dataUpdatedAt ? new Date(terminalQ.dataUpdatedAt).toLocaleTimeString("en-IN", { hour12: false }) : "-";
+  const lastSynced = terminalQ.dataUpdatedAt ? fmtTime(terminalQ.dataUpdatedAt) : "-";
 
   const accountSummary = ws?.accountSummary ?? {};
   const todayPnl = firstFinite(

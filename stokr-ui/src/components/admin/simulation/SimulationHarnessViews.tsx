@@ -26,6 +26,7 @@ import type {
   ValidationPackReport,
 } from "../../../api/simulation";
 import { AdminPanel, AdminStatusChip } from "../institutional/AdminDesignSystem";
+import { fmtDateTime } from "../../../lib/dateUtils";
 import { cn } from "../../../lib/utils";
 
 export type PipelineStepStatus = "pass" | "fail" | "skip";
@@ -571,12 +572,7 @@ export function SimulationDashboardPanel({
 
 function formatWhen(iso: string): string {
   try {
-    return new Date(iso).toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return fmtDateTime(iso);
   } catch {
     return iso;
   }

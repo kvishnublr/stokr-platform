@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { cn } from "../../../lib/utils";
+import { fmtTime } from "../../../lib/dateUtils";
 import { toast } from "sonner";
 
 interface ExecutionEvent {
@@ -198,15 +199,7 @@ export function SignalLifecyclePanel() {
                           </span>
                         </div>
                         <div className="mt-1 text-xs text-gray-600">
-                          {new Date(event.timestamp).toLocaleTimeString(
-                            "en-US",
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                              fractionalSecondDigits: 3,
-                            }
-                          )}
+                          {fmtTime(event.timestamp)}
                         </div>
                       </div>
                     </div>

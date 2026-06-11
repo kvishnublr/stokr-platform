@@ -656,7 +656,7 @@ export function AdvEnhancedDashboard() {
               <div className="flex items-center gap-3">
                 <div className="text-right">
                   <div className="text-xs font-bold uppercase text-slate-500">IST Time</div>
-                  <div className="text-sm font-black text-slate-900 dark:text-neutral-100">{snapshot?.istTime ?? new Date().toLocaleTimeString("en-IN")}</div>
+                  <div className="text-sm font-black text-slate-900 dark:text-neutral-100">{snapshot?.istTime ?? new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })}</div>
                 </div>
                 <button
                   type="button"

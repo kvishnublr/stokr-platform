@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Trash2 } from "lucide-react";
 import type { OperationalMessage } from "../../state/messages";
+import { fmtDateTime } from "../../lib/dateUtils";
 import { cn } from "../../lib/utils";
 
 export function MessagesDrawer({
@@ -99,13 +100,7 @@ export function MessagesDrawer({
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-neutral-600">
                             {item.source ? <span>{item.source}</span> : null}
                             <span>
-                              {new Date(item.ts).toLocaleString("en-IN", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                day: "2-digit",
-                                month: "short",
-                                timeZone: "Asia/Kolkata",
-                              })}
+                              {fmtDateTime(item.ts)}
                             </span>
                             {item.actionPath ? <span className="text-blue-400">Open →</span> : null}
                           </div>

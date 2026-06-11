@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { fmtDateTime } from '../../lib/dateUtils';
 import { cn } from '../../lib/utils';
 
 interface ReplayStatus {
@@ -233,7 +234,7 @@ export function ReplayControlsPanel() {
               <div>
                 <p className="text-gray-600">Current Time</p>
                 <p className="font-mono">
-                  {new Date(replayStatus.currentTime).toLocaleString()}
+                  {fmtDateTime(replayStatus.currentTime)}
                 </p>
               </div>
               <div>

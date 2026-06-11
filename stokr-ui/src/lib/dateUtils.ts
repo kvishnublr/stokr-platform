@@ -2,32 +2,47 @@
 export const IST_ZONE = "Asia/Kolkata";
 export const IST_LOCALE = "en-IN";
 
-export function fmtTime(iso: string | Date | null | undefined): string {
-  if (!iso) return "—";
-  const d = typeof iso === "string" ? new Date(iso) : iso;
-  return d.toLocaleTimeString(IST_LOCALE, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: IST_ZONE });
+type DateInput = string | number | Date | null | undefined;
+
+function toDate(value: DateInput): Date | null {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export function fmtDate(iso: string | Date | null | undefined): string {
-  if (!iso) return "—";
-  const d = typeof iso === "string" ? new Date(iso) : iso;
+export function fmtTime(iso: DateInput): string {
+  const d = toDate(iso);
+  if (!d) return "—";
+  return d.toLocaleTimeString(IST_LOCALE, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: IST_ZONE,
+  });
+}
+
+export function fmtDate(iso: DateInput): string {
+  const d = toDate(iso);
+  if (!d) return "—";
   return d.toLocaleDateString(IST_LOCALE, { day: "2-digit", month: "short", timeZone: IST_ZONE });
 }
 
-export function fmtDateTime(iso: string | Date | null | undefined): string {
+export function fmtDateTime(iso: DateInput): string {
   if (!iso) return "—";
-  return fmtTime(iso) + "  " + fmtDate(iso);
+  return `${fmtTime(iso)}  ${fmtDate(iso)}`;
 }
 
-export function fmtDateLong(iso: string | Date | null | undefined): string {
-  if (!iso) return "—";
-  const d = typeof iso === "string" ? new Date(iso) : iso;
+export function fmtDateLong(iso: DateInput): string {
+  const d = toDate(iso);
+  if (!d) return "—";
   return d.toLocaleDateString(IST_LOCALE, { weekday: "long", day: "numeric", month: "long", timeZone: IST_ZONE });
 }
 
-export function fmtDateWeekday(iso: string | Date | null | undefined): string {
-  if (!iso) return "—";
-  const d = typeof iso === "string" ? new Date(iso) : iso;
+export function fmtDateWeekday(iso: DateInput): string {
+  const d = toDate(iso);
+  if (!d) return "—";
   return d.toLocaleDateString(IST_LOCALE, { weekday: "short", month: "short", day: "numeric", timeZone: IST_ZONE });
 }
 

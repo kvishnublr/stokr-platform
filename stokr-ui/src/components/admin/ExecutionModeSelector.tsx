@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api, parseAxiosMessage } from '../../api/client';
+import { fmtDateTime } from '../../lib/dateUtils';
 import { cn } from '../../lib/utils';
 import { useSessionStore } from '../../state/session';
 
@@ -64,7 +65,7 @@ export function ExecutionModeSelector() {
     setCurrentMode(String(data.mode));
     setTargetMode(String(data.mode));
     if (data.lastSwitchTime) {
-      setLastSwitchTime(new Date(data.lastSwitchTime).toLocaleString());
+      setLastSwitchTime(fmtDateTime(data.lastSwitchTime));
     }
     if (data.lastSwitchedBy) {
       setLastSwitchedBy(String(data.lastSwitchedBy));

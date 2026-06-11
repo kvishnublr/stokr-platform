@@ -7,6 +7,7 @@ import {
   Loader2, User, Activity, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { useState } from "react";
+import { fmtDateTime, fmtTime } from "../../lib/dateUtils";
 import { cn } from "../../lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -102,7 +103,7 @@ function StageBox({ stage }: { stage: PipelineStage }) {
         {stageIcon(stage.status)}
         <span className="text-[10px] font-semibold text-center leading-tight">{stage.label}</span>
         {stage.timestamp && (
-          <span className="text-[9px] opacity-60">{new Date(stage.timestamp).toLocaleTimeString("en-IN")}</span>
+          <span className="text-[9px] opacity-60">{fmtTime(stage.timestamp)}</span>
         )}
         {hasDetails && (
           <ChevronDown className={cn("w-3 h-3 transition-transform", expanded && "rotate-180")} />
@@ -214,7 +215,7 @@ export default function AdminSignalTracePage() {
           )}
           <span className="text-zinc-500">·</span>
           <span className="text-xs text-zinc-400">
-            {new Date(data.createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+            {fmtDateTime(data.createdAt)}
           </span>
           {isFetching && (
             <>

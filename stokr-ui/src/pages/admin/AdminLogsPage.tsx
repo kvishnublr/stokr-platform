@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IST_LOCALE, IST_ZONE } from "../../lib/dateUtils";
+import { fmtDateTime, fmtTime } from "../../lib/dateUtils";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronRight,
   Info, Search, XCircle, WifiOff, Trash2,
@@ -73,12 +73,7 @@ const LEVEL_CFG: Record<string, {
 
 function formatTs(iso: string, full = false): string {
   try {
-    const d = new Date(iso);
-    if (full) return d.toLocaleString(IST_LOCALE, {
-      day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: IST_ZONE,
-    });
-    return d.toLocaleTimeString(IST_LOCALE, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: IST_ZONE });
+    return full ? fmtDateTime(iso) : fmtTime(iso);
   } catch { return iso; }
 }
 
@@ -430,7 +425,7 @@ export function AdminLogsPage() {
             <div className="flex flex-col items-center justify-center h-52 gap-3 text-slate-600">
               <Zap className="h-10 w-10 opacity-20" />
               <span className="text-sm font-mono font-medium">
-                {entries.length === 0 ? "$ waiting for log stream..." : "no entries match filter"}
+                {entries.length === 0 ? "₹ waiting for log stream..." : "no entries match filter"}
               </span>
               {entries.length > 0 && (
                 <span className="text-xs font-mono text-slate-700">{entries.length} entries buffered · adjust filters above</span>
