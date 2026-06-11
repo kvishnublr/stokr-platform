@@ -6,11 +6,16 @@ import com.stokr.common.events.realtime.RealtimeBridgeEvents;
 import com.stokr.execution.guard.ExecutionGuardMode;
 import com.stokr.execution.guard.ExecutionGuardSeverity;
 import com.stokr.execution.guard.ExecutionGuardViolation;
+import com.stokr.oms.domain.ExecutionMode;
+import com.stokr.oms.domain.OmsExecution;
+import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
+import com.stokr.oms.portfolio.PortfolioAccountingService;
 import com.stokr.oms.reconciliation.BrokerReconciliationService;
 import com.stokr.oms.reconciliation.ReconciliationEventRepository;
 import com.stokr.oms.repository.OmsExecutionRepository;
 import com.stokr.oms.repository.OmsOrderRepository;
+import com.stokr.oms.service.ExecutionLedgerService;
 import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
@@ -30,7 +35,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Set;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -52,6 +56,9 @@ import java.util.stream.Collectors;
 @Slf4j
 public class BrokerPositionTruthService {
 
+    private static final String EXTERNAL_EXIT_STRATEGY = "EXTERNAL_BROKER_EXIT";
+    private static final String EXTERNAL_EXIT_LINKAGE = "EXTERNAL_BROKER_EXIT";
+
     private static final Collection<OrderState> ACTIVE_ORDER_STATES = List.of(
             OrderState.CREATED, OrderState.VALIDATED, OrderState.RISK_CHECK,
             OrderState.PENDING_SUBMISSION, OrderState.SUBMITTED, OrderState.ACCEPTED,
@@ -67,6 +74,8 @@ public class BrokerPositionTruthService {
     private final ZerodhaBrokerOperationsService zerodhaBrokerOperationsService;
     private final OmsExecutionRepository omsExecutionRepository;
     private final OmsOrderRepository omsOrderRepository;
+    private final ExecutionLedgerService executionLedgerService;
+    private final PortfolioAccountingService portfolioAccountingService;
     private final ReconciliationEventRepository reconciliationEventRepository;
     private final StrategyInstanceRepository strategyInstanceRepository;
     private final StrategySignalRepository strategySignalRepository;
@@ -377,6 +386,7 @@ public class BrokerPositionTruthService {
         }
         log.warn("broker.truth.external_exit user={} symbol={} internalQty={}", userId, symbol, internalQty);
         persistRecon(userId, symbol, "EXTERNAL_BROKER_EXIT", BigDecimal.ZERO, internalQty);
+        recordExternalBrokerExitOffset(userId, symbol, internalQty);
         manualExitSuppressionService.suppressAutoExitForSymbol(userId, symbol, "MANUAL: external_broker_exit");
         haltStrategyRuntimeForSymbol(userId, symbol);
 
@@ -391,6 +401,82 @@ public class BrokerPositionTruthService {
                 userId,
                 "Position " + symbol + " closed at broker; strategy runtime halted"
         ));
+    }
+
+    private void recordExternalBrokerExitOffset(UUID userId, String symbol, BigDecimal internalQty) {
+        if (userId == null || internalQty == null || internalQty.compareTo(BigDecimal.ZERO) == 0) {
+            return;
+        }
+        String normalized = normalizeSymbol(symbol);
+        ExternalExitLedgerAnchor anchor = externalExitLedgerAnchor(userId, normalized);
+        String idempotencyKey = "external-broker-exit:" + normalized + ":" + anchor.idempotencySuffix();
+        if (omsOrderRepository.findByUserIdAndIdempotencyKeyAndDeletedFalse(userId, idempotencyKey).isPresent()) {
+            log.info("broker.truth.external_exit_offset_exists user={} symbol={} key={}",
+                    userId, normalized, idempotencyKey);
+            return;
+        }
+
+        BigDecimal qty = internalQty.abs();
+        OmsOrder offset = new OmsOrder();
+        offset.setUserId(userId);
+        offset.setIdempotencyKey(idempotencyKey);
+        offset.setStrategyKey(EXTERNAL_EXIT_STRATEGY);
+        offset.setExecutionMode(ExecutionMode.LIVE);
+        offset.setSymbol(normalized);
+        offset.setSide(internalQty.compareTo(BigDecimal.ZERO) > 0 ? "SELL" : "BUY");
+        offset.setOrderType("EXTERNAL_EXIT");
+        offset.setQuantity(qty);
+        offset.setState(OrderState.FILLED);
+        offset.setBrokerVendor("ZERODHA");
+        offset.setExecutionLinkage(EXTERNAL_EXIT_LINKAGE);
+        offset.setExecutionLinkageReason("Broker reported flat; OMS ledger offset recorded after confirmation");
+
+        OmsOrder saved = omsOrderRepository.save(offset);
+        executionLedgerService.appendExecution(
+                saved,
+                null,
+                qty,
+                anchor.price(),
+                EXTERNAL_EXIT_LINKAGE,
+                Instant.now(),
+                0L,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                anchor.price(),
+                "BROKER_TRUTH",
+                null
+        );
+        portfolioAccountingService.applyFill(userId, normalized, EXTERNAL_EXIT_STRATEGY);
+        log.warn("broker.truth.external_exit_offset_recorded user={} symbol={} side={} qty={} price={} orderId={}",
+                userId, normalized, saved.getSide(), qty, anchor.price(), saved.getId());
+    }
+
+    private ExternalExitLedgerAnchor externalExitLedgerAnchor(UUID userId, String normalizedSymbol) {
+        List<OmsExecution> executions = liveExecutionsForSymbol(userId, normalizedSymbol);
+        for (int i = executions.size() - 1; i >= 0; i--) {
+            OmsExecution execution = executions.get(i);
+            if (execution == null || execution.getId() == null) {
+                continue;
+            }
+            BigDecimal price = execution.getAvgPrice();
+            if (price == null || price.compareTo(BigDecimal.ZERO) < 0) {
+                price = BigDecimal.ZERO;
+            }
+            return new ExternalExitLedgerAnchor(price, execution.getId().toString());
+        }
+        return new ExternalExitLedgerAnchor(BigDecimal.ZERO, "no-live-execution");
+    }
+
+    private List<OmsExecution> liveExecutionsForSymbol(UUID userId, String normalizedSymbol) {
+        List<OmsExecution> executions = omsExecutionRepository.findLiveForUserAndSymbolOrdered(userId, normalizedSymbol);
+        if (!executions.isEmpty()) {
+            return executions;
+        }
+        String bare = bareSymbol(normalizedSymbol);
+        if (!bare.equals(normalizedSymbol)) {
+            return omsExecutionRepository.findLiveForUserAndSymbolOrdered(userId, bare);
+        }
+        return executions;
     }
 
     private void updateSignalOutcomeForManualExit(UUID userId, String symbol) {
@@ -627,5 +713,8 @@ public class BrokerPositionTruthService {
     static String bareSymbol(String symbol) {
         int idx = symbol.indexOf(':');
         return idx >= 0 ? symbol.substring(idx + 1) : symbol;
+    }
+
+    private record ExternalExitLedgerAnchor(BigDecimal price, String idempotencySuffix) {
     }
 }
