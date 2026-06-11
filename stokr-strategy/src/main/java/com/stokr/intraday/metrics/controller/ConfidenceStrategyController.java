@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
 
 @Slf4j
 @RestController
@@ -110,9 +111,9 @@ public class ConfidenceStrategyController {
     public ResponseEntity<List<ConfidenceScore>> getLatestScores(
             @RequestParam(defaultValue = "10") int limit) {
 
-        List<ConfidenceScore> scores = scoreRepository.findTopByConfidenceRecent(
+        List<ConfidenceScore> scores = scoreRepository.findByTimestampAfterOrderByConfidenceScoreDescTimestampDesc(
             Instant.now().minusSeconds(300),
-            limit
+            PageRequest.of(0, limit)
         );
 
         return ResponseEntity.ok(scores);

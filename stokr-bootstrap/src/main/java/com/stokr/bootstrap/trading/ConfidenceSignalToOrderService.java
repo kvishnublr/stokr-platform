@@ -114,7 +114,8 @@ public class ConfidenceSignalToOrderService {
         try {
             // Get new confidence signals from last 2 minutes
             List<ConfidenceScore> recentScores = confidenceScoreRepository
-                .findRecentByConfidenceThreshold(threshold, Instant.now().minusSeconds(120));
+                .findByConfidenceScoreGreaterThanAndTimestampAfterOrderByConfidenceScoreDescTimestampDesc(
+                        threshold, Instant.now().minusSeconds(120));
 
             if (recentScores.isEmpty()) {
                 log.debug("No new signals above threshold {} for trader {}",

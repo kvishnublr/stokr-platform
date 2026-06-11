@@ -45,7 +45,7 @@ public class OrderFlowMetricsService {
 
             // If not in Redis, query database
             if (latest == null) {
-                latest = snapshotRepository.findLatestBySymbol(symbol)
+                latest = snapshotRepository.findFirstBySymbolAndIsValidTrueOrderByTimestampDesc(symbol)
                     .orElse(null);
             }
 
@@ -409,8 +409,8 @@ public class OrderFlowMetricsService {
      * Useful for anomaly detection
      */
     public boolean isOrderFlowAnomaly(String symbol) {
-        OrderFlowSnapshot current = snapshotRepository.findLatestBySymbol(symbol)
-            .orElse(null);
+        OrderFlowSnapshot current = snapshotRepository.findFirstBySymbolAndIsValidTrueOrderByTimestampDesc(symbol)
+                .orElse(null);
 
         if (current == null) {
             return false;

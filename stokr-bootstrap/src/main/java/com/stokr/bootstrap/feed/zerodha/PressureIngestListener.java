@@ -1,7 +1,6 @@
 package com.stokr.bootstrap.feed.zerodha;
 
 import com.stokr.intraday.metrics.OrderFlowCollectorService;
-import com.stokr.intraday.metrics.domain.NSEOrderBook;
 import com.stokr.marketdata.service.OrderBookPressureTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -64,14 +63,47 @@ public class PressureIngestListener {
 
         // Create synthetic depth levels from the aggregated buy/sell quantities
         // This allows the confidence calculator to compute buyer pressure, liquidity, etc.
-        NSEOrderBook orderBook = new NSEOrderBook(
+        OrderFlowCollectorService.NSEOrderBook orderBook = new OrderFlowCollectorService.NSEOrderBook(
             e.symbol(),
-            e.price(),
-            e.totalBuyQuantity(),  // Aggregate buy quantity (depth)
-            e.totalSellQuantity()  // Aggregate sell quantity (depth)
+            buildSyntheticBidLevels(e.price(), e.totalBuyQuantity()),
+            buildSyntheticAskLevels(e.price(), e.totalSellQuantity())
         );
 
         // Process through order flow collector to persist snapshots
         orderFlowCollectorService.processOrderBookSnapshot(orderBook);
+    }
+
+    private java.util.List<OrderFlowCollectorService.OrderLevel> buildSyntheticBidLevels(
+            java.math.BigDecimal price,
+            long totalBuyQuantity) {
+        java.util.List<OrderFlowCollectorService.OrderLevel> levels = new java.util.ArrayList<>();
+        if (price == null || totalBuyQuantity <= 0) {
+            return levels;
+        }
+        long qtyPerLevel = Math.max(1L, totalBuyQuantity / 5L);
+        java.math.BigDecimal tickSize = java.math.BigDecimal.valueOf(0.05);
+        for (int i = 1; i <= 5; i++) {
+            java.math.BigDecimal bidPrice = price.subtract(tickSize.multiply(java.math.BigDecimal.valueOf(i)));
+            long qty = (i == 5) ? Math.max(1L, totalBuyQuantity - (qtyPerLevel * 4L)) : qtyPerLevel;
+            levels.add(new OrderFlowCollectorService.OrderLevel(bidPrice, qty));
+        }
+        return levels;
+    }
+
+    private java.util.List<OrderFlowCollectorService.OrderLevel> buildSyntheticAskLevels(
+            java.math.BigDecimal price,
+            long totalSellQuantity) {
+        java.util.List<OrderFlowCollectorService.OrderLevel> levels = new java.util.ArrayList<>();
+        if (price == null || totalSellQuantity <= 0) {
+            return levels;
+        }
+        long qtyPerLevel = Math.max(1L, totalSellQuantity / 5L);
+        java.math.BigDecimal tickSize = java.math.BigDecimal.valueOf(0.05);
+        for (int i = 1; i <= 5; i++) {
+            java.math.BigDecimal askPrice = price.add(tickSize.multiply(java.math.BigDecimal.valueOf(i)));
+            long qty = (i == 5) ? Math.max(1L, totalSellQuantity - (qtyPerLevel * 4L)) : qtyPerLevel;
+            levels.add(new OrderFlowCollectorService.OrderLevel(askPrice, qty));
+        }
+        return levels;
     }
 }

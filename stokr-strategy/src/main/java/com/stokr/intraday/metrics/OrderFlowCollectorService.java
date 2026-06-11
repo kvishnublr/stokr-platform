@@ -489,14 +489,14 @@ public class OrderFlowCollectorService {
             String cached = (String) redisTemplate.opsForValue()
                 .get("orderflow:" + symbol);
             if (cached != null) {
-                return snapshotRepository.findLatestBySymbol(symbol).orElse(null);
+                return snapshotRepository.findFirstBySymbolAndIsValidTrueOrderByTimestampDesc(symbol).orElse(null);
             }
         } catch (Exception ex) {
             log.trace("orderflow.redis_miss symbol={}", symbol);
         }
 
         // Fallback to DB
-        return snapshotRepository.findLatestBySymbol(symbol).orElse(null);
+        return snapshotRepository.findFirstBySymbolAndIsValidTrueOrderByTimestampDesc(symbol).orElse(null);
     }
 
     /**

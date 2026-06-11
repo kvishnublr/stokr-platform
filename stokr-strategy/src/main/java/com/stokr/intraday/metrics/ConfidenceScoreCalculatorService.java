@@ -108,7 +108,7 @@ public class ConfidenceScoreCalculatorService {
 
     public List<ConfidenceScore> getLatestScoresForSymbols(List<String> symbols) {
         return symbols.stream()
-            .map(scoreRepository::findLatestBySymbol)
+            .map(scoreRepository::findFirstBySymbolOrderByTimestampDesc)
             .filter(opt -> opt.isPresent())
             .map(opt -> opt.get())
             .toList();

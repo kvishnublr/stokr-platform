@@ -2,6 +2,8 @@ package com.stokr.execution.service;
 
 import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.repository.PortfolioPositionRepository;
+import com.stokr.marketdata.domain.MarketdataCandle;
+import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.signals.SignalOwnerType;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -31,6 +34,7 @@ public class TargetProfitMonitorService {
     private final StrategySignalRepository signalRepository;
     private final PositionExitOrchestratorService positionExitOrchestratorService;
     private final PositionPnLCalculatorService pnlCalculator;
+    private final MarketDataQueryService marketDataQueryService;
 
     @Value("${stokr.execution.target-profit.enabled:true}")
     private boolean profitTargetMonitoringEnabled;
@@ -62,10 +66,10 @@ public class TargetProfitMonitorService {
                     continue; // Skip zero positions
                 }
 
-                // Use position average price until live market price wiring is available.
-                BigDecimal currentPrice = position.getAvgPrice();
+                BigDecimal currentPrice = resolveCurrentPrice(position.getSymbol());
 
                 if (currentPrice == null) {
+                    log.debug("target_profit.skip_no_live_price symbol={}", position.getSymbol());
                     continue;
                 }
 
@@ -117,5 +121,21 @@ public class TargetProfitMonitorService {
             log.error("target_profit.exit_signal_failed positionId={} symbol={} error={}",
                     positionId, symbol, e.getMessage(), e);
         }
+    }
+
+    private BigDecimal resolveCurrentPrice(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return null;
+        }
+        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, "1m", 1);
+        if (bars.isEmpty()) {
+            bars = marketDataQueryService.lastBarsAsc(symbol, "5m", 1);
+        }
+        for (MarketdataCandle candle : bars) {
+            if (candle != null && candle.getClosePrice() != null && candle.getClosePrice().signum() > 0) {
+                return candle.getClosePrice();
+            }
+        }
+        return null;
     }
 }

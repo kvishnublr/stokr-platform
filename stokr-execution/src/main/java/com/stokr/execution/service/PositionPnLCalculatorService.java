@@ -47,7 +47,11 @@ public class PositionPnLCalculatorService {
                     if (pos.getAvgPrice() == null || pos.getAvgPrice().compareTo(BigDecimal.ZERO) == 0) {
                         return BigDecimal.ZERO;
                     }
-                    BigDecimal priceChange = currentPrice.subtract(pos.getAvgPrice());
+                    BigDecimal current = currentPrice == null ? BigDecimal.ZERO : currentPrice;
+                    BigDecimal direction = pos.getQuantity() != null && pos.getQuantity().signum() < 0
+                            ? BigDecimal.ONE.negate()
+                            : BigDecimal.ONE;
+                    BigDecimal priceChange = current.subtract(pos.getAvgPrice()).multiply(direction);
                     return priceChange.divide(pos.getAvgPrice(), 6, java.math.RoundingMode.HALF_UP)
                             .multiply(BigDecimal.valueOf(100));
                 })

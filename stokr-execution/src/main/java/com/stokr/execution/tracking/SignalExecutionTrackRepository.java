@@ -43,12 +43,11 @@ public interface SignalExecutionTrackRepository extends JpaRepository<SignalExec
             AND s.retryCount < :maxRetries
             AND (s.lastRetryAt IS NULL OR s.lastRetryAt < :retryBefore)
             ORDER BY s.createdAt ASC
-            LIMIT :limit
             """)
     List<SignalExecutionTrack> findRetryableFailures(
             @Param("maxRetries") Integer maxRetries,
             @Param("retryBefore") Instant retryBefore,
-            @Param("limit") Integer limit);
+            Pageable pageable);
 
     @Query("""
             SELECT COUNT(s) FROM SignalExecutionTrack s
