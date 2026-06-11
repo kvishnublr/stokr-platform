@@ -77,6 +77,7 @@ import { ThemeHtmlSync } from "./components/theme/ThemeHtmlSync";
 import { SyncedToaster } from "./components/theme/SyncedToaster";
 import AdvDashboardPage from "./pages/AdvDashboardPage";
 import { AdvEnhancedDashboardPage } from "./pages/AdvEnhancedDashboardPage";
+import { IntradayTraderDashboard } from "./pages/IntradayTraderDashboard";
 import { TraderDashboard } from "./pages/trader/TraderDashboard";
 import { AdminOverviewPage } from "./pages/AdminOverviewPage";
 import { AdminCommandCenterPage } from "./pages/admin/AdminCommandCenterPage";
@@ -256,6 +257,7 @@ export default function App() {
           <Route path="brokers" element={<TraderBrokerRoute />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="strategy-settings" element={<TraderExecutionConfigPage />} />
+          <Route path="intraday-dashboard" element={<IntradayTraderDashboard />} />
           <Route path="admin" element={<AdminGate />}>
             <Route element={<AdminConsoleLayout />}>
               <Route index element={<AdminCommandCenterPage />} />
