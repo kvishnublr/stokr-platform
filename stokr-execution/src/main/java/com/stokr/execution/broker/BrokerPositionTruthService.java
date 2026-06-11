@@ -31,6 +31,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -84,6 +87,7 @@ public class BrokerPositionTruthService {
     private final ApplicationEventPublisher eventPublisher;
     private final BrokerAccountRepository brokerAccountRepository;
     private final SignalManualExitSuppressionService manualExitSuppressionService;
+    private final PlatformTransactionManager transactionManager;
 
     private final ConcurrentHashMap<UUID, BrokerPositionTruthSnapshot> cache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Instant> pendingExternalBrokerExits = new ConcurrentHashMap<>();
@@ -408,6 +412,17 @@ public class BrokerPositionTruthService {
         if (userId == null || internalQty == null || internalQty.compareTo(BigDecimal.ZERO) == 0) {
             return;
         }
+        try {
+            TransactionTemplate tx = new TransactionTemplate(transactionManager);
+            tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            tx.executeWithoutResult(status -> recordExternalBrokerExitOffsetInNewTransaction(userId, symbol, internalQty));
+        } catch (Exception ex) {
+            log.error("broker.truth.external_exit_offset_failed user={} symbol={} internalQty={} error={}",
+                    userId, symbol, internalQty, ex.getMessage(), ex);
+        }
+    }
+
+    private void recordExternalBrokerExitOffsetInNewTransaction(UUID userId, String symbol, BigDecimal internalQty) {
         String normalized = normalizeSymbol(symbol);
         ExternalExitLedgerAnchor anchor = externalExitLedgerAnchor(userId, normalized);
         String idempotencyKey = "external-broker-exit:" + normalized + ":" + anchor.idempotencySuffix();
