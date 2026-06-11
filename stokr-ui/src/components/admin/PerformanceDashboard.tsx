@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { api, parseAxiosMessage } from '../../api/client';
 import { cn } from '../../lib/utils';
 
 interface SummaryMetrics {
@@ -64,15 +65,11 @@ export function PerformanceDashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await fetch('/api/v1/admin/performance/dashboard');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const jsonData = await response.json();
-      setData(jsonData);
+      const response = await api.get<DashboardData>('/api/v1/admin/performance/dashboard');
+      setData(response.data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch data');
+      setError(parseAxiosMessage(err));
     } finally {
       setLoading(false);
     }
