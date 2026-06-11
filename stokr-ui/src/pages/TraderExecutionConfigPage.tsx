@@ -18,6 +18,7 @@ import { RiskBadge } from "../components/ds/RiskBadge";
 import { SkeletonCard } from "../components/ds/SkeletonLoader";
 import { useSessionStore } from "../state/session";
 import { useUiThemeStore } from "../state/uiTheme";
+import { CapitalAllocationManager } from "../components/trader/CapitalAllocationManager";
 
 type RuntimeRow = {
   definitionId: string;
@@ -360,14 +361,17 @@ export function TraderExecutionConfigPage() {
     <div className="flex h-full flex-col">
       <div className="border-b border-border px-6 py-5">
         <h1 className={isLight ? "text-xl font-semibold text-foreground" : "text-xl font-semibold text-white"}>
-          Strategy Settings
+          ⚙️ Trader Execution & Capital Settings
         </h1>
         <p className={isLight ? "mt-0.5 text-sm text-muted-foreground" : "mt-0.5 text-sm text-neutral-400"}>
-          Per-strategy execution preferences, sizing, and alerts — synced with the live catalog.
+          Configure capital allocation across asset classes, set daily loss limits, and manage per-strategy execution preferences.
         </p>
       </div>
 
       <div className="flex-1 space-y-4 overflow-auto p-6">
+        {/* Capital Allocation Manager */}
+        <CapitalAllocationManager />
+
         <GlassPanel variant={isLight ? "light" : "dark"} className="p-3">
           <div className={isLight ? "flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2" : "flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2"}>
             <Search className="h-4 w-4 text-muted-foreground" />
