@@ -184,7 +184,7 @@ public class PortfolioAccountingService {
             pos.setSimulationRunId(ref.getSimulationRunId());
             pos.setSimulationScenario(ref.getSimulationScenario());
         }
-        if (netQty.compareTo(BigDecimal.ZERO) == 0 && liveLedgerOnly) {
+        if (netQty.compareTo(BigDecimal.ZERO) == 0) {
             pos.setDeleted(true);
         }
         positionRepository.save(pos);
