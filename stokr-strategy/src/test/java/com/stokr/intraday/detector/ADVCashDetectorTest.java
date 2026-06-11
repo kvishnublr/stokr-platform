@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -41,8 +42,8 @@ public class ADVCashDetectorTest {
         data.momentum5m = BigDecimal.valueOf(0.25);
         data.vixLevel = BigDecimal.valueOf(15);
 
-        when(marketDataProvider.isMarketOpen()).thenReturn(true);
-        when(marketDataProvider.getIndexMarketData("RELIANCE")).thenReturn(data);
+        stubOpenMarket();
+        stubSymbolData("RELIANCE", data);
 
         List<EquitySignal> signals = detector.detectSignals();
 
@@ -64,8 +65,8 @@ public class ADVCashDetectorTest {
         data.momentum5m = BigDecimal.valueOf(0.02);
         data.vixLevel = BigDecimal.valueOf(32);
 
-        when(marketDataProvider.isMarketOpen()).thenReturn(true);
-        when(marketDataProvider.getIndexMarketData("RELIANCE")).thenReturn(data);
+        stubOpenMarket();
+        stubSymbolData("RELIANCE", data);
 
         List<EquitySignal> signals = detector.detectSignals();
 
@@ -83,8 +84,8 @@ public class ADVCashDetectorTest {
         data.momentum5m = BigDecimal.valueOf(0.25);
         data.vixLevel = BigDecimal.valueOf(15);
 
-        when(marketDataProvider.isMarketOpen()).thenReturn(true);
-        when(marketDataProvider.getIndexMarketData("RELIANCE")).thenReturn(data);
+        stubOpenMarket();
+        stubSymbolData("RELIANCE", data);
 
         List<EquitySignal> signals = detector.detectSignals();
         EquitySignal signal = signals.stream()
@@ -96,13 +97,13 @@ public class ADVCashDetectorTest {
         assertEquals("LONG", signal.getDirection());
 
         BigDecimal expectedT1 = BigDecimal.valueOf(1007);
-        assertTrue(signal.getTargetLevel1().compareTo(expectedT1) > 0);
+        assertEquals(0, signal.getTargetLevel1().compareTo(expectedT1));
 
         BigDecimal expectedT2 = BigDecimal.valueOf(1014);
-        assertTrue(signal.getTargetLevel2().compareTo(expectedT2) > 0);
+        assertEquals(0, signal.getTargetLevel2().compareTo(expectedT2));
 
         BigDecimal expectedSL = BigDecimal.valueOf(996);
-        assertTrue(signal.getStopLossLevel().compareTo(expectedSL) < 0);
+        assertEquals(0, signal.getStopLossLevel().compareTo(expectedSL));
     }
 
     @Test
@@ -113,8 +114,8 @@ public class ADVCashDetectorTest {
         data.momentum5m = BigDecimal.valueOf(0.3);
         data.vixLevel = BigDecimal.valueOf(12);
 
-        when(marketDataProvider.isMarketOpen()).thenReturn(true);
-        when(marketDataProvider.getIndexMarketData("TCS")).thenReturn(data);
+        stubOpenMarket();
+        stubSymbolData("TCS", data);
 
         List<EquitySignal> signals = detector.detectSignals();
         EquitySignal signal = signals.stream()
@@ -134,8 +135,8 @@ public class ADVCashDetectorTest {
         data.momentum5m = BigDecimal.valueOf(0.25);
         data.vixLevel = BigDecimal.valueOf(40);
 
-        when(marketDataProvider.isMarketOpen()).thenReturn(true);
-        when(marketDataProvider.getIndexMarketData("HDFCBANK")).thenReturn(data);
+        stubOpenMarket();
+        stubSymbolData("HDFCBANK", data);
 
         List<EquitySignal> signals = detector.detectSignals();
 
@@ -153,8 +154,8 @@ public class ADVCashDetectorTest {
         data.momentum5m = BigDecimal.valueOf(0.25);
         data.vixLevel = BigDecimal.valueOf(15);
 
-        when(marketDataProvider.isMarketOpen()).thenReturn(true);
-        when(marketDataProvider.getIndexMarketData("INFY")).thenReturn(data);
+        stubOpenMarket();
+        stubSymbolData("INFY", data);
 
         List<EquitySignal> signals = detector.detectSignals();
         EquitySignal signal = signals.stream()
@@ -174,8 +175,8 @@ public class ADVCashDetectorTest {
         data.momentum5m = BigDecimal.valueOf(0.25);
         data.vixLevel = BigDecimal.valueOf(15);
 
-        when(marketDataProvider.isMarketOpen()).thenReturn(true);
-        when(marketDataProvider.getIndexMarketData("PNB")).thenReturn(data);
+        stubOpenMarket();
+        stubSymbolData("PNB", data);
 
         List<EquitySignal> signals = detector.detectSignals();
         EquitySignal signal = signals.stream()
@@ -195,8 +196,8 @@ public class ADVCashDetectorTest {
         data.momentum5m = BigDecimal.valueOf(0.25);
         data.vixLevel = BigDecimal.valueOf(15);
 
-        when(marketDataProvider.isMarketOpen()).thenReturn(true);
-        when(marketDataProvider.getIndexMarketData("MARUTI")).thenReturn(data);
+        stubOpenMarket();
+        stubSymbolData("MARUTI", data);
 
         List<EquitySignal> signals = detector.detectSignals();
         EquitySignal signal = signals.stream()
@@ -216,8 +217,8 @@ public class ADVCashDetectorTest {
         data.momentum5m = BigDecimal.valueOf(0.11);
         data.vixLevel = BigDecimal.valueOf(24);
 
-        when(marketDataProvider.isMarketOpen()).thenReturn(true);
-        when(marketDataProvider.getIndexMarketData("WIPRO")).thenReturn(data);
+        stubOpenMarket();
+        stubSymbolData("WIPRO", data);
 
         List<EquitySignal> signals = detector.detectSignals();
 
@@ -229,5 +230,15 @@ public class ADVCashDetectorTest {
         if (signal != null) {
             assertTrue(signal.getQualityScore().compareTo(BigDecimal.valueOf(65)) >= 0);
         }
+    }
+
+    private void stubOpenMarket() {
+        when(marketDataProvider.isMarketOpen()).thenReturn(true);
+        when(marketDataProvider.getCurrentTimeMinutes()).thenReturn(630);
+    }
+
+    private void stubSymbolData(String symbol, MarketDataProvider.IndexMarketData data) {
+        when(marketDataProvider.getIndexMarketData(anyString())).thenReturn(null);
+        when(marketDataProvider.getIndexMarketData(symbol)).thenReturn(data);
     }
 }

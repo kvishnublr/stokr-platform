@@ -76,6 +76,7 @@ public class RedisHealthLog {
     @Column(name = "recovery_successful")
     private Boolean recoverySuccessful;
 
+    @Builder.Default
     @Transient
     private Boolean isSynthetic = false;
 

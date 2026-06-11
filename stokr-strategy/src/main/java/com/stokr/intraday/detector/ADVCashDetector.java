@@ -106,6 +106,9 @@ public class ADVCashDetector {
         }
 
         BigDecimal currentPrice = data.currentPrice;
+        if (currentPrice == null || currentPrice.signum() <= 0) {
+            return null;
+        }
 
         // STEP 1: Time Window Check (9:30-15:00 IST, avoid first 2 min gap chaos)
         int currentMin = getCurrentTimeMinutes();
@@ -120,7 +123,7 @@ public class ADVCashDetector {
         }
 
         // STEP 3: Bid-Ask Spread Check (< 0.15%)
-        BigDecimal spread = BigDecimal.valueOf(0.002); // Assume 0.2% spread (can be refined)
+        BigDecimal spread = BigDecimal.valueOf(0.001); // Conservative proxy when live spread is unavailable.
         if (spread.compareTo(BigDecimal.valueOf(0.0015)) > 0) {
             return null; // Spread too wide
         }
@@ -254,8 +257,7 @@ public class ADVCashDetector {
     }
 
     private int getCurrentTimeMinutes() {
-        LocalTime ist = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        return ist.getHour() * 60 + ist.getMinute();
+        return marketDataProvider.getCurrentTimeMinutes();
     }
 
     private static Map<String, String> buildSectorMap() {

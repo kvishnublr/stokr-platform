@@ -62,18 +62,23 @@ public class AutomatedAPlusTrade {
     private BigDecimal pnlPct;
 
     // Exit criteria tracking
+    @Builder.Default
     @Column(columnDefinition = "BOOLEAN DEFAULT FALSE")
     private Boolean aiScoreDropReason = false;
 
+    @Builder.Default
     @Column(columnDefinition = "BOOLEAN DEFAULT FALSE")
     private Boolean oppositeSignalTriggered = false;
 
+    @Builder.Default
     @Column(columnDefinition = "BOOLEAN DEFAULT FALSE")
     private Boolean hardSlHit = false;
 
+    @Builder.Default
     @Column(columnDefinition = "BOOLEAN DEFAULT FALSE")
     private Boolean hardTpHit = false;
 
+    @Builder.Default
     @Column(columnDefinition = "BOOLEAN DEFAULT FALSE")
     private Boolean marketCloseExit = false;
 
@@ -93,12 +98,15 @@ public class AutomatedAPlusTrade {
     @Column(columnDefinition = "uuid")
     private UUID traderId;
 
+    @Builder.Default
     @Column(length = 100)
     private String strategyName = "AI_PLUS_SETUP_AUTO";
 
+    @Builder.Default
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
+    @Builder.Default
     @Column(nullable = false)
     private Instant updatedAt = Instant.now();
 

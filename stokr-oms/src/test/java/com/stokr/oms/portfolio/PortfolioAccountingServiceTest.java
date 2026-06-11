@@ -18,9 +18,12 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -50,8 +53,9 @@ class PortfolioAccountingServiceTest {
         PortfolioPosition raw = position(userId, "AXISBANK", "1");
         PortfolioPosition prefixed = position(userId, "NSE:AXISBANK", "-1");
 
-        when(executionRepository.findAllForUserOrdered(userId)).thenReturn(List.of(entry, reconciliation));
+        when(executionRepository.findAllForUserAndSymbolsOrdered(eq(userId), any())).thenReturn(List.of(entry, reconciliation));
         when(positionRepository.findByUserIdAndDeletedFalse(userId)).thenReturn(List.of(raw, prefixed));
+        when(positionRepository.findByUserIdAndSymbolAndDeletedFalse(userId, "AXISBANK")).thenReturn(Optional.of(raw));
 
         service.rebuildSymbol(userId, "NSE:AXISBANK", "BROKER_TRUTH_RECONCILIATION");
 

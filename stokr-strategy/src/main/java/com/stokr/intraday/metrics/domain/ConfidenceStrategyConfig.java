@@ -31,6 +31,7 @@ public class ConfidenceStrategyConfig {
     @Column(name = "min_confidence_threshold", nullable = false)
     private Integer minConfidenceThreshold;  // 60, 70, 80, or 90
 
+    @Builder.Default
     @Column(nullable = false)
     private Boolean enabled = true;
 

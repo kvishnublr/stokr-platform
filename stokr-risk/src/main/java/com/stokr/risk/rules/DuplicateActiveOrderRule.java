@@ -49,7 +49,7 @@ public class DuplicateActiveOrderRule implements RiskRule {
         if (o.getBacktestRunId() != null) {
             return RiskDecision.ok();
         }
-        if (o.getSymbol() == null || o.getSide() == null) {
+        if (o.getSymbol() == null || o.getSide() == null || o.getExecutionMode() == null) {
             return RiskDecision.ok();
         }
         if (isExitBypass(o)) {

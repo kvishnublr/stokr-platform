@@ -27,6 +27,7 @@ public class SimulationModeService {
     }
 
     /** @deprecated use {@link #isActive()} */
+    @Deprecated
     public boolean isEnabled() {
         return isActive();
     }

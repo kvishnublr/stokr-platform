@@ -6,6 +6,7 @@ import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.PortfolioPosition;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.repository.PortfolioPositionRepository;
+import com.stokr.oms.util.OmsSymbolNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -52,9 +53,7 @@ public class AdminTestSignalLabSquareOffScheduler {
             squareOffService.squareOffImmediately(run, entry, false);
             return;
         }
-        PortfolioPosition position = portfolioPositionRepository
-                .findByUserIdAndSymbolAndDeletedFalse(run.getTraderUserId(), stripExchange(run.getSymbol()))
-                .orElse(null);
+        PortfolioPosition position = findPosition(run);
         if (position == null || position.getQuantity() == null || position.getQuantity().signum() == 0) {
             run.setSquareOffStatus("NO_POSITION");
             run.setSquareOffCompletedAt(Instant.now());
@@ -64,9 +63,11 @@ public class AdminTestSignalLabSquareOffScheduler {
         log.warn("test.squareoff.scheduler_no_entry_order runId={}", run.getId());
     }
 
-    private static String stripExchange(String symbol) {
-        if (symbol == null) return "";
-        int idx = symbol.indexOf(':');
-        return idx >= 0 ? symbol.substring(idx + 1) : symbol;
+    private PortfolioPosition findPosition(AdminTestSignalRun run) {
+        String normalized = OmsSymbolNormalizer.normalize(run.getSymbol());
+        return portfolioPositionRepository.findByUserIdAndDeletedFalse(run.getTraderUserId()).stream()
+                .filter(p -> normalized.equals(OmsSymbolNormalizer.normalize(p.getSymbol())))
+                .findFirst()
+                .orElse(null);
     }
 }

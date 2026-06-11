@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -69,6 +70,9 @@ public class S7RangeFadeDetector {
         }
 
         BigDecimal currentPrice = data.currentPrice;
+        if (currentPrice == null || currentPrice.signum() <= 0) {
+            return null;
+        }
         BigDecimal range5mHigh = data.recent5mHigh != null ? data.recent5mHigh : currentPrice;
         BigDecimal range5mLow = data.recent5mLow != null ? data.recent5mLow : currentPrice;
         BigDecimal momentum5m = data.momentum5m != null ? data.momentum5m : BigDecimal.ZERO;
@@ -101,8 +105,7 @@ public class S7RangeFadeDetector {
         }
 
         // Gate 5: Time window check (not too close to close)
-        LocalTime ist = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        int minutes = ist.getHour() * 60 + ist.getMinute();
+        int minutes = marketDataProvider.getCurrentTimeMinutes();
         if (minutes > 810) { // After 1:30 PM, skip (too close to 3:30 PM close)
             return null;
         }
@@ -146,7 +149,8 @@ public class S7RangeFadeDetector {
         BigDecimal distToHigh = high.subtract(currentPrice);
         BigDecimal maxDist = high.subtract(low);
         if (maxDist.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal proximity = distToHigh.divide(maxDist).multiply(BigDecimal.valueOf(25));
+            BigDecimal distanceRatio = distToHigh.divide(maxDist, 8, RoundingMode.HALF_UP);
+            BigDecimal proximity = BigDecimal.ONE.subtract(distanceRatio).max(BigDecimal.ZERO).multiply(BigDecimal.valueOf(25));
             score = score.add(proximity);
         }
 
@@ -179,7 +183,6 @@ public class S7RangeFadeDetector {
     }
 
     private int getCurrentTimeMinutes() {
-        LocalTime ist = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        return ist.getHour() * 60 + ist.getMinute();
+        return marketDataProvider.getCurrentTimeMinutes();
     }
 }

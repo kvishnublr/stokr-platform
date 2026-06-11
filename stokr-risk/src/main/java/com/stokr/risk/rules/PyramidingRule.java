@@ -41,7 +41,9 @@ public class PyramidingRule implements RiskRule {
         String strategyKey = context.order().getStrategyKey();
         String symbol = context.order().getSymbol();
         String side = context.order().getSide();
-        if (strategyKey == null || symbol == null || side == null) return RiskDecision.ok();
+        if (strategyKey == null || symbol == null || side == null || context.order().getExecutionMode() == null) {
+            return RiskDecision.ok();
+        }
 
         long existing = omsOrderRepository.countActiveSameDirection(
                 context.userId(), symbol, side, context.order().getExecutionMode(), context.order().getId(), OPEN_STATES);

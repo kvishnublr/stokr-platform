@@ -42,6 +42,14 @@ public interface OmsExecutionRepository extends JpaRepository<OmsExecution, UUID
     @Query("""
             select e from OmsExecution e
             join fetch e.order o
+            where o.userId = :userId and o.symbol in :symbols and e.deleted = false and o.deleted = false
+            order by e.executionTimestamp asc, e.createdAt asc
+            """)
+    List<OmsExecution> findAllForUserAndSymbolsOrdered(@Param("userId") UUID userId, @Param("symbols") Collection<String> symbols);
+
+    @Query("""
+            select e from OmsExecution e
+            join fetch e.order o
             where o.userId = :userId
               and o.symbol = :symbol
               and e.deleted = false

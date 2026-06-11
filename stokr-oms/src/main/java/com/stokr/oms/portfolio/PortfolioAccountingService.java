@@ -9,6 +9,7 @@ import com.stokr.oms.repository.OmsExecutionRepository;
 import com.stokr.oms.repository.PortfolioDailySummaryRepository;
 import com.stokr.oms.repository.PortfolioPnlSnapshotRepository;
 import com.stokr.oms.repository.PortfolioPositionRepository;
+import com.stokr.oms.util.OmsSymbolNormalizer;
 import com.stokr.common.events.realtime.RealtimeBridgeEvents;
 import com.stokr.common.events.StrategyPnlUpdateEvent;
 import lombok.RequiredArgsConstructor;
@@ -23,9 +24,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -49,11 +52,11 @@ public class PortfolioAccountingService {
 
     @Transactional
     public void applyFill(UUID userId, String symbol, String strategyKey) {
-        BigDecimal prevRealized = positionRepository.findByUserIdAndSymbolAndDeletedFalse(userId, symbol)
+        BigDecimal prevRealized = findActivePositionByNormalizedSymbol(userId, symbol)
                 .map(p -> nullSafe(p.getRealizedPnl()))
                 .orElse(BigDecimal.ZERO);
         rebuildSymbol(userId, symbol, strategyKey);
-        BigDecimal newRealized = positionRepository.findByUserIdAndSymbolAndDeletedFalse(userId, symbol)
+        BigDecimal newRealized = findActivePositionByNormalizedSymbol(userId, symbol)
                 .map(p -> nullSafe(p.getRealizedPnl()))
                 .orElse(BigDecimal.ZERO);
         recordSnapshot(userId, ZoneId.of("Asia/Kolkata"));
@@ -72,12 +75,15 @@ public class PortfolioAccountingService {
 
     @Transactional
     public void rebuildSymbol(UUID userId, String symbol, String strategyKey) {
+        String portfolioSymbol = resolvePortfolioSymbol(userId, symbol);
+        List<String> variants = symbolVariants(symbol);
         applyLedgerToPosition(
                 userId,
-                symbol,
+                portfolioSymbol,
                 strategyKey,
-                executionRepository.findAllForUserAndSymbolOrdered(userId, symbol),
+                executionRepository.findAllForUserAndSymbolsOrdered(userId, variants),
                 false);
+        deleteDuplicatePositionRows(userId, portfolioSymbol);
     }
 
     /**
@@ -182,6 +188,53 @@ public class PortfolioAccountingService {
             pos.setDeleted(true);
         }
         positionRepository.save(pos);
+    }
+
+    private Optional<PortfolioPosition> findActivePositionByNormalizedSymbol(UUID userId, String symbol) {
+        String normalized = OmsSymbolNormalizer.normalize(symbol);
+        return positionRepository.findByUserIdAndDeletedFalse(userId).stream()
+                .filter(p -> normalized.equals(OmsSymbolNormalizer.normalize(p.getSymbol())))
+                .findFirst();
+    }
+
+    private String resolvePortfolioSymbol(UUID userId, String symbol) {
+        String normalized = OmsSymbolNormalizer.normalize(symbol);
+        return positionRepository.findByUserIdAndDeletedFalse(userId).stream()
+                .filter(p -> normalized.equals(OmsSymbolNormalizer.normalize(p.getSymbol())))
+                .map(PortfolioPosition::getSymbol)
+                .findFirst()
+                .orElse(normalized);
+    }
+
+    private void deleteDuplicatePositionRows(UUID userId, String keeperSymbol) {
+        String normalized = OmsSymbolNormalizer.normalize(keeperSymbol);
+        for (PortfolioPosition position : positionRepository.findByUserIdAndDeletedFalse(userId)) {
+            if (position.getSymbol() == null || position.getSymbol().equals(keeperSymbol)) {
+                continue;
+            }
+            if (!normalized.equals(OmsSymbolNormalizer.normalize(position.getSymbol()))) {
+                continue;
+            }
+            position.setQuantity(BigDecimal.ZERO);
+            position.setAvgPrice(BigDecimal.ZERO);
+            position.setUnrealizedPnl(BigDecimal.ZERO);
+            position.setMtmPrice(null);
+            position.setDeleted(true);
+            positionRepository.save(position);
+        }
+    }
+
+    private static List<String> symbolVariants(String symbol) {
+        String normalized = OmsSymbolNormalizer.normalize(symbol);
+        Set<String> variants = new LinkedHashSet<>();
+        if (symbol != null && !symbol.isBlank()) {
+            variants.add(symbol.trim().toUpperCase());
+        }
+        variants.add(normalized);
+        if (normalized.startsWith("NSE:")) {
+            variants.add(OmsSymbolNormalizer.display(normalized));
+        }
+        return List.copyOf(variants);
     }
 
     private static final class Ledger {

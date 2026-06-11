@@ -34,7 +34,6 @@ import com.stokr.strategy.service.SignalPriceEnrichmentService;
 import com.stokr.strategy.service.StrategyExecutionConfigService;
 import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
-import com.stokr.strategy.signals.SignalType;
 import com.stokr.user.domain.BrokerAccount;
 import com.stokr.user.domain.PlatformBrokerFeedSession;
 import com.stokr.user.repository.BrokerAccountRepository;

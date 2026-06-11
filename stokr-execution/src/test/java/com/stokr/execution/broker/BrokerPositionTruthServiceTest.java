@@ -7,6 +7,7 @@ import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.reconciliation.ReconciliationEventRepository;
 import com.stokr.oms.reconciliation.BrokerReconciliationService;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
+import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.strategy.service.SignalManualExitSuppressionService;
 import com.stokr.user.broker.ZerodhaBrokerOperationsService;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,6 +47,8 @@ class BrokerPositionTruthServiceTest {
     private ReconciliationEventRepository reconciliationEventRepository;
     @Mock
     private StrategyInstanceRepository strategyInstanceRepository;
+    @Mock
+    private StrategySignalRepository strategySignalRepository;
     @Mock
     private BrokerReconciliationService brokerReconciliationService;
     @Mock

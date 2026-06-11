@@ -310,7 +310,7 @@ public class IndexHuntDetector {
         }
 
         // VIX penalty if elevated (down to -10)
-        if (signal.getVixLevel() != null && signal.getVixLevel().compareTo(BigDecimal.valueOf(18)) > 0) {
+        if (signal.getVixLevel() != null && signal.getVixLevel().compareTo(BigDecimal.valueOf(20)) > 0) {
             score = score.subtract(BigDecimal.valueOf(5));
         }
 

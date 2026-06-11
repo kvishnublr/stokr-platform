@@ -9,6 +9,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -23,9 +25,17 @@ class TradingKillSwitchServiceTest {
     private StrategyEmergencyStopService strategyEmergencyStopService;
 
     private TradingKillSwitchService service;
+    private AtomicBoolean killSwitchState;
 
     @BeforeEach
     void setUp() {
+        killSwitchState = new AtomicBoolean(false);
+        doAnswer(inv -> {
+            killSwitchState.set(inv.getArgument(0));
+            return null;
+        }).when(killSwitchService).setEnabled(anyBoolean());
+        when(killSwitchService.isEnabled()).thenAnswer(inv -> killSwitchState.get());
+
         service = new TradingKillSwitchService(killSwitchService, eventRepository, strategyEmergencyStopService);
         ReflectionTestUtils.setField(service, "configEnabled", false);
         ReflectionTestUtils.setField(service, "flattenOnActivateDefault", false);
