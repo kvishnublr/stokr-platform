@@ -124,7 +124,7 @@ deploy_jar() {
     BUILD_TARGETS="${CHANGED_MODULES},stokr-bootstrap"
     echo "==> [JAR] Building modules: $BUILD_TARGETS"
 
-    mvn -pl "$BUILD_TARGETS" -am package -DskipTests -q
+    mvn -pl "$BUILD_TARGETS" -am clean package -DskipTests -q
 
     echo "==> [JAR] Hot-swapping JAR into running container..."
     JAR=$(ls stokr-bootstrap/target/stokr-bootstrap-*.jar 2>/dev/null | head -1)
