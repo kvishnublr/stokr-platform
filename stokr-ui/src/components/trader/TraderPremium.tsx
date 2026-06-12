@@ -328,10 +328,15 @@ export function LivePositionsCommandTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-xs">
-          <thead>
-            <tr className={cn("text-[10px] uppercase tracking-[0.16em]", isLight ? "bg-neutral-900 text-neutral-300" : "bg-black/40 text-neutral-400")}>
+      <div className="max-h-[72vh] min-h-[460px] overflow-auto">
+        <table className={cn("min-w-full text-left text-xs", showExtendedColumns ? "min-w-[1280px]" : "min-w-[880px]")}>
+          <thead
+            className={cn(
+              "sticky top-0 z-20 text-[10px] uppercase tracking-[0.16em]",
+              isLight ? "bg-neutral-900 text-neutral-300" : "bg-black/40 text-neutral-400",
+            )}
+          >
+            <tr>
               {(showExtendedColumns
                 ? ["Symbol", "MTM P&L", "Side", "Qty", "Avg", "LTP", "% Change", "SL/Target", "Unrealized", "Realized", "Notional", "Source"]
                 : ["Symbol", "Side", "Qty", "LTP", "% Change", "MTM P&L", "Unrealized"]
