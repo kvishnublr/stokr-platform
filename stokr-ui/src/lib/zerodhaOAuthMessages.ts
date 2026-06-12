@@ -49,5 +49,13 @@ export function parseZerodhaAuthorizeUrl(raw: string): string {
   if (parsed.hostname.toLowerCase() !== "kite.zerodha.com") {
     throw new Error("Invalid authorize URL from server");
   }
+  if (parsed.searchParams.has("redirect_url")) {
+    const state = parsed.searchParams.get("state");
+    parsed.searchParams.delete("redirect_url");
+    parsed.searchParams.delete("state");
+    if (state && !parsed.searchParams.has("redirect_params")) {
+      parsed.searchParams.set("redirect_params", `state=${state}`);
+    }
+  }
   return parsed.toString();
 }

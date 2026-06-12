@@ -18,7 +18,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.client.RestClient;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -59,17 +58,11 @@ public class ZerodhaConnectionService {
         row.setExpiresAt(Instant.now().plus(15, ChronoUnit.MINUTES));
         row.setConsumed(false);
         oauthStateRepository.save(row);
-        String callbackUrlWithState = UriComponentsBuilder
-                .fromUriString(zerodhaBrokerProperties.getRedirectUrl())
-                .replaceQueryParam("state", state)
-                .build()
-                .toUriString();
+        String redirectParams = "state=" + URLEncoder.encode(state, StandardCharsets.UTF_8);
         String loginUrl = "https://kite.zerodha.com/connect/login?v=3&api_key="
                 + URLEncoder.encode(zerodhaBrokerProperties.getApiKey(), StandardCharsets.UTF_8)
-                + "&redirect_url="
-                + URLEncoder.encode(callbackUrlWithState, StandardCharsets.UTF_8)
-                + "&state="
-                + URLEncoder.encode(state, StandardCharsets.UTF_8);
+                + "&redirect_params="
+                + URLEncoder.encode(redirectParams, StandardCharsets.UTF_8);
         return new ZerodhaAuthorizeDto(loginUrl, row.getExpiresAt());
     }
 

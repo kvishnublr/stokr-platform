@@ -52,7 +52,7 @@ public class ZerodhaOAuthCallbackController {
             if (platformMarketFeedService.isPlatformOauthState(resolvedState)) {
                 return platformFeedHtml(false, "Zerodha login was cancelled.");
             }
-            return redirect("?zerodha=error");
+            return redirect(request, "?zerodha=error");
         }
 
         if (!hasText(resolvedState) || !hasText(resolvedRequestToken)) {
@@ -61,7 +61,7 @@ public class ZerodhaOAuthCallbackController {
             if (platformMarketFeedService.isPlatformOauthState(resolvedState)) {
                 return platformFeedHtml(false, "Missing OAuth parameters. Please try again from Telegram.");
             }
-            return redirect("?zerodha=error&reason=missing_params");
+            return redirect(request, "?zerodha=error&reason=missing_params");
         }
 
         try {
@@ -71,7 +71,7 @@ public class ZerodhaOAuthCallbackController {
             }
             UUID userId = zerodhaConnectionService.completeOAuth(resolvedState, resolvedRequestToken);
             log.info("zerodha.callback.success userId={}", userId);
-            return redirect("?zerodha=ok");
+            return redirect(request, "?zerodha=ok");
         } catch (Exception e) {
             log.error("zerodha.callback.failed error={} message={}",
                     e.getClass().getSimpleName(), e.getMessage());
@@ -84,7 +84,7 @@ public class ZerodhaOAuthCallbackController {
             String reasonText = e.getMessage() != null && !e.getMessage().isBlank()
                     ? e.getMessage()
                     : e.getClass().getSimpleName();
-            return redirect("?zerodha=error&reason=" + URLEncoder.encode(reasonText, StandardCharsets.UTF_8));
+            return redirect(request, "?zerodha=error&reason=" + URLEncoder.encode(reasonText, StandardCharsets.UTF_8));
         }
     }
 
@@ -153,9 +153,55 @@ public class ZerodhaOAuthCallbackController {
         return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
     }
 
-    private RedirectView redirect(String query) {
-        String url = uiPublicBaseUrl.replaceAll("/+$", "") + "/brokers/zerodha-complete" + query;
+    private RedirectView redirect(HttpServletRequest request, String query) {
+        String url = resolveUiPublicBaseUrl(request).replaceAll("/+$", "") + "/brokers/zerodha-complete" + query;
         return new RedirectView(url);
+    }
+
+    private String resolveUiPublicBaseUrl(HttpServletRequest request) {
+        String configured = uiPublicBaseUrl != null ? uiPublicBaseUrl.strip() : "";
+        if (hasText(configured) && !isLocalhostBaseUrl(configured)) {
+            return configured;
+        }
+        String forwardedProto = firstPresent(
+                request.getHeader("X-Forwarded-Proto"),
+                request.getHeader("X-Forwarded-Protocol")
+        );
+        String host = firstPresent(
+                request.getHeader("X-Forwarded-Host"),
+                request.getHeader("Host"),
+                request.getServerName()
+        );
+        if (hasText(host) && !isLocalhostHost(host)) {
+            String scheme = hasText(forwardedProto) ? forwardedProto.split(",")[0].strip() : "https";
+            String forwardedHost = host.split(",")[0].strip();
+            return scheme + "://" + forwardedHost;
+        }
+        return hasText(configured) ? configured : "http://localhost:5173";
+    }
+
+    private static boolean isLocalhostBaseUrl(String raw) {
+        try {
+            java.net.URI uri = java.net.URI.create(raw);
+            return isLocalhostHost(uri.getHost());
+        } catch (Exception ignored) {
+            return raw.contains("localhost") || raw.contains("127.0.0.1");
+        }
+    }
+
+    private static boolean isLocalhostHost(String host) {
+        if (host == null) {
+            return false;
+        }
+        String normalized = host.strip().toLowerCase();
+        if ("::1".equals(normalized) || "[::1]".equals(normalized)) {
+            return true;
+        }
+        int colon = normalized.indexOf(':');
+        if (colon >= 0) {
+            normalized = normalized.substring(0, colon);
+        }
+        return "localhost".equals(normalized) || "127.0.0.1".equals(normalized) || "::1".equals(normalized);
     }
 
     private static String firstPresent(String... values) {
