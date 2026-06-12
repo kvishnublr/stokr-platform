@@ -513,6 +513,11 @@ public class TraderTerminalViewService {
             closedPositions.clear();
         }
 
+        boolean brokerHasOpenLegs = brokerTruth.positions().stream()
+                .map(BrokerPositionTruthSnapshot.BrokerTruthPositionRow::brokerQty)
+                .filter(q -> q != null)
+                .anyMatch(q -> q.compareTo(BigDecimal.ZERO) != 0);
+
         BigDecimal totalRealized = sumRealized.setScale(8, java.math.RoundingMode.HALF_UP);
         BigDecimal totalUnrealized = sumUnrealized.setScale(8, java.math.RoundingMode.HALF_UP);
         int openCount = openPositions.size();
@@ -523,7 +528,7 @@ public class TraderTerminalViewService {
                 BrokerPnlTotals brokerOpenTotals = summarizeFromOpenPositionRows(openPositions);
                 totalRealized = brokerOpenTotals.realized();
                 totalUnrealized = brokerOpenTotals.unrealized();
-                pnlSource = "BROKER";
+                pnlSource = brokerHasOpenLegs ? "BROKER" : "OMS";
             } else {
                 // Broker session is flat — hide stale OMS portfolio ghosts from header metrics.
                 totalRealized = BigDecimal.ZERO;
@@ -892,6 +897,13 @@ public class TraderTerminalViewService {
             } else if (hasBrokerPnl(truth)) {
                 brokerClosed.add(mapBrokerFlatRow(truth, userId, broker, mode));
             }
+        }
+
+        if (brokerOpen.isEmpty()) {
+            // Broker mirror is flat, but OMS may still have live internal legs from a stale sync.
+            // Keep the OMS rows visible so the trader does not see an empty book when the broker
+            // truth has not yet rehydrated or is lagging behind the OMS ledger.
+            return;
         }
 
         openPositions.clear();
