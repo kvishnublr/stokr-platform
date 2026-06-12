@@ -365,7 +365,7 @@ export function LivePositionsCommandTable({
           >
             <tr>
               {(showExtendedColumns
-                ? ["symbol", "mtmPnl", "side", "qty", "avgPrice", "ltp", "unrealizedPnl", "realizedPnl", "notional"]
+                ? ["symbol", "mtmPnl", "side", "qty", "avgPrice", "ltp", "pctChange", "slTarget", "unrealizedPnl", "realizedPnl", "notional"]
                 : ["symbol", "side", "qty", "ltp", "mtmPnl", "unrealizedPnl"]
               ).map((col) => {
                 const labels: Record<string, string> = {
@@ -375,19 +375,21 @@ export function LivePositionsCommandTable({
                   qty: "Qty",
                   avgPrice: "Avg",
                   ltp: "LTP",
+                  pctChange: "% Change",
+                  slTarget: "SL/Target",
                   unrealizedPnl: "Unrealized",
                   realizedPnl: "Realized",
-                  notional: "Notional",
-                  stopLoss: "SL",
-                  targetPrice: "Target"
+                  notional: "Notional"
                 };
                 const isSorted = sortColumn === col;
+                const isSortable = col !== "pctChange" && col !== "slTarget";
                 return (
                   <th
                     key={col}
-                    onClick={() => handleSort(col)}
+                    onClick={() => isSortable && handleSort(col)}
                     className={cn(
-                      "px-3 py-3 font-bold first:pl-5 last:pr-5 cursor-pointer select-none hover:opacity-80 transition-opacity flex items-center gap-1",
+                      "px-3 py-3 font-bold first:pl-5 last:pr-5 select-none transition-opacity flex items-center gap-1",
+                      isSortable ? "cursor-pointer hover:opacity-80" : "opacity-60",
                       isSorted ? "text-white" : ""
                     )}
                   >
