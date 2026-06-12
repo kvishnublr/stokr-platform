@@ -151,7 +151,7 @@ spring:
     redis:
       namespace: stokr:session
       flush-mode: on_save
-    timeout: 120m
+    timeout: 5h
     cookie:
       name: STOKR_SESSION
       secure: ${SESSION_SECURE:true}
@@ -282,7 +282,7 @@ stokr:
   user:
     session:
       max-concurrent-sessions: 1  # One active session per user
-      session-timeout-minutes: 120
+      session-timeout-minutes: 300
       cache-enabled: true
     quotas:
       enabled: true
@@ -428,7 +428,7 @@ stokr:
   security:
     jwt:
       secret: ${JWT_SECRET:change-me-use-long-random-secret-for-development-only}
-      access-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:900}
+      access-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:18000}
     refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS:1209600}
 
 # ===== LOGGING CONFIGURATION =====

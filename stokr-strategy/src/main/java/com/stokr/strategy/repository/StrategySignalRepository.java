@@ -8,7 +8,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Lock;
 
+import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -124,6 +126,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
               and s.createdAt >= :since
             order by s.createdAt asc
             """)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<StrategySignalEntity> findRunningSignalsSince(@Param("since") Instant since, Pageable pageable);
 
     @Query("""

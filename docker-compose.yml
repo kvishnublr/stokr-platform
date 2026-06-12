@@ -29,7 +29,7 @@ services:
       # Compose stack includes RabbitMQ — consumers must run unless explicitly disabled.
       STOKR_RABBIT_LISTENERS_ENABLED: ${STOKR_RABBIT_LISTENERS_ENABLED:-true}
       JWT_SECRET: ${JWT_SECRET:-change-me-use-long-random-secret-for-development-only}
-      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-18000}
       JWT_REFRESH_TTL_SECONDS: ${JWT_REFRESH_TTL_SECONDS:-1209600}
       TZ: Asia/Kolkata
       STOKR_RISK_ZONE: ${STOKR_RISK_ZONE:-Asia/Kolkata}

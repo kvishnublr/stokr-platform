@@ -23,7 +23,7 @@ public class JwtService {
 
     public JwtService(
             @Value("${stokr.security.jwt.secret}") String secret,
-            @Value("${stokr.security.jwt.access-ttl-seconds:900}") long accessTtlSeconds,
+            @Value("${stokr.security.jwt.access-ttl-seconds:18000}") long accessTtlSeconds,
             @Value("${stokr.security.jwt.issuer:stokr-platform}") String issuer
     ) {
         byte[] keyBytes = deriveKey(secret);

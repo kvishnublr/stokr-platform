@@ -373,7 +373,7 @@ export function SignalsPage() {
   const [signalType, setSignalType] = useState("ALL");
   const [outcomeFilter, setOutcomeFilter] = useState("ALL");
   const [highConvictionOnly, setHighConvictionOnly] = useState(false);
-  const [signalSortMode, setSignalSortMode] = useState<SignalSortMode>("confirmation");
+  const [signalSortMode, setSignalSortMode] = useState<SignalSortMode>("time");
   const [selectedSignal, setSelectedSignal] = useState<SignalRow | null>(null);
   const { advMap } = useAdvAiScoreMap(true);
 
@@ -437,7 +437,7 @@ export function SignalsPage() {
   );
 
   return (
-    <div className="flex h-full flex-col space-y-4">
+    <div className="flex min-h-[calc(100vh-11rem)] flex-col space-y-4">
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -552,8 +552,8 @@ export function SignalsPage() {
 
       {/* Table */}
       {(q.isLoading || rows.length > 0) && (
-        <div className={cn("flex-1 overflow-auto rounded-xl border", borderCls, bg)}>
-          <table className="w-full min-w-[1050px] text-xs">
+        <div className={cn("flex-1 min-h-[34rem] overflow-auto rounded-xl border", borderCls, bg)}>
+          <table className="w-full min-w-[1150px] text-xs">
             <thead className={cn("sticky top-0 z-10 border-b", borderCls, hdrBg)}>
               <tr>
                 {["Time", "Strategy", "Symbol", "Side", "Entry", "LTP", "SL", "Target", "RR", "Rank", "P&L", "Status", "Conf", "Rationale"].map(h => (

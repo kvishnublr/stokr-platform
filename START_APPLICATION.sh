@@ -72,7 +72,7 @@ MAILPIT_UI_PORT=8025
 
 # JWT Configuration
 JWT_SECRET=change-me-use-long-random-secret-for-development-only
-JWT_ACCESS_TTL_SECONDS=900
+JWT_ACCESS_TTL_SECONDS=18000
 JWT_REFRESH_TTL_SECONDS=1209600
 
 # Zerodha (optional, for broker integration)
