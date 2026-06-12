@@ -156,10 +156,10 @@ public class OrderFlowMetricsService {
      * POOR_LIQUIDITY_SKIP: Liquidity < 40
      */
     private String generateRecommendation(OrderFlowSnapshot snapshot) {
-        int buyerScore = snapshot.getBuyerPressureScore();
-        int sellerScore = snapshot.getSellerPressureScore();
-        int liquidityScore = snapshot.getLiquidityScore();
-        BigDecimal ratio = snapshot.getBidAskRatio();
+        int buyerScore = safeScore(snapshot.getBuyerPressureScore());
+        int sellerScore = safeScore(snapshot.getSellerPressureScore());
+        int liquidityScore = safeScore(snapshot.getLiquidityScore());
+        BigDecimal ratio = snapshot.getBidAskRatio() != null ? snapshot.getBidAskRatio() : BigDecimal.ONE;
 
         // Check liquidity first (hard blocker)
         if (liquidityScore < 40) {
@@ -215,8 +215,8 @@ public class OrderFlowMetricsService {
 
         // Factor 1: Pressure strength (40 points max)
         int maxPressure = Math.max(
-            snapshot.getBuyerPressureScore(),
-            snapshot.getSellerPressureScore()
+            safeScore(snapshot.getBuyerPressureScore()),
+            safeScore(snapshot.getSellerPressureScore())
         );
         confidence += (int) (maxPressure * 0.4);
 
@@ -267,13 +267,13 @@ public class OrderFlowMetricsService {
         }
 
         int maxPressure = Math.max(
-            snapshot.getBuyerPressureScore(),
-            snapshot.getSellerPressureScore()
+            safeScore(snapshot.getBuyerPressureScore()),
+            safeScore(snapshot.getSellerPressureScore())
         );
 
         return maxPressure > 65 &&
-               snapshot.getLiquidityScore() > 65 &&
-               snapshot.getSpreadPct().compareTo(BigDecimal.valueOf(0.10)) < 0;
+               safeScore(snapshot.getLiquidityScore()) > 65 &&
+               safeBigDecimal(snapshot.getSpreadPct()).compareTo(BigDecimal.valueOf(0.10)) < 0;
     }
 
     /**
@@ -285,10 +285,10 @@ public class OrderFlowMetricsService {
             return false;
         }
 
-        return snapshot.getLiquidityScore() < 50 ||
-               (snapshot.getBuyerPressureScore() < 40 &&
-                snapshot.getSellerPressureScore() < 40) ||
-               snapshot.getSpreadPct().compareTo(BigDecimal.valueOf(0.30)) > 0;
+        return safeScore(snapshot.getLiquidityScore()) < 50 ||
+               (safeScore(snapshot.getBuyerPressureScore()) < 40 &&
+                safeScore(snapshot.getSellerPressureScore()) < 40) ||
+               safeBigDecimal(snapshot.getSpreadPct()).compareTo(BigDecimal.valueOf(0.30)) > 0;
     }
 
     /**
@@ -296,9 +296,17 @@ public class OrderFlowMetricsService {
      * YES if: very poor liquidity OR no pressure
      */
     private boolean shouldSkip(OrderFlowSnapshot snapshot) {
-        return snapshot.getLiquidityScore() < 30 ||
-               (snapshot.getBuyerPressureScore() < 20 &&
-                snapshot.getSellerPressureScore() < 20);
+        return safeScore(snapshot.getLiquidityScore()) < 30 ||
+               (safeScore(snapshot.getBuyerPressureScore()) < 20 &&
+                safeScore(snapshot.getSellerPressureScore()) < 20);
+    }
+
+    private static int safeScore(Integer score) {
+        return score == null ? 50 : score;
+    }
+
+    private static BigDecimal safeBigDecimal(BigDecimal value) {
+        return value == null ? BigDecimal.ONE : value;
     }
 
     /**

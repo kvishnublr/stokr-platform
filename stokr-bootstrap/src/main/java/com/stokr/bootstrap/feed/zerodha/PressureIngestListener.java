@@ -44,7 +44,17 @@ public class PressureIngestListener {
                 log.warn("pressure.orderflow_persist_failed symbol={} {}", e.symbol(), ex.getMessage());
                 // Don't fail the tick ingestion if order flow persistence fails
             }
+            return;
         }
+
+        // Keep the feed freshness proxy alive even when depth is unavailable on a tick packet.
+        pressureTracker.update(
+                e.symbol(),
+                0L,
+                0L,
+                e.price() != null ? e.price().doubleValue() : 0,
+                e.tickTime()
+        );
     }
 
     /**
