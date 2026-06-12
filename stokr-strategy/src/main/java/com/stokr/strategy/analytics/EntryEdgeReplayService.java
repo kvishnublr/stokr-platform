@@ -66,7 +66,7 @@ public class EntryEdgeReplayService {
               FROM strategy_signals
               WHERE deleted = false
                 AND backtest_run_id IS NULL
-                AND test_trade = false
+                AND is_test_trade = false
                 AND target_price IS NOT NULL AND stop_price IS NOT NULL
                 AND entry_price IS NOT NULL
                 AND entry_price <> stop_price
