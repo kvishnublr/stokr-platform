@@ -343,7 +343,7 @@ stokr:
         GAP_FILL: ${STOKR_GAPFILL_DAILY_CAP:30}
         SECTOR_LAGGARD: ${STOKR_SECTOR_LAGGARD_DAILY_CAP:30}
     market-close:
-      nse-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_NSE_EXIT_CRON:0 55 14 * * MON-FRI}
+      nse-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_NSE_EXIT_CRON:0 15 15 * * MON-FRI}
       mcx-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_MCX_EXIT_CRON:0 45 23 * * MON-FRI}
     broker-disconnect:
       block-live: ${STOKR_OMS_BROKER_DISCONNECT_BLOCK:true}
@@ -395,9 +395,9 @@ stokr:
       default-max-seconds: ${STOKR_OMS_STALE_DEFAULT_SEC:60}
     market-close:
       no-new-entries-after: ${STOKR_OMS_NO_NEW_ENTRIES_AFTER:15:00}
-      flatten-time: ${STOKR_OMS_FLATTEN_TIME:15:20}
+      flatten-time: ${STOKR_OMS_FLATTEN_TIME:15:15}
       flatten-end: ${STOKR_OMS_FLATTEN_END:15:30}
-      flatten-cron: ${STOKR_OMS_FLATTEN_CRON:0 20 15 * * MON-FRI}
+      flatten-cron: ${STOKR_OMS_FLATTEN_CRON:0 15 15 * * MON-FRI}
       mcx-no-new-entries-after: ${STOKR_OMS_MCX_NO_NEW_ENTRIES_AFTER:23:55}
       mcx-flatten-time: ${STOKR_OMS_MCX_FLATTEN_TIME:23:50}
       mcx-flatten-end: ${STOKR_OMS_MCX_FLATTEN_END:23:55}

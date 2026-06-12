@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /**
  * Auto-exit system: places real exit orders at market close.
- * NSE: 3:00 PM | MCX: 11:55 PM | Currency: separate config
+ * NSE: 3:15 PM | MCX: 11:55 PM | Currency: separate config
  */
 @Service
 @RequiredArgsConstructor
@@ -25,9 +25,9 @@ public class MarketCloseExitSignalGenerator {
     private final PositionExitOrchestratorService positionExitOrchestratorService;
     private static final UUID PRIMARY_TRADER_ID = UUID.fromString("6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4");
 
-    @Scheduled(cron = "${stokr.strategy.market-close.nse-exit-cron:0 55 14 * * MON-FRI}", zone = "${stokr.strategy.session.zone:Asia/Kolkata}")
+    @Scheduled(cron = "${stokr.strategy.market-close.nse-exit-cron:0 15 15 * * MON-FRI}", zone = "${stokr.strategy.session.zone:Asia/Kolkata}")
     public void generateNseMarketCloseExits() {
-        generateExitSignalForSegment("NSE", LocalTime.of(14, 55), LocalTime.of(15, 0));
+        generateExitSignalForSegment("NSE", LocalTime.of(15, 15), LocalTime.of(15, 20));
     }
 
     @Scheduled(cron = "${stokr.strategy.market-close.mcx-exit-cron:0 45 23 * * MON-FRI}", zone = "${stokr.strategy.session.zone:Asia/Kolkata}")
