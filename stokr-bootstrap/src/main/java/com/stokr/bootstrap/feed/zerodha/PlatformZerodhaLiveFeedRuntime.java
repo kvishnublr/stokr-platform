@@ -583,6 +583,7 @@ public class PlatformZerodhaLiveFeedRuntime {
         Map<String, Integer> symbolToToken = new LinkedHashMap<>();
         fullMap.forEach((token, symbol) -> symbolToToken.putIfAbsent(normalize(symbol), token));
 
+        List<String> unpinned = new ArrayList<>();
         for (StrategyUniverseSymbol row : rows) {
             if (row == null || !row.isEnabled()) {
                 continue;
@@ -603,7 +604,16 @@ public class PlatformZerodhaLiveFeedRuntime {
             }
             if (token != null && token > 0 && fullMap.containsKey(token)) {
                 pinned.add(token);
+            } else {
+                unpinned.add(normalize(row.getSymbol()));
             }
+        }
+        // A symbol that scans live but is not pinned silently loses its feed when the
+        // 3000-token cap drops it (this is how NIFTY constituents went candle-dark).
+        if (!unpinned.isEmpty()) {
+            log.warn("platform.ws.universe_pin_failed count={} symbols={} — these scan-universe symbols "
+                            + "will not survive the WS token cap and will have NO candle feed",
+                    unpinned.size(), unpinned.stream().distinct().sorted().toList());
         }
         return pinned.stream().distinct().toList();
     }

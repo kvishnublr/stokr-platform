@@ -357,7 +357,7 @@ stokr:
     # Execution configuration
     execution-modes:
       allow-live: ${STOKR_EXECUTION_MODES_ALLOW_LIVE:true}
-      live-validated: ${STOKR_EXECUTION_MODES_LIVE_VALIDATED:GAP_FILL,NSE_SPIKE_DETECTION,VWAP_BOUNCE,SECTOR_LAGGARD,ADV_CASH,INDEX_HUNT}
+      live-validated: ${STOKR_EXECUTION_MODES_LIVE_VALIDATED:ADV_CASH,GAP_FILL,VWAP_BOUNCE}
 
   # ===== ORDER EXECUTION =====
   execution:

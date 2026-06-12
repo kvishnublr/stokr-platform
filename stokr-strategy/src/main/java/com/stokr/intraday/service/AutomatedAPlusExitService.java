@@ -204,11 +204,13 @@ public class AutomatedAPlusExitService {
 
     private BigDecimal getCurrentPrice(String symbol) {
         try {
-            List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(
-                    symbol.contains("NSE:") ? symbol : "NSE:" + symbol, "1m", 1);
+            // marketdata_candles stores plain trading symbols (e.g. RELIANCE, not NSE:RELIANCE)
+            String plainSymbol = symbol.startsWith("NSE:") ? symbol.substring(4) : symbol;
+            List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(plainSymbol, "1m", 1);
             if (!bars.isEmpty()) {
                 return bars.get(bars.size() - 1).getClosePrice();
             }
+            log.warn("A+ exit price unavailable: no candles for {}", plainSymbol);
         } catch (Exception e) {
             log.debug("Could not get current price for {}", symbol, e);
         }

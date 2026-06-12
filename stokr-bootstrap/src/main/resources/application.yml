@@ -210,17 +210,23 @@ stokr:
     # Per-strategy execution mode: LIVE, PAPER, DRY_RUN, DISABLED
     execution-modes:
       allow-live: ${STOKR_EXECUTION_MODES_ALLOW_LIVE:true}
-      live-validated: ${STOKR_EXECUTION_MODES_LIVE_VALIDATED:GAP_FILL,NSE_SPIKE_DETECTION,VWAP_BOUNCE,SECTOR_LAGGARD,ADV_CASH,INDEX_HUNT}
+      # Live whitelist limited to strategies with proven positive entry edge
+      # (counterfactual candle replay May-Jun 2026: target-first % at avg R:R):
+      #   ADV_CASH 56.9% @1.40, GAP_FILL 72.3% @1.36, VWAP_BOUNCE 57.1% @1.32.
+      # NSE_SPIKE (27.8%), EARLY_BREAKOUT (34.4%), SECTOR_LAGGARD (12.5%),
+      # PRE_OPEN_GAP_OI (inverse edge) and INDEX_HUNT (25.3%, targets ~3x the
+      # realistic 30-min drift) are paper-only until the entry-edge gate clears them.
+      live-validated: ${STOKR_EXECUTION_MODES_LIVE_VALIDATED:ADV_CASH,GAP_FILL,VWAP_BOUNCE}
       GAP_FILL: ${STOKR_EXEC_MODE_GAP_FILL:LIVE}
-      SECTOR_LAGGARD: ${STOKR_EXEC_MODE_SECTOR_LAGGARD:LIVE}
-      NSE_SPIKE_DETECTION: ${STOKR_EXEC_MODE_NSE_SPIKE:LIVE}
+      SECTOR_LAGGARD: ${STOKR_EXEC_MODE_SECTOR_LAGGARD:PAPER}
+      NSE_SPIKE_DETECTION: ${STOKR_EXEC_MODE_NSE_SPIKE:PAPER}
       EARLY_BREAKOUT: ${STOKR_EXEC_MODE_EARLY_BREAKOUT:PAPER}
       VWAP_BOUNCE: ${STOKR_EXEC_MODE_VWAP_BOUNCE:LIVE}
-      INDEX_HUNT: ${STOKR_EXEC_MODE_INDEX_HUNT:BOTH}
+      INDEX_HUNT: ${STOKR_EXEC_MODE_INDEX_HUNT:PAPER}
       ADV_CASH: ${STOKR_EXEC_MODE_ADV_CASH:LIVE}
       S3_VWAP_RETEST: ${STOKR_EXEC_MODE_S3:PAPER}
       S7_RANGE_FADE: ${STOKR_EXEC_MODE_S7:PAPER}
-      PRE_OPEN_GAP_OI: ${STOKR_EXEC_MODE_PRE_OPEN_GAP_OI:LIVE}
+      PRE_OPEN_GAP_OI: ${STOKR_EXEC_MODE_PRE_OPEN_GAP_OI:PAPER}
       COMMODITIES_E2E_TEST: ${STOKR_EXEC_MODE_COMMODITIES_E2E_TEST:PAPER}
       USDINR_MOMENTUM: ${STOKR_EXEC_MODE_USDINR_MOMENTUM:PAPER}
       EURINR_MEAN_REVERSION: ${STOKR_EXEC_MODE_EURINR_MEAN_REVERSION:PAPER}
@@ -238,21 +244,32 @@ stokr:
       cron: ${STOKR_SESSION_SUMMARY_CRON:0 35 15 * * MON-FRI}
     lifecycle:
       emergency:
-        spread-pct: ${STOKR_LIFECYCLE_EMERGENCY_SPREAD_PCT:0.50}
         bar-range-pct: ${STOKR_LIFECYCLE_EMERGENCY_BAR_RANGE_PCT:2.5}
-        candle-stale-seconds: ${STOKR_LIFECYCLE_EMERGENCY_CANDLE_STALE_SEC:120}
+        # Beyond this, exit evaluation freezes (stale data is unreliable, do not act on it)
+        candle-stale-seconds: ${STOKR_LIFECYCLE_EMERGENCY_CANDLE_STALE_SEC:180}
+        # Only a prolonged feed stall force-closes positions (a stale feed is our data problem,
+        # not a market move against us)
+        force-exit-stale-seconds: ${STOKR_LIFECYCLE_EMERGENCY_FORCE_EXIT_STALE_SEC:600}
         volume-vacuum-ratio: ${STOKR_LIFECYCLE_EMERGENCY_VOLUME_VACUUM:0.10}
         min-hold-seconds: ${STOKR_LIFECYCLE_EMERGENCY_MIN_HOLD_SEC:180}
     smart-exit:
       enabled: ${STOKR_SMART_EXIT_ENABLED:true}
       interval-ms: ${STOKR_SMART_EXIT_INTERVAL_MS:15000}
-      pressure-reversal-buy: ${STOKR_SMART_EXIT_PRESSURE_REVERSAL_BUY:0.43}
-      pressure-reversal-sell: ${STOKR_SMART_EXIT_PRESSURE_REVERSAL_SELL:0.57}
-      exhaustion-consistency: ${STOKR_SMART_EXIT_EXHAUSTION_CONSISTENCY:0.35}
-      pressure-lookback: ${STOKR_SMART_EXIT_PRESSURE_LOOKBACK:60}
-      trailing-mfe-ratio: ${STOKR_SMART_EXIT_TRAILING_MFE_RATIO:0.40}
-      min-progress-pct: ${STOKR_SMART_EXIT_MIN_PROGRESS_PCT:20}
-      counter-candle-body-ratio: ${STOKR_SMART_EXIT_COUNTER_CANDLE_BODY_RATIO:0.55}
+      # Trailing breakeven only after the trade covered most of the target distance
+      trailing-mfe-ratio: ${STOKR_SMART_EXIT_TRAILING_MFE_RATIO:0.60}
+      # Progress scratch: exit when below this % of target distance at the strategy time stop.
+      # Replay May-Jun 2026: winners reach target in 5-7 min median, losers bleed 20-31 min.
+      min-progress-pct: ${STOKR_SMART_EXIT_MIN_PROGRESS_PCT:40}
+    # Nightly counterfactual replay: per-strategy target-first vs SL-first from stored candles,
+    # plus the automatic PAPER demotion gate for strategies below their breakeven edge.
+    entry-edge:
+      enabled: ${STOKR_ENTRY_EDGE_ENABLED:true}
+      cron: ${STOKR_ENTRY_EDGE_CRON:0 50 15 * * MON-FRI}
+      gate-enabled: ${STOKR_ENTRY_EDGE_GATE_ENABLED:true}
+      window-sessions: ${STOKR_ENTRY_EDGE_WINDOW_SESSIONS:14}
+      min-signals: ${STOKR_ENTRY_EDGE_MIN_SIGNALS:30}
+      demote-buffer-pct: ${STOKR_ENTRY_EDGE_DEMOTE_BUFFER_PCT:2.0}
+      lift-buffer-pct: ${STOKR_ENTRY_EDGE_LIFT_BUFFER_PCT:8.0}
     # Drop new signals when reference price exceeds ceiling (INR). 0 or negative = disabled.
     max-entry-price: ${STOKR_STRATEGY_MAX_ENTRY_PRICE:5000}
     quality-gate:
@@ -272,6 +289,8 @@ stokr:
       cooldown-seconds: ${STOKR_SIGNAL_COOLDOWN_SECONDS:900}
     signal-dedup:
       cooldown-minutes: ${STOKR_STRATEGY_SIGNAL_DEDUP_MINUTES:15}
+      # Block re-entry on a symbol right after exiting it (anti flip-flop churn)
+      post-exit-cooldown-minutes: ${STOKR_SIGNAL_POST_EXIT_COOLDOWN_MIN:15}
     exit:
       breakeven-enabled: ${STOKR_STRATEGY_BREAKEVEN_EXIT_ENABLED:true}
       breakeven-mfe-ratio: ${STOKR_STRATEGY_BREAKEVEN_MFE_RATIO:0.5}

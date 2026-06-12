@@ -1,6 +1,8 @@
 package com.stokr.strategy.operational;
 
+import com.stokr.strategy.analytics.StrategyEdgeGateService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +20,7 @@ public class StrategyExecutionModeService {
     private final Map<String, StrategyExecutionMode> modes;
     private final boolean allowLive;
     private final Set<String> liveValidated;
+    private final ObjectProvider<StrategyEdgeGateService> edgeGateProvider;
 
     public StrategyExecutionModeService(
             @Value("${stokr.strategy.execution-modes.GAP_FILL:PAPER}") String gapFill,
@@ -34,7 +37,8 @@ public class StrategyExecutionModeService {
             @Value("${stokr.strategy.execution-modes.USDINR_MOMENTUM:PAPER}") String usdInrMomentum,
             @Value("${stokr.strategy.execution-modes.EURINR_MEAN_REVERSION:PAPER}") String eurInrMeanReversion,
             @Value("${stokr.strategy.execution-modes.allow-live:true}") boolean allowLive,
-            @Value("${stokr.strategy.execution-modes.live-validated:GAP_FILL,NSE_SPIKE_DETECTION,VWAP_BOUNCE,SECTOR_LAGGARD,ADV_CASH}") String liveValidatedCsv) {
+            @Value("${stokr.strategy.execution-modes.live-validated:ADV_CASH,GAP_FILL,VWAP_BOUNCE}") String liveValidatedCsv,
+            ObjectProvider<StrategyEdgeGateService> edgeGateProvider) {
         modes = new LinkedHashMap<>();
         modes.put("GAP_FILL", StrategyExecutionMode.parse(gapFill));
         modes.put("SECTOR_LAGGARD", StrategyExecutionMode.parse(sectorLaggard));
@@ -51,6 +55,7 @@ public class StrategyExecutionModeService {
         modes.put("EURINR_MEAN_REVERSION", StrategyExecutionMode.parse(eurInrMeanReversion));
         this.allowLive = allowLive;
         this.liveValidated = parseValidatedList(liveValidatedCsv);
+        this.edgeGateProvider = edgeGateProvider;
     }
 
     public StrategyExecutionMode modeFor(String strategyKey) {
@@ -60,11 +65,31 @@ public class StrategyExecutionModeService {
         StrategyExecutionMode configured = modes.getOrDefault(
                 strategyKey.trim().toUpperCase(Locale.ROOT),
                 StrategyExecutionMode.PAPER);
-        if (configured == StrategyExecutionMode.LIVE && !isLiveValidated(strategyKey)) {
+        boolean wantsLiveLeg = configured == StrategyExecutionMode.LIVE
+                || configured == StrategyExecutionMode.BOTH;
+        if (wantsLiveLeg && !isLiveValidated(strategyKey)) {
             log.warn("execution_mode.live_blocked strategyKey={} downgraded=PAPER", strategyKey);
             return StrategyExecutionMode.PAPER;
         }
+        if (wantsLiveLeg && isEdgeDemoted(strategyKey)) {
+            log.warn("execution_mode.edge_demoted strategyKey={} downgraded=PAPER", strategyKey);
+            return StrategyExecutionMode.PAPER;
+        }
         return configured;
+    }
+
+    /** Rolling entry-edge gate: strategies below their breakeven target-first rate trade paper-only. */
+    private boolean isEdgeDemoted(String strategyKey) {
+        if (edgeGateProvider == null) {
+            return false;
+        }
+        try {
+            StrategyEdgeGateService gate = edgeGateProvider.getIfAvailable();
+            return gate != null && gate.isDemoted(strategyKey);
+        } catch (Exception ex) {
+            log.debug("execution_mode.edge_gate_unavailable {}", ex.getMessage());
+            return false;
+        }
     }
 
     public Map<String, String> allModes() {

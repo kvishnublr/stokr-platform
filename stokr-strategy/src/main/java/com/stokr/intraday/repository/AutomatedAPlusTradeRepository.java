@@ -27,5 +27,8 @@ public interface AutomatedAPlusTradeRepository extends JpaRepository<AutomatedAP
     @Query("SELECT t FROM AutomatedAPlusTrade t WHERE t.entryTime >= :from AND t.entryTime <= :to ORDER BY t.entryTime DESC")
     List<AutomatedAPlusTrade> findByEntryTimeRange(@Param("from") Instant from, @Param("to") Instant to);
 
+    @Query("SELECT COUNT(t) > 0 FROM AutomatedAPlusTrade t WHERE t.symbol = :symbol AND t.exitTime >= :since")
+    boolean existsExitedSince(@Param("symbol") String symbol, @Param("since") Instant since);
+
     List<AutomatedAPlusTrade> findBySymbolOrderByEntryTimeDesc(String symbol);
 }

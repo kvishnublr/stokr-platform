@@ -157,6 +157,22 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             @Param("signalType") SignalType signalType,
             @Param("since") Instant since);
 
+    @Query("""
+            select case when count(s) > 0 then true else false end
+            from StrategySignalEntity s
+            where s.deleted = false
+              and s.testTrade = false
+              and s.backtestRunId is null
+              and (s.signalSource is null or s.signalSource not in (com.stokr.strategy.signals.SignalProvenance.REPLAY, com.stokr.strategy.signals.SignalProvenance.LAB))
+              and s.strategyName = :strategyName
+              and s.symbol = :symbol
+              and s.outcomeTime >= :since
+            """)
+    boolean existsRecentlyExitedSignal(
+            @Param("strategyName") String strategyName,
+            @Param("symbol") String symbol,
+            @Param("since") Instant since);
+
     @Query(value = """
             SELECT
                 COUNT(*) FILTER (WHERE created_at >= :since)::bigint                                         AS total_today,
