@@ -31,6 +31,7 @@ public class TraderExecutionClientController {
 
     private final TraderTerminalViewService traderTerminalViewService;
     private final TraderTerminalControlService traderTerminalControlService;
+    private final TransactionRollbackGuardService transactionRollbackGuardService;
     private final IntradayReadinessService intradayReadinessService;
     private final ExecutionGuardStreamService executionGuardStreamService;
     private final ExecutionTimelineService executionTimelineService;
@@ -40,6 +41,7 @@ public class TraderExecutionClientController {
     public TraderExecutionClientController(
             TraderTerminalViewService traderTerminalViewService,
             TraderTerminalControlService traderTerminalControlService,
+            TransactionRollbackGuardService transactionRollbackGuardService,
             IntradayReadinessService intradayReadinessService,
             ExecutionGuardStreamService executionGuardStreamService,
             ExecutionTimelineService executionTimelineService,
@@ -48,6 +50,7 @@ public class TraderExecutionClientController {
     ) {
         this.traderTerminalViewService = traderTerminalViewService;
         this.traderTerminalControlService = traderTerminalControlService;
+        this.transactionRollbackGuardService = transactionRollbackGuardService;
         this.intradayReadinessService = intradayReadinessService;
         this.executionGuardStreamService = executionGuardStreamService;
         this.executionTimelineService = executionTimelineService;
@@ -199,7 +202,7 @@ public class TraderExecutionClientController {
             @org.springframework.web.bind.annotation.RequestBody TraderTerminalActionRequest body
     ) {
         return ApiResponse.ok(
-                traderTerminalControlService.execute(user.getId(), body.confirmationToken()),
+                transactionRollbackGuardService.executeWithGuard(user.getId(), body.confirmationToken()),
                 CorrelationIdHolder.get()
         );
     }
