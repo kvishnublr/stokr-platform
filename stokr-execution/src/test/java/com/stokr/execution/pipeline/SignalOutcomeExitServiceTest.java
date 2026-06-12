@@ -101,7 +101,7 @@ class SignalOutcomeExitServiceTest {
         assertThat(req.brokerVendor()).isEqualTo("ZERODHA");
         assertThat(req.exitOrder()).isTrue();
         assertThat(req.guardMode()).isEqualTo("EXIT_SAFE");
-        assertThat(req.signalId()).isEqualTo(signalId);
+        assertThat(req.signalId()).isNull();
         assertThat(req.idempotencyKey()).contains("outcome-exit:" + signalId);
     }
 
@@ -179,8 +179,9 @@ class SignalOutcomeExitServiceTest {
 
         service.dispatchForSignal(signalId, "PRESSURE_EXIT");
 
-        verify(orderPlacementService, org.mockito.Mockito.times(2))
-                .place(eq(userId), any(CreateOrderRequest.class));
+        ArgumentCaptor<CreateOrderRequest> captor = ArgumentCaptor.forClass(CreateOrderRequest.class);
+        verify(orderPlacementService, org.mockito.Mockito.times(2)).place(eq(userId), captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(req -> assertThat(req.signalId()).isNull());
     }
 
     @Test

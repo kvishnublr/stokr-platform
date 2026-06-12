@@ -262,7 +262,7 @@ public class SignalOutcomeExitService {
                 exit.broker(),
                 strategyKey,
                 idempotencyKey,
-                signal.getId(),
+                null,
                 signal.getCandleTimestamp(),
                 signal.getEntryReferencePrice(),
                 null,
