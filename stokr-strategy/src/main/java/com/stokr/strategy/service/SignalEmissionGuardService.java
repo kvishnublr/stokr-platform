@@ -10,7 +10,9 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
 /**
- * Suppresses duplicate live signals for the same strategy + symbol + direction within a cooldown window.
+ * Suppresses duplicate live signals for the same strategy + symbol + direction within a cooldown
+ * window, and re-entries on a symbol too soon after a position there was just exited
+ * (entry/exit flip-flop churn pays spread + charges repeatedly on the same idea).
  */
 @Service
 @RequiredArgsConstructor
@@ -20,6 +22,9 @@ public class SignalEmissionGuardService {
 
     @Value("${stokr.strategy.signal-dedup.cooldown-minutes:15}")
     private int cooldownMinutes;
+
+    @Value("${stokr.strategy.signal-dedup.post-exit-cooldown-minutes:15}")
+    private int postExitCooldownMinutes;
 
     public boolean shouldSuppress(StrategySignalEntity signal) {
         if (signal == null || Boolean.TRUE.equals(signal.getTestTrade())) {
@@ -36,8 +41,13 @@ public class SignalEmissionGuardService {
         if (strategy == null || symbol == null || signal.getSignalType() == null) {
             return false;
         }
-        Instant since = Instant.now().minus(cooldownMinutes, ChronoUnit.MINUTES);
-        return signalRepository.existsSimilarLiveSignal(
-                strategy, symbol, signal.getSignalType(), since);
+        Instant now = Instant.now();
+        if (signalRepository.existsSimilarLiveSignal(
+                strategy, symbol, signal.getSignalType(),
+                now.minus(cooldownMinutes, ChronoUnit.MINUTES))) {
+            return true;
+        }
+        return postExitCooldownMinutes > 0 && signalRepository.existsRecentlyExitedSignal(
+                strategy, symbol, now.minus(postExitCooldownMinutes, ChronoUnit.MINUTES));
     }
 }

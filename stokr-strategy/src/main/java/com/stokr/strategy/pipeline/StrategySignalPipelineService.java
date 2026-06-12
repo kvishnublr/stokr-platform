@@ -462,15 +462,25 @@ public class StrategySignalPipelineService {
     /**
      * Catalog/admin BOTH must not be downgraded to PAPER when a trader instance is still on PAPER.
      */
+    /**
+     * Per-trader instance rows may DOWNGRADE the catalog execution mode (trader opted into
+     * paper) but must never ESCALATE it: a strategy demoted to PAPER at catalog level stays
+     * paper for every trader, regardless of stale LIVE flags on their instance rows.
+     */
     private static String mergeInstanceExecutionMode(String catalogMode, String instanceMode) {
         String cat = normalizeExecutionModeLabel(catalogMode);
         String inst = normalizeExecutionModeLabel(instanceMode);
+        boolean catAllowsLive = "LIVE".equals(cat) || "BOTH".equals(cat);
+        boolean instAllowsLive = "LIVE".equals(inst) || "BOTH".equals(inst);
+        if (!catAllowsLive) {
+            return cat;
+        }
+        if (!instAllowsLive) {
+            return inst;
+        }
         if ("BOTH".equals(cat) || "BOTH".equals(inst)) {
             return "BOTH";
         }
-        if ("LIVE".equals(cat) || "LIVE".equals(inst)) {
-            return "LIVE";
-        }
-        return inst;
+        return "LIVE";
     }
 }

@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { fadeUp, staggerContainer } from "../../lib/motionPresets";
 import { formatInr, formatPnlDisplay, pnlToneClass, type PnlDataSource } from "../../lib/moneyUtils";
@@ -9,7 +10,9 @@ import {
   Activity,
   ArrowDownRight,
   ArrowUpRight,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Radio,
   ShieldCheck,
   TrendingDown,
@@ -288,6 +291,30 @@ export function LivePositionsCommandTable({
 }) {
   const isLight = useUiThemeStore((s) => s.mode === "light");
   const reduceMotion = useReducedMotion();
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const sortedRows = sortColumn ? [...rows].sort((a, b) => {
+    let aVal: any = a[sortColumn as keyof CommandPositionRow];
+    let bVal: any = b[sortColumn as keyof CommandPositionRow];
+
+    if (aVal == null || bVal == null) return 0;
+    aVal = Number(aVal) || String(aVal).toLowerCase();
+    bVal = Number(bVal) || String(bVal).toLowerCase();
+
+    const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+    return sortDir === "asc" ? cmp : -cmp;
+  }) : rows;
+
+  const handleSort = (col: string) => {
+    if (sortColumn === col) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(col);
+      setSortDir("asc");
+    }
+  };
+
   const maxAbsMtm = Math.max(...rows.map((r) => Math.abs(Number(r.mtmPnl ?? 0))), 1);
 
   return (
@@ -313,7 +340,7 @@ export function LivePositionsCommandTable({
           <div>
             <h3 className={cn("text-sm font-bold tracking-tight", isLight ? "text-neutral-900" : "text-white")}>{title}</h3>
             <p className={cn("text-[11px]", isLight ? "text-neutral-500" : "text-neutral-400")}>
-              {subtitle ?? `${rows.length} symbol${rows.length === 1 ? "" : "s"} · broker-backed quantities`}
+              {subtitle ?? `${sortedRows.length} symbol${sortedRows.length === 1 ? "" : "s"} · broker-backed quantities`}
             </p>
           </div>
         </div>
@@ -338,11 +365,41 @@ export function LivePositionsCommandTable({
           >
             <tr>
               {(showExtendedColumns
-                ? ["Symbol", "MTM P&L", "Side", "Qty", "Avg", "LTP", "% Change", "SL/Target", "Unrealized", "Realized", "Notional", "Source"]
-                : ["Symbol", "Side", "Qty", "LTP", "% Change", "MTM P&L", "Unrealized"]
-              ).map((h) => (
-                <th key={h} className="px-3 py-3 font-bold first:pl-5 last:pr-5">{h}</th>
-              ))}
+                ? ["symbol", "mtmPnl", "side", "qty", "avgPrice", "ltp", "pctChange", "slTarget", "unrealizedPnl", "realizedPnl", "notional"]
+                : ["symbol", "side", "qty", "ltp", "mtmPnl", "unrealizedPnl"]
+              ).map((col) => {
+                const labels: Record<string, string> = {
+                  symbol: "Symbol",
+                  mtmPnl: "MTM P&L",
+                  side: "Side",
+                  qty: "Qty",
+                  avgPrice: "Avg",
+                  ltp: "LTP",
+                  pctChange: "% Change",
+                  slTarget: "SL/Target",
+                  unrealizedPnl: "Unrealized",
+                  realizedPnl: "Realized",
+                  notional: "Notional"
+                };
+                const isSorted = sortColumn === col;
+                const isSortable = col !== "pctChange" && col !== "slTarget";
+                return (
+                  <th
+                    key={col}
+                    onClick={() => isSortable && handleSort(col)}
+                    className={cn(
+                      "px-3 py-3 font-bold first:pl-5 last:pr-5 select-none transition-opacity whitespace-nowrap",
+                      isSortable ? "cursor-pointer hover:opacity-80" : "opacity-60",
+                      isSorted ? "text-white" : ""
+                    )}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      <span>{labels[col]}</span>
+                      {isSorted ? (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
+                    </span>
+                  </th>
+                );
+              })}
               {onExit ? <th className="px-3 py-3 pr-5 font-bold">Exit</th> : null}
             </tr>
           </thead>
@@ -351,14 +408,14 @@ export function LivePositionsCommandTable({
               <tr>
                 <td colSpan={(showExtendedColumns ? 10 : 6) + (onExit ? 1 : 0)} className="px-5 py-10 text-center text-neutral-500">Syncing positions…</td>
               </tr>
-            ) : rows.length === 0 ? (
+            ) : sortedRows.length === 0 ? (
               <tr>
                 <td colSpan={(showExtendedColumns ? 10 : 6) + (onExit ? 1 : 0)}>
                   <EmptyState message="No open positions in this lane" />
                 </td>
               </tr>
             ) : (
-              rows.map((r, i) => {
+              sortedRows.map((r, i) => {
                 const mtm = r.mtmPnl != null ? Number(r.mtmPnl) : null;
                 const barPct = mtm != null ? Math.min(100, (Math.abs(mtm) / maxAbsMtm) * 100) : 0;
                 return (

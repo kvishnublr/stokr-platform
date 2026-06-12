@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 public class SimulationStartupLogger implements ApplicationListener<ApplicationReadyEvent> {
 
     private final SimulationRuntimeControlService runtimeControl;
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SimulationStartupLogger.class);
 
     @Override
     public void onApplicationEvent(ApplicationReadyEvent event) {

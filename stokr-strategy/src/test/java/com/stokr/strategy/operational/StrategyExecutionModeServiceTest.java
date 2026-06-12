@@ -15,7 +15,7 @@ class StrategyExecutionModeServiceTest {
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
                 "BOTH", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
                 "PAPER", "PAPER",
-                true, LIVE_COHORT);
+                true, LIVE_COHORT, null);
 
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("SECTOR_LAGGARD"));
@@ -38,7 +38,7 @@ class StrategyExecutionModeServiceTest {
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
                 "PAPER", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
                 "PAPER", "PAPER",
-                false, LIVE_COHORT);
+                false, LIVE_COHORT, null);
 
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("GAP_FILL"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("NSE_SPIKE_DETECTION"));
@@ -50,7 +50,7 @@ class StrategyExecutionModeServiceTest {
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
                 "BOTH", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
                 "PAPER", "PAPER",
-                true, LIVE_COHORT);
+                true, LIVE_COHORT, null);
 
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("SECTOR_LAGGARD"));
@@ -63,7 +63,7 @@ class StrategyExecutionModeServiceTest {
                 "LIVE", "LIVE", "LIVE", "PAPER", "LIVE",
                 "PAPER", "LIVE", "PAPER", "PAPER", "PAPER", "PAPER",
                 "PAPER", "PAPER",
-                true, "GAP_FILL");
+                true, "GAP_FILL", null);
         assertEquals(StrategyExecutionMode.LIVE, service.modeFor("GAP_FILL"));
         assertEquals(StrategyExecutionMode.PAPER, service.modeFor("NSE_SPIKE_DETECTION"));
     }

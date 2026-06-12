@@ -20,7 +20,7 @@ public class MarketCloseProtectionService {
     @Value("${stokr.oms.market-close.no-new-entries-after:15:00}")
     private LocalTime nseNoNewEntriesAfter;
 
-    @Value("${stokr.oms.market-close.flatten-time:15:20}")
+    @Value("${stokr.oms.market-close.flatten-time:15:15}")
     private LocalTime nseFlattenTime;
 
     @Value("${stokr.oms.market-close.flatten-end:15:30}")

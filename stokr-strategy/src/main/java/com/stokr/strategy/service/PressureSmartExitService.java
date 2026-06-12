@@ -5,7 +5,6 @@ import com.stokr.common.events.SignalPublishedEvent;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.marketdata.service.OrderBookPressureTracker;
-import com.stokr.marketdata.service.OrderBookPressureTracker.PressureAnalysis;
 import com.stokr.marketdata.service.OrderBookPressureTracker.PressureSnapshot;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.lifecycle.ExitCategory;
@@ -35,8 +34,19 @@ import java.util.Objects;
 import java.util.Objects;
 
 /**
- * Lifecycle-aware pressure exit engine with strategy-specific minimum hold times.
- * PRESSURE_EXIT is blocked until min hold unless an emergency condition fires.
+ * Lifecycle-aware exit engine with strategy-specific minimum hold times.
+ *
+ * Exit hierarchy (counterfactual replay of May-Jun 2026 signals showed order-book noise
+ * triggers were cutting winners at 10-25% of target progress while winners resolve in
+ * ~5-7 min median and losers bleed for 20-31 min):
+ *   1. HARD_STOP — SL breach, always, immediately.
+ *   2. FEED_PROTECTION — freeze evaluation while feed is stale; force-exit only after a
+ *      prolonged stall (stale feed is our data problem, not a market move against us).
+ *   3. LIQUIDITY_PROTECTION — extreme bar range / volume vacuum, after emergency min hold.
+ *   4. TRAILING_BREAKEVEN — price returned to entry after reaching a large share of target.
+ *   5. PROGRESS_SCRATCH (TIME_EXIT) — trade has not covered the minimum share of target
+ *      distance within the strategy's time stop; cuts slow bleeders without touching the
+ *      fast winners.
  */
 @Service
 @RequiredArgsConstructor
@@ -55,33 +65,14 @@ public class PressureSmartExitService {
     private final SignalOutcomeTrackerService signalOutcomeTrackerService;
     private final InstrumentNormalizationService instrumentNormalizationService;
 
-    @Value("${stokr.strategy.smart-exit.pressure-reversal-buy:0.35}")
-    private double pressureReversalBuyThreshold;
-
-    @Value("${stokr.strategy.smart-exit.pressure-reversal-sell:0.65}")
-    private double pressureReversalSellThreshold;
-
-    @Value("${stokr.strategy.smart-exit.exhaustion-consistency:0.30}")
-    private double exhaustionConsistency;
-
-    @Value("${stokr.strategy.smart-exit.pressure-lookback:60}")
-    private int pressureLookback;
-
-    @Value("${stokr.strategy.smart-exit.trailing-mfe-ratio:0.25}")
+    @Value("${stokr.strategy.smart-exit.trailing-mfe-ratio:0.60}")
     private double trailingMfeRatio;
 
-    @Value("${stokr.strategy.smart-exit.min-progress-pct:10}")
+    @Value("${stokr.strategy.smart-exit.min-progress-pct:40}")
     private double minProgressPct;
-
-    @Value("${stokr.strategy.smart-exit.counter-candle-body-ratio:0.60}")
-    private double counterCandleBodyRatio;
 
     @Value("${stokr.strategy.smart-exit.enabled:true}")
     private boolean enabled;
-
-    /** Min-hold pressure path: bar-range % vs mid on latest 1m candle (not bid-ask spread). */
-    @Value("${stokr.strategy.lifecycle.emergency.spread-pct:0.80}")
-    private double emergencySpreadPct;
 
     /**
      * Emergency liquidity exit: same bar-range proxy but higher threshold so normal 1m volatility
@@ -90,8 +81,13 @@ public class PressureSmartExitService {
     @Value("${stokr.strategy.lifecycle.emergency.bar-range-pct:3.5}")
     private double emergencyBarRangePct;
 
+    /** Beyond this staleness, exit evaluation is frozen — data is unreliable, do not act on it. */
     @Value("${stokr.strategy.lifecycle.emergency.candle-stale-seconds:180}")
     private long emergencyCandleStaleSeconds;
+
+    /** Only after this prolonged stall do we force-close the position for feed protection. */
+    @Value("${stokr.strategy.lifecycle.emergency.force-exit-stale-seconds:600}")
+    private long forceExitStaleSeconds;
 
     @Value("${stokr.strategy.lifecycle.emergency.volume-vacuum-ratio:0.05}")
     private double emergencyVolumeVacuumRatio;
@@ -180,13 +176,21 @@ public class PressureSmartExitService {
             return emergency;
         }
 
+        // Feed stale but not long enough to force-exit: freeze — do not evaluate trailing or
+        // time exits against unreliable prices. Target/SL tracking resumes when the feed recovers.
+        if (ctx.candleStaleSeconds() > emergencyCandleStaleSeconds) {
+            log.warn("smart_exit.feed_stale_freeze strategy={} symbol={} staleSec={} forceExitSec={}",
+                    sig.getStrategyName(), sig.getSymbol(), ctx.candleStaleSeconds(), forceExitStaleSeconds);
+            return null;
+        }
+
         if (!minHoldSatisfied) {
             log.debug("smart_exit.min_hold_blocked strategy={} symbol={} holdSec={} minHoldSec={}",
                     sig.getStrategyName(), sig.getSymbol(), holdSeconds, profile.minHoldSeconds());
             return null;
         }
 
-        return evaluatePressureAndTimeExit(ctx);
+        return evaluateTrailingAndTimeExit(ctx);
     }
 
     private ExitDecision evaluateEmergencyExit(ExitContext ctx) {
@@ -197,11 +201,11 @@ public class PressureSmartExitService {
                             ctx.currentPrice(), ctx.slPrice(), ctx.isBuy() ? "BUY" : "SELL"));
         }
 
-        if (ctx.candleStaleSeconds() > emergencyCandleStaleSeconds) {
+        if (ctx.candleStaleSeconds() > forceExitStaleSeconds) {
             return ExitDecision.emergency(
                     ExitCategory.FEED_PROTECTION,
-                    String.format("FEED_STALE: latestBarAgeSec=%d thresholdSec=%d",
-                            ctx.candleStaleSeconds(), emergencyCandleStaleSeconds));
+                    String.format("FEED_STALE_PROLONGED: latestBarAgeSec=%d thresholdSec=%d",
+                            ctx.candleStaleSeconds(), forceExitStaleSeconds));
         }
 
         if (ctx.spreadPct() >= emergencyBarRangePct) {
@@ -222,98 +226,31 @@ public class PressureSmartExitService {
         return null;
     }
 
-    private ExitDecision evaluatePressureAndTimeExit(ExitContext ctx) {
+    private ExitDecision evaluateTrailingAndTimeExit(ExitContext ctx) {
         StrategySignalEntity sig = ctx.signal();
-        PressureSnapshot snapshot = ctx.snapshot();
-        PressureAnalysis analysis = ctx.analysis();
-
-        if (snapshot != null && analysis != null) {
-            double ratio = snapshot.imbalanceRatio();
-
-            if (ctx.isBuy() && ratio < pressureReversalBuyThreshold && ctx.currentProgress() < 70) {
-                String reason = String.format(
-                        "IMBALANCE_COLLAPSE: buy→sell ratio=%.2f threshold=%.2f progress=%.1f%%",
-                        ratio, pressureReversalBuyThreshold, ctx.currentProgress());
-                logPressureExit(sig, PressureExitTrigger.IMBALANCE_COLLAPSE, reason);
-                return ExitDecision.pressure(PressureExitTrigger.IMBALANCE_COLLAPSE, reason, false);
-            }
-            if (!ctx.isBuy() && ratio > pressureReversalSellThreshold && ctx.currentProgress() < 70) {
-                String reason = String.format(
-                        "IMBALANCE_COLLAPSE: sell→buy ratio=%.2f threshold=%.2f progress=%.1f%%",
-                        ratio, pressureReversalSellThreshold, ctx.currentProgress());
-                logPressureExit(sig, PressureExitTrigger.IMBALANCE_COLLAPSE, reason);
-                return ExitDecision.pressure(PressureExitTrigger.IMBALANCE_COLLAPSE, reason, false);
-            }
-        }
-
-        if (analysis != null) {
-            double consistency = analysis.pressureConsistency();
-            int directionalTicks = analysis.buyPressureTicks() + analysis.sellPressureTicks();
-            // consistency=0 with no strong OBI ticks is choppy/neutral book — not pressure exhaustion.
-            if (directionalTicks >= 3
-                    && consistency > 0
-                    && consistency < exhaustionConsistency
-                    && ctx.currentProgress() < 50) {
-                String reason = String.format(
-                        "PRESSURE_EXHAUSTION: consistency=%.2f threshold=%.2f directionalTicks=%d progress=%.1f%%",
-                        consistency, exhaustionConsistency, directionalTicks, ctx.currentProgress());
-                logPressureExit(sig, PressureExitTrigger.VOLUME_VACUUM, reason);
-                return ExitDecision.pressure(PressureExitTrigger.VOLUME_VACUUM, reason, false);
-            }
-        }
 
         if (ctx.mfePctOfTarget() >= trailingMfeRatio * 100 && ctx.backAtEntry()) {
             String reason = String.format(
                     "TRAILING_BREAKEVEN: mfePctOfTarget=%.1f threshold=%.1f priceReturnedToEntry=true",
                     ctx.mfePctOfTarget(), trailingMfeRatio * 100);
-            logPressureExit(sig, PressureExitTrigger.TRAILING_BREAKEVEN, reason);
+            log.warn("smart_exit.trailing_breakeven strategy={} symbol={} reason={}",
+                    sig.getStrategyName(), sig.getSymbol(), reason);
             return ExitDecision.pressure(PressureExitTrigger.TRAILING_BREAKEVEN, reason, false);
         }
 
-        if (ctx.ageMinutes() >= 3 && ctx.recentBars().size() >= 2) {
-            MarketdataCandle lastBar = ctx.lastBar();
-            MarketdataCandle prevBar = ctx.recentBars().get(ctx.recentBars().size() - 2);
-            if (isCounterCandle(lastBar, ctx.isBuy())) {
-                if (isCounterCandle(prevBar, ctx.isBuy())) {
-                    String reason = String.format(
-                            "MOMENTUM_REVERSAL: consecutiveCounterBars=2 pnlPct=%.3f bodyRatioThreshold=%.2f",
-                            ctx.pnlPct(), counterCandleBodyRatio);
-                    logPressureExit(sig, PressureExitTrigger.MOMENTUM_REVERSAL, reason);
-                    return ExitDecision.pressure(PressureExitTrigger.MOMENTUM_REVERSAL, reason, false);
-                }
-                if (ctx.pnlPct() <= 0.05) {
-                    String reason = String.format(
-                            "ADVERSE_VELOCITY: counterBar pnlPct=%.3f bodyRatioThreshold=%.2f",
-                            ctx.pnlPct(), counterCandleBodyRatio);
-                    logPressureExit(sig, PressureExitTrigger.ADVERSE_VELOCITY, reason);
-                    return ExitDecision.pressure(PressureExitTrigger.ADVERSE_VELOCITY, reason, false);
-                }
-            }
-        }
-
-        if (ctx.spreadPct() >= emergencySpreadPct * 0.6 && ctx.pnlPct() < 0) {
-            String reason = String.format(
-                    "SPREAD_WIDENING: spreadPct=%.3f warnThreshold=%.3f pnlPct=%.3f",
-                    ctx.spreadPct(), emergencySpreadPct * 0.6, ctx.pnlPct());
-            logPressureExit(sig, PressureExitTrigger.SPREAD_WIDENING, reason);
-            return ExitDecision.pressure(PressureExitTrigger.SPREAD_WIDENING, reason, false);
-        }
-
+        // Progress scratch: winners on the kept strategies reach target in ~5-7 min median;
+        // a trade that has not covered minProgressPct of the target distance by the time stop
+        // is a slow bleeder — cut it instead of waiting for the full SL.
         int timeStopMinutes = ctx.profile().timeStopMinutes();
         if (ctx.ageMinutes() >= timeStopMinutes && ctx.currentProgress() < minProgressPct) {
             String reason = String.format(
-                    "TIME_EXIT: ageMin=%d timeStopMin=%d progress=%.1f minProgressPct=%.1f",
+                    "PROGRESS_SCRATCH: ageMin=%d timeStopMin=%d progress=%.1f minProgressPct=%.1f",
                     ctx.ageMinutes(), timeStopMinutes, ctx.currentProgress(), minProgressPct);
             log.info("smart_exit.time_exit strategy={} symbol={} {}", sig.getStrategyName(), sig.getSymbol(), reason);
             return ExitDecision.timeExit(reason);
         }
 
         return null;
-    }
-
-    private void logPressureExit(StrategySignalEntity sig, PressureExitTrigger trigger, String reason) {
-        log.warn("smart_exit.pressure strategy={} symbol={} trigger={} reason={}",
-                sig.getStrategyName(), sig.getSymbol(), trigger.name(), reason);
     }
 
     private ExitContext buildContext(StrategySignalEntity sig, Instant now, StrategyLifecycleProfile profile) {
@@ -327,9 +264,6 @@ public class PressureSmartExitService {
         if (normalizedSymbol == null) {
             return null;
         }
-
-        PressureSnapshot snapshot = pressureTracker.getSnapshot(normalizedSymbol);
-        PressureAnalysis analysis = pressureTracker.analyze(normalizedSymbol, pressureLookback);
 
         List<MarketdataCandle> recentBars = marketDataQueryService.lastBarsAsc(normalizedSymbol, "1m", 12);
         if (recentBars.isEmpty()) {
@@ -405,7 +339,7 @@ public class PressureSmartExitService {
                 && currentVolume / expectedCurrentVolume < emergencyVolumeVacuumRatio;
 
         return new ExitContext(
-                sig, profile, isBuy, snapshot, analysis, recentBars, lastBar,
+                sig, profile, isBuy, recentBars, lastBar,
                 currentPrice, slPrice, pnlPct, currentProgress, mfePctOfTarget,
                 ageMinutes, spreadPct, barRange, candleStaleSeconds,
                 currentVolume, avgVolume, expectedCurrentVolume, currentBarAgeSeconds,
@@ -479,29 +413,6 @@ public class PressureSmartExitService {
         return entry;
     }
 
-    private boolean isCounterCandle(MarketdataCandle bar, boolean isBuy) {
-        if (bar.getHighPrice() == null || bar.getLowPrice() == null
-                || bar.getClosePrice() == null || bar.getOpenPrice() == null) {
-            return false;
-        }
-
-        double high = bar.getHighPrice().doubleValue();
-        double low = bar.getLowPrice().doubleValue();
-        double close = bar.getClosePrice().doubleValue();
-        double open = bar.getOpenPrice().doubleValue();
-        double range = high - low;
-        if (range <= 0) {
-            return false;
-        }
-
-        double bodyRatio = Math.abs(close - open) / range;
-        if (bodyRatio < counterCandleBodyRatio) {
-            return false;
-        }
-
-        return isBuy ? close < open : close > open;
-    }
-
     private void broadcastOutcomeChange(StrategySignalEntity sig, ExitDecision decision) {
         try {
             SignalPublishedEvent signalEvt = new SignalPublishedEvent(
@@ -526,8 +437,6 @@ public class PressureSmartExitService {
             StrategySignalEntity signal,
             StrategyLifecycleProfile profile,
             boolean isBuy,
-            PressureSnapshot snapshot,
-            PressureAnalysis analysis,
             List<MarketdataCandle> recentBars,
             MarketdataCandle lastBar,
             double currentPrice,

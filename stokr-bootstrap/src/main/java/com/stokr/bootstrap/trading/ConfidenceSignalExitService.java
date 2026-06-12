@@ -1,5 +1,6 @@
 package com.stokr.bootstrap.trading;
 
+import com.stokr.execution.safety.MarketCloseProtectionService;
 import com.stokr.execution.service.PositionExitOrchestratorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -9,9 +10,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalTime;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
+import java.time.Instant;
 
 /**
  * ConfidenceSignalExitService
@@ -24,7 +23,7 @@ import java.time.ZonedDateTime;
  * - Medium confidence (70-80): +1.5% target, -1.5% SL
  * - Low confidence (<70): +1% target, -2% SL
  *
- * Also closes all positions at market close (15:30 IST)
+ * Also closes all positions at market close (15:15 IST)
  */
 @Slf4j
 @Service
@@ -39,12 +38,7 @@ public class ConfidenceSignalExitService {
     private static final java.util.UUID PRIMARY_TRADER_ID = java.util.UUID.fromString("6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4");
 
     private final PositionExitOrchestratorService positionExitOrchestratorService;
-
-    @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
-    private String marketZone;
-
-    @Value("${stokr.marketdata.session.nse.end:15:30}")
-    private String nseEndTime;
+    private final MarketCloseProtectionService marketCloseProtectionService;
 
     @Value("${stokr.confidence-strategy.exit.profit-target-high:2.0}")
     private double profitTargetHigh; // 2% for confidence >= 80
@@ -93,20 +87,14 @@ public class ConfidenceSignalExitService {
     }
 
     /**
-     * Check if market is within 10 minutes of close (15:20-15:30)
+     * Check if the market is within the configured flatten window.
      */
     private boolean isNearMarketClose() {
         try {
-            ZoneId zone = ZoneId.of(marketZone);
-            ZonedDateTime now = ZonedDateTime.now(zone);
-            LocalTime currentTime = now.toLocalTime();
-            LocalTime nseEnd = LocalTime.parse(nseEndTime);
-            LocalTime closeWindowStart = nseEnd.minusMinutes(10); // 15:20
-
-            boolean nearClose = !currentTime.isBefore(closeWindowStart) && currentTime.isBefore(nseEnd);
-
+            boolean nearClose = marketCloseProtectionService.shouldFlatten(Instant.now());
             if (nearClose) {
-                log.debug("Market close window: {} - {}", closeWindowStart, nseEnd);
+                log.debug("Market close flatten window active: flattenTime={}",
+                        marketCloseProtectionService.flattenTime());
             }
 
             return nearClose;

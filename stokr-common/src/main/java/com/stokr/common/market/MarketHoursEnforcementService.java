@@ -18,6 +18,7 @@ import java.time.ZonedDateTime;
 @Slf4j
 public class MarketHoursEnforcementService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MarketHoursEnforcementService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final LocalTime NSE_MARKET_CLOSE = LocalTime.of(15, 0); // 3:00 PM
     private static final LocalTime MCX_MARKET_CLOSE = LocalTime.of(23, 55); // 11:55 PM
