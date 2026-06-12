@@ -85,7 +85,8 @@ public class BrokerReconciliationService {
         Map<String, BigDecimal> internalBySymbol = omsExecutionRepository.computeLiveNetQtyBySymbol(userId).stream()
                 .collect(Collectors.toMap(
                         row -> OmsSymbolNormalizer.normalize(String.valueOf(row[0])),
-                        row -> (BigDecimal) row[1]
+                        row -> (BigDecimal) row[1],
+                        BigDecimal::add
                 ));
 
         if (brokerBySymbol.isEmpty() && internalBySymbol.isEmpty()) {

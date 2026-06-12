@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ADMIN_OPS_SNAPSHOT_KEY } from "./lib/adminQueryKeys";
@@ -67,6 +67,7 @@ import { AdminStrategyDiagnosticsPage } from "./pages/admin/AdminStrategyDiagnos
 import { AdminStrategyEffectivenessPage } from "./pages/admin/AdminStrategyEffectivenessPage";
 import { PerformanceDashboard } from "./components/admin/PerformanceDashboard";
 import { useSessionStore } from "./state/session";
+import type { AuthPayload } from "./state/session";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { OnboardingWizardPage } from "./pages/OnboardingWizardPage";
 import { TerminalPage } from "./pages/TerminalPage";
@@ -75,6 +76,7 @@ import { PageSkeleton } from "./components/ds/SkeletonLoader";
 import { ErrorBoundary } from "./components/ds/ErrorBoundary";
 import { ThemeHtmlSync } from "./components/theme/ThemeHtmlSync";
 import { SyncedToaster } from "./components/theme/SyncedToaster";
+import { api } from "./api/client";
 import AdvDashboardPage from "./pages/AdvDashboardPage";
 import { AdvEnhancedDashboardPage } from "./pages/AdvEnhancedDashboardPage";
 import { IntradayTraderDashboard } from "./pages/IntradayTraderDashboard";
@@ -105,6 +107,64 @@ function Protected({ children }: { children: ReactNode }) {
   const token = useSessionStore((s) => s.accessToken);
   if (!token) {
     return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+}
+
+function SessionBootstrapGate({ children }: { children: ReactNode }) {
+  const accessToken = useSessionStore((s) => s.accessToken);
+  const refreshToken = useSessionStore((s) => s.refreshToken);
+  const setSession = useSessionStore((s) => s.setSession);
+  const clearSession = useSessionStore((s) => s.clearSession);
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+
+  useEffect(() => {
+    if (accessToken || !refreshToken || attempted) return;
+    let cancelled = false;
+    setBootstrapping(true);
+    void api
+      .post("/api/auth/refresh", { refreshToken })
+      .then((res: { data?: { data?: Partial<AuthPayload> } }) => {
+        const payload = res.data?.data as Partial<AuthPayload> | undefined;
+        if (!payload?.accessToken || !payload.refreshToken || !payload.userId || !payload.username || !payload.email) {
+          throw new Error("Unexpected refresh response");
+        }
+        if (cancelled) return;
+        setSession({
+          accessToken: payload.accessToken,
+          refreshToken: payload.refreshToken,
+          userId: String(payload.userId),
+          username: payload.username,
+          email: payload.email,
+          displayName: payload.displayName ?? null,
+          roles: Array.isArray(payload.roles) ? payload.roles : [],
+          expiresInSeconds: payload.expiresInSeconds ?? 0,
+          emailVerified: Boolean(payload.emailVerified),
+          telegramVerified: Boolean(payload.telegramVerified),
+          whatsAppVerified: Boolean(payload.whatsAppVerified ?? (payload as { whatsappVerified?: boolean }).whatsappVerified),
+          onboardingComplete: Boolean(payload.onboardingComplete),
+          liveTradingApproved: Boolean(payload.liveTradingApproved),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          clearSession();
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setBootstrapping(false);
+          setAttempted(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, refreshToken, attempted, setSession, clearSession]);
+
+  if (bootstrapping) {
+    return <PageSkeleton />;
   }
   return <>{children}</>;
 }
@@ -204,119 +264,121 @@ export default function App() {
     <ErrorBoundary>
       <ThemeHtmlSync />
       <SyncedToaster />
-      <Routes>
-        <Route path="/demo" element={<DemoPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/brokers/zerodha-complete" element={<ZerodhaOauthCompletePage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
-        <Route path="/verify-email" element={<VerifyEmailPage />} />
-        <Route
-          path="/"
-          element={
-            <Protected>
-              <ShellLayout />
-            </Protected>
-          }
-        >
-          <Route index element={<RootEntryRedirect />} />
-          <Route path="dashboard" element={<TraderDashboardRoute />} />
-          <Route path="adv-dashboard" element={<AdvDashboardPage />} />
-          <Route path="adv-enhanced-dashboard" element={<AdvEnhancedDashboardPage />} />
-          <Route path="watchlist" element={<Navigate to="/strategies" replace />} />
-          <Route path="terminal" element={<TerminalPage />} />
-          <Route path="signals" element={<SignalsPage />} />
-          <Route path="onboarding" element={<OnboardingWizardPage />} />
-          <Route path="orders" element={<OrdersPage />} />
-          <Route path="trades" element={<TradesPage />} />
-          <Route path="executions" element={<ExecutionsPage />} />
-          <Route path="positions" element={<PositionsPage />} />
-          <Route path="strategies" element={<StrategiesPage />} />
-          <Route path="intraday/*" element={<TraderIntradayRoute />} />
-          <Route path="backtests" element={<BacktestsLayout />}>
-            <Route index element={<Navigate to="launch" replace />} />
-            <Route path="launch" element={<BacktestLauncherPage />} />
-            <Route path="history" element={<BacktestHistoryPage />} />
-            <Route
-              path=":runId/replay"
-              element={
-                <Suspense fallback={<PageSkeleton />}>
-                  <BacktestReplayPage />
-                </Suspense>
-              }
-            />
-            <Route path=":runId" element={<BacktestRunDetailsPage />} />
-          </Route>
-          <Route path="research" element={<StrategyResearchLayout />}>
-            <Route index element={<Navigate to="leaderboard" replace />} />
-            <Route path="leaderboard" element={<ResearchLeaderboardPage />} />
-          </Route>
-          <Route path="paper" element={<PaperTradingPage />} />
-          <Route path="debug" element={<DebugToolsPage />} />
-          <Route path="brokers" element={<TraderBrokerRoute />} />
-          <Route path="profile" element={<ProfilePage />} />
-          <Route path="strategy-settings" element={<TraderExecutionConfigPage />} />
-          <Route path="intraday-dashboard" element={<IntradayTraderDashboard />} />
-          <Route path="admin" element={<AdminGate />}>
-            <Route element={<AdminConsoleLayout />}>
-              <Route index element={<AdminCommandCenterPage />} />
-              <Route path="overview" element={<AdminOverviewPage />} />
-              <Route path="broker-infrastructure" element={<AdminBrokerInfrastructurePage />} />
-              <Route path="market-connectivity" element={<Navigate to="../broker-infrastructure" replace />} />
-              <Route path="market" element={<AdminMarketIntelPage />} />
-              <Route path="performance" element={<PerformanceDashboard />} />
+      <SessionBootstrapGate>
+        <Routes>
+          <Route path="/demo" element={<DemoPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/brokers/zerodha-complete" element={<ZerodhaOauthCompletePage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route
+            path="/"
+            element={
+              <Protected>
+                <ShellLayout />
+              </Protected>
+            }
+          >
+            <Route index element={<RootEntryRedirect />} />
+            <Route path="dashboard" element={<TraderDashboardRoute />} />
+            <Route path="adv-dashboard" element={<AdvDashboardPage />} />
+            <Route path="adv-enhanced-dashboard" element={<AdvEnhancedDashboardPage />} />
+            <Route path="watchlist" element={<Navigate to="/strategies" replace />} />
+            <Route path="terminal" element={<TerminalPage />} />
+            <Route path="signals" element={<SignalsPage />} />
+            <Route path="onboarding" element={<OnboardingWizardPage />} />
+            <Route path="orders" element={<OrdersPage />} />
+            <Route path="trades" element={<TradesPage />} />
+            <Route path="executions" element={<ExecutionsPage />} />
+            <Route path="positions" element={<PositionsPage />} />
+            <Route path="strategies" element={<StrategiesPage />} />
+            <Route path="intraday/*" element={<TraderIntradayRoute />} />
+            <Route path="backtests" element={<BacktestsLayout />}>
+              <Route index element={<Navigate to="launch" replace />} />
+              <Route path="launch" element={<BacktestLauncherPage />} />
+              <Route path="history" element={<BacktestHistoryPage />} />
               <Route
-                path="intraday/*"
+                path=":runId/replay"
                 element={
                   <Suspense fallback={<PageSkeleton />}>
-                    <AdminIntradayOpsPage />
+                    <BacktestReplayPage />
                   </Suspense>
                 }
               />
-              <Route path="replay" element={<AdminReplayInfraPage />} />
-              <Route path="signals" element={<AdminSignalsPage />} />
-              <Route path="signals/:id/pipeline-trace" element={<AdminSignalTracePage />} />
-              <Route path="signal-replay" element={<AdminSignalReplayPage />} />
-              <Route path="signal-lab" element={<AdminSignalLabPage />} />
-              <Route path="research-lab" element={<AdminResearchLabPage />} />
-              <Route path="execution" element={<AdminExecutionPage />} />
-              <Route path="traders-health" element={<AdminTraderHealthPage />} />
-              <Route path="backfill" element={<AdminBackfillPage />} />
-              <Route path="infrastructure" element={<AdminInfrastructurePage />} />
-              <Route path="history" element={<AdminHistoryPage />} />
-              <Route path="audit" element={<AdminAuditPage />} />
-              <Route path="controls" element={<Navigate to="../ops" replace />} />
-              <Route path="users" element={<AdminUsersPage />} />
-              <Route path="strategies" element={<AdminStrategiesPage />} />
-              <Route path="strategy-catalog" element={<AdminStrategyCatalogPage />} />
-              <Route path="universe-groups" element={<AdminUniverseGroupsPage />} />
-              <Route path="runtime-bindings" element={<AdminRuntimeBindingsPage />} />
-              <Route path="execution-config" element={<AdminExecutionConfigPage />} />
-              <Route path="risk-dashboard" element={<AdminRiskDashboardPage />} />
-              <Route path="safety-diagnostics" element={<AdminSafetyDiagnosticsPage />} />
-              <Route path="protection-diagnostics" element={<AdminProtectionDiagnosticsPage />} />
-              <Route path="strategy-diagnostics" element={<AdminStrategyDiagnosticsPage />} />
-              <Route path="strategy-effectiveness" element={<AdminStrategyEffectivenessPage />} />
-              <Route path="capital" element={<AdminCapitalPage />} />
-              <Route path="oms" element={<AdminOmsMonitorPage />} />
-              <Route path="settings" element={<AdminSectionPage section="settings" />} />
-              <Route path="security" element={<AdminSectionPage section="security" />} />
-              <Route path="reports" element={<AdminSectionPage section="reports" />} />
-              <Route path="alerts" element={<AdminAlertCenterPage />} />
-              <Route path="ops" element={<AdminOpsGate />} />
-              <Route path="pipeline-health" element={<AdminPipelineHealthPage />} />
-              <Route path="test-signal-lab" element={<AdminTestSignalLabPage />} />
-              <Route path="market-simulation" element={<AdminMarketSimulationPage />} />
-              <Route path="test-execution-monitor" element={<AdminTestExecutionMonitorPage />} />
-              <Route path="infra-health-center" element={<AdminInfrastructureHealthCenterPage />} />
-              <Route path="failure-analysis" element={<AdminFailureAnalysisConsolePage />} />
-              <Route path="logs" element={<AdminLogsPage />} />
+              <Route path=":runId" element={<BacktestRunDetailsPage />} />
+            </Route>
+            <Route path="research" element={<StrategyResearchLayout />}>
+              <Route index element={<Navigate to="leaderboard" replace />} />
+              <Route path="leaderboard" element={<ResearchLeaderboardPage />} />
+            </Route>
+            <Route path="paper" element={<PaperTradingPage />} />
+            <Route path="debug" element={<DebugToolsPage />} />
+            <Route path="brokers" element={<TraderBrokerRoute />} />
+            <Route path="profile" element={<ProfilePage />} />
+            <Route path="strategy-settings" element={<TraderExecutionConfigPage />} />
+            <Route path="intraday-dashboard" element={<IntradayTraderDashboard />} />
+            <Route path="admin" element={<AdminGate />}>
+              <Route element={<AdminConsoleLayout />}>
+                <Route index element={<AdminCommandCenterPage />} />
+                <Route path="overview" element={<AdminOverviewPage />} />
+                <Route path="broker-infrastructure" element={<AdminBrokerInfrastructurePage />} />
+                <Route path="market-connectivity" element={<Navigate to="../broker-infrastructure" replace />} />
+                <Route path="market" element={<AdminMarketIntelPage />} />
+                <Route path="performance" element={<PerformanceDashboard />} />
+                <Route
+                  path="intraday/*"
+                  element={
+                    <Suspense fallback={<PageSkeleton />}>
+                      <AdminIntradayOpsPage />
+                    </Suspense>
+                  }
+                />
+                <Route path="replay" element={<AdminReplayInfraPage />} />
+                <Route path="signals" element={<AdminSignalsPage />} />
+                <Route path="signals/:id/pipeline-trace" element={<AdminSignalTracePage />} />
+                <Route path="signal-replay" element={<AdminSignalReplayPage />} />
+                <Route path="signal-lab" element={<AdminSignalLabPage />} />
+                <Route path="research-lab" element={<AdminResearchLabPage />} />
+                <Route path="execution" element={<AdminExecutionPage />} />
+                <Route path="traders-health" element={<AdminTraderHealthPage />} />
+                <Route path="backfill" element={<AdminBackfillPage />} />
+                <Route path="infrastructure" element={<AdminInfrastructurePage />} />
+                <Route path="history" element={<AdminHistoryPage />} />
+                <Route path="audit" element={<AdminAuditPage />} />
+                <Route path="controls" element={<Navigate to="../ops" replace />} />
+                <Route path="users" element={<AdminUsersPage />} />
+                <Route path="strategies" element={<AdminStrategiesPage />} />
+                <Route path="strategy-catalog" element={<AdminStrategyCatalogPage />} />
+                <Route path="universe-groups" element={<AdminUniverseGroupsPage />} />
+                <Route path="runtime-bindings" element={<AdminRuntimeBindingsPage />} />
+                <Route path="execution-config" element={<AdminExecutionConfigPage />} />
+                <Route path="risk-dashboard" element={<AdminRiskDashboardPage />} />
+                <Route path="safety-diagnostics" element={<AdminSafetyDiagnosticsPage />} />
+                <Route path="protection-diagnostics" element={<AdminProtectionDiagnosticsPage />} />
+                <Route path="strategy-diagnostics" element={<AdminStrategyDiagnosticsPage />} />
+                <Route path="strategy-effectiveness" element={<AdminStrategyEffectivenessPage />} />
+                <Route path="capital" element={<AdminCapitalPage />} />
+                <Route path="oms" element={<AdminOmsMonitorPage />} />
+                <Route path="settings" element={<AdminSectionPage section="settings" />} />
+                <Route path="security" element={<AdminSectionPage section="security" />} />
+                <Route path="reports" element={<AdminSectionPage section="reports" />} />
+                <Route path="alerts" element={<AdminAlertCenterPage />} />
+                <Route path="ops" element={<AdminOpsGate />} />
+                <Route path="pipeline-health" element={<AdminPipelineHealthPage />} />
+                <Route path="test-signal-lab" element={<AdminTestSignalLabPage />} />
+                <Route path="market-simulation" element={<AdminMarketSimulationPage />} />
+                <Route path="test-execution-monitor" element={<AdminTestExecutionMonitorPage />} />
+                <Route path="infra-health-center" element={<AdminInfrastructureHealthCenterPage />} />
+                <Route path="failure-analysis" element={<AdminFailureAnalysisConsolePage />} />
+                <Route path="logs" element={<AdminLogsPage />} />
+              </Route>
             </Route>
           </Route>
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </SessionBootstrapGate>
     </ErrorBoundary>
   );
 }
