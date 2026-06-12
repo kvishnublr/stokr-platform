@@ -14,5 +14,5 @@ SELECT CURRENT_DATE, COUNT(*), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM confidence_strategy_config
 WHERE enabled = TRUE AND min_confidence_threshold = 80
 ON CONFLICT (summary_date) DO UPDATE SET
-    threshold_80_count = threshold_80_count + EXCLUDED.threshold_80_count,
+    threshold_80_count = confidence_signal_summary.threshold_80_count + EXCLUDED.threshold_80_count,
     updated_at = CURRENT_TIMESTAMP;
