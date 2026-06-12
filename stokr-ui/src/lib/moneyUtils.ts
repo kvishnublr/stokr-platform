@@ -73,9 +73,12 @@ export function sumPositionsPnl(
   };
 }
 
-/** True when Zerodha session is live and broker truth has synced at least once. */
+/** True when Zerodha session is live (connected and synced, or sync in progress). */
 export function isBrokerSessionLive(brokerTruth: Record<string, unknown> | undefined): boolean {
-  return brokerTruth?.brokerConnected === true && brokerTruth?.lastSyncAt != null;
+  if (brokerTruth?.brokerConnected !== true) return false;
+  if (brokerTruth?.lastSyncAt != null) return true;
+  const syncState = String(brokerTruth?.syncState ?? "").toUpperCase();
+  return syncState === "VERIFIED" || syncState === "PENDING_SYNC" || syncState === "DEGRADED";
 }
 
 /** Sum P&L from broker truth rows with non-zero broker quantity only. */

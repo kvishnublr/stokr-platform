@@ -359,7 +359,7 @@ public class IndexHuntDetectorTest {
 
         assertNotNull(signal);
         BigDecimal expectedT1 = BigDecimal.valueOf(50.0).multiply(BigDecimal.valueOf(1.28));
-        assertEquals(expectedT1, signal.getOptionT1(), "T1 should be entry × 1.28");
+        assertEquals(0, expectedT1.compareTo(signal.getOptionT1()), "T1 should be entry x 1.28");
     }
 
     // ===== INTEGRATION TESTS =====

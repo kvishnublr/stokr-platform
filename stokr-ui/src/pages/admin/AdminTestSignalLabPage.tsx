@@ -12,6 +12,7 @@ import {
 } from "../../api/testSignalLab";
 import { parseAxiosMessage } from "../../api/client";
 import { toast } from "sonner";
+import { fmtDateTime, fmtTime } from "../../lib/dateUtils";
 
 function fieldClassName() {
   return "w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary";
@@ -659,7 +660,7 @@ export function AdminTestSignalLabPage() {
                     className={`cursor-pointer border-t border-border hover:bg-muted/40 ${selectedRunId === r.id ? "bg-primary/5" : ""}`}
                     onClick={() => setSelectedRunId(r.id)}
                   >
-                    <td className="py-2 pr-2">{new Date(r.createdAt).toLocaleTimeString()}</td>
+                    <td className="py-2 pr-2">{fmtTime(r.createdAt)}</td>
                     <td className="pr-2 font-medium">{r.strategyKey}</td>
                     <td className="pr-2">{r.symbol}</td>
                     <td className="pr-2">
@@ -734,7 +735,7 @@ export function AdminTestSignalLabPage() {
                   {(report.data.timeline ?? []).map((t: any, idx: number) => (
                     <div key={idx} className="rounded-lg border border-border p-2">
                       <div className="font-medium">{t.stage}</div>
-                      <div className="text-muted-foreground">{t.at ? new Date(t.at).toLocaleString() : "-"} {t.detail ? `- ${t.detail}` : ""}</div>
+                      <div className="text-muted-foreground">{t.at ? fmtDateTime(t.at) : "-"} {t.detail ? `- ${t.detail}` : ""}</div>
                     </div>
                   ))}
                 </div>

@@ -5,7 +5,9 @@ import com.stokr.intraday.metrics.domain.ConfidenceStrategyConfig;
 import com.stokr.intraday.metrics.repository.ConfidenceScoreRepository;
 import com.stokr.intraday.metrics.repository.ConfidenceStrategyConfigRepository;
 import com.stokr.strategy.domain.StrategySignalEntity;
-import com.stokr.strategy.repository.StrategySignalRepository;
+import com.stokr.strategy.pipeline.StrategySignalPipelineService;
+import com.stokr.strategy.signals.SignalOwnerType;
+import com.stokr.strategy.signals.SignalProvenance;
 import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +34,7 @@ public class ConfidenceBasedSignalGeneratorService {
 
     private final ConfidenceScoreRepository scoreRepository;
     private final ConfidenceStrategyConfigRepository configRepository;
-    private final StrategySignalRepository signalRepository;
+    private final StrategySignalPipelineService signalPipelineService;
 
     // Run every 2 minutes (after confidence calculation)
     @Scheduled(fixedRateString = "${stokr.confidence-strategy.generator-interval:120000}",
@@ -82,7 +84,7 @@ public class ConfidenceBasedSignalGeneratorService {
         try {
             // Get all scores from last 2 minutes that exceed threshold
             List<ConfidenceScore> highConfidenceScores = scoreRepository
-                .findRecentByConfidenceThreshold(threshold,
+                .findByConfidenceScoreGreaterThanAndTimestampAfterOrderByConfidenceScoreDescTimestampDesc(threshold,
                     Instant.now().minusSeconds(120));
 
             log.debug("Found {} symbols with confidence > {} for config: {}",
@@ -97,18 +99,41 @@ public class ConfidenceBasedSignalGeneratorService {
                 signal.setStrategyVersion("1.0");
                 signal.setCandleTimestamp(score.getTimestamp());
                 signal.setConfidenceScore(BigDecimal.valueOf(score.getConfidenceScore()));
+                signal.setUserId(config.getTraderId());
                 signal.setReason(String.format("Confidence %.1f > threshold %d. Buyer pressure: %d%%, Liquidity: %d%%",
                     score.getConfidenceScore(), threshold,
                     score.getBuyerPressure() != null ? score.getBuyerPressure() : 0,
                     score.getLiquidityScore() != null ? score.getLiquidityScore() : 0));
                 signal.setSimulation(false);
+                signal.setOwnerType(SignalOwnerType.AUTO_TRADE);
+                signal.setSignalSource(SignalProvenance.PAPER);
 
-                signalRepository.save(signal);
+                // RUNTIME INSTRUMENTATION: Trace all signals created by this service
+                StringBuilder stackTrace = new StringBuilder();
+                for (StackTraceElement ste : Thread.currentThread().getStackTrace()) {
+                    if (ste.getClassName().contains("com.stokr")) {
+                        stackTrace.append(ste.getClassName()).append(".").append(ste.getMethodName())
+                            .append(":").append(ste.getLineNumber()).append("\n");
+                    }
+                }
+                log.warn("CONFIDENCE_SIGNAL_PERSIST_TRACE");
+                log.warn("FROM_CONFIDENCE_SERVICE strategy={} symbol={} confidence={} pipeline={} thread={}",
+                    config.getStrategyName(), score.getSymbol(), score.getConfidenceScore(),
+                    signal.getPipeline(), Thread.currentThread().getName());
+                log.warn("CALLER_STACK:\n{}", stackTrace);
 
-                log.debug("  ✅ Signal persisted: {} at {} confidence",
-                    score.getSymbol(), score.getConfidenceScore());
-
-                signalsGenerated++;
+                StrategySignalEntity persisted = signalPipelineService.persistAndDispatch(
+                        signal,
+                        java.util.UUID.randomUUID().toString(),
+                        "PAPER",
+                        SignalProvenance.PAPER,
+                        true
+                );
+                if (persisted != null) {
+                    log.debug("  ✅ Signal persisted: {} at {} confidence",
+                        score.getSymbol(), score.getConfidenceScore());
+                    signalsGenerated++;
+                }
             }
 
         } catch (Exception e) {
@@ -131,9 +156,9 @@ public class ConfidenceBasedSignalGeneratorService {
     }
 
     public List<ConfidenceScore> getSignalsAboveThreshold(int threshold, int limit) {
-        return scoreRepository.findTopByConfidenceRecent(
-            Instant.now().minusSeconds(300),
-            limit
-        );
+        return scoreRepository.findByConfidenceScoreGreaterThanAndTimestampAfterOrderByConfidenceScoreDescTimestampDesc(
+            threshold,
+            Instant.now().minusSeconds(300)
+        ).stream().limit(limit).toList();
     }
 }

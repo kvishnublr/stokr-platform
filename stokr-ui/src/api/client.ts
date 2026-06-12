@@ -66,6 +66,12 @@ function parseAxiosMessage(err: unknown): string {
       if (mapped) return mapped;
     }
     if (err.response?.status === 401) return "Session expired - please sign in again.";
+    if (err.response?.status === 403) {
+      const rawBody403 = typeof err.response?.data === "string" ? err.response.data : "";
+      if (rawBody403.toLowerCase().includes("cors")) {
+        return "Login blocked by server CORS policy. Try again in a minute or contact support.";
+      }
+    }
     if (err.response?.status === 503) {
       return "API is starting — portfolio and ops data will sync automatically in a few seconds.";
     }

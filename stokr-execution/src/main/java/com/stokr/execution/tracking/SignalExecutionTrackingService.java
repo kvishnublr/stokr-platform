@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -156,6 +157,6 @@ public class SignalExecutionTrackingService {
 
     public List<SignalExecutionTrack> getRetryableFailures(int maxRetries, int retryAfterMinutes) {
         Instant retryBefore = Instant.now().minus(retryAfterMinutes, java.time.temporal.ChronoUnit.MINUTES);
-        return trackRepository.findRetryableFailures(maxRetries, retryBefore, 100);
+        return trackRepository.findRetryableFailures(maxRetries, retryBefore, PageRequest.of(0, 100));
     }
 }

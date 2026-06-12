@@ -1,8 +1,5 @@
 package com.stokr.execution.service;
 
-import com.stokr.strategy.domain.StrategySignalEntity;
-import com.stokr.strategy.repository.StrategySignalRepository;
-import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -15,7 +12,7 @@ import java.time.ZoneId;
 import java.util.UUID;
 
 /**
- * Auto-exit system: Generates EXIT signals at market close
+ * Auto-exit system: places real exit orders at market close.
  * NSE: 3:00 PM | MCX: 11:55 PM | Currency: separate config
  */
 @Service
@@ -23,7 +20,7 @@ import java.util.UUID;
 @Slf4j
 public class MarketCloseExitSignalGenerator {
 
-    private final StrategySignalRepository signalRepository;
+    private final PositionExitOrchestratorService positionExitOrchestratorService;
     private static final UUID PRIMARY_TRADER_ID = UUID.fromString("6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4");
 
     @Scheduled(cron = "${stokr.strategy.market-close.nse-exit-cron:0 55 14 * * MON-FRI}", zone = "${stokr.strategy.session.zone:Asia/Kolkata}")
@@ -46,18 +43,14 @@ public class MarketCloseExitSignalGenerator {
         }
 
         try {
-            StrategySignalEntity signal = new StrategySignalEntity();
-            signal.setUserId(PRIMARY_TRADER_ID);
-            signal.setSignalType(SignalType.EXIT);
-            signal.setReason("AUTO-EXIT: Market close for " + segment + " at " + now);
-            signal.setStrategyName("MARKET_CLOSE_AUTO_EXIT");
-            signal.setStrategyVersion("1.0");
-            signal.setPipeline("SYSTEM");
-            signal.setTestTrade(false);
-            signal.setSimulation(false);
-
-            signalRepository.save(signal);
-            log.warn("market_close.auto_exit_signal_created segment={} time={}", segment, now);
+            var result = positionExitOrchestratorService.flattenSegment(
+                    PRIMARY_TRADER_ID,
+                    segment,
+                    "MARKET_CLOSE_AUTO_EXIT",
+                    "AUTO-EXIT: Market close for " + segment + " at " + now
+            );
+            log.warn("market_close.auto_exit_executed segment={} time={} ordersCreated={} notes={}",
+                    segment, now, result.get("ordersCreated"), result.get("notes"));
         } catch (Exception e) {
             log.error("market_close.auto_exit_failed segment={} error={}", segment, e.getMessage());
         }

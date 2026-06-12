@@ -8,8 +8,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Lock;
 
+import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -123,6 +126,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
               and s.createdAt >= :since
             order by s.createdAt asc
             """)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<StrategySignalEntity> findRunningSignalsSince(@Param("since") Instant since, Pageable pageable);
 
     @Query("""
@@ -292,4 +296,42 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             @Param("toExclusive") Instant toExclusive,
             @Param("strategyName") String strategyName,
             @Param("includeReplayAndLab") boolean includeReplayAndLab);
+
+    @Query("""
+            select s from StrategySignalEntity s
+            where s.deleted = false
+              and s.outcomeTime >= :since
+              and s.outcomeStatus in :outcomes
+              and (s.testTrade = false or s.testTrade is null)
+              and (s.signalSource is null or s.signalSource not in :excludedSources)
+            order by s.outcomeTime asc
+            """)
+    List<StrategySignalEntity> findTerminalOutcomesSince(
+            @Param("since") Instant since,
+            @Param("outcomes") Collection<String> outcomes,
+            @Param("excludedSources") Collection<SignalProvenance> excludedSources);
+
+    // ===== Position Sweeper queries =====
+
+    @Query("""
+            select s from StrategySignalEntity s
+            where s.deleted = false
+              and s.outcomeStatus in ('RUNNING', 'PENDING')
+              and s.testTrade = false
+              and s.createdAt < :maxCreatedAt
+            order by s.createdAt asc
+            """)
+    List<StrategySignalEntity> findRunningSignalsCreatedBefore(@Param("maxCreatedAt") Instant maxCreatedAt);
+
+    @Query("""
+            select s from StrategySignalEntity s
+            where s.deleted = false
+              and s.testTrade = false
+              and (s.outcomeStatus is null or s.outcomeStatus not in :terminalOutcomes)
+              and s.createdAt < :maxCreatedAt
+            order by s.createdAt asc
+            """)
+    List<StrategySignalEntity> findNonTerminalSignalsCreatedBefore(
+            @Param("maxCreatedAt") Instant maxCreatedAt,
+            @Param("terminalOutcomes") Collection<String> terminalOutcomes);
 }

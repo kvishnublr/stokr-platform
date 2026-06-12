@@ -19,7 +19,7 @@ public class TokenBlacklistService {
 
     private final StringRedisTemplate redis;
 
-    @Value("${stokr.security.jwt.access-ttl-seconds:900}")
+    @Value("${stokr.security.jwt.access-ttl-seconds:18000}")
     private long accessTtlSeconds;
 
     private static String key(String jtiOrHash) {

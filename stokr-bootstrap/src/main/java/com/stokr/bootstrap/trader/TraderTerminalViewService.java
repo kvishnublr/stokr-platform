@@ -18,6 +18,7 @@ import com.stokr.oms.domain.PortfolioPosition;
 import com.stokr.oms.dto.OmsExecutionRowDto;
 import com.stokr.oms.dto.OmsOrderSummaryDto;
 import com.stokr.oms.dto.PortfolioOverviewDto;
+import com.stokr.oms.dto.PortfolioExposureDto;
 import com.stokr.oms.query.OmsReadParams;
 import com.stokr.oms.query.PipelineMode;
 import com.stokr.oms.repository.OmsExecutionRepository;
@@ -29,7 +30,6 @@ import com.stokr.oms.service.PortfolioQueryService;
 import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.catalog.StrategyUniverseResolverService;
 import com.stokr.strategy.repository.StrategyInstanceRepository;
-import com.stokr.strategy.domain.StrategyInstance;
 import com.stokr.strategy.domain.StrategySignalEntity;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import com.stokr.user.broker.ZerodhaBrokerOperationsService;
@@ -365,7 +365,7 @@ public class TraderTerminalViewService {
         }
 
         PortfolioOverviewDto overview = portfolioQueryService.overview(userId);
-        var exposure = portfolioQueryService.exposure(userId);
+        PortfolioExposureDto exposure = safeExposure(userId);
         var recon = omsReconciliationService.reconcileUser(userId);
         var broker = zerodhaBrokerOperationsService.status(userId);
         TraderExecutionModePreferenceDto mode = traderExecutionModePreferenceService.get(userId);
@@ -513,6 +513,11 @@ public class TraderTerminalViewService {
             closedPositions.clear();
         }
 
+        boolean brokerHasOpenLegs = brokerTruth.positions().stream()
+                .map(BrokerPositionTruthSnapshot.BrokerTruthPositionRow::brokerQty)
+                .filter(q -> q != null)
+                .anyMatch(q -> q.compareTo(BigDecimal.ZERO) != 0);
+
         BigDecimal totalRealized = sumRealized.setScale(8, java.math.RoundingMode.HALF_UP);
         BigDecimal totalUnrealized = sumUnrealized.setScale(8, java.math.RoundingMode.HALF_UP);
         int openCount = openPositions.size();
@@ -523,7 +528,7 @@ public class TraderTerminalViewService {
                 BrokerPnlTotals brokerOpenTotals = summarizeFromOpenPositionRows(openPositions);
                 totalRealized = brokerOpenTotals.realized();
                 totalUnrealized = brokerOpenTotals.unrealized();
-                pnlSource = "BROKER";
+                pnlSource = brokerHasOpenLegs ? "BROKER" : "OMS";
             } else {
                 // Broker session is flat — hide stale OMS portfolio ghosts from header metrics.
                 totalRealized = BigDecimal.ZERO;
@@ -611,6 +616,15 @@ public class TraderTerminalViewService {
         } catch (Exception ex) {
             log.warn("terminal.workstation.broker_truth_sync_failed user={} {}", userId, ex.toString());
             return brokerPositionTruthService.snapshot(userId);
+        }
+    }
+
+    private PortfolioExposureDto safeExposure(UUID userId) {
+        try {
+            return portfolioQueryService.exposure(userId);
+        } catch (Exception ex) {
+            log.warn("terminal.workstation.exposure_failed user={} {}", userId, ex.toString());
+            return new PortfolioExposureDto(List.of(), List.of());
         }
     }
 
@@ -883,6 +897,13 @@ public class TraderTerminalViewService {
             } else if (hasBrokerPnl(truth)) {
                 brokerClosed.add(mapBrokerFlatRow(truth, userId, broker, mode));
             }
+        }
+
+        if (brokerOpen.isEmpty()) {
+            // Broker mirror is flat, but OMS may still have live internal legs from a stale sync.
+            // Keep the OMS rows visible so the trader does not see an empty book when the broker
+            // truth has not yet rehydrated or is lagging behind the OMS ledger.
+            return;
         }
 
         openPositions.clear();

@@ -221,6 +221,7 @@ export function ShellLayout() {
 
   const intradayLinks: SidebarLink[] = useMemo(
     () => [
+      { to: "/intraday-dashboard", label: "Intraday Dashboard", icon: BarChart3 },
       { to: "/intraday", label: "Intraday Terminal", icon: Radar, matchPrefix: "/intraday" },
     ],
     [],

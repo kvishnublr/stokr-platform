@@ -19,9 +19,7 @@ public interface OrderFlowSnapshotRepository extends JpaRepository<OrderFlowSnap
     /**
      * Find the most recent snapshot for a symbol
      */
-    @Query("SELECT o FROM OrderFlowSnapshot o WHERE o.symbol = :symbol " +
-           "AND o.isValid = true ORDER BY o.timestamp DESC LIMIT 1")
-    Optional<OrderFlowSnapshot> findLatestBySymbol(@Param("symbol") String symbol);
+    Optional<OrderFlowSnapshot> findFirstBySymbolAndIsValidTrueOrderByTimestampDesc(@Param("symbol") String symbol);
 
     /**
      * Find snapshots for a symbol within a time range
@@ -38,34 +36,28 @@ public interface OrderFlowSnapshotRepository extends JpaRepository<OrderFlowSnap
     /**
      * Find snapshots with strong buyer pressure
      */
-    @Query("SELECT o FROM OrderFlowSnapshot o WHERE o.symbol = :symbol " +
-           "AND o.buyerPressureScore > :minScore " +
-           "AND o.isValid = true ORDER BY o.timestamp DESC LIMIT 10")
-    List<OrderFlowSnapshot> findWithBuyerPressure(
+    List<OrderFlowSnapshot> findBySymbolAndBuyerPressureScoreGreaterThanAndIsValidTrueOrderByTimestampDesc(
         @Param("symbol") String symbol,
-        @Param("minScore") Integer minScore
+        @Param("minScore") Integer minScore,
+        Pageable pageable
     );
 
     /**
      * Find snapshots with strong seller pressure
      */
-    @Query("SELECT o FROM OrderFlowSnapshot o WHERE o.symbol = :symbol " +
-           "AND o.sellerPressureScore > :minScore " +
-           "AND o.isValid = true ORDER BY o.timestamp DESC LIMIT 10")
-    List<OrderFlowSnapshot> findWithSellerPressure(
+    List<OrderFlowSnapshot> findBySymbolAndSellerPressureScoreGreaterThanAndIsValidTrueOrderByTimestampDesc(
         @Param("symbol") String symbol,
-        @Param("minScore") Integer minScore
+        @Param("minScore") Integer minScore,
+        Pageable pageable
     );
 
     /**
      * Find snapshots with good liquidity
      */
-    @Query("SELECT o FROM OrderFlowSnapshot o WHERE o.symbol = :symbol " +
-           "AND o.liquidityScore > :minScore " +
-           "AND o.isValid = true ORDER BY o.timestamp DESC LIMIT 10")
-    List<OrderFlowSnapshot> findWithGoodLiquidity(
+    List<OrderFlowSnapshot> findBySymbolAndLiquidityScoreGreaterThanAndIsValidTrueOrderByTimestampDesc(
         @Param("symbol") String symbol,
-        @Param("minScore") Integer minScore
+        @Param("minScore") Integer minScore,
+        Pageable pageable
     );
 
     /**

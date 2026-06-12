@@ -15,6 +15,8 @@ server:
 spring:
   application:
     name: stokr-platform
+  session:
+    timeout: 5h
   jackson:
     time-zone: Asia/Kolkata
   mail:
@@ -170,14 +172,17 @@ stokr:
   security:
     jwt:
       secret: ${JWT_SECRET:change-me-use-long-random-secret-for-development-only}
-      access-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:900}
+      access-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:18000}
     refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS:1209600}
   risk:
     zone: ${STOKR_RISK_ZONE:Asia/Kolkata}
     max-order-qty: ${STOKR_RISK_MAX_ORDER_QTY:100000}
     max-order-notional: ${STOKR_RISK_MAX_ORDER_NOTIONAL:50000000}
     max-open-positions: ${STOKR_RISK_MAX_OPEN_POSITIONS:100}
-    order-cooldown-ms: ${STOKR_RISK_ORDER_COOLDOWN_MS:0}
+    order-cooldown-ms: ${STOKR_RISK_ORDER_COOLDOWN_MS:30000}
+    cluster-detection-enabled: ${STOKR_RISK_CLUSTER_DETECTION_ENABLED:true}
+    cluster-max-entries: ${STOKR_RISK_CLUSTER_MAX_ENTRIES:2}
+    cluster-detection-window-minutes: ${STOKR_RISK_CLUSTER_DETECTION_WINDOW_MINUTES:2}
     max-trades-per-day: ${STOKR_RISK_MAX_TRADES_PER_DAY:200}
     max-daily-loss-amount: ${STOKR_RISK_MAX_DAILY_LOSS_AMOUNT:0}
     max-portfolio-drawdown-pct: ${STOKR_RISK_MAX_PORTFOLIO_DRAWDOWN_PCT:0}
@@ -400,6 +405,32 @@ stokr:
       force-close-stale-positions: ${STOKR_OMS_FORCE_CLOSE_STALE:true}
   reconciliation:
     interval-ms: ${STOKR_RECONCILIATION_INTERVAL_MS:30000}
+  orphan:
+    monitor:
+      enabled: ${STOKR_ORPHAN_MONITOR_ENABLED:true}
+      cron: ${STOKR_ORPHAN_MONITOR_CRON:0 * * * * *}
+      timezone: ${STOKR_ORPHAN_MONITOR_TIMEZONE:Asia/Kolkata}
+    classification:
+      time-window-minutes: ${STOKR_ORPHAN_TIME_WINDOW_MINUTES:5}
+      evidence-score-threshold: ${STOKR_ORPHAN_EVIDENCE_THRESHOLD:50}
+      confidence-minimum: ${STOKR_ORPHAN_CONFIDENCE_MIN:UNKNOWN}
+      default-classification: ${STOKR_ORPHAN_DEFAULT_CLASS:UNKNOWN_ORIGIN}
+    review:
+      task-due-hours: ${STOKR_ORPHAN_REVIEW_DUE_HOURS:24}
+      enabled: ${STOKR_ORPHAN_REVIEW_ENABLED:true}
+      do-not-touch-priority: ${STOKR_ORPHAN_DO_NOT_TOUCH_PRIORITY:CRITICAL}
+    cleanup:
+      enabled: ${STOKR_ORPHAN_CLEANUP_ENABLED:true}
+      cron: ${STOKR_ORPHAN_CLEANUP_CRON:0 0 1 * * *}
+      archive-cron: ${STOKR_ORPHAN_ARCHIVE_CRON:0 0 0 * * SUN}
+    audit:
+      retention-days: ${STOKR_ORPHAN_AUDIT_RETENTION_DAYS:730}
+      partitioning: ${STOKR_ORPHAN_AUDIT_PARTITIONING:monthly}
+    notifications:
+      enabled: ${STOKR_ORPHAN_NOTIFICATIONS_ENABLED:true}
+      new-orphan-alert: ${STOKR_ORPHAN_NEW_ALERT:true}
+      do-not-touch-alert: ${STOKR_ORPHAN_DO_NOT_TOUCH_ALERT:true}
+      review-task-alert: ${STOKR_ORPHAN_REVIEW_ALERT:true}
   signal:
     outcome-track-ms: ${STOKR_SIGNAL_OUTCOME_TRACK_MS:300000}
     outcome-fast-track-ms: ${STOKR_SIGNAL_OUTCOME_FAST_TRACK_MS:30000}
@@ -416,6 +447,12 @@ stokr:
     bot-username: ${STOKR_TELEGRAM_BOT_USERNAME:}
     webhook-secret: ${STOKR_TELEGRAM_WEBHOOK_SECRET:}
     dry-run: ${STOKR_TELEGRAM_DRY_RUN:true}
+    operator-chat-id: ${STOKR_TELEGRAM_OPERATOR_CHAT_ID:}
+    trader-chat-id: ${STOKR_TELEGRAM_TRADER_CHAT_ID:}
+    admin-chat-id: ${STOKR_TELEGRAM_ADMIN_CHAT_ID:}
+    operator-alerts-enabled: ${STOKR_TELEGRAM_OPERATOR_ALERTS_ENABLED:true}
+    trader-fill-alerts-enabled: ${STOKR_TELEGRAM_TRADER_FILL_ALERTS_ENABLED:true}
+    operator-readiness-alerts-enabled: ${STOKR_TELEGRAM_OPERATOR_READINESS_ALERTS_ENABLED:true}
   broker:
     zerodha:
       api-key: ${STOKR_ZERODHA_API_KEY:}
@@ -428,6 +465,11 @@ stokr:
       token-refresh-before-hours: ${STOKR_ZERODHA_TOKEN_REFRESH_BEFORE_HOURS:4}
       token-refresh-interval-ms: ${STOKR_ZERODHA_TOKEN_REFRESH_INTERVAL_MS:1800000}
       token-refresh-daily-cron: ${STOKR_ZERODHA_TOKEN_REFRESH_DAILY_CRON:0 45 5 * * *}
+      oauth-alert-enabled: ${STOKR_ZERODHA_OAUTH_ALERT_ENABLED:true}
+      oauth-reconnect-alert-enabled: ${STOKR_ZERODHA_OAUTH_RECONNECT_ALERT_ENABLED:false}
+      oauth-success-alert-enabled: ${STOKR_ZERODHA_OAUTH_SUCCESS_ALERT_ENABLED:true}
+      oauth-alert-cooldown-minutes: ${STOKR_ZERODHA_OAUTH_ALERT_COOLDOWN_MINUTES:240}
+      oauth-alert-poll-ms: ${STOKR_ZERODHA_OAUTH_ALERT_POLL_MS:900000}
       test-order-enabled: ${STOKR_ZERODHA_TEST_ORDER_ENABLED:false}
       test-order-dry-run: ${STOKR_ZERODHA_TEST_ORDER_DRY_RUN:true}
   ui:
@@ -444,6 +486,12 @@ stokr:
       interval-ms: ${STOKR_PLATFORM_AUTO_HEAL_INTERVAL_MS:45000}
       reconnect-cooldown-sec: ${STOKR_PLATFORM_AUTO_HEAL_RECONNECT_COOLDOWN_SEC:30}
       pipeline-cooldown-sec: ${STOKR_PLATFORM_AUTO_HEAL_PIPELINE_COOLDOWN_SEC:300}
+    automation:
+      enabled: ${STOKR_PLATFORM_AUTOMATION_ENABLED:true}
+      pre-market-cron: ${STOKR_PLATFORM_AUTOMATION_PRE_MARKET_CRON:0 40 5 * * MON-FRI}
+      pre-open-cron: ${STOKR_PLATFORM_AUTOMATION_PRE_OPEN_CRON:0 55 8 * * MON-FRI}
+      in-session-cron: ${STOKR_PLATFORM_AUTOMATION_IN_SESSION_CRON:0 */30 9-16 * * MON-FRI}
+      token-refresh-before-hours: ${STOKR_PLATFORM_AUTOMATION_TOKEN_REFRESH_BEFORE_HOURS:${STOKR_ZERODHA_TOKEN_REFRESH_BEFORE_HOURS:4}}
     recovery:
       enabled: ${STOKR_PLATFORM_RECOVERY_ENABLED:${STOKR_PLATFORM_AUTO_HEAL_ENABLED:true}}
       interval-ms: ${STOKR_PLATFORM_RECOVERY_INTERVAL_MS:${STOKR_PLATFORM_AUTO_HEAL_INTERVAL_MS:45000}}
@@ -501,6 +549,11 @@ stokr:
     # How much to weight order flow confidence (0.0 = ignore, 1.0 = full weight)
     confidence-adjustment-factor: ${STOKR_ORDERFLOW_CONFIDENCE_ADJUSTMENT:0.5}
 
+    # Tier 1 accuracy improvements: require real order flow data (no synthetic fallback)
+    require-order-flow: ${STOKR_ORDERFLOW_REQUIRE_ORDER_FLOW:true}
+    allow-synthetic: ${STOKR_ORDERFLOW_ALLOW_SYNTHETIC:false}
+    min-liquidity-threshold: ${STOKR_ORDERFLOW_MIN_LIQUIDITY_THRESHOLD:70}
+
     # Data source configuration
     datasource:
       type: ${STOKR_ORDERFLOW_DATASOURCE_TYPE:NSE_FEED}  # NSE_FEED, SIMULATED
@@ -549,6 +602,32 @@ stokr:
     generator-enabled: ${STOKR_CONFIDENCE_GENERATOR_ENABLED:true}
     generator-interval: ${STOKR_CONFIDENCE_GENERATOR_INTERVAL_MS:120000}  # 2 minutes
     generator-initial-delay: ${STOKR_CONFIDENCE_GENERATOR_INITIAL_DELAY_MS:70000}  # 70 seconds
+
+    # Tier 1 accuracy improvements: require 2:1 risk:reward ratio minimum
+    min-risk-reward-ratio: ${STOKR_CONFIDENCE_MIN_RR:2.0}
+
+    # AUTO-TRADE: Convert signals to orders automatically (NEW)
+    auto-trade-enabled: ${STOKR_CONFIDENCE_AUTO_TRADE_ENABLED:false}  # Set to true to enable auto-trading
+    auto-trade:
+      interval-ms: ${STOKR_CONFIDENCE_AUTO_TRADE_INTERVAL_MS:120000}  # 2 minutes (aligned with signal generation)
+      initial-delay-ms: ${STOKR_CONFIDENCE_AUTO_TRADE_INITIAL_DELAY_MS:75000}  # 75 seconds (after signal generation)
+      execution-mode: ${STOKR_CONFIDENCE_AUTO_TRADE_EXECUTION_MODE:SIMULATED}  # SIMULATED (paper) or LIVE
+      default-quantity: ${STOKR_CONFIDENCE_AUTO_TRADE_DEFAULT_QUANTITY:1}  # 1 lot for normal confidence
+      high-confidence-quantity: ${STOKR_CONFIDENCE_AUTO_TRADE_HIGH_CONF_QTY:2}  # 2 lots for high confidence
+      confidence-threshold: ${STOKR_CONFIDENCE_AUTO_TRADE_CONF_THRESHOLD:75}  # Score >= 75 = high confidence
+
+    # AUTO-EXIT: Close positions based on profit/loss targets (NEW)
+    exit:
+      check-interval-ms: ${STOKR_CONFIDENCE_EXIT_CHECK_INTERVAL_MS:60000}  # Check every 1 minute
+      initial-delay-ms: ${STOKR_CONFIDENCE_EXIT_INITIAL_DELAY_MS:10000}  # 10 sec initial delay
+      # Profit targets based on confidence level
+      profit-target-high: ${STOKR_CONFIDENCE_EXIT_PROFIT_TARGET_HIGH:2.0}  # 2% for confidence >= 80
+      profit-target-medium: ${STOKR_CONFIDENCE_EXIT_PROFIT_TARGET_MEDIUM:1.5}  # 1.5% for confidence 70-80
+      profit-target-low: ${STOKR_CONFIDENCE_EXIT_PROFIT_TARGET_LOW:1.0}  # 1% for confidence < 70
+      # Stop loss based on confidence level
+      stop-loss-high: ${STOKR_CONFIDENCE_EXIT_STOP_LOSS_HIGH:1.0}  # 1% SL for confidence >= 80
+      stop-loss-medium: ${STOKR_CONFIDENCE_EXIT_STOP_LOSS_MEDIUM:1.5}  # 1.5% SL for confidence 70-80
+      stop-loss-low: ${STOKR_CONFIDENCE_EXIT_STOP_LOSS_LOW:2.0}  # 2% SL for confidence < 70
 
 logging:
   level:

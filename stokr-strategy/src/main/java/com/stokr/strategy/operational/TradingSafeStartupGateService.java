@@ -85,9 +85,12 @@ public class TradingSafeStartupGateService {
 
     private void evaluate(Instant now) {
         Instant boot = startedAt.get();
-        if (boot != null && Duration.between(boot, now).getSeconds() < minWarmupSeconds) {
-            blockReason = "STARTUP_WARMUP";
-            return;
+        if (boot != null) {
+            long secondsSinceBoot = Duration.between(boot, now).getSeconds();
+            if (secondsSinceBoot >= 0 && secondsSinceBoot < minWarmupSeconds) {
+                blockReason = "STARTUP_WARMUP";
+                return;
+            }
         }
 
         if (!isWithinMarketHours(now)) {

@@ -9,6 +9,7 @@ import com.stokr.oms.repository.PortfolioDailySummaryRepository;
 import com.stokr.oms.repository.PortfolioPnlSnapshotRepository;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.oms.service.PortfolioQueryService;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -52,7 +53,20 @@ public class BrokerAwarePortfolioQueryService extends PortfolioQueryService {
         if (!snap.brokerConnected() || snap.lastSyncAt() == null) {
             return super.exposure(userId);
         }
+        PortfolioExposureDto omsExposure = super.exposure(userId);
+        if (!hasOpenBrokerLegs(snap) && !omsExposure.bySymbol().isEmpty()) {
+            return omsExposure;
+        }
         return exposureFromBrokerTruth(userId, snap);
+    }
+
+    private static boolean hasOpenBrokerLegs(BrokerPositionTruthSnapshot snap) {
+        for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : snap.positions()) {
+            if (row.brokerQty() != null && row.brokerQty().compareTo(BigDecimal.ZERO) != 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private PortfolioExposureDto exposureFromBrokerTruth(UUID userId, BrokerPositionTruthSnapshot snap) {

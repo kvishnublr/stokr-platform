@@ -52,6 +52,9 @@ public class TradingWindowRule implements RiskRule {
                 && "PAPER".equalsIgnoreCase(context.order().getExecutionMode().name())) {
             return RiskDecision.ok();
         }
+        if (context.order() != null && isLiveExitBypass(context.order())) {
+            return RiskDecision.ok();
+        }
         LocalTime t = context.nowLocal();
         boolean mcx = context.order() != null
                 && MarketSegmentUtil.isMcxContext(context.order().getSymbol(), context.order().getStrategyKey());
@@ -61,5 +64,19 @@ public class TradingWindowRule implements RiskRule {
             return RiskDecision.reject(code(), "Outside configured trading window");
         }
         return RiskDecision.ok();
+    }
+
+    private static boolean isLiveExitBypass(com.stokr.oms.domain.OmsOrder order) {
+        if (order.getStrategyKey() != null
+                && order.getStrategyKey().trim().toUpperCase().startsWith("TERMINAL_")) {
+            return true;
+        }
+        String idem = order.getIdempotencyKey();
+        if (idem != null) {
+            String key = idem.trim().toLowerCase();
+            return key.startsWith("outcome-exit:") || key.startsWith("terminal:flatten:")
+                    || key.startsWith("terminal:exit:");
+        }
+        return false;
     }
 }

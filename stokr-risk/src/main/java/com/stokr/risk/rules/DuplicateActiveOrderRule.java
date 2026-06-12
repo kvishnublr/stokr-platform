@@ -14,6 +14,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -48,7 +49,10 @@ public class DuplicateActiveOrderRule implements RiskRule {
         if (o.getBacktestRunId() != null) {
             return RiskDecision.ok();
         }
-        if (o.getSymbol() == null || o.getSide() == null) {
+        if (o.getSymbol() == null || o.getSide() == null || o.getExecutionMode() == null) {
+            return RiskDecision.ok();
+        }
+        if (isExitBypass(o)) {
             return RiskDecision.ok();
         }
 
@@ -68,6 +72,7 @@ public class DuplicateActiveOrderRule implements RiskRule {
                 context.userId(),
                 o.getSymbol(),
                 o.getSide(),
+                o.getExecutionMode(),
                 o.getId(),
                 DUPLICATE_STATES
         );
@@ -75,5 +80,23 @@ public class DuplicateActiveOrderRule implements RiskRule {
             return RiskDecision.reject(code(), "An active order already exists for this symbol and side");
         }
         return RiskDecision.ok();
+    }
+
+    private static boolean isExitBypass(OmsOrder o) {
+        if (o.getStrategyKey() != null) {
+            String sk = o.getStrategyKey().trim().toUpperCase(Locale.ROOT);
+            if (sk.startsWith("TERMINAL_")) {
+                return true;
+            }
+        }
+        String idem = o.getIdempotencyKey();
+        if (idem != null) {
+            String key = idem.trim().toLowerCase(Locale.ROOT);
+            if (key.startsWith("outcome-exit:") || key.startsWith("terminal:flatten:")
+                    || key.startsWith("terminal:exit:")) {
+                return true;
+            }
+        }
+        return false;
     }
 }

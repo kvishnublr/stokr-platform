@@ -106,33 +106,33 @@ export function TradesPage() {
         }
       >
         <DataGrid columns={cols} data={rows} isLoading={q.isLoading} variant={isLight ? "light" : "dark"} />
-        <div className="flex items-center justify-between border-t px-4 py-3 text-xs text-neutral-500">
-          <span>
+        <div className="flex flex-col gap-2 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between text-xs text-neutral-500">
+          <span className="text-xs">
             Page {(q.data?.page ?? 0) + 1}
             {q.data?.totalPages ? ` of ${q.data.totalPages}` : ""}
           </span>
-          <div className="flex gap-2">
+          <div className="flex gap-2 w-full sm:w-auto">
             <button
               type="button"
               disabled={page <= 0}
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               className={cn(
-                "inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-semibold disabled:opacity-40",
+                "flex-1 sm:flex-none inline-flex items-center justify-center gap-1 rounded-lg border px-3 py-1.5 text-xs sm:text-xs font-semibold disabled:opacity-40",
                 isLight ? "border-neutral-200 hover:bg-neutral-50" : "border-neutral-700 hover:bg-neutral-800",
               )}
             >
-              <ChevronLeft className="h-3.5 w-3.5" /> Prev
+              <ChevronLeft className="h-3.5 w-3.5" /> <span className="sm:inline">Prev</span>
             </button>
             <button
               type="button"
               disabled={q.data != null && page >= q.data.totalPages - 1}
               onClick={() => setPage((p) => p + 1)}
               className={cn(
-                "inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-semibold disabled:opacity-40",
+                "flex-1 sm:flex-none inline-flex items-center justify-center gap-1 rounded-lg border px-3 py-1.5 text-xs sm:text-xs font-semibold disabled:opacity-40",
                 isLight ? "border-neutral-200 hover:bg-neutral-50" : "border-neutral-700 hover:bg-neutral-800",
               )}
             >
-              Next <ChevronRight className="h-3.5 w-3.5" />
+              <span className="sm:inline">Next</span> <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>

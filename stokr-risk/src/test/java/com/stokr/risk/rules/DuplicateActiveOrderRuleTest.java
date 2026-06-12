@@ -1,5 +1,6 @@
 package com.stokr.risk.rules;
 
+import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.risk.model.RiskContext;
@@ -23,7 +24,7 @@ class DuplicateActiveOrderRuleTest {
     void allowsWhenNoDuplicate() {
         OmsOrderRepository repo = mock(OmsOrderRepository.class);
         StrategySignalRepository signalRepo = mock(StrategySignalRepository.class);
-        when(repo.countActiveSameDirection(any(), any(), any(), any(), any())).thenReturn(0L);
+        when(repo.countActiveSameDirection(any(), any(), any(), any(), any(), any())).thenReturn(0L);
         DuplicateActiveOrderRule rule = new DuplicateActiveOrderRule(repo, signalRepo);
         RiskContext ctx = ctx(order());
         assertThat(rule.evaluate(ctx).allowed()).isTrue();
@@ -34,10 +35,21 @@ class DuplicateActiveOrderRuleTest {
         OmsOrderRepository repo = mock(OmsOrderRepository.class);
         StrategySignalRepository signalRepo = mock(StrategySignalRepository.class);
         OmsOrder o = order();
-        when(repo.countActiveSameDirection(eq(o.getUserId()), eq("NIFTY"), eq("BUY"), eq(o.getId()), any()))
+        when(repo.countActiveSameDirection(eq(o.getUserId()), eq("NIFTY"), eq("BUY"), eq(ExecutionMode.LIVE), eq(o.getId()), any()))
                 .thenReturn(1L);
         DuplicateActiveOrderRule rule = new DuplicateActiveOrderRule(repo, signalRepo);
         assertThat(rule.evaluate(ctx(o)).allowed()).isFalse();
+    }
+
+    @Test
+    void allowsTerminalFlattenDespiteDuplicate() {
+        OmsOrderRepository repo = mock(OmsOrderRepository.class);
+        StrategySignalRepository signalRepo = mock(StrategySignalRepository.class);
+        OmsOrder o = order();
+        o.setStrategyKey("TERMINAL_FLATTEN");
+        when(repo.countActiveSameDirection(any(), any(), any(), any(), any(), any())).thenReturn(1L);
+        DuplicateActiveOrderRule rule = new DuplicateActiveOrderRule(repo, signalRepo);
+        assertThat(rule.evaluate(ctx(o)).allowed()).isTrue();
     }
 
     @Test
@@ -58,6 +70,7 @@ class DuplicateActiveOrderRuleTest {
         o.setSide("BUY");
         o.setOrderType("MARKET");
         o.setQuantity(BigDecimal.ONE);
+        o.setExecutionMode(ExecutionMode.LIVE);
         return o;
     }
 

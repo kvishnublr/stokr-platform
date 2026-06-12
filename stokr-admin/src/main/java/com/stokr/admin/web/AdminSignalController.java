@@ -33,6 +33,7 @@ import com.stokr.strategy.domain.StrategyRuntimeBinding;
 import com.stokr.strategy.domain.StrategyUniverseSymbol;
 import com.stokr.strategy.runtime.SignalPipelineActivationService;
 // StrategyEvaluationScheduler removed — catalog scanner handles evaluation
+import com.stokr.execution.pipeline.SignalOutcomeExitService;
 import com.stokr.strategy.service.SignalHistoricalReplayService;
 import com.stokr.strategy.service.SignalOutcomeTrackerService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -81,6 +82,7 @@ public class AdminSignalController {
     private final StrategyInstanceRepository strategyInstanceRepository;
     private final StrategyInstanceLifecycleService strategyInstanceLifecycleService;
     private final SignalOutcomeTrackerService outcomeTrackerService;
+    private final SignalOutcomeExitService signalOutcomeExitService;
     private final SignalHistoricalReplayService historicalReplayService;
     private final SignalPipelineActivationService signalPipelineActivationService;
     private final StrategyDefinitionRepository strategyDefinitionRepository;
@@ -381,6 +383,17 @@ public class AdminSignalController {
         }
         Map<String, Object> seeded = replayEquityCandleSeedService.seedSymbols(new ArrayList<>(symbols));
         return ApiResponse.ok(seeded, CorrelationIdHolder.get());
+    }
+
+    @PostMapping("/backfill-outcome-exits")
+    @Operation(summary = "Place missing OMS exit orders for signals that exited without outcome-exit legs")
+    public ApiResponse<Map<String, Object>> backfillOutcomeExits(
+            @RequestParam(defaultValue = "24") int lookbackHours,
+            @RequestParam(defaultValue = "100") int maxSignals
+    ) {
+        Instant since = Instant.now().minus(lookbackHours, ChronoUnit.HOURS);
+        Map<String, Object> result = signalOutcomeExitService.backfillMissingOutcomeExits(since, maxSignals);
+        return ApiResponse.ok(result, CorrelationIdHolder.get());
     }
 
     @PostMapping("/track-outcomes")

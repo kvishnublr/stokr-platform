@@ -201,7 +201,9 @@ public class LiveIntradayMoverService {
                 : 0.0;
 
         double volFactor = Math.min(3.0, Math.log10(Math.max(1, volumeSum)));
-        double activity = Math.abs(dayChange) * 3.0 + Math.abs(recentMom) * 2.0 + volFactor;
+        // INTRADAY ROTATION: Prioritize current momentum (recentMom 4.0x) over stale dayChange (1.5x)
+        // This enables proper exit signals when momentum decays + stock rotation throughout day
+        double activity = Math.abs(dayChange) * 1.5 + Math.abs(recentMom) * 4.0 + volFactor * 2.0;
 
         return new MoverScore(symbol, close, dayChange, recentMom, volumeSum, activity, volFactor);
     }

@@ -49,12 +49,15 @@ public class IntelligenceScore {
     @Column(name = "signal_strength", length = 30)
     private String signalStrength;
 
+    @Builder.Default
     @Column(name = "should_enhance_confidence")
     private Boolean shouldEnhanceConfidence = false;
 
+    @Builder.Default
     @Column(name = "should_reduce_confidence")
     private Boolean shouldReduceConfidence = false;
 
+    @Builder.Default
     @Column(name = "should_skip")
     private Boolean shouldSkip = false;
 

@@ -16,11 +16,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.stokr.strategy.dto.AssetClassAllocationDto;
+import com.stokr.strategy.dto.TraderCapitalAllocationView;
+
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -266,6 +273,189 @@ public class StrategyExecutionConfigService {
                 .findByStrategyKeyAndDeletedFalse(strategyKey)
                 .orElse(null);
         return toTraderDto(cfg, false, definition);
+    }
+
+    // ── Trader capital allocation (asset-class fan-out) ───────────────────────
+
+    /** Display order of the four asset-class buckets shown in the trader UI. */
+    private static final List<String> ASSET_CLASSES = List.of("CASH", "F&O", "CURRENCY", "MCX");
+
+    /**
+     * Known platform strategies whose catalog asset_class may not be populated.
+     * These explicit mappings take precedence over catalog-derived classification.
+     */
+    private static final Map<String, Set<String>> EXPLICIT_MEMBERS = Map.of(
+            "CASH", Set.of("ADV_CASH", "EARLY_BREAKOUT", "GAP_FILL", "INDEX_HUNT",
+                    "NSE_SPIKE_DETECTION", "PRE_OPEN_GAP_OI", "S3_VWAP_RETEST",
+                    "S7_RANGE_FADE", "SECTOR_LAGGARD", "VWAP_BOUNCE"),
+            "CURRENCY", Set.of("EUR_INR_MEAN_REVERSION", "USD_INR_MOMENTUM"));
+
+    /** Production-safe defaults shown when a trader has no personal capital overrides yet. */
+    private static final Map<String, AssetClassAllocationDto> DEFAULTS = Map.of(
+            "CASH", new AssetClassAllocationDto("CASH", BigDecimal.valueOf(50000), 10, BigDecimal.valueOf(5000), true, BigDecimal.valueOf(5000), false, List.of()),
+            "F&O", new AssetClassAllocationDto("F&O", BigDecimal.valueOf(30000), 5, BigDecimal.valueOf(6000), true, BigDecimal.valueOf(3000), false, List.of()),
+            "CURRENCY", new AssetClassAllocationDto("CURRENCY", BigDecimal.valueOf(15000), 3, BigDecimal.valueOf(5000), true, BigDecimal.valueOf(1500), false, List.of()),
+            "MCX", new AssetClassAllocationDto("MCX", BigDecimal.valueOf(5000), 2, BigDecimal.valueOf(2500), false, BigDecimal.valueOf(500), false, List.of()));
+
+    private static final BigDecimal DEFAULT_TOTAL_CAPITAL = BigDecimal.valueOf(100000);
+
+    /**
+     * Resolves which strategy keys belong to each asset-class bucket. Explicit platform
+     * mappings win; everything else is classified from the catalog (asset_class / segment /
+     * derivative flags). Runtime-bound scanners are included via {@link #loadCatalogDefinitionsByKey()}.
+     */
+    private Map<String, List<String>> resolveMembersByAssetClass() {
+        Map<String, String> keyToClass = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        EXPLICIT_MEMBERS.forEach((cls, keys) -> keys.forEach(k -> keyToClass.put(k, cls)));
+        for (StrategyDefinition def : loadCatalogDefinitionsByKey().values()) {
+            keyToClass.putIfAbsent(def.getStrategyKey(), classifyAssetClass(def));
+        }
+        Map<String, List<String>> byClass = new LinkedHashMap<>();
+        for (String cls : ASSET_CLASSES) {
+            byClass.put(cls, new ArrayList<>());
+        }
+        keyToClass.forEach((key, cls) -> byClass.computeIfAbsent(cls, c -> new ArrayList<>()).add(key));
+        byClass.values().forEach(list -> list.sort(String.CASE_INSENSITIVE_ORDER));
+        return byClass;
+    }
+
+    private static String classifyAssetClass(StrategyDefinition def) {
+        String seg = def.getSegment() == null ? "" : def.getSegment().trim().toUpperCase();
+        String ac = def.getAssetClass() == null ? "" : def.getAssetClass().trim().toUpperCase();
+        if ("MCX".equals(seg) || "COMMODITY".equals(ac)) return "MCX";
+        if ("CDS".equals(seg) || "CURRENCY".equals(ac)) return "CURRENCY";
+        if (def.isDerivativeEnabled() || def.isFuturesStrategyEnabled() || def.isOptionStrategyEnabled()
+                || "FUTURES".equals(ac) || "OPTIONS".equals(ac) || "NFO".equals(seg)) {
+            return "F&O";
+        }
+        return "CASH";
+    }
+
+    /**
+     * Builds the trader-facing capital allocation view by aggregating the effective
+     * per-strategy configs for each asset-class bucket. When a bucket has no personal
+     * overrides, production-safe defaults are returned for that bucket.
+     */
+    public TraderCapitalAllocationView getCapitalAllocation(UUID userId) {
+        Map<String, List<String>> membersByClass = resolveMembersByAssetClass();
+        Map<String, StrategyExecutionConfig> userOverrides = configRepository
+                .findByUserIdAndDeletedFalseOrderByStrategyKeyAsc(userId)
+                .stream()
+                .collect(Collectors.toMap(StrategyExecutionConfig::getStrategyKey, c -> c, (a, b) -> a));
+
+        List<AssetClassAllocationDto> allocations = new ArrayList<>();
+        for (String cls : ASSET_CLASSES) {
+            List<String> members = membersByClass.getOrDefault(cls, List.of());
+            allocations.add(aggregateBucket(cls, members, userOverrides));
+        }
+        BigDecimal total = allocations.stream()
+                .map(AssetClassAllocationDto::allocatedCapital)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (total.compareTo(DEFAULT_TOTAL_CAPITAL) < 0) {
+            total = DEFAULT_TOTAL_CAPITAL;
+        }
+        return new TraderCapitalAllocationView(total, allocations);
+    }
+
+    private AssetClassAllocationDto aggregateBucket(
+            String cls, List<String> members, Map<String, StrategyExecutionConfig> userOverrides) {
+        // Representative = first member with a personal override (all members are written identically).
+        StrategyExecutionConfig rep = members.stream()
+                .map(userOverrides::get)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        AssetClassAllocationDto def = DEFAULTS.getOrDefault(cls,
+                new AssetClassAllocationDto(cls, BigDecimal.ZERO, 1, BigDecimal.ZERO, false, BigDecimal.ZERO, false, List.of()));
+        if (rep == null) {
+            return new AssetClassAllocationDto(cls, def.allocatedCapital(), def.maxConcurrentPositions(),
+                    def.perTradeLimitAmount(), def.enabled(), def.dailyLossLimit(), def.dailyLossLimitEnabled(), members);
+        }
+        BigDecimal allocated = rep.getAllocatedCapital() != null ? rep.getAllocatedCapital() : def.allocatedCapital();
+        int maxPos = rep.getMaxPositions() > 0 ? rep.getMaxPositions() : def.maxConcurrentPositions();
+        BigDecimal perTrade = rep.getMaxCapitalPerTrade() != null
+                ? rep.getMaxCapitalPerTrade()
+                : allocated.divide(BigDecimal.valueOf(Math.max(maxPos, 1)), 0, RoundingMode.FLOOR);
+        boolean capitalSizingActive = "FIXED_CAPITAL_PER_TRADE".equals(rep.getSizingMode()) && !rep.isForceFixedQty();
+        boolean lossEnabled = rep.getDailyLossLimit() != null;
+        BigDecimal lossLimit = rep.getDailyLossLimit() != null ? rep.getDailyLossLimit() : def.dailyLossLimit();
+        return new AssetClassAllocationDto(cls, allocated, maxPos, perTrade, capitalSizingActive,
+                lossLimit, lossEnabled, members);
+    }
+
+    /**
+     * Persists a trader's capital allocation by fanning each asset-class bucket out to its
+     * member strategies' personal execution-config rows. Enabled buckets switch to
+     * FIXED_CAPITAL_PER_TRADE sizing; disabled buckets revert to fixed-qty sizing without
+     * touching the strategy's enabled flag (admin-controlled routing fields are never modified).
+     */
+    @Transactional
+    public TraderCapitalAllocationView saveCapitalAllocation(UUID userId, TraderCapitalAllocationView req) {
+        Map<String, List<String>> membersByClass = resolveMembersByAssetClass();
+        for (AssetClassAllocationDto alloc : req.allocations()) {
+            if (alloc == null || alloc.assetClass() == null) continue;
+            List<String> members = membersByClass.getOrDefault(alloc.assetClass().trim().toUpperCase(), List.of());
+            for (String strategyKey : members) {
+                applyCapitalToStrategy(userId, strategyKey, alloc);
+            }
+        }
+        log.info("trader_capital.saved userId={} buckets={}", userId, req.allocations().size());
+        return getCapitalAllocation(userId);
+    }
+
+    private void applyCapitalToStrategy(UUID userId, String strategyKey, AssetClassAllocationDto alloc) {
+        StrategyExecutionConfig cfg = configRepository
+                .findByUserIdAndStrategyKeyAndDeletedFalse(userId, strategyKey)
+                .orElseGet(() -> {
+                    StrategyExecutionConfig newCfg = new StrategyExecutionConfig();
+                    newCfg.setUserId(userId);
+                    newCfg.setStrategyKey(strategyKey);
+                    // Copy admin-controlled read-only fields from global baseline
+                    configRepository.findByUserIdIsNullAndStrategyKeyAndDeletedFalse(strategyKey)
+                            .ifPresent(global -> {
+                                newCfg.setExecutionMode(global.getExecutionMode());
+                                newCfg.setLiveEnabled(global.isLiveEnabled());
+                                newCfg.setPaperEnabled(global.isPaperEnabled());
+                                newCfg.setEnabled(global.isEnabled());
+                                newCfg.setMaxTradeQuantity(global.getMaxTradeQuantity());
+                                newCfg.setLiveConfirmationRequired(global.isLiveConfirmationRequired());
+                            });
+                    return newCfg;
+                });
+
+        BigDecimal allocated = alloc.allocatedCapital() != null ? alloc.allocatedCapital() : BigDecimal.ZERO;
+        int maxPos = Math.max(alloc.maxConcurrentPositions(), 1);
+        BigDecimal perTrade = alloc.perTradeLimitAmount() != null && alloc.perTradeLimitAmount().signum() > 0
+                ? alloc.perTradeLimitAmount()
+                : allocated.divide(BigDecimal.valueOf(maxPos), 0, RoundingMode.FLOOR);
+
+        cfg.setAllocatedCapital(allocated);
+        cfg.setMaxPositions(maxPos);
+        cfg.setMaxCapitalPerTrade(perTrade);
+
+        if (alloc.enabled()) {
+            // Capital sizing active: qty = floor(maxCapitalPerTrade / price)
+            cfg.setSizingMode("FIXED_CAPITAL_PER_TRADE");
+            cfg.setForceFixedQty(false);
+        } else {
+            // Disabled bucket → revert sizing only; leave strategy enabled flag untouched.
+            cfg.setSizingMode("FIXED_QUANTITY");
+            cfg.setForceFixedQty(true);
+        }
+
+        // Daily loss limit is enforced per-strategy by StrategyDailyLossLimitRule and
+        // auto-resets each IST business day via StrategyDailyLossTrackerService.
+        if (alloc.dailyLossLimitEnabled() && alloc.dailyLossLimit() != null
+                && alloc.dailyLossLimit().signum() > 0) {
+            cfg.setDailyLossLimit(alloc.dailyLossLimit());
+            cfg.setAutoDisableOnLoss(true);
+        } else {
+            cfg.setDailyLossLimit(null);
+            cfg.setAutoDisableOnLoss(false);
+        }
+
+        configRepository.save(cfg);
     }
 
     public TraderExecutionConfigDto toTraderDto(StrategyExecutionConfig cfg, boolean isGlobalFallback) {

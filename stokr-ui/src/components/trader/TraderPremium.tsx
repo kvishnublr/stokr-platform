@@ -30,6 +30,8 @@ export type CommandPositionRow = {
   notional?: number | null;
   quantitySource?: string | null;
   parityBadge?: { label: string; tone: "rose" | "sky" | "amber" } | null;
+  stopLoss?: number | null;
+  targetPrice?: number | null;
 };
 
 export function TraderPageShell({
@@ -234,6 +236,32 @@ function fmtPrice(v: unknown) {
   return Number.isFinite(n) ? n.toFixed(2) : "—";
 }
 
+function calculatePctChange(ltp: number | null | undefined, avg: number | null | undefined): number | null {
+  if (ltp == null || avg == null || avg === 0) return null;
+  return ((ltp - avg) / avg) * 100;
+}
+
+function calculateSLTargetPosition(ltp: number | null | undefined, sl: number | null | undefined, target: number | null | undefined): { pct: number; isBeyondTarget: boolean; isBeyondSL: boolean } | null {
+  if (ltp == null || sl == null || target == null) return null;
+  const slNum = Number(sl);
+  const targetNum = Number(target);
+  const ltpNum = Number(ltp);
+  if (!Number.isFinite(slNum) || !Number.isFinite(targetNum) || !Number.isFinite(ltpNum)) return null;
+
+  const range = Math.abs(targetNum - slNum);
+  if (range === 0) return null;
+
+  if (slNum < targetNum) {
+    const distFromSL = ltpNum - slNum;
+    const pct = Math.max(0, Math.min(100, (distFromSL / range) * 100));
+    return { pct, isBeyondTarget: ltpNum >= targetNum, isBeyondSL: ltpNum <= slNum };
+  } else {
+    const distFromSL = slNum - ltpNum;
+    const pct = Math.max(0, Math.min(100, (distFromSL / range) * 100));
+    return { pct, isBeyondTarget: ltpNum <= targetNum, isBeyondSL: ltpNum >= slNum };
+  }
+}
+
 /** Institutional live positions table — dashboard + positions page. */
 export function LivePositionsCommandTable({
   title = "Live positions",
@@ -305,8 +333,8 @@ export function LivePositionsCommandTable({
           <thead>
             <tr className={cn("text-[10px] uppercase tracking-[0.16em]", isLight ? "bg-neutral-900 text-neutral-300" : "bg-black/40 text-neutral-400")}>
               {(showExtendedColumns
-                ? ["Symbol", "MTM P&L", "Side", "Qty", "Avg", "LTP", "Unrealized", "Realized", "Notional", "Source"]
-                : ["Symbol", "Side", "Qty", "LTP", "MTM P&L", "Unrealized"]
+                ? ["Symbol", "MTM P&L", "Side", "Qty", "Avg", "LTP", "% Change", "SL/Target", "Unrealized", "Realized", "Notional", "Source"]
+                : ["Symbol", "Side", "Qty", "LTP", "% Change", "MTM P&L", "Unrealized"]
               ).map((h) => (
                 <th key={h} className="px-3 py-3 font-bold first:pl-5 last:pr-5">{h}</th>
               ))}
@@ -370,6 +398,46 @@ export function LivePositionsCommandTable({
                       <>
                         <td className="px-3 py-3.5 font-mono tabular-nums">{fmtPrice(r.avgPrice)}</td>
                         <td className="px-3 py-3.5 font-mono tabular-nums">{fmtPrice(r.ltp)}</td>
+                        <td className="px-3 py-3.5 font-mono tabular-nums">
+                          {(() => {
+                            const pctChange = calculatePctChange(Number(r.ltp ?? 0), Number(r.avgPrice ?? 0));
+                            if (pctChange === null) return "—";
+                            const isPositive = pctChange >= 0;
+                            return (
+                              <span className={cn("font-bold", isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")}>
+                                {isPositive ? "+" : ""}{pctChange.toFixed(2)}%
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-3 py-3.5">
+                          {(() => {
+                            const position = calculateSLTargetPosition(Number(r.ltp ?? 0), r.stopLoss, r.targetPrice);
+                            if (position === null) return "—";
+                            return (
+                              <div className="flex flex-col gap-1">
+                                <div className={cn("h-2 overflow-hidden rounded-full", isLight ? "bg-neutral-200" : "bg-neutral-700")}>
+                                  <motion.div
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${position.pct}%` }}
+                                    transition={{ duration: 0.5, delay: i * 0.04 }}
+                                    className={cn(
+                                      "h-full rounded-full",
+                                      position.isBeyondTarget
+                                        ? "bg-gradient-to-r from-emerald-500 to-emerald-600"
+                                        : position.isBeyondSL
+                                          ? "bg-gradient-to-r from-rose-500 to-rose-600"
+                                          : "bg-gradient-to-r from-amber-500 to-emerald-500"
+                                    )}
+                                  />
+                                </div>
+                                <div className={cn("text-[10px] font-semibold", isLight ? "text-neutral-600" : "text-neutral-400")}>
+                                  SL {fmtPrice(r.stopLoss)} • {fmtPrice(r.ltp)} • TGT {fmtPrice(r.targetPrice)}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </td>
                         <td className="px-3 py-3.5"><PnlCell value={r.unrealizedPnl} /></td>
                         <td className="px-3 py-3.5"><PnlCell value={r.realizedPnl} /></td>
                         <td className="px-3 py-3.5 font-mono tabular-nums">{r.notional != null ? formatInr(r.notional).replace(/^\+/, "") : "—"}</td>
@@ -382,6 +450,18 @@ export function LivePositionsCommandTable({
                     ) : (
                       <>
                         <td className="px-3 py-3.5 font-mono tabular-nums">{fmtPrice(r.ltp)}</td>
+                        <td className="px-3 py-3.5 font-mono tabular-nums">
+                          {(() => {
+                            const pctChange = calculatePctChange(Number(r.ltp ?? 0), Number(r.avgPrice ?? 0));
+                            if (pctChange === null) return "—";
+                            const isPositive = pctChange >= 0;
+                            return (
+                              <span className={cn("font-bold", isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")}>
+                                {isPositive ? "+" : ""}{pctChange.toFixed(2)}%
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td className="px-3 py-3.5">
                           <div className="space-y-1.5">
                             <PnlCell value={r.mtmPnl} />

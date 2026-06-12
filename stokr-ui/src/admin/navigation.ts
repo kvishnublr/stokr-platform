@@ -359,6 +359,22 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     subtitle: "Reports & operational KPIs",
     items: [
       {
+        to: "/admin/performance",
+        label: "Performance Dashboard",
+        description: "Signal execution metrics by confidence bracket, targets hit, SL hit rates, PnL tracking",
+        icon: TrendingUp,
+        tier: "critical",
+        keywords: ["performance", "metrics", "signals", "pnl", "hit rate", "dashboard"],
+      },
+      {
+        to: "/intraday-dashboard",
+        label: "Intraday Dashboard",
+        description: "Live intraday P&L, capital, hit rate, and risk",
+        icon: BarChart3,
+        tier: "frequent",
+        keywords: ["intraday", "dashboard", "pnl", "risk", "capital"],
+      },
+      {
         to: "/admin/reports",
         label: "Reports",
         description: "Operational reports summary",

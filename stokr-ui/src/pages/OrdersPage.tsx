@@ -169,10 +169,10 @@ export function OrdersPage(props?: { embedded?: boolean }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         {!embedded ? (
           <div>
-            <h1 className={cn("text-2xl font-semibold tracking-tight", isLight ? "text-slate-900" : "text-white")}>Orders</h1>
+            <h1 className={cn("text-xl font-semibold tracking-tight sm:text-2xl", isLight ? "text-slate-900" : "text-white")}>Orders</h1>
             <p className={cn("mt-1 text-sm", isLight ? "text-slate-600" : "text-neutral-400")}>
               OMS history with rejection reasons, server-side pagination, and CSV export.
             </p>
@@ -180,7 +180,7 @@ export function OrdersPage(props?: { embedded?: boolean }) {
         ) : (
           <div />
         )}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <input
             placeholder="Filter symbol"
             value={symbol}
@@ -189,7 +189,7 @@ export function OrdersPage(props?: { embedded?: boolean }) {
               setSymbol(e.target.value);
             }}
             className={cn(
-              "rounded-xl border px-3 py-2 text-sm outline-none transition-shadow focus:ring-2",
+              "rounded-xl border px-3 py-2 text-xs sm:text-sm outline-none transition-shadow focus:ring-2 w-full sm:w-auto",
               isLight
                 ? "border-slate-200/80 bg-white/90 text-slate-900 shadow-sm focus:border-blue-400 focus:ring-blue-100"
                 : "border-neutral-800 bg-neutral-950 text-white focus:border-blue-600 focus:ring-blue-900/40",
@@ -201,14 +201,14 @@ export function OrdersPage(props?: { embedded?: boolean }) {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             className={cn(
-              "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors",
+              "inline-flex items-center justify-center gap-1 sm:gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors w-full sm:w-auto",
               isLight
                 ? "border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
                 : "border-neutral-700 text-neutral-100 hover:bg-neutral-900",
             )}
           >
             <Download className="h-3.5 w-3.5" />
-            Export CSV
+            <span className="sm:inline">Export CSV</span>
           </motion.button>
         </div>
       </div>
@@ -241,11 +241,11 @@ export function OrdersPage(props?: { embedded?: boolean }) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08, duration: 0.4 }}
       >
-        <table className="w-full min-w-[900px] border-collapse text-left">
+        <table className="w-full min-w-[600px] border-collapse text-left">
           <thead className={cn("sticky top-0 z-10 backdrop-blur-md", isLight ? "bg-white/95" : "bg-neutral-950/95")}>
             <tr className={cn("border-b", isLight ? "border-slate-200/80" : "border-neutral-800")}>
               {["Time", "Symbol", "Side", "State", "Mode", "Strategy", "Qty", "Reject reason"].map((h) => (
-                <th key={h} className={thCls}>
+                <th key={h} className={cn(thCls, h === "Strategy" || h === "Mode" ? "hidden md:table-cell" : "")}>
                   {h}
                 </th>
               ))}
@@ -286,17 +286,17 @@ export function OrdersPage(props?: { embedded?: boolean }) {
                     isLight ? "border-slate-100" : "border-neutral-800/60",
                   )}
                 >
-                  <td className={cn(tdBase, "font-mono", isLight ? "text-slate-600" : "text-neutral-400")}>{fmtDateTime(r.createdAt)}</td>
-                  <td className={cn(tdBase, "font-mono font-semibold", isLight ? "text-slate-900" : "text-white")}>{r.symbol}</td>
-                  <td className={tdBase}>
+                  <td className={cn(tdBase, "text-xs sm:text-xs font-mono", isLight ? "text-slate-600" : "text-neutral-400")}>{fmtDateTime(r.createdAt)}</td>
+                  <td className={cn(tdBase, "text-xs sm:text-xs font-mono font-semibold", isLight ? "text-slate-900" : "text-white")}>{r.symbol}</td>
+                  <td className={cn(tdBase, "text-xs sm:text-xs")}>
                     <SideBadge side={r.side} isLight={isLight} />
                   </td>
-                  <td className={tdBase}>
+                  <td className={cn(tdBase, "text-xs sm:text-xs")}>
                     <StateBadge state={r.state} isLight={isLight} />
                   </td>
-                  <td className={cn(tdBase, isLight ? "text-slate-700" : "text-neutral-300")}>{r.executionMode ?? "—"}</td>
+                  <td className={cn("hidden md:table-cell max-w-[80px] truncate px-4 py-3 text-xs", isLight ? "text-slate-700" : "text-neutral-300")}>{r.executionMode ?? "—"}</td>
                   <td
-                    className={cn("max-w-[160px] truncate px-4 py-3 text-xs", isLight ? "text-slate-700" : "text-neutral-300")}
+                    className={cn("hidden md:table-cell max-w-[160px] truncate px-4 py-3 text-xs", isLight ? "text-slate-700" : "text-neutral-300")}
                     title={r.strategyKey ?? ""}
                   >
                     {r.strategyKey ?? "—"}
@@ -324,15 +324,15 @@ export function OrdersPage(props?: { embedded?: boolean }) {
       </motion.div>
 
       <motion.div
-        className={cn("flex items-center justify-between text-xs", isLight ? "text-slate-500" : "text-neutral-500")}
+        className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-xs", isLight ? "text-slate-500" : "text-neutral-500")}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.15 }}
       >
-        <span>
+        <span className="text-xs">
           Page {(q.data?.page ?? 0) + 1} / {Math.max(1, q.data?.totalPages ?? 1)} · {q.data?.totalElements ?? 0} orders
         </span>
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full sm:w-auto">
           <motion.button
             type="button"
             disabled={page <= 0}
@@ -340,7 +340,7 @@ export function OrdersPage(props?: { embedded?: boolean }) {
             whileHover={page > 0 ? { scale: 1.03 } : undefined}
             whileTap={page > 0 ? { scale: 0.97 } : undefined}
             className={cn(
-              "rounded-lg border px-3 py-1.5 disabled:opacity-40",
+              "flex-1 sm:flex-none rounded-lg border px-3 py-1.5 text-xs sm:text-xs disabled:opacity-40",
               isLight ? "border-slate-200 bg-white hover:bg-slate-50" : "border-neutral-800 hover:bg-neutral-900",
             )}
           >
@@ -353,7 +353,7 @@ export function OrdersPage(props?: { embedded?: boolean }) {
             whileHover={q.data != null && page < q.data.totalPages - 1 ? { scale: 1.03 } : undefined}
             whileTap={q.data != null && page < q.data.totalPages - 1 ? { scale: 0.97 } : undefined}
             className={cn(
-              "rounded-lg border px-3 py-1.5 disabled:opacity-40",
+              "flex-1 sm:flex-none rounded-lg border px-3 py-1.5 text-xs sm:text-xs disabled:opacity-40",
               isLight ? "border-slate-200 bg-white hover:bg-slate-50" : "border-neutral-800 hover:bg-neutral-900",
             )}
           >

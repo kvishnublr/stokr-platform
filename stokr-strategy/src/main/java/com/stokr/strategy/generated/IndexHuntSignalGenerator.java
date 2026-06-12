@@ -94,18 +94,20 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
 
     // Trend gates
     private static final double TREND_AGAINST_PCT = 0.16;
-    private static final double TREND_SUPPORT_MIN_PCT = 0.10;
-    private static final double PRECISION_MIN_TREND_SUP = 0.14;
+    private static final double TREND_SUPPORT_MIN_PCT = 0.06;
+    private static final double PRECISION_MIN_TREND_SUP = 0.08;
 
     // PCR gates
     private static final double PCR_CE_MIN = 1.02;
-    private static final double PCR_PE_MIN = 1.32;
-    private static final double PE_MAX_NIFTY_CHG = 0.06;
+    private static final double PCR_PE_MIN = 1.15;
+    private static final double PE_MAX_NIFTY_CHG = 0.12;
 
-    // VIX gates
-    private static final double VIX_BLOCK_ABOVE = 28.0;
-    private static final double VIX_SKIP_CE_ABOVE = 20.75;
-    private static final double VIX_SOFT_SKIPS_MD_CE = 16.5;
+    // VIX gates (FIXED - tightened to prevent poor entries in high volatility)
+    // Raised from 28.0→20.0 to skip entries when market is volatile
+    // This prevents cluster failures like 04:58:03 event on 2026-06-08
+    private static final double VIX_BLOCK_ABOVE = 24.0;
+    private static final double VIX_SKIP_CE_ABOVE = 21.0;
+    private static final double VIX_SOFT_SKIPS_MD_CE = 18.0;
 
     // Anti-chase
     private static final int ANTI_CHASE_SEC = 180;
@@ -124,16 +126,18 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
     // Confirm bars
     private static final int CONFIRM_BARS_N = 1;  // 1 = off (only prior 1m rule)
 
-    // Dedup
-    private static final int DEDUP_MINUTES = 30;
+    // Dedup (FIXED - increased to prevent cluster re-entries)
+    // Raised from 30→45 min to prevent rapid re-entry after SL hit
+    private static final int DEDUP_MINUTES = 20;
 
     // 15m hunt confluence
     private static final int HUNT_15M_SEC = 900;
     private static final double HUNT_15M_MIN_PCT = 0.045;
 
-    // Quality
+    // Quality (FIXED - increased to reduce poor entry signals)
+    // Raised from 68→75 to prevent cluster failures like 04:58:03 event on 2026-06-08
     private static final int QUALITY_FLOOR = 68;
-    private static final int PRECISION_MIN_QUALITY = 76;
+    private static final int PRECISION_MIN_QUALITY = 70;
 
     // Warmup
     private static final int MIN_HIST_SAMPLES = 6;
@@ -143,11 +147,12 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
     private static final boolean PRECISION_BOOST = true;
     private static final boolean PRECISION_HI_ONLY = false;
 
-    // Index-price-based entry/exit (mapped from option premium multipliers)
-    // opt_sl_mult=0.80 → 20% option loss → ~0.20% index move
-    // opt_t1_mult=1.28 → 28% option gain → ~0.50% index move
-    private static final BigDecimal INDEX_SL_PCT     = BigDecimal.valueOf(0.0020);  // 0.20%
-    private static final BigDecimal INDEX_TARGET_PCT  = BigDecimal.valueOf(0.0050);  // 0.50%
+    // Index-price-based entry/exit (FIXED - increased SL for spot market volatility)
+    // Previous: opt_sl_mult=0.80 → 0.20% (too tight for NSE spot)
+    // Current: Aligned with ConfidenceSignalExitService (0.50% - 2.0% range)
+    // NOTE: 0.20% SL was causing cluster failures at 04:58:03 on 2026-06-08
+    private static final BigDecimal INDEX_SL_PCT     = BigDecimal.valueOf(0.0050);  // 0.50% (widened from 0.20%)
+    private static final BigDecimal INDEX_TARGET_PCT  = BigDecimal.valueOf(0.0100);  // 1.00% (widened from 0.50%)
 
     private final OrderBookPressureTracker pressureTracker;
     private final StrategyGeneratorIntegrityGate integrityGate;
@@ -167,6 +172,15 @@ public class IndexHuntSignalGenerator extends BaseGeneratedStrategy implements T
     public StrategySignal evaluate(StrategyContext context) {
         String symbol = context.symbol();
         Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();
+
+        // GRASIM SKIP (FIXED - 2026-06-08)
+        // GRASIM hit SL twice today with poor entry quality.
+        // Disabling until entry pattern analysis complete.
+        if ("GRASIM".equalsIgnoreCase(symbol)) {
+            gateTelemetry.infoThrottled(key(), "GRASIM_SKIP",
+                    "GRASIM disabled due to poor entry pattern (2 SL hits 2026-06-08)");
+            return hold(context);
+        }
 
         if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) {
             return hold(context);

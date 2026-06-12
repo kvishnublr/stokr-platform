@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchTestSignalRuns, fetchTestSignalTelemetry } from "../../api/testSignalLab";
+import { fmtDateTime } from "../../lib/dateUtils";
 
 export function AdminTestExecutionMonitorPage() {
   const runs = useQuery({
@@ -40,7 +41,7 @@ export function AdminTestExecutionMonitorPage() {
           <tbody>
             {(runs.data?.content ?? []).map((r) => (
               <tr key={r.id} className="border-t border-border">
-                <td className="py-2">{new Date(r.createdAt).toLocaleString()}</td>
+                <td className="py-2">{fmtDateTime(r.createdAt)}</td>
                 <td>{r.traderUserId}</td>
                 <td>{r.strategyKey}</td>
                 <td>{r.symbol}</td>

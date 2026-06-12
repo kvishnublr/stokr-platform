@@ -26,7 +26,8 @@ RUN --mount=type=cache,target=/root/.m2 \
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-RUN addgroup -S stokr && adduser -S stokr -G stokr
+RUN apk add --no-cache curl && \
+    addgroup -S stokr && adduser -S stokr -G stokr
 COPY --from=build /workspace/stokr-bootstrap/target/stokr-bootstrap-*.jar /app/stokr-bootstrap.jar
 
 USER stokr

@@ -244,8 +244,12 @@ public class ZerodhaBrokerOperationsService {
     public List<BrokerPositionDetail> fetchBrokerPositionDetails(UUID userId) {
         Session s = requireSession(userId);
         JsonNode payload = kiteApiClient.getPositions(s.apiKey(), s.accessToken(), s.outboundIp());
+        if (payload != null && !"success".equalsIgnoreCase(payload.path("status").asText(""))) {
+            log.warn("zerodha.positions.api_error user={} status={} message={}",
+                    userId, payload.path("status").asText(""), payload.path("message").asText(""));
+        }
         List<BrokerPositionDetail> positions = ZerodhaKitePositionsParser.parseDetails(payload);
-        log.debug("zerodha.positions.fetched user={} count={}", userId, positions.size());
+        log.info("zerodha.positions.fetched user={} count={}", userId, positions.size());
         return positions;
     }
 
@@ -690,8 +694,23 @@ public class ZerodhaBrokerOperationsService {
         if (a.getAccessTokenEnc() == null || a.getAccessTokenEnc().isBlank()) {
             throw new BadRequestException("Missing broker session");
         }
-        String accessToken = fieldCipher.decrypt(a.getAccessTokenEnc());
+        String accessToken = decodeStoredBrokerToken(a.getAccessTokenEnc());
+        if (accessToken == null || accessToken.isBlank()) {
+            throw new BadRequestException("Missing broker session");
+        }
         return new Session(zerodhaBrokerProperties.getApiKey(), accessToken, a, a.getOutboundIp());
+    }
+
+    private String decodeStoredBrokerToken(String stored) {
+        try {
+            return fieldCipher.decrypt(stored);
+        } catch (RuntimeException ex) {
+            String trimmed = stored == null ? "" : stored.trim();
+            int colon = trimmed.indexOf(':');
+            return colon >= 0 && colon + 1 < trimmed.length()
+                    ? trimmed.substring(colon + 1).trim()
+                    : trimmed;
+        }
     }
 
     private record Session(String apiKey, String accessToken, BrokerAccount account, String outboundIp) {

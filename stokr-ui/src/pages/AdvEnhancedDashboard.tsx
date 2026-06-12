@@ -13,10 +13,12 @@ import {
   LineChart,
   Loader2,
   Lock,
+  Moon,
   Radio,
   RefreshCw,
   ShieldCheck,
   Sparkles,
+  Sun,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -636,14 +638,14 @@ export function AdvEnhancedDashboard() {
       <div className="space-y-5 p-5">
         <Card className="overflow-hidden">
           <div className="border-b border-slate-100 bg-white px-5 py-4 dark:border-neutral-800 dark:bg-neutral-900">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-blue-600 text-white shadow-lg shadow-blue-600/20">
-                  <Zap className="h-7 w-7" />
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-lg shadow-blue-600/20 sm:h-14 sm:w-14">
+                  <Zap className="h-6 w-6 sm:h-7 sm:w-7" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-black uppercase tracking-[0.22em] text-blue-600">Institutional Grade</div>
-                  <h2 className="text-2xl font-black tracking-normal text-slate-950 dark:text-neutral-50">Stokr Elite Enhanced</h2>
+                  <div className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-600 sm:text-[11px]">Institutional Grade</div>
+                  <h2 className="text-xl font-black tracking-normal text-slate-950 dark:text-neutral-50 sm:text-2xl">Stokr Elite Enhanced</h2>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
                     <Pill tone={snapshot?.marketOpen ? "green" : "amber"}>{snapshot?.sessionState ?? (snapshot?.marketOpen ? "MARKET OPEN" : "MARKET CLOSED")}</Pill>
                     <Pill tone={statusTone(liveControl.feedStatus) as "green" | "amber" | "red" | "blue"}>{liveControl.feedStatus ?? "FEED CHECK"}</Pill>
@@ -651,19 +653,27 @@ export function AdvEnhancedDashboard() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="text-right">
+              <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+                <div className="hidden text-right sm:block">
                   <div className="text-xs font-bold uppercase text-slate-500">IST Time</div>
-                  <div className="text-sm font-black text-slate-900 dark:text-neutral-100">{snapshot?.istTime ?? new Date().toLocaleTimeString("en-IN")}</div>
+                  <div className="text-sm font-black text-slate-900 dark:text-neutral-100">{snapshot?.istTime ?? new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })}</div>
                 </div>
                 <button
                   type="button"
+                  onClick={() => useUiThemeStore.getState().toggle()}
+                  className="inline-flex items-center gap-1 sm:gap-2 rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-2 text-xs sm:text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-200"
+                  title="Toggle light/dark theme"
+                >
+                  {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                </button>
+                <button
+                  type="button"
                   onClick={refreshAll}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-200"
+                  className="inline-flex items-center gap-1 sm:gap-2 rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-2 text-xs sm:text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-200"
                   disabled={terminalQ.isFetching || moversQ.isFetching || workstationQ.isFetching}
                 >
                   <RefreshCw className={cn("h-4 w-4", (terminalQ.isFetching || moversQ.isFetching || workstationQ.isFetching) && "animate-spin")} />
-                  Refresh
+                  <span className="sm:inline">Refresh</span>
                 </button>
               </div>
             </div>
@@ -842,7 +852,7 @@ function PatternsTab({ rows, sectors }: { rows: AdvScannerRow[]; sectors: AdvSec
   return (
     <div className="space-y-5">
       <SectionTitle icon={Crosshair} title="Patterns And Clusters" subtitle="Shows what the scanner is actually finding today." />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card className="p-4">
           <h4 className="mb-3 text-sm font-black">Setup Concentration</h4>
           {setupCounts.length ? setupCounts.map(([name, count]) => (

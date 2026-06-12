@@ -22,6 +22,7 @@ import com.stokr.strategy.service.SignalSymbolPriceGateService;
 import com.stokr.strategy.service.StrategyDailySignalCapService;
 import com.stokr.strategy.signals.SignalOwnerType;
 import com.stokr.strategy.signals.SignalProvenance;
+import com.stokr.strategy.signals.SignalType;
 import com.stokr.common.simulation.SimulationScenario;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -145,6 +146,7 @@ public class StrategySignalPipelineService {
                     && signal.getUserId().equals(UUID.fromString("33333333-3333-3333-3333-333333333333"));
             signal.setOwnerType(SignalOwnerType.fromExecutionMode(executionMode, systemCatalog));
         }
+        boolean operationalExit = signal.getSignalType() == SignalType.EXIT;
         boolean replaySignal = signal.getSignalSource() == SignalProvenance.REPLAY || replayAnalytics;
 
         Instant signalTime = signal.getCandleTimestamp() != null ? signal.getCandleTimestamp() : Instant.now();
@@ -152,6 +154,7 @@ public class StrategySignalPipelineService {
         if (!simulationModeService.bypassSessionGuard()
                 && signalSessionGuardEnabled
                 && !Boolean.TRUE.equals(signal.getTestTrade())
+                && !operationalExit
                 && shouldDropOutsideSession(signal, sessionCheckTime)) {
             log.info("signal.dropped_outside_session strategy={} symbol={} mode={} replay={}",
                     signal.getStrategyName(), signal.getSymbol(), executionMode, replaySignal);
@@ -162,45 +165,67 @@ public class StrategySignalPipelineService {
         }
         if (!Boolean.TRUE.equals(signal.getTestTrade()) && signal.getBacktestRunId() == null
                 && signal.getSignalSource() != null && signal.getSignalSource().isProductionAnalytics()) {
-            if (signal.getConfidenceScore() == null) {
+            if (!operationalExit && signal.getConfidenceScore() == null) {
                 throw new IllegalStateException("Confidence missing for production signal: "
                         + Objects.toString(signal.getStrategyName(), "UNKNOWN") + " / "
                         + Objects.toString(signal.getSymbol(), "UNKNOWN"));
             }
-            signalPriceEnrichmentService.enrichIfMissing(signal, signalTime);
-            if (signalSymbolPriceGateService.exceedsMaxPrice(signal, signalTime)) {
-                return null;
-            }
-            if (signalQualityGateService.shouldDrop(signal)) {
-                String reason = signalQualityGateService.dropReason(signal);
-                signalPipelineAuditService.recordSignalDrop(signal, "QUALITY_GATE", reason, "FAILED");
-                return null;
-            }
-            if (signalEmissionGuardService.shouldSuppress(signal)) {
-                log.info("signal.dropped_duplicate strategy={} symbol={} type={}",
-                        signal.getStrategyName(), signal.getSymbol(), signal.getSignalType());
-                signalPipelineAuditService.recordRejection(
-                        signal.getStrategyName(), signal.getSymbol(), "DEDUP", "REJECTED",
-                        "DUPLICATE", "Duplicate signal suppressed (DB dedup window)");
-                return null;
+            if (!operationalExit) {
+                signalPriceEnrichmentService.enrichIfMissing(signal, signalTime);
+                if (signalSymbolPriceGateService.exceedsMaxPrice(signal, signalTime)) {
+                    return null;
+                }
+                if (signalQualityGateService.shouldDrop(signal)) {
+                    String reason = signalQualityGateService.dropReason(signal);
+                    signalPipelineAuditService.recordSignalDrop(signal, "QUALITY_GATE", reason, "FAILED");
+                    return null;
+                }
+                if (signalEmissionGuardService.shouldSuppress(signal)) {
+                    log.info("signal.dropped_duplicate strategy={} symbol={} type={}",
+                            signal.getStrategyName(), signal.getSymbol(), signal.getSignalType());
+                    signalPipelineAuditService.recordRejection(
+                            signal.getStrategyName(), signal.getSymbol(), "DEDUP", "REJECTED",
+                            "DUPLICATE", "Duplicate signal suppressed (DB dedup window)");
+                    return null;
+                }
             }
             if (signal.getLifecycleStatus() == null || signal.getLifecycleStatus().isBlank()) {
                 SignalLifecycleService.applyInitial(signal, "PENDING");
             } else {
                 SignalLifecycleService.syncFromOutcome(signal);
             }
-            String capKey = signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
-            if (dailySignalCapService.isOverCap(capKey, signalTime)) {
-                log.info("signal.dropped_daily_cap strategy={} symbol={}", capKey, signal.getSymbol());
-                signalPipelineAuditService.recordRejection(
-                        capKey, signal.getSymbol(), "DAILY_CAP", "REJECTED",
-                        "DAILY_CAP", "Daily signal cap reached for strategy");
-                return null;
+            if (!operationalExit) {
+                String capKey = signal.getStrategyName() != null ? signal.getStrategyName() : StrategySignalEntity.STRATEGY_KEY;
+                if (dailySignalCapService.isOverCap(capKey, signalTime)) {
+                    log.info("signal.dropped_daily_cap strategy={} symbol={}", capKey, signal.getSymbol());
+                    signalPipelineAuditService.recordRejection(
+                            capKey, signal.getSymbol(), "DAILY_CAP", "REJECTED",
+                            "DAILY_CAP", "Daily signal cap reached for strategy");
+                    return null;
+                }
             }
         }
         if (replaySignal && (signal.getLifecycleStatus() == null || signal.getLifecycleStatus().isBlank())) {
             SignalLifecycleService.applyInitial(signal, "PENDING");
         }
+
+        // RUNTIME INSTRUMENTATION: Trace LIVE signals with NULL confidence
+        if (signal.getConfidenceScore() == null || "LIVE".equals(signal.getPipeline())) {
+            StringBuilder stackTrace = new StringBuilder();
+            for (StackTraceElement ste : Thread.currentThread().getStackTrace()) {
+                if (ste.getClassName().contains("com.stokr")) {
+                    stackTrace.append(ste.getClassName()).append(".").append(ste.getMethodName())
+                        .append(":").append(ste.getLineNumber()).append("\n");
+                }
+            }
+            log.warn("SIGNAL_PERSIST_TRACE_START");
+            log.warn("signalId={} strategy={} symbol={} pipeline={} confidence={} quality={} thread={}",
+                signal.getId(), signal.getStrategyName(), signal.getSymbol(), signal.getPipeline(),
+                signal.getConfidenceScore(), signal.getTradeQuality(), Thread.currentThread().getName());
+            log.warn("CALLER_STACK:\n{}", stackTrace);
+            log.warn("SIGNAL_PERSIST_TRACE_END");
+        }
+
         StrategySignalEntity saved = signalRepository.save(signal);
 
         String cid = (correlationId == null || correlationId.isBlank()) ? UUID.randomUUID().toString() : correlationId;

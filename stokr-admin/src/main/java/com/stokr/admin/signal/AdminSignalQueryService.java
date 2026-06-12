@@ -4,6 +4,7 @@ import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.marketdata.service.MarketDataQueryService;
 import com.stokr.oms.dto.OmsOrderSummaryDto;
 import com.stokr.oms.domain.OmsOrder;
+import com.stokr.oms.repository.OmsExecutionRepository;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.trace.ExecutionTimelineProjection;
 import com.stokr.oms.trace.ExecutionTraceEvent;
@@ -27,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -35,6 +37,7 @@ public class AdminSignalQueryService {
 
     private final StrategySignalRepository signalRepo;
     private final OmsOrderRepository orderRepo;
+    private final OmsExecutionRepository executionRepo;
     private final ExecutionTimelineProjection timelineProjection;
     private final MarketDataQueryService marketDataQueryService;
     private final StrategyExecutionConfigService executionConfigService;
@@ -90,7 +93,8 @@ public class AdminSignalQueryService {
 
         // Batch LTP lookup for all unique symbols
         Map<String, BigDecimal> ltpCache = new HashMap<>();
-        for (StrategySignalEntity s : page.getContent()) {
+        List<StrategySignalEntity> signals = page.getContent();
+        for (StrategySignalEntity s : signals) {
             if (s.getSymbol() != null) ltpCache.putIfAbsent(s.getSymbol(), null);
         }
         for (String sym : ltpCache.keySet()) {
@@ -101,7 +105,29 @@ public class AdminSignalQueryService {
             }
         }
 
-        return page.map(s -> toDtoWithLtp(s, ltpCache.getOrDefault(s.getSymbol(), BigDecimal.ZERO)));
+        // Batch load actual execution avg prices
+        List<UUID> signalIds = signals.stream()
+                .map(StrategySignalEntity::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        Map<UUID, BigDecimal> executionPriceMap = new HashMap<>();
+        if (!signalIds.isEmpty()) {
+            try {
+                for (Object[] row : executionRepo.findAvgPriceBySignalIds(signalIds)) {
+                    UUID sid = (UUID) row[0];
+                    BigDecimal avgPrice = (BigDecimal) row[1];
+                    if (sid != null && avgPrice != null && avgPrice.compareTo(BigDecimal.ZERO) > 0) {
+                        executionPriceMap.put(sid, avgPrice);
+                    }
+                }
+            } catch (Exception e) {
+                // best-effort
+            }
+        }
+
+        Map<UUID, BigDecimal> finalExecutionPriceMap = executionPriceMap;
+        return page.map(s -> toDtoWithLtp(s, ltpCache.getOrDefault(s.getSymbol(), BigDecimal.ZERO),
+                finalExecutionPriceMap.getOrDefault(s.getId(), null)));
     }
 
     public AdminSignalDetailDto detail(UUID id) {
@@ -143,11 +169,15 @@ public class AdminSignalQueryService {
     }
 
     private AdminSignalDto toDto(StrategySignalEntity s) {
-        return toDtoWithLtp(s, null);
+        return toDtoWithLtp(s, null, null);
     }
 
-    private AdminSignalDto toDtoWithLtp(StrategySignalEntity s, BigDecimal ltp) {
-        // Compute live P&L
+    private AdminSignalDto toDtoWithLtp(StrategySignalEntity s, BigDecimal ltp, BigDecimal executionAvgPrice) {
+        // Use actual execution avg price for PnL when available (more accurate than entryReferencePrice)
+        BigDecimal entryForPnl = executionAvgPrice != null && executionAvgPrice.compareTo(BigDecimal.ZERO) > 0
+                ? executionAvgPrice
+                : s.getEntryReferencePrice();
+
         BigDecimal pnl = null;
         boolean isClosed = s.getOutcomeStatus() != null && (
                 "TARGET_HIT".equalsIgnoreCase(s.getOutcomeStatus())
@@ -161,13 +191,13 @@ public class AdminSignalQueryService {
         if (isClosed && s.getRealizedPnl() != null) {
             pnl = s.getRealizedPnl();
         } else if (ltp != null && ltp.compareTo(BigDecimal.ZERO) > 0
-                && s.getEntryReferencePrice() != null
-                && s.getEntryReferencePrice().compareTo(BigDecimal.ZERO) > 0) {
+                && entryForPnl != null
+                && entryForPnl.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal qty = s.getSuggestedQty() != null ? s.getSuggestedQty() : BigDecimal.ONE;
             boolean isBuy = s.getSignalType() != null && "BUY".equalsIgnoreCase(s.getSignalType().name());
             pnl = isBuy
-                    ? ltp.subtract(s.getEntryReferencePrice()).multiply(qty).setScale(2, RoundingMode.HALF_UP)
-                    : s.getEntryReferencePrice().subtract(ltp).multiply(qty).setScale(2, RoundingMode.HALF_UP);
+                    ? ltp.subtract(entryForPnl).multiply(qty).setScale(2, RoundingMode.HALF_UP)
+                    : entryForPnl.subtract(ltp).multiply(qty).setScale(2, RoundingMode.HALF_UP);
         }
 
         return new AdminSignalDto(

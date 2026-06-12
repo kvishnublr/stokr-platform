@@ -67,16 +67,16 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
 
-    @Value("${stokr.strategy.vwapbounce.touch-threshold-pct:0.10}")
+    @Value("${stokr.strategy.vwapbounce.touch-threshold-pct:0.18}")
     private double touchThresholdPct;
 
-    @Value("${stokr.strategy.vwapbounce.min-slope-pct:0.005}")
+    @Value("${stokr.strategy.vwapbounce.min-slope-pct:0.002}")
     private double minSlopePct;
 
-    @Value("${stokr.strategy.vwapbounce.min-volume-multiple:1.3}")
+    @Value("${stokr.strategy.vwapbounce.min-volume-multiple:0.9}")
     private double minVolumeMultiple;
 
-    @Value("${stokr.strategy.vwapbounce.bounce-confirm-pct:0.05}")
+    @Value("${stokr.strategy.vwapbounce.bounce-confirm-pct:0.025}")
     private double bounceConfirmPct;
 
     @Value("${stokr.strategy.vwapbounce.target-sigma:0.8}")
@@ -88,7 +88,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     @Value("${stokr.strategy.vwapbounce.cooldown-seconds:900}")
     private int cooldownSeconds;
 
-    @Value("${stokr.strategy.vwapbounce.min-risk-reward:1.2}")
+    @Value("${stokr.strategy.vwapbounce.min-risk-reward:1.0}")
     private double minRiskReward;
 
     @Override
@@ -181,15 +181,15 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
 
         // 6. NIFTY ALIGNMENT — bounce direction must match NIFTY
         double niftyTrend = calculateNiftyTrend(context);
-        if (isUptrend && niftyTrend < 0.02) return hold(context);
-        if (!isUptrend && niftyTrend > -0.02) return hold(context);
+        if (isUptrend && niftyTrend < -0.03) return hold(context);
+        if (!isUptrend && niftyTrend > 0.03) return hold(context);
 
         // 7. PRESSURE CONFIRMATION — institutions active at VWAP
         PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
         if (snapshot != null) {
             double ratio = snapshot.imbalanceRatio();
-            if (isUptrend && ratio < 0.52) return hold(context);  // Need buy pressure for uptrend bounce
-            if (!isUptrend && ratio > 0.48) return hold(context); // Need sell pressure for downtrend bounce
+            if (isUptrend && ratio < 0.50) return hold(context);  // Need buy pressure for uptrend bounce
+            if (!isUptrend && ratio > 0.50) return hold(context); // Need sell pressure for downtrend bounce
         }
 
         // 8. BOUNCE CONFIRMATION — 2 bar check
@@ -203,11 +203,11 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
 
         boolean bounceConfirmed;
         if (isUptrend) {
-            // Both current and previous bar should be green (bouncing up)
-            bounceConfirmed = curClose > curOpen && prevClose > prevOpen
+            // Current bar must confirm; previous bar can be neutral after VWAP touch.
+            bounceConfirmed = curClose > curOpen
                     && (curClose - currentVwap) / currentVwap * 100 >= bounceConfirmPct;
         } else {
-            bounceConfirmed = curClose < curOpen && prevClose < prevOpen
+            bounceConfirmed = curClose < curOpen
                     && (currentVwap - curClose) / currentVwap * 100 >= bounceConfirmPct;
         }
         if (!bounceConfirmed) {
@@ -229,7 +229,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
         for (int i = Math.max(0, lastIdx - 8); i < lastIdx - 1; i++) {
             double prc = toDouble(bars.get(sessionStart + i).getClosePrice());
             double d = Math.abs(prc - vwapArr[i]) / vwapArr[i] * 100;
-            if (d > touchThresholdPct * 2.5) { wasAway = true; break; }
+            if (d > touchThresholdPct * 1.5) { wasAway = true; break; }
         }
         if (!wasAway) {
             gateTelemetry.infoNearMiss(key(), symbol, "NOT_AWAY_FROM_VWAP",

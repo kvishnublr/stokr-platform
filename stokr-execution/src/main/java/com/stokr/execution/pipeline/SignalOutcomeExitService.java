@@ -16,11 +16,18 @@ import com.stokr.strategy.signals.SignalType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,8 +64,45 @@ public class SignalOutcomeExitService {
     @Value("${stokr.strategy.exit.auto-exit-on-breakeven:true}")
     private boolean autoExitOnBreakeven;
 
-    @EventListener
-    @Transactional
+    /**
+     * Scheduled fail-safe: scans for signals with terminal outcomes that have no exit orders placed.
+     * Catches events lost during restarts (in-memory events are not persisted).
+     */
+    @Scheduled(fixedDelayString = "${stokr.strategy.exit.backfill-interval-ms:300000}")
+    public void scheduledBackfill() {
+        if (!autoExitEnabled) {
+            return;
+        }
+        // Backfill for last 7 days (168 hours = 7 days * 24 hours/day)
+        Instant since = Instant.now().minus(java.time.Duration.ofHours(168));
+        List<StrategySignalEntity> signals = signalRepository.findTerminalOutcomesSince(
+                since, EXIT_OUTCOMES, List.of());
+        int dispatched = 0;
+        for (StrategySignalEntity signal : signals) {
+            if (dispatched >= 20) {
+                break;
+            }
+            if (signal.getSymbol() == null) {
+                continue;
+            }
+            String prefix = "outcome-exit:" + signal.getId() + ":";
+            if (omsOrderRepository.existsByDeletedFalseAndIdempotencyKeyStartingWith(prefix)) {
+                continue;
+            }
+            try {
+                dispatchForSignal(signal.getId(), signal.getOutcomeStatus(), true);
+                dispatched++;
+            } catch (Exception ex) {
+                log.warn("signal.outcome_exit.scheduled_backfill_failed signalId={} err={}",
+                        signal.getId(), ex.getMessage());
+            }
+        }
+        if (dispatched > 0) {
+            log.info("signal.outcome_exit.scheduled_backfill_dispatched count={}", dispatched);
+        }
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onSignalOutcome(OperationalRealtimeEvent event) {
         if (!autoExitEnabled || event == null || !"signal_outcome".equals(event.topic())) {
             return;
@@ -74,12 +118,65 @@ public class SignalOutcomeExitService {
         if ("BREAKEVEN_EXIT".equals(outcomeStatus) && !autoExitOnBreakeven) {
             return;
         }
-
         UUID signalId = parseUuid(payload.get("signalId"));
         if (signalId == null) {
             return;
         }
+        dispatchForSignal(signalId, outcomeStatus);
+    }
 
+    /**
+     * One-off / admin repair: place missing exit OMS legs for signals that already have terminal outcomes.
+     */
+    public Map<String, Object> backfillMissingOutcomeExits(Instant since, int maxSignals) {
+        List<StrategySignalEntity> signals = signalRepository.findTerminalOutcomesSince(
+                since,
+                EXIT_OUTCOMES,
+                List.of(SignalProvenance.REPLAY, SignalProvenance.LAB));
+        int examined = 0;
+        int dispatched = 0;
+        int skipped = 0;
+        int failed = 0;
+        List<String> dispatchedIds = new ArrayList<>();
+        for (StrategySignalEntity signal : signals) {
+            if (examined >= maxSignals) {
+                break;
+            }
+            examined++;
+            String prefix = "outcome-exit:" + signal.getId() + ":";
+            if (omsOrderRepository.existsByDeletedFalseAndIdempotencyKeyStartingWith(prefix)) {
+                skipped++;
+                continue;
+            }
+            try {
+                dispatchForSignal(signal.getId(), signal.getOutcomeStatus());
+                dispatched++;
+                dispatchedIds.add(signal.getId().toString());
+            } catch (Exception ex) {
+                failed++;
+                log.warn("signal.outcome_exit.backfill_failed signalId={} err={}",
+                        signal.getId(), ex.getMessage());
+            }
+        }
+        log.info("signal.outcome_exit.backfill examined={} dispatched={} skipped={} failed={} since={}",
+                examined, dispatched, skipped, failed, since);
+        return Map.of(
+                "examined", examined,
+                "dispatched", dispatched,
+                "skipped", skipped,
+                "failed", failed,
+                "since", since.toString(),
+                "signalIds", dispatchedIds
+        );
+    }
+
+    @Transactional
+    public void dispatchForSignal(UUID signalId, String outcomeStatus) {
+        dispatchForSignal(signalId, outcomeStatus, false);
+    }
+
+    @Transactional
+    public void dispatchForSignal(UUID signalId, String outcomeStatus, boolean includeAllSources) {
         StrategySignalEntity signal = signalRepository.findById(signalId).orElse(null);
         if (signal == null || signal.isDeleted()) {
             return;
@@ -87,16 +184,21 @@ public class SignalOutcomeExitService {
         if (Boolean.TRUE.equals(signal.getTestTrade())) {
             return;
         }
-        SignalProvenance source = signal.getSignalSource();
-        if (source == SignalProvenance.REPLAY || source == SignalProvenance.LAB) {
+        if (!includeAllSources) {
+            SignalProvenance source = signal.getSignalSource();
+            if (source == SignalProvenance.REPLAY || source == SignalProvenance.LAB) {
+                return;
+            }
+        }
+
+        List<OmsOrder> entryOrders = resolveEntryOrders(signalId);
+        if (entryOrders.isEmpty()) {
+            log.info("signal.outcome_exit.no_entry_orders signalId={} outcome={}", signalId, outcomeStatus);
             return;
         }
 
-        List<OmsOrder> entryOrders = omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(signalId);
-        if (entryOrders.isEmpty()) {
-            log.debug("signal.outcome_exit.no_entry_orders signalId={} outcome={}", signalId, outcomeStatus);
-            return;
-        }
+        log.info("signal.outcome_exit.dispatch signalId={} outcome={} entryLegs={}",
+                signalId, outcomeStatus, entryOrders.size());
 
         for (OmsOrder entry : entryOrders) {
             if (entry.getUserId() == null || entry.getSide() == null) {
@@ -117,30 +219,47 @@ public class SignalOutcomeExitService {
         }
     }
 
+    /**
+     * BOTH-mode LIVE legs omit signal_id (ux_oms_orders_user_signal); include paired LIVE entries.
+     */
+    private List<OmsOrder> resolveEntryOrders(UUID signalId) {
+        List<OmsOrder> direct = omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(signalId);
+        Map<UUID, OmsOrder> merged = new LinkedHashMap<>();
+        for (OmsOrder order : direct) {
+            if (order.getId() != null) {
+                merged.put(order.getId(), order);
+            }
+            UUID pairedId = order.getPairedOrderId();
+            if (pairedId != null) {
+                omsOrderRepository.findById(pairedId)
+                        .filter(o -> !o.isDeleted())
+                        .ifPresent(paired -> merged.putIfAbsent(paired.getId(), paired));
+            }
+        }
+        return List.copyOf(merged.values());
+    }
+
     private void placeExitForEntry(OmsOrder entry, StrategySignalEntity signal, String outcomeStatus) {
         UUID userId = entry.getUserId();
         String symbol = entry.getSymbol();
-        BigDecimal qty = resolveExitQty(userId, symbol, entry);
-        if (qty == null || qty.signum() <= 0) {
+        ExitResolution exit = resolveExit(userId, symbol, entry);
+        if (exit == null) {
             log.debug("signal.outcome_exit.skip_flat userId={} symbol={} signalId={}",
                     userId, symbol, signal.getId());
             return;
         }
 
-        String exitSide = "BUY".equalsIgnoreCase(entry.getSide()) ? "SELL" : "BUY";
-        ExecutionMode mode = entry.getExecutionMode() != null ? entry.getExecutionMode() : ExecutionMode.PAPER;
-        String broker = mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM";
         String strategyKey = entry.getStrategyKey() != null ? entry.getStrategyKey() : signal.getStrategyName();
-        String idempotencyKey = "outcome-exit:" + signal.getId() + ":" + userId + ":" + outcomeStatus;
+        String idempotencyKey = "outcome-exit:" + signal.getId() + ":" + entry.getId() + ":" + outcomeStatus;
 
-        OmsOrder exit = orderPlacementService.place(userId, new CreateOrderRequest(
+        OmsOrder placed = orderPlacementService.place(userId, new CreateOrderRequest(
                 symbol,
-                exitSide,
+                exit.side(),
                 "MARKET",
-                qty,
+                exit.qty(),
                 null,
-                mode,
-                broker,
+                exit.mode(),
+                exit.broker(),
                 strategyKey,
                 idempotencyKey,
                 null,
@@ -153,24 +272,35 @@ public class SignalOutcomeExitService {
                 null
         ));
 
-        log.info("signal.outcome_exit.placed signalId={} outcome={} userId={} symbol={} side={} qty={} orderId={} state={}",
-                signal.getId(), outcomeStatus, userId, symbol, exitSide, qty.toPlainString(),
-                exit.getId(), exit.getState());
+        log.info("signal.outcome_exit.placed signalId={} outcome={} userId={} symbol={} side={} qty={} mode={} orderId={} state={}",
+                signal.getId(), outcomeStatus, userId, symbol, exit.side(), exit.qty().toPlainString(), exit.mode(),
+                placed.getId(), placed.getState());
     }
 
-    private BigDecimal resolveExitQty(UUID userId, String symbol, OmsOrder entry) {
+    /**
+     * When Zerodha still holds qty, always place a LIVE exit — PAPER-filled entry legs are not sufficient.
+     */
+    private ExitResolution resolveExit(UUID userId, String symbol, OmsOrder entry) {
         brokerPositionTruthService.syncUser(userId);
         BrokerPositionTruthSnapshot snap = brokerPositionTruthService.snapshot(userId);
         String norm = BrokerPositionTruthService.normalizeSymbol(symbol);
         for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : snap.positions()) {
             if (norm.equals(row.symbol()) && row.brokerQty() != null && row.brokerQty().signum() != 0) {
-                return row.brokerQty().abs();
+                BigDecimal brokerQty = row.brokerQty();
+                String side = brokerQty.signum() > 0 ? "SELL" : "BUY";
+                return new ExitResolution(brokerQty.abs(), side, ExecutionMode.LIVE, "ZERODHA");
             }
         }
         if (entry.getQuantity() != null && entry.getQuantity().signum() > 0) {
-            return entry.getQuantity();
+            String side = "BUY".equalsIgnoreCase(entry.getSide()) ? "SELL" : "BUY";
+            ExecutionMode mode = entry.getExecutionMode() != null ? entry.getExecutionMode() : ExecutionMode.PAPER;
+            String broker = mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM";
+            return new ExitResolution(entry.getQuantity(), side, mode, broker);
         }
         return null;
+    }
+
+    private record ExitResolution(BigDecimal qty, String side, ExecutionMode mode, String broker) {
     }
 
     private static String stringVal(Object v) {

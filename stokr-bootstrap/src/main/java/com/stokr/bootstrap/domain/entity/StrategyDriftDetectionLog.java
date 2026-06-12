@@ -70,4 +70,10 @@ public class StrategyDriftDetectionLog {
 
     @Column(name = "pause_reason")
     private String pauseReason;
+
+    // Explicit getters (Lombok @Data not generating due to processor issue)
+    public LocalDateTime getCheckTime() { return this.checkTime; }
+    public String getStrategyName() { return this.strategyName; }
+    public Integer getPositionDelta() { return this.positionDelta; }
+    public Boolean getStrategyPaused() { return this.strategyPaused; }
 }

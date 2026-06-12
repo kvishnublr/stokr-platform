@@ -19,6 +19,7 @@ import {
   ValidationPackResults,
 } from "../../components/admin/simulation/SimulationHarnessViews";
 import { AdminPageShell, AdminPanel, AdminSection, AdminStatusChip } from "../../components/admin/institutional/AdminDesignSystem";
+import { fmtDateTime } from "../../lib/dateUtils";
 import { useUiThemeStore } from "../../state/uiTheme";
 import { cn } from "../../lib/utils";
 
@@ -111,7 +112,7 @@ export function AdminMarketSimulationPage() {
             </AdminStatusChip>
             {statusQ.data?.enabledAt && (
               <span className={cn("text-xs", isLight ? "text-neutral-500" : "text-neutral-400")}>
-                since {new Date(statusQ.data.enabledAt).toLocaleString()}
+                since {fmtDateTime(statusQ.data.enabledAt)}
               </span>
             )}
           </div>

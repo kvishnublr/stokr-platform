@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -96,6 +97,8 @@ class SignalOutcomeExitServiceTest {
         verify(orderPlacementService).place(eq(userId), captor.capture());
         CreateOrderRequest req = captor.getValue();
         assertThat(req.side()).isEqualTo("SELL");
+        assertThat(req.executionMode()).isEqualTo(ExecutionMode.LIVE);
+        assertThat(req.brokerVendor()).isEqualTo("ZERODHA");
         assertThat(req.exitOrder()).isTrue();
         assertThat(req.guardMode()).isEqualTo("EXIT_SAFE");
         assertThat(req.signalId()).isNull();
@@ -135,6 +138,97 @@ class SignalOutcomeExitServiceTest {
         ArgumentCaptor<CreateOrderRequest> captor = ArgumentCaptor.forClass(CreateOrderRequest.class);
         verify(orderPlacementService).place(eq(userId), captor.capture());
         assertThat(captor.getValue().side()).isEqualTo("BUY");
+    }
+
+    @Test
+    void placesExitForPairedLiveLegWithoutSignalId() {
+        StrategySignalEntity signal = liveSignal();
+        when(signalRepository.findById(signalId)).thenReturn(Optional.of(signal));
+
+        UUID liveOrderId = UUID.randomUUID();
+        OmsOrder paper = new OmsOrder();
+        paper.setId(UUID.randomUUID());
+        paper.setUserId(userId);
+        paper.setSymbol("NSE:INFY");
+        paper.setSide("BUY");
+        paper.setQuantity(BigDecimal.ONE);
+        paper.setState(OrderState.FILLED);
+        paper.setExecutionMode(ExecutionMode.PAPER);
+        paper.setPairedOrderId(liveOrderId);
+
+        OmsOrder live = new OmsOrder();
+        live.setId(liveOrderId);
+        live.setUserId(userId);
+        live.setSymbol("NSE:INFY");
+        live.setSide("BUY");
+        live.setQuantity(BigDecimal.ONE);
+        live.setState(OrderState.FILLED);
+        live.setExecutionMode(ExecutionMode.LIVE);
+        live.setStrategyKey("INDEX_HUNT");
+
+        when(omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(signalId))
+                .thenReturn(List.of(paper));
+        when(omsOrderRepository.findById(liveOrderId)).thenReturn(Optional.of(live));
+
+        when(brokerPositionTruthService.snapshot(userId)).thenReturn(snapshotWithQty("NSE:INFY", BigDecimal.ONE));
+
+        OmsOrder exit = new OmsOrder();
+        exit.setId(UUID.randomUUID());
+        exit.setState(OrderState.PENDING_SUBMISSION);
+        when(orderPlacementService.place(eq(userId), any(CreateOrderRequest.class))).thenReturn(exit);
+
+        service.dispatchForSignal(signalId, "PRESSURE_EXIT");
+
+        ArgumentCaptor<CreateOrderRequest> captor = ArgumentCaptor.forClass(CreateOrderRequest.class);
+        verify(orderPlacementService, org.mockito.Mockito.times(2)).place(eq(userId), captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(req -> assertThat(req.signalId()).isNull());
+    }
+
+    @Test
+    void backfillDispatchesOnlyWhenOutcomeExitMissing() {
+        StrategySignalEntity signal = liveSignal();
+        signal.setOutcomeStatus("PRESSURE_EXIT");
+        signal.setOutcomeTime(Instant.now());
+        when(signalRepository.findTerminalOutcomesSince(any(), any(), any())).thenReturn(List.of(signal));
+        when(signalRepository.findById(signalId)).thenReturn(Optional.of(signal));
+        when(omsOrderRepository.existsByDeletedFalseAndIdempotencyKeyStartingWith("outcome-exit:" + signalId + ":"))
+                .thenReturn(false);
+
+        OmsOrder entry = new OmsOrder();
+        entry.setId(UUID.randomUUID());
+        entry.setUserId(userId);
+        entry.setSymbol("NSE:INFY");
+        entry.setSide("BUY");
+        entry.setQuantity(BigDecimal.ONE);
+        entry.setState(OrderState.FILLED);
+        entry.setExecutionMode(ExecutionMode.PAPER);
+        when(omsOrderRepository.findAllBySignalIdAndDeletedFalseOrderByCreatedAtDesc(signalId))
+                .thenReturn(List.of(entry));
+        when(brokerPositionTruthService.snapshot(userId)).thenReturn(snapshotWithQty("NSE:INFY", BigDecimal.ONE));
+        when(orderPlacementService.place(eq(userId), any(CreateOrderRequest.class)))
+                .thenReturn(new OmsOrder());
+
+        Map<String, Object> result = service.backfillMissingOutcomeExits(Instant.now().minusSeconds(3600), 10);
+
+        assertThat(result.get("dispatched")).isEqualTo(1);
+        assertThat(result.get("skipped")).isEqualTo(0);
+        verify(orderPlacementService).place(eq(userId), any(CreateOrderRequest.class));
+    }
+
+    @Test
+    void backfillSkipsSignalsThatAlreadyHaveOutcomeExit() {
+        StrategySignalEntity signal = liveSignal();
+        signal.setOutcomeStatus("STOPLOSS_HIT");
+        signal.setOutcomeTime(Instant.now());
+        when(signalRepository.findTerminalOutcomesSince(any(), any(), any())).thenReturn(List.of(signal));
+        when(omsOrderRepository.existsByDeletedFalseAndIdempotencyKeyStartingWith("outcome-exit:" + signalId + ":"))
+                .thenReturn(true);
+
+        Map<String, Object> result = service.backfillMissingOutcomeExits(Instant.now().minusSeconds(3600), 10);
+
+        assertThat(result.get("skipped")).isEqualTo(1);
+        assertThat(result.get("dispatched")).isEqualTo(0);
+        verify(orderPlacementService, never()).place(any(), any());
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.stokr.strategy.pipeline;
 import com.stokr.common.pipeline.OmsIntentDispatcher;
 import com.stokr.common.pipeline.PipelineQueues;
 import com.stokr.common.pipeline.messages.SignalPersistedMessage;
+import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.common.runtime.ExecutionPipelineRuntimeReadinessService;
 import com.stokr.common.telemetry.SignalDistributionTelemetryService;
 import com.stokr.strategy.domain.StrategySignalEntity;
@@ -23,6 +24,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -39,6 +42,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class StrategySignalPipelineServiceReplayTest {
 
     @Mock
@@ -67,6 +71,8 @@ class StrategySignalPipelineServiceReplayTest {
     private SignalQualityGateService signalQualityGateService;
     @Mock
     private StrategyDailySignalCapService dailySignalCapService;
+    @Mock
+    private SimulationModeService simulationModeService;
 
     @InjectMocks
     private StrategySignalPipelineService service;
@@ -75,7 +81,9 @@ class StrategySignalPipelineServiceReplayTest {
     void setup() {
         ReflectionTestUtils.setField(service, "signalSessionGuardEnabled", false);
         ReflectionTestUtils.setField(service, "replayDispatchToOms", false);
+        ReflectionTestUtils.setField(service, "systemUserId", UUID.fromString("33333333-3333-3333-3333-333333333333"));
         when(executionPipelineRuntimeReadinessService.canRouteExecutionMode(any())).thenReturn(true);
+        when(simulationModeService.bypassSessionGuard()).thenReturn(false);
         when(strategyInstanceRepository.findAllRunningByStrategyKey(any())).thenReturn(List.of());
     }
 
@@ -103,7 +111,8 @@ class StrategySignalPipelineServiceReplayTest {
         }
 
         verify(signalRepository).save(any());
-        verify(rabbitTemplate).convertAndSend(eq(PipelineQueues.STRATEGY_SIGNAL), any(SignalPersistedMessage.class));
+        verify(rabbitTemplate, never()).convertAndSend(eq(PipelineQueues.STRATEGY_SIGNAL), any(SignalPersistedMessage.class));
+        verify(omsIntentDispatcher, never()).dispatch(any(), eq(true));
     }
 
     @Test
@@ -126,7 +135,7 @@ class StrategySignalPipelineServiceReplayTest {
             TransactionSynchronizationManager.clearSynchronization();
         }
 
-        verify(rabbitTemplate).convertAndSend(eq(PipelineQueues.STRATEGY_SIGNAL), any(SignalPersistedMessage.class));
+        verify(rabbitTemplate, never()).convertAndSend(eq(PipelineQueues.STRATEGY_SIGNAL), any(SignalPersistedMessage.class));
         verify(omsIntentDispatcher, never()).dispatch(any(), eq(true));
     }
 

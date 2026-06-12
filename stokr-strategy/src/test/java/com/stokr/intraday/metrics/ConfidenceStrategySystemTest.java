@@ -68,7 +68,7 @@ public class ConfidenceStrategySystemTest {
         entityManager.clear();
 
         // Assert
-        Optional<ConfidenceScore> found = scoreRepository.findLatestBySymbol("SBIN");
+        Optional<ConfidenceScore> found = scoreRepository.findFirstBySymbolOrderByTimestampDesc("SBIN");
         assertTrue(found.isPresent());
         assertEquals(85, found.get().getConfidenceScore());
         assertEquals("STRONG", found.get().getSignalStrength());
@@ -87,7 +87,7 @@ public class ConfidenceStrategySystemTest {
 
         // Act
         List<ConfidenceScore> above70 = scoreRepository
-            .findRecentByConfidenceThreshold(70, now.minusSeconds(120));
+            .findByConfidenceScoreGreaterThanAndTimestampAfterOrderByConfidenceScoreDescTimestampDesc(70, now.minusSeconds(120));
 
         // Assert
         assertEquals(3, above70.size());  // SBIN(85), HDFC(72), TCS(92)

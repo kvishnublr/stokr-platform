@@ -3,6 +3,7 @@ package com.stokr.intraday.metrics.repository;
 import com.stokr.intraday.metrics.domain.ConfidenceScore;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -13,13 +14,11 @@ import java.util.Optional;
 @Repository
 public interface ConfidenceScoreRepository extends JpaRepository<ConfidenceScore, Long> {
 
-    @Query("SELECT c FROM ConfidenceScore c WHERE c.symbol = :symbol " +
-           "ORDER BY c.timestamp DESC LIMIT 1")
-    Optional<ConfidenceScore> findLatestBySymbol(@Param("symbol") String symbol);
+    Optional<ConfidenceScore> findFirstBySymbolOrderByTimestampDesc(@Param("symbol") String symbol);
 
     @Query("SELECT c FROM ConfidenceScore c WHERE c.confidenceScore > :threshold " +
            "AND c.timestamp > :since ORDER BY c.confidenceScore DESC, c.timestamp DESC")
-    List<ConfidenceScore> findRecentByConfidenceThreshold(
+    List<ConfidenceScore> findByConfidenceScoreGreaterThanAndTimestampAfterOrderByConfidenceScoreDescTimestampDesc(
         @Param("threshold") Integer threshold,
         @Param("since") Instant since
     );
@@ -63,10 +62,8 @@ public interface ConfidenceScoreRepository extends JpaRepository<ConfidenceScore
         @Param("since") Instant since
     );
 
-    @Query("SELECT c FROM ConfidenceScore c WHERE c.timestamp > :since " +
-           "ORDER BY c.confidenceScore DESC LIMIT :limit")
-    List<ConfidenceScore> findTopByConfidenceRecent(
+    List<ConfidenceScore> findByTimestampAfterOrderByConfidenceScoreDescTimestampDesc(
         @Param("since") Instant since,
-        @Param("limit") int limit
+        Pageable pageable
     );
 }

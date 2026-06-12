@@ -48,12 +48,16 @@ public class OrderFlowSignalEnhancement {
     private Long cumulativeAskDepth;         // Total ask volume (10 levels)
 
     // Signals for Integration
-    private Boolean shouldEnhanceConfidence; // Recommendation: increase signal confidence
-    private Boolean shouldReduceConfidence;  // Recommendation: decrease signal confidence
-    private Boolean shouldSkip;              // Recommendation: skip signal entirely
+    @Builder.Default
+    private Boolean shouldEnhanceConfidence = false; // Recommendation: increase signal confidence
+    @Builder.Default
+    private Boolean shouldReduceConfidence = false;  // Recommendation: decrease signal confidence
+    @Builder.Default
+    private Boolean shouldSkip = false;              // Recommendation: skip signal entirely
 
     // Error Handling
-    private Boolean error;
+    @Builder.Default
+    private Boolean error = false;
     private String errorMessage;
 
     // Factory Methods
@@ -77,34 +81,34 @@ public class OrderFlowSignalEnhancement {
 
     // Helper methods
     public boolean isStrongBuySignal() {
-        return !error && buyerPressureScore > 70 && liquidityScore > 60;
+        return !hasError() && scoreAbove(buyerPressureScore, 70) && scoreAbove(liquidityScore, 60);
     }
 
     public boolean isBuySignal() {
-        return !error && buyerPressureScore > 55 && liquidityScore > 50;
+        return !hasError() && scoreAbove(buyerPressureScore, 55) && scoreAbove(liquidityScore, 50);
     }
 
     public boolean isStrongSellSignal() {
-        return !error && sellerPressureScore > 70 && liquidityScore > 60;
+        return !hasError() && scoreAbove(sellerPressureScore, 70) && scoreAbove(liquidityScore, 60);
     }
 
     public boolean isSellSignal() {
-        return !error && sellerPressureScore > 55 && liquidityScore > 50;
+        return !hasError() && scoreAbove(sellerPressureScore, 55) && scoreAbove(liquidityScore, 50);
     }
 
     public boolean isPoorLiquidity() {
-        return !error && (liquidityScore == null || liquidityScore < 40);
+        return !hasError() && (liquidityScore == null || liquidityScore < 40);
     }
 
     public boolean isNeutral() {
-        return !error &&
-               buyerPressureScore >= 45 && buyerPressureScore <= 55 &&
-               sellerPressureScore >= 45 && sellerPressureScore <= 55;
+        return !hasError() &&
+               between(buyerPressureScore, 45, 55) &&
+               between(sellerPressureScore, 45, 55);
     }
 
     // Confidence multiplier for signal quality adjustment
     public double getConfidenceMultiplier() {
-        if (error || confidence == null) {
+        if (hasError() || confidence == null) {
             return 1.0;  // No adjustment
         }
 
@@ -117,11 +121,23 @@ public class OrderFlowSignalEnhancement {
 
     // Get signal strength rating
     public String getSignalStrength() {
-        if (error) return "ERROR";
-        if (buyerPressureScore > 80 || sellerPressureScore > 80) return "VERY_STRONG";
-        if (buyerPressureScore > 65 || sellerPressureScore > 65) return "STRONG";
-        if (buyerPressureScore > 55 || sellerPressureScore > 55) return "MODERATE";
-        if (buyerPressureScore > 45 || sellerPressureScore > 45) return "WEAK";
+        if (hasError()) return "ERROR";
+        if (scoreAbove(buyerPressureScore, 80) || scoreAbove(sellerPressureScore, 80)) return "VERY_STRONG";
+        if (scoreAbove(buyerPressureScore, 65) || scoreAbove(sellerPressureScore, 65)) return "STRONG";
+        if (scoreAbove(buyerPressureScore, 55) || scoreAbove(sellerPressureScore, 55)) return "MODERATE";
+        if (scoreAbove(buyerPressureScore, 45) || scoreAbove(sellerPressureScore, 45)) return "WEAK";
         return "NEUTRAL";
+    }
+
+    private boolean hasError() {
+        return Boolean.TRUE.equals(error);
+    }
+
+    private static boolean scoreAbove(Integer score, int threshold) {
+        return score != null && score > threshold;
+    }
+
+    private static boolean between(Integer score, int min, int max) {
+        return score != null && score >= min && score <= max;
     }
 }

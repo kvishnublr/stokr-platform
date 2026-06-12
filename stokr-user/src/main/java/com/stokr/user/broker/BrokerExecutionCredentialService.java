@@ -87,12 +87,24 @@ public class BrokerExecutionCredentialService {
                 if (account.getTokenExpiresAt() != null && account.getTokenExpiresAt().isBefore(Instant.now())) {
                     return null;
                 }
-                return fieldCipher.decrypt(account.getAccessTokenEnc());
+                return decodeStoredBrokerToken(account.getAccessTokenEnc());
             }
         } catch (Exception ex) {
             log.error("broker.creds.decrypt_failed userId={} {}", account.getUserId(), ex.getMessage());
         }
         return null;
+    }
+
+    private String decodeStoredBrokerToken(String stored) {
+        try {
+            return fieldCipher.decrypt(stored);
+        } catch (RuntimeException ex) {
+            String trimmed = stored == null ? "" : stored.trim();
+            int colon = trimmed.indexOf(':');
+            return colon >= 0 && colon + 1 < trimmed.length()
+                    ? trimmed.substring(colon + 1).trim()
+                    : trimmed;
+        }
     }
 
     private static boolean brokerReady(BrokerAccount account) {

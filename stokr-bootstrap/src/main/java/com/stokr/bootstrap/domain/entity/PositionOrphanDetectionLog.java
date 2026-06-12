@@ -61,4 +61,8 @@ public class PositionOrphanDetectionLog {
 
     @Column(name = "ghost_removed")
     private Boolean ghostRemoved;
+
+    // Explicit getters (Lombok @Data not generating due to processor issue)
+    public LocalDateTime getCheckTime() { return this.checkTime; }
+    public UUID getUserId() { return this.userId; }
 }

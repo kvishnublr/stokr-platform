@@ -74,6 +74,8 @@ type PositionRow = {
   parityBadge: ReturnType<typeof resolvePositionParityBadge>;
   executionMode: string | null;
   brokerStatus: string | null;
+  stopLoss: number | null;
+  targetPrice: number | null;
 };
 
 function fmtNum(v: number, dec = 2) {
@@ -160,6 +162,8 @@ export function PositionsPage(props?: { embedded?: boolean }) {
         parityBadge: resolvePositionParityBadge({ parityState, qty, brokerQty }, brokerConnected),
         executionMode: ws.executionMode != null ? String(ws.executionMode) : null,
         brokerStatus: ws.brokerStatus != null ? String(ws.brokerStatus) : null,
+        stopLoss: parseMoney(ws.stopLoss),
+        targetPrice: parseMoney(ws.targetPrice),
       };
     });
     return filterBrokerMirrorPositions(mapped, brokerSessionLive);
@@ -236,7 +240,7 @@ export function PositionsPage(props?: { embedded?: boolean }) {
 
   const content = (
     <>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
         <PnlSourceBadge source={accountPnl.source} brokerConnected={brokerConnected} />
         {brokerConnected ? (
           <span
@@ -317,6 +321,8 @@ export function PositionsPage(props?: { embedded?: boolean }) {
           notional: r.notional,
           quantitySource: r.quantitySource,
           parityBadge: r.parityBadge,
+          stopLoss: r.stopLoss,
+          targetPrice: r.targetPrice,
         }))}
         loading={loading}
         footerMtm={summary.totalMtm}

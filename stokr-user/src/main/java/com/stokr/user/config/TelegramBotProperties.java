@@ -10,6 +10,17 @@ public class TelegramBotProperties {
     private String webhookSecret = "";
     private boolean dryRun = true;
     private String operatorChatId = "";
+    private String traderChatId = "";
+    private String adminChatId = "";
+
+    /** Master switch for operator (admin) Telegram alerts. */
+    private boolean operatorAlertsEnabled = true;
+
+    /** Send trader entry/exit fill alerts when Telegram is verified. */
+    private boolean traderFillAlertsEnabled = true;
+
+    /** Pre-market / pre-open live-readiness summary to operator. */
+    private boolean operatorReadinessAlertsEnabled = true;
 
     public String getBotToken() {
         return botToken;
@@ -49,5 +60,45 @@ public class TelegramBotProperties {
 
     public void setOperatorChatId(String operatorChatId) {
         this.operatorChatId = operatorChatId;
+    }
+
+    public boolean isOperatorAlertsEnabled() {
+        return operatorAlertsEnabled;
+    }
+
+    public void setOperatorAlertsEnabled(boolean operatorAlertsEnabled) {
+        this.operatorAlertsEnabled = operatorAlertsEnabled;
+    }
+
+    public boolean isTraderFillAlertsEnabled() {
+        return traderFillAlertsEnabled;
+    }
+
+    public void setTraderFillAlertsEnabled(boolean traderFillAlertsEnabled) {
+        this.traderFillAlertsEnabled = traderFillAlertsEnabled;
+    }
+
+    public boolean isOperatorReadinessAlertsEnabled() {
+        return operatorReadinessAlertsEnabled;
+    }
+
+    public void setOperatorReadinessAlertsEnabled(boolean operatorReadinessAlertsEnabled) {
+        this.operatorReadinessAlertsEnabled = operatorReadinessAlertsEnabled;
+    }
+
+    public String getTraderChatId() {
+        return traderChatId;
+    }
+
+    public void setTraderChatId(String traderChatId) {
+        this.traderChatId = traderChatId;
+    }
+
+    public String getAdminChatId() {
+        return adminChatId;
+    }
+
+    public void setAdminChatId(String adminChatId) {
+        this.adminChatId = adminChatId;
     }
 }

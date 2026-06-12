@@ -1,0 +1,252 @@
+# ========================================
+# PROMETHEUS ALERT RULES FOR RELEASE_V2
+# ========================================
+
+groups:
+  # ===== CRITICAL ALERTS (PAGES ON-CALL) =====
+  - name: stokr_critical_alerts
+    interval: 30s
+    rules:
+      # Error rate alert
+      - alert: HighErrorRate
+        expr: |
+          (sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High error rate detected ({{ $value | humanizePercentage }})"
+          description: "Error rate is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+          runbook: "https://internal.stokr.in/runbooks/high-error-rate"
+
+      # Database connection exhaustion
+      - alert: DBConnectionExhaustion
+        expr: |
+          hikaricp_connections_active / hikaricp_connections_max > 0.9
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Connection pool utilization: {{ $value | humanizePercentage }}"
+
+      # Message queue backlog
+      - alert: MessageQueueBacklog
+        expr: |
+          rabbitmq_queue_messages_ready > 1000
+        for: 5m
+        labels:
+          severity: critical
+          team: operations
+        annotations:
+          summary: "Message queue backlog detected"
+          description: "Queue has {{ $value }} pending messages"
+
+      # API latency spike
+      - alert: APILatencyHigh
+        expr: |
+          histogram_quantile(0.99, http_request_duration_seconds) > 1
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "API latency p99 exceeds 1 second"
+          description: "P99 latency: {{ $value | humanizeDuration }}"
+
+      # Broker API timeout
+      - alert: BrokerAPITimeout
+        expr: |
+          (sum(rate(broker_api_timeout_total[5m])) / sum(rate(broker_api_total[5m]))) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          team: broker-integration
+        annotations:
+          summary: "Broker API timeout rate > 10%"
+          description: "Timeout rate: {{ $value | humanizePercentage }}"
+
+      # Redis memory critical
+      - alert: RedisMemoryCritical
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 3m
+        labels:
+          severity: critical
+          team: operations
+        annotations:
+          summary: "Redis memory usage critical"
+          description: "Redis memory: {{ $value | humanizePercentage }}"
+
+      # System disk space critical
+      - alert: DiskSpaceCritical
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          team: operations
+        annotations:
+          summary: "Disk space critical (< 10%)"
+          description: "Available disk: {{ $value | humanizePercentage }}"
+
+  # ===== WARNING ALERTS (SLACK NOTIFICATION) =====
+  - name: stokr_warning_alerts
+    interval: 60s
+    rules:
+      # Slow database queries
+      - alert: SlowQueries
+        expr: |
+          histogram_quantile(0.99, rate(db_query_duration_seconds_bucket[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Query p99 latency: {{ $value | humanizeDuration }}"
+
+      # Cache hit rate degradation
+      - alert: LowCacheHitRate
+        expr: |
+          (sum(rate(cache_gets_hit_total[5m])) / sum(rate(cache_gets_total[5m]))) < 0.7
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Cache hit rate below 70%"
+          description: "Hit rate: {{ $value | humanizePercentage }}"
+
+      # High GC pause time
+      - alert: HighGCPause
+        expr: |
+          jvm_gc_pause_seconds_max > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "GC pause time exceeds 500ms"
+          description: "Max pause: {{ $value | humanizeDuration }}"
+
+      # Thread count high
+      - alert: HighThreadCount
+        expr: |
+          jvm_threads_live_threads > 100
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Thread count unusually high"
+          description: "Active threads: {{ $value }}"
+
+      # Fill sync latency high
+      - alert: FillSyncLatencyHigh
+        expr: |
+          fill_sync_duration_seconds_max > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: execution
+        annotations:
+          summary: "Fill sync latency > 5 seconds"
+          description: "Latency: {{ $value | humanizeDuration }}"
+
+      # Strategy scan duration high
+      - alert: StrategyScanDurationHigh
+        expr: |
+          strategy_scan_duration_seconds_max > 20
+        for: 5m
+        labels:
+          severity: warning
+          team: strategy
+        annotations:
+          summary: "Strategy scan duration > 20 seconds"
+          description: "Duration: {{ $value | humanizeDuration }}"
+
+      # Database replication lag
+      - alert: ReplicationLagHigh
+        expr: |
+          pg_replication_lag_seconds > 1
+        for: 5m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "Database replication lag > 1 second"
+          description: "Lag: {{ $value | humanizeDuration }}"
+
+      # Connection timeout rate
+      - alert: ConnectionTimeoutRate
+        expr: |
+          (sum(rate(db_connection_timeout_total[5m])) / sum(rate(db_connection_total[5m]))) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Database connection timeout rate > 1%"
+          description: "Timeout rate: {{ $value | humanizePercentage }}"
+
+  # ===== CUSTOM STOKR METRICS ALERTS =====
+  - name: stokr_custom_alerts
+    interval: 60s
+    rules:
+      # No signals generated
+      - alert: NoSignalsGenerated
+        expr: |
+          increase(signals_generated_total[15m]) == 0
+        for: 15m
+        labels:
+          severity: warning
+          team: strategy
+        annotations:
+          summary: "No signals generated in last 15 minutes"
+          description: "Signal generation may be halted"
+
+      # High failed order rate
+      - alert: HighFailedOrderRate
+        expr: |
+          (sum(rate(orders_failed_total[5m])) / sum(rate(orders_total[5m]))) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: execution
+        annotations:
+          summary: "Order failure rate > 5%"
+          description: "Failure rate: {{ $value | humanizePercentage }}"
+
+      # Trader activity drop
+      - alert: TraderActivityDrop
+        expr: |
+          (rate(user_login_total[1h]) / rate(user_login_total{job="stokr-platform"}[1h] offset 1h)) < 0.5
+        for: 15m
+        labels:
+          severity: warning
+          team: operations
+        annotations:
+          summary: "Trader login activity dropped >50%"
+          description: "May indicate system issues"
+
+      # Broker sync failures
+      - alert: BrokerSyncFailures
+        expr: |
+          (sum(rate(broker_sync_failures_total[5m]))) > 0
+        for: 10m
+        labels:
+          severity: warning
+          team: broker-integration
+        annotations:
+          summary: "Broker synchronization failures detected"
+          description: "Unable to sync with broker"
+
+# ===== RECORDING RULES (OPTIMIZATION) =====
+# These pre-compute common queries for faster dashboard loading
+recording_rules.yml should contain:
+# - increase/rate calculations for common metrics
+# - aggregations by service, endpoint, method
+# - pre-aggregated percentiles for dashboards

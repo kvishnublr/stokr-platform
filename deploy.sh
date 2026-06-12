@@ -51,14 +51,18 @@ record_deploy_sha() {
 
 export_deploy_metadata() {
     export STOKR_GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-    export STOKR_DEPLOY_BRANCH="${STOKR_DEPLOY_BRANCH:-Release_v1}"
+    export STOKR_DEPLOY_BRANCH="${STOKR_DEPLOY_BRANCH:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo Release_v1)}"
     echo "==> Deploy metadata: branch=$STOKR_DEPLOY_BRANCH commit=$STOKR_GIT_COMMIT"
+}
+
+git_pull_deploy_branch() {
+    git pull origin "$STOKR_DEPLOY_BRANCH"
 }
 
 deploy_api_docker() {
     export_deploy_metadata
     echo "==> [API] Pulling latest code..."
-    git pull origin Release_v1
+    git_pull_deploy_branch
 
     echo "==> [API] Ensuring dependencies are running (postgres, redis, rabbitmq, autoheal)..."
     docker compose --profile app up -d postgres redis rabbitmq autoheal
@@ -68,8 +72,8 @@ deploy_api_docker() {
     echo "==> [API] Building Docker image (uses Maven layer cache)..."
     docker compose --profile app build api
 
-    echo "==> [API] Restarting API container..."
-    docker compose --profile app up -d api
+    echo "==> [API] Restarting API container (without recreating postgres/redis)..."
+    docker compose --profile app --profile v2-ui up -d --no-deps --force-recreate api
 
     echo "==> [API] Waiting for health check..."
     sleep 15
@@ -79,29 +83,30 @@ deploy_api_docker() {
 deploy_ui_docker() {
     export_deploy_metadata
     echo "==> [UI] Pulling latest code..."
-    git pull origin Release_v1
+    git_pull_deploy_branch
 
     echo "==> [UI] Ensuring API is running and healthy..."
     if ! curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1; then
         echo "==> [UI] API is not healthy. Restarting API first..."
         docker compose --profile app up -d postgres redis rabbitmq autoheal
         sleep 60
-        docker compose --profile app up -d api
+        docker compose --profile app up -d --no-deps --force-recreate api
         echo "==> [UI] Waiting for API to be ready..."
         sleep 15
     fi
 
-    echo "==> [UI] Building Docker image..."
-    docker compose --profile app build ui
+    echo "==> [UI] Building Docker images..."
+    docker compose --profile app --profile v2-ui build ui ui-v2
 
-    echo "==> [UI] Restarting UI container..."
-    docker compose --profile app up -d ui
+    echo "==> [UI] Restarting UI containers (without recreating dependencies)..."
+    docker compose --profile app --profile v2-ui up -d --no-deps --force-recreate ui ui-v2
     echo "==> [UI] Done."
 }
 
 deploy_jar() {
+    export_deploy_metadata
     echo "==> [JAR] Pulling latest code..."
-    git pull origin Release_v1
+    git_pull_deploy_branch
 
     echo "==> [JAR] Ensuring dependencies are running (postgres, redis, rabbitmq, autoheal)..."
     docker compose --profile app up -d postgres redis rabbitmq autoheal
@@ -110,7 +115,7 @@ deploy_jar() {
 
     # Detect which modules changed since last deploy
     CHANGED_MODULES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null \
-        | grep -oE '^stokr-[a-z]+' | sort -u | tr '\n' ',' | sed 's/,$//')
+        | grep -oE '^stokr-[a-z]+' | sort -u | tr '\n' ',' | sed 's/,$//' || true)
 
     if [ -z "$CHANGED_MODULES" ]; then
         CHANGED_MODULES="stokr-bootstrap"
@@ -119,7 +124,7 @@ deploy_jar() {
     BUILD_TARGETS="${CHANGED_MODULES},stokr-bootstrap"
     echo "==> [JAR] Building modules: $BUILD_TARGETS"
 
-    mvn -pl "$BUILD_TARGETS" -am package -DskipTests -q
+    mvn -pl "$BUILD_TARGETS" -am clean package -DskipTests -q
 
     echo "==> [JAR] Hot-swapping JAR into running container..."
     JAR=$(ls stokr-bootstrap/target/stokr-bootstrap-*.jar 2>/dev/null | head -1)
@@ -147,8 +152,9 @@ fi
 TARGETS=("$@")
 
 if [ ${#TARGETS[@]} -eq 0 ]; then
+    export_deploy_metadata
     echo "==> Auto-detecting changes..."
-    git pull origin Release_v1
+    git_pull_deploy_branch
     detect_changes
     if $CHANGED_API; then TARGETS+=("api"); fi
     if $CHANGED_UI;  then TARGETS+=("ui");  fi

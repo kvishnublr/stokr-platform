@@ -30,6 +30,20 @@ class StrategyLifecycleProfileTest {
     }
 
     @Test
+    void currencyStrategiesHaveExplicitTimeStopProfiles() {
+        StrategyLifecycleProfile usd = StrategyLifecycleProfile.forStrategy("USDINR_MOMENTUM");
+        StrategyLifecycleProfile eur = StrategyLifecycleProfile.forStrategy("EURINR_MEAN_REVERSION");
+
+        assertEquals(300, usd.minHoldSeconds());
+        assertEquals(20, usd.timeStopMinutes());
+        assertTrue(usd.pressureExitEnabled());
+
+        assertEquals(300, eur.minHoldSeconds());
+        assertEquals(20, eur.timeStopMinutes());
+        assertTrue(eur.pressureExitEnabled());
+    }
+
+    @Test
     void exitCategoryMapsToOutcomeStatus() {
         assertEquals("TIME_EXIT", ExitCategory.TIME_EXIT.outcomeStatus());
         assertEquals("FEED_PROTECTION", ExitCategory.FEED_PROTECTION.outcomeStatus());

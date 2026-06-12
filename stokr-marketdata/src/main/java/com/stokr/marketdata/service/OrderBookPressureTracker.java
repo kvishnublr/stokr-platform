@@ -32,7 +32,7 @@ public class OrderBookPressureTracker {
      * Stores the latest buy/sell quantities and maintains rolling history.
      */
     public void update(String symbol, long totalBuyQty, long totalSellQty, double price, Instant tickTime) {
-        if (symbol == null || (totalBuyQty == 0 && totalSellQty == 0)) return;
+        if (symbol == null || tickTime == null) return;
         pressureMap.computeIfAbsent(symbol, k -> new SymbolPressure())
                    .addSnapshot(totalBuyQty, totalSellQty, price, tickTime);
     }

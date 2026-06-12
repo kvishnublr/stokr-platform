@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../api/client";
+import { fmtTime } from "../../lib/dateUtils";
 import {
   Card,
   CardContent,
@@ -319,7 +320,7 @@ export function BacktestHistoricalDataLoader() {
           {progressData?.last_updated && (
             <p className="flex items-center gap-2 text-xs text-slate-500">
               <Clock className="h-3 w-3" />
-              Last updated: {new Date(progressData.last_updated).toLocaleTimeString()}
+              Last updated: {fmtTime(progressData.last_updated)}
             </p>
           )}
         </CardContent>

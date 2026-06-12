@@ -88,7 +88,7 @@ public class SignalPipelineTraceService {
         stages.add(new PipelineStageDto(
             "SIGNAL_GENERATED", STAGE_PASSED, "Signal Generated",
             signal.getCreatedAt(), null, null,
-            Map.of(
+            detailsOf(
                 "confidence", signal.getConfidenceScore(),
                 "signalType", signal.getSignalType() != null ? signal.getSignalType().name() : null,
                 "provenance", signal.getSignalSource() != null ? signal.getSignalSource().name() : null
@@ -278,7 +278,7 @@ public class SignalPipelineTraceService {
                 userStages.add(new PipelineStageDto(
                     "ORDER_CREATED", STAGE_PASSED, "Order Created",
                     primaryOrder.getCreatedAt(), null, null,
-                    Map.of(
+                    detailsOf(
                         "orderId", primaryOrder.getId().toString(),
                         "state", primaryOrder.getState() != null ? primaryOrder.getState().name() : null,
                         "quantity", primaryOrder.getQuantity(),
@@ -357,6 +357,20 @@ public class SignalPipelineTraceService {
         if (audit.getRiskGate() != null) details.put("riskGate", audit.getRiskGate());
         if (audit.getCooldownSecRemaining() != null) details.put("cooldownSecRemaining", audit.getCooldownSecRemaining());
         if (audit.getUserId() != null) details.put("userId", audit.getUserId().toString());
+        return details;
+    }
+
+    private static Map<String, Object> detailsOf(Object... keyValues) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        if (keyValues == null) {
+            return details;
+        }
+        for (int i = 0; i + 1 < keyValues.length; i += 2) {
+            Object value = keyValues[i + 1];
+            if (value != null) {
+                details.put(String.valueOf(keyValues[i]), value);
+            }
+        }
         return details;
     }
 

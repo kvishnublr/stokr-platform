@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stokr Admin Dashboard - Premium</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: #1a1a1a;
+            min-height: 100vh;
+            padding: 20px;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 20% 50%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 80%, rgba(59, 130, 246, 0.1) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        .navbar {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            animation: slideDown 0.6s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .navbar-brand {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .navbar-right {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .status-badge {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            color: white;
+            border-radius: 50px;
+            font-size: 12px;
+            font-weight: 600;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(72, 187, 120, 0); }
+        }
+
+        .btn-primary {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .tab-btn {
+            padding: 12px 24px;
+            background: transparent;
+            color: #666;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .tab-btn::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+        }
+
+        .tab-btn:hover {
+            color: #333;
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .tab-btn.active {
+            color: #667eea;
+            border-bottom: 2px solid #667eea;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.05) 100%);
+        }
+
+        .tab-btn.active::after {
+            width: 100%;
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeInUp 0.6s ease-out;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            animation: slideInUp 0.6s ease-out both;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .card:hover::before {
+            left: 100%;
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.1);
+            background: rgba(255, 255, 255, 0.95);
+        }
+
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(40px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .card-header {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #333;
+            margin: 15px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+
+        .stat-change {
+            font-size: 12px;
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: rgba(72, 187, 120, 0.1);
+            color: #48bb78;
+            border-radius: 6px;
+            display: inline-block;
+            font-weight: 600;
+        }
+
+        .stat-change.negative {
+            background: rgba(245, 101, 101, 0.1);
+            color: #f56565;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 4px;
+            animation: slideRight 0.8s ease-out;
+        }
+
+        @keyframes slideRight {
+            from {
+                width: 0;
+            }
+        }
+
+        .table-container {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: linear-gradient(135deg, #f5f7fa 0%, #e2e8f0 100%);
+            padding: 15px;
+            text-align: left;
+            font-weight: 700;
+            color: #333;
+            border-bottom: 2px solid #e2e8f0;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #f0f0f0;
+            color: #666;
+            font-size: 13px;
+        }
+
+        tr:hover {
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-success {
+            background: rgba(72, 187, 120, 0.15);
+            color: #22863a;
+        }
+
+        .badge-warning {
+            background: rgba(237, 137, 54, 0.15);
+            color: #9f6b00;
+        }
+
+        .badge-danger {
+            background: rgba(245, 101, 101, 0.15);
+            color: #6d2c26;
+        }
+
+        .badge-info {
+            background: rgba(66, 153, 225, 0.15);
+            color: #1e3a8a;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 15px 20px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            font-family: 'Inter', sans-serif;
+            margin-bottom: 20px;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .action-btn {
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin-right: 8px;
+        }
+
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .action-btn.danger {
+            background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+        }
+
+        .timeline {
+            position: relative;
+            padding: 20px 0;
+        }
+
+        .timeline-item {
+            display: flex;
+            margin-bottom: 25px;
+            position: relative;
+            animation: fadeInLeft 0.6s ease-out both;
+        }
+
+        @keyframes fadeInLeft {
+            from {
+                opacity: 0;
+                transform: translateX(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .timeline-dot {
+            width: 12px;
+            height: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            margin-top: 5px;
+            margin-right: 20px;
+            flex-shrink: 0;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+
+        .timeline-content {
+            flex: 1;
+        }
+
+        .timeline-time {
+            font-size: 12px;
+            color: #999;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .timeline-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #333;
+            margin: 5px 0;
+        }
+
+        .timeline-desc {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .status-box {
+            padding: 20px;
+            background: linear-gradient(135deg, rgba(72, 187, 120, 0.1) 0%, rgba(56, 161, 105, 0.05) 100%);
+            border-radius: 12px;
+            border: 2px solid rgba(72, 187, 120, 0.3);
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .status-box:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(72, 187, 120, 0.2);
+        }
+
+        .status-box.warning {
+            background: linear-gradient(135deg, rgba(237, 137, 54, 0.1) 0%, rgba(221, 107, 32, 0.05) 100%);
+            border-color: rgba(237, 137, 54, 0.3);
+        }
+
+        .status-box.warning:hover {
+            box-shadow: 0 8px 20px rgba(237, 137, 54, 0.2);
+        }
+
+        .status-box.danger {
+            background: linear-gradient(135deg, rgba(245, 101, 101, 0.1) 0%, rgba(229, 62, 62, 0.05) 100%);
+            border-color: rgba(245, 101, 101, 0.3);
+        }
+
+        .status-box.danger:hover {
+            box-shadow: 0 8px 20px rgba(245, 101, 101, 0.2);
+        }
+
+        .status-title {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .status-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .chart-container {
+            height: 300px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e2e8f0 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            font-weight: 600;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chart-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 30% 30%, rgba(102, 126, 234, 0.1) 0%, transparent 50%);
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .navbar {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .navbar-right {
+                flex-direction: column;
+                width: 100%;
+            }
+
+            .tabs {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Navbar -->
+        <div class="navbar">
+            <div class="navbar-brand">🚀 Stokr Admin Dashboard</div>
+            <div class="navbar-right">
+                <div class="status-badge">🟢 SYSTEM HEALTHY</div>
+                <button class="btn-primary">⟳ Refresh</button>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('overview')">📊 Overview</button>
+            <button class="tab-btn" onclick="switchTab('users')">👥 Users</button>
+            <button class="tab-btn" onclick="switchTab('signals')">📡 Signals</button>
+            <button class="tab-btn" onclick="switchTab('strategies')">⚙️ Strategies</button>
+            <button class="tab-btn" onclick="switchTab('infrastructure')">🏗️ Infrastructure</button>
+            <button class="tab-btn" onclick="switchTab('diagnostics')">🔍 Diagnostics</button>
+            <button class="tab-btn" onclick="switchTab('reports')">📈 Reports</button>
+            <button class="tab-btn" onclick="switchTab('settings')">⚙️ Settings</button>
+        </div>
+
+        <!-- TAB 1: OVERVIEW -->
+        <div id="overview" class="tab-content active">
+            <div class="grid-4">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">👥</div>
+                        <div>Total Users</div>
+                    </div>
+                    <div class="stat-value">2,847</div>
+                    <div class="stat-label">Active Users</div>
+                    <div class="stat-change">↑ 12% this month</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📡</div>
+                        <div>Total Signals</div>
+                    </div>
+                    <div class="stat-value">18,290</div>
+                    <div class="stat-label">Generated Today</div>
+                    <div class="stat-change">234 signals</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📍</div>
+                        <div>Open Positions</div>
+                    </div>
+                    <div class="stat-value">1,234</div>
+                    <div class="stat-label">Active Trades</div>
+                    <div class="stat-change" style="background: rgba(72, 187, 120, 0.1); color: #48bb78;">+₹2.34 Cr P&L</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">🟢</div>
+                        <div>System Health</div>
+                    </div>
+                    <div class="stat-value">99.95%</div>
+                    <div class="stat-label">Uptime (24h)</div>
+                    <div class="stat-change">All systems optimal</div>
+                </div>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">💻</div>
+                        <div>Resource Utilization</div>
+                    </div>
+                    <div style="margin: 20px 0;">
+                        <div class="stat-label">CPU Usage</div>
+                        <div style="margin: 8px 0; font-size: 18px; font-weight: 700; color: #667eea;">34%</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 34%;"></div>
+                        </div>
+
+                        <div class="stat-label" style="margin-top: 15px;">Memory Usage</div>
+                        <div style="margin: 8px 0; font-size: 18px; font-weight: 700; color: #667eea;">62%</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 62%;"></div>
+                        </div>
+
+                        <div class="stat-label" style="margin-top: 15px;">Disk I/O</div>
+                        <div style="margin: 8px 0; font-size: 18px; font-weight: 700; color: #667eea;">28%</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 28%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">🔗</div>
+                        <div>System Status</div>
+                    </div>
+                    <div class="status-grid">
+                        <div class="status-box">
+                            <div class="status-title">Redis</div>
+                            <div class="status-value">✓</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="status-title">Database</div>
+                            <div class="status-value">✓</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="status-title">Broker API</div>
+                            <div class="status-value">✓</div>
+                        </div>
+                        <div class="status-box warning">
+                            <div class="status-title">Market Feed</div>
+                            <div class="status-value">⚠</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="status-title">OMS</div>
+                            <div class="status-value">✓</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="status-title">Signal Engine</div>
+                            <div class="status-value">✓</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📈</div>
+                        <div>Daily Trends</div>
+                    </div>
+                    <div class="chart-container">
+                        📊 Performance Chart
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">⏰</div>
+                    <div>Recent Activity</div>
+                </div>
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">Today 13:45 IST</div>
+                            <div class="timeline-title">Market Feed Closed</div>
+                            <div class="timeline-desc">NSE/MCX/NCDEX trading closed. Automatic halt triggered.</div>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">Today 13:30 IST</div>
+                            <div class="timeline-title">Kill Switch Activated</div>
+                            <div class="timeline-desc">Safety mechanism engaged. No new orders placed.</div>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">Today 13:20 IST</div>
+                            <div class="timeline-title">OMS Load Spike</div>
+                            <div class="timeline-desc">Load at 37.80%, monitoring increased (threshold: 70%)</div>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">Today 13:10 IST</div>
+                            <div class="timeline-title">Redis Reconnected</div>
+                            <div class="timeline-desc">Latency normalized to 15ms after brief outage.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: USERS MANAGEMENT -->
+        <div id="users" class="tab-content">
+            <div style="margin-bottom: 20px;">
+                <input type="text" class="search-box" placeholder="🔍 Search users by name, email, or ID...">
+                <button class="btn-primary">+ Add New User</button>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>User ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Status</th>
+                            <th>Joined</th>
+                            <th>Live Trading</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>#U001</td>
+                            <td>Rahul Kumar</td>
+                            <td>rahul@example.com</td>
+                            <td><span class="badge badge-success">ACTIVE</span></td>
+                            <td>2024-01-15</td>
+                            <td><span class="badge badge-success">APPROVED</span></td>
+                            <td><button class="action-btn">View</button><button class="action-btn danger">Disable</button></td>
+                        </tr>
+                        <tr>
+                            <td>#U002</td>
+                            <td>Priya Singh</td>
+                            <td>priya@example.com</td>
+                            <td><span class="badge badge-success">ACTIVE</span></td>
+                            <td>2024-01-10</td>
+                            <td><span class="badge badge-warning">PENDING</span></td>
+                            <td><button class="action-btn">View</button><button class="action-btn">Approve</button></td>
+                        </tr>
+                        <tr>
+                            <td>#U003</td>
+                            <td>Amit Patel</td>
+                            <td>amit@example.com</td>
+                            <td><span class="badge badge-danger">INACTIVE</span></td>
+                            <td>2024-01-05</td>
+                            <td><span class="badge badge-danger">REVOKED</span></td>
+                            <td><button class="action-btn">View</button><button class="action-btn">Enable</button></td>
+                        </tr>
+                        <tr>
+                            <td>#U004</td>
+                            <td>Neha Gupta</td>
+                            <td>neha@example.com</td>
+                            <td><span class="badge badge-success">ACTIVE</span></td>
+                            <td>2024-01-20</td>
+                            <td><span class="badge badge-success">APPROVED</span></td>
+                            <td><button class="action-btn">View</button><button class="action-btn danger">Disable</button></td>
+                        </tr>
+                        <tr>
+                            <td>#U005</td>
+                            <td>Vikram Desai</td>
+                            <td>vikram@example.com</td>
+                            <td><span class="badge badge-success">ACTIVE</span></td>
+                            <td>2024-01-12</td>
+                            <td><span class="badge badge-success">APPROVED</span></td>
+                            <td><button class="action-btn">View</button><button class="action-btn danger">Disable</button></td>
+                        </tr>
+                        <tr>
+                            <td>#U006</td>
+                            <td>Sarah Johnson</td>
+                            <td>sarah@example.com</td>
+                            <td><span class="badge badge-success">ACTIVE</span></td>
+                            <td>2024-01-08</td>
+                            <td><span class="badge badge-success">APPROVED</span></td>
+                            <td><button class="action-btn">View</button><button class="action-btn danger">Disable</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB 3: SIGNALS -->
+        <div id="signals" class="tab-content">
+            <div style="margin-bottom: 20px;">
+                <input type="text" class="search-box" placeholder="🔍 Search signals by symbol or strategy...">
+                <button class="btn-primary">📊 Signal Stats</button>
+                <button class="btn-primary">🔄 Replay</button>
+                <button class="btn-primary">🧹 Cleanup</button>
+            </div>
+
+            <div class="grid-4">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📈</div>
+                        <div>Today Signals</div>
+                    </div>
+                    <div class="stat-value">234</div>
+                    <div class="stat-label">Generated</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">🔴</div>
+                        <div>Active Signals</div>
+                    </div>
+                    <div class="stat-value">45</div>
+                    <div class="stat-label">In Progress</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">✓</div>
+                        <div>Completed</div>
+                    </div>
+                    <div class="stat-value">189</div>
+                    <div class="stat-label">Finished</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📊</div>
+                        <div>Win Rate</div>
+                    </div>
+                    <div class="stat-value">67.2%</div>
+                    <div class="stat-label">Accuracy</div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Signal ID</th>
+                            <th>Symbol</th>
+                            <th>Strategy</th>
+                            <th>Type</th>
+                            <th>Confidence</th>
+                            <th>Entry Price</th>
+                            <th>Exit Price</th>
+                            <th>P&L</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>#SIG001</td>
+                            <td>NIFTYPE25JAN</td>
+                            <td>NSE_SPIKE_v1.0</td>
+                            <td>BUY</td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <div class="progress-bar" style="flex: 1;">
+                                        <div class="progress-fill" style="width: 88%; animation: none;"></div>
+                                    </div>
+                                    88%
+                                </div>
+                            </td>
+                            <td>₹26,500</td>
+                            <td>₹26,620</td>
+                            <td><span style="color: #48bb78; font-weight: 700;">+₹1,200</span></td>
+                            <td><span class="badge badge-success">TARGET_HIT</span></td>
+                        </tr>
+                        <tr>
+                            <td>#SIG002</td>
+                            <td>GOLDMIC25JAN</td>
+                            <td>MCX_SWING_v1.0</td>
+                            <td>BUY</td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <div class="progress-bar" style="flex: 1;">
+                                        <div class="progress-fill" style="width: 72%; animation: none;"></div>
+                                    </div>
+                                    72%
+                                </div>
+                            </td>
+                            <td>₹7,250</td>
+                            <td>₹7,180</td>
+                            <td><span style="color: #f56565; font-weight: 700;">-₹700</span></td>
+                            <td><span class="badge badge-danger">STOPLOSS_HIT</span></td>
+                        </tr>
+                        <tr>
+                            <td>#SIG003</td>
+                            <td>NIFTY50</td>
+                            <td>NSE_SPIKE_v1.0</td>
+                            <td>SELL</td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <div class="progress-bar" style="flex: 1;">
+                                        <div class="progress-fill" style="width: 91%; animation: none;"></div>
+                                    </div>
+                                    91%
+                                </div>
+                            </td>
+                            <td>₹25,800</td>
+                            <td>₹25,850</td>
+                            <td><span style="color: #48bb78; font-weight: 700;">+₹500</span></td>
+                            <td><span class="badge badge-success">TARGET_HIT</span></td>
+                        </tr>
+                        <tr>
+                            <td>#SIG004</td>
+                            <td>BANKNIFTY</td>
+                            <td>NSE_SPIKE_v1.0</td>
+                            <td>BUY</td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <div class="progress-bar" style="flex: 1;">
+                                        <div class="progress-fill" style="width: 45%; animation: none;"></div>
+                                    </div>
+                                    45%
+                                </div>
+                            </td>
+                            <td>₹48,200</td>
+                            <td>₹48,100</td>
+                            <td><span style="color: #f56565; font-weight: 700;">-₹100</span></td>
+                            <td><span class="badge badge-info">ACTIVE</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB 4: STRATEGIES -->
+        <div id="strategies" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">🚀</div>
+                        <div>NSE_SPIKE_v1.0</div>
+                    </div>
+                    <div class="stat-label">Nifty Spike Detection</div>
+                    <div style="margin: 15px 0; padding: 12px; background: rgba(72, 187, 120, 0.1); border-radius: 8px; color: #48bb78; font-weight: 600;">🟢 LIVE</div>
+                    <div style="margin: 10px 0; font-size: 13px; color: #666;">
+                        <div style="margin: 8px 0;">Signals Today: <strong>67</strong></div>
+                        <div style="margin: 8px 0;">Win Rate: <strong>71%</strong></div>
+                        <div style="margin: 8px 0;">Avg P&L: <strong>+₹2,345</strong></div>
+                    </div>
+                    <button class="action-btn" style="width: 100%; margin-top: 10px;">View Details</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">💰</div>
+                        <div>MCX_SWING_v1.0</div>
+                    </div>
+                    <div class="stat-label">Gold Swing Trading</div>
+                    <div style="margin: 15px 0; padding: 12px; background: rgba(72, 187, 120, 0.1); border-radius: 8px; color: #48bb78; font-weight: 600;">🟢 LIVE</div>
+                    <div style="margin: 10px 0; font-size: 13px; color: #666;">
+                        <div style="margin: 8px 0;">Signals Today: <strong>34</strong></div>
+                        <div style="margin: 8px 0;">Win Rate: <strong>64%</strong></div>
+                        <div style="margin: 8px 0;">Avg P&L: <strong>+₹1,890</strong></div>
+                    </div>
+                    <button class="action-btn" style="width: 100%; margin-top: 10px;">View Details</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">💱</div>
+                        <div>CDS_FOREX_v1.0</div>
+                    </div>
+                    <div class="stat-label">Currency Pair Trading</div>
+                    <div style="margin: 15px 0; padding: 12px; background: rgba(237, 137, 54, 0.1); border-radius: 8px; color: #ed8936; font-weight: 600;">🟡 BETA</div>
+                    <div style="margin: 10px 0; font-size: 13px; color: #666;">
+                        <div style="margin: 8px 0;">Signals Today: <strong>12</strong></div>
+                        <div style="margin: 8px 0;">Win Rate: <strong>58%</strong></div>
+                        <div style="margin: 8px 0;">Avg P&L: <strong>+₹1,234</strong></div>
+                    </div>
+                    <button class="action-btn" style="width: 100%; margin-top: 10px;">View Details</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📊</div>
+                        <div>INTRADAY_OI_v1.0</div>
+                    </div>
+                    <div class="stat-label">Intraday OI Analysis</div>
+                    <div style="margin: 15px 0; padding: 12px; background: rgba(102, 126, 234, 0.1); border-radius: 8px; color: #667eea; font-weight: 600;">🔵 DRAFT</div>
+                    <div style="margin: 10px 0; font-size: 13px; color: #666;">
+                        <div style="margin: 8px 0;">Signals Today: <strong>0</strong></div>
+                        <div style="margin: 8px 0;">Win Rate: <strong>-</strong></div>
+                        <div style="margin: 8px 0;">Avg P&L: <strong>N/A</strong></div>
+                    </div>
+                    <button class="action-btn" style="width: 100%; margin-top: 10px;">Edit</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: INFRASTRUCTURE -->
+        <div id="infrastructure" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📍</div>
+                        <div>Redis Cache</div>
+                    </div>
+                    <div style="background: rgba(72, 187, 120, 0.1); padding: 15px; border-radius: 10px; margin: 15px 0;">
+                        <div style="color: #48bb78; font-weight: 700; font-size: 14px; margin-bottom: 10px;">✓ Connected</div>
+                        <div style="font-size: 12px; color: #666;">
+                            <div style="margin: 8px 0;">Latency: <strong>15ms</strong></div>
+                            <div style="margin: 8px 0;">Memory: <strong>2.3 GB / 8 GB</strong></div>
+                            <div style="margin: 8px 0;">Hit Rate: <strong>94.2%</strong></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">💾</div>
+                        <div>PostgreSQL Database</div>
+                    </div>
+                    <div style="background: rgba(72, 187, 120, 0.1); padding: 15px; border-radius: 10px; margin: 15px 0;">
+                        <div style="color: #48bb78; font-weight: 700; font-size: 14px; margin-bottom: 10px;">✓ Connected</div>
+                        <div style="font-size: 12px; color: #666;">
+                            <div style="margin: 8px 0;">Response: <strong>8ms</strong></div>
+                            <div style="margin: 8px 0;">Connections: <strong>45/100</strong></div>
+                            <div style="margin: 8px 0;">CPU: <strong>12%</strong></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">🔗</div>
+                        <div>Zerodha Broker API</div>
+                    </div>
+                    <div style="background: rgba(72, 187, 120, 0.1); padding: 15px; border-radius: 10px; margin: 15px 0;">
+                        <div style="color: #48bb78; font-weight: 700; font-size: 14px; margin-bottom: 10px;">✓ Connected</div>
+                        <div style="font-size: 12px; color: #666;">
+                            <div style="margin: 8px 0;">Latency: <strong>45ms</strong></div>
+                            <div style="margin: 8px 0;">Request Rate: <strong>234/min</strong></div>
+                            <div style="margin: 8px 0;">Error Rate: <strong>0.1%</strong></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📡</div>
+                        <div>Market Data Feed</div>
+                    </div>
+                    <div style="background: rgba(237, 137, 54, 0.1); padding: 15px; border-radius: 10px; margin: 15px 0;">
+                        <div style="color: #ed8936; font-weight: 700; font-size: 14px; margin-bottom: 10px;">⚠ Market Closed</div>
+                        <div style="font-size: 12px; color: #666;">
+                            <div style="margin: 8px 0;">Will reopen tomorrow</div>
+                            <div style="margin: 8px 0;">Last update: <strong>13:35 IST</strong></div>
+                            <div style="margin: 8px 0;">Symbols: <strong>4,234</strong></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">⚙️</div>
+                        <div>OMS Engine</div>
+                    </div>
+                    <div style="background: rgba(72, 187, 120, 0.1); padding: 15px; border-radius: 10px; margin: 15px 0;">
+                        <div style="color: #48bb78; font-weight: 700; font-size: 14px; margin-bottom: 10px;">✓ Healthy</div>
+                        <div style="font-size: 12px; color: #666;">
+                            <div style="margin: 8px 0;">Load: <strong>37.8%</strong></div>
+                            <div style="margin: 8px 0;">Orders/min: <strong>156</strong></div>
+                            <div style="margin: 8px 0;">Queue: <strong>34 pending</strong></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">🚀</div>
+                        <div>Signal Engine</div>
+                    </div>
+                    <div style="background: rgba(72, 187, 120, 0.1); padding: 15px; border-radius: 10px; margin: 15px 0;">
+                        <div style="color: #48bb78; font-weight: 700; font-size: 14px; margin-bottom: 10px;">✓ Running</div>
+                        <div style="font-size: 12px; color: #666;">
+                            <div style="margin: 8px 0;">Instances: <strong>11 active</strong></div>
+                            <div style="margin: 8px 0;">Signals/min: <strong>234</strong></div>
+                            <div style="margin: 8px 0;">Latency: <strong>120ms</strong></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">📊</div>
+                    <div>Performance Metrics</div>
+                </div>
+                <div class="chart-container">
+                    📈 Request Latency Chart - Average: 245ms (P95: 580ms)
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 6: DIAGNOSTICS -->
+        <div id="diagnostics" class="tab-content">
+            <div style="margin-bottom: 20px;">
+                <button class="btn-primary">🔧 Run Diagnostics</button>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">✓</div>
+                    <div>Signal Pipeline Diagnostics</div>
+                </div>
+                <div style="margin: 20px 0;">
+                    <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                        <span style="width: 20px; height: 20px; background: #48bb78; border-radius: 50%; margin-right: 10px;"></span>
+                        <span>Strategy Evaluation: <strong style="color: #48bb78;">✓ OK</strong> (234 strategies, 67 active)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                        <span style="width: 20px; height: 20px; background: #48bb78; border-radius: 50%; margin-right: 10px;"></span>
+                        <span>Signal Generation: <strong style="color: #48bb78;">✓ OK</strong> (234 signals today)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                        <span style="width: 20px; height: 20px; background: #48bb78; border-radius: 50%; margin-right: 10px;"></span>
+                        <span>Quality Gates: <strong style="color: #48bb78;">✓ OK</strong> (Pass rate: 89.2%)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                        <span style="width: 20px; height: 20px; background: #48bb78; border-radius: 50%; margin-right: 10px;"></span>
+                        <span>Order Conversion: <strong style="color: #48bb78;">✓ OK</strong> (Conversion rate: 78.5%)</span>
+                    </div>
+                    <div style="display: flex; align-items: center;">
+                        <span style="width: 20px; height: 20px; background: #48bb78; border-radius: 50%; margin-right: 10px;"></span>
+                        <span>Outcome Tracking: <strong style="color: #48bb78;">✓ OK</strong> (Tracking rate: 100%)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">🔀</div>
+                    <div>Exit System Status</div>
+                </div>
+                <div class="grid" style="margin-top: 15px;">
+                    <div style="padding: 15px; background: rgba(72, 187, 120, 0.1); border-radius: 10px; border-left: 4px solid #48bb78;">
+                        <div style="font-weight: 700; color: #333;">Stop Loss (HARD_STOP)</div>
+                        <div style="font-size: 12px; color: #666; margin-top: 5px;">✓ Operational - 45 triggered today</div>
+                    </div>
+                    <div style="padding: 15px; background: rgba(72, 187, 120, 0.1); border-radius: 10px; border-left: 4px solid #48bb78;">
+                        <div style="font-weight: 700; color: #333;">Target Profit (TARGET)</div>
+                        <div style="font-size: 12px; color: #666; margin-top: 5px;">✓ Operational - 89 triggered today</div>
+                    </div>
+                    <div style="padding: 15px; background: rgba(72, 187, 120, 0.1); border-radius: 10px; border-left: 4px solid #48bb78;">
+                        <div style="font-weight: 700; color: #333;">Pressure Exit</div>
+                        <div style="font-size: 12px; color: #666; margin-top: 5px;">✓ Operational - 12 triggered today</div>
+                    </div>
+                    <div style="padding: 15px; background: rgba(72, 187, 120, 0.1); border-radius: 10px; border-left: 4px solid #48bb78;">
+                        <div style="font-weight: 700; color: #333;">Time Exit</div>
+                        <div style="font-size: 12px; color: #666; margin-top: 5px;">✓ Operational - 5 triggered today</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 7: REPORTS -->
+        <div id="reports" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📊</div>
+                        <div>Daily Report</div>
+                    </div>
+                    <div style="margin: 15px 0; font-size: 13px; color: #666;">
+                        <div style="margin: 10px 0;">Total Signals: <strong>234</strong></div>
+                        <div style="margin: 10px 0;">Completed: <strong>189</strong></div>
+                        <div style="margin: 10px 0;">Win Rate: <strong>67.2%</strong></div>
+                        <div style="margin: 10px 0;">Total P&L: <strong style="color: #48bb78;">+₹2,34,500</strong></div>
+                    </div>
+                    <button class="action-btn" style="width: 100%;">Download PDF</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📈</div>
+                        <div>Weekly Report</div>
+                    </div>
+                    <div style="margin: 15px 0; font-size: 13px; color: #666;">
+                        <div style="margin: 10px 0;">Total Signals: <strong>1,234</strong></div>
+                        <div style="margin: 10px 0;">Completed: <strong>1,045</strong></div>
+                        <div style="margin: 10px 0;">Win Rate: <strong>71.4%</strong></div>
+                        <div style="margin: 10px 0;">Total P&L: <strong style="color: #48bb78;">+₹12,34,500</strong></div>
+                    </div>
+                    <button class="action-btn" style="width: 100%;">Download PDF</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📋</div>
+                        <div>Monthly Report</div>
+                    </div>
+                    <div style="margin: 15px 0; font-size: 13px; color: #666;">
+                        <div style="margin: 10px 0;">Total Signals: <strong>4,567</strong></div>
+                        <div style="margin: 10px 0;">Completed: <strong>3,890</strong></div>
+                        <div style="margin: 10px 0;">Win Rate: <strong>72.1%</strong></div>
+                        <div style="margin: 10px 0;">Total P&L: <strong style="color: #48bb78;">+₹45,67,890</strong></div>
+                    </div>
+                    <button class="action-btn" style="width: 100%;">Download PDF</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">💼</div>
+                        <div>Audit Trail</div>
+                    </div>
+                    <div style="margin: 15px 0; font-size: 13px; color: #666;">
+                        <div style="margin: 10px 0;">User Activities: <strong>2,345</strong></div>
+                        <div style="margin: 10px 0;">Admin Changes: <strong>123</strong></div>
+                        <div style="margin: 10px 0;">System Events: <strong>5,678</strong></div>
+                        <div style="margin: 10px 0;">Period: <strong>Last 30 days</strong></div>
+                    </div>
+                    <button class="action-btn" style="width: 100%;">View Audit</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">📊</div>
+                    <div>Strategy Performance Report</div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Strategy</th>
+                                <th>Signals</th>
+                                <th>Win Rate</th>
+                                <th>Avg P&L</th>
+                                <th>Total P&L</th>
+                                <th>Sharpe</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>NSE_SPIKE_v1.0</td>
+                                <td>1,234</td>
+                                <td><span class="badge badge-success">73%</span></td>
+                                <td>+₹2,345</td>
+                                <td style="color: #48bb78; font-weight: 700;">+₹28,90,530</td>
+                                <td>1.85</td>
+                            </tr>
+                            <tr>
+                                <td>MCX_SWING_v1.0</td>
+                                <td>567</td>
+                                <td><span class="badge badge-success">68%</span></td>
+                                <td>+₹1,890</td>
+                                <td style="color: #48bb78; font-weight: 700;">+₹10,71,330</td>
+                                <td>1.65</td>
+                            </tr>
+                            <tr>
+                                <td>CDS_FOREX_v1.0</td>
+                                <td>234</td>
+                                <td><span class="badge badge-warning">58%</span></td>
+                                <td>+₹1,234</td>
+                                <td style="color: #48bb78; font-weight: 700;">+₹2,88,756</td>
+                                <td>1.42</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 8: SETTINGS -->
+        <div id="settings" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">🔐</div>
+                        <div>System Settings</div>
+                    </div>
+                    <div style="margin: 15px 0;">
+                        <div style="margin: 15px 0; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0;">
+                            <div style="font-weight: 600; margin-bottom: 8px;">Trading Hours</div>
+                            <input type="text" placeholder="09:15 - 15:30" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        </div>
+                        <div style="margin: 15px 0; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0;">
+                            <div style="font-weight: 600; margin-bottom: 8px;">Max Daily Orders</div>
+                            <input type="number" placeholder="1000" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        </div>
+                        <div style="margin: 15px 0;">
+                            <div style="font-weight: 600; margin-bottom: 8px;">Kill Switch Enabled</div>
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" checked style="margin-right: 8px; width: 18px; height: 18px;">
+                                <span>Automatic emergency halt on critical errors</span>
+                            </label>
+                        </div>
+                    </div>
+                    <button class="action-btn" style="width: 100%;">Save Changes</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📧</div>
+                        <div>Notification Settings</div>
+                    </div>
+                    <div style="margin: 15px 0;">
+                        <div style="margin: 15px 0; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" checked style="margin-right: 8px; width: 18px; height: 18px;">
+                                <span>Email alerts for critical events</span>
+                            </label>
+                        </div>
+                        <div style="margin: 15px 0; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" checked style="margin-right: 8px; width: 18px; height: 18px;">
+                                <span>SMS alerts for system issues</span>
+                            </label>
+                        </div>
+                        <div style="margin: 15px 0;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" style="margin-right: 8px; width: 18px; height: 18px;">
+                                <span>Daily summary report</span>
+                            </label>
+                        </div>
+                    </div>
+                    <button class="action-btn" style="width: 100%;">Save Changes</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">🔑</div>
+                        <div>API Configuration</div>
+                    </div>
+                    <div style="margin: 15px 0;">
+                        <div style="margin: 15px 0;">
+                            <div style="font-weight: 600; margin-bottom: 8px;">API Key</div>
+                            <div style="padding: 10px; background: #f5f7fa; border-radius: 6px; font-family: monospace; font-size: 12px; word-break: break-all;">
+                                sk_live_51H***j9K
+                            </div>
+                        </div>
+                        <div style="margin: 15px 0;">
+                            <div style="font-weight: 600; margin-bottom: 8px;">Rate Limit</div>
+                            <input type="number" placeholder="1000" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        </div>
+                    </div>
+                    <button class="action-btn" style="width: 100%;">Regenerate API Key</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Remove active class from all buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+
+            // Add active class to clicked button
+            event.target.classList.add('active');
+        }
+
+        // Add stagger animation to cards
+        document.querySelectorAll('.card').forEach((card, index) => {
+            card.style.animationDelay = `${index * 50}ms`;
+        });
+    </script>
+</body>
+</html>

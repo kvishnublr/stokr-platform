@@ -311,7 +311,7 @@ export function WorkspaceTopNav({
   const selectedMode: TraderExecutionMode =
     updateMode.isPending && updateMode.variables
       ? updateMode.variables
-      : executionModeQuery.data ?? (liveApproved ? "LIVE" : "PAPER");
+      : executionModeQuery.data ?? "PAPER";
   const paperMode = selectedMode !== "LIVE";
 
   const sanitizedDisplayName =

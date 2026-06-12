@@ -44,7 +44,7 @@ public class ConfidenceScoreCalculatorService {
                     // Get the order flow signal enhancement (calculates confidence)
                     OrderFlowSignalEnhancement signal = metricsService.getOrderFlowSignal(symbol);
 
-                    if (signal != null && !signal.getError()) {
+                    if (signal != null && !Boolean.TRUE.equals(signal.getError())) {
                         // Create confidence score record
                         ConfidenceScore score = ConfidenceScore.builder()
                             .symbol(symbol)
@@ -108,7 +108,7 @@ public class ConfidenceScoreCalculatorService {
 
     public List<ConfidenceScore> getLatestScoresForSymbols(List<String> symbols) {
         return symbols.stream()
-            .map(scoreRepository::findLatestBySymbol)
+            .map(scoreRepository::findFirstBySymbolOrderByTimestampDesc)
             .filter(opt -> opt.isPresent())
             .map(opt -> opt.get())
             .toList();

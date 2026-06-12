@@ -9,6 +9,8 @@ import com.stokr.oms.domain.ExecutionMode;
 import com.stokr.oms.domain.OmsOrder;
 import com.stokr.oms.domain.OrderState;
 import com.stokr.oms.domain.PortfolioPosition;
+import com.stokr.oms.reconciliation.ReconciliationEvent;
+import com.stokr.oms.reconciliation.ReconciliationEventRepository;
 import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.oms.repository.PortfolioPositionRepository;
 import com.stokr.oms.service.OrderLifecycleService;
@@ -18,6 +20,7 @@ import com.stokr.strategy.service.SignalManualExitSuppressionService;
 import com.stokr.strategy.service.StrategyInstanceLifecycleService;
 import com.stokr.user.service.TraderExecutionModePreferenceService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,9 +37,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TraderTerminalControlService {
 
     private static final Duration TOKEN_TTL = Duration.ofMinutes(2);
+    private static final Duration ORPHAN_RECON_FALLBACK = Duration.ofHours(2);
     private static final Collection<OrderState> CANCELLABLE = List.of(
             OrderState.CREATED,
             OrderState.VALIDATED,
@@ -56,6 +61,7 @@ public class TraderTerminalControlService {
     private final OrderPlacementService orderPlacementService;
     private final BrokerPositionTruthService brokerPositionTruthService;
     private final SignalManualExitSuppressionService manualExitSuppressionService;
+    private final ReconciliationEventRepository reconciliationEventRepository;
 
     private final Map<String, PendingPlan> pendingPlans = new ConcurrentHashMap<>();
 
@@ -162,6 +168,20 @@ public class TraderTerminalControlService {
         return out;
     }
 
+    /** Admin / ops: square off all open Zerodha legs for a user (ignores PAPER execution preference). */
+    public Map<String, Object> flattenBrokerPositions(UUID userId) {
+        List<String> notes = new ArrayList<>();
+        List<Map<String, Object>> flattenResults = new ArrayList<>();
+        int created = flattenOpenPositions(userId, notes, flattenResults);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("ordersCreated", created);
+        out.put("flattenResults", flattenResults);
+        out.put("notes", notes);
+        out.put("executedAt", Instant.now().toString());
+        return out;
+    }
+
     @Transactional
     public Map<String, Object> cancelOrder(UUID userId, UUID orderId) {
         OmsOrder order = omsOrderRepository.findById(orderId)
@@ -257,6 +277,7 @@ public class TraderTerminalControlService {
 
         BigDecimal qty = null;
         String product = null;
+        boolean brokerSourced = false;
         if (snap.brokerConnected() && snap.lastSyncAt() != null) {
             for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : snap.positions()) {
                 if (symbol.equalsIgnoreCase(BrokerPositionTruthService.normalizeSymbol(row.symbol()))
@@ -264,6 +285,7 @@ public class TraderTerminalControlService {
                         && row.brokerQty().signum() != 0) {
                     qty = row.brokerQty();
                     product = row.product();
+                    brokerSourced = true;
                     break;
                 }
             }
@@ -284,6 +306,8 @@ public class TraderTerminalControlService {
 
         BigDecimal exitQty = qty.abs();
         String side = qty.signum() > 0 ? "SELL" : "BUY";
+        ExecutionMode exitMode = brokerSourced ? ExecutionMode.LIVE : mode;
+        String exitBroker = exitMode == ExecutionMode.LIVE ? "ZERODHA" : "SIM";
         try {
             OmsOrder o = orderPlacementService.place(userId, new CreateOrderRequest(
                     symbol,
@@ -291,8 +315,8 @@ public class TraderTerminalControlService {
                     "MARKET",
                     exitQty,
                     null,
-                    mode,
-                    mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM",
+                    exitMode,
+                    exitBroker,
                     "TERMINAL_EXIT_SYMBOL",
                     "terminal:exit:" + userId + ":" + symbol + ":" + Instant.now().toEpochMilli(),
                     null,
@@ -310,7 +334,7 @@ public class TraderTerminalControlService {
                     "qty", exitQty.toPlainString(),
                     "orderId", o.getId().toString(),
                     "state", o.getState().name(),
-                    "mode", mode.name(),
+                    "mode", exitMode.name(),
                     "product", product != null ? product : ""
             ));
             int suppressed = manualExitSuppressionService.suppressAutoExitForSymbol(
@@ -342,7 +366,7 @@ public class TraderTerminalControlService {
         if (snap.brokerConnected() && snap.lastSyncAt() != null) {
             for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : snap.positions()) {
                 if (row.brokerQty() != null && row.brokerQty().signum() != 0) {
-                    targets.add(new FlattenTarget(row.symbol(), row.brokerQty(), row.product()));
+                    targets.add(new FlattenTarget(row.symbol(), row.brokerQty(), row.product(), true));
                 }
             }
         }
@@ -350,14 +374,19 @@ public class TraderTerminalControlService {
             List<PortfolioPosition> positions = portfolioPositionRepository.findByUserIdAndDeletedFalse(userId);
             for (PortfolioPosition p : positions) {
                 if (p.getQuantity() != null && p.getQuantity().signum() != 0) {
-                    targets.add(new FlattenTarget(p.getSymbol(), p.getQuantity(), null));
+                    targets.add(new FlattenTarget(p.getSymbol(), p.getQuantity(), null, false));
                 }
             }
+        }
+        if (targets.isEmpty()) {
+            targets.addAll(orphanReconciliationTargets(userId, notes));
         }
 
         for (FlattenTarget target : targets) {
             BigDecimal qty = target.qty().abs();
             String side = target.qty().signum() > 0 ? "SELL" : "BUY";
+            ExecutionMode exitMode = target.fromBroker() ? ExecutionMode.LIVE : mode;
+            String exitBroker = exitMode == ExecutionMode.LIVE ? "ZERODHA" : "SIM";
             try {
                 OmsOrder o = orderPlacementService.place(userId, new CreateOrderRequest(
                         target.symbol(),
@@ -365,8 +394,8 @@ public class TraderTerminalControlService {
                         "MARKET",
                         qty,
                         null,
-                        mode,
-                        mode == ExecutionMode.LIVE ? "ZERODHA" : "SIM",
+                        exitMode,
+                        exitBroker,
                         "TERMINAL_FLATTEN",
                         "terminal:flatten:" + userId + ":" + target.symbol() + ":" + Instant.now().toEpochMilli(),
                         null,
@@ -385,13 +414,18 @@ public class TraderTerminalControlService {
                         "qty", qty.toPlainString(),
                         "orderId", o.getId().toString(),
                         "state", o.getState().name(),
-                        "mode", mode.name(),
+                        "mode", exitMode.name(),
                         "product", target.product() != null ? target.product() : ""
                 ));
-                int suppressed = manualExitSuppressionService.suppressAutoExitForSymbol(
-                        userId, target.symbol(), "MANUAL: terminal_flatten");
-                if (suppressed > 0) {
-                    notes.add("suppressed auto-exit for " + suppressed + " signal(s) on " + target.symbol());
+                try {
+                    int suppressed = manualExitSuppressionService.suppressAutoExitForSymbol(
+                            userId, target.symbol(), "MANUAL: terminal_flatten");
+                    if (suppressed > 0) {
+                        notes.add("suppressed auto-exit for " + suppressed + " signal(s) on " + target.symbol());
+                    }
+                } catch (Exception suppressEx) {
+                    notes.add("suppress auto-exit failed " + target.symbol() + ": "
+                            + suppressEx.getClass().getSimpleName());
                 }
             } catch (Exception ex) {
                 notes.add("flatten failed " + target.symbol() + ": " + ex.getClass().getSimpleName());
@@ -407,7 +441,24 @@ public class TraderTerminalControlService {
         return created;
     }
 
-    private record FlattenTarget(String symbol, java.math.BigDecimal qty, String product) {}
+    private List<FlattenTarget> orphanReconciliationTargets(UUID userId, List<String> notes) {
+        Instant since = Instant.now().minus(ORPHAN_RECON_FALLBACK);
+        Map<String, FlattenTarget> bySymbol = new LinkedHashMap<>();
+        for (ReconciliationEvent event : reconciliationEventRepository.findRecentOrphanBrokerPositions(userId, since)) {
+            if (event.getSymbol() == null || event.getBrokerQty() == null || event.getBrokerQty().signum() == 0) {
+                continue;
+            }
+            String symbol = BrokerPositionTruthService.normalizeSymbol(event.getSymbol());
+            bySymbol.putIfAbsent(symbol, new FlattenTarget(symbol, event.getBrokerQty(), null, true));
+        }
+        if (!bySymbol.isEmpty()) {
+            notes.add("using " + bySymbol.size() + " orphan broker position(s) from reconciliation fallback");
+            log.warn("terminal.flatten.recon_fallback user={} symbols={}", userId, bySymbol.size());
+        }
+        return List.copyOf(bySymbol.values());
+    }
+
+    private record FlattenTarget(String symbol, java.math.BigDecimal qty, String product, boolean fromBroker) {}
 
     private ExecutionMode resolveExecutionMode(UUID userId) {
         String m = executionModePreferenceService.get(userId).executionMode();

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -69,6 +70,9 @@ public class S3VWAPDetector {
         }
 
         BigDecimal currentPrice = data.currentPrice;
+        if (currentPrice == null || currentPrice.signum() <= 0) {
+            return null;
+        }
         BigDecimal vwap = data.vwap != null ? data.vwap : currentPrice;
         BigDecimal sma20 = data.sma20 != null ? data.sma20 : currentPrice;
         BigDecimal sma50 = data.sma50 != null ? data.sma50 : currentPrice;
@@ -159,7 +163,11 @@ public class S3VWAPDetector {
 
         // VWAP alignment (±20 points)
         BigDecimal vwapDiff = price.subtract(vwap).abs();
-        BigDecimal vwapFactor = BigDecimal.ONE.subtract(vwapDiff.divide(vwap.multiply(BigDecimal.valueOf(0.01))));
+        BigDecimal denominator = vwap.multiply(BigDecimal.valueOf(0.01));
+        BigDecimal vwapFactor = BigDecimal.ONE.subtract(vwapDiff.divide(denominator, 8, RoundingMode.HALF_UP));
+        if (vwapFactor.compareTo(BigDecimal.ZERO) < 0) {
+            vwapFactor = BigDecimal.ZERO;
+        }
         score = score.add(vwapFactor.multiply(BigDecimal.valueOf(20)));
 
         // SMA alignment (±15 points)
@@ -185,7 +193,6 @@ public class S3VWAPDetector {
     }
 
     private int getCurrentTimeMinutes() {
-        LocalTime ist = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        return ist.getHour() * 60 + ist.getMinute();
+        return marketDataProvider.getCurrentTimeMinutes();
     }
 }

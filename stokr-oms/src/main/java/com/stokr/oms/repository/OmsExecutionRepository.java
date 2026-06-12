@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,6 +38,14 @@ public interface OmsExecutionRepository extends JpaRepository<OmsExecution, UUID
             order by e.executionTimestamp asc, e.createdAt asc
             """)
     List<OmsExecution> findAllForUserAndSymbolOrdered(@Param("userId") UUID userId, @Param("symbol") String symbol);
+
+    @Query("""
+            select e from OmsExecution e
+            join fetch e.order o
+            where o.userId = :userId and o.symbol in :symbols and e.deleted = false and o.deleted = false
+            order by e.executionTimestamp asc, e.createdAt asc
+            """)
+    List<OmsExecution> findAllForUserAndSymbolsOrdered(@Param("userId") UUID userId, @Param("symbols") Collection<String> symbols);
 
     @Query("""
             select e from OmsExecution e
@@ -94,6 +103,13 @@ public interface OmsExecutionRepository extends JpaRepository<OmsExecution, UUID
             @Param("from") Instant from,
             @Param("to") Instant to
     );
+
+    @Query("""
+            select o.signalId, e.avgPrice from OmsExecution e
+            join e.order o
+            where o.signalId in :signalIds and e.deleted = false and o.deleted = false
+            """)
+    List<Object[]> findAvgPriceBySignalIds(@Param("signalIds") Collection<UUID> signalIds);
 
     @Query(value = """
             SELECT

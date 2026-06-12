@@ -220,6 +220,10 @@ public class PlatformZerodhaLiveFeedRuntime {
         // Auto-refresh platform token shortly before expiry to avoid daily manual admin auth.
         boolean tokenUsable = platformMarketFeedService.ensureValidPlatformZerodhaToken(Duration.ofMinutes(30));
         if (!tokenUsable) {
+            platformMarketFeedService.ensureSessionFromTraderFallback(VENDOR);
+            tokenUsable = platformMarketFeedService.ensureValidPlatformZerodhaToken(Duration.ofMinutes(30));
+        }
+        if (!tokenUsable) {
             closeActive("token_expired_or_refresh_failed");
             return;
         }
@@ -292,6 +296,15 @@ public class PlatformZerodhaLiveFeedRuntime {
                 if (err != null) {
                     log.warn("platform.ws.connect_failed {}", err.toString());
                     telemetryService.markWebsocketClosed(VENDOR, "connect_failed: " + err.getClass().getSimpleName());
+                    boolean refreshed = platformMarketFeedService.forceSessionFromTraderFallback(
+                            VENDOR,
+                            "websocket_connect_failed:" + err.getClass().getSimpleName()
+                    );
+                    if (refreshed) {
+                        cachedForToken = null;
+                        cachedSymbolMap = null;
+                        log.info("platform.ws.token_recovered_from_trader reason=connect_failed");
+                    }
                     wsOpen.set(false);
                     return;
                 }
