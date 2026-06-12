@@ -388,15 +388,15 @@ export function LivePositionsCommandTable({
                     key={col}
                     onClick={() => isSortable && handleSort(col)}
                     className={cn(
-                      "px-3 py-3 font-bold first:pl-5 last:pr-5 select-none transition-opacity flex items-center gap-1",
+                      "px-3 py-3 font-bold first:pl-5 last:pr-5 select-none transition-opacity whitespace-nowrap",
                       isSortable ? "cursor-pointer hover:opacity-80" : "opacity-60",
                       isSorted ? "text-white" : ""
                     )}
                   >
-                    <span>{labels[col]}</span>
-                    {isSorted && (
-                      sortDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                    )}
+                    <span className="inline-flex items-center gap-1">
+                      <span>{labels[col]}</span>
+                      {isSorted ? (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
+                    </span>
                   </th>
                 );
               })}
