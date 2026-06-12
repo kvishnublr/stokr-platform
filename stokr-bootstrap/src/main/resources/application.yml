@@ -549,6 +549,11 @@ stokr:
     # How much to weight order flow confidence (0.0 = ignore, 1.0 = full weight)
     confidence-adjustment-factor: ${STOKR_ORDERFLOW_CONFIDENCE_ADJUSTMENT:0.5}
 
+    # Tier 1 accuracy improvements: require real order flow data (no synthetic fallback)
+    require-order-flow: ${STOKR_ORDERFLOW_REQUIRE_ORDER_FLOW:true}
+    allow-synthetic: ${STOKR_ORDERFLOW_ALLOW_SYNTHETIC:false}
+    min-liquidity-threshold: ${STOKR_ORDERFLOW_MIN_LIQUIDITY_THRESHOLD:70}
+
     # Data source configuration
     datasource:
       type: ${STOKR_ORDERFLOW_DATASOURCE_TYPE:NSE_FEED}  # NSE_FEED, SIMULATED
@@ -597,6 +602,9 @@ stokr:
     generator-enabled: ${STOKR_CONFIDENCE_GENERATOR_ENABLED:true}
     generator-interval: ${STOKR_CONFIDENCE_GENERATOR_INTERVAL_MS:120000}  # 2 minutes
     generator-initial-delay: ${STOKR_CONFIDENCE_GENERATOR_INITIAL_DELAY_MS:70000}  # 70 seconds
+
+    # Tier 1 accuracy improvements: require 2:1 risk:reward ratio minimum
+    min-risk-reward-ratio: ${STOKR_CONFIDENCE_MIN_RR:2.0}
 
     # AUTO-TRADE: Convert signals to orders automatically (NEW)
     auto-trade-enabled: ${STOKR_CONFIDENCE_AUTO_TRADE_ENABLED:false}  # Set to true to enable auto-trading
