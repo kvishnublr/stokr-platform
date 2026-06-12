@@ -249,7 +249,7 @@ springdoc:
 stokr:
   deploy:
     git-commit: ${STOKR_GIT_COMMIT:unknown}
-    branch: ${STOKR_DEPLOY_BRANCH:Release_v2}
+    branch: ${STOKR_DEPLOY_BRANCH:Release_v4}
     version: 2.0.0
     deployment-date: 2026-06-05
 
