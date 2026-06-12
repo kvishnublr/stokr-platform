@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Map;
 import java.util.UUID;
 
-@Service
+@Service("traderTerminalTransactionRollbackGuardService")
 @RequiredArgsConstructor
 @Slf4j
 public class TransactionRollbackGuardService {
