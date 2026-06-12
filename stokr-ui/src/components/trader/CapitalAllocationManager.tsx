@@ -1,8 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { ModernInput } from '../modern/ModernInput';
 import { Button } from '../ui/button';
-import { AlertCircle, Save, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, Save } from 'lucide-react';
+import { parseAxiosMessage } from '../../api/client';
+import {
+  fetchCapitalAllocation,
+  saveCapitalAllocation,
+  type AssetClassAllocationDto,
+  type TraderCapitalAllocationView,
+} from '../../api/traderCapitalAllocation';
 
 interface AssetClassAllocation {
   assetClass: 'CASH' | 'F&O' | 'CURRENCY' | 'MCX';
@@ -13,6 +22,7 @@ interface AssetClassAllocation {
   enabled: boolean;
   dailyLossLimit?: number;
   dailyLossLimitEnabled?: boolean;
+  memberStrategyKeys?: string[];
 }
 
 interface CapitalAllocationConfig {
@@ -21,20 +31,75 @@ interface CapitalAllocationConfig {
   lastUpdated: string;
 }
 
-export function CapitalAllocationManager() {
-  const [config, setConfig] = useState<CapitalAllocationConfig>({
-    totalCapital: 100000,
-    allocations: [
-      { assetClass: 'CASH', allocatedCapital: 50000, maxConcurrentPositions: 10, perTradeLimitAmount: 5000, perTradeMinQty: 0, enabled: true, dailyLossLimit: 5000, dailyLossLimitEnabled: true },
-      { assetClass: 'F&O', allocatedCapital: 30000, maxConcurrentPositions: 5, perTradeLimitAmount: 6000, perTradeMinQty: 0, enabled: true, dailyLossLimit: 3000, dailyLossLimitEnabled: true },
-      { assetClass: 'CURRENCY', allocatedCapital: 15000, maxConcurrentPositions: 3, perTradeLimitAmount: 5000, perTradeMinQty: 0, enabled: true, dailyLossLimit: 1500, dailyLossLimitEnabled: false },
-      { assetClass: 'MCX', allocatedCapital: 5000, maxConcurrentPositions: 2, perTradeLimitAmount: 2500, perTradeMinQty: 0, enabled: false, dailyLossLimit: 500, dailyLossLimitEnabled: false },
-    ],
+const EMPTY_CONFIG: CapitalAllocationConfig = {
+  totalCapital: 100000,
+  allocations: [],
+  lastUpdated: new Date().toISOString(),
+};
+
+function viewToConfig(view: TraderCapitalAllocationView): CapitalAllocationConfig {
+  return {
+    totalCapital: view.totalCapital,
+    allocations: view.allocations.map((a) => ({
+      assetClass: a.assetClass,
+      allocatedCapital: a.allocatedCapital,
+      maxConcurrentPositions: a.maxConcurrentPositions,
+      perTradeLimitAmount: a.perTradeLimitAmount,
+      perTradeMinQty: 0,
+      enabled: a.enabled,
+      dailyLossLimit: a.dailyLossLimit ?? undefined,
+      dailyLossLimitEnabled: a.dailyLossLimitEnabled,
+      memberStrategyKeys: a.memberStrategyKeys,
+    })),
     lastUpdated: new Date().toISOString(),
+  };
+}
+
+function configToView(config: CapitalAllocationConfig): TraderCapitalAllocationView {
+  return {
+    totalCapital: config.totalCapital,
+    allocations: config.allocations.map((a): AssetClassAllocationDto => ({
+      assetClass: a.assetClass,
+      allocatedCapital: a.allocatedCapital,
+      maxConcurrentPositions: a.maxConcurrentPositions,
+      perTradeLimitAmount: a.perTradeLimitAmount,
+      enabled: a.enabled,
+      dailyLossLimit: a.dailyLossLimitEnabled ? (a.dailyLossLimit ?? null) : null,
+      dailyLossLimitEnabled: a.dailyLossLimitEnabled ?? false,
+      memberStrategyKeys: a.memberStrategyKeys ?? [],
+    })),
+  };
+}
+
+export function CapitalAllocationManager() {
+  const queryClient = useQueryClient();
+  const [config, setConfig] = useState<CapitalAllocationConfig>(EMPTY_CONFIG);
+  const [isEditing, setIsEditing] = useState(false);
+
+  const allocationQuery = useQuery({
+    queryKey: ['trader-capital-allocation'],
+    queryFn: fetchCapitalAllocation,
   });
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [selectedAssetClass, setSelectedAssetClass] = useState<'CASH' | 'F&O' | 'CURRENCY' | 'MCX' | null>(null);
+  // Sync server state into the editable local copy whenever it loads/refreshes,
+  // unless the trader is mid-edit (don't clobber unsaved changes).
+  useEffect(() => {
+    if (allocationQuery.data && !isEditing) {
+      setConfig(viewToConfig(allocationQuery.data));
+    }
+  }, [allocationQuery.data, isEditing]);
+
+  const saveMut = useMutation({
+    mutationFn: (cfg: CapitalAllocationConfig) => saveCapitalAllocation(configToView(cfg)),
+    onSuccess: (saved) => {
+      setConfig(viewToConfig(saved));
+      setIsEditing(false);
+      void queryClient.invalidateQueries({ queryKey: ['trader-capital-allocation'] });
+      void queryClient.invalidateQueries({ queryKey: ['trader-exec-configs'] });
+      toast.success('Capital allocation saved');
+    },
+    onError: (err) => toast.error(parseAxiosMessage(err)),
+  });
 
   // Calculate per-trade limits automatically
   const calculatePerTradeLimits = (allocation: AssetClassAllocation) => {
@@ -76,15 +141,15 @@ export function CapitalAllocationManager() {
     return Math.max(0, config.totalCapital - getTotalAllocated());
   };
 
-  const handleSave = async () => {
-    try {
-      // Save to backend
-      console.log('Saving capital allocation:', config);
-      setIsEditing(false);
-      // TODO: Call API endpoint to save configuration
-    } catch (error) {
-      console.error('Failed to save allocation:', error);
+  const handleSave = () => {
+    saveMut.mutate(config);
+  };
+
+  const handleCancel = () => {
+    if (allocationQuery.data) {
+      setConfig(viewToConfig(allocationQuery.data));
     }
+    setIsEditing(false);
   };
 
   const assetClassLabels = {
@@ -110,12 +175,26 @@ export function CapitalAllocationManager() {
           <p className="text-gray-600 mt-1">Configure capital allocation across asset classes and trading strategies</p>
         </div>
         <Button
-          onClick={() => setIsEditing(!isEditing)}
+          onClick={() => (isEditing ? handleCancel() : setIsEditing(true))}
           variant={isEditing ? "default" : "outline"}
+          disabled={saveMut.isPending || allocationQuery.isLoading}
         >
           {isEditing ? 'Cancel' : 'Edit Configuration'}
         </Button>
       </div>
+
+      {allocationQuery.isLoading && config.allocations.length === 0 && (
+        <div className="p-6 text-center text-gray-500">Loading capital allocation…</div>
+      )}
+      {allocationQuery.isError && (
+        <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-semibold text-red-900">Could not load capital allocation</p>
+            <p className="text-sm text-red-700 mt-1">Check API connectivity and refresh.</p>
+          </div>
+        </div>
+      )}
 
       {/* Total Capital Overview */}
       <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200">
@@ -265,6 +344,10 @@ export function CapitalAllocationManager() {
                 {allocation.dailyLossLimitEnabled && (
                   <div className="text-sm text-red-700 mb-3 p-2 bg-white rounded border border-red-200">
                     <p className="font-semibold">⚠️ Stop trading when daily loss reaches:</p>
+                    <p className="text-xs text-red-500 mt-1">
+                      Applied <strong>per strategy</strong> in this class (no single shared cap). The risk engine
+                      blocks new entries once a strategy's realized loss breaches this and auto-resets next trading day.
+                    </p>
                     {isEditing ? (
                       <div className="mt-2">
                         <ModernInput
@@ -293,6 +376,14 @@ export function CapitalAllocationManager() {
                 )}
               </div>
 
+              {/* Member strategies this bucket controls */}
+              {allocation.memberStrategyKeys && allocation.memberStrategyKeys.length > 0 && (
+                <div className="text-xs text-gray-500">
+                  <span className="font-semibold">Applies to {allocation.memberStrategyKeys.length} strategies:</span>{' '}
+                  {allocation.memberStrategyKeys.join(', ')}
+                </div>
+              )}
+
               {/* Enable/Disable Toggle */}
               {isEditing && (
                 <button
@@ -303,7 +394,7 @@ export function CapitalAllocationManager() {
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
-                  {allocation.enabled ? '✅ Disable This Asset Class' : '🔓 Enable This Asset Class'}
+                  {allocation.enabled ? '✅ Capital sizing ON (click to revert to fixed qty)' : '🔓 Enable capital sizing'}
                 </button>
               )}
             </CardContent>
@@ -359,12 +450,12 @@ export function CapitalAllocationManager() {
       {/* Action Buttons */}
       {isEditing && (
         <div className="flex gap-3 justify-end">
-          <Button variant="outline" onClick={() => setIsEditing(false)}>
+          <Button variant="outline" onClick={handleCancel} disabled={saveMut.isPending}>
             Cancel
           </Button>
-          <Button onClick={handleSave} className="bg-green-600 hover:bg-green-700">
+          <Button onClick={handleSave} disabled={saveMut.isPending} className="bg-green-600 hover:bg-green-700">
             <Save className="w-4 h-4 mr-2" />
-            Save Configuration
+            {saveMut.isPending ? 'Saving…' : 'Save Configuration'}
           </Button>
         </div>
       )}
