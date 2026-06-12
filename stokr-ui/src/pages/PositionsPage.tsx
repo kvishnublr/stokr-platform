@@ -103,6 +103,8 @@ export function PositionsPage(props?: { embedded?: boolean }) {
     queryKey: ["positions-workstation", modeQ.data],
     queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
     refetchInterval: 2_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 
   const brokerSessionLive = isBrokerSessionLive(wsQ.data?.brokerTruth);
@@ -112,6 +114,8 @@ export function PositionsPage(props?: { embedded?: boolean }) {
     queryKey: ["portfolio-exposure"],
     queryFn: async () => (await api.get("/api/portfolio/exposure")).data?.data as Exposure,
     refetchInterval: pollMs,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 
   const accountPnl = useMemo(
