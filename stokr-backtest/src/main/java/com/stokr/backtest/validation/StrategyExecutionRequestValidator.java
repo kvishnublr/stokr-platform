@@ -33,7 +33,10 @@ public class StrategyExecutionRequestValidator {
             "VWAP_BOUNCE",
             "SECTOR_LAGGARD",
             "EARLY_BREAKOUT",
-            "ADV_CASH"
+            "ADV_CASH",
+            "NIFTY_CATCHUP",
+            "VWAP_SQUEEZE",
+            "VWAP_CLOSE_RECLAIM"
     );
 
     private final StrategyMetadataQueryService strategyMetadataQueryService;
