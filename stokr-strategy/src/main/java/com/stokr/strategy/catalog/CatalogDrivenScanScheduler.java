@@ -133,7 +133,7 @@ public class CatalogDrivenScanScheduler {
                 continue;
             }
 
-            if (!feedHealthy) {
+            if (!feedHealthy && binding.getStrategyCatalog().isSupportsLive()) {
                 runtimeHealthService.recordScanBlockedFeed(strategyKey, "FEED_STALE", tick);
                 signalPipelineAuditService.recordRejection(
                         strategyKey, "*", "FEED_CHECK", "BLOCKED",
