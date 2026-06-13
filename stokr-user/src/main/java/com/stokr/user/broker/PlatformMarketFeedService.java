@@ -431,8 +431,14 @@ public class PlatformMarketFeedService {
     /**
      * Renews platform and all connected trader Zerodha sessions when tokens are missing or near expiry.
      * Works without the live WebSocket runtime — intended for schedulers and admin refresh actions.
+     *
+     * Deliberately NOT @Transactional: it orchestrates independent, idempotent sub-operations (platform
+     * token, each trader token, platform→trader sync), each of which commits on its own. A single wrapping
+     * transaction (a) held a DB connection across Kite HTTP calls and (b) deferred the @Version check to
+     * commit time — after the per-account retry returned — so a concurrent broker_accounts writer
+     * (e.g. BrokerMarginSyncScheduler) produced an ObjectOptimisticLockingFailureException that bubbled
+     * uncaught to the scheduler. With per-save auto-commit, refreshTraderTokenWithRetry catches and retries.
      */
-    @Transactional
     public Map<String, Object> refreshAllZerodhaTokens(Duration refreshBefore) {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("at", Instant.now().toString());
