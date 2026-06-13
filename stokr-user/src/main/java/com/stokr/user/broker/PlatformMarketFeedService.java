@@ -58,6 +58,15 @@ public class PlatformMarketFeedService {
     private final ApplicationEventPublisher eventPublisher;
     private final RestClient http = RestClient.builder().build();
 
+    /**
+     * Serializes token refreshes. startup + daily-cron + 30-min periodic triggers can overlap,
+     * and two concurrent runs both load-modify-save the same broker_accounts row, throwing
+     * ObjectOptimisticLockingFailureException on the loser. A skipped overlapping run is safe —
+     * the in-flight run is already doing the work and the next cycle retries.
+     */
+    private final java.util.concurrent.atomic.AtomicBoolean tokenRefreshInFlight =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
     public boolean isPlatformOauthState(String state) {
         if (state == null || state.isBlank()) {
             return false;
@@ -428,34 +437,42 @@ public class PlatformMarketFeedService {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("at", Instant.now().toString());
 
-        ensureSessionFromTraderFallback("ZERODHA");
-        boolean platformOk = ensureValidPlatformZerodhaToken(refreshBefore);
-        summary.put("platformRefreshed", platformOk);
-
-        int traderAttempted = 0;
-        int traderRefreshed = 0;
-        int traderFailed = 0;
-        for (BrokerAccount account : brokerAccountRepository.findAllByVendorCodeIgnoreCaseAndDeletedFalse("ZERODHA")) {
-            if (account.getAccessTokenEnc() == null || account.getAccessTokenEnc().isBlank()) {
-                continue;
-            }
-            if (!"CONNECTED".equalsIgnoreCase(Optional.ofNullable(account.getStatus()).orElse(""))) {
-                continue;
-            }
-            traderAttempted++;
-            if (ensureValidTraderZerodhaToken(account, refreshBefore)) {
-                traderRefreshed++;
-            } else {
-                traderFailed++;
-            }
+        if (!tokenRefreshInFlight.compareAndSet(false, true)) {
+            summary.put("skipped", "refresh_already_in_flight");
+            return summary;
         }
-        summary.put("traderAttempted", traderAttempted);
-        summary.put("traderRefreshed", traderRefreshed);
-        summary.put("traderFailed", traderFailed);
+        try {
+            ensureSessionFromTraderFallback("ZERODHA");
+            boolean platformOk = ensureValidPlatformZerodhaToken(refreshBefore);
+            summary.put("platformRefreshed", platformOk);
 
-        syncPlatformTokensToTraders();
-        summary.put("platformSyncedToTraders", true);
-        return summary;
+            int traderAttempted = 0;
+            int traderRefreshed = 0;
+            int traderFailed = 0;
+            for (BrokerAccount account : brokerAccountRepository.findAllByVendorCodeIgnoreCaseAndDeletedFalse("ZERODHA")) {
+                if (account.getAccessTokenEnc() == null || account.getAccessTokenEnc().isBlank()) {
+                    continue;
+                }
+                if (!"CONNECTED".equalsIgnoreCase(Optional.ofNullable(account.getStatus()).orElse(""))) {
+                    continue;
+                }
+                traderAttempted++;
+                if (ensureValidTraderZerodhaToken(account, refreshBefore)) {
+                    traderRefreshed++;
+                } else {
+                    traderFailed++;
+                }
+            }
+            summary.put("traderAttempted", traderAttempted);
+            summary.put("traderRefreshed", traderRefreshed);
+            summary.put("traderFailed", traderFailed);
+
+            syncPlatformTokensToTraders();
+            summary.put("platformSyncedToTraders", true);
+            return summary;
+        } finally {
+            tokenRefreshInFlight.set(false);
+        }
     }
 
     /**
