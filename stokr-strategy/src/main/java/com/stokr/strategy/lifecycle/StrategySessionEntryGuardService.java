@@ -1,5 +1,6 @@
 package com.stokr.strategy.lifecycle;
 
+import com.stokr.common.backtest.BacktestReplayHolder;
 import com.stokr.strategy.repository.StrategySignalRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,9 @@ public class StrategySessionEntryGuardService {
     private ZoneId zone;
 
     public boolean isSessionEntryAllowed(String strategyKey, String symbol, Instant asOf) {
+        if (BacktestReplayHolder.isActive()) {
+            return true;
+        }
         StrategyLifecycleProfile profile = StrategyLifecycleProfile.forStrategy(strategyKey);
         if (profile.maxEntriesPerSymbolPerSession() <= 0) {
             return true;

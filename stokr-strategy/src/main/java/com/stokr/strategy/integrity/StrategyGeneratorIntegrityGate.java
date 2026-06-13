@@ -5,6 +5,7 @@ import com.stokr.marketdata.integrity.IntegrityRejectionReason;
 import com.stokr.marketdata.integrity.LookbackWindow;
 import com.stokr.marketdata.integrity.MarketDataIntegrityService;
 import com.stokr.marketdata.service.MarketDataQueryService;
+import com.stokr.common.backtest.BacktestReplayHolder;
 import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.strategy.context.StrategyContext;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +27,7 @@ public class StrategyGeneratorIntegrityGate {
     private final SimulationModeService simulationModeService;
 
     public boolean isStrategyScanAllowed(String strategyKey, Instant asOf) {
-        if (simulationModeService.bypassIntegrityGate()) {
+        if (simulationModeService.bypassIntegrityGate() || BacktestReplayHolder.isActive()) {
             return true;
         }
         StrategyIntegrityProfile profile = StrategyIntegrityProfile.forStrategy(strategyKey);
@@ -62,7 +63,7 @@ public class StrategyGeneratorIntegrityGate {
     }
 
     public boolean passPreEvaluate(String strategyKey, String symbol, Instant asOf) {
-        if (simulationModeService.bypassIntegrityGate()) {
+        if (simulationModeService.bypassIntegrityGate() || BacktestReplayHolder.isActive()) {
             return true;
         }
         StrategyIntegrityProfile profile = StrategyIntegrityProfile.forStrategy(strategyKey);
@@ -86,7 +87,7 @@ public class StrategyGeneratorIntegrityGate {
             LookbackWindow window,
             StrategyContext context) {
         List<MarketdataCandle> raw = loadRawBars(symbol, timeframe, fetchBars, context);
-        if (simulationModeService.bypassIntegrityGate()) {
+        if (simulationModeService.bypassIntegrityGate() || BacktestReplayHolder.isActive()) {
             return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
         }
         Instant asOf = context.asOf() != null ? context.asOf() : Instant.now();

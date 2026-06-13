@@ -122,7 +122,7 @@ public class GapFillSignalGenerator extends BaseGeneratedStrategy implements Tra
         }
 
         // 2. LOAD BARS (need prev session for close reference)
-        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAsc(symbol, TIMEFRAME, SESSION_BARS + PREV_SESSION_BARS);
+        List<MarketdataCandle> bars = marketDataQueryService.lastBarsAscEndingAt(symbol, TIMEFRAME, SESSION_BARS + PREV_SESSION_BARS, asOf);
         if (bars.size() < SESSION_BARS + 5) return hold(context);
 
         // 3. DETERMINE PREVIOUS SESSION CLOSE & TODAY OPEN

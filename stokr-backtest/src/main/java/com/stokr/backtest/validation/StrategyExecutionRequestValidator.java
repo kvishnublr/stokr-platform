@@ -32,7 +32,8 @@ public class StrategyExecutionRequestValidator {
             "GAP_FILL",
             "VWAP_BOUNCE",
             "SECTOR_LAGGARD",
-            "EARLY_BREAKOUT"
+            "EARLY_BREAKOUT",
+            "ADV_CASH"
     );
 
     private final StrategyMetadataQueryService strategyMetadataQueryService;

@@ -14,6 +14,7 @@ public class BacktestStrategyPluginConfiguration {
             "EARLY_BREAKOUT",
             "VWAP_BOUNCE",
             "GAP_FILL",
+            "ADV_CASH",
             "SECTOR_LAGGARD"
     );
 

@@ -1,6 +1,7 @@
 package com.stokr.backtest.strategy;
 
 import com.stokr.backtest.execution.BacktestEvaluationContext;
+import com.stokr.common.backtest.BacktestReplayHolder;
 import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.domain.StrategySignalEntity;
@@ -44,7 +45,13 @@ public class RegistryTradingStrategyBacktestPlugin implements BacktestStrategyPl
         }
         BigDecimal last = bar.getClosePrice() != null ? bar.getClosePrice() : BigDecimal.ZERO;
         StrategyContext sc = new StrategyContext(ctx.execution().symbol(), bar.getOpenTime(), Map.of(), last);
-        StrategySignal signal = strategy.evaluate(sc);
+        BacktestReplayHolder.activate();
+        StrategySignal signal;
+        try {
+            signal = strategy.evaluate(sc);
+        } finally {
+            BacktestReplayHolder.deactivate();
+        }
         if (signal == null || signal.type() == SignalType.HOLD) {
             return null;
         }
