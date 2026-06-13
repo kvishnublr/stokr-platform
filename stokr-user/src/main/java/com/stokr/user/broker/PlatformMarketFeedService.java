@@ -479,8 +479,16 @@ public class PlatformMarketFeedService {
      * Refreshes a single trader Zerodha session using stored refresh token (bootstrapped from platform when missing).
      */
     @Transactional
-    public boolean ensureValidTraderZerodhaToken(BrokerAccount account, Duration refreshBefore) {
-        if (account == null) {
+    public boolean ensureValidTraderZerodhaToken(BrokerAccount detachedAccount, Duration refreshBefore) {
+        if (detachedAccount == null || detachedAccount.getId() == null) {
+            return false;
+        }
+        // Re-fetch inside the transaction. refreshAllZerodhaTokens loads accounts once and holds
+        // them across the whole loop; saving that long-held detached entity threw
+        // ObjectOptimisticLockingFailureException whenever another writer (broker status / feed
+        // sync) bumped the row's @Version in between. A fresh fetch always carries the current version.
+        BrokerAccount account = brokerAccountRepository.findById(detachedAccount.getId()).orElse(null);
+        if (account == null || account.isDeleted()) {
             return false;
         }
         Instant now = Instant.now();
