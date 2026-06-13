@@ -404,8 +404,9 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
      */
     private String classifyWindow(String timeStr) {
         if (timeStr.compareTo("09:15") >= 0 && timeStr.compareTo("10:00") < 0) return "MORNING";
-        if (timeStr.compareTo("10:00") >= 0 && timeStr.compareTo("11:30") < 0) return "MIDDAY";
-        if (timeStr.compareTo("11:30") >= 0 && timeStr.compareTo("13:15") < 0) return "DEAD_ZONE";
+        if (timeStr.compareTo("10:00") >= 0 && timeStr.compareTo("11:00") < 0) return "MIDDAY";
+        // 11:00-13:15 dead zone — extended from 11:30 to 11:00 (near-zero EV window per backtest analysis)
+        if (timeStr.compareTo("11:00") >= 0 && timeStr.compareTo("13:15") < 0) return "DEAD_ZONE";
         if (timeStr.compareTo("13:30") >= 0 && timeStr.compareTo("14:30") < 0) return "AFTERNOON";
         return "OTHER";
     }

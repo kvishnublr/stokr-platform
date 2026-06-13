@@ -73,7 +73,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     @Value("${stokr.strategy.vwapbounce.min-slope-pct:0.004}")
     private double minSlopePct;
 
-    @Value("${stokr.strategy.vwapbounce.min-volume-multiple:1.4}")
+    @Value("${stokr.strategy.vwapbounce.min-volume-multiple:1.2}")
     private double minVolumeMultiple;
 
     @Value("${stokr.strategy.vwapbounce.bounce-confirm-pct:0.025}")
