@@ -102,8 +102,14 @@ public class StrategyExecutionRequestValidator {
         if (assessment.ready()) {
             return;
         }
+        // Backtest replay tolerates intraday gaps — missing ticks are handled by the replay engine.
+        // Only hard-block when there is no data at all for the requested window.
+        String state = assessment.state() == null ? "" : assessment.state();
+        if ("GAPS_PRESENT".equalsIgnoreCase(state)) {
+            return;
+        }
         String detail = assessment.detail() == null ? "" : assessment.detail();
-        if ("INCOMPLETE_RANGE".equalsIgnoreCase(assessment.state())
+        if ("INCOMPLETE_RANGE".equalsIgnoreCase(state)
                 && assessment.coverageStart() != null
                 && assessment.coverageEnd() != null) {
             detail = detail + " (available "
@@ -113,7 +119,7 @@ public class StrategyExecutionRequestValidator {
                     + (assessment.latestCandleAt() != null ? ", latest bar " + assessment.latestCandleAt() : "")
                     + ")";
         }
-        throw new BadRequestException(assessment.state() + ": " + detail);
+        throw new BadRequestException(state + ": " + detail);
     }
 
     private static void assertInList(String value, List<String> allowed, String field) {
