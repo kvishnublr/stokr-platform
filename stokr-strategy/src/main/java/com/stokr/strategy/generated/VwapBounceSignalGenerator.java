@@ -70,16 +70,16 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     @Value("${stokr.strategy.vwapbounce.touch-threshold-pct:0.18}")
     private double touchThresholdPct;
 
-    @Value("${stokr.strategy.vwapbounce.min-slope-pct:0.002}")
+    @Value("${stokr.strategy.vwapbounce.min-slope-pct:0.004}")
     private double minSlopePct;
 
-    @Value("${stokr.strategy.vwapbounce.min-volume-multiple:0.9}")
+    @Value("${stokr.strategy.vwapbounce.min-volume-multiple:1.4}")
     private double minVolumeMultiple;
 
     @Value("${stokr.strategy.vwapbounce.bounce-confirm-pct:0.025}")
     private double bounceConfirmPct;
 
-    @Value("${stokr.strategy.vwapbounce.target-sigma:0.8}")
+    @Value("${stokr.strategy.vwapbounce.target-sigma:1.5}")
     private double targetSigma;
 
     @Value("${stokr.strategy.vwapbounce.stop-sigma:1.0}")
@@ -88,7 +88,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     @Value("${stokr.strategy.vwapbounce.cooldown-seconds:900}")
     private int cooldownSeconds;
 
-    @Value("${stokr.strategy.vwapbounce.min-risk-reward:1.0}")
+    @Value("${stokr.strategy.vwapbounce.min-risk-reward:1.4}")
     private double minRiskReward;
 
     @Override
@@ -181,8 +181,8 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
 
         // 6. NIFTY ALIGNMENT — bounce direction must match NIFTY
         double niftyTrend = calculateNiftyTrend(context);
-        if (isUptrend && niftyTrend < -0.03) return hold(context);
-        if (!isUptrend && niftyTrend > 0.03) return hold(context);
+        if (isUptrend && niftyTrend < -0.07) return hold(context);
+        if (!isUptrend && niftyTrend > 0.07) return hold(context);
 
         // 7. PRESSURE CONFIRMATION — institutions active at VWAP
         PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
