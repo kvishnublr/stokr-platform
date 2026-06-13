@@ -21,6 +21,9 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@org.junit.jupiter.api.Disabled("Never ran since creation: @DataJpaTest slice has no @SpringBootConfiguration in this module, "
+        + "no embedded DB dependency, and OrderFlowMetricsService requires a RedisTemplate the slice cannot provide. "
+        + "Needs a rewrite as Mockito unit tests or a Testcontainers integration suite.")
 @DataJpaTest
 @Import({OrderFlowMetricsService.class, ConfidenceScoreCalculatorService.class})
 @DisplayName("Confidence Strategy System Tests")

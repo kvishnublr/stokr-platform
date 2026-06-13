@@ -23,6 +23,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -79,6 +83,23 @@ class BrokerPositionTruthServiceTest {
         ReflectionTestUtils.setField(service, "staleMs", 60_000L);
         ReflectionTestUtils.setField(service, "blockExitMinutes", 30L);
         ReflectionTestUtils.setField(service, "externalExitConfirmSeconds", 60L);
+        // @InjectMocks leaves the final PlatformTransactionManager null; recordExternalBrokerExitOffset
+        // runs its ledger write in a REQUIRES_NEW TransactionTemplate, so supply a real no-op manager
+        // (not a Mockito mock — avoids strict-stubbing noise) that just executes the callback.
+        ReflectionTestUtils.setField(service, "transactionManager", new PlatformTransactionManager() {
+            @Override
+            public TransactionStatus getTransaction(TransactionDefinition definition) {
+                return new SimpleTransactionStatus();
+            }
+
+            @Override
+            public void commit(TransactionStatus status) {
+            }
+
+            @Override
+            public void rollback(TransactionStatus status) {
+            }
+        });
     }
 
     @Test

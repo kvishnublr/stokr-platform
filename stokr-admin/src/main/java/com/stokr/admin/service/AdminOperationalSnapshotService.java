@@ -5,6 +5,7 @@ import com.stokr.admin.dto.OperationsSnapshotDto;
 import com.stokr.admin.telemetry.BrokerSessionRegistryService;
 import com.stokr.admin.telemetry.MarketDataFreshnessService;
 import com.stokr.admin.telemetry.MarketPlaneMonitorService;
+import com.stokr.admin.telemetry.ExecutionIncidentService;
 import com.stokr.admin.telemetry.OperationalIncidentService;
 import com.stokr.auth.repository.AuthUserRepository;
 import com.stokr.backtest.domain.BacktestJob;
@@ -99,6 +100,7 @@ public class AdminOperationalSnapshotService {
     private final ScannerExecutionTelemetryService scannerExecutionTelemetryService;
     private final PlatformMarketFeedService platformMarketFeedService;
     private final ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService;
+    private final ExecutionIncidentService executionIncidentService;
 
     @Value("${stokr.strategy.symbols:NIFTY_FUT,BANKNIFTY_FUT}")
     private String strategySymbolsCsv;
@@ -140,7 +142,8 @@ public class AdminOperationalSnapshotService {
             OperationalHistoryService operationalHistoryService,
             ScannerExecutionTelemetryService scannerExecutionTelemetryService,
             PlatformMarketFeedService platformMarketFeedService,
-            ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService
+            ExecutionPipelineRuntimeReadinessService executionPipelineRuntimeReadinessService,
+            ExecutionIncidentService executionIncidentService
     ) {
         this.killSwitchService = killSwitchService;
         this.liveTradingArmingService = liveTradingArmingService;
@@ -167,6 +170,7 @@ public class AdminOperationalSnapshotService {
         this.scannerExecutionTelemetryService = scannerExecutionTelemetryService;
         this.platformMarketFeedService = platformMarketFeedService;
         this.executionPipelineRuntimeReadinessService = executionPipelineRuntimeReadinessService;
+        this.executionIncidentService = executionIncidentService;
     }
 
     public OperationsSnapshotDto snapshot() {
@@ -248,6 +252,7 @@ public class AdminOperationalSnapshotService {
                 rabbit,
                 brokerSessions
         );
+        incidents.addAll(executionIncidentService.evaluate(now));
         return new OperationsSnapshotDto(
                 now,
                 marketInfra,

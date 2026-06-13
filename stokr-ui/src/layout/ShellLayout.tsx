@@ -37,7 +37,6 @@ import {
   Wallet,
   Radar,
   GitBranch,
-  Zap,
   Cpu,
   BrainCircuit,
 } from "lucide-react";
@@ -207,7 +206,6 @@ export function ShellLayout() {
     () => [
       { to: "/dashboard", end: true, label: "Dashboard", icon: LayoutDashboard },
       { to: "/adv-dashboard", label: "ADV Dashboard", icon: Cpu },
-      { to: "/adv-enhanced-dashboard", label: "ADV Dashboard Enhanced", icon: Zap },
       { to: "/strategies", label: "Strategies", icon: Wallet },
       { to: "/positions", label: "Positions", icon: Layers },
       { to: "/orders", label: "Orders", icon: TrendingUp },

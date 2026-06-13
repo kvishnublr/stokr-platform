@@ -5,6 +5,7 @@ import com.stokr.broker.model.BrokerOrderRequest;
 import com.stokr.broker.model.BrokerOrderResponse;
 import com.stokr.broker.registry.BrokerAdapterRegistry;
 import com.stokr.broker.safety.BrokerLiveOrderGuard;
+import com.stokr.common.events.OrderStateTransitionEvent;
 import com.stokr.common.simulation.SimulationModeService;
 import com.stokr.common.correlation.CorrelationIdHolder;
 import com.stokr.common.exception.ConflictException;
@@ -18,6 +19,7 @@ import com.stokr.oms.repository.OmsOrderRepository;
 import com.stokr.common.exception.BadRequestException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,11 +40,18 @@ public class OrderLifecycleService {
             OrderState.SUBMITTED, OrderState.VALIDATED
     );
 
+    /** States worth broadcasting: fills and terminal failures. */
+    private static final Set<OrderState> NOTIFY_STATES = Set.of(
+            OrderState.FILLED, OrderState.PARTIALLY_FILLED,
+            OrderState.REJECTED, OrderState.FAILED, OrderState.CANCELLED
+    );
+
     private final OmsOrderRepository orderRepository;
     private final BrokerAdapterRegistry brokerAdapterRegistry;
     private final SimulationModeService simulationModeService;
     private final BrokerLiveOrderGuard brokerLiveOrderGuard;
     private final MarketHoursEnforcementService marketHoursEnforcement;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public OmsOrder createOrGetIdempotent(UUID userId, String idempotencyKey, OmsOrder draft) {
@@ -109,10 +118,24 @@ public class OrderLifecycleService {
     @Transactional
     public OmsOrder transition(UUID orderId, OrderState newState, String rejectReason) {
         OmsOrder order = orderRepository.findById(orderId).orElseThrow(() -> new NotFoundException("Order not found"));
-        OrderStateMachine.validate(order.getState(), newState);
+        OrderState previous = order.getState();
+        OrderStateMachine.validate(previous, newState);
         order.setState(newState);
         order.setRejectReason(rejectReason);
-        return orderRepository.save(order);
+        OmsOrder saved = orderRepository.save(order);
+        if (NOTIFY_STATES.contains(newState)) {
+            eventPublisher.publishEvent(new OrderStateTransitionEvent(
+                    saved.getId(),
+                    saved.getUserId(),
+                    saved.getSymbol(),
+                    saved.getStrategyKey(),
+                    saved.getExecutionMode() != null ? saved.getExecutionMode().name() : null,
+                    previous != null ? previous.name() : null,
+                    newState.name(),
+                    rejectReason
+            ));
+        }
+        return saved;
     }
 
     /**

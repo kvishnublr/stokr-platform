@@ -170,3 +170,29 @@ export async function fetchAdvWorkstation(): Promise<Record<string, unknown>> {
   const res = await api.get("/api/trader/terminal/workstation", { timeout: ADV_HTTP_TIMEOUT_MS });
   return (res.data?.data ?? {}) as Record<string, unknown>;
 }
+
+export type AdvEdgeRow = {
+  strategy_name: string;
+  sessions: number;
+  signals: number;
+  target_first: number;
+  sl_first: number;
+  avg_rr: number | null;
+  target_first_pct: number | null;
+  breakeven_pct: number | null;
+  replay_pnl: number | null;
+  has_edge: boolean;
+  live_whitelisted: boolean;
+};
+
+export type AdvEdgeSnapshot = {
+  liveWhitelist: string[];
+  entryEdge: AdvEdgeRow[];
+  activeDemotions: Array<{ strategy_key: string; reason: string | null; demoted_at: string }>;
+  todayOrders: { total?: number; filled?: number; failed?: number };
+};
+
+export async function fetchAdvEdge(): Promise<AdvEdgeSnapshot> {
+  const res = await api.get("/api/v1/adv-dashboard/edge", { timeout: ADV_HTTP_TIMEOUT_MS });
+  return (res.data?.data ?? {}) as AdvEdgeSnapshot;
+}

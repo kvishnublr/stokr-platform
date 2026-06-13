@@ -65,8 +65,11 @@ public class SignalOutcomeExitService {
     private boolean autoExitOnBreakeven;
 
     /**
-     * Scheduled fail-safe: scans for signals with terminal outcomes that have no exit orders placed.
-     * Catches events lost during restarts (in-memory events are not persisted).
+     * Scheduled fail-safe: scans for signals with terminal outcomes whose exit-dispatch
+     * decision is still open (outcome_exit_disposition is null). Catches events lost
+     * during restarts (in-memory events are not persisted). Each signal is settled
+     * exactly once — EXIT_PLACED or NO_EXIT_NEEDED — so dead entries (rejected/cancelled
+     * before fill) stop re-entering the scan every cycle.
      */
     @Scheduled(fixedDelayString = "${stokr.strategy.exit.backfill-interval-ms:300000}")
     public void scheduledBackfill() {
@@ -77,9 +80,10 @@ public class SignalOutcomeExitService {
         Instant since = Instant.now().minus(java.time.Duration.ofHours(168));
         List<StrategySignalEntity> signals = signalRepository.findTerminalOutcomesSince(
                 since, EXIT_OUTCOMES, List.of());
-        int dispatched = 0;
+        int placed = 0;
+        int settled = 0;
         for (StrategySignalEntity signal : signals) {
-            if (dispatched >= 20) {
+            if (placed >= 20) {
                 break;
             }
             if (signal.getSymbol() == null) {
@@ -87,18 +91,24 @@ public class SignalOutcomeExitService {
             }
             String prefix = "outcome-exit:" + signal.getId() + ":";
             if (omsOrderRepository.existsByDeletedFalseAndIdempotencyKeyStartingWith(prefix)) {
+                settleDisposition(signal.getId(), "EXIT_PLACED");
+                settled++;
                 continue;
             }
             try {
-                dispatchForSignal(signal.getId(), signal.getOutcomeStatus(), true);
-                dispatched++;
+                int exits = dispatchForSignal(signal.getId(), signal.getOutcomeStatus(), true);
+                if (exits > 0) {
+                    placed++;
+                } else {
+                    settled++;
+                }
             } catch (Exception ex) {
                 log.warn("signal.outcome_exit.scheduled_backfill_failed signalId={} err={}",
                         signal.getId(), ex.getMessage());
             }
         }
-        if (dispatched > 0) {
-            log.info("signal.outcome_exit.scheduled_backfill_dispatched count={}", dispatched);
+        if (placed > 0 || settled > 0) {
+            log.info("signal.outcome_exit.scheduled_backfill placed={} settledNoExit={}", placed, settled);
         }
     }
 
@@ -171,35 +181,42 @@ public class SignalOutcomeExitService {
     }
 
     @Transactional
-    public void dispatchForSignal(UUID signalId, String outcomeStatus) {
-        dispatchForSignal(signalId, outcomeStatus, false);
+    public int dispatchForSignal(UUID signalId, String outcomeStatus) {
+        return dispatchForSignal(signalId, outcomeStatus, false);
     }
 
+    /**
+     * @return number of exit legs placed. Settles outcome_exit_disposition: EXIT_PLACED when
+     * legs were created, NO_EXIT_NEEDED when all entry legs are terminal-unfilled (or absent)
+     * and the outcome is old enough that no late entry leg can still appear.
+     */
     @Transactional
-    public void dispatchForSignal(UUID signalId, String outcomeStatus, boolean includeAllSources) {
+    public int dispatchForSignal(UUID signalId, String outcomeStatus, boolean includeAllSources) {
         StrategySignalEntity signal = signalRepository.findById(signalId).orElse(null);
         if (signal == null || signal.isDeleted()) {
-            return;
+            return 0;
         }
         if (Boolean.TRUE.equals(signal.getTestTrade())) {
-            return;
+            settleDisposition(signalId, "NO_EXIT_NEEDED");
+            return 0;
         }
         if (!includeAllSources) {
             SignalProvenance source = signal.getSignalSource();
             if (source == SignalProvenance.REPLAY || source == SignalProvenance.LAB) {
-                return;
+                return 0;
             }
         }
 
         List<OmsOrder> entryOrders = resolveEntryOrders(signalId);
         if (entryOrders.isEmpty()) {
             log.info("signal.outcome_exit.no_entry_orders signalId={} outcome={}", signalId, outcomeStatus);
-            return;
+            settleIfOutcomeSettledLongAgo(signal);
+            return 0;
         }
 
-        log.info("signal.outcome_exit.dispatch signalId={} outcome={} entryLegs={}",
-                signalId, outcomeStatus, entryOrders.size());
-
+        int placed = 0;
+        boolean anyEligible = false;
+        boolean anyFailed = false;
         for (OmsOrder entry : entryOrders) {
             if (entry.getUserId() == null || entry.getSide() == null) {
                 continue;
@@ -210,12 +227,55 @@ public class SignalOutcomeExitService {
             if ("HOLD".equalsIgnoreCase(entry.getSide())) {
                 continue;
             }
+            anyEligible = true;
             try {
                 placeExitForEntry(entry, signal, outcomeStatus);
+                placed++;
             } catch (Exception ex) {
+                anyFailed = true;
                 log.warn("signal.outcome_exit.failed signalId={} orderId={} outcome={} err={}",
                         signalId, entry.getId(), outcomeStatus, ex.getMessage());
             }
+        }
+
+        if (placed > 0) {
+            log.info("signal.outcome_exit.dispatch signalId={} outcome={} entryLegs={} exitsPlaced={}",
+                    signalId, outcomeStatus, entryOrders.size(), placed);
+            settleDisposition(signalId, "EXIT_PLACED");
+        } else if (!anyEligible) {
+            // Every entry leg is terminal-unfilled (REJECTED/CANCELLED) — nothing to unwind.
+            log.debug("signal.outcome_exit.no_fillable_entries signalId={} outcome={} entryLegs={}",
+                    signalId, outcomeStatus, entryOrders.size());
+            settleIfOutcomeSettledLongAgo(signal);
+        } else if (!anyFailed) {
+            // Eligible entries resolved to flat at broker (skip_flat) — exit already done elsewhere.
+            settleDisposition(signalId, "NO_EXIT_NEEDED");
+        }
+        // anyFailed with placed==0: leave disposition null so the next backfill cycle retries.
+        return placed;
+    }
+
+    /**
+     * Only stamp NO_EXIT_NEEDED once the outcome is 30+ minutes old: entry legs are created
+     * synchronously at emission, but the grace window protects against marking a fresh signal
+     * whose order rows are still being written.
+     */
+    private void settleIfOutcomeSettledLongAgo(StrategySignalEntity signal) {
+        Instant outcomeTime = signal.getOutcomeTime();
+        if (outcomeTime != null && outcomeTime.isBefore(Instant.now().minus(Duration.ofMinutes(30)))) {
+            settleDisposition(signal.getId(), "NO_EXIT_NEEDED");
+        }
+    }
+
+    private void settleDisposition(UUID signalId, String disposition) {
+        try {
+            int updated = signalRepository.settleOutcomeExitDisposition(signalId, disposition);
+            if (updated > 0) {
+                log.info("signal.outcome_exit.disposition signalId={} disposition={}", signalId, disposition);
+            }
+        } catch (Exception ex) {
+            log.warn("signal.outcome_exit.disposition_failed signalId={} disposition={} err={}",
+                    signalId, disposition, ex.getMessage());
         }
     }
 

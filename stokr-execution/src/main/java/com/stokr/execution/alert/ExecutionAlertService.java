@@ -52,6 +52,16 @@ public class ExecutionAlertService {
         publish("BROKER_REJECTED", order.getStrategyKey(), order.getSymbol(), order, text);
     }
 
+    /** Pre-broker rejections: risk engine, execution guards, duplicate keys, position caps. */
+    @Transactional
+    public void onLiveOrderRejected(OmsOrder order, String reason) {
+        if (order.getExecutionMode() != ExecutionMode.LIVE) return;
+        String text = "ORDER REJECTED: " + order.getStrategyKey()
+                + " " + order.getSymbol() + " " + order.getSide()
+                + " — " + reason;
+        publish("ORDER_REJECTED", order.getStrategyKey(), order.getSymbol(), order, text);
+    }
+
     @Transactional
     public void onDailyLossBreach(String strategyKey, BigDecimal todayPnl, BigDecimal limit) {
         String text = "DAILY LOSS LIMIT: " + strategyKey + " loss=" + todayPnl + " limit=" + limit;

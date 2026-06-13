@@ -78,7 +78,6 @@ import { ThemeHtmlSync } from "./components/theme/ThemeHtmlSync";
 import { SyncedToaster } from "./components/theme/SyncedToaster";
 import { api } from "./api/client";
 import AdvDashboardPage from "./pages/AdvDashboardPage";
-import { AdvEnhancedDashboardPage } from "./pages/AdvEnhancedDashboardPage";
 import { IntradayTraderDashboard } from "./pages/IntradayTraderDashboard";
 import { TraderDashboard } from "./pages/trader/TraderDashboard";
 import { AdminOverviewPage } from "./pages/AdminOverviewPage";
@@ -284,7 +283,8 @@ export default function App() {
             <Route index element={<RootEntryRedirect />} />
             <Route path="dashboard" element={<TraderDashboardRoute />} />
             <Route path="adv-dashboard" element={<AdvDashboardPage />} />
-            <Route path="adv-enhanced-dashboard" element={<AdvEnhancedDashboardPage />} />
+            {/* Enhanced variant consumed the same three feeds as adv-dashboard — consolidated. */}
+            <Route path="adv-enhanced-dashboard" element={<Navigate to="/adv-dashboard" replace />} />
             <Route path="watchlist" element={<Navigate to="/strategies" replace />} />
             <Route path="terminal" element={<TerminalPage />} />
             <Route path="signals" element={<SignalsPage />} />

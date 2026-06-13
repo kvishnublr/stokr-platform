@@ -17,10 +17,12 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  fetchAdvEdge,
   fetchAdvExecutionSummary,
   fetchAdvMovers,
   fetchAdvTerminal,
   fetchAdvWorkstation,
+  type AdvEdgeSnapshot,
   type AdvScannerRow,
 } from "../api/advDashboard";
 import { parseAxiosMessage } from "../api/client";
@@ -200,6 +202,116 @@ function firstFinite(...values: unknown[]) {
   return 0;
 }
 
+/**
+ * Edge & Go-Live: the per-strategy decision panel. Rolling counterfactual entry edge
+ * (which level got touched first — target or stop) vs the breakeven implied by each
+ * strategy's own risk:reward, plus edge-gate demotions and today's fill health.
+ */
+function EdgeGoLivePanel({ edge, loading }: { edge: AdvEdgeSnapshot | undefined; loading: boolean }) {
+  const rows = edge?.entryEdge ?? [];
+  const demotions = edge?.activeDemotions ?? [];
+  const fills = edge?.todayOrders ?? {};
+  const total = asNum(fills.total, 0);
+  const filled = asNum(fills.filled, 0);
+  const failed = asNum(fills.failed, 0);
+  const fillRate = total > 0 ? Math.round((filled / total) * 100) : null;
+
+  return (
+    <Card>
+      <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionTitle
+            icon={ShieldCheck}
+            title="Edge & Go-Live"
+            subtitle="Rolling 14-session entry edge per strategy — decide what deserves LIVE capital"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Pill tone={fillRate === null ? "slate" : fillRate > 0 ? "green" : "red"}>
+              {fillRate === null ? "NO ORDERS TODAY" : `FILL RATE ${fillRate}%`}
+            </Pill>
+            {failed > 0 ? <Pill tone="red">{failed} FAILED</Pill> : null}
+            {demotions.length > 0 ? <Pill tone="amber">{demotions.length} DEMOTED</Pill> : null}
+          </div>
+        </div>
+      </div>
+      <div className="overflow-x-auto p-4 sm:p-5">
+        {loading && !rows.length ? (
+          <div className="flex min-h-[120px] items-center justify-center gap-2 text-xs font-semibold text-slate-500 sm:text-sm">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading entry-edge data
+          </div>
+        ) : rows.length ? (
+          <TableShell>
+            <table className="min-w-full text-left text-xs sm:text-sm">
+              <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2.5">Strategy</th>
+                  <th className="px-3 py-2.5">Mode</th>
+                  <th className="px-3 py-2.5">Target-first %</th>
+                  <th className="px-3 py-2.5">Breakeven</th>
+                  <th className="px-3 py-2.5">Avg R:R</th>
+                  <th className="px-3 py-2.5">Signals</th>
+                  <th className="px-3 py-2.5">Replay P&L</th>
+                  <th className="px-3 py-2.5">Verdict</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((row) => {
+                  const demoted = demotions.some((d) => d.strategy_key === row.strategy_name);
+                  const tf = row.target_first_pct;
+                  const be = row.breakeven_pct;
+                  const margin = tf !== null && be !== null ? tf - be : null;
+                  return (
+                    <tr key={row.strategy_name} className="align-middle">
+                      <td className="px-3 py-2.5 font-bold text-slate-950">{row.strategy_name}</td>
+                      <td className="px-3 py-2.5">
+                        <Pill tone={demoted ? "red" : row.live_whitelisted ? "green" : "slate"}>
+                          {demoted ? "DEMOTED" : row.live_whitelisted ? "LIVE" : "PAPER"}
+                        </Pill>
+                      </td>
+                      <td className={cn("px-3 py-2.5 font-black", row.has_edge ? "text-emerald-700" : "text-rose-700")}>
+                        {tf !== null ? `${tf}%` : "-"}
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-500">{be !== null ? `${be}%` : "-"}</td>
+                      <td className="px-3 py-2.5 font-medium text-slate-700">{row.avg_rr ?? "-"}</td>
+                      <td className="px-3 py-2.5 text-slate-600">{row.signals}</td>
+                      <td className={cn("px-3 py-2.5 font-bold", asNum(row.replay_pnl, 0) >= 0 ? "text-emerald-700" : "text-rose-700")}>
+                        {row.replay_pnl ?? "-"}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {margin === null ? (
+                          <span className="text-xs text-slate-400">insufficient data</span>
+                        ) : margin >= 8 ? (
+                          <Pill tone="green">STRONG EDGE +{margin.toFixed(1)}pp</Pill>
+                        ) : margin > 0 ? (
+                          <Pill tone="amber">THIN EDGE +{margin.toFixed(1)}pp</Pill>
+                        ) : (
+                          <Pill tone="red">NO EDGE {margin.toFixed(1)}pp</Pill>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </TableShell>
+        ) : (
+          <EmptyState text="Entry-edge data appears after the first nightly replay (15:50 IST). Until then all strategies trade on their configured mode." />
+        )}
+        {demotions.length > 0 ? (
+          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-700">
+            {demotions.map((d) => (
+              <div key={d.strategy_key}>
+                <span className="font-bold">{d.strategy_key}</span> demoted to PAPER — {d.reason ?? "edge below breakeven"}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
 export function ModernDashboard() {
   const retry = (failureCount: number, error: unknown) => {
     if (failureCount >= 4) return false;
@@ -252,6 +364,17 @@ export function ModernDashboard() {
     refetchInterval: 15_000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: "always",
+    retry,
+    retryDelay: (attempt) => Math.min(2_000 * 2 ** attempt, 20_000),
+    placeholderData: (prev) => prev,
+  });
+
+  const advEdgeQ = useQuery({
+    queryKey: ["adv-dashboard", "edge"],
+    queryFn: fetchAdvEdge,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true,
     retry,
     retryDelay: (attempt) => Math.min(2_000 * 2 ** attempt, 20_000),
     placeholderData: (prev) => prev,
@@ -367,6 +490,8 @@ export function ModernDashboard() {
             </div>
           </Card>
         ) : null}
+
+        <EdgeGoLivePanel edge={advEdgeQ.data} loading={advEdgeQ.isLoading} />
 
         <div className="grid grid-cols-1 gap-4 sm:gap-5 md:gap-6 md:grid-cols-2 lg:grid-cols-3">
           <Card className="md:col-span-2">

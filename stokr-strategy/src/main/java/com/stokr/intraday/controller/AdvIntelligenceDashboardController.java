@@ -10,6 +10,8 @@ import com.stokr.intraday.engine.MarketRegimeDetector;
 import com.stokr.intraday.domain.CurrentSetup;
 import com.stokr.auth.security.StokrUserDetails;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,6 +35,10 @@ public class AdvIntelligenceDashboardController {
     private final AdvIntelligenceFeedService feedService;
     private final AdvIntelligenceTerminalService terminalService;
     private final LiveIntradayMoverService liveMoverService;
+    private final JdbcTemplate jdbcTemplate;
+
+    @Value("${stokr.strategy.execution-modes.live-validated:}")
+    private String liveValidatedCsv;
 
     /**
      * Dashboard metrics endpoint for the enhanced frontend dashboard.
@@ -104,6 +110,67 @@ public class AdvIntelligenceDashboardController {
     public ApiResponse<Map<String, Object>> terminal(@AuthenticationPrincipal StokrUserDetails user) {
         var uid = user != null ? user.getId() : null;
         return ApiResponse.ok(terminalService.buildTerminal(uid), CorrelationIdHolder.get());
+    }
+
+    /**
+     * Edge & Go-Live panel: per-strategy rolling entry edge (counterfactual target-first %
+     * vs the breakeven implied by its own R:R), active edge-gate demotions, the live
+     * whitelist, and today's fill health — everything a trader needs to decide whether
+     * a strategy deserves LIVE capital today.
+     */
+    @GetMapping("/edge")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<Map<String, Object>> edge() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        List<String> liveWhitelist = liveValidatedCsv == null || liveValidatedCsv.isBlank()
+                ? List.of()
+                : List.of(liveValidatedCsv.split("\\s*,\\s*"));
+        out.put("liveWhitelist", liveWhitelist);
+
+        List<Map<String, Object>> edgeRows = jdbcTemplate.queryForList("""
+                SELECT strategy_name,
+                       count(*)                                  AS sessions,
+                       sum(signals)                              AS signals,
+                       sum(target_first)                         AS target_first,
+                       sum(sl_first)                             AS sl_first,
+                       round(avg(avg_rr)::numeric, 2)            AS avg_rr,
+                       round((100.0 * sum(target_first) /
+                              NULLIF(sum(target_first) + sum(sl_first), 0))::numeric, 1) AS target_first_pct,
+                       round(avg(breakeven_pct)::numeric, 1)     AS breakeven_pct,
+                       round(sum(replay_pnl)::numeric, 1)        AS replay_pnl
+                FROM strategy_entry_edge_daily
+                WHERE session_date >= current_date - interval '14 days'
+                GROUP BY strategy_name
+                ORDER BY target_first_pct DESC NULLS LAST
+                """);
+        for (Map<String, Object> row : edgeRows) {
+            Object tf = row.get("target_first_pct");
+            Object be = row.get("breakeven_pct");
+            boolean hasEdge = tf instanceof Number t && be instanceof Number b
+                    && t.doubleValue() > b.doubleValue();
+            row.put("has_edge", hasEdge);
+            row.put("live_whitelisted", liveWhitelist.contains(String.valueOf(row.get("strategy_name"))));
+        }
+        out.put("entryEdge", edgeRows);
+
+        out.put("activeDemotions", jdbcTemplate.queryForList("""
+                SELECT strategy_key, reason, demoted_at
+                FROM strategy_edge_demotions
+                WHERE active = true
+                ORDER BY demoted_at DESC
+                """));
+
+        Map<String, Object> fills = jdbcTemplate.queryForList("""
+                SELECT count(*) AS total,
+                       count(*) FILTER (WHERE state IN ('FILLED','PARTIALLY_FILLED')) AS filled,
+                       count(*) FILTER (WHERE state IN ('REJECTED','FAILED'))         AS failed
+                FROM oms_orders
+                WHERE deleted = false
+                  AND idempotency_key NOT LIKE 'outcome-exit:%'
+                  AND created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
+                """).stream().findFirst().orElse(Map.of());
+        out.put("todayOrders", fills);
+        return ApiResponse.ok(out, CorrelationIdHolder.get());
     }
 
     @PostMapping("/refresh")

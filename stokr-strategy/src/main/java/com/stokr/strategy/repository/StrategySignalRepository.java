@@ -318,6 +318,7 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             where s.deleted = false
               and s.outcomeTime >= :since
               and s.outcomeStatus in :outcomes
+              and s.outcomeExitDisposition is null
               and (s.testTrade = false or s.testTrade is null)
               and (s.signalSource is null or s.signalSource not in :excludedSources)
             order by s.outcomeTime asc
@@ -326,6 +327,15 @@ public interface StrategySignalRepository extends JpaRepository<StrategySignalEn
             @Param("since") Instant since,
             @Param("outcomes") Collection<String> outcomes,
             @Param("excludedSources") Collection<SignalProvenance> excludedSources);
+
+    /** First write wins; direct update avoids optimistic-lock conflicts with the outcome tracker. */
+    @org.springframework.transaction.annotation.Transactional
+    @Modifying
+    @Query("""
+            update StrategySignalEntity s set s.outcomeExitDisposition = :disposition
+            where s.id = :id and s.outcomeExitDisposition is null
+            """)
+    int settleOutcomeExitDisposition(@Param("id") UUID id, @Param("disposition") String disposition);
 
     // ===== Position Sweeper queries =====
 

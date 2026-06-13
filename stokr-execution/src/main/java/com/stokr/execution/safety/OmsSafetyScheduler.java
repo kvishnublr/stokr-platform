@@ -31,6 +31,22 @@ public class OmsSafetyScheduler {
     /** Re-arm LIVE execution after overnight market-close kill switch (MON–FRI NSE open). */
     @Scheduled(cron = "${stokr.oms.market-open.disarm-cron:0 10 9 * * MON-FRI}", zone = "${stokr.strategy.session.zone:Asia/Kolkata}")
     public void nseMarketOpenDisarmKillSwitch() {
+        disarmIfMarketCloseEngaged("Scheduled NSE market-open re-arm");
+    }
+
+    /**
+     * The NSE flatten at 15:20 engages the kill switch, but the MCX evening session runs
+     * ~17:00–23:30 — without this re-arm every MCX evening signal is rejected with
+     * "Kill switch enabled" (29 rejections on 2026-06-12 alone). MCX close at 23:50
+     * re-engages it for the overnight window.
+     */
+    @Scheduled(cron = "${stokr.oms.mcx-evening.disarm-cron:0 0 17 * * MON-FRI}", zone = "${stokr.strategy.session.zone:Asia/Kolkata}")
+    public void mcxEveningDisarmKillSwitch() {
+        disarmIfMarketCloseEngaged("Scheduled MCX evening-session re-arm");
+    }
+
+    /** Only releases MARKET_CLOSE engagements — a manual/risk kill switch always stays engaged. */
+    private void disarmIfMarketCloseEngaged(String reason) {
         if (!killSwitchService.isActive()) {
             return;
         }
@@ -41,10 +57,10 @@ public class OmsSafetyScheduler {
         if (!TradingKillSwitchService.TriggerSource.MARKET_CLOSE.name().equals(last.get().getTriggerSource())) {
             return;
         }
-        log.info("oms.market_open.disarm_kill_switch reason={}", last.get().getReason());
+        log.info("oms.kill_switch.scheduled_disarm reason={} engagedFor={}", reason, last.get().getReason());
         killSwitchService.deactivate(
                 TradingKillSwitchService.TriggerSource.MARKET_CLOSE,
-                "Scheduled NSE market-open re-arm",
+                reason,
                 "scheduler");
     }
 

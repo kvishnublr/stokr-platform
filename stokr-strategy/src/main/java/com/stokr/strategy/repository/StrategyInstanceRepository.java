@@ -6,10 +6,13 @@ import org.springframework.data.domain.Pageable;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -67,4 +70,28 @@ public interface StrategyInstanceRepository extends JpaRepository<StrategyInstan
             @Param("strategyKey") String strategyKey,
             @Param("cutoff") Instant cutoff
     );
+
+    /**
+     * Atomic heartbeat touch for all RUNNING instances. Bypasses entity loading so the
+     * refresh scheduler can never lose to a concurrent writer via @Version conflicts
+     * (ObjectOptimisticLockingFailureException) — a stale heartbeat blocks LIVE dispatch
+     * through existsLiveHealthyRuntime, so this must always land.
+     */
+    @Transactional
+    @Modifying
+    @Query("""
+            update StrategyInstance si set si.heartbeatAt = :now, si.updatedAt = :now
+            where si.runtimeState = 'RUNNING' and si.deleted = false
+            """)
+    int touchHeartbeatsForRunning(@Param("now") Instant now);
+
+    /** Atomic stale-stop; returns rows actually transitioned (still RUNNING at write time). */
+    @Transactional
+    @Modifying
+    @Query("""
+            update StrategyInstance si
+            set si.orchestrationState = 'ERROR', si.runtimeState = 'STOPPED', si.updatedAt = :now
+            where si.id in :ids and si.runtimeState = 'RUNNING' and si.deleted = false
+            """)
+    int markStaleStopped(@Param("ids") Collection<UUID> ids, @Param("now") Instant now);
 }

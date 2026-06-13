@@ -149,6 +149,14 @@ public class StrategySignalEntity extends BaseEntity {
     @Column(name = "outcome_comment", length = 500)
     private String outcomeComment;
 
+    /**
+     * Terminal exit-dispatch decision: EXIT_PLACED (broker exit legs created) or
+     * NO_EXIT_NEEDED (all entry legs rejected/cancelled/absent — nothing to unwind).
+     * Null = not yet evaluated; the outcome-exit backfill only scans null rows.
+     */
+    @Column(name = "outcome_exit_disposition", length = 32)
+    private String outcomeExitDisposition;
+
     @Column(name = "realized_pnl", precision = 24, scale = 8)
     private BigDecimal realizedPnl;
 
