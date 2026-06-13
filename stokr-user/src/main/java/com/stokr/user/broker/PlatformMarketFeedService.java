@@ -457,7 +457,7 @@ public class PlatformMarketFeedService {
                     continue;
                 }
                 traderAttempted++;
-                if (ensureValidTraderZerodhaToken(account, refreshBefore)) {
+                if (refreshTraderTokenWithRetry(account, refreshBefore)) {
                     traderRefreshed++;
                 } else {
                     traderFailed++;
@@ -467,12 +467,39 @@ public class PlatformMarketFeedService {
             summary.put("traderRefreshed", traderRefreshed);
             summary.put("traderFailed", traderFailed);
 
-            syncPlatformTokensToTraders();
-            summary.put("platformSyncedToTraders", true);
+            try {
+                syncPlatformTokensToTraders();
+                summary.put("platformSyncedToTraders", true);
+            } catch (org.springframework.dao.OptimisticLockingFailureException ex) {
+                // Concurrent broker_accounts writer; idempotent, completes next cycle.
+                summary.put("platformSyncedToTraders", "deferred_concurrent_update");
+            }
             return summary;
         } finally {
             tokenRefreshInFlight.set(false);
         }
+    }
+
+    /**
+     * broker_accounts has many concurrent writers (margin sync, status sync, connect flow). Because
+     * ensureValidTraderZerodhaToken is self-invoked here its @Transactional proxy is bypassed, so each
+     * save auto-commits and a writer committing in between bumps the row @Version → optimistic-lock.
+     * These refreshes are idempotent, so re-fetch-and-retry: the next attempt reads the now-current
+     * version and lands. A persistent conflict (rare) is logged as a benign deferral, not a stacktrace.
+     */
+    private boolean refreshTraderTokenWithRetry(BrokerAccount account, Duration refreshBefore) {
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                return ensureValidTraderZerodhaToken(account, refreshBefore);
+            } catch (org.springframework.dao.OptimisticLockingFailureException ex) {
+                if (attempt == 3) {
+                    log.info("trader.zerodha.token_refresh_deferred userId={} reason=concurrent_broker_account_update attempts={}",
+                            account.getUserId(), attempt);
+                    return false;
+                }
+            }
+        }
+        return false;
     }
 
     /**
