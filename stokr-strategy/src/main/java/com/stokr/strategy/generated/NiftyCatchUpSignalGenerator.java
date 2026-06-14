@@ -83,7 +83,7 @@ public class NiftyCatchUpSignalGenerator extends BaseGeneratedStrategy implement
     @Value("${stokr.strategy.niftycatchup.stock-min-return-pct:-0.10}")
     private double stockMinReturnPct;
 
-    @Value("${stokr.strategy.niftycatchup.obi-min:0.55}")
+    @Value("${stokr.strategy.niftycatchup.obi-min:0.52}")
     private double obiMin;
 
     @Value("${stokr.strategy.niftycatchup.min-volume-multiple:1.2}")
@@ -126,27 +126,32 @@ public class NiftyCatchUpSignalGenerator extends BaseGeneratedStrategy implement
         if (stockReturn < stockMinReturnPct) return hold(context);
         if (stockReturn >= stockLagRatio * niftyReturn) return hold(context); // not lagging
 
-        // 4. OBI check — must be > threshold and rising
-        PressureSnapshot snap = pressureTracker.getSnapshot(symbol);
-        double obi = snap != null ? snap.imbalanceRatio() : 0.5;
-        Deque<Double> hist = obiHistory.computeIfAbsent(symbol, k -> new ArrayDeque<>());
-        hist.addLast(obi);
-        while (hist.size() > 5) hist.removeFirst();
-
-        if (obi < obiMin) return hold(context);
-        if (hist.size() >= 2) {
-            double[] arr = hist.stream().mapToDouble(Double::doubleValue).toArray();
-            double prev = arr[arr.length - 2];
-            if (obi < prev * 0.95) return hold(context); // OBI declining sharply — skip
-        }
-
-        // 5. VOLUME check — stock must show activity >= 1.2x avg
+        // 4. LOAD STOCK BARS (needed for both volume gate and order-flow proxy)
         var barsOpt = integrityGate.sessionBars(
                 key(), symbol, TIMEFRAME, BARS_FETCH, 5, LookbackWindow.FIVE_MINUTE, context);
         if (barsOpt.isEmpty() || barsOpt.get().size() < 8) return hold(context);
         List<MarketdataCandle> bars = barsOpt.get();
         int n = bars.size();
 
+        // 5. OBI check — prefer live book, fall back to OHLCV proxy (works in backtest).
+        //    Previously obi defaulted to 0.5 with a 0.55 threshold, so the gate could
+        //    NEVER pass without a live book → zero signals in every backtest.
+        PressureSnapshot snap = pressureTracker.getSnapshot(symbol);
+        double obi = resolvePressure(snap != null ? snap.imbalanceRatio() : null, bars, 5);
+        Deque<Double> hist = obiHistory.computeIfAbsent(symbol, k -> new ArrayDeque<>());
+        hist.addLast(obi);
+        while (hist.size() > 5) hist.removeFirst();
+
+        if (obi < obiMin) return hold(context);
+        // "Rising" guard only meaningful with a continuous live feed; the proxy is
+        // computed per-bar so a sharp-decline veto would falsely fire in replay.
+        if (snap != null && hist.size() >= 2) {
+            double[] arr = hist.stream().mapToDouble(Double::doubleValue).toArray();
+            double prev = arr[arr.length - 2];
+            if (obi < prev * 0.95) return hold(context); // OBI declining sharply — skip
+        }
+
+        // 6. VOLUME check — stock must show activity >= 1.2x avg
         double totalVol = 0;
         for (MarketdataCandle b : bars) totalVol += toDouble(b.getVolume());
         double avgVol   = totalVol / n;

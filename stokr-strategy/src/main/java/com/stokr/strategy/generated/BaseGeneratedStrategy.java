@@ -1,8 +1,12 @@
 package com.stokr.strategy.generated;
 
+import com.stokr.marketdata.domain.MarketdataCandle;
 import com.stokr.strategy.context.StrategyContext;
 import com.stokr.strategy.signals.SignalType;
 import com.stokr.strategy.signals.StrategySignal;
+
+import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * Optional base class for admin-generated strategy templates.
@@ -97,4 +101,61 @@ public abstract class BaseGeneratedStrategy {
         if (loss == 0) return 100;
         return 100 - (100.0 / (1 + gain / loss));
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Order-flow proxy — works in BOTH live and backtest
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Price-derived order-flow proxy (Close-Location-Value, volume-weighted).
+     *
+     * <p>The live {@code OrderBookPressureTracker} only has data from the websocket
+     * order book, so it returns {@code null} during backtest replay — which silently
+     * disabled (or, worse, hard-blocked) every strategy that depended on it. This
+     * proxy reconstructs an equivalent 0..1 "buy pressure" reading purely from OHLCV
+     * so that the SAME code path runs in backtest and live.</p>
+     *
+     * <p>For each of the last {@code lookback} bars it computes the close location
+     * within the bar's range: {@code (close-low)/(high-low)} (0 = closed on low /
+     * sellers won, 1 = closed on high / buyers won), volume-weights it, and averages.
+     * Returns 0.5 when there is no usable range/volume (neutral).</p>
+     *
+     * @return imbalance ratio in [0,1]; &gt;0.5 = net buying pressure
+     */
+    protected double pressureProxy(List<MarketdataCandle> bars, int lookback) {
+        if (bars == null || bars.isEmpty()) return 0.5;
+        int n = bars.size();
+        int start = Math.max(0, n - lookback);
+        double weightedClv = 0.0;
+        double volSum = 0.0;
+        for (int i = start; i < n; i++) {
+            MarketdataCandle b = bars.get(i);
+            double high = toD(b.getHighPrice());
+            double low = toD(b.getLowPrice());
+            double close = toD(b.getClosePrice());
+            double range = high - low;
+            if (range <= 0 || high <= 0) continue;
+            double clv = (close - low) / range;           // 0..1
+            double vol = toD(b.getVolume());
+            double w = vol > 0 ? vol : 1.0;
+            weightedClv += clv * w;
+            volSum += w;
+        }
+        if (volSum <= 0) return 0.5;
+        return weightedClv / volSum;
+    }
+
+    /**
+     * Resolves an order-flow reading, preferring the live order book when present
+     * and falling back to the OHLCV {@link #pressureProxy} otherwise. This is the
+     * single accessor strategies should use so behaviour is identical in backtest.
+     *
+     * @param liveImbalance the live imbalanceRatio, or {@code null} if no snapshot
+     */
+    protected double resolvePressure(Double liveImbalance, List<MarketdataCandle> bars, int lookback) {
+        if (liveImbalance != null) return liveImbalance;
+        return pressureProxy(bars, lookback);
+    }
+
+    private static double toD(BigDecimal v) { return v == null ? 0.0 : v.doubleValue(); }
 }

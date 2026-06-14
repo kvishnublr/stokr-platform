@@ -73,10 +73,10 @@ public class ClosingVwapReclaimSignalGenerator extends BaseGeneratedStrategy imp
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
 
-    @Value("${stokr.strategy.vwapclosere.below-vwap-ratio:0.55}")
+    @Value("${stokr.strategy.vwapclosere.below-vwap-ratio:0.50}")
     private double belowVwapRatio;
 
-    @Value("${stokr.strategy.vwapclosere.vol-multiple:1.8}")
+    @Value("${stokr.strategy.vwapclosere.vol-multiple:1.5}")
     private double volMultiple;
 
     @Value("${stokr.strategy.vwapclosere.obi-min:0.52}")
@@ -101,9 +101,9 @@ public class ClosingVwapReclaimSignalGenerator extends BaseGeneratedStrategy imp
 
         if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) return hold(context);
 
-        // 1. STRICT TIME GATE: 3:00 PM – 3:08 PM ONLY
+        // 1. CLOSING WINDOW: 2:55 PM – 3:12 PM (TWAP/NAV closing flow window)
         LocalTime lt = asOf.atZone(zone).toLocalTime();
-        if (lt.isBefore(LocalTime.of(15, 0)) || lt.isAfter(LocalTime.of(15, 8))) {
+        if (lt.isBefore(LocalTime.of(14, 55)) || lt.isAfter(LocalTime.of(15, 12))) {
             return hold(context);
         }
 
@@ -177,9 +177,10 @@ public class ClosingVwapReclaimSignalGenerator extends BaseGeneratedStrategy imp
         // 8. STOCK POSITIVE FOR THE DAY
         if (firstOpen > 0 && curClose < firstOpen) return hold(context);
 
-        // 9. OBI check
+        // 9. OBI check — live book or OHLCV proxy (works in backtest).
         PressureSnapshot snap = pressureTracker.getSnapshot(symbol);
-        if (snap != null && snap.imbalanceRatio() < obiMin) return hold(context);
+        double obi = resolvePressure(snap != null ? snap.imbalanceRatio() : null, bars, 5);
+        if (obi < obiMin) return hold(context);
 
         // 10. COOLDOWN (once per afternoon session)
         Instant lastEmit = lastEmitBySymbol.get(symbol);
@@ -202,7 +203,7 @@ public class ClosingVwapReclaimSignalGenerator extends BaseGeneratedStrategy imp
             "entry=%.2f sl=%.2f target=%.2f rr=%.2f",
             belowFrac * 100.0, curVwap, curClose,
             recentAvg > 0 ? curV / recentAvg : 0,
-            snap != null ? snap.imbalanceRatio() : 0.5,
+            obi,
             entry, sl, target, reward / risk
         );
         log.info("vwap_close_reclaim.signal symbol={} {}", symbol, reason);

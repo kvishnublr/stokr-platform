@@ -67,13 +67,13 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
 
-    @Value("${stokr.strategy.vwapbounce.touch-threshold-pct:0.18}")
+    @Value("${stokr.strategy.vwapbounce.touch-threshold-pct:0.25}")
     private double touchThresholdPct;
 
     @Value("${stokr.strategy.vwapbounce.min-slope-pct:0.004}")
     private double minSlopePct;
 
-    @Value("${stokr.strategy.vwapbounce.min-volume-multiple:1.2}")
+    @Value("${stokr.strategy.vwapbounce.min-volume-multiple:1.0}")
     private double minVolumeMultiple;
 
     @Value("${stokr.strategy.vwapbounce.bounce-confirm-pct:0.025}")
@@ -184,13 +184,13 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
         if (isUptrend && niftyTrend < -0.07) return hold(context);
         if (!isUptrend && niftyTrend > 0.07) return hold(context);
 
-        // 7. PRESSURE CONFIRMATION — institutions active at VWAP
+        // 7. PRESSURE CONFIRMATION — institutions active at VWAP.
+        //    Prefer the live book; fall back to OHLCV proxy so this stays a genuine
+        //    filter in backtest (previously skipped entirely when no book).
         PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
-        if (snapshot != null) {
-            double ratio = snapshot.imbalanceRatio();
-            if (isUptrend && ratio < 0.50) return hold(context);  // Need buy pressure for uptrend bounce
-            if (!isUptrend && ratio > 0.50) return hold(context); // Need sell pressure for downtrend bounce
-        }
+        double imb = resolvePressure(snapshot != null ? snapshot.imbalanceRatio() : null, bars, 5);
+        if (isUptrend && imb < 0.45) return hold(context);   // Need buy pressure for uptrend bounce
+        if (!isUptrend && imb > 0.55) return hold(context);  // Need sell pressure for downtrend bounce
 
         // 8. BOUNCE CONFIRMATION — 2 bar check
         if (n < 3) return hold(context);
@@ -267,7 +267,7 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
 
         lastEmitBySymbol.put(symbol, now);
 
-        String pressureInfo = snapshot != null ? String.format("imb=%.0f%%", snapshot.imbalanceRatio() * 100) : "imb=N/A";
+        String pressureInfo = String.format("imb=%.0f%%%s", imb * 100, snapshot != null ? "" : "(proxy)");
         String reason = String.format(
             "VWAP_BOUNCE_V2 %s: vwap=%.2f sigma=%.2f dist=%.3f%% slope=%.3f%% %s " +
             "vol=%.1fx nifty=%+.2f%% entry=%.2f sl=%.2f target=%.2f rr=%.1f",

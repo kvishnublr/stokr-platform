@@ -74,16 +74,16 @@ public class VwapSqueezeReleaseSignalGenerator extends BaseGeneratedStrategy imp
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
 
-    @Value("${stokr.strategy.vwapsqueeze.squeeze-band-pct:0.0015}")
+    @Value("${stokr.strategy.vwapsqueeze.squeeze-band-pct:0.0020}")
     private double squeezeBandPct;
 
-    @Value("${stokr.strategy.vwapsqueeze.squeeze-vol-ratio:0.85}")
+    @Value("${stokr.strategy.vwapsqueeze.squeeze-vol-ratio:0.90}")
     private double squeezeVolRatio;
 
     @Value("${stokr.strategy.vwapsqueeze.breakout-body-pct:0.002}")
     private double breakoutBodyPct;
 
-    @Value("${stokr.strategy.vwapsqueeze.breakout-vol-multiple:2.5}")
+    @Value("${stokr.strategy.vwapsqueeze.breakout-vol-multiple:2.0}")
     private double breakoutVolMultiple;
 
     @Value("${stokr.strategy.vwapsqueeze.target-mult:3.0}")
@@ -190,9 +190,11 @@ public class VwapSqueezeReleaseSignalGenerator extends BaseGeneratedStrategy imp
         double avg5Vol = cnt5 > 0 ? sum5 / cnt5 : 1;
         if (avg5Vol > 0 && curV / avg5Vol < breakoutVolMultiple) return hold(context);
 
-        // 7. VOLUME ACCELERATION: curV > prevV > prev2V
+        // 7. VOLUME EXPANSION: breakout bar must be heavier than the prior bar.
+        //    (Dropped the additional prev>prev2 requirement — a 3-bar monotonic
+        //    ramp almost never coincides with a fresh squeeze release and made the
+        //    strategy fire <1/day. Breakout-vs-prev + the 2x prev-5 gate suffice.)
         if (prevV > 0 && curV <= prevV) return hold(context);
-        if (prev2V > 0 && prevV <= prev2V) return hold(context);
 
         // 8. DIRECTION — must match VWAP slope
         double vwapSlope = last >= 5 ? (vwap[last - 1] - vwap[last - 6]) / vwap[last - 6] : 0;
@@ -200,13 +202,11 @@ public class VwapSqueezeReleaseSignalGenerator extends BaseGeneratedStrategy imp
         if (isBuy  && vwapSlope < -0.0005) return hold(context); // VWAP declining — no BUY
         if (!isBuy && vwapSlope >  0.0005) return hold(context); // VWAP rising — no SELL
 
-        // 9. OBI CONFIRMATION
+        // 9. OBI CONFIRMATION — live book or OHLCV proxy (works in backtest).
         PressureSnapshot snap = pressureTracker.getSnapshot(symbol);
-        if (snap != null) {
-            double obi = snap.imbalanceRatio();
-            if (isBuy  && obi < 0.50) return hold(context);
-            if (!isBuy && obi > 0.50) return hold(context);
-        }
+        double obi = resolvePressure(snap != null ? snap.imbalanceRatio() : null, bars, 5);
+        if (isBuy  && obi < 0.45) return hold(context);
+        if (!isBuy && obi > 0.55) return hold(context);
 
         // 10. COOLDOWN
         Instant lastEmit = lastEmitBySymbol.get(symbol);
