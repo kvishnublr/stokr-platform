@@ -67,10 +67,10 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
 
-    @Value("${stokr.strategy.vwapbounce.touch-threshold-pct:0.25}")
+    @Value("${stokr.strategy.vwapbounce.touch-threshold-pct:0.40}")
     private double touchThresholdPct;
 
-    @Value("${stokr.strategy.vwapbounce.min-slope-pct:0.004}")
+    @Value("${stokr.strategy.vwapbounce.min-slope-pct:0.003}")
     private double minSlopePct;
 
     @Value("${stokr.strategy.vwapbounce.min-volume-multiple:1.0}")

@@ -64,7 +64,10 @@ public class VwapSqueezeReleaseSignalGenerator extends BaseGeneratedStrategy imp
     private static final String TIMEFRAME      = "1m";
     private static final int    BARS_FETCH     = 180;
     private static final int    MIN_BARS       = 30;
-    private static final int    SQUEEZE_BARS   = 20;
+    // 15 (was 20): requiring 20 consecutive bars pinned to a moving VWAP almost
+    // never occurs on liquid Nifty names — a 15-bar squeeze is still a genuine
+    // compression but found several times per session.
+    private static final int    SQUEEZE_BARS   = 15;
 
     private final StrategyGeneratorIntegrityGate integrityGate;
     private final OrderBookPressureTracker        pressureTracker;
@@ -74,7 +77,7 @@ public class VwapSqueezeReleaseSignalGenerator extends BaseGeneratedStrategy imp
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
 
-    @Value("${stokr.strategy.vwapsqueeze.squeeze-band-pct:0.0020}")
+    @Value("${stokr.strategy.vwapsqueeze.squeeze-band-pct:0.0025}")
     private double squeezeBandPct;
 
     @Value("${stokr.strategy.vwapsqueeze.squeeze-vol-ratio:0.90}")
@@ -83,13 +86,17 @@ public class VwapSqueezeReleaseSignalGenerator extends BaseGeneratedStrategy imp
     @Value("${stokr.strategy.vwapsqueeze.breakout-body-pct:0.002}")
     private double breakoutBodyPct;
 
-    @Value("${stokr.strategy.vwapsqueeze.breakout-vol-multiple:2.0}")
+    @Value("${stokr.strategy.vwapsqueeze.breakout-vol-multiple:1.8}")
     private double breakoutVolMultiple;
 
     @Value("${stokr.strategy.vwapsqueeze.target-mult:3.0}")
     private double targetMult;
 
-    @Value("${stokr.strategy.vwapsqueeze.sl-pct:0.0015}")
+    // Stop at the squeeze boundary (0.25%), not 0.15%. A stop INSIDE the squeeze
+    // band gets tagged by the same compression noise that defines the setup; the
+    // breakout is only invalidated once price falls back through the band edge.
+    // target = 0.25% x 3 = 0.75%, risk = 0.25% → 3:1 (break-even 25%).
+    @Value("${stokr.strategy.vwapsqueeze.sl-pct:0.0025}")
     private double slPct;
 
     @Value("${stokr.strategy.vwapsqueeze.cooldown-seconds:1200}")
