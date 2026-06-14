@@ -36,7 +36,8 @@ public class StrategyExecutionRequestValidator {
             "ADV_CASH",
             "NIFTY_CATCHUP",
             "VWAP_SQUEEZE",
-            "VWAP_CLOSE_RECLAIM"
+            "VWAP_CLOSE_RECLAIM",
+            "OPENING_RANGE_BREAKOUT"
     );
 
     private final StrategyMetadataQueryService strategyMetadataQueryService;
