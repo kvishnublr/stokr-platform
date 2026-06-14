@@ -86,7 +86,7 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     // stop survives noise; the VWAP-trend gate below lifts the hit rate to cover
     // the slightly lower 1.6 R:R (break-even ~38.5%).
     private static final BigDecimal SL_PCT  = BigDecimal.valueOf(0.005);   // 0.5%
-    private static final BigDecimal T1_PCT  = BigDecimal.valueOf(0.008);   // 0.8%
+    private static final BigDecimal T1_PCT  = BigDecimal.valueOf(0.009);   // 0.9% (R:R 1.8, break-even 35.7%)
     private static final BigDecimal T2_PCT  = BigDecimal.valueOf(0.014);   // 1.4%
     private static final double OBI_SLOPE_MIN = 0.015;
     private static final int OBI_HISTORY_FOR_SLOPE = 6;
@@ -135,7 +135,7 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     @Value("${stokr.advcash.cooldown-seconds:900}")
     private int cooldownSeconds;
 
-    @Value("${stokr.advcash.min-consensus:3}")
+    @Value("${stokr.advcash.min-consensus:4}")
     private int minConsensus;
 
     @Value("${stokr.advcash.candidate-min-consensus:2}")
@@ -144,7 +144,7 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     @Value("${stokr.advcash.candidate-log-cooldown-seconds:300}")
     private int candidateLogCooldownSeconds;
 
-    @Value("${stokr.advcash.min-composite-score:55.0}")
+    @Value("${stokr.advcash.min-composite-score:68.0}")
     private double minCompositeScore;
 
     public AdvCashEquitySignalGenerator(OrderBookPressureTracker pressureTracker,
