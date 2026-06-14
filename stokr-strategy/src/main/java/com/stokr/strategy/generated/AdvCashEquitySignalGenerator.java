@@ -385,10 +385,16 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
         }
 
         // ─── Cooldown ───
+        // Guard against backtest state leakage: lastEmitBySymbol is a singleton
+        // field shared across runs. If replay jumps BACK in time (a later run
+        // replaying earlier dates), Duration is negative and would falsely block
+        // every bar. Treat a backwards jump as a fresh run (ignore stale cooldown).
         Instant lastEmit = lastEmitBySymbol.get(symbol);
-        if (lastEmit != null && Duration.between(lastEmit, evalTime).getSeconds() < cooldownSeconds) {
-            long remaining = Math.max(0, cooldownSeconds - Duration.between(lastEmit, evalTime).getSeconds());
-            return hold(context, "ADV_CASH_HOLD cooldown remainingSeconds=" + remaining);
+        if (lastEmit != null) {
+            long sinceLast = Duration.between(lastEmit, evalTime).getSeconds();
+            if (sinceLast >= 0 && sinceLast < cooldownSeconds) {
+                return hold(context, "ADV_CASH_HOLD cooldown remainingSeconds=" + (cooldownSeconds - sinceLast));
+            }
         }
 
         // ─── Entry/Exit Levels (EXACT Python: _levels_from_entry) ───

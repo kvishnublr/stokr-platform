@@ -237,11 +237,15 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
             return hold(context);
         }
 
-        // 11. COOLDOWN
+        // 11. COOLDOWN (guard backtest time-travel: ignore stale cooldown from a
+        //    prior run when replay jumps backwards — see ADV_CASH for details)
         Instant now = context.asOf() != null ? context.asOf() : Instant.now();
         Instant lastEmit = lastEmitBySymbol.get(symbol);
-        if (lastEmit != null && Duration.between(lastEmit, now).getSeconds() < cooldownSeconds) {
-            return hold(context);
+        if (lastEmit != null) {
+            long sinceLast = Duration.between(lastEmit, now).getSeconds();
+            if (sinceLast >= 0 && sinceLast < cooldownSeconds) {
+                return hold(context);
+            }
         }
 
         // 12. SIGNAL with proper prices.

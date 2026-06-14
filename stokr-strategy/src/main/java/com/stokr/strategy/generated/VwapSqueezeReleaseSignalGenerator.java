@@ -215,10 +215,14 @@ public class VwapSqueezeReleaseSignalGenerator extends BaseGeneratedStrategy imp
         if (isBuy  && obi < 0.45) return hold(context);
         if (!isBuy && obi > 0.55) return hold(context);
 
-        // 10. COOLDOWN
+        // 10. COOLDOWN (guard backtest time-travel: ignore stale cooldown from a
+        //    prior run when replay jumps backwards — see ADV_CASH for details)
         Instant lastEmit = lastEmitBySymbol.get(symbol);
-        if (lastEmit != null && Duration.between(lastEmit, asOf).getSeconds() < cooldownSeconds) {
-            return hold(context);
+        if (lastEmit != null) {
+            long sinceLast = Duration.between(lastEmit, asOf).getSeconds();
+            if (sinceLast >= 0 && sinceLast < cooldownSeconds) {
+                return hold(context);
+            }
         }
 
         // 11. SIGNAL

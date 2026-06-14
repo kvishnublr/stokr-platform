@@ -182,10 +182,14 @@ public class ClosingVwapReclaimSignalGenerator extends BaseGeneratedStrategy imp
         double obi = resolvePressure(snap != null ? snap.imbalanceRatio() : null, bars, 5);
         if (obi < obiMin) return hold(context);
 
-        // 10. COOLDOWN (once per afternoon session)
+        // 10. COOLDOWN (once per afternoon session; guard backtest time-travel:
+        //    ignore stale cooldown from a prior run when replay jumps backwards)
         Instant lastEmit = lastEmitBySymbol.get(symbol);
-        if (lastEmit != null && Duration.between(lastEmit, asOf).getSeconds() < cooldownSeconds) {
-            return hold(context);
+        if (lastEmit != null) {
+            long sinceLast = Duration.between(lastEmit, asOf).getSeconds();
+            if (sinceLast >= 0 && sinceLast < cooldownSeconds) {
+                return hold(context);
+            }
         }
 
         // 11. SIGNAL

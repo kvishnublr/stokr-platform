@@ -158,10 +158,14 @@ public class NiftyCatchUpSignalGenerator extends BaseGeneratedStrategy implement
         double curVol   = toDouble(bars.get(n - 1).getVolume());
         if (avgVol > 0 && curVol / avgVol < minVolumeMultiple) return hold(context);
 
-        // 6. COOLDOWN
+        // 6. COOLDOWN (guard backtest time-travel: ignore stale cooldown from a
+        //    prior run when replay jumps backwards — see ADV_CASH for details)
         Instant lastEmit = lastEmitBySymbol.get(symbol);
-        if (lastEmit != null && Duration.between(lastEmit, asOf).getSeconds() < cooldownSeconds) {
-            return hold(context);
+        if (lastEmit != null) {
+            long sinceLast = Duration.between(lastEmit, asOf).getSeconds();
+            if (sinceLast >= 0 && sinceLast < cooldownSeconds) {
+                return hold(context);
+            }
         }
 
         // 7. PRICES
