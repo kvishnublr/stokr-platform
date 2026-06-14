@@ -229,6 +229,17 @@ public class PressureSmartExitService {
     private ExitDecision evaluateTrailingAndTimeExit(ExitContext ctx) {
         StrategySignalEntity sig = ctx.signal();
 
+        // ── PROFIT TRAILING (trend strategies only — opt-in via lifecycle profile) ──
+        // Once the trade has run trailArmPct in our favour, ride it but exit if price gives
+        // back trailGiveBackPct (of entry) from the peak. This captures trend-day tails
+        // while locking gains — the only exit that beats transaction costs for breakouts.
+        if (ctx.profile().profitTrailingEnabled()) {
+            ExitDecision trail = evaluateProfitTrailing(ctx);
+            if (trail != null) {
+                return trail;
+            }
+        }
+
         if (ctx.mfePctOfTarget() >= trailingMfeRatio * 100 && ctx.backAtEntry()) {
             String reason = String.format(
                     "TRAILING_BREAKEVEN: mfePctOfTarget=%.1f threshold=%.1f priceReturnedToEntry=true",
@@ -250,6 +261,43 @@ public class PressureSmartExitService {
             return ExitDecision.timeExit(reason);
         }
 
+        return null;
+    }
+
+    /**
+     * Profit-trailing stop (opt-in per strategy). Uses the tracked max-favorable-excursion
+     * (MFE, a price distance) as the "peak". Once the trade has run {@code trailArmPct} of
+     * entry in our favour, exit if it has retraced {@code trailGiveBackPct} of entry from
+     * that peak — locking gains while letting trend tails extend.
+     */
+    private ExitDecision evaluateProfitTrailing(ExitContext ctx) {
+        StrategySignalEntity sig = ctx.signal();
+        if (sig.getEntryReferencePrice() == null) {
+            return null;
+        }
+        double entry = sig.getEntryReferencePrice().doubleValue();
+        if (entry <= 0) {
+            return null;
+        }
+        double mfe = sig.getMaxFavorableExcursion() != null
+                ? sig.getMaxFavorableExcursion().doubleValue()
+                : 0.0;
+        double curFav = ctx.isBuy() ? (ctx.currentPrice() - entry) : (entry - ctx.currentPrice());
+        double armDist = entry * ctx.profile().trailArmPct() / 100.0;
+        double giveBackDist = entry * ctx.profile().trailGiveBackPct() / 100.0;
+        // Only trail once the move is armed and we are still in profit.
+        if (mfe < armDist || curFav <= 0 || giveBackDist <= 0) {
+            return null;
+        }
+        double giveBack = mfe - curFav; // retrace from the peak, in price units
+        if (giveBack >= giveBackDist) {
+            String reason = String.format(
+                    "TRAILING_PROFIT: mfe=%.4f curFav=%.4f giveBack=%.4f trailDist=%.4f armDist=%.4f",
+                    mfe, curFav, giveBack, giveBackDist, armDist);
+            log.info("smart_exit.trailing_profit strategy={} symbol={} {}",
+                    sig.getStrategyName(), sig.getSymbol(), reason);
+            return ExitDecision.pressure(PressureExitTrigger.TRAILING_PROFIT, reason, false);
+        }
         return null;
     }
 

@@ -11,8 +11,22 @@ public record StrategyLifecycleProfile(
         boolean pressureExitEnabled,
         int timeStopMinutes,
         boolean allowReentry,
-        int maxEntriesPerSymbolPerSession
+        int maxEntriesPerSymbolPerSession,
+        // Profit-trailing (trend strategies only — it HURTS reversion strategies, which
+        // exit better at their fixed target). Armed once the trade has run trailArmPct of
+        // entry in your favour; exits when price gives back trailGiveBackPct (of entry)
+        // from the peak (max-favorable-excursion). Lets trend tails run while locking gains.
+        boolean profitTrailingEnabled,
+        double trailArmPct,
+        double trailGiveBackPct
 ) {
+    /** Backward-compatible 5-arg constructor: profit-trailing OFF (existing strategies). */
+    public StrategyLifecycleProfile(int minHoldSeconds, boolean pressureExitEnabled,
+            int timeStopMinutes, boolean allowReentry, int maxEntriesPerSymbolPerSession) {
+        this(minHoldSeconds, pressureExitEnabled, timeStopMinutes, allowReentry,
+                maxEntriesPerSymbolPerSession, false, 0.0, 0.0);
+    }
+
     // Max 3 entries per symbol per session: session replay showed re-entry churn (SBIN 6x,
     // HDFCBANK 5x in one day) repeatedly paying spread + charges on the same idea.
     private static final StrategyLifecycleProfile DEFAULT = new StrategyLifecycleProfile(
@@ -31,7 +45,11 @@ public record StrategyLifecycleProfile(
             Map.entry("PRE_OPEN_GAP_OI", new StrategyLifecycleProfile(60, true, 105, false, 1)),
             Map.entry("USDINR_MOMENTUM", new StrategyLifecycleProfile(300, true, 20, true, 3)),
             Map.entry("EURINR_MEAN_REVERSION", new StrategyLifecycleProfile(300, true, 20, true, 3)),
-            Map.entry("COMMODITIES_E2E_TEST", new StrategyLifecycleProfile(60, false, 30, true, 3))
+            Map.entry("COMMODITIES_E2E_TEST", new StrategyLifecycleProfile(60, false, 30, true, 3)),
+            // OPENING_RANGE_BREAKOUT — trend strategy: profit-trailing ON (arm at +0.2%,
+            // give back 0.5% from peak), longer time stop, one entry per symbol per day.
+            Map.entry("OPENING_RANGE_BREAKOUT",
+                    new StrategyLifecycleProfile(0, true, 90, false, 1, true, 0.2, 0.5))
     );
 
     public static StrategyLifecycleProfile forStrategy(String strategyKey) {

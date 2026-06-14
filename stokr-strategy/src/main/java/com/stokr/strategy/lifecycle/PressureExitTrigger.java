@@ -9,5 +9,7 @@ public enum PressureExitTrigger {
     SPREAD_WIDENING,
     VOLUME_VACUUM,
     ADVERSE_VELOCITY,
-    TRAILING_BREAKEVEN
+    TRAILING_BREAKEVEN,
+    /** Profit-trailing stop: lock gains after a trade has run, exit on give-back from peak (MFE). */
+    TRAILING_PROFIT
 }

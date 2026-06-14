@@ -18,7 +18,8 @@ public class BacktestStrategyPluginConfiguration {
             "SECTOR_LAGGARD",
             "NIFTY_CATCHUP",
             "VWAP_SQUEEZE",
-            "VWAP_CLOSE_RECLAIM"
+            "VWAP_CLOSE_RECLAIM",
+            "OPENING_RANGE_BREAKOUT"
     );
 
     @Bean
