@@ -74,7 +74,7 @@ public class NiftyCatchUpSignalGenerator extends BaseGeneratedStrategy implement
     @Value("${stokr.strategy.session.zone:Asia/Kolkata}")
     private ZoneId zone;
 
-    @Value("${stokr.strategy.niftycatchup.nifty-min-move-pct:0.35}")
+    @Value("${stokr.strategy.niftycatchup.nifty-min-move-pct:0.25}")
     private double niftyMinMovePct;
 
     @Value("${stokr.strategy.niftycatchup.stock-lag-ratio:0.40}")

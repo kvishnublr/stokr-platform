@@ -244,25 +244,30 @@ public class VwapBounceSignalGenerator extends BaseGeneratedStrategy implements 
             return hold(context);
         }
 
-        // 12. SIGNAL with proper prices
+        // 12. SIGNAL with proper prices.
+        // Anchor target/stop to the ENTRY price (not VWAP). With the wider touch
+        // band, entry can sit up to 0.40% from VWAP — a VWAP-anchored target could
+        // then fall BELOW entry (target = vwap+1.5σ < entry when σ is small),
+        // producing an invalid/negative R:R that silently killed every signal.
+        // Entry-anchored levels guarantee R:R = targetSigma/stopSigma (1.5).
         SignalType signalType;
         double target, stopLoss, entryPrice = currentPrice;
 
         if (isUptrend) {
             signalType = SignalType.BUY;
-            target = currentVwap + targetSigma * currentSigma;
-            stopLoss = currentVwap - stopSigma * currentSigma;
+            target = entryPrice + targetSigma * currentSigma;
+            stopLoss = entryPrice - stopSigma * currentSigma;
         } else {
             signalType = SignalType.SELL;
-            target = currentVwap - targetSigma * currentSigma;
-            stopLoss = currentVwap + stopSigma * currentSigma;
+            target = entryPrice - targetSigma * currentSigma;
+            stopLoss = entryPrice + stopSigma * currentSigma;
         }
 
         double risk = Math.abs(entryPrice - stopLoss);
         double reward = Math.abs(target - entryPrice);
         double rr = risk > 0 ? reward / risk : 0;
         if (rr < minRiskReward) return hold(context);
-        if (risk / entryPrice > 0.02) return hold(context);
+        if (risk / entryPrice > 0.025) return hold(context);
         if (risk / entryPrice < 0.0005) return hold(context);
 
         lastEmitBySymbol.put(symbol, now);
