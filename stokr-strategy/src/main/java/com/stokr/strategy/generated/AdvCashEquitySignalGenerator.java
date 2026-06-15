@@ -144,8 +144,15 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     @Value("${stokr.advcash.candidate-log-cooldown-seconds:300}")
     private int candidateLogCooldownSeconds;
 
-    @Value("${stokr.advcash.min-composite-score:68.0}")
+    @Value("${stokr.advcash.min-composite-score:78.0}")
     private double minCompositeScore;
+
+    // HIGH-ACCURACY GATE: minimum absolute order-book imbalance. |obi|>=0.5 means
+    // imbalanceRatio<=0.25 or >=0.75 — a decisively one-sided book. Weak/balanced
+    // books are where order-flow scalps coin-flip and bleed costs; this only takes
+    // the strongly directional setups.
+    @Value("${stokr.advcash.min-obi-strength:0.5}")
+    private double minObiStrength;
 
     public AdvCashEquitySignalGenerator(OrderBookPressureTracker pressureTracker,
                                         StrategyGeneratorIntegrityGate integrityGate,
@@ -241,6 +248,15 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
         PressureSnapshot snapshot = pressureTracker.getSnapshot(symbol);
         double imbalance = resolvePressure(snapshot != null ? snapshot.imbalanceRatio() : null, bars, 5);
         double obiScore = (imbalance - 0.5) * 2.0;
+
+        // ─── HIGH-ACCURACY GATE: require a strongly one-sided order book ───
+        // Only trade decisive imbalances; weak/balanced books are the bulk of the
+        // losing scalps in the live-paper data. This is the single biggest accuracy
+        // lever for an order-flow strategy.
+        if (Math.abs(obiScore) < minObiStrength) {
+            return hold(context, String.format(Locale.ROOT,
+                    "ADV_CASH_HOLD weak_obi obi=%.3f need>=%.2f", obiScore, minObiStrength));
+        }
 
         // ─── Session VWAP trend (computed over loaded bars) ───
         // Used to keep entries WITH the intraday trend: longs only above a rising
