@@ -36,8 +36,11 @@ public class StrategyExecutionModeService {
             @Value("${stokr.strategy.execution-modes.COMMODITIES_E2E_TEST:PAPER}") String commoditiesE2eTest,
             @Value("${stokr.strategy.execution-modes.USDINR_MOMENTUM:PAPER}") String usdInrMomentum,
             @Value("${stokr.strategy.execution-modes.EURINR_MEAN_REVERSION:PAPER}") String eurInrMeanReversion,
+            @Value("${stokr.strategy.execution-modes.OPENING_RANGE_BREAKOUT:BOTH}") String openingRangeBreakout,
+            @Value("${stokr.strategy.execution-modes.NIFTY_CATCHUP:BOTH}") String niftyCatchup,
+            @Value("${stokr.strategy.execution-modes.VWAP_CLOSE_RECLAIM:BOTH}") String vwapCloseReclaim,
             @Value("${stokr.strategy.execution-modes.allow-live:true}") boolean allowLive,
-            @Value("${stokr.strategy.execution-modes.live-validated:ADV_CASH,GAP_FILL,VWAP_BOUNCE}") String liveValidatedCsv,
+            @Value("${stokr.strategy.execution-modes.live-validated:ADV_CASH,GAP_FILL,VWAP_BOUNCE,OPENING_RANGE_BREAKOUT,NIFTY_CATCHUP,VWAP_CLOSE_RECLAIM}") String liveValidatedCsv,
             ObjectProvider<StrategyEdgeGateService> edgeGateProvider) {
         modes = new LinkedHashMap<>();
         modes.put("GAP_FILL", StrategyExecutionMode.parse(gapFill));
@@ -53,6 +56,9 @@ public class StrategyExecutionModeService {
         modes.put("COMMODITIES_E2E_TEST", StrategyExecutionMode.parse(commoditiesE2eTest));
         modes.put("USDINR_MOMENTUM", StrategyExecutionMode.parse(usdInrMomentum));
         modes.put("EURINR_MEAN_REVERSION", StrategyExecutionMode.parse(eurInrMeanReversion));
+        modes.put("OPENING_RANGE_BREAKOUT", StrategyExecutionMode.parse(openingRangeBreakout));
+        modes.put("NIFTY_CATCHUP", StrategyExecutionMode.parse(niftyCatchup));
+        modes.put("VWAP_CLOSE_RECLAIM", StrategyExecutionMode.parse(vwapCloseReclaim));
         this.allowLive = allowLive;
         this.liveValidated = parseValidatedList(liveValidatedCsv);
         this.edgeGateProvider = edgeGateProvider;
