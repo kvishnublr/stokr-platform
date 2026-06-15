@@ -234,13 +234,15 @@ export function StrategiesPage() {
     const activePipeline = readinessQuery.data?.executionPipelineActive !== false;
     const selectedMode = modeQuery.data === "LIVE" ? "LIVE" : "PAPER";
 
-    const catalogRows = [...(catalogQuery.data?.content ?? [])].sort((a, b) => {
-      if (a.code === "NSE_SPIKE_DETECTION") return -1;
-      if (b.code === "NSE_SPIKE_DETECTION") return 1;
-      return a.name.localeCompare(b.name);
-    });
+    const modeOrder = (m: string) => {
+      const u = m.toUpperCase();
+      if (u === "LIVE") return 0;
+      if (u === "BOTH") return 1;
+      return 2;
+    };
 
-    return catalogRows.map((c) => {
+    return [...(catalogQuery.data?.content ?? [])]
+      .map((c) => {
       const codeKey = c.code.trim().toUpperCase();
       const inst = instances.find((i) => i.definitionId === c.id);
       const execCfg = execByKey.get(codeKey);
@@ -289,7 +291,13 @@ export function StrategiesPage() {
         candleReadiness: met?.health ?? "NO_DATA",
         omsState: activePipeline ? "READY" : "BLOCKED",
       } as StrategyCatalogCard;
-    });
+    })
+      .sort((a, b) => {
+        const ma = modeOrder(a.executionMode ?? "");
+        const mb = modeOrder(b.executionMode ?? "");
+        if (ma !== mb) return ma - mb;
+        return (a.name ?? "").localeCompare(b.name ?? "");
+      });
   }, [
     catalogQuery.data,
     runtimeQuery.data,
