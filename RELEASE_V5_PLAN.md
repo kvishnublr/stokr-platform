@@ -8,6 +8,29 @@
 
 ---
 
+## 0. Approach: clean orphan branch, copy only what's useful (CONFIRMED 2026-06-15)
+
+User confirmed the clean-break approach. **We do NOT keep the old code as
+frozen dead weight.** Instead:
+
+1. Produce an inventory of what's genuinely useful (~8,500 lines, mostly
+   broker/auth/market-data plumbing) — see Phase 0 / Appendix C below.
+2. Create `Release_v5_clean` as an **orphan branch** (no git history of
+   Release_v4 — clean slate).
+3. Copy only the inventoried files. Everything else: gone.
+4. Build the 12 new v5 classes on top.
+
+**Result:** ~10,000 lines total (vs current ~60,000+ Java alone). 6× smaller.
+
+**Confirmed scope decisions:**
+- Auth: keep existing JWT + email login system (~1,500 lines). Multi-user
+  activation in Phase 5 then needs no auth rebuild.
+- Backtest: NOT copying the existing 57-file backtest module. Instead, a
+  ~200-line `OrbBacktester` that replays historical candles through the
+  exact `OrbStrategy` class that runs live. **Same code path** for live
+  and backtest — eliminates an entire category of "backtest looked good,
+  live didn't match" bugs.
+
 ## 1. Why we are doing this (the brutally honest part)
 
 The current system has 1,038 Java files, 556 Spring beans, 64 schedulers,
