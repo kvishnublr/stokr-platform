@@ -68,7 +68,7 @@ public class OpeningRangeBreakoutSignalGenerator extends BaseGeneratedStrategy i
     @Value("${stokr.strategy.orb.or-minutes:15}")
     private int orMinutes;
 
-    @Value("${stokr.strategy.orb.volume-multiple:1.5}")
+    @Value("${stokr.strategy.orb.volume-multiple:2.0}")
     private double volumeMultiple;
 
     @Value("${stokr.strategy.orb.max-stop-pct:0.006}")
@@ -90,9 +90,9 @@ public class OpeningRangeBreakoutSignalGenerator extends BaseGeneratedStrategy i
 
         if (!integrityGate.passPreEvaluate(key(), symbol, asOf)) return hold(context);
 
-        // 1. ENTRY SESSION: 09:30 – 14:30 IST (after the OR window, before the close)
+        // 1. ENTRY SESSION: 09:30 – 12:30 IST (after the OR window, before lunch fade)
         LocalTime lt = asOf.atZone(zone).toLocalTime();
-        if (lt.isBefore(LocalTime.of(9, 30)) || lt.isAfter(LocalTime.of(14, 30))) {
+        if (lt.isBefore(LocalTime.of(9, 30)) || lt.isAfter(LocalTime.of(12, 30))) {
             return hold(context);
         }
 
