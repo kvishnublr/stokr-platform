@@ -144,7 +144,7 @@ public class AdvCashEquitySignalGenerator extends BaseGeneratedStrategy implemen
     @Value("${stokr.advcash.candidate-log-cooldown-seconds:300}")
     private int candidateLogCooldownSeconds;
 
-    @Value("${stokr.advcash.min-composite-score:78.0}")
+    @Value("${stokr.advcash.min-composite-score:68.0}")
     private double minCompositeScore;
 
     // HIGH-ACCURACY GATE: minimum absolute order-book imbalance. |obi|>=0.5 means

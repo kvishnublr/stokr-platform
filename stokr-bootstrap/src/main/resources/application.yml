@@ -112,6 +112,13 @@ stokr:
   deploy:
     git-commit: ${STOKR_GIT_COMMIT:unknown}
     branch: ${STOKR_DEPLOY_BRANCH:Release_v4}
+  advcash:
+    min-consensus: ${STOKR_ADVCASH_MIN_CONSENSUS:4}
+    candidate-min-consensus: ${STOKR_ADVCASH_CANDIDATE_MIN_CONSENSUS:2}
+    min-composite-score: ${STOKR_ADVCASH_MIN_COMPOSITE_SCORE:68.0}
+    min-obi-strength: ${STOKR_ADVCASH_MIN_OBI_STRENGTH:0.5}
+    cooldown-seconds: ${STOKR_ADVCASH_COOLDOWN_SECONDS:900}
+    candidate-log-cooldown-seconds: ${STOKR_ADVCASH_CANDIDATE_LOG_COOLDOWN_SECONDS:300}
   marketdata:
     integrity:
       enabled: ${STOKR_MARKETDATA_INTEGRITY_ENABLED:true}
