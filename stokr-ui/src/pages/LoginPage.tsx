@@ -31,7 +31,7 @@ export function LoginPage() {
     setLoading(true);
     try {
       const res = await api.post<{ data?: AuthPayload }>("/api/auth/login", {
-        email: trimmed,
+        principal: trimmed,
         password,
       });
       const d = res.data?.data;

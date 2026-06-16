@@ -1,0 +1,831 @@
+import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
+import { fmtDateTime, fmtNseClock, fmtDateLong } from "../../lib/dateUtils";
+import { Navigate, Link } from "react-router-dom";
+import { useSessionStore } from "../../state/session";
+import { useUiThemeStore } from "../../state/uiTheme";
+import { api, parseAxiosMessage } from "../../api/client";
+import {
+  TRADER_EXECUTION_MODE_QUERY_KEY,
+  fetchTraderExecutionMode,
+  signalMatchesExecutionMode,
+} from "../../lib/traderExecutionMode";
+import { cn } from "../../lib/utils";
+import { formatInr, formatPnlDisplay, parseMoney, resolveAccountPnl, filterBrokerMirrorPositions, isBrokerSessionLive } from "../../lib/moneyUtils";
+import { brokerPositionPollMs, isBrokerSyncPulseLive, useBrokerPositionSync } from "../../lib/hooks/useBrokerPositionSync";
+import { usePositionExit } from "../../lib/hooks/usePositionExit";
+import { AnimatedKpiCard, PnlCommandRail, PnlSourceBadge, LivePositionsCommandTable, TerminalLinkAction, type CommandPositionRow } from "../../components/trader/TraderPremium";
+import { NiftyCandleChart } from "../../components/charts/NiftyCandleChart";
+import { useEffect, useMemo, useState } from "react";
+import {
+  TrendingUp, TrendingDown, Activity, RefreshCw,
+  Zap, Layers, ArrowUpRight, ArrowDownRight,
+  CircleDot, ChevronRight, AlertTriangle, Radio,
+} from "lucide-react";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Workstation = {
+  accountSummary?: {
+    totalPnl?: string | number;
+    realizedPnl?: string | number;
+    unrealizedPnl?: string | number;
+    openPositions?: number;
+    activeStrategies?: number;
+    brokerConnectionState?: string;
+    executionMode?: string;
+  };
+  latestSignals?: Array<Record<string, unknown>>;
+  strategyAllocations?: Array<Record<string, unknown>>;
+  badges?: string[];
+  openPositions?: Array<Record<string, unknown>>;
+  brokerTruth?: Record<string, unknown>;
+};
+
+type ReadinessStrategy = {
+  strategy?: string;
+  strategyKey?: string;
+  runtime?: string;
+  status?: string;
+  lastSignalTime?: string;
+  historicalCoverage?: { symbol?: string; state?: string };
+};
+
+type Readiness = {
+  strategies?: ReadinessStrategy[];
+  broker?: { status?: string; tokenValid?: boolean };
+};
+
+type SignalRow = {
+  id: string; strategyName?: string; symbol?: string; signalType?: string; createdAt?: string;
+  confidenceScore?: string; reason?: string; executionMode?: string;
+};
+
+type OrderRow = {
+  id: string; symbol?: string; side?: string; state?: string;
+  createdAt?: string; executionMode?: string; strategyKey?: string; rejectReason?: string | null;
+};
+
+type StrategyRow = {
+  strategyKey?: string;
+  strategyName?: string;
+  name?: string;
+  code?: string;
+  symbol?: string;
+  executionMode?: string;
+  runtimeState?: string;
+  unrealizedPnl?: string;
+  subscribed?: boolean;
+};
+
+type CandleRow = {
+  time?: number; ts?: number; open?: number; high?: number; low?: number;
+  close?: number; volume?: number;
+};
+
+type WatchRow = {
+  symbol: string; price?: string; changePct?: string;
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const safeNum = (v: unknown): number | null => parseMoney(v);
+
+const fmtTime = fmtDateTime;
+
+function NseClock({ className }: { className?: string }) {
+  const [label, setLabel] = useState(() => fmtNseClock());
+  useEffect(() => {
+    const tick = () => setLabel(fmtNseClock());
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, []);
+  return <span className={className}>{label}</span>;
+}
+
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
+
+function Skeleton({ className }: { className?: string }) {
+  return <div className={cn("animate-pulse rounded-md bg-neutral-200 dark:bg-neutral-800", className)} />;
+}
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
+
+export function TraderDashboard() {
+  const accessToken = useSessionStore((s) => s.accessToken);
+  const userId = useSessionStore((s) => s.userId);
+  useBrokerPositionSync(accessToken, userId, true);
+  const hasTraderAccess = useSessionStore((s) => s.hasTraderAccess());
+  const isLight = useUiThemeStore((s) => s.mode === "light");
+  const displayName = useSessionStore((s) => s.displayName);
+  const [chartInterval, setChartInterval] = useState("15m");
+  const [chartSymbol, setChartSymbol] = useState("NIFTY_FUT");
+
+  if (!accessToken || !hasTraderAccess) return <Navigate to="/login" replace />;
+
+  // ── Independent parallel queries (each shows immediately as it resolves) ──
+
+  const queryEnabled = Boolean(accessToken);
+
+  const modeQ = useQuery({
+    queryKey: [...TRADER_EXECUTION_MODE_QUERY_KEY],
+    queryFn: fetchTraderExecutionMode,
+    staleTime: 60_000,
+    enabled: queryEnabled,
+  });
+  const selectedMode = modeQ.data ?? "PAPER";
+  const exitMutation = usePositionExit();
+
+  const workstationQ = useQuery<Workstation>({
+    queryKey: ["trader-dashboard-workstation", selectedMode],
+    queryFn: async () => (await api.get("/api/trader/terminal/workstation")).data?.data as Workstation,
+    staleTime: 1_500,
+    refetchInterval: 2_000,
+    enabled: queryEnabled,
+    retry: 2,
+  });
+
+  const portfolioOverviewQ = useQuery<Record<string, unknown>>({
+    queryKey: ["trader-dashboard-portfolio-overview"],
+    queryFn: async () => (await api.get("/api/portfolio/overview")).data?.data as Record<string, unknown>,
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+    enabled: queryEnabled,
+    retry: 2,
+  });
+
+  const brokerFundsQ = useQuery<Array<Record<string, unknown>>>({
+    queryKey: ["trader-dashboard-broker-funds"],
+    queryFn: async () => {
+      const r = await api.get("/api/trader/broker/accounts");
+      return Array.isArray(r?.data?.data) ? (r.data.data as Array<Record<string, unknown>>) : [];
+    },
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+    enabled: queryEnabled,
+    retry: 1,
+  });
+
+  const readinessQ = useQuery<Readiness>({
+    queryKey: ["trader-dashboard-readiness"],
+    queryFn: async () => (await api.get("/api/trader/intraday/readiness")).data?.data,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    enabled: queryEnabled,
+  });
+
+  const executionSummaryQ = useQuery<Record<string, unknown>>({
+    queryKey: ["trader-dashboard-exec-summary"],
+    queryFn: async () => (await api.get("/api/trader/execution-summary")).data?.data,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    enabled: queryEnabled,
+  });
+
+  const ordersQ = useQuery<{ content: OrderRow[] }>({
+    queryKey: ["trader-dashboard-orders", selectedMode],
+    queryFn: async () =>
+      (
+        await api.get(
+          `/api/oms/orders?page=0&size=8&sort=createdAt,desc&executionMode=${encodeURIComponent(selectedMode)}`,
+        )
+      ).data?.data,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+    enabled: queryEnabled,
+  });
+
+  const signalsFeedQ = useQuery<Array<Record<string, unknown>>>({
+    queryKey: ["trader-dashboard-signals-feed", selectedMode],
+    queryFn: async () => {
+      const r = await api.get("/api/trader/strategy-feed?limit=10");
+      const rows = Array.isArray(r.data?.data) ? r.data.data : [];
+      return rows.filter((row: { pipeline?: string; executionMode?: string }) =>
+        signalMatchesExecutionMode(row, selectedMode),
+      );
+    },
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+    enabled: queryEnabled,
+  });
+
+  const candlesQ = useQuery<CandleRow[]>({
+    queryKey: ["trader-dashboard-candles", chartSymbol, chartInterval],
+    queryFn: async () => {
+      const r = await api.get(`/api/trader/terminal/market/chart?symbol=${chartSymbol}&interval=${chartInterval}&limit=120`);
+      return Array.isArray(r.data?.data) ? r.data.data : [];
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    enabled: queryEnabled,
+  });
+
+  const watchQ = useQuery<WatchRow[]>({
+    queryKey: ["trader-dashboard-watch"],
+    queryFn: async () => {
+      const r = await api.get("/api/trader/terminal/market/watch").catch(() => null);
+      return Array.isArray(r?.data?.data) ? r.data.data.slice(0, 5) : [];
+    },
+    staleTime: 15_000,
+    refetchInterval: 20_000,
+    enabled: queryEnabled,
+  });
+
+  // ── Derived data ───────────────────────────────────────────────────────────
+
+  const ws = workstationQ.data;
+  const greetName = displayName ?? "Trader";
+
+  const accountPnl = useMemo(() => {
+    const resolved = resolveAccountPnl({
+      brokerTruth: ws?.brokerTruth,
+      accountSummary: ws?.accountSummary as Record<string, unknown> | undefined,
+      openPositions: ws?.openPositions,
+      portfolioOverview: portfolioOverviewQ.data,
+    });
+    return resolved;
+  }, [ws?.accountSummary, ws?.openPositions, ws?.brokerTruth, portfolioOverviewQ.data]);
+
+  const brokerSessionLive = isBrokerSessionLive(ws?.brokerTruth);
+  const brokerConnected = brokerSessionLive;
+  const syncPulseLive = isBrokerSyncPulseLive(ws?.brokerTruth?.lastSyncAt != null ? String(ws.brokerTruth.lastSyncAt) : null);
+
+  const openPositionRows = useMemo(() => {
+    const rows = (ws?.openPositions ?? []).map((r) => ({
+      symbol: String(r.symbol ?? "—"),
+      side: String(r.side ?? "LONG"),
+      qty: r.qty != null ? Number(r.qty) : null,
+      ltp: parseMoney(r.ltp),
+      mtmPnl: parseMoney(r.mtmPnl),
+      unrealizedPnl: parseMoney(r.unrealizedPnl),
+      quantitySource: String(r.quantitySource ?? r.pnlSource ?? "OMS").toUpperCase(),
+      brokerQty: parseMoney(r.brokerQty),
+    }));
+    return filterBrokerMirrorPositions(rows, brokerSessionLive).slice(0, 6);
+  }, [ws?.openPositions, brokerSessionLive]);
+
+  const pnlLoading = workstationQ.isLoading && portfolioOverviewQ.isLoading;
+  const pnlFailed = workstationQ.isError && portfolioOverviewQ.isError;
+  const pnlReady = workstationQ.isSuccess || portfolioOverviewQ.isSuccess;
+  const pnlErrorMsg =
+    pnlFailed
+      ? parseAxiosMessage(workstationQ.error ?? portfolioOverviewQ.error)
+      : null;
+
+  const fmtKpiPnl = (n: number | null) => {
+    if (!pnlReady) return "—";
+    return formatPnlDisplay(n, { compact: true });
+  };
+
+  const brokerConnectedLegacy =
+    accountPnl.source === "BROKER" ||
+    String(ws?.accountSummary?.brokerConnectionState ?? "").includes("CONNECTED") ||
+    (brokerFundsQ.data?.length ?? 0) > 0;
+  const brokerConnectedForMargin = brokerConnected || brokerConnectedLegacy;
+
+  const availableMargin = useMemo(() => {
+    const row = brokerFundsQ.data?.[0];
+    if (!row) return null;
+    return parseMoney(
+      row.availableMargin ?? row.available_margin ?? row.cashAvailable ?? row.cash_available,
+    );
+  }, [brokerFundsQ.data]);
+
+  const marginLoading = brokerFundsQ.isLoading;
+  const marginFailed = brokerFundsQ.isError;
+  const marginReady = brokerFundsQ.isSuccess;
+  const marginErrorMsg = marginFailed ? parseAxiosMessage(brokerFundsQ.error) : null;
+
+  const activeStrategies = useMemo<StrategyRow[]>(() => {
+    const fromWs = (ws?.strategyAllocations ?? [])
+      .filter((s) => {
+        const state = String(s.runtimeState ?? "").toUpperCase();
+        return state.includes("RUN") || state === "ACTIVE";
+      })
+      .map((s) => ({
+        strategyKey: String(s.strategyKey ?? ""),
+        strategyName: String(s.strategyName ?? s.strategyKey ?? "Strategy"),
+        symbol: s.symbol != null ? String(s.symbol) : undefined,
+        executionMode: String(s.executionMode ?? ws?.accountSummary?.executionMode ?? selectedMode),
+        runtimeState: String(s.runtimeState ?? ""),
+      }));
+    if (fromWs.length > 0) return fromWs.slice(0, 8);
+
+    const fromReady = (readinessQ.data?.strategies ?? [])
+      .filter((s) => String(s.runtime ?? "").includes("RUN") || String(s.status ?? "").includes("READY"))
+      .map((s) => ({
+        strategyKey: s.strategyKey,
+        strategyName: s.strategy ?? s.strategyKey,
+        symbol: s.historicalCoverage?.symbol,
+        executionMode: ws?.accountSummary?.executionMode ?? selectedMode,
+        runtimeState: s.runtime,
+      }));
+    return fromReady.slice(0, 8);
+  }, [ws?.strategyAllocations, readinessQ.data?.strategies, ws?.accountSummary?.executionMode, selectedMode]);
+
+  const mapSignalRows = (rows: Array<Record<string, unknown>>): SignalRow[] =>
+    rows.slice(0, 10).map((s, i) => ({
+      id: String(s.id ?? `sig-${i}`),
+      strategyName: s.strategyName != null ? String(s.strategyName) : undefined,
+      symbol: s.symbol != null ? String(s.symbol) : undefined,
+      signalType: s.signalType != null ? String(s.signalType) : undefined,
+      createdAt: s.createdAt != null ? String(s.createdAt) : undefined,
+      confidenceScore: s.confidenceScore != null ? String(s.confidenceScore) : undefined,
+      reason: s.reason != null ? String(s.reason) : undefined,
+      executionMode: String(s.executionMode ?? s.pipeline ?? "").toUpperCase() || undefined,
+    }));
+
+  const latestSignals = useMemo<SignalRow[]>(() => {
+    const fromFeed = mapSignalRows(signalsFeedQ.data ?? []);
+    if (fromFeed.length > 0) return fromFeed;
+    return mapSignalRows(ws?.latestSignals ?? []);
+  }, [signalsFeedQ.data, ws?.latestSignals]);
+
+  const recentOrders = useMemo(() => (ordersQ.data?.content ?? []).slice(0, 5), [ordersQ.data?.content]);
+
+  const rejectedOrders = Number(executionSummaryQ.data?.rejectedOrders ?? 0);
+  const totalOrders = Number(executionSummaryQ.data?.ordersTotal ?? 0);
+  const rejectionPct =
+    totalOrders > 0 ? `${((rejectedOrders / totalOrders) * 100).toFixed(0)}% rejected today` : undefined;
+
+  const mtmPnl = accountPnl.mtm;
+  const unrealizedPnl = accountPnl.unrealized;
+  const realizedPnl = accountPnl.realized;
+  const openPosCount = accountPnl.openPositions ?? 0;
+
+  const candles = (candlesQ.data ?? [])
+    .map(r => ({ time: Number(r.time ?? r.ts ?? 0), open: Number(r.open ?? 0), high: Number(r.high ?? 0), low: Number(r.low ?? 0), close: Number(r.close ?? 0) }))
+    .filter(c => c.time > 0);
+
+  const volumes = (candlesQ.data ?? [])
+    .map(r => ({ time: Number(r.time ?? r.ts ?? 0), value: Number(r.volume ?? 0), up: Number(r.close ?? 0) >= Number(r.open ?? 0) }))
+    .filter(v => v.time > 0);
+
+  const watchSymbol = watchQ.data?.find(w => w.symbol === chartSymbol);
+
+  // ── Theme tokens ───────────────────────────────────────────────────────────
+
+  const pageBg = isLight ? "bg-neutral-50" : "bg-neutral-950";
+  const cardBg = isLight ? "bg-white border-neutral-200" : "bg-neutral-900/80 border-white/[0.08]";
+  const headingCls = isLight ? "text-neutral-900" : "text-white";
+  const mutedCls = isLight ? "text-neutral-400" : "text-neutral-500";
+  const subCls = isLight ? "text-neutral-500" : "text-neutral-400";
+  const dividerCls = isLight ? "border-neutral-100" : "border-white/[0.06]";
+  const rowHover = isLight ? "hover:bg-neutral-50" : "hover:bg-white/[0.04]";
+  const rowBg = isLight ? "bg-neutral-50/50" : "bg-white/[0.02]";
+
+  const isLoading = pnlLoading;
+  const hasChartData = candles.length > 0;
+
+  const refetchPnl = () => {
+    void workstationQ.refetch();
+    void portfolioOverviewQ.refetch();
+  };
+
+  const refetchAll = () => {
+    refetchPnl();
+    void brokerFundsQ.refetch();
+    void ordersQ.refetch();
+    void signalsFeedQ.refetch();
+    void candlesQ.refetch();
+    void watchQ.refetch();
+    void readinessQ.refetch();
+    void executionSummaryQ.refetch();
+  };
+
+  return (
+    <div className={cn("min-h-full space-y-6 pb-10", pageBg)}>
+      {/* ── Header ── */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className={cn("text-2xl font-black tracking-tight", headingCls)}>
+            Welcome back, {greetName}
+          </h1>
+          <p className={cn("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm", subCls)}>
+            <span className={cn(
+              "inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+              selectedMode === "LIVE"
+                ? isLight ? "bg-rose-100 text-rose-700" : "bg-rose-500/15 text-rose-400"
+                : isLight ? "bg-amber-100 text-amber-700" : "bg-amber-500/15 text-amber-400",
+            )}>
+              {selectedMode === "LIVE" ? "Live" : "Paper"}
+            </span>
+            <NseClock className={cn("font-mono text-xs", mutedCls)} />
+            <span className={mutedCls}>· {fmtDateLong(new Date())}</span>
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link to="/signals" className={cn(
+            "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition",
+            isLight ? "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50" : "border-white/[0.1] bg-white/[0.05] text-neutral-300 hover:bg-white/[0.09]"
+          )}>
+            <Zap className="h-3.5 w-3.5 text-amber-400" /> My Signals
+          </Link>
+          <Link to="/orders" className={cn(
+            "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition",
+            isLight ? "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50" : "border-white/[0.1] bg-white/[0.05] text-neutral-300 hover:bg-white/[0.09]"
+          )}>
+            <Layers className="h-3.5 w-3.5 text-sky-400" /> Orders
+          </Link>
+          <button
+            type="button"
+            onClick={refetchAll}
+            className={cn(
+              "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition",
+              isLight ? "border-neutral-200 bg-white text-neutral-600" : "border-white/[0.1] bg-white/[0.05] text-neutral-400"
+            )}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", (workstationQ.isFetching || ordersQ.isFetching) && "animate-spin")} />
+          </button>
+        </div>
+      </div>
+
+      {!brokerConnected && !workstationQ.isLoading && (
+        <div className={cn(
+          "flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-3 text-sm",
+          isLight ? "border-amber-200 bg-amber-50 text-amber-900" : "border-amber-500/30 bg-amber-500/10 text-amber-200",
+        )}>
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span className="flex-1 min-w-[200px]">
+            Broker disconnected — live positions and P&amp;L are hidden until Zerodha reconnects. Connect broker to mirror your real account.
+          </span>
+          <Link
+            to="/brokers"
+            className={cn(
+              "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold",
+              isLight ? "bg-amber-200/80 text-amber-900 hover:bg-amber-200" : "bg-amber-500/20 text-amber-100 hover:bg-amber-500/30",
+            )}
+          >
+            Connect broker
+          </Link>
+        </div>
+      )}
+
+      {pnlErrorMsg && (
+        <p className={cn("text-xs font-medium", isLight ? "text-rose-600" : "text-rose-400")}>
+          P&amp;L snapshot unavailable: {pnlErrorMsg}
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <PnlSourceBadge source={accountPnl.source} brokerConnected={brokerConnected} />
+        <Link
+          to="/positions"
+          className={cn(
+            "rounded-full border px-3 py-1 text-[11px] font-semibold",
+            isLight ? "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50" : "border-white/10 bg-white/5 text-neutral-300",
+          )}
+        >
+          View all positions
+        </Link>
+      </div>
+
+      {/* ── P&L Command Rail ── */}
+      <PnlCommandRail
+        mtm={mtmPnl}
+        unrealized={unrealizedPnl}
+        realized={realizedPnl}
+        loading={isLoading}
+        openPositions={openPosCount}
+        sublabel={rejectionPct}
+      />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        <AnimatedKpiCard label="Available Margin" loading={marginLoading} value={!brokerConnectedForMargin ? "—" : marginFailed ? "—" : marginReady ? formatInr(availableMargin) : "—"} sublabel={!brokerConnectedForMargin ? "Connect broker for live margin" : marginFailed ? marginErrorMsg ?? "Load failed" : undefined} accent="bg-amber-400" icon={Layers} index={3} />
+      </div>
+
+      {openPositionRows.length > 0 ? (
+        <LivePositionsCommandTable
+          title="Live positions"
+          subtitle={brokerSessionLive ? "Zerodha mirror · sync every 2s" : "Connect Zerodha to mirror your live account"}
+          syncPulseLive={brokerConnected && (syncPulseLive || workstationQ.isFetching)}
+          onExit={(symbol) => exitMutation.mutate(symbol)}
+          exitingSymbol={exitMutation.isPending ? (exitMutation.variables ?? null) : null}
+          rows={openPositionRows.map((r): CommandPositionRow => ({
+            symbol: r.symbol,
+            side: r.side,
+            qty: r.qty,
+            ltp: r.ltp,
+            mtmPnl: r.mtmPnl,
+            unrealizedPnl: r.unrealizedPnl,
+            quantitySource: r.quantitySource,
+          }))}
+          loading={workstationQ.isLoading}
+          footerMtm={mtmPnl}
+          action={<TerminalLinkAction to="/terminal" />}
+        />
+      ) : null}
+
+      {/* ── Main 2-col layout ── */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_340px]">
+
+        {/* Left — Chart + Orders */}
+        <div className="space-y-5">
+
+          {/* Chart */}
+          <div className={cn("rounded-2xl border p-5 shadow-sm", cardBg)}>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className={cn("text-base font-bold", headingCls)}>
+                  {watchSymbol?.symbol ?? chartSymbol}
+                </div>
+                {watchSymbol && (
+                  <div className="mt-1 flex items-center gap-2 text-sm">
+                    <span className={cn("font-mono font-bold", headingCls)}>{watchSymbol.price ?? "—"}</span>
+                    <span className={cn("font-semibold text-xs",
+                      (safeNum(watchSymbol.changePct) ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500")}>
+                      {(safeNum(watchSymbol.changePct) ?? 0) >= 0 ? "▲" : "▼"} {watchSymbol.changePct ?? "—"}%
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {/* Symbol tabs */}
+                {(watchQ.data ?? []).slice(0, 4).map(w => (
+                  <button key={w.symbol} type="button"
+                    onClick={() => setChartSymbol(w.symbol)}
+                    className={cn(
+                      "rounded-lg border px-2.5 py-1 text-[11px] font-bold transition",
+                      chartSymbol === w.symbol
+                        ? isLight ? "border-sky-400 bg-sky-50 text-sky-700" : "border-sky-500/50 bg-sky-500/15 text-sky-300"
+                        : isLight ? "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300" : "border-white/[0.07] bg-white/[0.03] text-neutral-400 hover:border-white/[0.12]"
+                    )}>
+                    {w.symbol.replace("_FUT", "").replace("_", " ")}
+                  </button>
+                ))}
+                {/* Interval tabs */}
+                <div className={cn("flex items-center gap-1 rounded-xl border px-1.5 py-1",
+                  isLight ? "border-neutral-200 bg-neutral-50" : "border-white/[0.07] bg-white/[0.03]")}>
+                  {["1m", "5m", "15m", "1H"].map(t => (
+                    <button key={t} type="button" onClick={() => setChartInterval(t)}
+                      className={cn(
+                        "rounded-lg px-2 py-0.5 text-[11px] font-bold transition",
+                        t === chartInterval
+                          ? isLight ? "bg-neutral-800 text-white" : "bg-white/[0.15] text-white"
+                          : isLight ? "text-neutral-500 hover:text-neutral-800" : "text-neutral-500 hover:text-neutral-300"
+                      )}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className={cn("h-72 rounded-xl", isLight ? "bg-neutral-50 border border-neutral-100" : "bg-neutral-950/60 border border-white/[0.05]")}>
+              {candlesQ.isLoading ? (
+                <div className="flex h-full items-center justify-center"><Skeleton className="h-48 w-full rounded-xl" /></div>
+              ) : hasChartData ? (
+                <NiftyCandleChart variant={isLight ? "light" : "dark"} height={272} candles={candles} volumes={volumes} />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+                  <Radio className={cn("h-8 w-8", mutedCls)} />
+                  <p className={cn("text-sm font-medium", subCls)}>No candle data for this symbol yet</p>
+                  <p className={cn("text-xs", mutedCls)}>
+                    {brokerConnected
+                      ? "Market tape may still be warming up — try another symbol or open the intraday cockpit."
+                      : "Connect your broker and open the intraday workspace for live charts."}
+                  </p>
+                  <Link
+                    to="/intraday"
+                    className={cn(
+                      "mt-1 rounded-lg px-3 py-1.5 text-xs font-semibold",
+                      isLight ? "bg-sky-600 text-white hover:bg-sky-700" : "bg-sky-500 text-white hover:bg-sky-600",
+                    )}
+                  >
+                    Open Intraday Cockpit
+                  </Link>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Recent Orders */}
+          <div className={cn("rounded-2xl border shadow-sm", cardBg)}>
+            <div className={cn("flex items-center justify-between border-b px-5 py-3.5", dividerCls)}>
+              <h3 className={cn("font-bold text-sm", headingCls)}>Recent Orders</h3>
+              <Link to="/orders" className={cn("flex items-center gap-1 text-xs font-semibold",
+                isLight ? "text-sky-600 hover:text-sky-700" : "text-sky-400 hover:text-sky-300")}>
+                View all <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div className="divide-y" style={{ borderColor: isLight ? "#f3f4f6" : "rgba(255,255,255,0.05)" }}>
+              {ordersQ.isLoading && [1,2,3].map(i => (
+                <div key={i} className="flex items-center justify-between px-5 py-3.5 gap-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-4 w-14" />
+                </div>
+              ))}
+              {!ordersQ.isLoading && recentOrders.length === 0 && (
+                <div className={cn("px-5 py-8 text-center text-xs", mutedCls)}>No orders yet</div>
+              )}
+              {recentOrders.map(o => {
+                const state = (o.state ?? "").toUpperCase();
+                const stateCls =
+                  state === "FILLED" || state === "EXIT_FILLED" ? "text-emerald-500" :
+                  state === "REJECTED" ? "text-rose-500" :
+                  state.includes("FILL") ? "text-amber-500" : subCls;
+                const rejectReason = o.rejectReason?.trim() || null;
+                return (
+                  <div key={o.id} className={cn("flex items-center justify-between px-5 py-3 gap-3 transition", rowHover)}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={cn(
+                        "flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-[10px] font-black",
+                        (o.side ?? "").toUpperCase() === "SELL"
+                          ? isLight ? "bg-rose-100 text-rose-700" : "bg-rose-500/15 text-rose-400"
+                          : isLight ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/15 text-emerald-400"
+                      )}>
+                        {(o.side ?? "?").toUpperCase() === "SELL" ? "S" : "B"}
+                      </div>
+                      <div className="min-w-0">
+                        <div className={cn("font-mono text-sm font-bold truncate", headingCls)}>{o.symbol ?? "—"}</div>
+                        <div className={cn("text-[10px] truncate", mutedCls)}>
+                          {o.strategyKey ? `${o.strategyKey} · ` : ""}{fmtTime(o.createdAt)}
+                          {o.executionMode ? ` · ${o.executionMode}` : ""}
+                        </div>
+                        {state === "REJECTED" && rejectReason && (
+                          <div
+                            className={cn("mt-0.5 max-w-[220px] truncate text-[10px] font-medium", isLight ? "text-rose-600" : "text-rose-400")}
+                            title={rejectReason}
+                          >
+                            {rejectReason}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className={cn("shrink-0 text-xs font-bold", stateCls)}>{state}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Rail */}
+        <div className="space-y-5">
+
+          {/* Strategies */}
+          <div className={cn("rounded-2xl border shadow-sm", cardBg)}>
+            <div className={cn("flex items-center justify-between border-b px-5 py-3.5", dividerCls)}>
+              <h3 className={cn("font-bold text-sm", headingCls)}>Active Strategies</h3>
+              <Link to="/strategies" className={cn("flex items-center gap-1 text-xs font-semibold",
+                isLight ? "text-sky-600 hover:text-sky-700" : "text-sky-400 hover:text-sky-300")}>
+                Manage <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div className="divide-y" style={{ borderColor: isLight ? "#f3f4f6" : "rgba(255,255,255,0.05)" }}>
+              {workstationQ.isLoading && [1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center justify-between px-5 py-3 gap-3">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-10" />
+                </div>
+              ))}
+              {!workstationQ.isLoading && activeStrategies.length === 0 && (
+                <div className={cn("px-5 py-8 text-center text-xs", mutedCls)}>
+                  No running strategies.{" "}
+                  <Link to="/strategies" className={cn("font-semibold underline", isLight ? "text-sky-600" : "text-sky-400")}>
+                    Start one →
+                  </Link>
+                </div>
+              )}
+              {activeStrategies.map((s, i) => {
+                const name = s.strategyName ?? s.strategyKey ?? s.code ?? s.name ?? "Strategy";
+                const mode = (s.executionMode ?? selectedMode).toUpperCase();
+                const runtime = (s.runtimeState ?? "RUNNING").toUpperCase();
+                return (
+                  <div key={`${s.strategyKey ?? name}-${i}`} className={cn("flex items-center justify-between gap-3 px-5 py-3 transition", rowHover)}>
+                    <div className="min-w-0">
+                      <div className={cn("truncate text-xs font-semibold", headingCls)} title={name}>{name}</div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {s.symbol && (
+                          <span className={cn(
+                            "rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold",
+                            isLight ? "bg-sky-50 text-sky-700" : "bg-sky-500/15 text-sky-300",
+                          )}>
+                            {s.symbol}
+                          </span>
+                        )}
+                        <span className={cn(
+                          "rounded-md px-1.5 py-0.5 text-[10px] font-bold",
+                          mode === "LIVE"
+                            ? isLight ? "bg-rose-100 text-rose-600" : "bg-rose-500/15 text-rose-400"
+                            : isLight ? "bg-amber-100 text-amber-600" : "bg-amber-500/15 text-amber-400",
+                        )}>{mode}</span>
+                        <span className={cn(
+                          "rounded-md px-1.5 py-0.5 text-[10px] font-bold",
+                          isLight ? "bg-emerald-50 text-emerald-700" : "bg-emerald-500/15 text-emerald-400",
+                        )}>{runtime}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Recent Signals */}
+          <div className={cn("rounded-2xl border shadow-sm", cardBg)}>
+            <div className={cn("flex items-center justify-between border-b px-5 py-3.5", dividerCls)}>
+              <h3 className={cn("font-bold text-sm", headingCls)}>Latest Signals</h3>
+              <Link to="/signals" className={cn("flex items-center gap-1 text-xs font-semibold",
+                isLight ? "text-sky-600 hover:text-sky-700" : "text-sky-400 hover:text-sky-300")}>
+                All signals <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div className="divide-y" style={{ borderColor: isLight ? "#f3f4f6" : "rgba(255,255,255,0.05)" }}>
+              {(workstationQ.isLoading || signalsFeedQ.isLoading) && [1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center justify-between px-5 py-3 gap-3">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-14" />
+                </div>
+              ))}
+              {!workstationQ.isLoading && !signalsFeedQ.isLoading && latestSignals.length === 0 && (
+                <div className={cn("px-5 py-8 text-center text-xs", mutedCls)}>
+                  No signals yet — subscribe to a strategy and start it during market hours.
+                </div>
+              )}
+              {latestSignals.map((s) => {
+                const type = (s.signalType ?? "").toUpperCase();
+                const mode = (s.executionMode ?? "PAPER").toUpperCase();
+                return (
+                  <div key={s.id} className={cn("flex items-center justify-between gap-3 px-5 py-3 transition", rowHover)}>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <CircleDot className={cn("h-3.5 w-3.5 shrink-0",
+                        type === "BUY" ? "text-emerald-500" : type === "SELL" ? "text-rose-500" : "text-neutral-400")} />
+                      <div className="min-w-0">
+                        <div className={cn("font-mono text-xs font-bold truncate", headingCls)}>{s.symbol ?? "—"}</div>
+                        <div className={cn("truncate text-[10px]", mutedCls)}>{s.strategyName ?? "—"}</div>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-0.5 shrink-0">
+                      <div className="flex items-center gap-1">
+                        <span className={cn(
+                          "rounded-md px-1.5 py-0.5 text-[10px] font-black",
+                          type === "BUY" ? isLight ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/15 text-emerald-400"
+                            : type === "SELL" ? isLight ? "bg-rose-100 text-rose-700" : "bg-rose-500/15 text-rose-400"
+                            : isLight ? "bg-neutral-100 text-neutral-500" : "bg-neutral-700/50 text-neutral-400"
+                        )}>{type || "—"}</span>
+                        <span className={cn(
+                          "rounded-md px-1.5 py-0.5 text-[10px] font-bold",
+                          mode === "LIVE"
+                            ? isLight ? "bg-rose-100 text-rose-600" : "bg-rose-500/15 text-rose-400"
+                            : isLight ? "bg-amber-100 text-amber-600" : "bg-amber-500/15 text-amber-400",
+                        )}>{mode === "LIVE" ? "LIVE" : "PAPER"}</span>
+                      </div>
+                      <span className={cn("text-[10px]", mutedCls)}>{fmtTime(s.createdAt)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Market Watch */}
+          <div className={cn("rounded-2xl border shadow-sm", cardBg)}>
+            <div className={cn("border-b px-5 py-3.5", dividerCls)}>
+              <h3 className={cn("font-bold text-sm", headingCls)}>Market Watch</h3>
+            </div>
+            <div className="divide-y" style={{ borderColor: isLight ? "#f3f4f6" : "rgba(255,255,255,0.05)" }}>
+              {watchQ.isLoading && [1,2,3].map(i => (
+                <div key={i} className="flex items-center justify-between px-5 py-3">
+                  <Skeleton className="h-4 w-20" /><Skeleton className="h-4 w-16" />
+                </div>
+              ))}
+              {(watchQ.data ?? []).map((w) => {
+                const chg = safeNum(w.changePct) ?? 0;
+                return (
+                  <div key={w.symbol}
+                    onClick={() => setChartSymbol(w.symbol)}
+                    className={cn(
+                      "flex cursor-pointer items-center justify-between px-5 py-3 transition",
+                      rowHover,
+                      chartSymbol === w.symbol ? rowBg : ""
+                    )}>
+                    <div className={cn("font-mono text-xs font-bold", headingCls)}>
+                      {w.symbol.replace("_FUT", "").replace("_", " ")}
+                    </div>
+                    <div className="text-right">
+                      <div className={cn("font-mono text-xs font-bold", headingCls)}>{w.price ?? "—"}</div>
+                      <div className={cn("text-[10px] font-semibold", chg >= 0 ? "text-emerald-500" : "text-rose-500")}>
+                        {chg >= 0 ? "▲" : "▼"} {Math.abs(chg).toFixed(2)}%
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {!watchQ.isLoading && (watchQ.data ?? []).length === 0 && (
+                <div className={cn("px-5 py-6 text-center text-xs", mutedCls)}>
+                  {watchQ.isError
+                    ? "Market watch unavailable — retry refresh"
+                    : brokerConnected
+                      ? "No candle data yet for watchlist symbols"
+                      : "Showing cached quotes when available — connect broker for live LTP"}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

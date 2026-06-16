@@ -1,0 +1,110 @@
+# Unified Execution Framework Configuration
+# This file should be merged into application.yml
+
+execution:
+  # PAPER, LIVE, or HYBRID
+  mode: PAPER
+
+  paper:
+    # Starting capital for paper trading
+    startingCapital: 1000000.00
+
+    # Margin settings
+    marginEnabled: true
+    marginMultiplier: 1.0  # 1x = no leverage, 2x = 1:1 margin
+
+    # Slippage simulation
+    slippageBps: 2.0  # 2 basis points average slippage
+    slippageSize: 0.01  # Size factor threshold
+
+    # Latency simulation (range in milliseconds)
+    latencyMinMs: 5
+    latencyMaxMs: 15
+
+    # Partial fill settings
+    partialFillsEnabled: true
+    partialFillRatio: 0.8  # Fill 80% on first attempt, remainder later
+
+  replay:
+    # Historical data replay
+    enabled: true
+    defaultSpeed: 1.0  # 1x speed
+    minSpeed: 0.1     # 0.1x minimum
+    maxSpeed: 10.0    # 10x maximum
+    tickIntervalMs: 1000  # Process ticks every second
+    allowSyntheticFallback: true  # Use synthetic data if historical unavailable
+
+  synthetic:
+    # Synthetic market data generation
+    enabled: true
+
+    # Available models: random_walk, volatility_clustering, trend_reversion, gaps_spikes
+    defaultModel: random_walk
+
+    # Volatility settings
+    volatility: 0.02  # 2% daily volatility
+
+    # Mean reversion factor
+    meanReversionFactor: 0.02
+
+    # Gap and spike simulation
+    gapProbability: 0.02      # 2% chance of overnight gap
+    spikeProbability: 0.01    # 1% chance of intraday spike
+
+    # Deterministic mode for reproducible testing
+    deterministic: false
+    randomSeed: 42
+
+  safety:
+    # Enforce paper/live isolation
+    isolationEnforced: true
+
+    # Pre-execution validation
+    preExecutionCheckEnabled: true
+
+    # Post-execution validation
+    postExecutionCheckEnabled: true
+
+    # Validate time source consistency
+    timeSourceValidationEnabled: true
+
+    # Reconciliation between paper and live fills
+    reconciliationEnabled: true
+    reconciliationDriftThresholdBps: 50.0  # 0.5% allowed drift
+    reconciliationIntervalSeconds: 60      # Check every minute
+
+  broker:
+    # Primary broker for LIVE mode
+    primaryBroker: ZERODHA  # ZERODHA, FYERS, or DHAN
+
+    # Connection settings
+    connectionTimeoutMs: 5000
+    requestTimeoutMs: 10000
+
+    # Retry policy
+    maxRetries: 3
+    retryDelayMs: 1000
+
+    # Circuit breaker
+    circuitBreakerEnabled: true
+    circuitBreakerThreshold: 0.5     # Open circuit if >50% fail
+    circuitBreakerResetMs: 60000     # Try reset after 60 seconds
+
+# Example section to add to main application.yml:
+# ---
+# spring:
+#   application:
+#     name: stokr-execution
+#
+# execution:
+#   mode: PAPER
+#   paper:
+#     startingCapital: 1000000.00
+#     marginEnabled: true
+#     marginMultiplier: 1.0
+#     slippageBps: 2.0
+#     latencyMinMs: 5
+#     latencyMaxMs: 15
+#   safety:
+#     isolationEnforced: true
+#     reconciliationEnabled: true

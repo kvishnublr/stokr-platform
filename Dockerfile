@@ -8,8 +8,16 @@ COPY stokr-auth/pom.xml stokr-auth/
 COPY stokr-user/pom.xml stokr-user/
 COPY stokr-marketdata/pom.xml stokr-marketdata/
 COPY stokr-broker/pom.xml stokr-broker/
+COPY stokr-oms/pom.xml stokr-oms/
+COPY stokr-websocket/pom.xml stokr-websocket/
+COPY stokr-strategy/pom.xml stokr-strategy/
+COPY stokr-risk/pom.xml stokr-risk/
+COPY stokr-execution/pom.xml stokr-execution/
+COPY stokr-backtest/pom.xml stokr-backtest/
+COPY stokr-admin/pom.xml stokr-admin/
 COPY stokr-v5/pom.xml stokr-v5/
 RUN --mount=type=cache,target=/root/.m2 \
+    mvn install -N -q && \
     mvn -pl stokr-v5 -am dependency:go-offline -q
 
 COPY . .
