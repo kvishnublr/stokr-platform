@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: stokr-lite-db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-stokr_lite}
+      POSTGRES_USER: ${DB_USERNAME:-stokr}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-stokr_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-stokr}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: stokr-lite-backend
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-stokr_lite}
+      DB_USERNAME: ${DB_USERNAME:-stokr}
+      DB_PASSWORD: ${DB_PASSWORD:-stokr_pass}
+      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-very-long-random-secret-key-at-least-256-bits}
+      ZERODHA_API_KEY: ${ZERODHA_API_KEY:-}
+      ZERODHA_API_SECRET: ${ZERODHA_API_SECRET:-}
+      DHAN_API_KEY: ${DHAN_API_KEY:-}
+      FYERS_API_KEY: ${FYERS_API_KEY:-}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

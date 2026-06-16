@@ -1,0 +1,85 @@
+spring:
+  application:
+    name: stokr-lite
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:stokr_lite}
+    username: ${DB_USERNAME:stokr}
+    password: ${DB_PASSWORD:stokr_pass}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    default-property-inclusion: non_null
+
+# JWT Configuration
+jwt:
+  secret: ${JWT_SECRET:change-this-to-a-very-long-random-secret-key-at-least-256-bits}
+  expiration: 86400000        # 24 hours in ms
+  refresh-expiration: 604800000  # 7 days in ms
+
+# Broker Configuration
+broker:
+  zerodha:
+    api-key: ${ZERODHA_API_KEY:}
+    api-secret: ${ZERODHA_API_SECRET:}
+    redirect-uri: ${ZERODHA_REDIRECT_URI:http://localhost:8080/api/brokers/zerodha/callback}
+  dhan:
+    api-key: ${DHAN_API_KEY:}
+    redirect-uri: ${DHAN_REDIRECT_URI:http://localhost:8080/api/brokers/dhan/callback}
+  fyers:
+    api-key: ${FYERS_API_KEY:}
+    redirect-uri: ${FYERS_REDIRECT_URI:http://localhost:8080/api/brokers/fyers/callback}
+
+# Trading Configuration
+trading:
+  market-open-time: "09:15"
+  market-close-time: "15:30"
+  eod-squareoff-time: "15:15"
+  scan-interval-seconds: 60
+  default-cooldown-minutes: 5
+
+# Server
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /
+  error:
+    include-message: always
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    com.stokr: INFO
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
