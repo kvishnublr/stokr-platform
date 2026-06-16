@@ -16,8 +16,8 @@ COPY stokr-core/src ./stokr-core/src
 COPY stokr-trading/src ./stokr-trading/src
 COPY stokr-common/src ./stokr-common/src
 
-# Build only the LITE modules (skip other modules)
-RUN mvn package -pl stokr-core,stokr-trading -am -DskipTests -B
+# Build only the LITE modules with Spring Boot repackaging (skip other modules)
+RUN mvn package -pl stokr-core,stokr-trading -am spring-boot:repackage -DskipTests -B
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
@@ -27,11 +27,11 @@ WORKDIR /app
 # Add non-root user
 RUN addgroup -g 1001 -S stokr && adduser -u 1001 -S stokr -G stokr
 
-# Copy the built jar
-COPY --from=builder /app/stokr-core/target/stokr-core-*.jar ./stokr-core.jar
+# Copy the built Spring Boot JAR
+COPY --from=builder /app/stokr-core/target/stokr-core-*.jar ./app.jar
 
 # Copy application properties
-COPY stokr-core/src/main/resources/application.properties ./
+COPY stokr-core/src/main/resources/application.properties /app/config/
 
 # Create config directory
 RUN mkdir -p /app/config
@@ -49,4 +49,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/v1/health || exit 1
 
 # Run
-ENTRYPOINT ["java", "-jar", "-Xms256m", "-Xmx512m", "/app/stokr-core.jar"]
+ENTRYPOINT ["java", "-jar", "-Xms256m", "-Xmx512m", "/app/app.jar"]
