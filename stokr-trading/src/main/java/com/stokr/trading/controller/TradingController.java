@@ -177,7 +177,7 @@ public class TradingController {
     }
 
     @GetMapping("/portfolio/summary")
-    public ResponseEntity<TradingDto.PortfolioSummary> getPortfolioSummary(
+    public ResponseEntity<PortfolioSummary> getPortfolioSummary(
             @RequestAttribute("userId") UUID userId) {
         return ResponseEntity.ok(positionService.getPortfolioSummary(userId));
     }

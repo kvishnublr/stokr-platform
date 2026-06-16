@@ -21,7 +21,7 @@ public class PositionService {
     private final PositionRepository positionRepository;
 
     @Transactional(readOnly = true)
-    public List<TradingDto.PositionDto> getPositionsByUser(UUID userId) {
+    public List<PositionDto> getPositionsByUser(UUID userId) {
         return positionRepository.findByUserIdAndDeletedFalse(userId)
                 .stream()
                 .map(this::toDto)
@@ -29,7 +29,7 @@ public class PositionService {
     }
 
     @Transactional(readOnly = true)
-    public List<TradingDto.PositionDto> getOpenPositionsByUser(UUID userId) {
+    public List<PositionDto> getOpenPositionsByUser(UUID userId) {
         return positionRepository.findByUserIdAndStatusAndDeletedFalse(userId, "OPEN")
                 .stream()
                 .map(this::toDto)
@@ -37,14 +37,14 @@ public class PositionService {
     }
 
     @Transactional(readOnly = true)
-    public TradingDto.PositionDto getPositionBySymbol(UUID userId, String symbol) {
+    public PositionDto getPositionBySymbol(UUID userId, String symbol) {
         Position position = positionRepository.findByUserIdAndSymbolAndStatusAndDeletedFalse(userId, symbol, "OPEN")
                 .orElseThrow(() -> new IllegalArgumentException("No open position found for symbol: " + symbol));
         return toDto(position);
     }
 
     @Transactional(readOnly = true)
-    public TradingDto.PortfolioSummary getPortfolioSummary(UUID userId) {
+    public PortfolioSummary getPortfolioSummary(UUID userId) {
         List<Position> allPositions = positionRepository.findByUserIdAndDeletedFalse(userId);
         List<Position> openPositions = positionRepository.findByUserIdAndStatusAndDeletedFalse(userId, "OPEN");
         List<Position> closedPositions = positionRepository.findByUserIdAndStatusAndDeletedFalse(userId, "CLOSED");
@@ -61,7 +61,7 @@ public class PositionService {
                 .map(Position::getPositionValue)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        return TradingDto.PortfolioSummary.builder()
+        return PortfolioSummary.builder()
                 .totalPositions(allPositions.size())
                 .openPositions(openPositions.size())
                 .closedPositions(closedPositions.size())
@@ -73,8 +73,8 @@ public class PositionService {
                 .build();
     }
 
-    private TradingDto.PositionDto toDto(Position p) {
-        return TradingDto.PositionDto.builder()
+    private PositionDto toDto(Position p) {
+        return PositionDto.builder()
                 .id(p.getId())
                 .instanceId(p.getInstanceId())
                 .userId(p.getUserId())
