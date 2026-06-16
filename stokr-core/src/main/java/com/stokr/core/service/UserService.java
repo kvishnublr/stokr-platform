@@ -45,12 +45,8 @@ public class UserService {
             throw new IllegalArgumentException("Only admins and managers can create users");
         }
 
-        Organization org = organizationRepository.findByIdAndDeletedFalse(organizationId)
-                .orElseThrow(() -> new IllegalArgumentException("Organization not found"));
-
-        int currentCount = userRepository.countByOrganizationId(organizationId);
-        if (!org.canAddUser(currentCount)) {
-            throw new IllegalArgumentException("Organization user limit reached");
+        if (!organizationRepository.existsByIdAndDeletedFalse(organizationId)) {
+            throw new IllegalArgumentException("Organization not found");
         }
 
         if (userRepository.existsByEmail(request.getEmail())) {
