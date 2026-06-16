@@ -1,260 +1,179 @@
 import type { ReactNode } from "react";
-import { lazy, Suspense, useEffect, useState } from "react";
-import { Navigate, Outlet, Route, Routes } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
-import { ADMIN_OPS_SNAPSHOT_KEY } from "./lib/adminQueryKeys";
-import { AdminConsoleLayout } from "./layout/AdminConsoleLayout";
-import { ShellLayout } from "./layout/ShellLayout";
+import { Suspense, useState } from "react";
+import { Navigate, Outlet, Route, Routes, useNavigate, useLocation } from "react-router-dom";
+import { AppShell } from "./layout/AppShell";
 import { LoginPage } from "./pages/LoginPage";
-import { ZerodhaOauthCompletePage } from "./pages/ZerodhaOauthCompletePage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
-import { OrdersPage } from "./pages/OrdersPage";
-import { TradesPage } from "./pages/TradesPage";
-import { ExecutionsPage } from "./pages/ExecutionsPage";
-import { PositionsPage } from "./pages/PositionsPage";
-import { StrategiesPage } from "./pages/StrategiesPage";
-import { BacktestsLayout } from "./layout/BacktestsLayout";
-import { BacktestLauncherPage } from "./pages/BacktestLauncherPage";
-import { BacktestHistoryPage } from "./pages/BacktestHistoryPage";
-import { BacktestRunDetailsPage } from "./pages/BacktestRunDetailsPage";
-import { StrategyResearchLayout } from "./layout/StrategyResearchLayout";
-import { ResearchLeaderboardPage } from "./pages/ResearchLeaderboardPage";
-import { PaperTradingPage } from "./pages/PaperTradingPage";
-import { DebugToolsPage } from "./pages/DebugToolsPage";
-
-const BrokersPage = lazy(async () => {
-  const m = await import("./pages/BrokersPage");
-  return { default: m.BrokersPage };
-});
-import { AdminUsersPage } from "./pages/AdminUsersPage";
-import { AdminStrategiesPage } from "./pages/AdminStrategiesPage";
-import { AdminOmsMonitorPage } from "./pages/AdminOmsMonitorPage";
-import { AdminOpsPage } from "./pages/AdminOpsPage";
-import { AdminSectionPage } from "./pages/AdminSectionPage";
+import { VerifyEmailPage } from "./pages/VerifyEmailPage";
+import { ProfilePage } from "./pages/ProfilePage";
+import { BrokersPage } from "./pages/BrokersPage";
+import { ZerodhaOauthCompletePage } from "./pages/ZerodhaOauthCompletePage";
+import { V5DashboardPage } from "./pages/V5DashboardPage";
+import { AdminDashboard } from "./pages/admin/AdminDashboard";
+import { AdminOpsPage } from "./pages/admin/AdminOpsPage";
+import { AdminExecutionPage } from "./pages/admin/AdminExecutionPage";
+import { AdminSignalsPage } from "./pages/admin/AdminSignalsPage";
+import { AdminStrategyCatalogPage } from "./pages/admin/AdminStrategyCatalogPage";
 import { AdminAlertCenterPage } from "./pages/admin/AdminAlertCenterPage";
 import { AdminBrokerInfrastructurePage } from "./pages/admin/AdminBrokerInfrastructurePage";
-import { AdminAuditPage } from "./pages/admin/AdminAuditPage";
-import { AdminBackfillPage } from "./pages/admin/AdminBackfillPage";
-import { AdminExecutionPage } from "./pages/admin/AdminExecutionPage";
-import { AdminExecutionConfigPage } from "./pages/admin/AdminExecutionConfigPage";
-import { AdminResearchLabPage } from "./pages/admin/AdminResearchLabPage";
-import { AdminRiskDashboardPage } from "./pages/admin/AdminRiskDashboardPage";
 import { AdminCapitalPage } from "./pages/admin/AdminCapitalPage";
-import { AdminHistoryPage } from "./pages/admin/AdminHistoryPage";
-import { AdminInfrastructurePage } from "./pages/admin/AdminInfrastructurePage";
-import { AdminMarketIntelPage } from "./pages/admin/AdminMarketIntelPage";
-import { AdminReplayInfraPage } from "./pages/admin/AdminReplayInfraPage";
-import { AdminSignalsPage } from "./pages/admin/AdminSignalsPage";
-import { AdminSignalReplayPage } from "./pages/admin/AdminSignalReplayPage";
-import { AdminSignalLabPage } from "./pages/admin/AdminSignalLabPage";
-import AdminSignalTracePage from "./pages/admin/AdminSignalTracePage";
-import { AdminTraderHealthPage } from "./pages/admin/AdminTraderHealthPage";
-import { AdminStrategyCatalogPage } from "./pages/admin/AdminStrategyCatalogPage";
+import { AdminBackfillPage } from "./pages/admin/AdminBackfillPage";
 import { AdminUniverseGroupsPage } from "./pages/admin/AdminUniverseGroupsPage";
 import { AdminRuntimeBindingsPage } from "./pages/admin/AdminRuntimeBindingsPage";
-import { AdminPipelineHealthPage } from "./pages/admin/AdminPipelineHealthPage";
+import { AdminExecutionConfigPage } from "./pages/admin/AdminExecutionConfigPage";
 import { AdminLogsPage } from "./pages/admin/AdminLogsPage";
-import { AdminTestSignalLabPage } from "./pages/admin/AdminTestSignalLabPage";
+import { AdminAuditPage } from "./pages/admin/AdminAuditPage";
 import { AdminMarketSimulationPage } from "./pages/admin/AdminMarketSimulationPage";
-import { AdminTestExecutionMonitorPage } from "./pages/admin/AdminTestExecutionMonitorPage";
+import { AdminSignalLabPage } from "./pages/admin/AdminSignalLabPage";
+import { AdminSignalReplayPage } from "./pages/admin/AdminSignalReplayPage";
+import { AdminCommandCenterPage } from "./pages/admin/AdminCommandCenterPage";
+import { AdminInfrastructurePage } from "./pages/admin/AdminInfrastructurePage";
 import { AdminInfrastructureHealthCenterPage } from "./pages/admin/AdminInfrastructureHealthCenterPage";
-import { AdminFailureAnalysisConsolePage } from "./pages/admin/AdminFailureAnalysisConsolePage";
-import { AdminSafetyDiagnosticsPage } from "./pages/admin/AdminSafetyDiagnosticsPage";
+import { AdminIntradayOpsPage } from "./pages/admin/AdminIntradayOpsPage";
+import { AdminMarketIntelPage } from "./pages/admin/AdminMarketIntelPage";
+import { AdminBacktestDataPage } from "./pages/admin/AdminBacktestDataPage";
 import { AdminProtectionDiagnosticsPage } from "./pages/admin/AdminProtectionDiagnosticsPage";
 import { AdminStrategyDiagnosticsPage } from "./pages/admin/AdminStrategyDiagnosticsPage";
 import { AdminStrategyEffectivenessPage } from "./pages/admin/AdminStrategyEffectivenessPage";
-import { PerformanceDashboard } from "./components/admin/PerformanceDashboard";
+import { AdminReplayInfraPage } from "./pages/admin/AdminReplayInfraPage";
+import { AdminPipelineHealthPage } from "./pages/admin/AdminPipelineHealthPage";
+import { AdminTraderHealthPage } from "./pages/admin/AdminTraderHealthPage";
+import { AdminRiskDashboardPage } from "./pages/admin/AdminRiskDashboardPage";
+import { AdminFailureAnalysisConsolePage } from "./pages/admin/AdminFailureAnalysisConsolePage";
+import { AdminHistoryPage } from "./pages/admin/AdminHistoryPage";
+import { AdminTestSignalLabPage } from "./pages/admin/AdminTestSignalLabPage";
+import { AdminTestExecutionMonitorPage } from "./pages/admin/AdminTestExecutionMonitorPage";
+import { AdminControlsPage } from "./pages/admin/AdminControlsPage";
+import { AdminResearchLabPage } from "./pages/admin/AdminResearchLabPage";
+import AdminSignalTracePage from "./pages/admin/AdminSignalTracePage";
+import { AdminSafetyDiagnosticsPage } from "./pages/admin/AdminSafetyDiagnosticsPage";
 import { useSessionStore } from "./state/session";
-import type { AuthPayload } from "./state/session";
-import { VerifyEmailPage } from "./pages/VerifyEmailPage";
-import { OnboardingWizardPage } from "./pages/OnboardingWizardPage";
-import { TerminalPage } from "./pages/TerminalPage";
-import { SignalsPage } from "./pages/SignalsPage";
-import { PageSkeleton } from "./components/ds/SkeletonLoader";
 import { ErrorBoundary } from "./components/ds/ErrorBoundary";
 import { ThemeHtmlSync } from "./components/theme/ThemeHtmlSync";
 import { SyncedToaster } from "./components/theme/SyncedToaster";
-import { api } from "./api/client";
-import AdvDashboardPage from "./pages/AdvDashboardPage";
-import { IntradayTraderDashboard } from "./pages/IntradayTraderDashboard";
-import { TraderDashboard } from "./pages/trader/TraderDashboard";
-import { AdminOverviewPage } from "./pages/AdminOverviewPage";
-import { AdminCommandCenterPage } from "./pages/admin/AdminCommandCenterPage";
-import { ProfilePage } from "./pages/ProfilePage";
-import { TraderExecutionConfigPage } from "./pages/TraderExecutionConfigPage";
-import { DemoPage } from "./pages/demo/DemoPage";
-
-/** Heavy chart surface - defer initial JS until navigation. */
-const BacktestReplayPage = lazy(async () => {
-  const m = await import("./pages/BacktestReplayPage");
-  return { default: m.BacktestReplayPage };
-});
-
-const IntradayTraderPage = lazy(async () => {
-  const m = await import("./pages/IntradayTraderPage");
-  return { default: m.IntradayTraderPage };
-});
-
-const AdminIntradayOpsPage = lazy(async () => {
-  const m = await import("./pages/admin/AdminIntradayOpsPage");
-  return { default: m.AdminIntradayOpsPage };
-});
+import { PageSkeleton } from "./components/ds/SkeletonLoader";
+import { cn } from "./lib/utils";
+import { useUiThemeStore } from "./state/uiTheme";
 
 function Protected({ children }: { children: ReactNode }) {
   const token = useSessionStore((s) => s.accessToken);
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!token) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
-function SessionBootstrapGate({ children }: { children: ReactNode }) {
-  const accessToken = useSessionStore((s) => s.accessToken);
-  const refreshToken = useSessionStore((s) => s.refreshToken);
-  const setSession = useSessionStore((s) => s.setSession);
-  const clearSession = useSessionStore((s) => s.clearSession);
-  const [bootstrapping, setBootstrapping] = useState(false);
-  const [attempted, setAttempted] = useState(false);
+const adminNavItems = [
+  { label: "Dashboard", path: "/admin" },
+  { label: "Command Center", path: "/admin/command-center" },
+  { label: "Operations", path: "/admin/ops" },
+  { label: "OMS", path: "/admin/oms" },
+  { label: "Signals", path: "/admin/signals" },
+  { label: "Strategies", path: "/admin/strategies" },
+  { label: "Universe Groups", path: "/admin/universe-groups" },
+  { label: "Runtime Bindings", path: "/admin/runtime-bindings" },
+  { label: "Risk Dashboard", path: "/admin/risk-dashboard" },
+  { label: "Users", path: "/admin/users" },
+  { label: "Broker Infra", path: "/admin/brokers" },
+  { label: "Capital", path: "/admin/capital" },
+  { label: "Execution Config", path: "/admin/execution-config" },
+  { label: "Backfill", path: "/admin/backfill" },
+  { label: "Simulation", path: "/admin/simulation" },
+  { label: "Market Intel", path: "/admin/market-intel" },
+  { label: "Logs", path: "/admin/logs" },
+  { label: "Audit", path: "/admin/audit" },
+  { label: "Alerts", path: "/admin/alerts" },
+  { label: "Infrastructure", path: "/admin/infrastructure" },
+  { label: "Health Center", path: "/admin/health-center" },
+  { label: "Pipeline Health", path: "/admin/pipeline-health" },
+  { label: "Trader Health", path: "/admin/trader-health" },
+  { label: "Replay Infra", path: "/admin/replay-infra" },
+  { label: "Signal Lab", path: "/admin/signal-lab" },
+  { label: "Signal Replay", path: "/admin/signal-replay" },
+  { label: "Test Signal Lab", path: "/admin/test-signal-lab" },
+  { label: "Test Execution", path: "/admin/test-execution-monitor" },
+  { label: "Strategy Diagnostics", path: "/admin/strategy-diagnostics" },
+  { label: "Protection Diagnostics", path: "/admin/protection-diagnostics" },
+  { label: "Strategy Effectiveness", path: "/admin/strategy-effectiveness" },
+  { label: "Safety Diagnostics", path: "/admin/safety-diagnostics" },
+  { label: "Failure Analysis", path: "/admin/failure-analysis" },
+  { label: "Intraday Ops", path: "/admin/intraday-ops" },
+  { label: "Research Lab", path: "/admin/research-lab" },
+  { label: "Controls", path: "/admin/controls" },
+  { label: "History", path: "/admin/history" },
+  { label: "Backtest Data", path: "/admin/backtest-data" },
+];
 
-  useEffect(() => {
-    if (accessToken || !refreshToken || attempted) return;
-    let cancelled = false;
-    setBootstrapping(true);
-    void api
-      .post("/api/auth/refresh", { refreshToken })
-      .then((res: { data?: { data?: Partial<AuthPayload> } }) => {
-        const payload = res.data?.data as Partial<AuthPayload> | undefined;
-        if (!payload?.accessToken || !payload.refreshToken || !payload.userId || !payload.username || !payload.email) {
-          throw new Error("Unexpected refresh response");
-        }
-        if (cancelled) return;
-        setSession({
-          accessToken: payload.accessToken,
-          refreshToken: payload.refreshToken,
-          userId: String(payload.userId),
-          username: payload.username,
-          email: payload.email,
-          displayName: payload.displayName ?? null,
-          roles: Array.isArray(payload.roles) ? payload.roles : [],
-          expiresInSeconds: payload.expiresInSeconds ?? 0,
-          emailVerified: Boolean(payload.emailVerified),
-          telegramVerified: Boolean(payload.telegramVerified),
-          whatsAppVerified: Boolean(payload.whatsAppVerified ?? (payload as { whatsappVerified?: boolean }).whatsappVerified),
-          onboardingComplete: Boolean(payload.onboardingComplete),
-          liveTradingApproved: Boolean(payload.liveTradingApproved),
-        });
-      })
-      .catch(() => {
-        if (!cancelled) {
-          clearSession();
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setBootstrapping(false);
-          setAttempted(true);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken, refreshToken, attempted, setSession, clearSession]);
+function ShellSidebar() {
+  const isLight = useUiThemeStore((s) => s.mode === "light");
+  const location = useLocation();
+  const [collapsed, setCollapsed] = useState(false);
 
-  if (bootstrapping) {
-    return <PageSkeleton />;
-  }
-  return <>{children}</>;
-}
-
-function AdminGate() {
-  const queryClient = useQueryClient();
-  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
-  const isTrader = useSessionStore((s) => s.hasTraderAccess());
-  const ok = isAdmin && !isTrader;
-
-  useEffect(() => {
-    if (!ok) return;
-    void import("./lib/fetchAdminOpsSnapshotMerged").then(({ prefetchAdminOpsSnapshot }) => {
-      void queryClient.prefetchQuery({
-        queryKey: ADMIN_OPS_SNAPSHOT_KEY,
-        queryFn: prefetchAdminOpsSnapshot,
-        staleTime: 1500,
-      });
-    });
-  }, [ok, queryClient]);
-
-  if (!ok) {
-    return <Navigate to="/dashboard" replace />;
-  }
-  return <Outlet />;
-}
-
-function TraderDashboardRoute() {
-  const isTrader = useSessionStore((s) => s.hasTraderAccess());
-  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
-  if (!isTrader) {
-    return <Navigate to={isAdmin ? "/admin" : "/login"} replace />;
-  }
-  return <TraderDashboard />;
-}
-
-function RootEntryRedirect() {
-  const isTrader = useSessionStore((s) => s.hasTraderAccess());
-  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
-  const roles = useSessionStore((s) => s.roles);
-  if (isTrader) return <Navigate to="/dashboard" replace />;
-  if (isAdmin) return <Navigate to="/admin" replace />;
-  // Token exists but no recognised role — show diagnostic instead of looping back to /login
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
-      <div className="text-center space-y-3">
-        <p className="text-sm font-semibold">Session active but no role assigned.</p>
-        <p className="text-xs text-muted-foreground">Roles received: {roles.length ? roles.join(", ") : "(none)"}</p>
-        <p className="text-xs text-muted-foreground">Contact your admin to assign ROLE_ADMIN or ROLE_TRADER.</p>
-        <button
-          onClick={() => { localStorage.clear(); window.location.href = "/login"; }}
-          className="mt-2 rounded px-3 py-1.5 text-xs bg-primary text-primary-foreground hover:opacity-90"
-        >Sign out and retry</button>
+    <div className={cn("flex flex-col gap-1", isLight ? "text-neutral-700" : "text-neutral-300")}>
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-widest text-neutral-500">Stokr v5</span>
+        <button onClick={() => setCollapsed(!collapsed)} className="text-[10px] text-neutral-400 hover:text-neutral-600">
+          {collapsed ? "+" : "-"}
+        </button>
+      </div>
+      {!collapsed && (
+        <div className="space-y-0.5">
+          <div className="mb-2 px-2 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Dashboard</div>
+          <SidebarLink to="/dashboard" label="Home" currentPath={location.pathname} />
+          <div className="mb-2 mt-4 px-2 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Admin</div>
+          {adminNavItems.map((item) => (
+            <SidebarLink key={item.path} to={item.path} label={item.label} currentPath={location.pathname} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SidebarLink({ to, label, currentPath }: { to: string; label: string; currentPath: string }) {
+  const navigate = useNavigate();
+  const active = currentPath === to || (to !== "/admin" && currentPath.startsWith(to));
+  return (
+    <div
+      onClick={() => navigate(to)}
+      className={cn(
+        "cursor-pointer rounded px-3 py-1.5 text-xs transition-colors",
+        active
+          ? "bg-orange-50 font-medium text-orange-600"
+          : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700",
+      )}
+    >
+      {label}
+    </div>
+  );
+}
+
+function ShellTopNav() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
+  return (
+    <div className="flex items-center justify-between px-6 py-3">
+      <span className="text-sm font-semibold">Stokr v5</span>
+      <div className="flex items-center gap-4">
+        {isAdmin && location.pathname !== "/admin" && (
+          <button onClick={() => navigate("/admin")} className="rounded border px-3 py-1 text-xs font-semibold hover:bg-neutral-100">
+            Admin
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
-/** Kill-switch / emergency ops UI is not exposed to ROLE_TRADER. */
-function AdminOpsGate() {
-  const ok = useSessionStore((s) => s.canAccessKillSwitchOperations());
-  if (!ok) {
-    return <Navigate to="/admin" replace />;
-  }
-  return <AdminOpsPage />;
-}
-
-/** Broker Connect is trader-only; platform admins without trader role are redirected. */
-function TraderBrokerRoute() {
-  const hasTrader = useSessionStore((s) => s.hasTraderAccess());
-  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
-  if (!hasTrader) {
-    return <Navigate to={isAdmin ? "/admin" : "/dashboard"} replace />;
-  }
+function DashboardLayout() {
   return (
-    <Suspense fallback={<PageSkeleton />}>
-      <BrokersPage />
-    </Suspense>
-  );
-}
-
-function TraderIntradayRoute() {
-  const hasTrader = useSessionStore((s) => s.hasTraderAccess());
-  const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
-  if (!hasTrader) {
-    return <Navigate to={isAdmin ? "/admin" : "/dashboard"} replace />;
-  }
-  return (
-    <Suspense fallback={<PageSkeleton />}>
-      <IntradayTraderPage />
-    </Suspense>
+    <Protected>
+      <AppShell sidebar={<ShellSidebar />} topNav={<ShellTopNav />}>
+        <Outlet />
+      </AppShell>
+    </Protected>
   );
 }
 
@@ -263,122 +182,67 @@ export default function App() {
     <ErrorBoundary>
       <ThemeHtmlSync />
       <SyncedToaster />
-      <SessionBootstrapGate>
-        <Routes>
-          <Route path="/demo" element={<DemoPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/brokers/zerodha-complete" element={<ZerodhaOauthCompletePage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/verify-email" element={<VerifyEmailPage />} />
-          <Route
-            path="/"
-            element={
-              <Protected>
-                <ShellLayout />
-              </Protected>
-            }
-          >
-            <Route index element={<RootEntryRedirect />} />
-            <Route path="dashboard" element={<TraderDashboardRoute />} />
-            <Route path="adv-dashboard" element={<AdvDashboardPage />} />
-            {/* Enhanced variant consumed the same three feeds as adv-dashboard — consolidated. */}
-            <Route path="adv-enhanced-dashboard" element={<Navigate to="/adv-dashboard" replace />} />
-            <Route path="watchlist" element={<Navigate to="/strategies" replace />} />
-            <Route path="terminal" element={<TerminalPage />} />
-            <Route path="signals" element={<SignalsPage />} />
-            <Route path="onboarding" element={<OnboardingWizardPage />} />
-            <Route path="orders" element={<OrdersPage />} />
-            <Route path="trades" element={<TradesPage />} />
-            <Route path="executions" element={<ExecutionsPage />} />
-            <Route path="positions" element={<PositionsPage />} />
-            <Route path="strategies" element={<StrategiesPage />} />
-            <Route path="intraday/*" element={<TraderIntradayRoute />} />
-            <Route path="backtests" element={<BacktestsLayout />}>
-              <Route index element={<Navigate to="launch" replace />} />
-              <Route path="launch" element={<BacktestLauncherPage />} />
-              <Route path="history" element={<BacktestHistoryPage />} />
-              <Route
-                path=":runId/replay"
-                element={
-                  <Suspense fallback={<PageSkeleton />}>
-                    <BacktestReplayPage />
-                  </Suspense>
-                }
-              />
-              <Route path=":runId" element={<BacktestRunDetailsPage />} />
-            </Route>
-            <Route path="research" element={<StrategyResearchLayout />}>
-              <Route index element={<Navigate to="leaderboard" replace />} />
-              <Route path="leaderboard" element={<ResearchLeaderboardPage />} />
-            </Route>
-            <Route path="paper" element={<PaperTradingPage />} />
-            <Route path="debug" element={<DebugToolsPage />} />
-            <Route path="brokers" element={<TraderBrokerRoute />} />
-            <Route path="profile" element={<ProfilePage />} />
-            <Route path="strategy-settings" element={<TraderExecutionConfigPage />} />
-            <Route path="intraday-dashboard" element={<IntradayTraderDashboard />} />
-            <Route path="admin" element={<AdminGate />}>
-              <Route element={<AdminConsoleLayout />}>
-                <Route index element={<AdminCommandCenterPage />} />
-                <Route path="overview" element={<AdminOverviewPage />} />
-                <Route path="broker-infrastructure" element={<AdminBrokerInfrastructurePage />} />
-                <Route path="market-connectivity" element={<Navigate to="../broker-infrastructure" replace />} />
-                <Route path="market" element={<AdminMarketIntelPage />} />
-                <Route path="performance" element={<PerformanceDashboard />} />
-                <Route
-                  path="intraday/*"
-                  element={
-                    <Suspense fallback={<PageSkeleton />}>
-                      <AdminIntradayOpsPage />
-                    </Suspense>
-                  }
-                />
-                <Route path="replay" element={<AdminReplayInfraPage />} />
-                <Route path="signals" element={<AdminSignalsPage />} />
-                <Route path="signals/:id/pipeline-trace" element={<AdminSignalTracePage />} />
-                <Route path="signal-replay" element={<AdminSignalReplayPage />} />
-                <Route path="signal-lab" element={<AdminSignalLabPage />} />
-                <Route path="research-lab" element={<AdminResearchLabPage />} />
-                <Route path="execution" element={<AdminExecutionPage />} />
-                <Route path="traders-health" element={<AdminTraderHealthPage />} />
-                <Route path="backfill" element={<AdminBackfillPage />} />
-                <Route path="infrastructure" element={<AdminInfrastructurePage />} />
-                <Route path="history" element={<AdminHistoryPage />} />
-                <Route path="audit" element={<AdminAuditPage />} />
-                <Route path="controls" element={<Navigate to="../ops" replace />} />
-                <Route path="users" element={<AdminUsersPage />} />
-                <Route path="strategies" element={<AdminStrategiesPage />} />
-                <Route path="strategy-catalog" element={<AdminStrategyCatalogPage />} />
-                <Route path="universe-groups" element={<AdminUniverseGroupsPage />} />
-                <Route path="runtime-bindings" element={<AdminRuntimeBindingsPage />} />
-                <Route path="execution-config" element={<AdminExecutionConfigPage />} />
-                <Route path="risk-dashboard" element={<AdminRiskDashboardPage />} />
-                <Route path="safety-diagnostics" element={<AdminSafetyDiagnosticsPage />} />
-                <Route path="protection-diagnostics" element={<AdminProtectionDiagnosticsPage />} />
-                <Route path="strategy-diagnostics" element={<AdminStrategyDiagnosticsPage />} />
-                <Route path="strategy-effectiveness" element={<AdminStrategyEffectivenessPage />} />
-                <Route path="capital" element={<AdminCapitalPage />} />
-                <Route path="oms" element={<AdminOmsMonitorPage />} />
-                <Route path="settings" element={<AdminSectionPage section="settings" />} />
-                <Route path="security" element={<AdminSectionPage section="security" />} />
-                <Route path="reports" element={<AdminSectionPage section="reports" />} />
-                <Route path="alerts" element={<AdminAlertCenterPage />} />
-                <Route path="ops" element={<AdminOpsGate />} />
-                <Route path="pipeline-health" element={<AdminPipelineHealthPage />} />
-                <Route path="test-signal-lab" element={<AdminTestSignalLabPage />} />
-                <Route path="market-simulation" element={<AdminMarketSimulationPage />} />
-                <Route path="test-execution-monitor" element={<AdminTestExecutionMonitorPage />} />
-                <Route path="infra-health-center" element={<AdminInfrastructureHealthCenterPage />} />
-                <Route path="failure-analysis" element={<AdminFailureAnalysisConsolePage />} />
-                <Route path="logs" element={<AdminLogsPage />} />
-              </Route>
-            </Route>
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </SessionBootstrapGate>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/brokers/zerodha-complete" element={<ZerodhaOauthCompletePage />} />
+
+        {/* Admin dashboard has its own layout (AdminSidebar + AdminTopbar) */}
+        <Route path="/admin" element={<AdminDashboard />} />
+
+        {/* Standard dashboard layout for non-admin pages */}
+        <Route element={<DashboardLayout />}>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<V5DashboardPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/brokers" element={<Suspense fallback={<PageSkeleton />}><BrokersPage /></Suspense>} />
+
+          {/* Admin pages under standard layout */}
+          <Route path="/admin/ops" element={<Suspense fallback={<PageSkeleton />}><AdminOpsPage /></Suspense>} />
+          <Route path="/admin/oms" element={<Suspense fallback={<PageSkeleton />}><AdminExecutionPage /></Suspense>} />
+          <Route path="/admin/signals" element={<Suspense fallback={<PageSkeleton />}><AdminSignalsPage /></Suspense>} />
+          <Route path="/admin/strategies" element={<Suspense fallback={<PageSkeleton />}><AdminStrategyCatalogPage /></Suspense>} />
+          <Route path="/admin/alerts" element={<Suspense fallback={<PageSkeleton />}><AdminAlertCenterPage /></Suspense>} />
+          <Route path="/admin/users" element={<Suspense fallback={<PageSkeleton />}><AdminTraderHealthPage /></Suspense>} />
+          <Route path="/admin/brokers" element={<Suspense fallback={<PageSkeleton />}><AdminBrokerInfrastructurePage /></Suspense>} />
+          <Route path="/admin/capital" element={<Suspense fallback={<PageSkeleton />}><AdminCapitalPage /></Suspense>} />
+          <Route path="/admin/backfill" element={<Suspense fallback={<PageSkeleton />}><AdminBackfillPage /></Suspense>} />
+          <Route path="/admin/universe-groups" element={<Suspense fallback={<PageSkeleton />}><AdminUniverseGroupsPage /></Suspense>} />
+          <Route path="/admin/runtime-bindings" element={<Suspense fallback={<PageSkeleton />}><AdminRuntimeBindingsPage /></Suspense>} />
+          <Route path="/admin/execution-config" element={<Suspense fallback={<PageSkeleton />}><AdminExecutionConfigPage /></Suspense>} />
+          <Route path="/admin/logs" element={<Suspense fallback={<PageSkeleton />}><AdminLogsPage /></Suspense>} />
+          <Route path="/admin/audit" element={<Suspense fallback={<PageSkeleton />}><AdminAuditPage /></Suspense>} />
+          <Route path="/admin/simulation" element={<Suspense fallback={<PageSkeleton />}><AdminMarketSimulationPage /></Suspense>} />
+          <Route path="/admin/signal-lab" element={<Suspense fallback={<PageSkeleton />}><AdminSignalLabPage /></Suspense>} />
+          <Route path="/admin/signal-replay" element={<Suspense fallback={<PageSkeleton />}><AdminSignalReplayPage /></Suspense>} />
+          <Route path="/admin/command-center" element={<Suspense fallback={<PageSkeleton />}><AdminCommandCenterPage /></Suspense>} />
+          <Route path="/admin/infrastructure" element={<Suspense fallback={<PageSkeleton />}><AdminInfrastructurePage /></Suspense>} />
+          <Route path="/admin/health-center" element={<Suspense fallback={<PageSkeleton />}><AdminInfrastructureHealthCenterPage /></Suspense>} />
+          <Route path="/admin/intraday-ops" element={<Suspense fallback={<PageSkeleton />}><AdminIntradayOpsPage /></Suspense>} />
+          <Route path="/admin/market-intel" element={<Suspense fallback={<PageSkeleton />}><AdminMarketIntelPage /></Suspense>} />
+          <Route path="/admin/backtest-data" element={<Suspense fallback={<PageSkeleton />}><AdminBacktestDataPage /></Suspense>} />
+          <Route path="/admin/protection-diagnostics" element={<Suspense fallback={<PageSkeleton />}><AdminProtectionDiagnosticsPage /></Suspense>} />
+          <Route path="/admin/strategy-diagnostics" element={<Suspense fallback={<PageSkeleton />}><AdminStrategyDiagnosticsPage /></Suspense>} />
+          <Route path="/admin/strategy-effectiveness" element={<Suspense fallback={<PageSkeleton />}><AdminStrategyEffectivenessPage /></Suspense>} />
+          <Route path="/admin/replay-infra" element={<Suspense fallback={<PageSkeleton />}><AdminReplayInfraPage /></Suspense>} />
+          <Route path="/admin/pipeline-health" element={<Suspense fallback={<PageSkeleton />}><AdminPipelineHealthPage /></Suspense>} />
+          <Route path="/admin/trader-health" element={<Suspense fallback={<PageSkeleton />}><AdminTraderHealthPage /></Suspense>} />
+          <Route path="/admin/risk-dashboard" element={<Suspense fallback={<PageSkeleton />}><AdminRiskDashboardPage /></Suspense>} />
+          <Route path="/admin/failure-analysis" element={<Suspense fallback={<PageSkeleton />}><AdminFailureAnalysisConsolePage /></Suspense>} />
+          <Route path="/admin/history" element={<Suspense fallback={<PageSkeleton />}><AdminHistoryPage /></Suspense>} />
+          <Route path="/admin/test-signal-lab" element={<Suspense fallback={<PageSkeleton />}><AdminTestSignalLabPage /></Suspense>} />
+          <Route path="/admin/test-execution-monitor" element={<Suspense fallback={<PageSkeleton />}><AdminTestExecutionMonitorPage /></Suspense>} />
+          <Route path="/admin/controls" element={<Suspense fallback={<PageSkeleton />}><AdminControlsPage /></Suspense>} />
+          <Route path="/admin/research-lab" element={<Suspense fallback={<PageSkeleton />}><AdminResearchLabPage /></Suspense>} />
+          <Route path="/admin/signal-trace/:id" element={<Suspense fallback={<PageSkeleton />}><AdminSignalTracePage /></Suspense>} />
+          <Route path="/admin/safety-diagnostics" element={<Suspense fallback={<PageSkeleton />}><AdminSafetyDiagnosticsPage /></Suspense>} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </ErrorBoundary>
   );
 }

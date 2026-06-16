@@ -1,0 +1,564 @@
+server:
+  port: 8080
+  forward-headers-strategy: framework
+  tomcat:
+    threads:
+      max: ${TOMCAT_MAX_THREADS:30}
+      min-spare: ${TOMCAT_MIN_THREADS:5}
+    remoteip:
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
+
+spring:
+  application:
+    name: stokr-v5
+  session:
+    timeout: 5h
+  jackson:
+    time-zone: Asia/Kolkata
+  mail:
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SPRING_MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${SPRING_MAIL_SMTP_STARTTLS:true}
+          connectiontimeout: ${SPRING_MAIL_SMTP_CONNECTION_TIMEOUT_MS:10000}
+          timeout: ${SPRING_MAIL_SMTP_TIMEOUT_MS:10000}
+          writetimeout: ${SPRING_MAIL_SMTP_WRITE_TIMEOUT_MS:10000}
+  config:
+    import: optional:file:../.env[.properties],optional:file:./.env[.properties]
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:stokr_platform}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:root}
+    hikari:
+      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:20}
+      minimum-idle: ${HIKARI_MIN_IDLE:5}
+      connection-timeout: ${HIKARI_CONNECTION_TIMEOUT_MS:30000}
+      idle-timeout: 300000
+      max-lifetime: 900000
+      keepalive-time: 60000
+      leak-detection-threshold: ${HIKARI_LEAK_DETECTION_MS:60000}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: Asia/Kolkata
+  flyway:
+    enabled: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        auto-startup: ${STOKR_RABBIT_LISTENERS_ENABLED:true}
+      direct:
+        auto-startup: ${STOKR_RABBIT_LISTENERS_ENABLED:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    rabbit:
+      enabled: ${STOKR_RABBIT_HEALTH_ENABLED:false}
+    mail:
+      enabled: ${STOKR_MAIL_HEALTH_ENABLED:false}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui
+
+stokr:
+  deploy:
+    git-commit: ${STOKR_GIT_COMMIT:unknown}
+    branch: ${STOKR_DEPLOY_BRANCH:Release_v5}
+  advcash:
+    min-consensus: ${STOKR_ADVCASH_MIN_CONSENSUS:4}
+    candidate-min-consensus: ${STOKR_ADVCASH_CANDIDATE_MIN_CONSENSUS:2}
+    min-composite-score: ${STOKR_ADVCASH_MIN_COMPOSITE_SCORE:68.0}
+    min-obi-strength: ${STOKR_ADVCASH_MIN_OBI_STRENGTH:0.5}
+    cooldown-seconds: ${STOKR_ADVCASH_COOLDOWN_SECONDS:900}
+    candidate-log-cooldown-seconds: ${STOKR_ADVCASH_CANDIDATE_LOG_COOLDOWN_SECONDS:300}
+  marketdata:
+    integrity:
+      enabled: ${STOKR_MARKETDATA_INTEGRITY_ENABLED:true}
+      equity-candle-max-age-seconds: ${STOKR_MARKETDATA_INTEGRITY_EQUITY_CANDLE_MAX_AGE_SEC:300}
+      index-candle-max-age-seconds: ${STOKR_MARKETDATA_INTEGRITY_INDEX_CANDLE_MAX_AGE_SEC:300}
+      tick-max-age-seconds: ${STOKR_MARKETDATA_INTEGRITY_TICK_MAX_AGE_SEC:90}
+      use-live-tick-proxy-for-candle-freshness: ${STOKR_MARKETDATA_INTEGRITY_USE_LIVE_TICK_PROXY:true}
+      rejection-dedupe-seconds: ${STOKR_MARKETDATA_INTEGRITY_REJECTION_DEDUPE_SEC:300}
+      mid-session-recovery:
+        enabled: ${STOKR_MARKETDATA_INTEGRITY_MID_SESSION_RECOVERY:true}
+      mid-session-min-bars: ${STOKR_INTEGRITY_MID_SESSION_MIN_BARS:20}
+    session:
+      nse:
+        start: ${STOKR_MARKETDATA_NSE_SESSION_START:09:15}
+        end: ${STOKR_MARKETDATA_NSE_SESSION_END:15:30}
+      mcx:
+        start: ${STOKR_MARKETDATA_MCX_SESSION_START:09:00}
+        end: ${STOKR_MARKETDATA_MCX_SESSION_END:23:30}
+      cds:
+        start: ${STOKR_MARKETDATA_CDS_SESSION_START:09:00}
+        end: ${STOKR_MARKETDATA_CDS_SESSION_END:17:00}
+    feed-health:
+      poll-ms: ${STOKR_FEED_HEALTH_POLL_MS:${STOKR_MARKETDATA_FEED_HEALTH_POLL_MS:30000}}
+      equity-stale-seconds: ${STOKR_FEED_HEALTH_EQUITY_STALE_SEC:${STOKR_MARKETDATA_FEED_HEALTH_EQUITY_STALE_SECONDS:120}}
+      index-stale-seconds: ${STOKR_FEED_HEALTH_INDEX_STALE_SEC:${STOKR_MARKETDATA_FEED_HEALTH_INDEX_STALE_SECONDS:120}}
+      tick-stale-seconds: ${STOKR_FEED_HEALTH_TICK_STALE_SEC:${STOKR_MARKETDATA_FEED_HEALTH_TICK_STALE_SECONDS:60}}
+      outage-error-seconds: ${STOKR_FEED_HEALTH_OUTAGE_ERROR_SEC:${STOKR_MARKETDATA_FEED_HEALTH_OUTAGE_ERROR_SECONDS:900}}
+      session-warmup-seconds: ${STOKR_FEED_HEALTH_SESSION_WARMUP_SEC:180}
+  broker-truth:
+    poll-ms: ${STOKR_BROKER_TRUTH_POLL_MS:3000}
+    stale-ms: ${STOKR_BROKER_TRUTH_STALE_MS:15000}
+  rabbit:
+    listeners-enabled: ${STOKR_RABBIT_LISTENERS_ENABLED:true}
+  adv-dashboard:
+    universe-group: ${STOKR_ADV_UNIVERSE_GROUP:NIFTY_50}
+    max-symbols: ${STOKR_ADV_MAX_SYMBOLS:50}
+    feed-interval-ms: ${STOKR_ADV_FEED_INTERVAL_MS:45000}
+  admin:
+    ops:
+      sse-tick-ms: ${STOKR_ADMIN_OPS_SSE_TICK_MS:15000}
+      snapshot-cache-ms: ${STOKR_ADMIN_OPS_SNAPSHOT_CACHE_MS:4000}
+      snapshot-stale-max-ms: ${STOKR_ADMIN_OPS_SNAPSHOT_STALE_MAX_MS:120000}
+      snapshot-warm-ms: ${STOKR_ADMIN_OPS_SNAPSHOT_WARM_MS:10000}
+  cors:
+    allowed-origins: ${STOKR_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175}
+  auth:
+    login:
+      max-failed-attempts: ${STOKR_AUTH_MAX_FAILED:5}
+      lock-duration-minutes: ${STOKR_AUTH_LOCK_MINUTES:15}
+      password-reset-hours-valid: ${STOKR_AUTH_PW_RESET_HOURS:1}
+    email-verification-base-url: ${STOKR_EMAIL_VERIFY_BASE_URL:http://localhost:5173}
+    verification-resend-cooldown-seconds: ${STOKR_AUTH_VERIFY_RESEND_COOLDOWN:0}
+  security:
+    jwt:
+      secret: ${JWT_SECRET:change-me-use-long-random-secret-for-development-only}
+      access-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:18000}
+    refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS:1209600}
+  risk:
+    zone: ${STOKR_RISK_ZONE:Asia/Kolkata}
+    max-order-qty: ${STOKR_RISK_MAX_ORDER_QTY:100000}
+    max-order-notional: ${STOKR_RISK_MAX_ORDER_NOTIONAL:50000000}
+    max-open-positions: ${STOKR_RISK_MAX_OPEN_POSITIONS:100}
+    order-cooldown-ms: ${STOKR_RISK_ORDER_COOLDOWN_MS:30000}
+    cluster-detection-enabled: ${STOKR_RISK_CLUSTER_DETECTION_ENABLED:true}
+    cluster-max-entries: ${STOKR_RISK_CLUSTER_MAX_ENTRIES:2}
+    cluster-detection-window-minutes: ${STOKR_RISK_CLUSTER_DETECTION_WINDOW_MINUTES:2}
+    max-trades-per-day: ${STOKR_RISK_MAX_TRADES_PER_DAY:200}
+    max-daily-loss-amount: ${STOKR_RISK_MAX_DAILY_LOSS_AMOUNT:0}
+    max-portfolio-drawdown-pct: ${STOKR_RISK_MAX_PORTFOLIO_DRAWDOWN_PCT:0}
+    max-strategy-notional: ${STOKR_RISK_MAX_STRATEGY_NOTIONAL:0}
+    max-orders-per-minute: ${STOKR_RISK_MAX_ORDERS_PER_MINUTE:0}
+    volatility-halt-atr-close-ratio: ${STOKR_RISK_VOLATILITY_HALT_ATR_CLOSE_RATIO:0}
+    trading-window-start: ${STOKR_RISK_TRADING_WINDOW_START:09:25}
+    trading-window-end: ${STOKR_RISK_TRADING_WINDOW_END:14:45}
+    trading-window-mcx-start: ${STOKR_RISK_TRADING_WINDOW_MCX_START:09:00}
+    trading-window-mcx-end: ${STOKR_RISK_TRADING_WINDOW_MCX_END:23:55}
+  catalog:
+    scan:
+      enabled: ${STOKR_CATALOG_SCAN_ENABLED:true}
+      poll-ms: ${STOKR_CATALOG_SCAN_POLL_MS:15000}
+    universe-cache-seconds: ${STOKR_CATALOG_UNIVERSE_CACHE_SECONDS:300}
+  backfill:
+    enabled: ${STOKR_BACKFILL_ENABLED:false}
+    lookback-days: ${STOKR_BACKFILL_LOOKBACK_DAYS:30}
+  strategy:
+    execution-modes:
+      allow-live: ${STOKR_EXECUTION_MODES_ALLOW_LIVE:true}
+      live-validated: ${STOKR_EXECUTION_MODES_LIVE_VALIDATED:ADV_CASH,GAP_FILL,VWAP_BOUNCE}
+      GAP_FILL: ${STOKR_EXEC_MODE_GAP_FILL:LIVE}
+      SECTOR_LAGGARD: ${STOKR_EXEC_MODE_SECTOR_LAGGARD:PAPER}
+      NSE_SPIKE_DETECTION: ${STOKR_EXEC_MODE_NSE_SPIKE:PAPER}
+      EARLY_BREAKOUT: ${STOKR_EXEC_MODE_EARLY_BREAKOUT:PAPER}
+      VWAP_BOUNCE: ${STOKR_EXEC_MODE_VWAP_BOUNCE:LIVE}
+      INDEX_HUNT: ${STOKR_EXEC_MODE_INDEX_HUNT:PAPER}
+      ADV_CASH: ${STOKR_EXEC_MODE_ADV_CASH:LIVE}
+      S3_VWAP_RETEST: ${STOKR_EXEC_MODE_S3:PAPER}
+      S7_RANGE_FADE: ${STOKR_EXEC_MODE_S7:PAPER}
+      PRE_OPEN_GAP_OI: ${STOKR_EXEC_MODE_PRE_OPEN_GAP_OI:PAPER}
+      COMMODITIES_E2E_TEST: ${STOKR_EXEC_MODE_COMMODITIES_E2E_TEST:PAPER}
+      USDINR_MOMENTUM: ${STOKR_EXEC_MODE_USDINR_MOMENTUM:PAPER}
+      EURINR_MEAN_REVERSION: ${STOKR_EXEC_MODE_EURINR_MEAN_REVERSION:PAPER}
+    commodities-e2e-test:
+      enabled: ${STOKR_COMMODITIES_E2E_TEST_ENABLED:true}
+      scan-fire: ${STOKR_COMMODITIES_E2E_TEST_SCAN_FIRE:false}
+      max-candle-age-seconds: ${STOKR_COMMODITIES_E2E_TEST_MAX_CANDLE_AGE_SEC:180}
+    safe-startup:
+      enabled: ${STOKR_SAFE_STARTUP_ENABLED:true}
+      min-warmup-seconds: ${STOKR_SAFE_STARTUP_WARMUP_SEC:120}
+    gate-telemetry:
+      enabled: ${STOKR_STRATEGY_GATE_TELEMETRY_ENABLED:false}
+      min-interval-seconds: ${STOKR_STRATEGY_GATE_TELEMETRY_INTERVAL_SEC:60}
+    session-summary:
+      cron: ${STOKR_SESSION_SUMMARY_CRON:0 35 15 * * MON-FRI}
+    lifecycle:
+      emergency:
+        bar-range-pct: ${STOKR_LIFECYCLE_EMERGENCY_BAR_RANGE_PCT:2.5}
+        candle-stale-seconds: ${STOKR_LIFECYCLE_EMERGENCY_CANDLE_STALE_SEC:180}
+        force-exit-stale-seconds: ${STOKR_LIFECYCLE_EMERGENCY_FORCE_EXIT_STALE_SEC:600}
+        volume-vacuum-ratio: ${STOKR_LIFECYCLE_EMERGENCY_VOLUME_VACUUM:0.10}
+        min-hold-seconds: ${STOKR_LIFECYCLE_EMERGENCY_MIN_HOLD_SEC:180}
+    smart-exit:
+      enabled: ${STOKR_SMART_EXIT_ENABLED:true}
+      interval-ms: ${STOKR_SMART_EXIT_INTERVAL_MS:15000}
+      trailing-mfe-ratio: ${STOKR_SMART_EXIT_TRAILING_MFE_RATIO:0.60}
+      min-progress-pct: ${STOKR_SMART_EXIT_MIN_PROGRESS_PCT:40}
+    entry-edge:
+      enabled: ${STOKR_ENTRY_EDGE_ENABLED:true}
+      cron: ${STOKR_ENTRY_EDGE_CRON:0 50 15 * * MON-FRI}
+      gate-enabled: ${STOKR_ENTRY_EDGE_GATE_ENABLED:true}
+      window-sessions: ${STOKR_ENTRY_EDGE_WINDOW_SESSIONS:14}
+      min-signals: ${STOKR_ENTRY_EDGE_MIN_SIGNALS:30}
+      demote-buffer-pct: ${STOKR_ENTRY_EDGE_DEMOTE_BUFFER_PCT:2.0}
+      lift-buffer-pct: ${STOKR_ENTRY_EDGE_LIFT_BUFFER_PCT:8.0}
+    max-entry-price: ${STOKR_STRATEGY_MAX_ENTRY_PRICE:5000}
+    quality-gate:
+      enabled: ${STOKR_STRATEGY_QUALITY_GATE_ENABLED:true}
+      min-confidence: ${STOKR_STRATEGY_MIN_CONFIDENCE:0.55}
+      min-risk-reward: ${STOKR_STRATEGY_MIN_RR:1.2}
+    signal:
+      quality:
+        min-rr: ${STOKR_SIGNAL_QUALITY_MIN_RR:1.5}
+        min-candle-body-pct: ${STOKR_SIGNAL_QUALITY_MIN_CANDLE_BODY_PCT:0.003}
+        max-atr-compression-pct: ${STOKR_SIGNAL_QUALITY_MAX_ATR_COMPRESSION_PCT:0.005}
+        max-atr-expansion-pct: ${STOKR_SIGNAL_QUALITY_MAX_ATR_EXPANSION_PCT:0.03}
+        stale-candle-seconds: ${STOKR_SIGNAL_QUALITY_STALE_CANDLE_SECONDS:60}
+        min-volume-ratio: ${STOKR_SIGNAL_QUALITY_MIN_VOLUME_RATIO:0.8}
+        max-concurrent-trades: ${STOKR_SIGNAL_QUALITY_MAX_CONCURRENT_TRADES:10}
+      cooldown-seconds: ${STOKR_SIGNAL_COOLDOWN_SECONDS:900}
+    signal-dedup:
+      cooldown-minutes: ${STOKR_STRATEGY_SIGNAL_DEDUP_MINUTES:15}
+      post-exit-cooldown-minutes: ${STOKR_SIGNAL_POST_EXIT_COOLDOWN_MIN:15}
+    exit:
+      breakeven-enabled: ${STOKR_STRATEGY_BREAKEVEN_EXIT_ENABLED:true}
+      breakeven-mfe-ratio: ${STOKR_STRATEGY_BREAKEVEN_MFE_RATIO:0.5}
+      auto-exit-enabled: ${STOKR_STRATEGY_AUTO_EXIT_ENABLED:true}
+      auto-exit-on-breakeven: ${STOKR_STRATEGY_AUTO_EXIT_BREAKEVEN:true}
+    replay:
+      dispatch-to-oms: ${STOKR_STRATEGY_REPLAY_DISPATCH_OMS:false}
+    subscription-default-symbol: ${STOKR_STRATEGY_SUBSCRIPTION_SYMBOL:NIFTY_FUT}
+    mean-reversion:
+      enabled: ${STOKR_STRATEGY_MR_ENABLED:true}
+    poll-ms: ${STOKR_STRATEGY_POLL_MS:5000}
+    poll-execution-mode: ${STOKR_STRATEGY_POLL_EXECUTION_MODE:PAPER}
+    symbols: ${STOKR_STRATEGY_SYMBOLS:NIFTY_FUT,BANKNIFTY_FUT}
+    require-operational-live-path: ${STOKR_STRATEGY_REQUIRE_OPERATIONAL_LIVE_PATH:false}
+    pipeline:
+      auto-activate: ${STOKR_SIGNAL_PIPELINE_AUTO_ACTIVATE:true}
+      default-universe-group: ${STOKR_SIGNAL_PIPELINE_UNIVERSE:NIFTY_50}
+      fast-scan-interval-seconds: ${STOKR_SIGNAL_PIPELINE_SCAN_SEC:5}
+    session:
+      zone: ${STOKR_STRATEGY_SESSION_ZONE:Asia/Kolkata}
+      start: ${STOKR_STRATEGY_SESSION_START:09:25}
+      end: ${STOKR_STRATEGY_SESSION_END:14:45}
+    system-user-id: ${STOKR_STRATEGY_SYSTEM_USER_ID:33333333-3333-3333-3333-333333333333}
+    primary-trader-user-id: ${STOKR_PRIMARY_TRADER_USER_ID:6343e483-1d21-4fdf-ac0c-1ba19eaf2ff4}
+    default-quantity: ${STOKR_STRATEGY_DEFAULT_QTY:1}
+    spike:
+      min-velocity-pct: ${STOKR_SPIKE_MIN_VELOCITY_PCT:0.40}
+      min-volume-multiple: ${STOKR_SPIKE_MIN_VOLUME_MULTIPLE:4.5}
+      min-bar-quality-threshold: ${STOKR_SPIKE_MIN_BAR_QUALITY_THRESHOLD:80.0}
+      max-wick-pct-before-reject: ${STOKR_SPIKE_MAX_WICK_PCT_BEFORE_REJECT:0.40}
+      require-continuation-candle: ${STOKR_SPIKE_REQUIRE_CONTINUATION_CANDLE:true}
+      min-composite-score: ${STOKR_SPIKE_MIN_COMPOSITE_SCORE:85.0}
+      cooldown-seconds: ${STOKR_SPIKE_COOLDOWN_SECONDS:900}
+      sl-offset-pct: ${STOKR_SPIKE_SL_OFFSET_PCT:0.50}
+      target-tight-range-extension: ${STOKR_SPIKE_TARGET_TIGHT_RANGE_EXTENSION:0.50}
+      target-wide-range-extension: ${STOKR_SPIKE_TARGET_WIDE_RANGE_EXTENSION:1.50}
+      range-width-threshold-pct: ${STOKR_SPIKE_RANGE_WIDTH_THRESHOLD_PCT:1.0}
+      min-risk-reward: ${STOKR_SPIKE_MIN_RR:1.8}
+      regime-min-range-pct: ${STOKR_SPIKE_REGIME_MIN_RANGE_PCT:0.60}
+      regime-min-directional-bars: ${STOKR_SPIKE_REGIME_MIN_DIRECTIONAL_BARS:6}
+      require-prev-bar-alignment: ${STOKR_SPIKE_REQUIRE_PREV_BAR_ALIGNMENT:true}
+    earlybreakout:
+      min-range-pct: ${STOKR_EARLYBREAKOUT_MIN_RANGE_PCT:0.15}
+      max-range-pct: ${STOKR_EARLYBREAKOUT_MAX_RANGE_PCT:2.0}
+      min-volume-multiple: ${STOKR_EARLYBREAKOUT_MIN_VOLUME_MULTIPLE:1.2}
+      min-body-ratio: ${STOKR_EARLYBREAKOUT_MIN_BODY_RATIO:0.50}
+      breakout-exceed-pct: ${STOKR_EARLYBREAKOUT_BREAKOUT_EXCEED_PCT:0.05}
+      cooldown-seconds: ${STOKR_EARLYBREAKOUT_COOLDOWN_SECONDS:600}
+      min-risk-reward: ${STOKR_EARLYBREAKOUT_MIN_RR:1.2}
+    vwapbounce:
+      touch-threshold-pct: ${STOKR_VWAPBOUNCE_TOUCH_THRESHOLD_PCT:0.12}
+      min-slope-pct: ${STOKR_VWAPBOUNCE_MIN_SLOPE_PCT:0.002}
+      min-volume-multiple: ${STOKR_VWAPBOUNCE_MIN_VOLUME_MULTIPLE:1.0}
+      bounce-confirm-pct: ${STOKR_VWAPBOUNCE_BOUNCE_CONFIRM_PCT:0.06}
+      cooldown-seconds: ${STOKR_VWAPBOUNCE_COOLDOWN_SECONDS:600}
+      min-risk-reward: ${STOKR_VWAPBOUNCE_MIN_RR:1.2}
+    daily-cap:
+      enabled: ${STOKR_STRATEGY_DAILY_CAP_ENABLED:true}
+      default: ${STOKR_STRATEGY_DAILY_CAP_DEFAULT:120}
+      per-strategy:
+        NSE_SPIKE_DETECTION: ${STOKR_SPIKE_DAILY_CAP:80}
+        EARLY_BREAKOUT: ${STOKR_EARLYBREAKOUT_DAILY_CAP:40}
+        VWAP_BOUNCE: ${STOKR_VWAPBOUNCE_DAILY_CAP:25}
+        GAP_FILL: ${STOKR_GAPFILL_DAILY_CAP:30}
+        SECTOR_LAGGARD: ${STOKR_SECTOR_LAGGARD_DAILY_CAP:30}
+    market-close:
+      nse-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_NSE_EXIT_CRON:0 15 15 * * MON-FRI}
+      mcx-exit-cron: ${STOKR_STRATEGY_MARKET_CLOSE_MCX_EXIT_CRON:0 45 23 * * MON-FRI}
+    broker-disconnect:
+      block-live: ${STOKR_OMS_BROKER_DISCONNECT_BLOCK:true}
+      auto-heal-before-block: ${STOKR_OMS_BROKER_AUTO_HEAL_BEFORE_BLOCK:true}
+      flatten-on-disconnect: ${STOKR_OMS_BROKER_DISCONNECT_FLATTEN:false}
+      halt-ttl-hours: ${STOKR_OMS_BROKER_HALT_TTL_HOURS:4}
+    live-rollout:
+      default-live-qty: ${STOKR_OMS_LIVE_DEFAULT_QTY:1}
+  simulation:
+    candle-timeframe: ${STOKR_SIM_TF:1m}
+    latency-ms: ${STOKR_SIM_LATENCY_MS:1500}
+    base-slippage-bps: ${STOKR_SIM_SLIPPAGE_BPS:1.0}
+    base-spread-bps: ${STOKR_SIM_SPREAD_BPS:1.0}
+    partial-fill-count: ${STOKR_SIM_PARTIAL_FILLS:1}
+    order-queue-delay-ms: ${STOKR_SIM_QUEUE_DELAY_MS:0}
+  execution:
+    signal-order-quantity: ${STOKR_SIGNAL_ORDER_QTY:1}
+    max-attempts: ${STOKR_EXECUTION_MAX_ATTEMPTS:5}
+    live-trading-enabled: ${STOKR_LIVE_TRADING_ENABLED:false}
+    broker-fill-sync:
+      enabled: ${STOKR_BROKER_FILL_SYNC_ENABLED:true}
+      interval-ms: ${STOKR_BROKER_FILL_SYNC_MS:15000}
+    target-profit:
+      enabled: ${STOKR_TARGET_PROFIT_MONITORING_ENABLED:true}
+      percent: ${STOKR_TARGET_PROFIT_PERCENT:0.45}
+      monitor-interval-ms: ${STOKR_TARGET_PROFIT_MONITOR_INTERVAL_MS:15000}
+    stop-loss:
+      enabled: ${STOKR_STOP_LOSS_MONITORING_ENABLED:true}
+      percent: ${STOKR_STOP_LOSS_PERCENT:0.25}
+  oms:
+    kill-switch:
+      config-enabled: ${STOKR_OMS_KILL_SWITCH_CONFIG:false}
+      flatten-on-activate: ${STOKR_OMS_KILL_SWITCH_FLATTEN:false}
+    dedupe:
+      window-seconds: ${STOKR_OMS_DEDUPE_WINDOW_SEC:300}
+    exposure:
+      max-daily-loss: ${STOKR_OMS_MAX_DAILY_LOSS:50000}
+      max-loss-per-strategy: ${STOKR_OMS_MAX_STRATEGY_LOSS:20000}
+      max-concurrent-positions: ${STOKR_OMS_MAX_CONCURRENT_POSITIONS:10}
+      max-exposure-per-symbol: ${STOKR_OMS_MAX_EXPOSURE_SYMBOL:100000}
+      max-exposure-per-strategy: ${STOKR_OMS_MAX_EXPOSURE_STRATEGY:150000}
+      max-total-capital-deployed: ${STOKR_OMS_MAX_TOTAL_CAPITAL:500000}
+      max-orders-per-minute: ${STOKR_OMS_MAX_ORDERS_PER_MIN:20}
+      activate-kill-switch-on-breach: ${STOKR_OMS_KILL_ON_BREACH:false}
+    stale-signal:
+      scalp-max-seconds: ${STOKR_OMS_STALE_SCALP_SEC:30}
+      momentum-max-seconds: ${STOKR_OMS_STALE_MOMENTUM_SEC:120}
+      default-max-seconds: ${STOKR_OMS_STALE_DEFAULT_SEC:60}
+    market-close:
+      no-new-entries-after: ${STOKR_OMS_NO_NEW_ENTRIES_AFTER:15:00}
+      flatten-time: ${STOKR_OMS_FLATTEN_TIME:15:15}
+      flatten-end: ${STOKR_OMS_FLATTEN_END:15:30}
+      flatten-cron: ${STOKR_OMS_FLATTEN_CRON:0 15 15 * * MON-FRI}
+      mcx-no-new-entries-after: ${STOKR_OMS_MCX_NO_NEW_ENTRIES_AFTER:23:55}
+      mcx-flatten-time: ${STOKR_OMS_MCX_FLATTEN_TIME:23:50}
+      mcx-flatten-end: ${STOKR_OMS_MCX_FLATTEN_END:23:55}
+      mcx-flatten-cron: ${STOKR_OMS_MCX_FLATTEN_CRON:0 50 23 * * MON-FRI}
+      force-close-stale-positions: ${STOKR_OMS_FORCE_CLOSE_STALE:true}
+  reconciliation:
+    interval-ms: ${STOKR_RECONCILIATION_INTERVAL_MS:30000}
+  orphan:
+    monitor:
+      enabled: ${STOKR_ORPHAN_MONITOR_ENABLED:true}
+      cron: ${STOKR_ORPHAN_MONITOR_CRON:0 * * * * *}
+      timezone: ${STOKR_ORPHAN_MONITOR_TIMEZONE:Asia/Kolkata}
+    classification:
+      time-window-minutes: ${STOKR_ORPHAN_TIME_WINDOW_MINUTES:5}
+      evidence-score-threshold: ${STOKR_ORPHAN_EVIDENCE_THRESHOLD:50}
+      confidence-minimum: ${STOKR_ORPHAN_CONFIDENCE_MIN:UNKNOWN}
+      default-classification: ${STOKR_ORPHAN_DEFAULT_CLASS:UNKNOWN_ORIGIN}
+    review:
+      task-due-hours: ${STOKR_ORPHAN_REVIEW_DUE_HOURS:24}
+      enabled: ${STOKR_ORPHAN_REVIEW_ENABLED:true}
+      do-not-touch-priority: ${STOKR_ORPHAN_DO_NOT_TOUCH_PRIORITY:CRITICAL}
+    cleanup:
+      enabled: ${STOKR_ORPHAN_CLEANUP_ENABLED:true}
+      cron: ${STOKR_ORPHAN_CLEANUP_CRON:0 0 1 * * *}
+      archive-cron: ${STOKR_ORPHAN_ARCHIVE_CRON:0 0 0 * * SUN}
+    audit:
+      retention-days: ${STOKR_ORPHAN_AUDIT_RETENTION_DAYS:730}
+      partitioning: ${STOKR_ORPHAN_AUDIT_PARTITIONING:monthly}
+    notifications:
+      enabled: ${STOKR_ORPHAN_NOTIFICATIONS_ENABLED:true}
+      new-orphan-alert: ${STOKR_ORPHAN_NEW_ALERT:true}
+      do-not-touch-alert: ${STOKR_ORPHAN_DO_NOT_TOUCH_ALERT:true}
+      review-task-alert: ${STOKR_ORPHAN_REVIEW_ALERT:true}
+  signal:
+    outcome-track-ms: ${STOKR_SIGNAL_OUTCOME_TRACK_MS:300000}
+    outcome-fast-track-ms: ${STOKR_SIGNAL_OUTCOME_FAST_TRACK_MS:30000}
+    cooldown-seconds: ${STOKR_SIGNAL_COOLDOWN_SECONDS:900}
+  runtime:
+    live-heartbeat-stale-seconds: ${STOKR_RUNTIME_LIVE_STALE_SECONDS:600}
+  crypto:
+    field-key: ${STOKR_CRYPTO_FIELD_KEY:}
+  telegram:
+    bot-token: ${STOKR_TELEGRAM_BOT_TOKEN:}
+    bot-username: ${STOKR_TELEGRAM_BOT_USERNAME:}
+    webhook-secret: ${STOKR_TELEGRAM_WEBHOOK_SECRET:}
+    dry-run: ${STOKR_TELEGRAM_DRY_RUN:true}
+    operator-chat-id: ${STOKR_TELEGRAM_OPERATOR_CHAT_ID:}
+    trader-chat-id: ${STOKR_TELEGRAM_TRADER_CHAT_ID:}
+    admin-chat-id: ${STOKR_TELEGRAM_ADMIN_CHAT_ID:}
+    operator-alerts-enabled: ${STOKR_TELEGRAM_OPERATOR_ALERTS_ENABLED:true}
+    trader-fill-alerts-enabled: ${STOKR_TELEGRAM_TRADER_FILL_ALERTS_ENABLED:true}
+    operator-readiness-alerts-enabled: ${STOKR_TELEGRAM_OPERATOR_READINESS_ALERTS_ENABLED:true}
+  broker:
+    zerodha:
+      api-key: ${STOKR_ZERODHA_API_KEY:}
+      api-secret: ${STOKR_ZERODHA_API_SECRET:}
+      redirect-url: ${STOKR_ZERODHA_REDIRECT_URL:http://localhost:8080/api/broker/zerodha/callback}
+      sync-enabled: ${STOKR_ZERODHA_SYNC_ENABLED:true}
+      sync-ms: ${STOKR_ZERODHA_SYNC_MS:300000}
+      token-refresh-enabled: ${STOKR_ZERODHA_TOKEN_REFRESH_ENABLED:true}
+      token-refresh-before-hours: ${STOKR_ZERODHA_TOKEN_REFRESH_BEFORE_HOURS:4}
+      token-refresh-interval-ms: ${STOKR_ZERODHA_TOKEN_REFRESH_INTERVAL_MS:1800000}
+      token-refresh-daily-cron: ${STOKR_ZERODHA_TOKEN_REFRESH_DAILY_CRON:0 45 5 * * *}
+      oauth-alert-enabled: ${STOKR_ZERODHA_OAUTH_ALERT_ENABLED:true}
+      oauth-reconnect-alert-enabled: ${STOKR_ZERODHA_OAUTH_RECONNECT_ALERT_ENABLED:false}
+      oauth-success-alert-enabled: ${STOKR_ZERODHA_OAUTH_SUCCESS_ALERT_ENABLED:true}
+      oauth-alert-cooldown-minutes: ${STOKR_ZERODHA_OAUTH_ALERT_COOLDOWN_MINUTES:240}
+      oauth-alert-poll-ms: ${STOKR_ZERODHA_OAUTH_ALERT_POLL_MS:900000}
+      test-order-enabled: ${STOKR_ZERODHA_TEST_ORDER_ENABLED:false}
+      test-order-dry-run: ${STOKR_ZERODHA_TEST_ORDER_DRY_RUN:true}
+  ui:
+    public-base-url: ${STOKR_UI_PUBLIC_BASE_URL:http://localhost:5173}
+  replay:
+    seed-synthetic-candles: ${STOKR_REPLAY_SEED_SYNTHETIC:false}
+  platform:
+    auto-heal:
+      enabled: ${STOKR_PLATFORM_AUTO_HEAL_ENABLED:true}
+      interval-ms: ${STOKR_PLATFORM_AUTO_HEAL_INTERVAL_MS:45000}
+      reconnect-cooldown-sec: ${STOKR_PLATFORM_AUTO_HEAL_RECONNECT_COOLDOWN_SEC:30}
+      pipeline-cooldown-sec: ${STOKR_PLATFORM_AUTO_HEAL_PIPELINE_COOLDOWN_SEC:300}
+    automation:
+      enabled: ${STOKR_PLATFORM_AUTOMATION_ENABLED:true}
+      pre-market-cron: ${STOKR_PLATFORM_AUTOMATION_PRE_MARKET_CRON:0 40 5 * * MON-FRI}
+      pre-open-cron: ${STOKR_PLATFORM_AUTOMATION_PRE_OPEN_CRON:0 55 8 * * MON-FRI}
+      in-session-cron: ${STOKR_PLATFORM_AUTOMATION_IN_SESSION_CRON:0 */30 9-16 * * MON-FRI}
+      token-refresh-before-hours: ${STOKR_PLATFORM_AUTOMATION_TOKEN_REFRESH_BEFORE_HOURS:${STOKR_ZERODHA_TOKEN_REFRESH_BEFORE_HOURS:4}}
+    recovery:
+      enabled: ${STOKR_PLATFORM_RECOVERY_ENABLED:${STOKR_PLATFORM_AUTO_HEAL_ENABLED:true}}
+      interval-ms: ${STOKR_PLATFORM_RECOVERY_INTERVAL_MS:${STOKR_PLATFORM_AUTO_HEAL_INTERVAL_MS:45000}}
+      recheck-wait-ms: ${STOKR_PLATFORM_RECOVERY_RECHECK_WAIT_MS:15000}
+      recheck-wait-max-ms: ${STOKR_PLATFORM_RECOVERY_RECHECK_WAIT_MAX_MS:30000}
+      service-key: ${STOKR_PLATFORM_RECOVERY_SERVICE_KEY:platform-api}
+      max-attempts-per-signature: ${STOKR_PLATFORM_RECOVERY_MAX_ATTEMPTS:3}
+      action-cooldown-sec: ${STOKR_PLATFORM_RECOVERY_ACTION_COOLDOWN_SEC:60}
+      reconnect-cooldown-sec: ${STOKR_PLATFORM_RECOVERY_RECONNECT_COOLDOWN_SEC:${STOKR_PLATFORM_AUTO_HEAL_RECONNECT_COOLDOWN_SEC:30}}
+      pipeline-cooldown-sec: ${STOKR_PLATFORM_RECOVERY_PIPELINE_COOLDOWN_SEC:${STOKR_PLATFORM_AUTO_HEAL_PIPELINE_COOLDOWN_SEC:300}}
+      webhook-url: ${STOKR_PLATFORM_RECOVERY_WEBHOOK_URL:}
+      escalate-after-attempts: ${STOKR_PLATFORM_RECOVERY_ESCALATE_AFTER:5}
+      container-restart-flag-key: ${STOKR_PLATFORM_RECOVERY_RESTART_FLAG_KEY:stokr:platform:recovery:restart-requested}
+      scanner-stale-seconds: ${STOKR_PLATFORM_RECOVERY_SCANNER_STALE_SEC:120}
+      broker-vendor: ${STOKR_PLATFORM_RECOVERY_BROKER_VENDOR:ZERODHA}
+      kill-switch-auto-disarm-sources:
+        - BROKER_DISCONNECT
+        - RISK_BREACH
+    zerodha:
+      live-feed-enabled: ${STOKR_PLATFORM_ZERODHA_LIVE_FEED_ENABLED:true}
+      auto-subscribe-cds: ${STOKR_PLATFORM_ZERODHA_AUTO_SUBSCRIBE_CDS:true}
+      instrument-tokens: ${STOKR_PLATFORM_ZERODHA_INSTRUMENT_TOKENS:256265}
+      pinned-universe-group-keys: ${STOKR_PLATFORM_ZERODHA_PINNED_GROUPS:NIFTY_50,NIFTY_100,CDS_MAJOR_PAIRS}
+  cds-backfill:
+    enabled: ${STOKR_CDS_BACKFILL_ENABLED:true}
+    lookback-days: ${STOKR_CDS_BACKFILL_LOOKBACK_DAYS:10}
+  intraday-gap-fill:
+    enabled: ${STOKR_INTRADAY_GAP_FILL_ENABLED:true}
+    initial-delay-ms: ${STOKR_INTRADAY_GAP_FILL_INITIAL_DELAY_MS:120000}
+    poll-ms: ${STOKR_INTRADAY_GAP_FILL_POLL_MS:120000}
+    min-interval-seconds: ${STOKR_INTRADAY_GAP_FILL_MIN_INTERVAL_SECONDS:180}
+    universe:
+      enabled: ${STOKR_INTRADAY_GAP_FILL_UNIVERSE_ENABLED:true}
+      max-symbols-per-run: ${STOKR_INTRADAY_GAP_FILL_UNIVERSE_MAX_SYMBOLS:30}
+  simulation-mode:
+    enabled: false
+    bypass-session-guard: true
+    bypass-integrity-guard: true
+    bypass-safe-startup: true
+    simulate-broker-execution: true
+    broker-vendor: SIMULATED
+    default-execution-mode: PAPER
+    system-user-id: "33333333-3333-3333-3333-333333333333"
+  orderflow:
+    collection-enabled: ${STOKR_ORDERFLOW_COLLECTION_ENABLED:false}
+    enhancement-enabled: ${STOKR_ORDERFLOW_ENHANCEMENT_ENABLED:false}
+    confidence-adjustment-factor: ${STOKR_ORDERFLOW_CONFIDENCE_ADJUSTMENT:0.5}
+    require-order-flow: ${STOKR_ORDERFLOW_REQUIRE_ORDER_FLOW:true}
+    allow-synthetic: ${STOKR_ORDERFLOW_ALLOW_SYNTHETIC:false}
+    min-liquidity-threshold: ${STOKR_ORDERFLOW_MIN_LIQUIDITY_THRESHOLD:70}
+    datasource:
+      type: ${STOKR_ORDERFLOW_DATASOURCE_TYPE:NSE_FEED}
+      poll-interval-ms: ${STOKR_ORDERFLOW_POLL_INTERVAL_MS:100}
+      buffer-size: ${STOKR_ORDERFLOW_BUFFER_SIZE:1000}
+    redis-cache-enabled: ${STOKR_ORDERFLOW_REDIS_ENABLED:true}
+    redis-cache-ttl-seconds: ${STOKR_ORDERFLOW_REDIS_TTL:2}
+    metrics:
+      buyerpressure-enabled: ${STOKR_ORDERFLOW_BUYER_PRESSURE_ENABLED:true}
+      spread-analysis-enabled: ${STOKR_ORDERFLOW_SPREAD_ANALYSIS_ENABLED:true}
+      liquidity-analysis-enabled: ${STOKR_ORDERFLOW_LIQUIDITY_ANALYSIS_ENABLED:true}
+      depth-analysis-enabled: ${STOKR_ORDERFLOW_DEPTH_ANALYSIS_ENABLED:true}
+    thresholds:
+      min-buyer-pressure-for-buy: ${STOKR_ORDERFLOW_MIN_BUYER_PRESSURE:55}
+      min-seller-pressure-for-sell: ${STOKR_ORDERFLOW_MIN_SELLER_PRESSURE:55}
+      min-liquidity-for-trade: ${STOKR_ORDERFLOW_MIN_LIQUIDITY:50}
+      max-spread-pct-for-trade: ${STOKR_ORDERFLOW_MAX_SPREAD_PCT:0.3}
+    retention:
+      keep-days: ${STOKR_ORDERFLOW_RETENTION_DAYS:30}
+      archive-enabled: ${STOKR_ORDERFLOW_ARCHIVE_ENABLED:false}
+    logging:
+      debug-enabled: ${STOKR_ORDERFLOW_DEBUG:false}
+      trace-enabled: ${STOKR_ORDERFLOW_TRACE:false}
+    batch-update-enabled: ${STOKR_ORDERFLOW_BATCH_UPDATE_ENABLED:true}
+    batch-update-interval: ${STOKR_ORDERFLOW_BATCH_UPDATE_INTERVAL_MS:60000}
+  confidence-strategy:
+    calculator-enabled: ${STOKR_CONFIDENCE_CALCULATOR_ENABLED:true}
+    calculator-interval: ${STOKR_CONFIDENCE_CALCULATOR_INTERVAL_MS:60000}
+    generator-enabled: ${STOKR_CONFIDENCE_GENERATOR_ENABLED:true}
+    generator-interval: ${STOKR_CONFIDENCE_GENERATOR_INTERVAL_MS:120000}
+    generator-initial-delay: ${STOKR_CONFIDENCE_GENERATOR_INITIAL_DELAY_MS:70000}
+    min-risk-reward-ratio: ${STOKR_CONFIDENCE_MIN_RR:2.0}
+    auto-trade-enabled: ${STOKR_CONFIDENCE_AUTO_TRADE_ENABLED:false}
+    auto-trade:
+      interval-ms: ${STOKR_CONFIDENCE_AUTO_TRADE_INTERVAL_MS:120000}
+      initial-delay-ms: ${STOKR_CONFIDENCE_AUTO_TRADE_INITIAL_DELAY_MS:75000}
+      execution-mode: ${STOKR_CONFIDENCE_AUTO_TRADE_EXECUTION_MODE:SIMULATED}
+      default-quantity: ${STOKR_CONFIDENCE_AUTO_TRADE_DEFAULT_QUANTITY:1}
+      high-confidence-quantity: ${STOKR_CONFIDENCE_AUTO_TRADE_HIGH_CONF_QTY:2}
+      confidence-threshold: ${STOKR_CONFIDENCE_AUTO_TRADE_CONF_THRESHOLD:75}
+    exit:
+      check-interval-ms: ${STOKR_CONFIDENCE_EXIT_CHECK_INTERVAL_MS:60000}
+      initial-delay-ms: ${STOKR_CONFIDENCE_EXIT_INITIAL_DELAY_MS:10000}
+      profit-target-high: ${STOKR_CONFIDENCE_EXIT_PROFIT_TARGET_HIGH:2.0}
+      profit-target-medium: ${STOKR_CONFIDENCE_EXIT_PROFIT_TARGET_MEDIUM:1.5}
+      profit-target-low: ${STOKR_CONFIDENCE_EXIT_PROFIT_TARGET_LOW:1.0}
+      stop-loss-high: ${STOKR_CONFIDENCE_EXIT_STOP_LOSS_HIGH:1.0}
+      stop-loss-medium: ${STOKR_CONFIDENCE_EXIT_STOP_LOSS_MEDIUM:1.5}
+      stop-loss-low: ${STOKR_CONFIDENCE_EXIT_STOP_LOSS_LOW:2.0}
+
+logging:
+  level:
+    root: INFO
+    com.stokr: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [%X{correlationId}] %logger{36} - %msg%n"

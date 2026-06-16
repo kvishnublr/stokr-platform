@@ -6,31 +6,32 @@ COPY pom.xml .
 COPY stokr-common/pom.xml stokr-common/
 COPY stokr-auth/pom.xml stokr-auth/
 COPY stokr-user/pom.xml stokr-user/
-COPY stokr-risk/pom.xml stokr-risk/
-COPY stokr-oms/pom.xml stokr-oms/
 COPY stokr-marketdata/pom.xml stokr-marketdata/
-COPY stokr-strategy/pom.xml stokr-strategy/
-COPY stokr-backtest/pom.xml stokr-backtest/
-COPY stokr-execution/pom.xml stokr-execution/
-COPY stokr-admin/pom.xml stokr-admin/
 COPY stokr-broker/pom.xml stokr-broker/
+COPY stokr-oms/pom.xml stokr-oms/
 COPY stokr-websocket/pom.xml stokr-websocket/
-COPY stokr-bootstrap/pom.xml stokr-bootstrap/
+COPY stokr-strategy/pom.xml stokr-strategy/
+COPY stokr-risk/pom.xml stokr-risk/
+COPY stokr-execution/pom.xml stokr-execution/
+COPY stokr-backtest/pom.xml stokr-backtest/
+COPY stokr-admin/pom.xml stokr-admin/
+COPY stokr-v5/pom.xml stokr-v5/
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn -pl stokr-bootstrap -am dependency:go-offline -q
+    mvn install -N -q && \
+    mvn -pl stokr-v5 -am dependency:go-offline -q
 
 COPY . .
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn -pl stokr-bootstrap -am package -DskipTests -Dmaven.test.skip=true
+    mvn -pl stokr-v5 -am package -DskipTests -Dmaven.test.skip=true
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 RUN apk add --no-cache curl && \
     addgroup -S stokr && adduser -S stokr -G stokr
-COPY --from=build /workspace/stokr-bootstrap/target/stokr-bootstrap-*.jar /app/stokr-bootstrap.jar
+COPY --from=build /workspace/stokr-v5/target/stokr-v5-*.jar /app/stokr-v5.jar
 
 USER stokr
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=70.0", "-Xms256m", "-Duser.timezone=Asia/Kolkata", "-jar", "/app/stokr-bootstrap.jar"]
+ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=70.0", "-Xms256m", "-Duser.timezone=Asia/Kolkata", "-jar", "/app/stokr-v5.jar"]

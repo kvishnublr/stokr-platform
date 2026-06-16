@@ -16,15 +16,15 @@
         <module>stokr-auth</module>
         <module>stokr-broker</module>
         <module>stokr-user</module>
-        <module>stokr-oms</module>
-        <module>stokr-risk</module>
         <module>stokr-marketdata</module>
-        <module>stokr-strategy</module>
-        <module>stokr-backtest</module>
-        <module>stokr-execution</module>
+        <module>stokr-oms</module>
         <module>stokr-websocket</module>
+        <module>stokr-strategy</module>
+        <module>stokr-risk</module>
+        <module>stokr-execution</module>
+        <module>stokr-backtest</module>
         <module>stokr-admin</module>
-        <module>stokr-bootstrap</module>
+        <module>stokr-v5</module>
     </modules>
 
     <properties>

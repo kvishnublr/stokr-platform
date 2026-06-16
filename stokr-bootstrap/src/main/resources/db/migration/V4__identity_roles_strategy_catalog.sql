@@ -1,5 +1,5 @@
 -- Identity: ROLE_USER, username/display_name/last_login, seeded admin, strategy catalog flags
--- Seeded admin password (change immediately in production): "password"
+-- Seeded admin password (change immediately in production): "Temp@12345678"
 -- BCrypt strength 10, compatible with Spring BCryptPasswordEncoder.
 
 -- Role: standard app user (self-registration only gets this role)
@@ -47,7 +47,7 @@ SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
        'admin@stokr.local',
        'admin',
        'Platform Admin',
-       '$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG',
+       '$2a$10$iiZzRZfiKKxVsntI0OxZUuq7QSNRBkKg3G/Jjq9nAqc1HDy9dP/jm',
        TRUE,
        NULL
 WHERE NOT EXISTS (SELECT 1 FROM auth_users WHERE lower(email) = lower('admin@stokr.local'));
