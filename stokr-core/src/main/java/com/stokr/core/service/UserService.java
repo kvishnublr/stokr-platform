@@ -2,7 +2,7 @@ package com.stokr.core.service;
 
 import com.stokr.core.domain.Organization;
 import com.stokr.core.domain.User;
-import com.stokr.core.dto.*;
+import com.stokr.core.dto.AuthDto.*;
 import com.stokr.core.repository.OrganizationRepository;
 import com.stokr.core.repository.UserRepository;
 import lombok.RequiredArgsConstructor;

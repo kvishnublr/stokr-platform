@@ -1,7 +1,7 @@
 package com.stokr.core.service;
 
 import com.stokr.core.domain.User;
-import com.stokr.core.dto.*;
+import com.stokr.core.dto.AuthDto.*;
 import com.stokr.core.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +11,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 @Service
@@ -122,7 +121,6 @@ public class AuthService {
 
     @Transactional
     public void logout(String refreshToken) {
-        // In a real app, you'd blacklist the token
         log.info("User logged out");
     }
 
