@@ -1,0 +1,210 @@
+# Production: set HTTPS/public URLs in .env (not committed) — e.g. STOKR_ZERODHA_REDIRECT_URL,
+# STOKR_UI_PUBLIC_BASE_URL, STOKR_CORS_ALLOWED_ORIGINS, STOKR_EMAIL_VERIFY_BASE_URL. Spring uses
+# server.forward-headers-strategy when TLS terminates at an edge proxy (see application.yml).
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stokr-api
+    profiles:
+      - app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-stokr_platform}
+      DB_USER: ${DB_USER:-stokr}
+      DB_PASSWORD: ${DB_PASSWORD:-stokr}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-stokr_platform}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      SPRING_PROFILES_ACTIVE: prod,v2
+      # Compose stack includes RabbitMQ — consumers must run unless explicitly disabled.
+      STOKR_RABBIT_LISTENERS_ENABLED: ${STOKR_RABBIT_LISTENERS_ENABLED:-true}
+      JWT_SECRET: ${JWT_SECRET:-change-me-use-long-random-secret-for-development-only}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-18000}
+      JWT_REFRESH_TTL_SECONDS: ${JWT_REFRESH_TTL_SECONDS:-1209600}
+      STOKR_SECURITY_JWT_SECRET: ${JWT_SECRET}
+      TZ: Asia/Kolkata
+      STOKR_RISK_ZONE: ${STOKR_RISK_ZONE:-Asia/Kolkata}
+      STOKR_EXECUTION_MAX_ATTEMPTS: ${STOKR_EXECUTION_MAX_ATTEMPTS:-5}
+      STOKR_ZERODHA_API_KEY: ${STOKR_ZERODHA_API_KEY:-}
+      STOKR_ZERODHA_API_SECRET: ${STOKR_ZERODHA_API_SECRET:-}
+      STOKR_ZERODHA_REDIRECT_URL: ${STOKR_ZERODHA_REDIRECT_URL:-http://localhost:8080/api/broker/zerodha/callback}
+      STOKR_UI_PUBLIC_BASE_URL: ${STOKR_UI_PUBLIC_BASE_URL:-http://localhost:5173}
+      STOKR_CORS_ALLOWED_ORIGINS: ${STOKR_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175}
+      # Avoid aggregate health DOWN when SMTP is only partly configured (e.g. host set, password missing).
+      STOKR_MAIL_HEALTH_ENABLED: ${STOKR_MAIL_HEALTH_ENABLED:-false}
+      MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
+      STOKR_ZERODHA_TEST_ORDER_ENABLED: ${STOKR_ZERODHA_TEST_ORDER_ENABLED:-false}
+      STOKR_ZERODHA_TEST_ORDER_DRY_RUN: ${STOKR_ZERODHA_TEST_ORDER_DRY_RUN:-true}
+      STOKR_REPLAY_SEED_SYNTHETIC: ${STOKR_REPLAY_SEED_SYNTHETIC:-true}
+      STOKR_CATALOG_SCAN_POLL_MS: ${STOKR_CATALOG_SCAN_POLL_MS:-60000}
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0 -Xms256m}
+      STOKR_GITHUB_ENABLED: ${STOKR_GITHUB_ENABLED:-false}
+      STOKR_GITHUB_TOKEN: ${STOKR_GITHUB_TOKEN:-}
+      STOKR_GITHUB_OWNER: ${STOKR_GITHUB_OWNER:-}
+      STOKR_GITHUB_REPO: ${STOKR_GITHUB_REPO:-}
+      STOKR_GITHUB_BRANCH: ${STOKR_GITHUB_BRANCH:-Release_v4}
+      STOKR_GIT_COMMIT: ${STOKR_GIT_COMMIT:-unknown}
+      STOKR_DEPLOY_BRANCH: ${STOKR_DEPLOY_BRANCH:-Release_v4}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 10 http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 240s
+
+  ui:
+    build:
+      context: ./stokr-ui
+      dockerfile: Dockerfile
+    container_name: stokr-ui
+    profiles:
+      - app
+    restart: unless-stopped
+    ports:
+      - "${UI_PORT:-3000}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "test", "-f", "/usr/share/nginx/html/index.html"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  ui-v2:
+    build:
+      context: ./stokr-ui
+      dockerfile: Dockerfile
+    container_name: stokr-ui-v2
+    profiles:
+      - v2-ui
+    restart: unless-stopped
+    ports:
+      - "${UI_V2_PORT:-8090}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "test", "-f", "/usr/share/nginx/html/index.html"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    container_name: stokr-postgres
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${DB_NAME:-stokr_platform}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - stokr_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-stokr} -d ${DB_NAME:-stokr_platform}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    container_name: stokr-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - stokr_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    container_name: stokr-rabbitmq
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_UI_PORT:-15672}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    volumes:
+      - stokr_rabbitmq_data:/var/lib/rabbitmq
+    labels:
+      - autoheal=true
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 20s
+      timeout: 15s
+      retries: 10
+      start_period: 120s
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: stokr-autoheal
+    restart: always
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: 30
+      AUTOHEAL_START_PERIOD: 300
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: stokr-mailpit
+    profiles:
+      - tools
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: stokr-pgadmin
+    profiles:
+      - tools
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@stokr.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - stokr_pgadmin_data:/var/lib/pgadmin
+
+volumes:
+  stokr_pg_data:
+  stokr_redis_data:
+  stokr_rabbitmq_data:
+  stokr_pgadmin_data:
