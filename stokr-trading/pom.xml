@@ -19,6 +19,7 @@
         <dependency>
             <groupId>com.stokr</groupId>
             <artifactId>stokr-core</artifactId>
+            <version>${project.parent.version}</version>
         </dependency>
 
         <!-- Spring Boot Starters -->

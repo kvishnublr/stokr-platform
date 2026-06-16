@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.stokr</groupId>
         <artifactId>stokr-platform</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
+        <version>7.0.0-LITE</version>
     </parent>
 
     <artifactId>stokr-common</artifactId>

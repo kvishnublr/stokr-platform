@@ -15,6 +15,13 @@
     <description>Stokr Core Module - Auth, User, Organization</description>
 
     <dependencies>
+        <!-- Internal -->
+        <dependency>
+            <groupId>com.stokr</groupId>
+            <artifactId>stokr-common</artifactId>
+            <version>${project.parent.version}</version>
+        </dependency>
+
         <!-- Spring Boot Starters -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
