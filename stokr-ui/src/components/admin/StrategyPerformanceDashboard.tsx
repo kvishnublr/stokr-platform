@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { TrendingUp, Target, Zap, Award, DollarSign, Clock, AlertCircle } from 'lucide-react';
+import { api } from '../../api/client';
 
 interface StrategyMetrics {
   strategyKey: string;
@@ -45,13 +46,7 @@ async function fetchStrategyPerformance(userId: string, mode: string, startDate?
   if (startDate) params.append('startDate', startDate);
   if (endDate) params.append('endDate', endDate);
 
-  const response = await fetch(`/api/strategy/performance/user/${userId}?${params}`, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' }
-  });
-
-  if (!response.ok) throw new Error('Failed to fetch performance data');
-  const data = await response.json();
+  const { data } = await api.get(`/api/strategy/performance/user/${userId}?${params}`);
   return data.data;
 }
 

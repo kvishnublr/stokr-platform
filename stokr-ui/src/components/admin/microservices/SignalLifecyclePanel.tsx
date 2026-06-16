@@ -2,6 +2,7 @@ import { useState } from "react";
 import { cn } from "../../../lib/utils";
 import { fmtTime } from "../../../lib/dateUtils";
 import { toast } from "sonner";
+import { api } from "../../../api/client";
 
 interface ExecutionEvent {
   timestamp: number;
@@ -66,13 +67,7 @@ export function SignalLifecyclePanel() {
       setLoading(true);
       setError(null);
       setSearched(true);
-      const response = await fetch(
-        `/api/v1/admin/signals/${signalId}/lifecycle`
-      );
-      if (!response.ok) {
-        throw new Error(response.status === 404 ? "Signal not found" : "Failed to fetch signal lifecycle");
-      }
-      const data = await response.json();
+      const { data } = await api.get(`/api/v1/admin/signals/${signalId}/lifecycle`);
       setLifecycle(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";

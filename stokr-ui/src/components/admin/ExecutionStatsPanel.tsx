@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { api } from '../../api/client';
 
 interface ExecutionStats {
   ordersToday: number;
@@ -16,20 +17,8 @@ export function ExecutionStatsPanel() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-        const response = await fetch('/api/admin/execution/stats', {
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          const data = await response.json();
-          setStats(data);
-        } else {
-          throw new Error('Failed to fetch');
-        }
+        const { data } = await api.get('/api/admin/execution/stats', { timeout: 2000 });
+        setStats(data);
       } catch (error) {
         console.error('Error fetching stats, using mock data:', error);
         // Mock data fallback

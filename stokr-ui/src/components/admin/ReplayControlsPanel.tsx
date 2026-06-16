@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { fmtDateTime } from '../../lib/dateUtils';
 import { cn } from '../../lib/utils';
+import { api } from '../../api/client';
 
 interface ReplayStatus {
   status: 'RUNNING' | 'PAUSED' | 'STOPPED';
@@ -28,18 +29,8 @@ export function ReplayControlsPanel() {
   useEffect(() => {
     const pollReplayStatus = setInterval(async () => {
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1000);
-
-        const response = await fetch('/api/admin/execution/replay/status', {
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          const data = await response.json();
-          setReplayStatus(data);
-        }
+        const { data } = await api.get('/api/admin/execution/replay/status', { timeout: 1000 });
+        setReplayStatus(data);
       } catch (error) {
         // Silently fail - API not available yet
         console.debug('Replay status API not available');
@@ -52,23 +43,13 @@ export function ReplayControlsPanel() {
   const handleStartReplay = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/admin/execution/replay/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol,
-          startTime: new Date(startDate).toISOString(),
-          endTime: new Date(endDate).toISOString(),
-          speed,
-        }),
+      const { data } = await api.post('/api/admin/execution/replay/start', {
+        symbol,
+        startTime: new Date(startDate).toISOString(),
+        endTime: new Date(endDate).toISOString(),
+        speed,
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Replay started:', data);
-      } else {
-        alert('Failed to start replay');
-      }
+      console.log('Replay started:', data);
     } catch (error) {
       console.error('Start replay error:', error);
       alert('Error starting replay');
@@ -79,10 +60,7 @@ export function ReplayControlsPanel() {
 
   const handlePauseReplay = async () => {
     try {
-      const response = await fetch('/api/admin/execution/replay/pause', {
-        method: 'POST',
-      });
-      if (!response.ok) alert('Failed to pause replay');
+      await api.post('/api/admin/execution/replay/pause');
     } catch (error) {
       console.error('Pause replay error:', error);
     }
@@ -90,10 +68,7 @@ export function ReplayControlsPanel() {
 
   const handleResumeReplay = async () => {
     try {
-      const response = await fetch('/api/admin/execution/replay/resume', {
-        method: 'POST',
-      });
-      if (!response.ok) alert('Failed to resume replay');
+      await api.post('/api/admin/execution/replay/resume');
     } catch (error) {
       console.error('Resume replay error:', error);
     }
@@ -101,10 +76,7 @@ export function ReplayControlsPanel() {
 
   const handleStopReplay = async () => {
     try {
-      const response = await fetch('/api/admin/execution/replay/stop', {
-        method: 'POST',
-      });
-      if (!response.ok) alert('Failed to stop replay');
+      await api.post('/api/admin/execution/replay/stop');
     } catch (error) {
       console.error('Stop replay error:', error);
     }

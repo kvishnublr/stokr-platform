@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { TrendingUp, TrendingDown } from 'lucide-react';
+import { api } from '../../api/client';
 
 interface PerformanceData {
   aggregate: {
@@ -19,13 +20,7 @@ interface PerformanceData {
 }
 
 async function fetchTodayPerformance(userId: string, mode: string) {
-  const response = await fetch(`/api/strategy/performance/today?userId=${userId}&executionMode=${mode}`, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' }
-  });
-
-  if (!response.ok) return null;
-  const data = await response.json();
+  const { data } = await api.get(`/api/strategy/performance/today?userId=${userId}&executionMode=${mode}`);
   return data.data;
 }
 

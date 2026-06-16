@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
+import { api } from "../../../api/client";
 
 interface QueueStatus {
   name: string;
@@ -58,9 +59,7 @@ export function QueueMonitoringPanel() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch("/api/v1/admin/health/queues");
-      if (!response.ok) throw new Error("Failed to fetch queue status");
-      const data = await response.json();
+      const { data } = await api.get("/api/admin/ops/status");
       setQueueHealth(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
