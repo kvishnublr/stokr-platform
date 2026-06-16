@@ -5,22 +5,19 @@ FROM maven:3.9-eclipse-temurin-21-alpine AS builder
 
 WORKDIR /app
 
-# Copy pom files
-COPY pom.xml .
-COPY stokr-core/pom.xml ./stokr-core/
-COPY stokr-trading/pom.xml ./stokr-trading/
-COPY stokr-common/pom.xml ./stokr-common/
+# Copy only LITE module pom files
+COPY pom.xml ./pom.xml
+COPY stokr-core/pom.xml ./stokr-core/pom.xml
+COPY stokr-trading/pom.xml ./stokr-trading/pom.xml
+COPY stokr-common/pom.xml ./stokr-common/pom.xml
 
-# Download dependencies
-RUN mvn dependency:go-offline -B
-
-# Copy source code
+# Copy source code for LITE modules
 COPY stokr-core/src ./stokr-core/src
 COPY stokr-trading/src ./stokr-trading/src
 COPY stokr-common/src ./stokr-common/src
 
-# Build the application
-RUN mvn package -DskipTests -B
+# Build only the LITE modules (skip other modules)
+RUN mvn package -pl stokr-core,stokr-trading -am -DskipTests -B
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
@@ -31,8 +28,7 @@ WORKDIR /app
 RUN addgroup -g 1001 -S stokr && adduser -u 1001 -S stokr -G stokr
 
 # Copy the built jar
-COPY --from=builder /app/stokr-core/target/*.jar ./stokr-core.jar
-COPY --from=builder /app/stokr-trading/target/*.jar ./stokr-trading.jar
+COPY --from=builder /app/stokr-core/target/stokr-core-*.jar ./stokr-core.jar
 
 # Copy application properties
 COPY stokr-core/src/main/resources/application.properties ./

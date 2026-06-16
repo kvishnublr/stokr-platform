@@ -1,13 +1,49 @@
-.idea
-.tools
-docs
-scripts
-
-**/target
-**/node_modules
-**/dist
-**/*.log
-
+# Git
 .git
 .gitignore
-README.md
+
+# Documentation (not needed in container)
+*.md
+docs/
+scripts/
+
+# Frontend (separate build)
+stokr-ui-lite/
+
+# Legacy modules (not needed for LITE)
+stokr-auth/
+stokr-broker/
+stokr-user/
+stokr-oms/
+stokr-risk/
+stokr-marketdata/
+stokr-strategy/
+stokr-backtest/
+stokr-execution/
+stokr-websocket/
+stokr-admin/
+stokr-bootstrap/
+
+# Build artifacts
+**/target
+**/build
+**/node_modules
+**/dist
+*.class
+*.jar
+*.war
+
+# IDE
+.idea
+.vscode
+*.iml
+.tools
+
+# Logs
+*.log
+logs/
+
+# Temp files
+*.tmp
+*~
+.DS_Store

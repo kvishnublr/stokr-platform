@@ -12,23 +12,10 @@
     <description>Modular monolith automated trading platform</description>
 
     <modules>
-        <!-- LITE Version Modules -->
+        <!-- LITE Version Modules Only -->
+        <module>stokr-common</module>
         <module>stokr-core</module>
         <module>stokr-trading</module>
-        <!-- Legacy Modules (for compatibility) -->
-        <module>stokr-common</module>
-        <module>stokr-auth</module>
-        <module>stokr-broker</module>
-        <module>stokr-user</module>
-        <module>stokr-oms</module>
-        <module>stokr-risk</module>
-        <module>stokr-marketdata</module>
-        <module>stokr-strategy</module>
-        <module>stokr-backtest</module>
-        <module>stokr-execution</module>
-        <module>stokr-websocket</module>
-        <module>stokr-admin</module>
-        <module>stokr-bootstrap</module>
     </modules>
 
     <properties>
