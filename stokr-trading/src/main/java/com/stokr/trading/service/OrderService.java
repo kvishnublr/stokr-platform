@@ -1,7 +1,7 @@
 package com.stokr.trading.service;
 
 import com.stokr.trading.domain.*;
-import com.stokr.trading.dto.*;
+import com.stokr.trading.dto.TradingDto.*;
 import com.stokr.trading.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
