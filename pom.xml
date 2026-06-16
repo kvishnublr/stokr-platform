@@ -6,12 +6,16 @@
 
     <groupId>com.stokr</groupId>
     <artifactId>stokr-platform</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>7.0.0-LITE</version>
     <packaging>pom</packaging>
     <name>stokr-platform</name>
     <description>Modular monolith automated trading platform</description>
 
     <modules>
+        <!-- LITE Version Modules -->
+        <module>stokr-core</module>
+        <module>stokr-trading</module>
+        <!-- Legacy Modules (for compatibility) -->
         <module>stokr-common</module>
         <module>stokr-auth</module>
         <module>stokr-broker</module>

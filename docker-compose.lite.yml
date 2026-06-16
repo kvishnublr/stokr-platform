@@ -1,0 +1,114 @@
+# Stokr LITE - Docker Compose
+# Version: 7.0.0-LITE
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # API Service (Spring Boot)
+  # ==========================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.lite
+    container_name: stokr-lite-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=stokr_lite
+      - DB_USER=stokr
+      - DB_PASSWORD=stokr_lite_password
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/stokr_lite
+      - JWT_SECRET=stokr-lite-jwt-secret-key-change-in-production-32chars
+      - JWT_ACCESS_TTL_SECONDS=3600
+      - JWT_REFRESH_TTL_SECONDS=86400
+      - TZ=Asia/Kolkata
+      - STOKR_ZERODHA_API_KEY=${STOKR_ZERODHA_API_KEY:-}
+      - STOKR_ZERODHA_API_SECRET=${STOKR_ZERODHA_API_SECRET:-}
+      - STOKR_ZERODHA_REDIRECT_URL=${STOKR_ZERODHA_REDIRECT_URL:-http://localhost:8080/api/broker/zerodha/callback}
+      - STOKR_UI_PUBLIC_BASE_URL=${STOKR_UI_PUBLIC_BASE_URL:-http://localhost:3000}
+      - STOKR_CORS_ALLOWED_ORIGINS=${STOKR_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ==========================================================================
+  # Frontend (React)
+  # ==========================================================================
+  ui:
+    build:
+      context: ./stokr-ui-lite
+      dockerfile: Dockerfile
+    container_name: stokr-lite-ui
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "test", "-f", "/usr/share/nginx/html/index.html"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # ==========================================================================
+  # PostgreSQL Database
+  # ==========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: stokr-lite-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stokr_lite
+      POSTGRES_USER: stokr
+      POSTGRES_PASSWORD: stokr_lite_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./stokr-core/src/main/resources/db/migration:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stokr -d stokr_lite"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================================================
+  # Redis (for caching)
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: stokr-lite-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+# ==========================================================================
+# Volumes
+# ==========================================================================
+volumes:
+  postgres_data:
+  redis_data:
+
+# ==========================================================================
+# Networks
+# ==========================================================================
+networks:
+  default:
+    name: stokr-lite-network
