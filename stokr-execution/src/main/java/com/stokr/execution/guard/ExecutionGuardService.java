@@ -1,6 +1,7 @@
 package com.stokr.execution.guard;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -12,6 +13,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ExecutionGuardService {
 
     private final ExecutionGuardPolicyService policyService;
@@ -24,18 +26,18 @@ public class ExecutionGuardService {
         MarketSnapshot market = marketSnapshotService.capture(ctx.symbol(), ctx.now());
         List<ExecutionGuardViolation> violations = new ArrayList<>();
 
-        validateSession(ctx, market, violations);
-        validateSignalTtl(ctx, policy, violations);
-        validateDrift(ctx, policy, market, violations);
-        validateFeedFreshness(ctx, policy, market, violations);
-        validateSpread(policy, market, violations);
-        validateLiquidity(policy, market, violations);
-        validateVolatility(policy, market, violations);
-        validateCircuit(market, violations);
-        validateSlippage(policy, market, violations);
+        safeValidate(() -> validateSession(ctx, market, violations));
+        safeValidate(() -> validateSignalTtl(ctx, policy, violations));
+        safeValidate(() -> validateDrift(ctx, policy, market, violations));
+        safeValidate(() -> validateFeedFreshness(ctx, policy, market, violations));
+        safeValidate(() -> validateSpread(policy, market, violations));
+        safeValidate(() -> validateLiquidity(policy, market, violations));
+        safeValidate(() -> validateVolatility(policy, market, violations));
+        safeValidate(() -> validateCircuit(market, violations));
+        safeValidate(() -> validateSlippage(policy, market, violations));
         if (ctx.executionMode() == com.stokr.oms.domain.ExecutionMode.LIVE) {
-            violations.addAll(brokerPositionTruthService.validateForExecution(
-                    ctx.userId(), ctx.symbol(), ctx.side(), ctx.guardMode(), ctx.now()));
+            safeValidate(() -> violations.addAll(brokerPositionTruthService.validateForExecution(
+                    ctx.userId(), ctx.symbol(), ctx.side(), ctx.guardMode(), ctx.now())));
         }
 
         ExecutionGuardOutcome outcome = decideOutcome(ctx, policy, violations);
@@ -159,5 +161,16 @@ public class ExecutionGuardService {
                 ? ExecutionGuardOutcome.SOFT_FAIL : ExecutionGuardOutcome.HARD_FAIL;
         return ExecutionGuardOutcome.PASS;
     }
-}
 
+    /**
+     * Runs a validation lambda within a try-catch so that one guard failure does not
+     * prevent subsequent guards from being evaluated.
+     */
+    private static void safeValidate(Runnable validation) {
+        try {
+            validation.run();
+        } catch (Exception ex) {
+            log.warn("execution_guard.validation_exception err={}", ex.getMessage());
+        }
+    }
+}

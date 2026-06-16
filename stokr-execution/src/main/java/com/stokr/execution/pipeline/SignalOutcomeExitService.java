@@ -132,7 +132,12 @@ public class SignalOutcomeExitService {
         if (signalId == null) {
             return;
         }
-        dispatchForSignal(signalId, outcomeStatus);
+        try {
+            dispatchForSignal(signalId, outcomeStatus);
+        } catch (Exception ex) {
+            log.warn("signal.outcome_exit.listener_failed signalId={} outcome={} err={}",
+                    signalId, outcomeStatus, ex.getMessage());
+        }
     }
 
     /**
@@ -214,6 +219,24 @@ public class SignalOutcomeExitService {
             return 0;
         }
 
+        // Resolve broker snapshot ONCE before the entry loop to avoid N API calls
+        UUID userId = null;
+        for (OmsOrder entry : entryOrders) {
+            if (entry.getUserId() != null) {
+                userId = entry.getUserId();
+                break;
+            }
+        }
+        BrokerPositionTruthSnapshot brokerSnap = null;
+        if (userId != null) {
+            try {
+                brokerPositionTruthService.syncUser(userId);
+                brokerSnap = brokerPositionTruthService.snapshot(userId);
+            } catch (Exception ex) {
+                log.warn("signal.outcome_exit.sync_failed userId={} err={}", userId, ex.getMessage());
+            }
+        }
+
         int placed = 0;
         boolean anyEligible = false;
         boolean anyFailed = false;
@@ -229,7 +252,7 @@ public class SignalOutcomeExitService {
             }
             anyEligible = true;
             try {
-                placeExitForEntry(entry, signal, outcomeStatus);
+                placeExitForEntry(entry, signal, outcomeStatus, brokerSnap);
                 placed++;
             } catch (Exception ex) {
                 anyFailed = true;
@@ -299,10 +322,11 @@ public class SignalOutcomeExitService {
         return List.copyOf(merged.values());
     }
 
-    private void placeExitForEntry(OmsOrder entry, StrategySignalEntity signal, String outcomeStatus) {
+    private void placeExitForEntry(OmsOrder entry, StrategySignalEntity signal, String outcomeStatus,
+                                    BrokerPositionTruthSnapshot brokerSnap) {
         UUID userId = entry.getUserId();
         String symbol = entry.getSymbol();
-        ExitResolution exit = resolveExit(userId, symbol, entry);
+        ExitResolution exit = resolveExit(userId, symbol, entry, brokerSnap);
         if (exit == null) {
             log.debug("signal.outcome_exit.skip_flat userId={} symbol={} signalId={}",
                     userId, symbol, signal.getId());
@@ -310,7 +334,16 @@ public class SignalOutcomeExitService {
         }
 
         String strategyKey = entry.getStrategyKey() != null ? entry.getStrategyKey() : signal.getStrategyName();
-        String idempotencyKey = "outcome-exit:" + signal.getId() + ":" + entry.getId() + ":" + outcomeStatus;
+        // Stable key without outcomeStatus — one exit per signal+entry pair regardless of outcome transitions
+        String idempotencyKey = "outcome-exit:" + signal.getId() + ":" + entry.getId();
+
+        // Backward-compatible duplicate check — prefix matches both old keys (with outcomeStatus suffix)
+        // and new stable keys, preventing duplicate exits for the same signal+entry pair.
+        if (omsOrderRepository.existsByDeletedFalseAndIdempotencyKeyStartingWith(idempotencyKey)) {
+            log.debug("signal.outcome_exit.already_exists signalId={} entryId={} key={}",
+                    signal.getId(), entry.getId(), idempotencyKey);
+            return;
+        }
 
         OmsOrder placed = orderPlacementService.place(userId, new CreateOrderRequest(
                 symbol,
@@ -339,16 +372,17 @@ public class SignalOutcomeExitService {
 
     /**
      * When Zerodha still holds qty, always place a LIVE exit — PAPER-filled entry legs are not sufficient.
+     * Uses pre-fetched broker snapshot instead of calling syncUser() per leg.
      */
-    private ExitResolution resolveExit(UUID userId, String symbol, OmsOrder entry) {
-        brokerPositionTruthService.syncUser(userId);
-        BrokerPositionTruthSnapshot snap = brokerPositionTruthService.snapshot(userId);
-        String norm = BrokerPositionTruthService.normalizeSymbol(symbol);
-        for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : snap.positions()) {
-            if (norm.equals(row.symbol()) && row.brokerQty() != null && row.brokerQty().signum() != 0) {
-                BigDecimal brokerQty = row.brokerQty();
-                String side = brokerQty.signum() > 0 ? "SELL" : "BUY";
-                return new ExitResolution(brokerQty.abs(), side, ExecutionMode.LIVE, "ZERODHA");
+    private ExitResolution resolveExit(UUID userId, String symbol, OmsOrder entry, BrokerPositionTruthSnapshot brokerSnap) {
+        if (brokerSnap != null) {
+            String norm = BrokerPositionTruthService.normalizeSymbol(symbol);
+            for (BrokerPositionTruthSnapshot.BrokerTruthPositionRow row : brokerSnap.positions()) {
+                if (norm.equals(row.symbol()) && row.brokerQty() != null && row.brokerQty().signum() != 0) {
+                    BigDecimal brokerQty = row.brokerQty();
+                    String side = brokerQty.signum() > 0 ? "SELL" : "BUY";
+                    return new ExitResolution(brokerQty.abs(), side, ExecutionMode.LIVE, "ZERODHA");
+                }
             }
         }
         if (entry.getQuantity() != null && entry.getQuantity().signum() > 0) {
