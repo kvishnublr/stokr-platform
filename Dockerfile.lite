@@ -17,9 +17,9 @@ COPY stokr-trading/src ./stokr-trading/src
 COPY stokr-common/src ./stokr-common/src
 
 # Build only the LITE modules (skip other modules)
-# First build without repackage, then repackage just the core module
-RUN mvn package -pl stokr-core,stokr-trading -am -DskipTests -B && \
-    mvn spring-boot:repackage -pl stokr-core -DskipTests -B
+# Use reactor to build all dependencies first, then repackage core module
+WORKDIR /app
+RUN mvn package spring-boot:repackage -pl stokr-core -am -DskipTests -B
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
