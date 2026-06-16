@@ -26,6 +26,9 @@ FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
+# Install wget for health check
+RUN apk add --no-cache wget
+
 # Add non-root user
 RUN addgroup -g 1001 -S stokr && adduser -u 1001 -S stokr -G stokr
 
