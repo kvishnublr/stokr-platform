@@ -61,9 +61,9 @@ services:
       retries: 3
 
 # ==========================================================================
-# Networks (connect to existing stokr network)
+# Networks (connect to existing network)
 # ==========================================================================
 networks:
   default:
-    name: stokr_default
+    name: stokr-platform_default
     external: true
