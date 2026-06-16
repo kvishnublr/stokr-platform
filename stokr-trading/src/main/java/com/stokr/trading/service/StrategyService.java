@@ -258,7 +258,7 @@ public class StrategyService {
     // ===================== HELPER METHODS =====================
 
     private StrategyDto toStrategyDto(Strategy s) {
-        int instanceCount = instanceRepository.countByUserId(s.getId()).intValue();
+        long instanceCount = instanceRepository.countByUserId(s.getId());
         return StrategyDto.builder()
                 .id(s.getId())
                 .organizationId(s.getOrganizationId())
@@ -267,15 +267,15 @@ public class StrategyService {
                 .description(s.getDescription())
                 .isActive(s.getIsActive())
                 .isPublic(s.getIsPublic())
-                .instanceCount(instanceCount)
+                .instanceCount((int) instanceCount)
                 .createdAt(s.getCreatedAt())
                 .updatedAt(s.getUpdatedAt())
                 .build();
     }
 
     private InstanceDto toInstanceDto(StrategyInstance si) {
-        int pendingSignals = signalRepository.countByInstanceIdAndStatus(si.getId(), "PENDING");
-        List<Position> positions = positionRepository.findByInstanceIdAndStatusAndDeletedFalse(si.getId(), "OPEN");
+        long pendingSignals = signalRepository.countByInstanceIdAndStatus(si.getId(), "PENDING");
+        List<Position> positions = positionRepository.findByUserIdAndStatusAndDeletedFalse(si.getUserId(), "OPEN");
         BigDecimal totalPnl = positions.stream()
                 .map(p -> p.getPnl() != null ? p.getPnl() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -297,7 +297,7 @@ public class StrategyService {
                 .startedAt(si.getStartedAt())
                 .stoppedAt(si.getStoppedAt())
                 .lastSignalAt(si.getLastSignalAt())
-                .pendingSignals(pendingSignals)
+                .pendingSignals((int) pendingSignals)
                 .openPositions(positions.size())
                 .totalPnl(totalPnl)
                 .createdAt(si.getCreatedAt())
