@@ -1,7 +1,5 @@
 # Stokr LITE - Docker Compose
 # Version: 7.0.0-LITE
-version: '3.8'
-
 services:
   # ==========================================================================
   # API Service (Spring Boot)
@@ -10,10 +8,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.lite
-    container_name: stokr-lite-api
+    container_name: stokr7-api
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8070:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       - DB_HOST=postgres
@@ -28,9 +26,9 @@ services:
       - TZ=Asia/Kolkata
       - STOKR_ZERODHA_API_KEY=${STOKR_ZERODHA_API_KEY:-}
       - STOKR_ZERODHA_API_SECRET=${STOKR_ZERODHA_API_SECRET:-}
-      - STOKR_ZERODHA_REDIRECT_URL=${STOKR_ZERODHA_REDIRECT_URL:-http://localhost:8080/api/broker/zerodha/callback}
-      - STOKR_UI_PUBLIC_BASE_URL=${STOKR_UI_PUBLIC_BASE_URL:-http://localhost:3000}
-      - STOKR_CORS_ALLOWED_ORIGINS=${STOKR_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      - STOKR_ZERODHA_REDIRECT_URL=${STOKR_ZERODHA_REDIRECT_URL:-http://localhost:8070/api/broker/zerodha/callback}
+      - STOKR_UI_PUBLIC_BASE_URL=${STOKR_UI_PUBLIC_BASE_URL:-http://localhost:3070}
+      - STOKR_CORS_ALLOWED_ORIGINS=${STOKR_CORS_ALLOWED_ORIGINS:-http://localhost:3070,http://localhost:5173}
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,10 +46,10 @@ services:
     build:
       context: ./stokr-ui-lite
       dockerfile: Dockerfile
-    container_name: stokr-lite-ui
+    container_name: stokr7-ui
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "3070:80"
     depends_on:
       - api
     healthcheck:
@@ -65,14 +63,14 @@ services:
   # ==========================================================================
   postgres:
     image: postgres:16-alpine
-    container_name: stokr-lite-postgres
+    container_name: stokr7-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: stokr_lite
       POSTGRES_USER: stokr
       POSTGRES_PASSWORD: stokr_lite_password
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./stokr-core/src/main/resources/db/migration:/docker-entrypoint-initdb.d
@@ -87,10 +85,10 @@ services:
   # ==========================================================================
   redis:
     image: redis:7-alpine
-    container_name: stokr-lite-redis
+    container_name: stokr7-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -105,10 +103,3 @@ services:
 volumes:
   postgres_data:
   redis_data:
-
-# ==========================================================================
-# Networks
-# ==========================================================================
-networks:
-  default:
-    name: stokr-lite-network
