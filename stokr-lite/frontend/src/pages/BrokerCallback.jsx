@@ -8,6 +8,8 @@ const BROKER_LABELS = {
   fyers: 'Fyers',
 };
 
+const OAUTH_RESULT_KEY = 'stokr_broker_oauth_result';
+
 export default function BrokerCallback() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -25,17 +27,34 @@ export default function BrokerCallback() {
     if (handled.current) return;
     handled.current = true;
 
+    // Build the result object
+    const result = {
+      type: 'stokr_broker_oauth',
+      status: isSuccess ? 'ok' : 'error',
+      broker,
+      reason,
+      message,
+    };
+
+    // Always write to localStorage as fallback (works even if postMessage fails due to cross-origin)
+    try {
+      localStorage.setItem(OAUTH_RESULT_KEY, JSON.stringify({
+        status: result.status,
+        broker: result.broker,
+        reason: result.reason,
+        message: result.message,
+      }));
+    } catch { /* ignore */ }
+
     // If this was opened as a popup, send message to parent and close
     if (window.opener) {
-      window.opener.postMessage({
-        type: 'stokr_broker_oauth',
-        status: isSuccess ? 'ok' : 'error',
-        broker,
-        reason,
-        message,
-      }, '*');
-      // Brief delay so message is sent before closing
-      setTimeout(() => window.close(), 300);
+      try {
+        window.opener.postMessage(result, '*');
+      } catch { /* postMessage may fail cross-origin */ }
+      // Delay close to give parent time to receive message + poll localStorage
+      setTimeout(() => {
+        try { window.close(); } catch { /* ignore */ }
+      }, 1000);
       return;
     }
 

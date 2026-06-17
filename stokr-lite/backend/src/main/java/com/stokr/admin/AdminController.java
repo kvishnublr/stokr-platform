@@ -7,7 +7,7 @@ import com.stokr.oms.Position;
 import com.stokr.oms.PositionService;
 import com.stokr.risk.ErrorLogService;
 import com.stokr.risk.KillSwitchService;
-import com.stokr.strategy.StrategyService;
+import com.stokr.strategy.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -34,6 +34,9 @@ public class AdminController {
     private final KillSwitchService killSwitchService;
     private final ErrorLogService errorLogService;
     private final StrategyService strategyService;
+    private final StrategyConfigService strategyConfigService;
+    private final StrategyMappingService strategyMappingService;
+    private final UniverseGroupService universeGroupService;
     private final ExitManager exitManager;
     private final PositionService positionService;
 
@@ -141,6 +144,77 @@ public class AdminController {
     @PatchMapping("/strategies/{id}/toggle")
     public ResponseEntity<?> toggleStrategy(@PathVariable Long id, @RequestParam boolean enabled) {
         return ResponseEntity.ok(strategyService.toggleEnabled(id, enabled));
+    }
+
+    // ========= Strategy Configs =========
+
+    @GetMapping("/strategy-configs")
+    public ResponseEntity<List<StrategyConfig>> listStrategyConfigs() {
+        return ResponseEntity.ok(strategyConfigService.listAll());
+    }
+
+    @GetMapping("/strategy-configs/{strategyId}")
+    public ResponseEntity<StrategyConfig> getStrategyConfig(@PathVariable Long strategyId) {
+        return ResponseEntity.ok(strategyConfigService.getByStrategyId(strategyId));
+    }
+
+    @PutMapping("/strategy-configs/{strategyId}")
+    public ResponseEntity<StrategyConfig> updateStrategyConfig(@PathVariable Long strategyId, @RequestBody StrategyConfig patch) {
+        return ResponseEntity.ok(strategyConfigService.update(strategyId, patch));
+    }
+
+    // ========= Strategy Universe Mappings =========
+
+    @GetMapping("/strategy-mappings")
+    public ResponseEntity<List<StrategyUniverseMapping>> listStrategyMappings() {
+        return ResponseEntity.ok(strategyMappingService.listAll());
+    }
+
+    @GetMapping("/strategy-mappings/{strategyId}")
+    public ResponseEntity<List<StrategyUniverseMapping>> getStrategyMappings(@PathVariable Long strategyId) {
+        return ResponseEntity.ok(strategyMappingService.listByStrategy(strategyId));
+    }
+
+    @PostMapping("/strategy-mappings")
+    public ResponseEntity<StrategyUniverseMapping> createStrategyMapping(@RequestBody Map<String, Object> req) {
+        StrategyUniverseMapping m = strategyMappingService.create(
+                ((Number) req.get("strategyId")).longValue(),
+                ((Number) req.get("universeGroupId")).longValue(),
+                req.get("maxPositions") != null ? ((Number) req.get("maxPositions")).intValue() : null,
+                req.get("scanIntervalSeconds") != null ? ((Number) req.get("scanIntervalSeconds")).intValue() : null,
+                (String) req.get("riskProfile")
+        );
+        return ResponseEntity.ok(m);
+    }
+
+    @PatchMapping("/strategy-mappings/{id}")
+    public ResponseEntity<StrategyUniverseMapping> updateStrategyMapping(@PathVariable Long id, @RequestBody Map<String, Object> req) {
+        StrategyUniverseMapping m = strategyMappingService.update(
+                id,
+                req.containsKey("runtimeEnabled") ? (Boolean) req.get("runtimeEnabled") : null,
+                req.get("maxPositions") != null ? ((Number) req.get("maxPositions")).intValue() : null,
+                req.get("scanIntervalSeconds") != null ? ((Number) req.get("scanIntervalSeconds")).intValue() : null,
+                (String) req.get("riskProfile")
+        );
+        return ResponseEntity.ok(m);
+    }
+
+    @DeleteMapping("/strategy-mappings/{id}")
+    public ResponseEntity<Map<String, String>> deleteStrategyMapping(@PathVariable Long id) {
+        strategyMappingService.delete(id);
+        return ResponseEntity.ok(Map.of("status", "deleted"));
+    }
+
+    // ========= Universe Groups Admin =========
+
+    @GetMapping("/universe-groups")
+    public ResponseEntity<List<UniverseGroup>> listUniverseGroups() {
+        return ResponseEntity.ok(universeGroupService.listAll());
+    }
+
+    @GetMapping("/universe-groups/{id}/symbols")
+    public ResponseEntity<List<UniverseSymbol>> getGroupSymbols(@PathVariable Long id) {
+        return ResponseEntity.ok(universeGroupService.getSymbols(id));
     }
 
     // ========= Manual Square Off =========

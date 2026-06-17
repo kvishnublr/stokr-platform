@@ -1,6 +1,7 @@
 package com.stokr.engine;
 
 import com.stokr.marketdata.MarketDataService;
+import com.stokr.marketdata.Universe;
 import com.stokr.strategy.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +18,7 @@ public class SignalProcessor {
     private final StrategyService strategyService;
     private final MarketDataService marketDataService;
     private final EntryManager entryManager;
+    private final Universe universe;
 
     /**
      * Process a single deployment: evaluate strategy against market data, generate signal.
@@ -28,7 +30,6 @@ public class SignalProcessor {
             if (!strategy.isEnabled()) return;
 
             // Get market data for the universe
-            var universe = new com.stokr.marketdata.Universe();
             for (String symbol : universe.getSymbols()) {
                 var candles = marketDataService.getCandles(symbol, "5min", 50);
                 if (candles.isEmpty()) continue;

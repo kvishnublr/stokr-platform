@@ -17,6 +17,9 @@ import AdminDeployments from './pages/admin/AdminDeployments';
 import AdminBrokerHealth from './pages/admin/AdminBrokerHealth';
 import AdminKillSwitch from './pages/admin/AdminKillSwitch';
 import AdminErrorLogs from './pages/admin/AdminErrorLogs';
+import AdminUniverseGroups from './pages/admin/AdminUniverseGroups';
+import AdminStrategyMappings from './pages/admin/AdminStrategyMappings';
+import AdminStrategyConfigs from './pages/admin/AdminStrategyConfigs';
 
 export default function App() {
   return (
@@ -41,6 +44,9 @@ export default function App() {
           <Route path="/admin/brokers" element={<AdminBrokerHealth />} />
           <Route path="/admin/kill-switch" element={<AdminKillSwitch />} />
           <Route path="/admin/errors" element={<AdminErrorLogs />} />
+          <Route path="/admin/universe-groups" element={<AdminUniverseGroups />} />
+          <Route path="/admin/strategy-mappings" element={<AdminStrategyMappings />} />
+          <Route path="/admin/strategy-configs" element={<AdminStrategyConfigs />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

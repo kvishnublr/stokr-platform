@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import client from '../api/client';
 
@@ -9,12 +9,14 @@ const BROKER_META = {
 };
 
 const BROKER_OAUTH_MESSAGE = 'stokr_broker_oauth';
+const OAUTH_RESULT_KEY = 'stokr_broker_oauth_result';
 
 export default function Brokers() {
   const queryClient = useQueryClient();
   const [connectingBroker, setConnectingBroker] = useState(null);
   const [oauthResult, setOauthResult] = useState(null);
   const popupRef = useRef(null);
+  const messageReceivedRef = useRef(false);
 
   const { data: brokers, isLoading } = useQuery({
     queryKey: ['brokers'],
@@ -31,29 +33,53 @@ export default function Brokers() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['brokers'] }),
   });
 
+  const handleOauthResult = useCallback((result) => {
+    setConnectingBroker(null);
+    popupRef.current = null;
+    messageReceivedRef.current = true;
+    if (result.status === 'ok') {
+      setOauthResult({ status: 'ok', broker: result.broker });
+      queryClient.invalidateQueries({ queryKey: ['brokers'] });
+    } else {
+      const reason = result.reason || 'unknown';
+      const msg = result.message || 'Connection failed';
+      setOauthResult({ status: 'error', broker: result.broker, reason, message: decodeURIComponent(msg) });
+    }
+  }, [queryClient]);
+
   // Listen for postMessage from popup callback page
   useEffect(() => {
     function handleMessage(event) {
       if (event.data?.type === BROKER_OAUTH_MESSAGE) {
-        setConnectingBroker(null);
-        popupRef.current = null;
-        if (event.data.status === 'ok') {
-          setOauthResult({ status: 'ok', broker: event.data.broker });
-          queryClient.invalidateQueries({ queryKey: ['brokers'] });
-        } else {
-          const reason = event.data.reason || 'unknown';
-          const msg = event.data.message || 'Connection failed';
-          setOauthResult({ status: 'error', broker: event.data.broker, reason, message: decodeURIComponent(msg) });
-        }
+        handleOauthResult(event.data);
       }
     }
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [queryClient]);
+  }, [handleOauthResult]);
+
+  // Also poll localStorage as fallback when postMessage fails (cross-origin)
+  useEffect(() => {
+    if (!connectingBroker) return;
+    const pollKey = setInterval(() => {
+      const stored = localStorage.getItem(OAUTH_RESULT_KEY);
+      if (stored) {
+        localStorage.removeItem(OAUTH_RESULT_KEY);
+        try {
+          const result = JSON.parse(stored);
+          if (result.broker === connectingBroker?.toLowerCase()) {
+            handleOauthResult(result);
+          }
+        } catch { /* ignore */ }
+      }
+    }, 300);
+    return () => clearInterval(pollKey);
+  }, [connectingBroker, handleOauthResult]);
 
   const connectBroker = async (brokerName) => {
     setOauthResult(null);
     setConnectingBroker(brokerName);
+    messageReceivedRef.current = false;
     try {
       const { data } = await client.get(`/brokers/${brokerName}/connect`);
       if (data.authUrl) {
@@ -75,15 +101,18 @@ export default function Brokers() {
           return;
         }
 
-        // Watch for popup closing without completing
+        // Watch for popup closing - use ref to avoid stale closure
         const checkClosed = setInterval(() => {
           if (popup.closed) {
             clearInterval(checkClosed);
-            if (connectingBroker === brokerName) {
-              setConnectingBroker(null);
-              // Refresh broker status in case they completed in the popup tab
-              queryClient.invalidateQueries({ queryKey: ['brokers'] });
-            }
+            // Small delay to let postMessage / localStorage arrive first
+            setTimeout(() => {
+              if (!messageReceivedRef.current) {
+                setConnectingBroker(null);
+                // Refresh broker status - connection may have succeeded
+                queryClient.invalidateQueries({ queryKey: ['brokers'] });
+              }
+            }, 500);
           }
         }, 500);
       }
