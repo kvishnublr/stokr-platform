@@ -60,7 +60,12 @@ export function QueueMonitoringPanel() {
       setLoading(true);
       setError(null);
       const { data } = await api.get("/api/admin/ops/status");
-      setQueueHealth(data);
+      const payload = data?.data ?? data;
+      if (payload && Array.isArray(payload.queues)) {
+        setQueueHealth(payload);
+      } else {
+        setError("Unexpected response format from ops status endpoint");
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       setError(message);
@@ -109,7 +114,7 @@ export function QueueMonitoringPanel() {
       </div>
 
       <div className="space-y-2">
-        {queueHealth.queues.map((queue) => {
+        {(queueHealth.queues ?? []).map((queue) => {
           const health = getQueueHealth(queue);
           const isExpanded = expandedQueue === queue.name;
           const estimatedClearTime =

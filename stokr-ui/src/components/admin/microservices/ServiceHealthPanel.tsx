@@ -67,7 +67,12 @@ export function ServiceHealthPanel() {
       setLoading(true);
       setError(null);
       const { data } = await api.get("/api/admin/health");
-      setHealth(data);
+      const payload = data?.data ?? data;
+      if (payload && Array.isArray(payload.services)) {
+        setHealth(payload);
+      } else {
+        setError("Unexpected response format from health endpoint");
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       setError(message);
@@ -113,13 +118,13 @@ export function ServiceHealthPanel() {
           <span
             className={cn(
               "h-3 w-3 rounded-full",
-              getStatusBadgeColor(health.overallStatus)
+              health.overallStatus ? getStatusBadgeColor(health.overallStatus) : "bg-gray-400"
             )}
           />
-          <span className={cn("text-xs font-semibold", getStatusText(health.overallStatus))}>
-            {health.overallStatus === "UP" ? "System Healthy" : "System Issues Detected"}
+          <span className={cn("text-xs font-semibold", health.overallStatus ? getStatusText(health.overallStatus) : "text-gray-500")}>
+            {health.overallStatus === "UP" ? "System Healthy" : health.overallStatus || "Unknown"}
           </span>
-          <span className="text-xs text-gray-500">• {health.lastSync}</span>
+          <span className="text-xs text-gray-500">• {health.lastSync || "N/A"}</span>
         </div>
       </div>
 
@@ -129,7 +134,7 @@ export function ServiceHealthPanel() {
           Microservices
         </h4>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {health.services.map((service) => (
+          {health.services?.map((service) => (
             <div
               key={service.name}
               className={cn(
@@ -170,7 +175,7 @@ export function ServiceHealthPanel() {
           Infrastructure
         </h4>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          {[
+          {health.infrastructure ? [
             { key: "rabbitmq", label: "RabbitMQ", service: health.infrastructure.rabbitmq },
             { key: "database", label: "PostgreSQL", service: health.infrastructure.database },
             { key: "redis", label: "Redis Cache", service: health.infrastructure.redis },
@@ -179,7 +184,7 @@ export function ServiceHealthPanel() {
               key={label}
               className={cn(
                 "rounded-lg border p-4",
-                getStatusColor(service.status)
+                service ? getStatusColor(service.status) : "bg-gray-50 border-gray-200"
               )}
             >
               <div className="flex items-center justify-between">
@@ -188,21 +193,23 @@ export function ServiceHealthPanel() {
                     <span
                       className={cn(
                         "h-2 w-2 rounded-full",
-                        getStatusBadgeColor(service.status)
+                        service ? getStatusBadgeColor(service.status) : "bg-gray-400"
                       )}
                     />
                     <span className="font-semibold text-gray-900">{label}</span>
                   </div>
                   <div className="mt-2 text-xs text-gray-600">
-                    Response: {service.responseTime}ms
+                    {service ? `Response: ${service.responseTime}ms` : "No data"}
                   </div>
                 </div>
-                <span className={cn("text-xs font-bold", getStatusText(service.status))}>
-                  {service.status}
+                <span className={cn("text-xs font-bold", service ? getStatusText(service.status) : "text-gray-500")}>
+                  {service?.status || "N/A"}
                 </span>
               </div>
             </div>
-          ))}
+          )) : (
+            <div className="col-span-3 rounded-lg bg-gray-50 p-4 text-center text-sm text-gray-500">No infrastructure data available.</div>
+          )}
         </div>
       </div>
     </section>
