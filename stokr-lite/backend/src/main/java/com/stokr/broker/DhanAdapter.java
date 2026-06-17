@@ -27,6 +27,10 @@ public class DhanAdapter implements BrokerAdapter {
 
     @Override
     public String getAuthUrl() {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "Dhan API key is not configured. Set DHAN_API_KEY environment variable.");
+        }
         return DHAN_AUTH_URL + apiKey + "&redirect_uri=" + redirectUri;
     }
 

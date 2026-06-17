@@ -27,6 +27,10 @@ public class FyersAdapter implements BrokerAdapter {
 
     @Override
     public String getAuthUrl() {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "Fyers API key is not configured. Set FYERS_API_KEY environment variable.");
+        }
         return FYERS_AUTH_URL + apiKey + "&redirect_uri=" + redirectUri
                 + "&response_type=code&state=stokr";
     }

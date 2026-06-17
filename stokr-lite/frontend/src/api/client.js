@@ -17,9 +17,9 @@ client.interceptors.response.use(
         error.config._retried = true;
         try {
           const { data } = await axios.post('/api/auth/refresh', { refreshToken: refresh });
-          localStorage.setItem('token', data.token);
+          localStorage.setItem('token', data.accessToken);
           localStorage.setItem('refreshToken', data.refreshToken);
-          error.config.headers.Authorization = `Bearer ${data.token}`;
+          error.config.headers.Authorization = `Bearer ${data.accessToken}`;
           return client(error.config);
         } catch {
           localStorage.clear();

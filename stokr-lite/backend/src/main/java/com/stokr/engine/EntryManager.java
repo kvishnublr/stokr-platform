@@ -2,6 +2,8 @@ package com.stokr.engine;
 
 import com.stokr.broker.*;
 import com.stokr.oms.OrderService;
+import com.stokr.oms.Position;
+import com.stokr.oms.PositionService;
 import com.stokr.risk.*;
 import com.stokr.strategy.Signal;
 import lombok.RequiredArgsConstructor;
@@ -9,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -21,10 +24,28 @@ public class EntryManager {
     private final IdempotencyService idempotencyService;
     private final ErrorLogService errorLogService;
     private final PaperBroker paperBroker;
+    private final PositionService positionService;
 
     public void processEntrySignal(Deployment deployment, Signal signal) {
         log.info("Processing entry signal for deployment {}: {} {} @ {}",
                 deployment.getId(), signal.side(), signal.symbol(), signal.entryPrice());
+
+        // Check if deployment already has an open position in this symbol
+        List<Position> openPositions = positionService.getOpenPositions(deployment.getId());
+        boolean hasPositionInSymbol = openPositions.stream()
+                .anyMatch(p -> p.getSymbol().equals(signal.symbol()));
+        if (hasPositionInSymbol) {
+            log.info("Deployment {} already has open position in {}, skipping entry",
+                    deployment.getId(), signal.symbol());
+            return;
+        }
+
+        // Check max positions limit (default: 5 per deployment)
+        if (openPositions.size() >= 5) {
+            log.info("Deployment {} has {} open positions (max 5), skipping entry",
+                    deployment.getId(), openPositions.size());
+            return;
+        }
 
         // Dedup check
         if (!idempotencyService.tryAcquire(
@@ -35,7 +56,9 @@ public class EntryManager {
         }
 
         // Calculate quantity based on capital and entry price
-        int quantity = calculateQuantity(deployment.getCapital(), signal.entryPrice());
+        BigDecimal capitalPerPosition = deployment.getCapital()
+                .divide(BigDecimal.valueOf(5), 0, java.math.RoundingMode.DOWN); // Max 5 positions
+        int quantity = calculateQuantity(capitalPerPosition, signal.entryPrice());
         if (quantity <= 0) {
             log.warn("Calculated quantity is 0 for deployment {}", deployment.getId());
             return;
@@ -44,7 +67,7 @@ public class EntryManager {
         // Risk check (simplified - would need full context in production)
         RiskContext riskContext = new RiskContext(
                 deployment.getId(), deployment.getUserId(), signal.symbol(),
-                quantity, signal.entryPrice(), 0, BigDecimal.ZERO,
+                quantity, signal.entryPrice(), openPositions.size(), BigDecimal.ZERO,
                 BigDecimal.ZERO, deployment.getCapital(),
                 3, new BigDecimal("5000"), 100, 0);
 

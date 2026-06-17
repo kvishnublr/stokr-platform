@@ -15,11 +15,11 @@ export default function Login() {
     setLoading(true);
     try {
       const { data } = await client.post('/auth/login', { email, password });
-      localStorage.setItem('token', data.token);
+      localStorage.setItem('token', data.accessToken);
       localStorage.setItem('refreshToken', data.refreshToken);
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed');
+      setError(err.response?.data?.error || 'Login failed');
     } finally {
       setLoading(false);
     }

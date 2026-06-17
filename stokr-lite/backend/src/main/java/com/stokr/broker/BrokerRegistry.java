@@ -26,6 +26,9 @@ public class BrokerRegistry {
     }
 
     public List<String> getSupportedBrokers() {
-        return List.copyOf(adapters.keySet());
+        return adapters.keySet().stream()
+                .filter(name -> !"PAPER".equals(name))
+                .sorted()
+                .toList();
     }
 }

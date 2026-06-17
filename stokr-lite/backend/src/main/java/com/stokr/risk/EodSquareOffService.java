@@ -1,10 +1,18 @@
 package com.stokr.risk;
 
+import com.stokr.engine.DeploymentService;
+import com.stokr.engine.Deployment;
+import com.stokr.engine.ExitManager;
+import com.stokr.marketdata.MarketDataService;
+import com.stokr.oms.Position;
+import com.stokr.oms.PositionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * Auto-square-off service that closes all intraday positions at EOD.
@@ -14,19 +22,43 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class EodSquareOffService {
 
-    @Value("${trading.eod-squareoff-time:15:15}")
-    private String squareOffTime;
+    private final DeploymentService deploymentService;
+    private final PositionService positionService;
+    private final ExitManager exitManager;
+    private final MarketDataService marketDataService;
 
     /**
-     * Runs every minute during market hours to check if EOD square-off is needed.
-     * In production, this would call the execution engine to close all positions.
+     * Runs at 15:15 IST every trading day to square off all open positions.
      */
     @Scheduled(cron = "0 15 15 * * MON-FRI")
     public void triggerEodSquareOff() {
-        log.info("=== EOD SQUARE-OFF TRIGGERED at {} ===", squareOffTime);
-        // TODO: Fetch all active deployments with open positions
-        // TODO: Place market orders to close all positions
-        // TODO: Update deployment/position status
-        log.info("=== EOD SQUARE-OFF COMPLETE ===");
+        log.info("=== EOD SQUARE-OFF TRIGGERED ===");
+
+        List<Deployment> activeDeployments = deploymentService.getAllActiveDeployments();
+        int totalClosed = 0;
+
+        for (Deployment deployment : activeDeployments) {
+            List<Position> openPositions = positionService.getOpenPositions(deployment.getId());
+            if (openPositions.isEmpty()) continue;
+
+            log.info("EOD square-off for deployment {}: {} positions",
+                    deployment.getId(), openPositions.size());
+
+            for (Position position : openPositions) {
+                try {
+                    BigDecimal ltp = marketDataService.getLtp(position.getSymbol());
+                    if (ltp.compareTo(BigDecimal.ZERO) <= 0) {
+                        ltp = position.getAvgPrice();
+                    }
+                    exitManager.squareOffPosition(deployment, position, ltp);
+                    totalClosed++;
+                } catch (Exception e) {
+                    log.error("EOD square-off failed for deployment {} position {}",
+                            deployment.getId(), position.getSymbol(), e);
+                }
+            }
+        }
+
+        log.info("=== EOD SQUARE-OFF COMPLETE: {} positions closed ===", totalClosed);
     }
 }

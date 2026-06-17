@@ -18,7 +18,7 @@ export default function Register() {
       await client.post('/auth/register', form);
       navigate('/login');
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed');
+      setError(err.response?.data?.error || 'Registration failed');
     } finally {
       setLoading(false);
     }

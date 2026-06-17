@@ -92,8 +92,8 @@ function MarketStatus() {
   });
   return (
     <div className="flex items-center gap-3">
-      <div className={`w-3 h-3 rounded-full ${data?.open ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-      <span className="text-sm">{data?.open ? 'Market is Open' : 'Market is Closed'}</span>
+      <div className={`w-3 h-3 rounded-full ${data?.isOpen ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+      <span className="text-sm">{data?.isOpen ? 'Market is Open' : 'Market is Closed'}</span>
     </div>
   );
 }

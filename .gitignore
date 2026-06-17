@@ -25,3 +25,24 @@ stokr-ui/tsconfig.tsbuildinfo
 **/node_modules/
 
 deploy/contabo_github_deploy.key
+
+# Archives and binaries
+*.tar.gz
+stokr-lite-full.tar.gz
+stokr-lite-v2.tar.gz
+frontend-dist.tar.gz
+
+# Screenshots
+*.png
+
+# Qoder IDE
+.qoder/
+
+# Test/deploy scripts
+stokr-lite/test-*.sh
+stokr-lite/verify.sh
+stokr-lite/create-users.sh
+stokr-lite/seed-admin.sh
+stokr-lite/final-deploy.sh
+stokr-lite/rebuild.sh
+stokr-lite/redeploy.sh

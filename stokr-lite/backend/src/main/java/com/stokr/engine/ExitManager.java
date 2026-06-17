@@ -57,6 +57,8 @@ public class ExitManager {
 
             if (response.isSuccess()) {
                 orderService.completeOrder(order, response.orderId(), exitPrice, qty);
+                log.info("Position closed: deployment {} {} qty={} exit={}",
+                        deployment.getId(), position.getSymbol(), qty, exitPrice);
             } else {
                 orderService.rejectOrder(order, response.message());
                 errorLogService.logError(deployment.getId(), "EXIT_REJECTED",

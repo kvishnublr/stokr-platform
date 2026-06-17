@@ -21,10 +21,10 @@ export default function Brokers() {
 
   const connectBroker = async (brokerName) => {
     try {
-      const { data } = await client.get(`/brokers/${brokerName}/auth-url`);
+      const { data } = await client.get(`/brokers/${brokerName}/connect`);
       if (data.authUrl) window.open(data.authUrl, '_blank');
     } catch (err) {
-      alert('Failed to get auth URL: ' + (err.response?.data?.message || err.message));
+      alert('Failed to get auth URL: ' + (err.response?.data?.error || err.message));
     }
   };
 

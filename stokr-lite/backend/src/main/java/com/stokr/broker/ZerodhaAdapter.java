@@ -31,6 +31,10 @@ public class ZerodhaAdapter implements BrokerAdapter {
 
     @Override
     public String getAuthUrl() {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "Zerodha API key is not configured. Set ZERODHA_API_KEY environment variable.");
+        }
         return KITE_AUTH_URL + apiKey;
     }
 
