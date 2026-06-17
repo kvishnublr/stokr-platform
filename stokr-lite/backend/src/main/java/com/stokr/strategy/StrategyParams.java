@@ -29,7 +29,7 @@ public record StrategyParams(
                 15, 2.0,       // ORB
                 0.3, 1.5,      // VWAP
                 1.0, 3.0, 50000, // Gap Fill
-                0.5, 1.0       // Common
+                0.2, 0.6       // Common: 0.2% SL (₹30 on ₹15K), 0.6% target (3:1 R:R)
         );
     }
 

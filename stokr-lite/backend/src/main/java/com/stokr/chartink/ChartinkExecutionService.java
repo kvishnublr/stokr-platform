@@ -4,6 +4,7 @@ import com.stokr.broker.*;
 import com.stokr.engine.PaperBroker;
 import com.stokr.engine.SignalEntity;
 import com.stokr.engine.SignalRepository;
+import com.stokr.risk.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,14 +29,17 @@ public class ChartinkExecutionService {
     private final PaperBroker paperBroker;
     private final ChartinkPositionRepository positionRepository;
     private final SignalRepository signalRepository;
+    private final RiskEngine riskEngine;
+    private final MinTradeGapRule minTradeGapRule;
+    private final StrategyConsecutiveLossRule consecutiveLossRule;
 
     @Value("${chartink.execution.enabled:true}")
     private boolean executionEnabled;
 
-    @Value("${chartink.execution.max-positions:5}")
+    @Value("${chartink.execution.max-positions:3}")
     private int maxPositions;
 
-    @Value("${chartink.execution.capital:100000}")
+    @Value("${chartink.execution.capital:15000}")
     private BigDecimal capital;
 
     @Value("${chartink.execution.default-user-id:1}")
@@ -86,6 +90,35 @@ public class ChartinkExecutionService {
             return;
         }
 
+        // Risk evaluation
+        BigDecimal totalDeployed = positionRepository.findByStatusOrderByCreatedAtDesc("OPEN").stream()
+                .map(p -> p.getEntryPrice().multiply(BigDecimal.valueOf(p.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        RiskContext riskContext = new RiskContext(
+                null, defaultUserId, symbol, quantity, price,
+                (int) openCount, BigDecimal.ZERO, capital, totalDeployed,
+                maxPositions, new BigDecimal("225"), 1000, 0
+        );
+
+        RiskRule.RiskDecision riskDecision = riskEngine.evaluate(riskContext);
+        if (!riskDecision.passed()) {
+            log.warn("Chartink: Risk check failed for {}: {}", symbol, riskDecision.reason());
+            signal.setStatus("RISK_REJECTED");
+            signalRepository.save(signal);
+            return;
+        }
+
+        // Strategy consecutive loss check
+        String strategyType = signal.getScannerName() != null ? signal.getScannerName() : "UNKNOWN";
+        RiskRule.RiskDecision lossDecision = consecutiveLossRule.checkStrategy(defaultUserId, strategyType);
+        if (!lossDecision.passed()) {
+            log.warn("Chartink: {} — skipping {}", lossDecision.reason(), symbol);
+            signal.setStatus("STRATEGY_PAUSED");
+            signalRepository.save(signal);
+            return;
+        }
+
         // Place order
         try {
             BrokerOrderResponse response = placeBrokerOrder(symbol, side, quantity);
@@ -113,6 +146,8 @@ public class ChartinkExecutionService {
 
                 log.info("Chartink: EXECUTED {} {} {} qty={} @ {} | brokerOrderId={}",
                         symbol, side, quantity, price, response.orderId());
+
+                minTradeGapRule.recordTrade(defaultUserId, symbol);
             } else {
                 String msg = response != null ? response.message() : "No response from broker";
                 log.error("Chartink: Order rejected for {}: {}", symbol, msg);

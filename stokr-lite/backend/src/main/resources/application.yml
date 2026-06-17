@@ -64,6 +64,17 @@ trading:
   eod-squareoff-time: "15:15"
   scan-interval-seconds: 60
   default-cooldown-minutes: 5
+  min-trade-gap-minutes: 2
+  max-consecutive-losses: 3
+
+# Chartink Execution Configuration
+chartink:
+  execution:
+    enabled: true
+    max-positions: 3
+    capital: 15000
+    default-user-id: 1
+    mode: PAPER
 
 # Server
 server:
