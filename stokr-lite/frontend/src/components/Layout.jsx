@@ -1,4 +1,5 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 
 const traderLinks = [
   { to: '/', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6', end: true },
@@ -37,10 +38,75 @@ function getUserRole() {
   } catch { return null; }
 }
 
+function NavItem({ link, isAdminSection }) {
+  return (
+    <NavLink
+      key={link.to}
+      to={link.to}
+      end={link.end}
+      className={({ isActive }) =>
+        `group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-300 overflow-hidden ${
+          isActive
+            ? isAdminSection
+              ? 'text-white'
+              : 'text-white'
+            : 'text-slate-400 hover:text-white'
+        }`
+      }
+    >
+      {({ isActive }) => (
+        <>
+          {/* Active background glow */}
+          <div
+            className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+              isActive
+                ? isAdminSection
+                  ? 'bg-rose-600/20 shadow-lg shadow-rose-600/10'
+                  : 'bg-indigo-600/20 shadow-lg shadow-indigo-600/10'
+                : 'bg-transparent group-hover:bg-white/[0.03]'
+            }`}
+          />
+          {/* Active left border indicator */}
+          <div
+            className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full transition-all duration-300 ${
+              isActive
+                ? isAdminSection
+                  ? 'bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.5)]'
+                  : 'bg-indigo-500 shadow-[0_0_12px_rgba(99,102,241,0.5)]'
+                : 'bg-transparent'
+            }`}
+          />
+          <span className="relative z-10">
+            <SvgIcon path={link.icon} className={`w-[18px] h-[18px] shrink-0 transition-all duration-300 ${
+              isActive
+                ? isAdminSection
+                  ? 'text-rose-400 drop-shadow-[0_0_6px_rgba(244,63,94,0.4)]'
+                  : 'text-indigo-400 drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]'
+                : ''
+            }`} />
+          </span>
+          <span className="relative z-10">{link.label}</span>
+          {isActive && (
+            <div className={`absolute right-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${
+              isAdminSection ? 'bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.6)]' : 'bg-indigo-400 shadow-[0_0_8px_rgba(99,102,241,0.6)]'
+            }`} />
+          )}
+        </>
+      )}
+    </NavLink>
+  );
+}
+
 export default function Layout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const role = getUserRole();
   const isAdmin = role === 'ADMIN';
+  const [pageKey, setPageKey] = useState(location.pathname);
+
+  useEffect(() => {
+    setPageKey(location.pathname);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     localStorage.clear();
@@ -48,67 +114,46 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-screen overflow-hidden bg-slate-950">
+      {/* Subtle background pattern */}
+      <div className="fixed inset-0 bg-grid-pattern opacity-50 pointer-events-none" />
+      
+      {/* Ambient glow effects */}
+      <div className="fixed top-0 left-0 w-[500px] h-[500px] bg-indigo-600/5 rounded-full blur-[120px] pointer-events-none" />
+      <div className="fixed bottom-0 right-0 w-[400px] h-[400px] bg-violet-600/5 rounded-full blur-[100px] pointer-events-none" />
+
       {/* Sidebar */}
-      <aside className="w-[260px] bg-gradient-to-b from-slate-900 via-slate-900 to-indigo-950 text-white flex flex-col shrink-0">
+      <aside className="relative w-[260px] bg-slate-900/80 backdrop-blur-xl border-r border-white/5 text-white flex flex-col shrink-0 z-10">
         {/* Brand */}
         <div className="px-6 py-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+            <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-indigo-500/30 animate-glow-pulse">
               <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight">Stokr Lite</h1>
-              <p className="text-[11px] text-indigo-300/70 font-medium tracking-wide uppercase">Algo Trading</p>
+              <h1 className="text-lg font-bold tracking-tight text-white">Stokr Lite</h1>
+              <p className="text-[11px] text-indigo-300/60 font-medium tracking-widest uppercase">Algo Trading</p>
             </div>
           </div>
         </div>
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-3 pb-4">
-          <div className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Trading</div>
+          <div className="px-3 mb-2 text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Trading</div>
           <div className="space-y-0.5">
             {traderLinks.map((link) => (
-              <NavLink
-                key={link.to}
-                to={link.to}
-                end={link.end}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-200 ${
-                    isActive
-                      ? 'bg-indigo-600/90 text-white shadow-lg shadow-indigo-600/20'
-                      : 'text-slate-400 hover:text-white hover:bg-white/5'
-                  }`
-                }
-              >
-                <SvgIcon path={link.icon} className="w-[18px] h-[18px] shrink-0" />
-                <span>{link.label}</span>
-              </NavLink>
+              <NavItem key={link.to} link={link} isAdminSection={false} />
             ))}
           </div>
 
           {isAdmin && (
             <>
-              <div className="px-3 mt-6 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Admin</div>
+              <div className="px-3 mt-6 mb-2 text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Administration</div>
               <div className="space-y-0.5">
                 {adminLinks.map((link) => (
-                  <NavLink
-                    key={link.to}
-                    to={link.to}
-                    end={link.end}
-                    className={({ isActive }) =>
-                      `flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-200 ${
-                        isActive
-                          ? 'bg-rose-600/90 text-white shadow-lg shadow-rose-600/20'
-                          : 'text-slate-400 hover:text-white hover:bg-white/5'
-                      }`
-                    }
-                  >
-                    <SvgIcon path={link.icon} className="w-[18px] h-[18px] shrink-0" />
-                    <span>{link.label}</span>
-                  </NavLink>
+                  <NavItem key={link.to} link={link} isAdminSection={true} />
                 ))}
               </div>
             </>
@@ -118,8 +163,8 @@ export default function Layout() {
         {/* Footer */}
         <div className="p-4 border-t border-white/5">
           <button onClick={handleLogout}
-            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5 transition">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            className="group flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-sm text-slate-400 hover:text-white transition-all duration-300 hover:bg-white/[0.03]">
+            <svg className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-[-2px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
             Sign Out
@@ -128,9 +173,11 @@ export default function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto relative z-10">
         <div className="max-w-7xl mx-auto p-8">
-          <Outlet />
+          <div key={pageKey} className="animate-fade-in-up">
+            <Outlet />
+          </div>
         </div>
       </main>
     </div>
