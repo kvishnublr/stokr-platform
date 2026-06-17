@@ -38,15 +38,9 @@ public class SignalPipelineActivationService {
 
     private static final List<String> CASH_UNIVERSE_GROUP_KEYS = List.of("NIFTY_50", "NIFTY_100");
 
-    private static final List<String> COMMODITY_STRATEGY_KEYS = List.of(
-            "BREAKOUT_COMMODITIES",
-            "COMMODITIES_E2E_TEST"
-    );
+    private static final List<String> COMMODITY_STRATEGY_KEYS = List.of();
 
-    private static final List<String> CURRENCY_STRATEGY_KEYS = List.of(
-            "USDINR_MOMENTUM",
-            "EURINR_MEAN_REVERSION"
-    );
+    private static final List<String> CURRENCY_STRATEGY_KEYS = List.of();
 
     private static final String CDS_UNIVERSE_GROUP_KEY = "CDS_MAJOR_PAIRS";
 

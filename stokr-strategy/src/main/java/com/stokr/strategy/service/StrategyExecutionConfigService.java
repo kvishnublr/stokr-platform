@@ -285,10 +285,8 @@ public class StrategyExecutionConfigService {
      * These explicit mappings take precedence over catalog-derived classification.
      */
     private static final Map<String, Set<String>> EXPLICIT_MEMBERS = Map.of(
-            "CASH", Set.of("ADV_CASH", "EARLY_BREAKOUT", "GAP_FILL", "INDEX_HUNT",
-                    "NSE_SPIKE_DETECTION", "PRE_OPEN_GAP_OI", "S3_VWAP_RETEST",
-                    "S7_RANGE_FADE", "SECTOR_LAGGARD", "VWAP_BOUNCE"),
-            "CURRENCY", Set.of("EUR_INR_MEAN_REVERSION", "USD_INR_MOMENTUM"));
+            "CASH", Set.of("VWAP_TRIPLE_CONFIRMATION", "TRADE_BOOK_IMBALANCE",
+                    "PRE_OPEN_GAP_OI", "ORB_V", "MORNING_SURGE"));
 
     /** Production-safe defaults shown when a trader has no personal capital overrides yet. */
     private static final Map<String, AssetClassAllocationDto> DEFAULTS = Map.of(
