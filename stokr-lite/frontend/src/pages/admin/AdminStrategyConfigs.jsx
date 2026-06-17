@@ -29,50 +29,50 @@ export default function AdminStrategyConfigs() {
     <div>
       {/* Header */}
       <div className="mb-8 animate-fade-in-up">
-        <h1 className="text-3xl font-bold text-white tracking-tight">Strategy Execution Configs</h1>
-        <p className="text-slate-400 text-sm mt-2">Capital allocation, sizing, risk limits and execution mode</p>
+        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Strategy Execution Configs</h1>
+        <p className="text-slate-500 text-sm mt-2">Capital allocation, sizing, risk limits and execution mode</p>
       </div>
 
       {/* Config Cards Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {configs?.length === 0 && (
-          <div className="col-span-full glass-card rounded-2xl p-12 text-center text-slate-500 animate-fade-in-up">
-            <svg className="w-12 h-12 text-slate-600 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+          <div className="col-span-full card-light p-12 text-center text-slate-400 animate-fade-in-up">
+            <svg className="w-12 h-12 text-slate-300 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
             </svg>
             <p>No strategy configs yet</p>
           </div>
         )}
         {configs?.map((c, i) => (
-          <div key={c.id} className={`glass-card rounded-2xl p-5 hover-lift hover-glow animate-fade-in-up delay-${Math.min((i+1)*100, 600)} group`}>
+          <div key={c.id} className={`card-light p-5 hover-lift hover-glow animate-fade-in-up delay-${Math.min((i+1)*100, 600)} group`}>
             {/* Card Header */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-indigo-500/20 flex items-center justify-center">
-                  <span className="text-indigo-400 font-bold text-sm">{getStrategyName(c.strategyId).charAt(0)}</span>
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 flex items-center justify-center">
+                  <span className="text-indigo-600 font-bold text-sm">{getStrategyName(c.strategyId).charAt(0)}</span>
                 </div>
                 <div>
-                  <h3 className="font-semibold text-slate-100">{getStrategyName(c.strategyId)}</h3>
-                  <p className="text-xs text-slate-500">Strategy #{c.strategyId}</p>
+                  <h3 className="font-semibold text-slate-700">{getStrategyName(c.strategyId)}</h3>
+                  <p className="text-xs text-slate-400">Strategy #{c.strategyId}</p>
                 </div>
               </div>
-              <button onClick={() => setEditing(c)} className="text-indigo-400/60 hover:text-indigo-400 text-xs font-medium transition-all px-3 py-1.5 rounded-lg hover:bg-indigo-500/10 border border-transparent hover:border-indigo-500/20">
+              <button onClick={() => setEditing(c)} className="text-indigo-500/70 hover:text-indigo-600 text-xs font-medium transition-all px-3 py-1.5 rounded-lg hover:bg-indigo-50 border border-transparent hover:border-indigo-200">
                 Edit Config
               </button>
             </div>
 
             {/* Config Grid */}
             <div className="grid grid-cols-2 gap-3">
-              <ConfigItem label="Capital" value={`₹${(c.allocatedCapital || 0).toLocaleString()}`} color="indigo" />
+              <ConfigItem label="Capital" value={`Rs.${(c.allocatedCapital || 0).toLocaleString()}`} color="indigo" />
               <ConfigItem label="Max Positions" value={c.maxPositions} color="emerald" />
               <ConfigItem label="Fixed Qty" value={c.forceFixedQty ? c.fixedQty : 'Off'} color="sky" />
               <ConfigItem label="Sizing Mode" value={c.sizingMode?.replace(/_/g, ' ')} color="violet" />
-              <ConfigItem label="Daily Loss Limit" value={`₹${(c.dailyLossLimit || 0).toLocaleString()}`} color="rose" />
+              <ConfigItem label="Daily Loss Limit" value={`Rs.${(c.dailyLossLimit || 0).toLocaleString()}`} color="rose" />
               <ConfigItem label="Cooldown" value={`${c.cooldownMinutes} min`} color="amber" />
             </div>
 
             {/* Toggles Row */}
-            <div className="flex gap-3 mt-4 pt-4 border-t border-white/5">
+            <div className="flex gap-3 mt-4 pt-4 border-t border-slate-100">
               <StatusBadge active={c.liveEnabled} label="Live" activeColor="emerald" />
               <StatusBadge active={c.paperEnabled} label="Paper" activeColor="sky" />
               <StatusBadge active={c.forceFixedQty} label="Fixed Qty" activeColor="indigo" />
@@ -92,29 +92,29 @@ export default function AdminStrategyConfigs() {
 
 function ConfigItem({ label, value, color }) {
   const colors = {
-    indigo: 'text-indigo-400',
-    emerald: 'text-emerald-400',
-    sky: 'text-sky-400',
-    violet: 'text-violet-400',
-    rose: 'text-rose-400',
-    amber: 'text-amber-400',
+    indigo: 'text-indigo-600',
+    emerald: 'text-emerald-600',
+    sky: 'text-sky-600',
+    violet: 'text-violet-600',
+    rose: 'text-rose-600',
+    amber: 'text-amber-600',
   };
   return (
-    <div className="bg-slate-800/30 rounded-xl p-3 border border-white/5">
-      <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">{label}</p>
-      <p className={`text-sm font-semibold ${colors[color] || 'text-slate-200'}`}>{value}</p>
+    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+      <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">{label}</p>
+      <p className={`text-sm font-semibold ${colors[color] || 'text-slate-700'}`}>{value}</p>
     </div>
   );
 }
 
 function StatusBadge({ active, label, activeColor }) {
   const colors = {
-    emerald: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20',
-    sky: 'bg-sky-500/15 text-sky-400 border-sky-500/20',
-    indigo: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20',
-    violet: 'bg-violet-500/15 text-violet-400 border-violet-500/20',
+    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    sky: 'bg-sky-50 text-sky-700 border-sky-200',
+    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    violet: 'bg-violet-50 text-violet-700 border-violet-200',
   };
-  const inactive = 'bg-slate-500/10 text-slate-500 border-slate-500/15';
+  const inactive = 'bg-slate-100 text-slate-500 border-slate-200';
   return (
     <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${active ? colors[activeColor] : inactive}`}>
       {active ? label : `${label} Off`}
@@ -215,7 +215,7 @@ function LoadingSkeleton() {
       <div className="skeleton w-80 h-10 mb-8" />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {[1,2,3,4].map(i => (
-          <div key={i} className="glass-card rounded-2xl p-5">
+          <div key={i} className="card-light p-5">
             <div className="skeleton w-full h-32" />
           </div>
         ))}

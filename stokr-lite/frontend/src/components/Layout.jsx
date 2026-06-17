@@ -56,7 +56,6 @@ function NavItem({ link, isAdminSection }) {
     >
       {({ isActive }) => (
         <>
-          {/* Active background glow */}
           <div
             className={`absolute inset-0 rounded-xl transition-all duration-300 ${
               isActive
@@ -66,7 +65,6 @@ function NavItem({ link, isAdminSection }) {
                 : 'bg-transparent group-hover:bg-white/[0.03]'
             }`}
           />
-          {/* Active left border indicator */}
           <div
             className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full transition-all duration-300 ${
               isActive
@@ -114,16 +112,9 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-950">
-      {/* Subtle background pattern */}
-      <div className="fixed inset-0 bg-grid-pattern opacity-50 pointer-events-none" />
-      
-      {/* Ambient glow effects */}
-      <div className="fixed top-0 left-0 w-[500px] h-[500px] bg-indigo-600/5 rounded-full blur-[120px] pointer-events-none" />
-      <div className="fixed bottom-0 right-0 w-[400px] h-[400px] bg-violet-600/5 rounded-full blur-[100px] pointer-events-none" />
-
-      {/* Sidebar */}
-      <aside className="relative w-[260px] bg-slate-900/80 backdrop-blur-xl border-r border-white/5 text-white flex flex-col shrink-0 z-10">
+    <div className="flex h-screen overflow-hidden">
+      {/* Sidebar - Dark */}
+      <aside className="relative w-[260px] bg-[#0f172a] border-r border-white/5 text-white flex flex-col shrink-0 z-20">
         {/* Brand */}
         <div className="px-6 py-6">
           <div className="flex items-center gap-3">
@@ -172,9 +163,10 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-y-auto relative z-10">
-        <div className="max-w-7xl mx-auto p-8">
+      {/* Main content - Light */}
+      <main className="flex-1 overflow-y-auto relative bg-slate-50">
+        <div className="fixed inset-0 bg-grid-pattern-light pointer-events-none" />
+        <div className="max-w-7xl mx-auto p-8 relative z-10">
           <div key={pageKey} className="animate-fade-in-up">
             <Outlet />
           </div>
