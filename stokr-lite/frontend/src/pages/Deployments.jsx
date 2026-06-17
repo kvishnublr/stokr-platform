@@ -21,17 +21,20 @@ export default function Deployments() {
 
   const [form, setForm] = useState({ strategyId: '', brokerAccountId: '', mode: 'PAPER', capital: 100000 });
 
-  const inputCls = 'w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition outline-none text-sm';
+  const inputCls = 'w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition outline-none text-sm input-crystal';
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-8 animate-fade-in-up">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Deployments</h1>
-          <p className="text-slate-500 text-sm mt-1">Deploy and manage your trading strategies</p>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-1 h-7 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
+            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Deployments</h1>
+          </div>
+          <p className="text-slate-400 text-sm ml-4">Deploy and manage your trading strategies</p>
         </div>
         <button onClick={() => setShowForm(!showForm)}
-          className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:from-indigo-700 hover:to-violet-700 transition shadow-lg shadow-indigo-500/20 flex items-center gap-2">
+          className="btn-shimmer bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:from-indigo-700 hover:to-violet-700 transition shadow-lg shadow-indigo-500/20 flex items-center gap-2">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           New Deployment
         </button>
@@ -39,15 +42,15 @@ export default function Deployments() {
 
       {/* Deploy Form */}
       {showForm && (
-        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 mb-6">
-          <h2 className="text-lg font-semibold text-slate-800 mb-5">Deploy Strategy</h2>
+        <div className="card-crystal p-6 mb-6 animate-scale-in">
+          <h2 className="text-base font-semibold text-slate-800 mb-4">Deploy Strategy</h2>
           {deployMutation.isError && (
             <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm p-3.5 rounded-xl mb-5 flex items-center gap-2">
               <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01" /></svg>
               {deployMutation.error?.response?.data?.message || deployMutation.error?.response?.data?.error || 'Deploy failed'}
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">Strategy</label>
               <select value={form.strategyId} onChange={(e) => setForm({ ...form, strategyId: e.target.value })} className={inputCls}>
@@ -71,13 +74,13 @@ export default function Deployments() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Capital (&#8377;)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Capital (₹)</label>
               <input type="number" value={form.capital} onChange={(e) => setForm({ ...form, capital: Number(e.target.value) })} className={inputCls} />
             </div>
           </div>
-          <div className="flex gap-3 mt-6">
+          <div className="flex gap-3 mt-5">
             <button onClick={() => deployMutation.mutate(form)} disabled={deployMutation.isPending || !form.strategyId}
-              className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50 transition shadow-lg shadow-emerald-500/20">
+              className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50 transition shadow-lg shadow-emerald-500/20">
               {deployMutation.isPending ? 'Deploying...' : 'Deploy'}
             </button>
             <button onClick={() => setShowForm(false)} className="text-slate-500 px-4 py-2.5 text-sm hover:text-slate-700 font-medium transition">Cancel</button>
@@ -87,17 +90,17 @@ export default function Deployments() {
 
       {/* Deployment List */}
       {isLoading ? <p className="text-slate-500">Loading...</p> : (
-        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="card-crystal overflow-hidden">
+          <table className="w-full text-sm table-crystal">
             <thead>
-              <tr className="border-b border-slate-100">
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Strategy</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Broker</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Mode</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Capital</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Created</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
+              <tr>
+                <th>Strategy</th>
+                <th>Broker</th>
+                <th>Mode</th>
+                <th>Capital</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -111,18 +114,18 @@ export default function Deployments() {
                 </td></tr>
               )}
               {deployments?.map((d) => (
-                <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition">
-                  <td className="px-6 py-4 font-medium text-slate-800">{d.strategyName || `Strategy #${d.strategyId}`}</td>
-                  <td className="px-6 py-4 text-slate-600">{d.brokerName || `Broker #${d.brokerAccountId}`}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${d.mode === 'LIVE' ? 'bg-rose-50 text-rose-600 ring-1 ring-rose-200' : 'bg-amber-50 text-amber-600 ring-1 ring-amber-200'}`}>{d.mode}</span>
+                <tr key={d.id}>
+                  <td className="font-medium text-slate-800">{d.strategyName || `Strategy #${d.strategyId}`}</td>
+                  <td className="text-slate-600">{d.brokerName || `Broker #${d.brokerAccountId}`}</td>
+                  <td>
+                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${d.mode === 'LIVE' ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-amber-50 text-amber-600 border border-amber-200'}`}>{d.mode}</span>
                   </td>
-                  <td className="px-6 py-4 text-slate-700 font-medium">&#8377;{d.capital?.toLocaleString()}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${d.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-1 ring-slate-200'}`}>{d.status}</span>
+                  <td className="text-slate-700 font-medium">₹{d.capital?.toLocaleString()}</td>
+                  <td>
+                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${d.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>{d.status}</span>
                   </td>
-                  <td className="px-6 py-4 text-slate-500 text-xs">{new Date(d.createdAt).toLocaleDateString()}</td>
-                  <td className="px-6 py-4">
+                  <td className="text-slate-500 text-xs">{new Date(d.createdAt).toLocaleDateString()}</td>
+                  <td>
                     {d.status === 'ACTIVE' && (
                       <button onClick={() => stopMutation.mutate(d.id)} className="text-rose-500 hover:text-rose-700 text-xs font-semibold transition">Stop</button>
                     )}

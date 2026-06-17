@@ -19,49 +19,57 @@ export default function AdminDeployments() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-deployments'] }),
   });
 
-  if (isLoading) return <div className="text-gray-500">Loading...</div>;
+  if (isLoading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="animate-spin w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full" />
+    </div>
+  );
 
   return (
-    <div>
+    <div className="animate-fade-in-up">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">All Deployments</h1>
+        <div className="flex items-center gap-3">
+          <div className="w-1 h-7 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
+          <h1 className="text-3xl font-bold text-slate-800">All Deployments</h1>
+        </div>
         <button onClick={() => { if (confirm('Stop ALL deployments?')) stopAllMutation.mutate(); }}
-          className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 text-sm transition">
-          Stop All Deployments
+          className="bg-rose-50 hover:bg-rose-100 text-rose-600 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 border border-rose-200 hover:border-rose-300">
+          Stop All
         </button>
       </div>
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr className="text-left text-gray-500">
-              <th className="p-4">User</th>
-              <th className="p-4">Strategy</th>
-              <th className="p-4">Broker</th>
-              <th className="p-4">Mode</th>
-              <th className="p-4">Capital</th>
-              <th className="p-4">Status</th>
-              <th className="p-4">Actions</th>
+
+      <div className="card-crystal overflow-hidden">
+        <table className="w-full text-sm table-crystal">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Strategy</th>
+              <th>Broker</th>
+              <th>Mode</th>
+              <th>Capital</th>
+              <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {deployments?.length === 0 && (
-              <tr><td colSpan="7" className="p-8 text-center text-gray-400">No deployments</td></tr>
+            {(!deployments || deployments.length === 0) && (
+              <tr><td colSpan="7" className="p-8 text-center text-slate-400">No deployments</td></tr>
             )}
             {deployments?.map((d) => (
-              <tr key={d.id} className="border-t">
-                <td className="p-4">{d.userEmail || `User #${d.userId}`}</td>
-                <td className="p-4 font-medium">{d.strategyName || `#${d.strategyId}`}</td>
-                <td className="p-4">{d.brokerName || `#${d.brokerAccountId}`}</td>
+              <tr key={d.id} className="border-t border-slate-50">
+                <td className="p-4 text-slate-700">{d.userEmail || `User #${d.userId}`}</td>
+                <td className="p-4 font-medium text-slate-800">{d.strategyName || `#${d.strategyId}`}</td>
+                <td className="p-4 text-slate-700">{d.brokerName || `#${d.brokerAccountId}`}</td>
                 <td className="p-4">
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${d.mode === 'LIVE' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{d.mode}</span>
+                  <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide uppercase ${d.mode === 'LIVE' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>{d.mode}</span>
                 </td>
-                <td className="p-4">₹{d.capital?.toLocaleString()}</td>
+                <td className="p-4 font-medium text-slate-800">₹{d.capital?.toLocaleString()}</td>
                 <td className="p-4">
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${d.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{d.status}</span>
+                  <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide uppercase ${d.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'}`}>{d.status}</span>
                 </td>
                 <td className="p-4">
                   {d.status === 'ACTIVE' && (
-                    <button onClick={() => forceStopMutation.mutate(d.id)} className="text-red-600 hover:text-red-800 text-xs font-medium">Force Stop</button>
+                    <button onClick={() => forceStopMutation.mutate(d.id)} className="text-rose-600 hover:text-rose-700 text-xs font-medium transition-colors">Force Stop</button>
                   )}
                 </td>
               </tr>

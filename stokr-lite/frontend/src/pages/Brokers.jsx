@@ -122,8 +122,11 @@ export default function Brokers() {
     <div>
       {/* Header */}
       <div className="mb-8 animate-fade-in-up">
-        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Broker Connections</h1>
-        <p className="text-slate-500 text-sm mt-2">Connect your trading accounts to enable live execution</p>
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-1 h-7 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Broker Connections</h1>
+        </div>
+        <p className="text-slate-400 text-sm ml-4">Connect your trading accounts to enable live execution</p>
       </div>
 
       {/* OAuth Result Banner */}
@@ -136,13 +139,13 @@ export default function Brokers() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {oauthResult.status === 'ok' ? (
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
               ) : (
-                <div className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-rose-100 flex items-center justify-center">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -167,8 +170,8 @@ export default function Brokers() {
       {connectingBroker && (
         <div className="mb-6 p-4 rounded-2xl border bg-indigo-50 border-indigo-200 text-indigo-700 animate-scale-in">
           <div className="flex items-center gap-3">
-            <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
             <span className="text-sm font-medium">Connecting to {connectingBroker}...</span>
@@ -178,23 +181,23 @@ export default function Brokers() {
 
       {/* Connected Brokers */}
       {brokers?.length > 0 && (
-        <div className="mb-8 animate-fade-in-up delay-100">
+        <div className="mb-10 animate-fade-in-up delay-100">
           <div className="flex items-center gap-3 mb-5">
-            <div className="w-1 h-6 rounded-full bg-gradient-to-b from-emerald-500 to-teal-500" />
+            <div className="w-1 h-5 rounded-full bg-gradient-to-b from-emerald-500 to-teal-500" />
             <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Connected Accounts</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {brokers?.map((b, i) => {
               const meta = BROKER_META[b.brokerName] || { color: 'from-slate-500 to-slate-600', letter: b.brokerName[0], glow: 'shadow-slate-500/20' };
               return (
-                <div key={b.id} className={`card-light p-5 hover-lift hover-glow animate-fade-in-up delay-${Math.min((i+2)*100, 600)}`}>
+                <div key={b.id} className={`card-crystal p-5 hover-lift hover-glow animate-fade-in-up delay-${Math.min((i+2)*100, 600)}`}>
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${meta.color} flex items-center justify-center text-white font-bold text-sm shadow-lg ${meta.glow}`}>
                         {meta.letter}
                       </div>
                       <div>
-                        <h3 className="font-semibold text-slate-700 text-sm">{b.brokerName}</h3>
+                        <h3 className="font-semibold text-slate-800 text-sm">{b.brokerName}</h3>
                         <p className="text-xs text-slate-400">{b.clientId}</p>
                       </div>
                     </div>
@@ -204,7 +207,7 @@ export default function Brokers() {
                     </span>
                   </div>
                   <button onClick={() => disconnectMutation.mutate(b.id)}
-                    className="text-rose-500/70 hover:text-rose-600 text-xs font-medium transition-colors px-3 py-1.5 rounded-lg hover:bg-rose-50 border border-transparent hover:border-rose-200">
+                    className="text-rose-500/70 hover:text-rose-600 text-xs font-medium transition-colors px-3.5 py-1.5 rounded-lg hover:bg-rose-50 border border-transparent hover:border-rose-200">
                     Disconnect
                   </button>
                 </div>
@@ -217,24 +220,24 @@ export default function Brokers() {
       {/* Available Brokers */}
       <div className="animate-fade-in-up delay-200">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-1 h-6 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
+          <div className="w-1 h-5 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
           <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Available Brokers</h2>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {(supported || ['ZERODHA', 'DHAN', 'FYERS']).map((name, i) => {
             const brokerName = typeof name === 'string' ? name : name.name;
             const meta = BROKER_META[brokerName] || { color: 'from-slate-500 to-slate-600', letter: brokerName[0], desc: 'Trading broker', glow: 'shadow-slate-500/20' };
             const isConnected = brokers?.some((b) => b.brokerName === brokerName);
             return (
-              <div key={brokerName} className={`card-light overflow-hidden hover-lift hover-glow animate-fade-in-up delay-${Math.min((i+3)*100, 600)} group`}>
-                <div className={`h-1.5 bg-gradient-to-r ${meta.color}`} />
+              <div key={brokerName} className={`card-crystal overflow-hidden hover-lift hover-glow animate-fade-in-up delay-${Math.min((i+3)*100, 600)} group`}>
+                <div className={`h-1 bg-gradient-to-r ${meta.color}`} />
                 <div className="p-6">
-                  <div className="flex items-center gap-4 mb-5">
-                    <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${meta.color} flex items-center justify-center text-white font-bold text-xl shadow-lg ${meta.glow} group-hover:scale-110 transition-transform duration-300`}>
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${meta.color} flex items-center justify-center text-white font-bold text-xl shadow-lg ${meta.glow} group-hover:scale-105 transition-transform duration-300`}>
                       {meta.letter}
                     </div>
                     <div>
-                      <h3 className="font-bold text-slate-800 text-lg">{brokerName}</h3>
+                      <h3 className="font-bold text-slate-900 text-lg">{brokerName}</h3>
                       <p className="text-xs text-slate-400 mt-0.5">{meta.desc}</p>
                     </div>
                   </div>
@@ -251,7 +254,7 @@ export default function Brokers() {
                       {connectingBroker === brokerName ? (
                         <span className="flex items-center justify-center gap-2">
                           <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                           </svg>
                           Opening...
@@ -271,11 +274,11 @@ export default function Brokers() {
 
 function LoadingSkeleton() {
   return (
-    <div className="space-y-4">
-      <div className="skeleton w-80 h-10 mb-8" />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+    <div className="space-y-3">
+      <div className="skeleton w-60 h-10 mb-8" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[1,2,3].map(i => (
-          <div key={i} className="card-light p-5">
+          <div key={i} className="card-crystal p-6">
             <div className="skeleton w-full h-40" />
           </div>
         ))}

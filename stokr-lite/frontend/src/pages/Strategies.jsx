@@ -18,41 +18,44 @@ export default function Strategies() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-800">Strategy Catalog</h1>
-        <p className="text-slate-500 text-sm mt-1">Browse and deploy algorithmic trading strategies</p>
+      <div className="mb-8 animate-fade-in-up">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-1 h-7 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Strategy Catalog</h1>
+        </div>
+        <p className="text-slate-400 text-sm ml-4">Browse and deploy algorithmic trading strategies</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {strategies?.map((s) => {
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {strategies?.map((s, i) => {
           const icon = STRATEGY_ICONS[s.strategyType] || STRATEGY_ICONS.ORB;
           return (
-            <div key={s.id} className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
-              <div className="p-6">
+            <div key={s.id} className="card-crystal hover-lift hover-glow overflow-hidden animate-fade-in-up" style={{ animationDelay: `${i * 100}ms` }}>
+              <div className="p-5">
                 <div className="flex items-start justify-between mb-4">
-                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
                     <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
                     </svg>
                   </div>
-                  <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                    s.enabled ? 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-1 ring-slate-200'
+                  <span className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold ${
+                    s.enabled ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${s.enabled ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                     {s.enabled ? 'Enabled' : 'Disabled'}
                   </span>
                 </div>
 
-                <h3 className="text-lg font-bold text-slate-800 mb-2">{s.name}</h3>
+                <h3 className="text-base font-bold text-slate-800 mb-2">{s.name}</h3>
                 <p className="text-sm text-slate-500 mb-4 leading-relaxed">{s.description}</p>
 
-                <div className="flex items-center gap-2 mb-5">
-                  <span className="px-2.5 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-medium">{s.strategyType}</span>
-                  <span className="px-2.5 py-1 bg-violet-50 text-violet-600 rounded-lg text-xs font-medium">{s.assetClass}</span>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-medium border border-indigo-100">{s.strategyType}</span>
+                  <span className="px-2 py-1 bg-violet-50 text-violet-600 rounded-lg text-xs font-medium border border-violet-100">{s.assetClass}</span>
                 </div>
 
                 {s.paramsSchema && (
-                  <details className="mb-5 text-xs">
+                  <details className="mb-4 text-xs">
                     <summary className="cursor-pointer text-slate-500 hover:text-slate-700 font-medium transition">View Parameters</summary>
                     <pre className="mt-2 bg-slate-50 p-3 rounded-xl overflow-x-auto text-slate-600 border border-slate-100">{JSON.stringify(JSON.parse(s.paramsSchema), null, 2)}</pre>
                   </details>

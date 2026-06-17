@@ -45,50 +45,37 @@ function NavItem({ link, isAdminSection }) {
       to={link.to}
       end={link.end}
       className={({ isActive }) =>
-        `group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-300 overflow-hidden ${
+        `group relative flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-200 ${
           isActive
-            ? isAdminSection
-              ? 'text-white'
-              : 'text-white'
-            : 'text-slate-400 hover:text-white'
+            ? 'text-indigo-600'
+            : 'text-slate-500 hover:text-slate-900'
         }`
       }
     >
       {({ isActive }) => (
         <>
           <div
-            className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+            className={`absolute inset-0 rounded-xl transition-all duration-200 ${
               isActive
-                ? isAdminSection
-                  ? 'bg-rose-600/20 shadow-lg shadow-rose-600/10'
-                  : 'bg-indigo-600/20 shadow-lg shadow-indigo-600/10'
-                : 'bg-transparent group-hover:bg-white/[0.03]'
+                ? 'bg-indigo-50'
+                : 'bg-transparent group-hover:bg-slate-50'
             }`}
           />
           <div
-            className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full transition-all duration-300 ${
+            className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full transition-all duration-200 ${
               isActive
-                ? isAdminSection
-                  ? 'bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.5)]'
-                  : 'bg-indigo-500 shadow-[0_0_12px_rgba(99,102,241,0.5)]'
+                ? 'bg-indigo-500'
                 : 'bg-transparent'
             }`}
           />
           <span className="relative z-10">
-            <SvgIcon path={link.icon} className={`w-[18px] h-[18px] shrink-0 transition-all duration-300 ${
+            <SvgIcon path={link.icon} className={`w-[18px] h-[18px] shrink-0 transition-colors duration-200 ${
               isActive
-                ? isAdminSection
-                  ? 'text-rose-400 drop-shadow-[0_0_6px_rgba(244,63,94,0.4)]'
-                  : 'text-indigo-400 drop-shadow-[0_0_6px_rgba(99,102,241,0.4)]'
-                : ''
+                ? 'text-indigo-500'
+                : 'text-slate-400 group-hover:text-slate-600'
             }`} />
           </span>
           <span className="relative z-10">{link.label}</span>
-          {isActive && (
-            <div className={`absolute right-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${
-              isAdminSection ? 'bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.6)]' : 'bg-indigo-400 shadow-[0_0_8px_rgba(99,102,241,0.6)]'
-            }`} />
-          )}
         </>
       )}
     </NavLink>
@@ -112,27 +99,27 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Sidebar - Dark */}
-      <aside className="relative w-[260px] bg-[#0f172a] border-r border-white/5 text-white flex flex-col shrink-0 z-20">
+    <div className="flex h-screen overflow-hidden bg-white">
+      {/* Sidebar - Crystal Light */}
+      <aside className="relative w-[260px] bg-white border-r border-slate-100 flex flex-col shrink-0 z-20">
         {/* Brand */}
-        <div className="px-6 py-6">
+        <div className="px-5 py-5">
           <div className="flex items-center gap-3">
-            <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-indigo-500/30 animate-glow-pulse">
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight text-white">Stokr Lite</h1>
-              <p className="text-[11px] text-indigo-300/60 font-medium tracking-widest uppercase">Algo Trading</p>
+              <h1 className="text-[15px] font-bold text-slate-900 tracking-tight">Stokr</h1>
+              <p className="text-[10px] text-slate-400 font-medium tracking-wider uppercase">Algo Trading</p>
             </div>
           </div>
         </div>
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-3 pb-4">
-          <div className="px-3 mb-2 text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Trading</div>
+          <div className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Trading</div>
           <div className="space-y-0.5">
             {traderLinks.map((link) => (
               <NavItem key={link.to} link={link} isAdminSection={false} />
@@ -141,7 +128,7 @@ export default function Layout() {
 
           {isAdmin && (
             <>
-              <div className="px-3 mt-6 mb-2 text-[10px] font-semibold text-slate-600 uppercase tracking-widest">Administration</div>
+              <div className="px-3 mt-5 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Administration</div>
               <div className="space-y-0.5">
                 {adminLinks.map((link) => (
                   <NavItem key={link.to} link={link} isAdminSection={true} />
@@ -152,10 +139,10 @@ export default function Layout() {
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-white/5">
+        <div className="p-3 border-t border-slate-100">
           <button onClick={handleLogout}
-            className="group flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-sm text-slate-400 hover:text-white transition-all duration-300 hover:bg-white/[0.03]">
-            <svg className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-[-2px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            className="group flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-[13px] text-slate-500 hover:text-slate-900 transition-all duration-200 hover:bg-slate-50">
+            <svg className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
             Sign Out
@@ -163,9 +150,12 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Main content - Light */}
-      <main className="flex-1 overflow-y-auto relative bg-slate-50">
-        <div className="fixed inset-0 bg-grid-pattern-light pointer-events-none" />
+      {/* Main content - Crystal Light */}
+      <main className="flex-1 overflow-y-auto relative bg-gradient-to-b from-white via-white to-slate-50/50">
+        {/* Subtle ambient orbs */}
+        <div className="ambient-orb w-[500px] h-[500px] bg-indigo-400/[0.03] -top-40 -right-40 animate-float-orb" style={{ animationDelay: '0s' }} />
+        <div className="ambient-orb w-[300px] h-[300px] bg-violet-400/[0.02] -bottom-20 -left-20 animate-float-orb" style={{ animationDelay: '5s' }} />
+        
         <div className="max-w-7xl mx-auto p-8 relative z-10">
           <div key={pageKey} className="animate-fade-in-up">
             <Outlet />

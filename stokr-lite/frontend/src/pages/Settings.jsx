@@ -20,13 +20,19 @@ export default function Settings() {
 
   if (isLoading) return <div className="text-slate-500">Loading...</div>;
 
-  const inputCls = 'w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition outline-none text-sm';
+  const inputCls = 'w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition outline-none text-sm input-crystal';
 
   return (
     <div>
-      <div className="mb-8"><h1 className="text-2xl font-bold text-slate-800">Settings</h1><p className="text-slate-500 text-sm mt-1">Manage your profile and preferences</p></div>
-      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 max-w-2xl">
-        <h2 className="text-lg font-semibold text-slate-800 mb-5">Profile</h2>
+      <div className="mb-8 animate-fade-in-up">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-1 h-7 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Settings</h1>
+        </div>
+        <p className="text-slate-400 text-sm ml-4">Manage your profile and preferences</p>
+      </div>
+      <div className="card-crystal p-6 max-w-2xl">
+        <h2 className="text-base font-semibold text-slate-800 mb-4">Profile</h2>
         <div className="space-y-5">
           <div><label className="block text-sm font-medium text-slate-700 mb-1.5">Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputCls} /></div>
           <div><label className="block text-sm font-medium text-slate-700 mb-1.5">Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputCls} /></div>
@@ -38,7 +44,7 @@ export default function Settings() {
             </select>
           </div>
           <button onClick={() => updateMutation.mutate(form)} disabled={updateMutation.isPending}
-            className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 transition shadow-lg shadow-indigo-500/20">
+            className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 transition shadow-lg shadow-indigo-500/20">
             {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
