@@ -34,14 +34,26 @@ public class BrokerService {
         BrokerAdapter adapter = registry.getAdapter(brokerName);
         String[] tokens = adapter.exchangeToken(requestToken);
 
-        BrokerAccount account = BrokerAccount.builder()
-                .userId(userId)
-                .brokerName(brokerName.toUpperCase())
-                .accessToken(tokens[0])
-                .refreshToken(tokens.length > 1 ? tokens[1] : null)
-                .tokenExpiry(Instant.now().plusSeconds(86400)) // 24 hours default
-                .status("ACTIVE")
-                .build();
+        // Upsert: if user already has an active account for this broker, update it
+        BrokerAccount account = repository.findByUserIdAndBrokerNameAndStatus(userId, brokerName.toUpperCase(), "ACTIVE")
+                .stream().findFirst().orElse(null);
+
+        if (account != null) {
+            // Update existing
+            account.setAccessToken(tokens[0]);
+            account.setRefreshToken(tokens.length > 1 ? tokens[1] : null);
+            account.setTokenExpiry(Instant.now().plusSeconds(86400));
+        } else {
+            // Create new
+            account = BrokerAccount.builder()
+                    .userId(userId)
+                    .brokerName(brokerName.toUpperCase())
+                    .accessToken(tokens[0])
+                    .refreshToken(tokens.length > 1 ? tokens[1] : null)
+                    .tokenExpiry(Instant.now().plusSeconds(86400))
+                    .status("ACTIVE")
+                    .build();
+        }
 
         return repository.save(account);
     }

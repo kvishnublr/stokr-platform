@@ -3,6 +3,7 @@ import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import BrokerCallback from './pages/BrokerCallback';
 import Dashboard from './pages/Dashboard';
 import Strategies from './pages/Strategies';
 import Deployments from './pages/Deployments';
@@ -22,6 +23,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      {/* Broker OAuth callback - outside ProtectedRoute since broker redirects here directly */}
+      <Route path="/brokers/callback" element={<BrokerCallback />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />

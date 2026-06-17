@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import client from '../api/client';
 
@@ -7,8 +8,13 @@ const BROKER_META = {
   FYERS: { color: 'from-emerald-500 to-green-600', letter: 'F', desc: 'Commission-free trading' },
 };
 
+const BROKER_OAUTH_MESSAGE = 'stokr_broker_oauth';
+
 export default function Brokers() {
   const queryClient = useQueryClient();
+  const [connectingBroker, setConnectingBroker] = useState(null);
+  const [oauthResult, setOauthResult] = useState(null);
+  const popupRef = useRef(null);
 
   const { data: brokers, isLoading } = useQuery({
     queryKey: ['brokers'],
@@ -25,12 +31,65 @@ export default function Brokers() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['brokers'] }),
   });
 
+  // Listen for postMessage from popup callback page
+  useEffect(() => {
+    function handleMessage(event) {
+      if (event.data?.type === BROKER_OAUTH_MESSAGE) {
+        setConnectingBroker(null);
+        popupRef.current = null;
+        if (event.data.status === 'ok') {
+          setOauthResult({ status: 'ok', broker: event.data.broker });
+          queryClient.invalidateQueries({ queryKey: ['brokers'] });
+        } else {
+          const reason = event.data.reason || 'unknown';
+          const msg = event.data.message || 'Connection failed';
+          setOauthResult({ status: 'error', broker: event.data.broker, reason, message: decodeURIComponent(msg) });
+        }
+      }
+    }
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [queryClient]);
+
   const connectBroker = async (brokerName) => {
+    setOauthResult(null);
+    setConnectingBroker(brokerName);
     try {
       const { data } = await client.get(`/brokers/${brokerName}/connect`);
-      if (data.authUrl) window.open(data.authUrl, '_blank');
+      if (data.authUrl) {
+        const width = 600;
+        const height = 700;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+        const popup = window.open(
+          data.authUrl,
+          `${brokerName}_oauth`,
+          `width=${width},height=${height},left=${left},top=${top},scrollbars=yes`
+        );
+        popupRef.current = popup;
+
+        // If popup was blocked
+        if (!popup || popup.closed) {
+          setConnectingBroker(null);
+          setOauthResult({ status: 'error', broker: brokerName, reason: 'popup_blocked', message: 'Pop-up was blocked. Allow pop-ups for this site, then try again.' });
+          return;
+        }
+
+        // Watch for popup closing without completing
+        const checkClosed = setInterval(() => {
+          if (popup.closed) {
+            clearInterval(checkClosed);
+            if (connectingBroker === brokerName) {
+              setConnectingBroker(null);
+              // Refresh broker status in case they completed in the popup tab
+              queryClient.invalidateQueries({ queryKey: ['brokers'] });
+            }
+          }
+        }, 500);
+      }
     } catch (err) {
-      alert('Failed to get auth URL: ' + (err.response?.data?.error || err.message));
+      setConnectingBroker(null);
+      setOauthResult({ status: 'error', broker: brokerName, reason: 'connect_failed', message: err.response?.data?.error || err.message || 'Failed to get auth URL' });
     }
   };
 
@@ -42,6 +101,52 @@ export default function Brokers() {
         <h1 className="text-2xl font-bold text-slate-800">Broker Connections</h1>
         <p className="text-slate-500 text-sm mt-1">Connect your trading accounts to enable live execution</p>
       </div>
+
+      {/* OAuth Result Banner */}
+      {oauthResult && (
+        <div className={`mb-6 p-4 rounded-xl border ${
+          oauthResult.status === 'ok'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+            : 'bg-rose-50 border-rose-200 text-rose-700'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {oauthResult.status === 'ok' ? (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              )}
+              <span className="text-sm font-medium">
+                {oauthResult.status === 'ok'
+                  ? `${(BROKER_META[oauthResult.broker?.toUpperCase()]?.letter || oauthResult.broker)} connected successfully!`
+                  : `${oauthResult.broker || 'Broker'} link failed: ${oauthResult.message || oauthResult.reason}`}
+              </span>
+            </div>
+            <button onClick={() => setOauthResult(null)} className="text-current opacity-50 hover:opacity-100">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Connecting indicator */}
+      {connectingBroker && (
+        <div className="mb-6 p-4 rounded-xl border bg-indigo-50 border-indigo-200 text-indigo-700">
+          <div className="flex items-center gap-2">
+            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-sm font-medium">Connecting to {connectingBroker}...</span>
+          </div>
+        </div>
+      )}
 
       {/* Connected Brokers */}
       {brokers?.length > 0 && (
@@ -107,9 +212,9 @@ export default function Brokers() {
                       Connected
                     </div>
                   ) : (
-                    <button onClick={() => connectBroker(brokerName)}
-                      className={`w-full py-2.5 rounded-xl bg-gradient-to-r ${meta.color} text-white text-sm font-medium hover:opacity-90 transition shadow-lg shadow-${meta.color.split('-')[1]}-500/20`}>
-                      Connect
+                    <button onClick={() => connectBroker(brokerName)} disabled={connectingBroker === brokerName}
+                      className={`w-full py-2.5 rounded-xl bg-gradient-to-r ${meta.color} text-white text-sm font-medium hover:opacity-90 transition shadow-lg shadow-${meta.color.split('-')[1]}-500/20 disabled:opacity-50`}>
+                      {connectingBroker === brokerName ? 'Opening...' : 'Connect'}
                     </button>
                   )}
                 </div>

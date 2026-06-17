@@ -52,6 +52,11 @@ broker:
     api-key: ${FYERS_API_KEY:}
     redirect-uri: ${FYERS_REDIRECT_URI:http://localhost:8080/api/brokers/fyers/callback}
 
+# Stokr UI base URL (used for OAuth callback redirects)
+stokr:
+  ui:
+    base-url: ${STOKR_UI_BASE_URL:http://localhost:5173}
+
 # Trading Configuration
 trading:
   market-open-time: "09:15"
