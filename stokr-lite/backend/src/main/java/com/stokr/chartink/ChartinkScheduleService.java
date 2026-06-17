@@ -1,5 +1,6 @@
 package com.stokr.chartink;
 
+import com.stokr.engine.SignalRepository;
 import com.stokr.marketdata.MarketDataService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,15 +9,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalTime;
 import java.time.ZoneId;
 
 /**
  * Scheduled jobs for Chartink position management:
  * - Trailing stop updates (every 30 seconds)
- * - Time-based exits (2:00 PM mean reversion, 3:15 PM momentum)
- * - Hard stop loss checks
+ * - Time-based exits (2:00 PM mean reversion, 3:15 PM EOD)
+ * - Hard stop loss and target checks
+ * Supports per-strategy exit rules.
  */
 @Slf4j
 @Service
@@ -26,6 +27,7 @@ public class ChartinkScheduleService {
     private final ChartinkPositionRepository positionRepository;
     private final ChartinkExecutionService executionService;
     private final MarketDataService marketDataService;
+    private final SignalRepository signalRepository;
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final LocalTime MEAN_REVERSION_CUTOFF = LocalTime.of(14, 0);
@@ -33,7 +35,7 @@ public class ChartinkScheduleService {
     private static final LocalTime MARKET_CLOSE = LocalTime.of(15, 30);
 
     /**
-     * Every 30 seconds: update trailing stops and check hard SL.
+     * Every 30 seconds: update trailing stops and check hard SL / target.
      */
     @Scheduled(fixedRate = 30000)
     @Transactional
@@ -94,7 +96,7 @@ public class ChartinkScheduleService {
                     continue;
                 }
 
-                // Time-based exits
+                // Time-based exits per strategy
                 checkTimeExit(pos, now);
 
                 positionRepository.save(pos);
@@ -126,24 +128,29 @@ public class ChartinkScheduleService {
     }
 
     private void checkTimeExit(ChartinkPosition pos, LocalTime now) {
-        // After 2:00 PM, close mean reversion positions (VWAP, Gap Fill)
+        String scanner = getScannerName(pos.getSignalId());
+
+        // After 2:00 PM: close mean-reversion strategies (VWAP, Morning Surge)
         if (now.isAfter(MEAN_REVERSION_CUTOFF) && now.isBefore(MOMENTUM_CUTOFF)) {
-            String scanner = pos.getSignalId() != null ? getScannerName(pos.getSignalId()) : "";
-            if (scanner.contains("VWAP") || scanner.contains("GAP")) {
-                log.info("Chartink: TIME EXIT for mean reversion {} at {}", pos.getSymbol(), now);
+            if (scanner.contains("VWAP") || scanner.contains("MORNING_SURGE")) {
+                log.info("Chartink: TIME EXIT for mean reversion {} ({}) at {}",
+                        pos.getSymbol(), scanner, now);
                 executionService.closePosition(pos.getSymbol(), "TIME_EXIT_MR_2PM");
+                return;
             }
         }
 
-        // After 3:15 PM, close all remaining positions
+        // After 3:15 PM: close ALL remaining positions (EOD)
         if (now.isAfter(MOMENTUM_CUTOFF)) {
-            log.info("Chartink: TIME EXIT for {} at {} (end of day)", pos.getSymbol(), now);
+            log.info("Chartink: TIME EXIT EOD for {} ({}) at {}", pos.getSymbol(), scanner, now);
             executionService.closePosition(pos.getSymbol(), "TIME_EXIT_EOD_315PM");
         }
     }
 
     private String getScannerName(Long signalId) {
-        // This would ideally fetch from signal repository; simplified here
-        return "";
+        if (signalId == null) return "";
+        return signalRepository.findById(signalId)
+                .map(s -> s.getScannerName() != null ? s.getScannerName() : "")
+                .orElse("");
     }
 }

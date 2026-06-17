@@ -4,6 +4,7 @@ import com.stokr.broker.*;
 import com.stokr.engine.PaperBroker;
 import com.stokr.engine.SignalEntity;
 import com.stokr.engine.SignalRepository;
+import com.stokr.marketdata.MarketDataService;
 import com.stokr.risk.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +18,8 @@ import java.time.Instant;
 
 /**
  * Executes Chartink signals that pass Movement Assurance.
- * Places orders via the user's active broker and tracks positions.
+ * Uses per-trader configuration for capital, position limits, and risk.
+ * Supports both PAPER and LIVE modes.
  */
 @Slf4j
 @Service
@@ -32,29 +34,23 @@ public class ChartinkExecutionService {
     private final RiskEngine riskEngine;
     private final MinTradeGapRule minTradeGapRule;
     private final StrategyConsecutiveLossRule consecutiveLossRule;
-
-    @Value("${chartink.execution.enabled:true}")
-    private boolean executionEnabled;
-
-    @Value("${chartink.execution.max-positions:3}")
-    private int maxPositions;
-
-    @Value("${chartink.execution.capital:15000}")
-    private BigDecimal capital;
+    private final TraderConfigService traderConfigService;
+    private final MarketDataService marketDataService;
 
     @Value("${chartink.execution.default-user-id:1}")
     private Long defaultUserId;
 
-    @Value("${chartink.execution.mode:PAPER}")
-    private String mode;
-
     /**
      * Execute a signal that passed Movement Assurance.
+     * Uses per-trader config for all decisions.
      */
     @Transactional
     public void execute(SignalEntity signal) {
-        if (!executionEnabled) {
-            log.info("Chartink execution disabled. Signal {} queued but not executed.", signal.getId());
+        Long userId = signal.getUserId() != null ? signal.getUserId() : defaultUserId;
+        TraderConfig config = traderConfigService.getConfig(userId);
+
+        if (!config.isEnabled()) {
+            log.info("Chartink trading disabled for user {}. Signal {} queued.", userId, signal.getId());
             signal.setStatus("QUEUED");
             signalRepository.save(signal);
             return;
@@ -62,6 +58,16 @@ public class ChartinkExecutionService {
 
         String symbol = signal.getSymbol();
         String side = signal.getSide().name();
+        BigDecimal price = signal.getEntryPrice() != null ? signal.getEntryPrice() : BigDecimal.ZERO;
+
+        // Price filter: share price must be between min and max
+        if (price.compareTo(config.getMinSharePrice()) < 0 || price.compareTo(config.getMaxSharePrice()) > 0) {
+            log.warn("Chartink: Price {} for {} outside trader range [₹{}, ₹{}]",
+                    price, symbol, config.getMinSharePrice(), config.getMaxSharePrice());
+            signal.setStatus("REJECTED_PRICE_RANGE");
+            signalRepository.save(signal);
+            return;
+        }
 
         // Check for existing open position in this symbol
         if (positionRepository.existsBySymbolAndStatus(symbol, "OPEN")) {
@@ -71,20 +77,21 @@ public class ChartinkExecutionService {
             return;
         }
 
-        // Check max positions
+        // Check max positions per trader
         long openCount = positionRepository.countByStatus("OPEN");
-        if (openCount >= maxPositions) {
-            log.info("Chartink: Max positions ({}) reached, skipping {}", maxPositions, symbol);
+        if (openCount >= config.getMaxPositions()) {
+            log.info("Chartink: Max positions ({}) reached for user {}, skipping {}",
+                    config.getMaxPositions(), userId, symbol);
             signal.setStatus("SKIPPED_MAX_POSITIONS");
             signalRepository.save(signal);
             return;
         }
 
-        // Calculate quantity
-        BigDecimal price = signal.getEntryPrice() != null ? signal.getEntryPrice() : BigDecimal.ZERO;
-        int quantity = calculateQuantity(price);
+        // Calculate quantity using trader config
+        int quantity = config.calculateQuantity(price);
         if (quantity <= 0) {
-            log.warn("Chartink: Calculated quantity is 0 for {} @ {}", symbol, price);
+            log.warn("Chartink: Calculated quantity is 0 for {} @ {} (per-trade capital: ₹{})",
+                    symbol, price, config.getPerTradeCapital());
             signal.setStatus("REJECTED_ZERO_QTY");
             signalRepository.save(signal);
             return;
@@ -96,9 +103,9 @@ public class ChartinkExecutionService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         RiskContext riskContext = new RiskContext(
-                null, defaultUserId, symbol, quantity, price,
-                (int) openCount, BigDecimal.ZERO, capital, totalDeployed,
-                maxPositions, new BigDecimal("225"), 1000, 0
+                null, userId, symbol, quantity, price,
+                (int) openCount, BigDecimal.ZERO, config.getCapital(), totalDeployed,
+                config.getMaxPositions(), config.getMaxDailyLoss(), 1000, 0
         );
 
         RiskRule.RiskDecision riskDecision = riskEngine.evaluate(riskContext);
@@ -111,7 +118,7 @@ public class ChartinkExecutionService {
 
         // Strategy consecutive loss check
         String strategyType = signal.getScannerName() != null ? signal.getScannerName() : "UNKNOWN";
-        RiskRule.RiskDecision lossDecision = consecutiveLossRule.checkStrategy(defaultUserId, strategyType);
+        RiskRule.RiskDecision lossDecision = consecutiveLossRule.checkStrategy(userId, strategyType);
         if (!lossDecision.passed()) {
             log.warn("Chartink: {} — skipping {}", lossDecision.reason(), symbol);
             signal.setStatus("STRATEGY_PAUSED");
@@ -121,33 +128,41 @@ public class ChartinkExecutionService {
 
         // Place order
         try {
-            BrokerOrderResponse response = placeBrokerOrder(symbol, side, quantity);
+            BrokerOrderResponse response = placeBrokerOrder(symbol, side, quantity, userId, config);
 
             if (response != null && response.isSuccess()) {
-                // Create position
+                // Build SL and target from trader config if signal doesn't have them
+                BigDecimal sl = signal.getStopLoss() != null ? signal.getStopLoss()
+                        : calculateStopLoss(price, side, config);
+                BigDecimal target = signal.getTarget() != null ? signal.getTarget()
+                        : calculateTarget(price, side, config);
+
                 ChartinkPosition position = ChartinkPosition.builder()
                         .signalId(signal.getId())
+                        .userId(userId)
                         .symbol(symbol)
                         .side(side)
                         .quantity(quantity)
                         .entryPrice(price)
                         .avgPrice(price)
-                        .stopLoss(signal.getStopLoss())
-                        .target(signal.getTarget())
+                        .stopLoss(sl)
+                        .target(target)
                         .highestPrice(price)
                         .lowestPrice(price)
-                        .trailingStop(signal.getStopLoss()) // initial trailing = SL
+                        .trailingStop(sl)
                         .status("OPEN")
                         .build();
                 positionRepository.save(position);
 
+                signal.setStopLoss(sl);
+                signal.setTarget(target);
                 signal.setStatus("EXECUTED");
                 signalRepository.save(signal);
 
-                log.info("Chartink: EXECUTED {} {} {} qty={} @ {} | brokerOrderId={}",
-                        symbol, side, quantity, price, response.orderId());
+                log.info("Chartink: EXECUTED {} {} qty={} @ {} | mode={} | brokerOrderId={}",
+                        symbol, side, quantity, price, config.getMode(), response.orderId());
 
-                minTradeGapRule.recordTrade(defaultUserId, symbol);
+                minTradeGapRule.recordTrade(userId, symbol);
             } else {
                 String msg = response != null ? response.message() : "No response from broker";
                 log.error("Chartink: Order rejected for {}: {}", symbol, msg);
@@ -161,7 +176,8 @@ public class ChartinkExecutionService {
         }
     }
 
-    private BrokerOrderResponse placeBrokerOrder(String symbol, String side, int quantity) {
+    private BrokerOrderResponse placeBrokerOrder(String symbol, String side, int quantity,
+                                                  Long userId, TraderConfig config) {
         BrokerOrderRequest request = BrokerOrderRequest.builder()
                 .symbol(symbol)
                 .exchange("NSE")
@@ -171,16 +187,16 @@ public class ChartinkExecutionService {
                 .productType("MIS")
                 .build();
 
-        if ("PAPER".equalsIgnoreCase(mode)) {
-            return paperBroker.placeOrder("paper", request);
+        if (config.getMode() == TraderConfig.Mode.PAPER) {
+            return paperBroker.placeOrder("paper_" + userId, request);
         }
 
-        // LIVE mode: find active broker account for default user
+        // LIVE mode: find active broker account for user
         var accounts = brokerAccountRepository.findByUserIdAndBrokerNameAndStatus(
-                defaultUserId, "ZERODHA", "ACTIVE");
+                userId, "ZERODHA", "ACTIVE");
         if (accounts.isEmpty()) {
-            log.warn("No active Zerodha account for user {}, falling back to paper", defaultUserId);
-            return paperBroker.placeOrder("paper", request);
+            log.warn("No active Zerodha account for user {}, falling back to paper", userId);
+            return paperBroker.placeOrder("paper_" + userId, request);
         }
 
         BrokerAccount account = accounts.get(0);
@@ -188,10 +204,18 @@ public class ChartinkExecutionService {
         return adapter.placeOrder(account.getAccessToken(), request);
     }
 
-    private int calculateQuantity(BigDecimal price) {
-        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) return 0;
-        BigDecimal perPosition = capital.divide(BigDecimal.valueOf(maxPositions), 0, RoundingMode.DOWN);
-        return perPosition.divide(price, 0, RoundingMode.DOWN).intValue();
+    private BigDecimal calculateStopLoss(BigDecimal entry, String side, TraderConfig config) {
+        double factor = "BUY".equals(side)
+                ? 1.0 - (config.getStopLossPct().doubleValue() / 100.0)
+                : 1.0 + (config.getStopLossPct().doubleValue() / 100.0);
+        return entry.multiply(BigDecimal.valueOf(factor)).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateTarget(BigDecimal entry, String side, TraderConfig config) {
+        double factor = "BUY".equals(side)
+                ? 1.0 + (config.getTargetPct().doubleValue() / 100.0)
+                : 1.0 - (config.getTargetPct().doubleValue() / 100.0);
+        return entry.multiply(BigDecimal.valueOf(factor)).setScale(2, RoundingMode.HALF_UP);
     }
 
     @Transactional
@@ -203,26 +227,49 @@ public class ChartinkExecutionService {
         }
 
         ChartinkPosition position = posOpt.get();
+        Long userId = position.getUserId() != null ? position.getUserId() : defaultUserId;
+        TraderConfig config = traderConfigService.getConfig(userId);
+
         String closeSide = "BUY".equals(position.getSide()) ? "SELL" : "BUY";
         int qty = position.getQuantity();
 
         try {
-            BrokerOrderResponse response = placeBrokerOrder(symbol, closeSide, qty);
+            BrokerOrderResponse response = placeBrokerOrder(symbol, closeSide, qty, userId, config);
 
             if (response != null && response.isSuccess()) {
-                // Mark position closed
                 position.setStatus("CLOSED");
                 position.setExitReason(reason);
                 position.setClosedAt(Instant.now());
+
+                // Calculate realized PnL for consecutive loss tracking
+                BigDecimal exitPrice = marketDataService.getLtp(symbol);
+                if (exitPrice != null) {
+                    BigDecimal pnl = exitPrice.subtract(position.getAvgPrice())
+                            .multiply(BigDecimal.valueOf(
+                                    "BUY".equals(position.getSide()) ? qty : -qty));
+                    position.setRealizedPnl(pnl);
+
+                    // Record win/loss for consecutive loss rule
+                    String scanner = signalRepository.findById(position.getSignalId())
+                            .map(SignalEntity::getScannerName)
+                            .orElse("UNKNOWN");
+                    if (pnl.compareTo(BigDecimal.ZERO) > 0) {
+                        consecutiveLossRule.recordWin(userId, scanner);
+                    } else {
+                        consecutiveLossRule.recordLoss(userId, scanner);
+                    }
+                }
+
                 positionRepository.save(position);
 
-                // Update signal status
                 signalRepository.findById(position.getSignalId()).ifPresent(s -> {
                     s.setStatus("EXITED");
                     signalRepository.save(s);
                 });
 
-                log.info("Chartink: CLOSED {} {} qty={} | reason={}", symbol, closeSide, qty, reason);
+                log.info("Chartink: CLOSED {} {} qty={} | reason={} | mode={} | pnl={}",
+                        symbol, closeSide, qty, reason, config.getMode(),
+                        position.getRealizedPnl());
             } else {
                 String msg = response != null ? response.message() : "No response";
                 log.error("Chartink: Exit order failed for {}: {}", symbol, msg);

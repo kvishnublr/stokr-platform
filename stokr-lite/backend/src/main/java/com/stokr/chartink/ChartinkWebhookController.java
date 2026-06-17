@@ -86,6 +86,7 @@ public class ChartinkWebhookController {
             // 4. Map to SignalEntity
             Long strategyId = strategyRouter.resolveStrategyId(payload.scannerName());
             SignalEntity signal = signalMapper.toSignalEntity(payload, null, null, strategyId);
+            signal.setUserId(1L); // default user for Chartink webhooks
             signal.setMovementScore(ma.score());
             signal.setFailedFilters(String.join(",", ma.failedFilters()));
 

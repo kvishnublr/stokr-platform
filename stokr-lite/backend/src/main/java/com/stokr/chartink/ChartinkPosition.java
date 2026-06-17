@@ -26,6 +26,9 @@ public class ChartinkPosition {
     @Column(name = "signal_id", nullable = false, unique = true)
     private Long signalId;
 
+    @Column(name = "user_id")
+    private Long userId;
+
     @Column(nullable = false, length = 50)
     private String symbol;
 
