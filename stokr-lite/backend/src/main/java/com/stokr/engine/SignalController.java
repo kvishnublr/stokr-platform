@@ -1,5 +1,7 @@
 package com.stokr.engine;
 
+import com.stokr.chartink.ChartinkPosition;
+import com.stokr.chartink.ChartinkPositionRepository;
 import com.stokr.config.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +19,7 @@ import java.util.Map;
 public class SignalController {
 
     private final SignalRepository signalRepository;
+    private final ChartinkPositionRepository chartinkPositionRepository;
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     @GetMapping
@@ -44,5 +47,15 @@ public class SignalController {
                 "active", activeCount,
                 "total", totalCount
         ));
+    }
+
+    @GetMapping("/positions")
+    public ResponseEntity<List<ChartinkPosition>> getChartinkPositions() {
+        return ResponseEntity.ok(chartinkPositionRepository.findByStatusOrderByCreatedAtDesc("OPEN"));
+    }
+
+    @GetMapping("/positions/all")
+    public ResponseEntity<List<ChartinkPosition>> getAllChartinkPositions() {
+        return ResponseEntity.ok(chartinkPositionRepository.findAll());
     }
 }

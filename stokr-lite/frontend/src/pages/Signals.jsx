@@ -37,6 +37,14 @@ export default function Signals() {
     },
   });
 
+  const { data: positions = [] } = useQuery({
+    queryKey: ['chartink-positions'],
+    queryFn: async () => {
+      const res = await client.get('/signals/positions');
+      return res.data;
+    },
+  });
+
   const filtered = filter === 'ALL' ? signals : signals.filter(s => s.status === filter);
 
   const statCards = [
@@ -50,6 +58,9 @@ export default function Signals() {
     EXECUTED: { bg: 'rgba(16,185,129,0.12)', text: '#059669', border: 'rgba(16,185,129,0.25)' },
     REJECTED: { bg: 'rgba(244,63,94,0.12)', text: '#e11d48', border: 'rgba(244,63,94,0.25)' },
     EXPIRED: { bg: 'rgba(148,163,184,0.12)', text: '#64748b', border: 'rgba(148,163,184,0.25)' },
+    QUEUED: { bg: 'rgba(59,130,246,0.12)', text: '#2563eb', border: 'rgba(59,130,246,0.25)' },
+    EXITED: { bg: 'rgba(107,114,128,0.12)', text: '#4b5563', border: 'rgba(107,114,128,0.25)' },
+    ENSEMBLE_FILTERED: { bg: 'rgba(217,119,6,0.12)', text: '#b45309', border: 'rgba(217,119,6,0.25)' },
   };
 
   const sideColors = {
@@ -87,6 +98,49 @@ export default function Signals() {
           </div>
         ))}
       </div>
+
+      {/* Open Positions */}
+      {positions.length > 0 && (
+        <div className="card-aurora" style={{ padding: '24px', marginBottom: '24px', borderTop: '3px solid #10b981' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>📈</span> Open Positions ({positions.length})
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+            {positions.map((pos) => (
+              <div key={pos.id} style={{
+                padding: '16px',
+                borderRadius: '12px',
+                background: 'rgba(16,185,129,0.06)',
+                border: '1px solid rgba(16,185,129,0.15)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontWeight: 800, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-primary)' }}>{pos.symbol}</span>
+                  <span style={{
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    background: pos.side === 'BUY' ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)',
+                    color: pos.side === 'BUY' ? '#059669' : '#e11d48',
+                  }}>{pos.side}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace' }}>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Qty:</span> <strong style={{ color: 'var(--text-primary)' }}>{pos.quantity}</strong></div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Entry:</span> <strong style={{ color: 'var(--text-primary)' }}>{Number(pos.entryPrice).toFixed(2)}</strong></div>
+                  <div><span style={{ color: '#e11d48' }}>SL:</span> <strong>{Number(pos.stopLoss).toFixed(2)}</strong></div>
+                  <div><span style={{ color: '#059669' }}>Tgt:</span> <strong>{Number(pos.target).toFixed(2)}</strong></div>
+                </div>
+                {pos.unrealizedPnl !== 0 && (
+                  <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 700, color: pos.unrealizedPnl >= 0 ? '#059669' : '#e11d48', fontFamily: 'JetBrains Mono, monospace' }}>
+                    PnL: {pos.unrealizedPnl >= 0 ? '+' : ''}{Number(pos.unrealizedPnl).toFixed(2)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="card-aurora" style={{ padding: '16px 20px', marginBottom: '24px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>

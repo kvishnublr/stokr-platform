@@ -26,6 +26,8 @@ public class ChartinkWebhookController {
     private final MovementAssuranceFilter movementAssurance;
     private final StrategyRouter strategyRouter;
     private final SignalRepository signalRepository;
+    private final ChartinkExecutionService executionService;
+    private final EnsembleService ensembleService;
 
     /**
      * 9:09 AM pre-market webhook.
@@ -54,10 +56,10 @@ public class ChartinkWebhookController {
     @PostMapping("/exit")
     public ResponseEntity<Map<String, Object>> receiveExit(@RequestBody ChartinkPayload payload) {
         log.info("Chartink exit webhook: {} {} @ {}", payload.scannerName(), payload.symbol(), payload.ltp());
-        // TODO: wire to exit manager
+        executionService.closePosition(payload.symbol(), "CHARTINK_EXIT_SCANNER");
         return ResponseEntity.ok(Map.of(
                 "success", true,
-                "action", "EXIT_NOTED",
+                "action", "EXIT_EXECUTED",
                 "symbol", payload.symbol()
         ));
     }
@@ -91,18 +93,38 @@ public class ChartinkWebhookController {
             SignalEntity saved = signalRepository.save(signal);
             cooldownService.record(payload.symbol(), side);
 
-            // 6. If Movement Assurance passed, queue for execution
+            // 6. If Movement Assurance passed, execute
             if (ma.pass()) {
                 log.info("Signal PASSED Movement Assurance: {} {} score={}",
                         payload.symbol(), side, ma.score());
-                // TODO: wire to execution engine (Phase 1.5)
-                return ResponseEntity.ok(Map.of(
-                        "success", true,
-                        "signalId", saved.getId(),
-                        "movementScore", ma.score(),
-                        "action", isPreOpen ? "QUEUED_FOR_OPEN" : "QUEUED_FOR_EXECUTION",
-                        "componentScores", ma.componentScores()
-                ));
+
+                // Ensemble check (skip if ensemble doesn't confirm)
+                var ensemble = ensembleService.computeScore(payload.symbol(), saved.getCreatedAt());
+                boolean ensembleConfirms = "LONG".equals(ensemble.decision()) && "BUY".equals(side)
+                        || "SHORT".equals(ensemble.decision()) && "SELL".equals(side);
+
+                if (ensemble.shouldTrade() && ensembleConfirms) {
+                    executionService.execute(saved);
+                    return ResponseEntity.ok(Map.of(
+                            "success", true,
+                            "signalId", saved.getId(),
+                            "movementScore", ma.score(),
+                            "ensembleScore", ensemble.score(),
+                            "action", isPreOpen ? "QUEUED_FOR_OPEN" : "EXECUTED",
+                            "componentScores", ma.componentScores()
+                    ));
+                } else {
+                    saved.setStatus("ENSEMBLE_FILTERED");
+                    signalRepository.save(saved);
+                    return ResponseEntity.ok(Map.of(
+                            "success", false,
+                            "signalId", saved.getId(),
+                            "movementScore", ma.score(),
+                            "ensembleScore", ensemble.score(),
+                            "reason", "ENSEMBLE_NOT_CONFIRMED",
+                            "componentScores", ma.componentScores()
+                    ));
+                }
             } else {
                 log.info("Signal FAILED Movement Assurance: {} {} score={} failed={}",
                         payload.symbol(), side, ma.score(), ma.failedFilters());

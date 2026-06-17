@@ -14,8 +14,22 @@ public record MarketContext(
         List<Candle> candles,
         BigDecimal currentPrice,
         BigDecimal vwap,
-        Map<String, BigDecimal> indicators
+        Map<String, BigDecimal> indicators,
+        Map<String, Object> extras
 ) {
+    public MarketContext(String symbol, List<Candle> candles, BigDecimal currentPrice,
+                         BigDecimal vwap, Map<String, BigDecimal> indicators) {
+        this(symbol, candles, currentPrice, vwap, indicators, Map.of());
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T extra(String key, Class<T> type) {
+        if (extras == null) return null;
+        Object val = extras.get(key);
+        if (val == null) return null;
+        if (type.isInstance(val)) return (T) val;
+        return null;
+    }
     public Candle getLatestCandle() {
         return candles.isEmpty() ? null : candles.get(candles.size() - 1);
     }
