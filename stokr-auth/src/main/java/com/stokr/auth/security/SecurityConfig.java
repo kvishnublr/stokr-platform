@@ -41,6 +41,7 @@ public class SecurityConfig {
                                 "/api/health",
                                 "/api/v5/health",
                                 "/api/integrations/telegram/webhook",
+                                "/api/chartink/**",
                                 "/api/broker/zerodha/callback",
                                 "/api/system/health/fix-all",
                                 "/api/system/health/cleanup-ghost-symbols",

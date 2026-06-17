@@ -25,7 +25,8 @@ public record StrategyIntegrityProfile(
             Map.entry("PRE_OPEN_GAP_OI", new StrategyIntegrityProfile(false, false, true, true)),
             Map.entry("USDINR_MOMENTUM", new StrategyIntegrityProfile(false, false, true, false)),
             Map.entry("EURINR_MEAN_REVERSION", new StrategyIntegrityProfile(false, false, true, false)),
-            Map.entry("COMMODITIES_E2E_TEST", new StrategyIntegrityProfile(false, false, true, false))
+            Map.entry("COMMODITIES_E2E_TEST", new StrategyIntegrityProfile(false, false, true, false)),
+            Map.entry("VWAP_TRIPLE_CONFIRMATION", new StrategyIntegrityProfile(false, false, true, true))
     );
 
     private static final StrategyIntegrityProfile DEFAULT =
