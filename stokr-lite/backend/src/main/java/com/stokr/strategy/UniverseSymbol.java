@@ -5,6 +5,7 @@ import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
@@ -47,7 +48,7 @@ public class UniverseSymbol {
 
     @Column(name = "tick_size")
     @Builder.Default
-    private Double tickSize = 0.05;
+    private BigDecimal tickSize = new BigDecimal("0.05");
 
     @Column(nullable = false)
     @Builder.Default

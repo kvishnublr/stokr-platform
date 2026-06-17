@@ -1,21 +1,34 @@
 #!/bin/bash
-# Stokr Lite Backend Startup Script
-# Usage: bash /root/stokr-lite/start-backend.sh
+set -e
+APP_DIR="/opt/stokr-lite"
+LOG_FILE="$APP_DIR/app.log"
+PID_FILE="$APP_DIR/app.pid"
+JAR_FILE="$APP_DIR/app.jar"
 
-# Load .env file
-set -a
-source /root/stokr-lite/.env
-set +a
+# Kill existing process if running
+if [ -f "$PID_FILE" ]; then
+    OLD_PID=$(cat "$PID_FILE" 2>/dev/null || true)
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+        kill "$OLD_PID"
+        sleep 3
+    fi
+fi
 
-# Kill any existing backend
-pkill -f 'java.*stokr-lite' 2>/dev/null
-sleep 2
+# Clear log
+> "$LOG_FILE"
 
-cd /root/stokr-lite/backend
-nohup java -jar target/stokr-lite-1.0.0-SNAPSHOT.jar \
-  --server.port="$SERVER_PORT" \
-  --spring.datasource.password="$DB_PASSWORD" \
-  > /root/stokr-lite/backend.log 2>&1 &
+# Start application
+export DB_PASSWORD=root123
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_NAME=stokr_lite
+export DB_USERNAME=stokr
+export SERVER_PORT=8070
 
-echo "Backend started on port $SERVER_PORT"
-echo "Logs: tail -f /root/stokr-lite/backend.log"
+cd "$APP_DIR"
+nohup java -jar "$JAR_FILE" --spring.profiles.active=prod --server.port=8070 > "$LOG_FILE" 2>&1 &
+NEW_PID=$!
+echo "$NEW_PID" > "$PID_FILE"
+echo "Started stokr-lite with PID $NEW_PID"
+sleep 5
+ps -p "$NEW_PID" -o pid,comm,args || echo "Process not found!"

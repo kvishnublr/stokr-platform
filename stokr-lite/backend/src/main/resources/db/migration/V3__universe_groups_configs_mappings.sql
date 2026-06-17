@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS universe_symbols (
     instrument_token VARCHAR(50),
     instrument_type VARCHAR(10) DEFAULT 'EQ',
     lot_size INT DEFAULT 1,
-    tick_size NUMERIC(10,4) DEFAULT 0.05,
+    tick_size NUMERIC(19,4) DEFAULT 0.05,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
