@@ -2,41 +2,31 @@ import { useQuery } from '@tanstack/react-query';
 import client from '../../api/client';
 
 export default function AdminDashboard() {
-  const { data: dashboard } = useQuery({
-    queryKey: ['admin-dashboard'],
-    queryFn: () => client.get('/admin/dashboard').then((r) => r.data),
-  });
-
-  const { data: killSwitch } = useQuery({
-    queryKey: ['kill-switch'],
-    queryFn: () => client.get('/admin/kill-switch').then((r) => r.data),
-  });
+  const { data: dashboard } = useQuery({ queryKey: ['admin-dashboard'], queryFn: () => client.get('/admin/dashboard').then((r) => r.data) });
+  const { data: killSwitch } = useQuery({ queryKey: ['kill-switch'], queryFn: () => client.get('/admin/kill-switch').then((r) => r.data) });
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
+      <div className="mb-8"><h1 className="text-2xl font-bold text-slate-800">Admin Overview</h1><p className="text-slate-500 text-sm mt-1">Platform monitoring and controls</p></div>
 
-      {/* Kill Switch Warning */}
       {killSwitch?.active && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-          <p className="text-red-700 font-semibold">KILL SWITCH IS ACTIVE - All trading is halted</p>
-          <p className="text-red-600 text-sm mt-1">Activated by: {killSwitch.activatedBy} | Reason: {killSwitch.reason}</p>
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-5 mb-6 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center"><svg className="w-5 h-5 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg></div>
+          <div><p className="text-rose-700 font-semibold text-sm">KILL SWITCH ACTIVE - All trading halted</p><p className="text-rose-600 text-xs mt-0.5">By: {killSwitch.activatedBy} | Reason: {killSwitch.reason}</p></div>
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
         <StatCard title="Total Users" value={dashboard?.totalUsers || 0} />
         <StatCard title="Active Deployments" value={dashboard?.activeDeployments || 0} />
-        <StatCard title="Total Orders Today" value={dashboard?.ordersToday || 0} />
+        <StatCard title="Orders Today" value={dashboard?.ordersToday || 0} />
         <StatCard title="Pending Orders" value={dashboard?.pendingOrders || 0} />
       </div>
 
-      {/* Quick Links */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <QuickLink to="/admin/kill-switch" title="Kill Switch" desc="Emergency stop all trading" color="red" />
-        <QuickLink to="/admin/deployments" title="Manage Deployments" desc="View and control all deployments" color="blue" />
-        <QuickLink to="/admin/errors" title="Error Logs" desc="View recent system errors" color="yellow" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <QuickLink to="/admin/kill-switch" title="Kill Switch" desc="Emergency stop all trading" icon="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" color="rose" />
+        <QuickLink to="/admin/deployments" title="Manage Deployments" desc="View and control all deployments" icon="M4 6h16M4 10h16M4 14h16M4 18h16" color="indigo" />
+        <QuickLink to="/admin/errors" title="Error Logs" desc="View recent system errors" icon="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" color="amber" />
       </div>
     </div>
   );
@@ -44,19 +34,24 @@ export default function AdminDashboard() {
 
 function StatCard({ title, value }) {
   return (
-    <div className="bg-white rounded-lg shadow p-4">
-      <p className="text-sm text-gray-500">{title}</p>
-      <p className="text-2xl font-bold mt-1">{value}</p>
+    <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-5">
+      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{title}</p>
+      <p className="text-3xl font-bold text-slate-800 mt-1">{value}</p>
     </div>
   );
 }
 
-function QuickLink({ to, title, desc, color }) {
-  const colors = { red: 'border-red-200 hover:bg-red-50', blue: 'border-blue-200 hover:bg-blue-50', yellow: 'border-yellow-200 hover:bg-yellow-50' };
+function QuickLink({ to, title, desc, icon, color }) {
+  const colors = { rose: 'from-rose-500 to-pink-600 shadow-rose-500/20', indigo: 'from-indigo-500 to-violet-600 shadow-indigo-500/20', amber: 'from-amber-400 to-orange-500 shadow-amber-500/20' };
   return (
-    <a href={to} className={`block border rounded-lg p-4 transition ${colors[color]}`}>
-      <h3 className="font-semibold">{title}</h3>
-      <p className="text-sm text-gray-500 mt-1">{desc}</p>
+    <a href={to} className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-5 hover:shadow-md transition-all duration-200 group">
+      <div className="flex items-center gap-3 mb-3">
+        <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${colors[color]} flex items-center justify-center shadow-lg`}>
+          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d={icon} /></svg>
+        </div>
+        <h3 className="font-semibold text-slate-800 group-hover:text-indigo-600 transition">{title}</h3>
+      </div>
+      <p className="text-sm text-slate-500">{desc}</p>
     </a>
   );
 }

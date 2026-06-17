@@ -6,26 +6,14 @@ export default function Deployments() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
 
-  const { data: deployments, isLoading } = useQuery({
-    queryKey: ['deployments'],
-    queryFn: () => client.get('/deployments').then((r) => r.data),
-  });
-
-  const { data: strategies } = useQuery({
-    queryKey: ['strategies'],
-    queryFn: () => client.get('/strategies/enabled').then((r) => r.data),
-  });
-
-  const { data: brokers } = useQuery({
-    queryKey: ['brokers'],
-    queryFn: () => client.get('/brokers').then((r) => r.data),
-  });
+  const { data: deployments, isLoading } = useQuery({ queryKey: ['deployments'], queryFn: () => client.get('/deployments').then((r) => r.data) });
+  const { data: strategies } = useQuery({ queryKey: ['strategies'], queryFn: () => client.get('/strategies/enabled').then((r) => r.data) });
+  const { data: brokers } = useQuery({ queryKey: ['brokers'], queryFn: () => client.get('/brokers').then((r) => r.data) });
 
   const deployMutation = useMutation({
     mutationFn: (payload) => client.post('/deployments', payload),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['deployments'] }); setShowForm(false); },
   });
-
   const stopMutation = useMutation({
     mutationFn: (id) => client.delete(`/deployments/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['deployments'] }),
@@ -33,97 +21,110 @@ export default function Deployments() {
 
   const [form, setForm] = useState({ strategyId: '', brokerAccountId: '', mode: 'PAPER', capital: 100000 });
 
+  const inputCls = 'w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition outline-none text-sm';
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">My Deployments</h1>
-        <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm transition">
-          + New Deployment
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Deployments</h1>
+          <p className="text-slate-500 text-sm mt-1">Deploy and manage your trading strategies</p>
+        </div>
+        <button onClick={() => setShowForm(!showForm)}
+          className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:from-indigo-700 hover:to-violet-700 transition shadow-lg shadow-indigo-500/20 flex items-center gap-2">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+          New Deployment
         </button>
       </div>
 
       {/* Deploy Form */}
       {showForm && (
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">Deploy Strategy</h2>
+        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 mb-6">
+          <h2 className="text-lg font-semibold text-slate-800 mb-5">Deploy Strategy</h2>
           {deployMutation.isError && (
-            <div className="bg-red-50 text-red-600 text-sm p-3 rounded mb-4">{deployMutation.error?.response?.data?.message || 'Deploy failed'}</div>
+            <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm p-3.5 rounded-xl mb-5 flex items-center gap-2">
+              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01" /></svg>
+              {deployMutation.error?.response?.data?.message || deployMutation.error?.response?.data?.error || 'Deploy failed'}
+            </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Strategy</label>
-              <select value={form.strategyId} onChange={(e) => setForm({ ...form, strategyId: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg">
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Strategy</label>
+              <select value={form.strategyId} onChange={(e) => setForm({ ...form, strategyId: e.target.value })} className={inputCls}>
                 <option value="">Select strategy...</option>
                 {strategies?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Broker Account</label>
-              <select value={form.brokerAccountId} onChange={(e) => setForm({ ...form, brokerAccountId: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg">
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Broker Account</label>
+              <select value={form.brokerAccountId} onChange={(e) => setForm({ ...form, brokerAccountId: e.target.value })} className={inputCls}>
                 <option value="">Select broker...</option>
                 {brokers?.map((b) => <option key={b.id} value={b.id}>{b.brokerName} ({b.clientId})</option>)}
               </select>
+              {(!brokers || brokers.length === 0) && <p className="text-xs text-amber-600 mt-1">No brokers connected. <a href="/brokers" className="underline">Connect one first</a></p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mode</label>
-              <select value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg">
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Mode</label>
+              <select value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value })} className={inputCls}>
                 <option value="PAPER">Paper Trading</option>
                 <option value="LIVE">Live Trading</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Capital (&#8377;)</label>
-              <input type="number" value={form.capital} onChange={(e) => setForm({ ...form, capital: Number(e.target.value) })}
-                className="w-full px-3 py-2 border rounded-lg" />
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Capital (&#8377;)</label>
+              <input type="number" value={form.capital} onChange={(e) => setForm({ ...form, capital: Number(e.target.value) })} className={inputCls} />
             </div>
           </div>
-          <div className="flex gap-3 mt-4">
+          <div className="flex gap-3 mt-6">
             <button onClick={() => deployMutation.mutate(form)} disabled={deployMutation.isPending || !form.strategyId}
-              className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm transition">
+              className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50 transition shadow-lg shadow-emerald-500/20">
               {deployMutation.isPending ? 'Deploying...' : 'Deploy'}
             </button>
-            <button onClick={() => setShowForm(false)} className="text-gray-600 px-4 py-2 text-sm hover:text-gray-800">Cancel</button>
+            <button onClick={() => setShowForm(false)} className="text-slate-500 px-4 py-2.5 text-sm hover:text-slate-700 font-medium transition">Cancel</button>
           </div>
         </div>
       )}
 
       {/* Deployment List */}
-      {isLoading ? <p className="text-gray-500">Loading...</p> : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+      {isLoading ? <p className="text-slate-500">Loading...</p> : (
+        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr className="text-left text-gray-500">
-                <th className="p-4">Strategy</th>
-                <th className="p-4">Broker</th>
-                <th className="p-4">Mode</th>
-                <th className="p-4">Capital</th>
-                <th className="p-4">Status</th>
-                <th className="p-4">Created</th>
-                <th className="p-4">Actions</th>
+            <thead>
+              <tr className="border-b border-slate-100">
+                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Strategy</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Broker</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Mode</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Capital</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Created</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody>
               {deployments?.length === 0 && (
-                <tr><td colSpan="7" className="p-8 text-center text-gray-400">No deployments yet</td></tr>
+                <tr><td colSpan="7" className="p-12 text-center text-slate-400">
+                  <div className="flex flex-col items-center">
+                    <svg className="w-10 h-10 text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    <p>No deployments yet</p>
+                    <button onClick={() => setShowForm(true)} className="text-indigo-600 text-sm font-medium mt-2 hover:text-indigo-700">Create your first deployment</button>
+                  </div>
+                </td></tr>
               )}
               {deployments?.map((d) => (
-                <tr key={d.id} className="border-t">
-                  <td className="p-4 font-medium">{d.strategyName || `Strategy #${d.strategyId}`}</td>
-                  <td className="p-4">{d.brokerName || `Broker #${d.brokerAccountId}`}</td>
-                  <td className="p-4">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${d.mode === 'LIVE' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{d.mode}</span>
+                <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition">
+                  <td className="px-6 py-4 font-medium text-slate-800">{d.strategyName || `Strategy #${d.strategyId}`}</td>
+                  <td className="px-6 py-4 text-slate-600">{d.brokerName || `Broker #${d.brokerAccountId}`}</td>
+                  <td className="px-6 py-4">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${d.mode === 'LIVE' ? 'bg-rose-50 text-rose-600 ring-1 ring-rose-200' : 'bg-amber-50 text-amber-600 ring-1 ring-amber-200'}`}>{d.mode}</span>
                   </td>
-                  <td className="p-4">&#8377;{d.capital?.toLocaleString()}</td>
-                  <td className="p-4">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${d.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{d.status}</span>
+                  <td className="px-6 py-4 text-slate-700 font-medium">&#8377;{d.capital?.toLocaleString()}</td>
+                  <td className="px-6 py-4">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${d.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-1 ring-slate-200'}`}>{d.status}</span>
                   </td>
-                  <td className="p-4 text-gray-500">{new Date(d.createdAt).toLocaleDateString()}</td>
-                  <td className="p-4">
+                  <td className="px-6 py-4 text-slate-500 text-xs">{new Date(d.createdAt).toLocaleDateString()}</td>
+                  <td className="px-6 py-4">
                     {d.status === 'ACTIVE' && (
-                      <button onClick={() => stopMutation.mutate(d.id)} className="text-red-600 hover:text-red-800 text-xs font-medium">Stop</button>
+                      <button onClick={() => stopMutation.mutate(d.id)} className="text-rose-500 hover:text-rose-700 text-xs font-semibold transition">Stop</button>
                     )}
                   </td>
                 </tr>
