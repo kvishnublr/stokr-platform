@@ -48,7 +48,7 @@ public class UniverseSymbol {
 
     @Column(name = "tick_size")
     @Builder.Default
-    private BigDecimal tickSize = new BigDecimal("0.05");
+    private Double tickSize = 0.05;
 
     @Column(nullable = false)
     @Builder.Default

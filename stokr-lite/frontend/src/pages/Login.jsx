@@ -26,91 +26,102 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex">
+    <div className="bg-aurora" style={{ minHeight: '100vh', display: 'flex', position: 'relative', overflow: 'hidden' }}>
+      {/* Blob background */}
+      <div style={{ position: 'fixed', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+        <div className="animate-blob-drift" style={{ width: '600px', height: '600px', background: 'linear-gradient(135deg, #a78bfa, #60a5fa)', top: '-200px', left: '-200px', position: 'absolute', borderRadius: '50%', filter: 'blur(120px)', opacity: 0.25 }} />
+        <div className="animate-blob-drift" style={{ width: '500px', height: '500px', background: 'linear-gradient(135deg, #22d3ee, #10b981)', bottom: '-150px', right: '-150px', position: 'absolute', borderRadius: '50%', filter: 'blur(120px)', opacity: 0.25, animationDelay: '3s' }} />
+        <div className="animate-blob-drift" style={{ width: '400px', height: '400px', background: 'linear-gradient(135deg, #f472b6, #f59e0b)', top: '40%', left: '30%', position: 'absolute', borderRadius: '50%', filter: 'blur(120px)', opacity: 0.15, animationDelay: '6s' }} />
+      </div>
+
       {/* Left Panel - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-slate-900 via-indigo-950 to-violet-950 relative overflow-hidden">
-        <div className="absolute inset-0">
-          <div className="absolute top-20 left-20 w-72 h-72 bg-indigo-500/20 rounded-full blur-3xl animate-float-orb" />
-          <div className="absolute bottom-20 right-20 w-96 h-96 bg-violet-500/15 rounded-full blur-3xl animate-float-orb" style={{ animationDelay: '4s' }} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl animate-float-orb" style={{ animationDelay: '8s' }} />
-        </div>
-        <div className="relative z-10 flex flex-col justify-center px-16">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-2xl shadow-indigo-500/40">
-              <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+      <div className="hidden lg:flex" style={{ width: '50%', position: 'relative', zIndex: 1, alignItems: 'center', padding: '0 64px' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '48px' }}>
+            <div className="animate-brand-pop" style={{ width: '56px', height: '56px', borderRadius: '16px', background: 'linear-gradient(135deg, #6366f1 0%, #a78bfa 50%, #60a5fa 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', fontWeight: 900, color: 'white', boxShadow: '0 12px 48px rgba(99,102,241,0.4)' }}>
+              S
             </div>
-            <span className="text-3xl font-bold text-white tracking-tight">Stokr</span>
+            <div>
+              <div style={{ fontSize: '28px', fontWeight: 800, background: 'linear-gradient(135deg, #0f172a, #4f46e5)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Stokr</div>
+              <div style={{ fontSize: '10px', fontWeight: 800, letterSpacing: '1.5px', color: '#94a3b8', textTransform: 'uppercase' }}>Aurora Pro</div>
+            </div>
           </div>
-          <h2 className="text-4xl font-bold text-white leading-tight mb-4">
+          <h2 style={{ fontSize: '42px', fontWeight: 900, color: '#0f172a', lineHeight: 1.15, marginBottom: '16px', letterSpacing: '-1px' }}>
             Algorithmic Trading<br />Made Simple
           </h2>
-          <p className="text-indigo-200/70 text-lg max-w-md">
+          <p style={{ fontSize: '16px', color: '#64748b', maxWidth: '420px', lineHeight: 1.6 }}>
             Deploy strategies, connect brokers, and automate your trading with institutional-grade execution.
           </p>
-          <div className="mt-12 flex gap-8">
-            <div><p className="text-2xl font-bold text-white">3</p><p className="text-xs text-indigo-300/60 uppercase tracking-wide">Strategies</p></div>
-            <div><p className="text-2xl font-bold text-white">3</p><p className="text-xs text-indigo-300/60 uppercase tracking-wide">Brokers</p></div>
-            <div><p className="text-2xl font-bold text-white">30+</p><p className="text-xs text-indigo-300/60 uppercase tracking-wide">NSE Stocks</p></div>
+          <div style={{ marginTop: '48px', display: 'flex', gap: '40px' }}>
+            <div>
+              <div style={{ fontSize: '28px', fontWeight: 900, color: '#4f46e5' }}>3+</div>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '4px' }}>Strategies</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '28px', fontWeight: 900, color: '#4f46e5' }}>3</div>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '4px' }}>Brokers</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '28px', fontWeight: 900, color: '#4f46e5' }}>30+</div>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '4px' }}>NSE Stocks</div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Right Panel - Form */}
-      <div className="flex-1 flex items-center justify-center bg-white px-8">
-        <div className="w-full max-w-md">
-          <div className="lg:hidden flex items-center gap-2 mb-10 justify-center">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 1, padding: '0 32px' }}>
+        <div className="card-crystal" style={{ width: '100%', maxWidth: '420px', padding: '40px' }}>
+          <div className="lg:hidden" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px', justifyContent: 'center' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '14px', background: 'linear-gradient(135deg, #6366f1 0%, #a78bfa 50%, #60a5fa 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', fontWeight: 900, color: 'white' }}>
+              S
             </div>
-            <span className="text-2xl font-bold text-slate-800">Stokr</span>
+            <span style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>Stokr</span>
           </div>
 
-          <h1 className="text-2xl font-bold text-slate-800 mb-1">Welcome back</h1>
-          <p className="text-slate-500 mb-8">Sign in to access your trading dashboard</p>
+          <h1 style={{ fontSize: '24px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>Welcome back</h1>
+          <p style={{ color: '#94a3b8', marginBottom: '28px', fontSize: '14px' }}>Sign in to access your trading dashboard</p>
 
           {error && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-600 text-sm p-3.5 rounded-xl mb-6 flex items-center gap-2">
-              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              {error}
+            <div style={{ background: 'rgba(239,68,68,0.08)', border: '2px solid rgba(239,68,68,0.15)', color: '#dc2626', fontSize: '13px', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>⚠️</span> {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Email</label>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>Email</label>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
                 placeholder="you@example.com"
-                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition outline-none input-crystal" />
+                className="input-crystal" style={{ width: '100%' }} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>Password</label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
                 placeholder="Enter your password"
-                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition outline-none input-crystal" />
+                className="input-crystal" style={{ width: '100%' }} />
             </div>
             <button type="submit" disabled={loading}
-              className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white py-3 rounded-xl font-medium hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 transition-all duration-200 shadow-lg shadow-indigo-500/25">
+              style={{ width: '100%', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', padding: '14px', borderRadius: '14px', fontWeight: 700, fontSize: '14px', border: 'none', cursor: 'pointer', transition: 'all 0.3s', boxShadow: '0 8px 24px rgba(99,102,241,0.3)', marginTop: '4px' }}
+              onMouseEnter={(e) => { if (!loading) e.currentTarget.style.transform = 'translateY(-2px)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
+            >
               {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <span className="animate-spin" style={{ display: 'inline-block', width: '16px', height: '16px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%' }} />
                   Signing in...
                 </span>
               ) : 'Sign In'}
             </button>
           </form>
 
-          <p className="text-center text-sm text-slate-500 mt-6">
+          <p style={{ textAlign: 'center', fontSize: '13px', color: '#94a3b8', marginTop: '24px' }}>
             Don't have an account?{' '}
-            <Link to="/register" className="text-indigo-600 font-medium hover:text-indigo-700 transition">Create account</Link>
+            <Link to="/register" style={{ color: '#4f46e5', fontWeight: 700, textDecoration: 'none' }}>Create account</Link>
           </p>
         </div>
       </div>
     </div>
   );
 }
+

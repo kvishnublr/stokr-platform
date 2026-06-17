@@ -2,34 +2,27 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 
 const traderLinks = [
-  { to: '/', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6', end: true },
-  { to: '/strategies', label: 'Strategies', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z' },
-  { to: '/deployments', label: 'Deployments', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
-  { to: '/brokers', label: 'Brokers', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' },
-  { to: '/orders', label: 'Orders', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4' },
-  { to: '/positions', label: 'Positions', icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' },
-  { to: '/settings', label: 'Settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+  { to: '/', label: 'Dashboard', icon: '📊', end: true },
+  { to: '/signals', label: 'Signals', icon: '📡' },
+  { to: '/strategies', label: 'Strategies', icon: '🎯' },
+  { to: '/deployments', label: 'Deployments', icon: '⚡' },
+  { to: '/brokers', label: 'Brokers', icon: '🏦' },
+  { to: '/orders', label: 'Orders', icon: '📋' },
+  { to: '/positions', label: 'Positions', icon: '📈' },
+  { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
 const adminLinks = [
-  { to: '/admin', label: 'Overview', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', end: true },
-  { to: '/admin/users', label: 'Users', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
-  { to: '/admin/kill-switch', label: 'Kill Switch', icon: 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636' },
-  { to: '/admin/deployments', label: 'All Deploys', icon: 'M4 6h16M4 10h16M4 14h16M4 18h16' },
-  { to: '/admin/brokers', label: 'Broker Health', icon: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z' },
-  { to: '/admin/errors', label: 'Error Logs', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' },
-  { to: '/admin/universe-groups', label: 'Universe Groups', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
-  { to: '/admin/strategy-mappings', label: 'Strategy Mappings', icon: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' },
-  { to: '/admin/strategy-configs', label: 'Strategy Configs', icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4' },
+  { to: '/admin', label: 'Overview', icon: '📊', end: true },
+  { to: '/admin/users', label: 'Users', icon: '👥' },
+  { to: '/admin/kill-switch', label: 'Kill Switch', icon: '🛑' },
+  { to: '/admin/deployments', label: 'All Deploys', icon: '🚀' },
+  { to: '/admin/brokers', label: 'Broker Health', icon: '💓' },
+  { to: '/admin/errors', label: 'Error Logs', icon: '🐛' },
+  { to: '/admin/universe-groups', label: 'Universe Groups', icon: '🌌' },
+  { to: '/admin/strategy-mappings', label: 'Strategy Mappings', icon: '🔗' },
+  { to: '/admin/strategy-configs', label: 'Strategy Configs', icon: '🔧' },
 ];
-
-function SvgIcon({ path, className = 'w-5 h-5' }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d={path} />
-    </svg>
-  );
-}
 
 function getUserRole() {
   try {
@@ -39,48 +32,21 @@ function getUserRole() {
   } catch { return null; }
 }
 
-function NavItem({ link, isAdminSection }) {
-  return (
-    <NavLink
-      key={link.to}
-      to={link.to}
-      end={link.end}
-      className={({ isActive }) =>
-        `group relative flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-200 ${
-          isActive
-            ? 'text-indigo-600'
-            : 'text-slate-500 hover:text-slate-900'
-        }`
-      }
-    >
-      {({ isActive }) => (
-        <>
-          <div
-            className={`absolute inset-0 rounded-xl transition-all duration-200 ${
-              isActive
-                ? 'bg-indigo-50'
-                : 'bg-transparent group-hover:bg-slate-50'
-            }`}
-          />
-          <div
-            className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full transition-all duration-200 ${
-              isActive
-                ? 'bg-indigo-500'
-                : 'bg-transparent'
-            }`}
-          />
-          <span className="relative z-10">
-            <SvgIcon path={link.icon} className={`w-[18px] h-[18px] shrink-0 transition-colors duration-200 ${
-              isActive
-                ? 'text-indigo-500'
-                : 'text-slate-400 group-hover:text-slate-600'
-            }`} />
-          </span>
-          <span className="relative z-10">{link.label}</span>
-        </>
-      )}
-    </NavLink>
-  );
+function getUserEmail() {
+  try {
+    const token = localStorage.getItem('token');
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.sub || payload.email || 'User';
+  } catch { return 'User'; }
+}
+
+function getUserInitials(email) {
+  if (!email || email === 'User') return 'U';
+  const parts = email.split('@')[0].split(/[._-]/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return email.substring(0, 2).toUpperCase();
 }
 
 export default function Layout() {
@@ -89,6 +55,8 @@ export default function Layout() {
   const role = getUserRole();
   const isAdmin = role === 'ADMIN';
   const [pageKey, setPageKey] = useState(location.pathname);
+  const email = getUserEmail();
+  const initials = getUserInitials(email);
 
   useEffect(() => {
     setPageKey(location.pathname);
@@ -100,69 +68,90 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white">
-      {/* Sidebar - Crystal Light */}
-      <aside className="relative w-[260px] bg-white border-r border-slate-100 flex flex-col shrink-0 z-20">
+    <div className="app-wrapper" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', minHeight: '100vh' }}>
+      {/* Animated blob background */}
+      <div className="blob-bg" style={{ position: 'fixed', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+        <div className="blob animate-blob-drift" style={{ width: '500px', height: '500px', background: 'linear-gradient(135deg, #a78bfa, #60a5fa)', top: '-150px', left: '-150px', position: 'absolute', borderRadius: '50%', filter: 'blur(100px)', opacity: 0.3 }} />
+        <div className="blob animate-blob-drift" style={{ width: '400px', height: '400px', background: 'linear-gradient(135deg, #22d3ee, #10b981)', top: '20%', right: '-100px', position: 'absolute', borderRadius: '50%', filter: 'blur(100px)', opacity: 0.3, animationDelay: '2s', animationDirection: 'reverse' }} />
+        <div className="blob animate-blob-drift" style={{ width: '350px', height: '350px', background: 'linear-gradient(135deg, #f472b6, #f59e0b)', bottom: '-80px', left: '15%', position: 'absolute', borderRadius: '50%', filter: 'blur(100px)', opacity: 0.3, animationDelay: '4s' }} />
+      </div>
+
+      {/* Sidebar - Aurora Pro */}
+      <aside className="sidebar-aurora" style={{ padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: '8px', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', zIndex: 10 }}>
         {/* Brand */}
-        <div className="px-5 py-5">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-[15px] font-bold text-slate-900 tracking-tight">Stokr</h1>
-              <p className="text-[10px] text-slate-400 font-medium tracking-wider uppercase">Algo Trading</p>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px 28px', marginBottom: '12px', background: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(167,139,250,0.05))', borderRadius: '16px' }}>
+          <div className="animate-brand-pop" style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #6366f1 0%, #a78bfa 50%, #60a5fa 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 900, color: 'white', boxShadow: '0 8px 32px rgba(99,102,241,0.4)' }}>
+            S
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '20px', fontWeight: 800, background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-0.5px' }}>Stokr</div>
+            <div style={{ fontSize: '8px', fontWeight: 800, letterSpacing: '1.2px', background: 'linear-gradient(135deg, #3b82f6, #0ea5e9)', color: 'white', padding: '3px 10px', borderRadius: '8px', textTransform: 'uppercase', display: 'inline-block', marginTop: '2px' }}>Aurora Pro</div>
           </div>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto px-3 pb-4">
-          <div className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Trading</div>
-          <div className="space-y-0.5">
-            {traderLinks.map((link) => (
-              <NavItem key={link.to} link={link} isAdminSection={false} />
+        {/* Nav - Trading */}
+        <div>
+          <div style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#94a3b8', padding: '16px 12px 8px' }}>Trading</div>
+          {traderLinks.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              end={link.end}
+              className={({ isActive }) => `nav-item-aurora ${isActive ? 'active' : ''}`}
+              style={{ textDecoration: 'none' }}
+            >
+              <span style={{ fontSize: '20px', width: '28px', textAlign: 'center' }}>{link.icon}</span>
+              <span>{link.label}</span>
+            </NavLink>
+          ))}
+        </div>
+
+        {/* Nav - Admin */}
+        {isAdmin && (
+          <div>
+            <div style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#94a3b8', padding: '16px 12px 8px' }}>Administration</div>
+            {adminLinks.map((link) => (
+              <NavLink
+                key={link.to}
+                to={link.to}
+                end={link.end}
+                className={({ isActive }) => `nav-item-aurora ${isActive ? 'active' : ''}`}
+                style={{ textDecoration: 'none' }}
+              >
+                <span style={{ fontSize: '20px', width: '28px', textAlign: 'center' }}>{link.icon}</span>
+                <span>{link.label}</span>
+              </NavLink>
             ))}
           </div>
+        )}
 
-          {isAdmin && (
-            <>
-              <div className="px-3 mt-5 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Administration</div>
-              <div className="space-y-0.5">
-                {adminLinks.map((link) => (
-                  <NavItem key={link.to} link={link} isAdminSection={true} />
-                ))}
-              </div>
-            </>
-          )}
-        </nav>
-
-        {/* Footer */}
-        <div className="p-3 border-t border-slate-100">
-          <button onClick={handleLogout}
-            className="group flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-[13px] text-slate-500 hover:text-slate-900 transition-all duration-200 hover:bg-slate-50">
-            <svg className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            Sign Out
+        {/* Footer - User Card */}
+        <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '2px solid rgba(148,163,184,0.15)' }}>
+          <button
+            onClick={handleLogout}
+            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '14px', background: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(167,139,250,0.05))', cursor: 'pointer', transition: 'all 0.3s', border: 'none', width: '100%', textAlign: 'left' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(99,102,241,0.12), rgba(167,139,250,0.08))'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(167,139,250,0.05))'; e.currentTarget.style.transform = 'translateY(0)'; }}
+          >
+            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #a78bfa, #60a5fa)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 700, color: 'white', boxShadow: '0 4px 16px rgba(99,102,241,0.3)' }}>
+              {initials}
+            </div>
+            <div style={{ lineHeight: 1.4, flex: 1, overflow: 'hidden' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{email.split('@')[0]}</div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{isAdmin ? 'Administrator' : 'Active Trading'}</div>
+            </div>
+            <span style={{ fontSize: '16px', opacity: 0.5 }}>→</span>
           </button>
         </div>
       </aside>
 
-      {/* Main content - Crystal Light */}
-      <main className="flex-1 overflow-y-auto relative bg-gradient-to-b from-white via-white to-slate-50/50">
-        {/* Subtle ambient orbs */}
-        <div className="ambient-orb w-[500px] h-[500px] bg-indigo-400/[0.03] -top-40 -right-40 animate-float-orb" style={{ animationDelay: '0s' }} />
-        <div className="ambient-orb w-[300px] h-[300px] bg-violet-400/[0.02] -bottom-20 -left-20 animate-float-orb" style={{ animationDelay: '5s' }} />
-        
-        <div className="max-w-7xl mx-auto p-8 relative z-10">
-          <div key={pageKey} className="animate-fade-in-up">
-            <Outlet />
-          </div>
+      {/* Main content - Aurora Pro */}
+      <main className="bg-aurora" style={{ overflowY: 'auto', padding: '32px 40px', position: 'relative', zIndex: 1 }}>
+        <div key={pageKey} className="animate-fade-in-up" style={{ maxWidth: '1400px' }}>
+          <Outlet />
         </div>
       </main>
     </div>
   );
 }
+

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import client from '../../api/client';
 import { useEffect, useState, useRef } from 'react';
+import { Link } from 'react-router-dom';
 
 function AnimatedCounter({ value, duration = 1200 }) {
   const [display, setDisplay] = useState(0);
@@ -32,130 +33,96 @@ export default function AdminDashboard() {
   return (
     <div>
       {/* Header */}
-      <div className="mb-8 animate-fade-in-up">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-1 h-7 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Admin Overview</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px', paddingBottom: '24px', borderBottom: '2px solid rgba(148,163,184,0.08)' }}>
+        <div>
+          <h1 style={{ fontSize: '32px', fontWeight: 900, background: 'linear-gradient(135deg, #0f172a 0%, #4f46e5 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-1px', marginBottom: '6px' }}>Admin Overview</h1>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Platform monitoring and controls</p>
         </div>
-        <p className="text-slate-400 text-sm ml-4">Platform monitoring and controls</p>
+        <div className="live-indicator" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(52,211,153,0.1))', borderRadius: '8px', color: '#059669', fontWeight: 600, fontSize: '11px' }}>
+          <div className="animate-pulse-dot" style={{ width: '6px', height: '6px', background: '#10b981', borderRadius: '50%' }} />
+          System Healthy
+        </div>
       </div>
 
       {/* Kill Switch Banner */}
       {killSwitch?.active && (
-        <div className="card-crystal rounded-2xl p-5 mb-8 flex items-center gap-4 animate-fade-in-up border-l-4 border-l-rose-500">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center shadow-lg shadow-rose-500/20 animate-pulse">
-            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-rose-600 font-semibold text-sm">Kill Switch Active</p>
-            <p className="text-rose-500/60 text-sm mt-0.5">All trading halted by {killSwitch.activatedBy} — {killSwitch.reason}</p>
+        <div className="card-crystal animate-fade-in-up" style={{ marginBottom: '32px', borderLeft: '4px solid #ef4444' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #ef4444, #dc2626)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', boxShadow: '0 8px 24px rgba(239,68,68,0.3)' }}>
+              🛑
+            </div>
+            <div>
+              <p style={{ color: '#dc2626', fontWeight: 700, fontSize: '15px' }}>Kill Switch Active</p>
+              <p style={{ color: '#ef4444', fontSize: '13px', marginTop: '2px', opacity: 0.8 }}>All trading halted by {killSwitch.activatedBy} — {killSwitch.reason}</p>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Stats Grid - Bento Style */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
-        <StatCard title="Total Users" value={dashboard?.totalUsers || 0} icon="users" color="indigo" delay="delay-100" />
-        <StatCard title="Active Deployments" value={dashboard?.activeDeployments || 0} icon="deploy" color="emerald" delay="delay-200" />
-        <StatCard title="Orders Today" value={dashboard?.ordersToday || 0} icon="orders" color="sky" delay="delay-300" />
-        <StatCard title="Pending Orders" value={dashboard?.pendingOrders || 0} icon="pending" color="amber" delay="delay-400" />
+      {/* Stats Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '18px', marginBottom: '32px' }}>
+        <StatBox title="Total Users" value={dashboard?.totalUsers || 0} icon="👥" color="#4f46e5" gradient="linear-gradient(90deg, #6366f1, #a78bfa)" />
+        <StatBox title="Active Deployments" value={dashboard?.activeDeployments || 0} icon="🚀" color="#059669" gradient="linear-gradient(90deg, #10b981, #34d399)" />
+        <StatBox title="Orders Today" value={dashboard?.ordersToday || 0} icon="📋" color="#2563eb" gradient="linear-gradient(90deg, #3b82f6, #60a5fa)" />
+        <StatBox title="Pending Orders" value={dashboard?.pendingOrders || 0} icon="⏳" color="#d97706" gradient="linear-gradient(90deg, #f59e0b, #fbbf24)" />
       </div>
 
-      {/* Quick Links */}
-      <div className="mb-10">
-        <div className="flex items-center gap-3 mb-5 animate-fade-in-up">
-          <div className="w-1 h-5 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
-          <h2 className="text-base font-semibold text-slate-800">Quick Actions</h2>
+      {/* Quick Actions */}
+      <div style={{ marginBottom: '32px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+          <div style={{ width: '4px', height: '20px', borderRadius: '999px', background: 'linear-gradient(180deg, #6366f1, #a78bfa)' }} />
+          <h2 style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>Quick Actions</h2>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <QuickLink to="/admin/kill-switch" title="Kill Switch" desc="Emergency stop all trading" icon="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" color="rose" delay="delay-100" />
-          <QuickLink to="/admin/deployments" title="Manage Deployments" desc="View and control all deployments" icon="M4 6h16M4 10h16M4 14h16M4 18h16" color="indigo" delay="delay-200" />
-          <QuickLink to="/admin/errors" title="Error Logs" desc="View recent system errors" icon="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" color="amber" delay="delay-300" />
-        </div>
-      </div>
-
-      {/* Config & Mappings Section */}
-      <div className="animate-fade-in-up delay-500">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-1 h-5 rounded-full bg-gradient-to-b from-emerald-500 to-teal-500" />
-          <h2 className="text-base font-semibold text-slate-800">Configuration &amp; Mappings</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <QuickLink to="/admin/universe-groups" title="Universe Groups" desc="Manage symbol universes (Nifty 50, 100, custom)" icon="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" color="emerald" delay="delay-100" />
-          <QuickLink to="/admin/strategy-mappings" title="Strategy Mappings" desc="Map strategies to universe groups" icon="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" color="sky" delay="delay-200" />
-          <QuickLink to="/admin/strategy-configs" title="Strategy Configs" desc="Capital, sizing, risk, live/paper toggles" icon="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" color="violet" delay="delay-300" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '18px' }}>
+          <QuickLink to="/admin/kill-switch" title="Kill Switch" desc="Emergency stop all trading" icon="🛑" color="linear-gradient(135deg, #ef4444, #f87171)" />
+          <QuickLink to="/admin/deployments" title="Manage Deployments" desc="View and control all deployments" icon="🚀" color="linear-gradient(135deg, #6366f1, #8b5cf6)" />
+          <QuickLink to="/admin/errors" title="Error Logs" desc="View recent system errors" icon="🐛" color="linear-gradient(135deg, #f59e0b, #fbbf24)" />
         </div>
       </div>
-    </div>
-  );
-}
 
-function StatCard({ title, value, icon, color, delay }) {
-  const gradients = {
-    indigo: 'from-indigo-500/8 to-violet-500/8 border-indigo-100',
-    emerald: 'from-emerald-500/8 to-teal-500/8 border-emerald-100',
-    sky: 'from-sky-500/8 to-cyan-500/8 border-sky-100',
-    amber: 'from-amber-500/8 to-orange-500/8 border-amber-100',
-  };
-  const iconColors = {
-    indigo: 'text-indigo-500',
-    emerald: 'text-emerald-500',
-    sky: 'text-sky-500',
-    amber: 'text-amber-500',
-  };
-  const bgColors = {
-    indigo: 'bg-indigo-50',
-    emerald: 'bg-emerald-50',
-    sky: 'bg-sky-50',
-    amber: 'bg-amber-50',
-  };
-  const icons = {
-    users: <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />,
-    deploy: <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />,
-    orders: <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />,
-    pending: <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />,
-  };
-
-  return (
-    <div className={`card-crystal p-5 hover-lift hover-glow animate-fade-in-up ${delay} relative overflow-hidden group`}>
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradients[color]} opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-[16px]`} />
-      <div className="relative z-10">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{title}</p>
-          <div className={`w-8 h-8 rounded-lg ${bgColors[color]} flex items-center justify-center`}>
-            <svg className={`w-3.5 h-3.5 ${iconColors[color]}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              {icons[icon]}
-            </svg>
-          </div>
+      {/* Configuration & Mappings */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+          <div style={{ width: '4px', height: '20px', borderRadius: '999px', background: 'linear-gradient(180deg, #10b981, #34d399)' }} />
+          <h2 style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>Configuration &amp; Mappings</h2>
         </div>
-        <p className="text-3xl font-bold text-slate-900 stat-number">
-          <AnimatedCounter value={value} />
-        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '18px' }}>
+          <QuickLink to="/admin/universe-groups" title="Universe Groups" desc="Manage symbol universes" icon="🌌" color="linear-gradient(135deg, #10b981, #34d399)" />
+          <QuickLink to="/admin/strategy-mappings" title="Strategy Mappings" desc="Map strategies to groups" icon="🔗" color="linear-gradient(135deg, #3b82f6, #60a5fa)" />
+          <QuickLink to="/admin/strategy-configs" title="Strategy Configs" desc="Capital, sizing, risk settings" icon="🔧" color="linear-gradient(135deg, #a78bfa, #c084fc)" />
+        </div>
       </div>
     </div>
   );
 }
 
-function QuickLink({ to, title, desc, icon, color, delay }) {
-  const colors = {
-    rose: 'from-rose-500 to-pink-600',
-    indigo: 'from-indigo-500 to-violet-600',
-    amber: 'from-amber-400 to-orange-500',
-    emerald: 'from-emerald-500 to-teal-600',
-    sky: 'from-sky-500 to-cyan-600',
-    violet: 'from-violet-500 to-purple-600',
-  };
+function StatBox({ title, value, icon, color, gradient }) {
   return (
-    <a href={to} className={`card-crystal p-5 hover-lift hover-glow animate-fade-in-up ${delay} group block`}>
-      <div className="flex items-center gap-3 mb-3">
-        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colors[color]} flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform duration-300`}>
-          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d={icon} /></svg>
+    <div className="stat-box-aurora animate-fade-in-up">
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', borderRadius: '18px 18px 0 0', background: gradient }} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+        <span style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', color: '#94a3b8' }}>{title}</span>
+        <div style={{ width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', background: `linear-gradient(135deg, ${color}15, ${color}0A)` }}>
+          {icon}
         </div>
-        <h3 className="font-semibold text-slate-800 text-sm group-hover:text-slate-900 transition-colors">{title}</h3>
       </div>
-      <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
-    </a>
+      <div style={{ fontSize: '32px', fontWeight: 900, letterSpacing: '-1px', color }}>
+        <AnimatedCounter value={value} />
+      </div>
+    </div>
+  );
+}
+
+function QuickLink({ to, title, desc, icon, color }) {
+  return (
+    <Link to={to} className="card-crystal animate-fade-in-up" style={{ textDecoration: 'none', display: 'block' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '12px' }}>
+        <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', boxShadow: '0 8px 24px rgba(99,102,241,0.2)' }}>
+          {icon}
+        </div>
+        <h3 style={{ fontWeight: 700, color: '#0f172a', fontSize: '15px' }}>{title}</h3>
+      </div>
+      <p style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.5 }}>{desc}</p>
+    </Link>
   );
 }

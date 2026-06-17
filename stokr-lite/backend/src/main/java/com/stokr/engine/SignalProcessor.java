@@ -18,6 +18,7 @@ public class SignalProcessor {
     private final StrategyService strategyService;
     private final MarketDataService marketDataService;
     private final EntryManager entryManager;
+    private final SignalRepository signalRepository;
     private final Universe universe;
 
     /**
@@ -44,6 +45,23 @@ public class SignalProcessor {
                 if (signal != null && signal.isValid()) {
                     log.info("Signal generated: {} {} {} for deployment {}",
                             signal.side(), signal.symbol(), signal.reason(), deployment.getId());
+
+                    // Persist signal
+                    SignalEntity entity = SignalEntity.builder()
+                            .deploymentId(deployment.getId())
+                            .userId(deployment.getUserId())
+                            .strategyId(deployment.getStrategyId())
+                            .symbol(signal.symbol())
+                            .side(SignalEntity.Side.valueOf(signal.side().name()))
+                            .entryPrice(signal.entryPrice())
+                            .stopLoss(signal.stopLoss())
+                            .target(signal.target())
+                            .confidence(BigDecimal.valueOf(signal.confidence()))
+                            .reason(signal.reason())
+                            .status("GENERATED")
+                            .build();
+                    signalRepository.save(entity);
+
                     entryManager.processEntrySignal(deployment, signal);
                 }
             }

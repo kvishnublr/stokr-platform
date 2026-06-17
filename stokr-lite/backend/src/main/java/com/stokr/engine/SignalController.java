@@ -1,0 +1,48 @@
+package com.stokr.engine;
+
+import com.stokr.config.SecurityUtils;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/signals")
+@RequiredArgsConstructor
+public class SignalController {
+
+    private final SignalRepository signalRepository;
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    @GetMapping
+    public ResponseEntity<List<SignalEntity>> getMySignals() {
+        Long userId = SecurityUtils.currentUserId();
+        return ResponseEntity.ok(signalRepository.findTop50ByUserIdOrUserIdIsNullOrderByCreatedAtDesc(userId));
+    }
+
+    @GetMapping("/active")
+    public ResponseEntity<List<SignalEntity>> getActiveSignals() {
+        Long userId = SecurityUtils.currentUserId();
+        return ResponseEntity.ok(signalRepository.findByUserIdAndStatusOrderByCreatedAtDesc(userId, "GENERATED"));
+    }
+
+    @GetMapping("/stats")
+    public ResponseEntity<Map<String, Long>> getSignalStats() {
+        Instant todayStart = LocalDate.now(IST).atStartOfDay(IST).toInstant();
+
+        long todayCount = signalRepository.countByCreatedAtAfter(todayStart);
+        long activeCount = signalRepository.countByStatus("GENERATED");
+        long totalCount = signalRepository.countAllBy();
+
+        return ResponseEntity.ok(Map.of(
+                "today", todayCount,
+                "active", activeCount,
+                "total", totalCount
+        ));
+    }
+}

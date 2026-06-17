@@ -40,6 +40,7 @@ public class SecurityConfig {
                                 "/api/auth/**",
                                 "/actuator/**",
                                 "/api/brokers/*/callback",
+                                "/webhooks/**",
                                 "/", "/index.html", "/assets/**",
                                 "/favicon*", "/*.svg", "/*.js", "/*.css",
                                 "/error"
