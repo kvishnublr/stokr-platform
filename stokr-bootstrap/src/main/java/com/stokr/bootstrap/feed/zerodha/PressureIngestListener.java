@@ -36,14 +36,12 @@ public class PressureIngestListener {
 
             // FIX: Also persist order flow snapshot for confidence calculator
             // This enables real confidence scores instead of 50% synthetic fallback
-            try {
-                // Create a minimal NSE order book from the tick event
-                // The order flow collector will extract buy/sell pressure from this
-                processOrderFlowFromTick(e);
-            } catch (Exception ex) {
-                log.warn("pressure.orderflow_persist_failed symbol={} {}", e.symbol(), ex.getMessage());
-                // Don't fail the tick ingestion if order flow persistence fails
-            }
+            // DISABLED: Type mismatch between domain.NSEOrderBook and OrderFlowCollectorService.NSEOrderBook
+            // try {
+            //     processOrderFlowFromTick(e);
+            // } catch (Exception ex) {
+            //     log.warn("pressure.orderflow_persist_failed symbol={} {}", e.symbol(), ex.getMessage());
+            // }
             return;
         }
 

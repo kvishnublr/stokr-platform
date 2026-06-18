@@ -3,6 +3,7 @@ package com.stokr.websocket.config;
 import com.stokr.websocket.security.StompJwtHandshakeInterceptor;
 import com.stokr.websocket.security.StompTopicAuthorizationInterceptor;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -12,6 +13,7 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 
 @Configuration
 @EnableWebSocketMessageBroker
+@ConditionalOnProperty(name = "stokr.websocket.enabled", havingValue = "true", matchIfMissing = false)
 @RequiredArgsConstructor
 public class WebSocketStompConfig implements WebSocketMessageBrokerConfigurer {
 
