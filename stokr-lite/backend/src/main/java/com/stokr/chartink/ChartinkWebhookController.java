@@ -2,9 +2,9 @@ package com.stokr.chartink;
 
 import com.stokr.engine.SignalEntity;
 import com.stokr.engine.SignalRepository;
-import com.stokr.filter.MovementAssuranceFilter;
-import com.stokr.filter.MovementAssuranceFilter.MovementResult;
+import com.stokr.strategy.Signal;
 import lombok.RequiredArgsConstructor;
+import java.math.BigDecimal;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +14,8 @@ import java.util.Map;
 /**
  * Receives webhooks from Chartink Premium.
  * Three endpoints: preopen, intraday scanner hits, exit triggers.
+ * Each tick is evaluated by the corresponding backend strategy engine
+ * before execution is considered.
  */
 @Slf4j
 @RestController
@@ -23,11 +25,10 @@ public class ChartinkWebhookController {
 
     private final SignalCooldownService cooldownService;
     private final ChartinkSignalMapper signalMapper;
-    private final MovementAssuranceFilter movementAssurance;
     private final StrategyRouter strategyRouter;
     private final SignalRepository signalRepository;
     private final ChartinkExecutionService executionService;
-    private final EnsembleService ensembleService;
+    private final ChartinkStrategyEvaluator strategyEvaluator;
 
     /**
      * 9:09 AM pre-market webhook.
@@ -66,78 +67,49 @@ public class ChartinkWebhookController {
 
     private ResponseEntity<Map<String, Object>> processSignal(ChartinkPayload payload, boolean isPreOpen) {
         try {
-            // 1. Validate scanner is known
-            if (!strategyRouter.isKnownScanner(payload.scannerName())) {
-                log.warn("Unknown scanner: {}", payload.scannerName());
-                return ResponseEntity.ok(Map.of("success", false, "reason", "UNKNOWN_SCANNER"));
-            }
-
-            // 2. Cooldown check
+            // 1. Cooldown check (per scanner-symbol-side)
             String side = payload.inferSide();
-            if (!cooldownService.isAllowed(payload.symbol(), side)) {
+            if (!cooldownService.isAllowed(payload.scannerName(), payload.symbol(), side)) {
                 return ResponseEntity.ok(Map.of("success", false, "reason", "COOLDOWN"));
             }
+            cooldownService.record(payload.scannerName(), payload.symbol(), side);
 
-            // 3. Movement Assurance Layer
-            MovementResult ma = movementAssurance.evaluate(payload);
-            log.info("MovementScore for {} {}: {} (pass={})",
-                    payload.symbol(), payload.scannerName(), ma.score(), ma.pass());
-
-            // 4. Map to SignalEntity
-            Long strategyId = strategyRouter.resolveStrategyId(payload.scannerName());
-            SignalEntity signal = signalMapper.toSignalEntity(payload, null, null, strategyId);
-            signal.setUserId(1L); // default user for Chartink webhooks
-            signal.setMovementScore(ma.score());
-            signal.setFailedFilters(String.join(",", ma.failedFilters()));
-
-            // 5. Store signal regardless of pass/fail (for audit)
-            SignalEntity saved = signalRepository.save(signal);
-            cooldownService.record(payload.symbol(), side);
-
-            // 6. If Movement Assurance passed, execute
-            if (ma.pass()) {
-                log.info("Signal PASSED Movement Assurance: {} {} score={}",
-                        payload.symbol(), side, ma.score());
-
-                // Ensemble check (skip if ensemble doesn't confirm)
-                var ensemble = ensembleService.computeScore(payload.symbol(), saved.getCreatedAt());
-                boolean ensembleConfirms = "LONG".equals(ensemble.decision()) && "BUY".equals(side)
-                        || "SHORT".equals(ensemble.decision()) && "SELL".equals(side);
-
-                if (ensemble.shouldTrade() && ensembleConfirms) {
-                    executionService.execute(saved);
-                    return ResponseEntity.ok(Map.of(
-                            "success", true,
-                            "signalId", saved.getId(),
-                            "movementScore", ma.score(),
-                            "ensembleScore", ensemble.score(),
-                            "action", isPreOpen ? "QUEUED_FOR_OPEN" : "EXECUTED",
-                            "componentScores", ma.componentScores()
-                    ));
-                } else {
-                    saved.setStatus("ENSEMBLE_FILTERED");
-                    signalRepository.save(saved);
-                    return ResponseEntity.ok(Map.of(
-                            "success", false,
-                            "signalId", saved.getId(),
-                            "movementScore", ma.score(),
-                            "ensembleScore", ensemble.score(),
-                            "reason", "ENSEMBLE_NOT_CONFIRMED",
-                            "componentScores", ma.componentScores()
-                    ));
-                }
-            } else {
-                log.info("Signal FAILED Movement Assurance: {} {} score={} failed={}",
-                        payload.symbol(), side, ma.score(), ma.failedFilters());
+            // 2. Run strategy evaluation (primary decision maker)
+            Signal strategySignal = strategyEvaluator.evaluate(payload);
+            if (strategySignal == null || !strategySignal.isValid()) {
+                log.info("Strategy did not confirm: {} {} scanner={}",
+                        payload.symbol(), side, payload.scannerName());
                 return ResponseEntity.ok(Map.of(
                         "success", false,
-                        "signalId", saved.getId(),
-                        "movementScore", ma.score(),
-                        "reason", "MOVEMENT_ASSURANCE_FAILED",
-                        "failedFilters", ma.failedFilters(),
-                        "componentScores", ma.componentScores()
+                        "reason", "STRATEGY_NOT_CONFIRMED",
+                        "symbol", payload.symbol(),
+                        "scannerName", payload.scannerName()
                 ));
             }
+
+            log.info("Strategy CONFIRMED: {} {} | reason={} confidence={}",
+                    payload.symbol(), strategySignal.side(), strategySignal.reason(),
+                    strategySignal.confidence());
+
+            // 3. Map to SignalEntity and execute
+            Long strategyId = strategyRouter.resolveStrategyId(payload.scannerName());
+            SignalEntity entity = signalMapper.toSignalEntity(payload, null, null, strategyId);
+            entity.setUserId(1L);
+            entity.setConfidence(BigDecimal.valueOf(strategySignal.confidence()));
+            entity.setStopLoss(strategySignal.stopLoss());
+            entity.setTarget(strategySignal.target());
+            entity.setReason(strategySignal.reason());
+            entity = signalRepository.save(entity);
+
+            // 4. Execute
+            executionService.execute(entity);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "signalId", entity.getId(),
+                    "action", isPreOpen ? "QUEUED_FOR_OPEN" : "EXECUTED",
+                    "strategy", strategySignal.reason()
+            ));
 
         } catch (Exception e) {
             log.error("Error processing Chartink webhook", e);

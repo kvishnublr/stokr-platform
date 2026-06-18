@@ -18,20 +18,21 @@ public class SignalCooldownService {
     private final Map<String, Instant> lastSignalTime = new ConcurrentHashMap<>();
     private static final long COOLDOWN_MINUTES = 15;
 
-    private String key(String symbol, String side) {
-        return (symbol + "_" + side).toUpperCase();
+    private String key(String scannerName, String symbol, String side) {
+        String scanner = scannerName != null ? scannerName.toUpperCase() : "UNKNOWN";
+        return (scanner + "_" + symbol + "_" + side).toUpperCase();
     }
 
     /**
      * Check if a signal is allowed (not in cooldown).
      */
-    public boolean isAllowed(String symbol, String side) {
-        String k = key(symbol, side);
+    public boolean isAllowed(String scannerName, String symbol, String side) {
+        String k = key(scannerName, symbol, side);
         Instant last = lastSignalTime.get(k);
         if (last == null) return true;
         boolean allowed = Instant.now().isAfter(last.plusSeconds(COOLDOWN_MINUTES * 60));
         if (!allowed) {
-            log.debug("Cooldown active for {} {} (last: {})", symbol, side, last);
+            log.debug("Cooldown active for {} {} {} (last: {})", scannerName, symbol, side, last);
         }
         return allowed;
     }
@@ -39,9 +40,9 @@ public class SignalCooldownService {
     /**
      * Record that a signal was processed.
      */
-    public void record(String symbol, String side) {
-        lastSignalTime.put(key(symbol, side), Instant.now());
-        log.debug("Recorded signal for {} {}", symbol, side);
+    public void record(String scannerName, String symbol, String side) {
+        lastSignalTime.put(key(scannerName, symbol, side), Instant.now());
+        log.debug("Recorded signal for {} {} {}", scannerName, symbol, side);
     }
 
     public void clear() {

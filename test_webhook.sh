@@ -1,17 +1,15 @@
 #!/bin/bash
-curl -s -X POST http://localhost:8070/webhooks/chartink/intraday \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "scannerName": "ORB_BREAKOUT",
-    "scanName": "ORB Breakout Test",
-    "symbol": "RELIANCE",
-    "ltp": 2500.00,
-    "volume": 100000,
-    "buyerQty": 150000,
-    "sellerQty": 80000,
-    "changePct": 1.2,
-    "rvol": 1.8,
-    "atr14": 15.0,
-    "adx14": 30.0
-  }'
+echo "=== Testing webhook ==="
+docker exec stokr-api curl -s -X POST http://localhost:8080/api/chartink/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"strategy":"VWAP_TRIPLE_CONFIRMATION","symbol":"NIFTY","action":"buy"}' 2>&1
+
 echo ""
+echo "=== Testing dashboard ==="
+docker exec stokr-api curl -s http://localhost:8080/api/v1/adv-dashboard/dashboard-metrics 2>&1 | head -50
+
+echo ""
+echo "=== Testing auth endpoints ==="
+docker exec stokr-api curl -s -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@test.com","password":"test"}' 2>&1 | head -20

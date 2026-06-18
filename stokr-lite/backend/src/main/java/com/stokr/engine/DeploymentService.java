@@ -47,23 +47,30 @@ public class DeploymentService {
             throw new IllegalStateException("Strategy is disabled: " + strategy.getName());
         }
 
-        // Validate broker account exists
-        BrokerAccount broker = brokerService.getBrokerAccount(brokerAccountId, userId);
-        if (!"ACTIVE".equals(broker.getStatus())) {
-            throw new IllegalStateException("Broker account is not active");
+        String deployMode = mode != null ? mode : "PAPER";
+
+        // Validate broker account only for LIVE mode
+        if ("LIVE".equalsIgnoreCase(deployMode)) {
+            if (brokerAccountId == null) {
+                throw new IllegalStateException("Broker account required for LIVE mode");
+            }
+            BrokerAccount broker = brokerService.getBrokerAccount(brokerAccountId, userId);
+            if (!"ACTIVE".equals(broker.getStatus())) {
+                throw new IllegalStateException("Broker account is not active");
+            }
         }
 
         Deployment deployment = Deployment.builder()
                 .userId(userId)
                 .strategyId(strategyId)
                 .brokerAccountId(brokerAccountId)
-                .mode(mode != null ? mode : "PAPER")
+                .mode(deployMode)
                 .capital(capital != null ? capital : new BigDecimal("100000"))
                 .status("ACTIVE")
                 .build();
 
         deployment = repository.save(deployment);
-        log.info("Deployed strategy {} for user {} with mode {}", strategy.getName(), userId, mode);
+        log.info("Deployed strategy {} for user {} with mode {}", strategy.getName(), userId, deployMode);
         return deployment;
     }
 
