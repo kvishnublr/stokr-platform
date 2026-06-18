@@ -21,16 +21,22 @@ public class ChartinkSignalInserter {
     private final JdbcTemplate jdbcTemplate;
 
     public void insertSignalsFromAlert(ChartinkAlert alert) {
+        log.info("chartink.signal_inserter.called alert={}", alert.scanName());
         try {
             List<String> symbols = alert.stocks();
             List<BigDecimal> prices = alert.triggerPrices();
+
+            log.info("chartink.signal_insert.processing alert={} symbols={} count={}",
+                    alert.scanName(), symbols, symbols.size());
 
             for (int i = 0; i < symbols.size(); i++) {
                 String symbol = symbols.get(i);
                 BigDecimal price = prices.get(i);
 
+                log.info("chartink.signal_insert.processing_symbol symbol={} price={}", symbol, price);
                 insertEquitySignal(symbol, price, alert.scanName(), alert.triggeredAt());
             }
+            log.info("chartink.signal_insert.completed alert={} count={}", alert.scanName(), symbols.size());
         } catch (Exception e) {
             log.error("chartink.signal_insert.error alert={}", alert.scanName(), e);
         }
