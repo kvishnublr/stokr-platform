@@ -1,21 +1,24 @@
 package com.stokr.chartink;
 
+import com.stokr.chartink.ChartinkWebhookRequest.StockHit;
 import com.stokr.engine.SignalEntity;
 import com.stokr.engine.SignalRepository;
 import com.stokr.strategy.Signal;
 import lombok.RequiredArgsConstructor;
-import java.math.BigDecimal;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
- * Receives webhooks from Chartink Premium.
+ * Receives webhooks from Chartink FREE/PRO (batch format with comma-separated stocks).
  * Three endpoints: preopen, intraday scanner hits, exit triggers.
- * Each tick is evaluated by the corresponding backend strategy engine
- * before execution is considered.
+ * Each stock in the batch is evaluated individually by the strategy engine.
  */
 @Slf4j
 @RestController
@@ -30,69 +33,113 @@ public class ChartinkWebhookController {
     private final ChartinkExecutionService executionService;
     private final ChartinkStrategyEvaluator strategyEvaluator;
 
-    /**
-     * 9:09 AM pre-market webhook.
-     * Receives pre-open signals before market open.
-     */
     @PostMapping("/preopen")
-    public ResponseEntity<Map<String, Object>> receivePreOpen(@RequestBody ChartinkPayload payload) {
-        log.info("Chartink preopen webhook: {} {} @ {}", payload.scannerName(), payload.symbol(), payload.ltp());
-        return processSignal(payload, true);
+    public ResponseEntity<Map<String, Object>> receivePreOpen(@RequestBody ChartinkWebhookRequest request) {
+        log.info("Chartink preopen webhook: scan={} stocks={}", request.scanName(), request.stocks());
+        List<Map<String, Object>> results = processBatch(request, true);
+        return ResponseEntity.ok(Map.of("success", true, "results", results));
     }
 
-    /**
-     * 1-minute scanner webhooks during market hours.
-     * Receives hits from ORB, VWAP, Volume, Imbalance scanners.
-     */
     @PostMapping("/intraday")
-    public ResponseEntity<Map<String, Object>> receiveIntraday(@RequestBody ChartinkPayload payload) {
-        log.info("Chartink intraday webhook: {} {} @ {}", payload.scannerName(), payload.symbol(), payload.ltp());
-        return processSignal(payload, false);
+    public ResponseEntity<Map<String, Object>> receiveIntraday(@RequestBody ChartinkWebhookRequest request) {
+        log.info("Chartink intraday webhook: scan={} stocks={}", request.scanName(), request.stocks());
+        List<Map<String, Object>> results = processBatch(request, false);
+        return ResponseEntity.ok(Map.of("success", true, "results", results));
     }
 
-    /**
-     * Exit condition scanner webhook.
-     * Chartink sends when exit conditions are met.
-     */
     @PostMapping("/exit")
-    public ResponseEntity<Map<String, Object>> receiveExit(@RequestBody ChartinkPayload payload) {
-        log.info("Chartink exit webhook: {} {} @ {}", payload.scannerName(), payload.symbol(), payload.ltp());
-        executionService.closePosition(payload.symbol(), "CHARTINK_EXIT_SCANNER");
-        return ResponseEntity.ok(Map.of(
-                "success", true,
-                "action", "EXIT_EXECUTED",
-                "symbol", payload.symbol()
-        ));
+    public ResponseEntity<Map<String, Object>> receiveExit(@RequestBody ChartinkWebhookRequest request) {
+        log.info("Chartink exit webhook: scan={} stocks={}", request.scanName(), request.stocks());
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (StockHit hit : request.parseHits()) {
+            executionService.closePosition(hit.symbol(), "CHARTINK_EXIT_SCANNER");
+            results.add(Map.of(
+                    "symbol", hit.symbol(),
+                    "action", "EXIT_EXECUTED",
+                    "success", true
+            ));
+        }
+        return ResponseEntity.ok(Map.of("success", true, "results", results));
     }
 
-    private ResponseEntity<Map<String, Object>> processSignal(ChartinkPayload payload, boolean isPreOpen) {
-        try {
-            // 1. Cooldown check (per scanner-symbol-side)
-            String side = payload.inferSide();
-            if (!cooldownService.isAllowed(payload.scannerName(), payload.symbol(), side)) {
-                return ResponseEntity.ok(Map.of("success", false, "reason", "COOLDOWN"));
-            }
-            cooldownService.record(payload.scannerName(), payload.symbol(), side);
+    private List<Map<String, Object>> processBatch(ChartinkWebhookRequest request, boolean isPreOpen) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<StockHit> hits = request.parseHits();
+        String scannerName = request.scanName();
 
-            // 2. Run strategy evaluation (primary decision maker)
+        if (hits.isEmpty()) {
+            log.warn("No stocks parsed from webhook payload");
+            return List.of(Map.of("success", false, "reason", "NO_STOCKS"));
+        }
+
+        for (StockHit hit : hits) {
+            Map<String, Object> result = processSingleStock(scannerName, hit, isPreOpen);
+            results.add(result);
+        }
+        return results;
+    }
+
+    private Map<String, Object> processSingleStock(String scannerName, StockHit hit, boolean isPreOpen) {
+        try {
+            ChartinkPayload payload = new ChartinkPayload(
+                    scannerName,         // scannerName
+                    scannerName,         // scanName (fallback to scannerName)
+                    hit.symbol(),        // symbol
+                    "NSE",               // exchange
+                    hit.triggerPrice(),  // ltp
+                    null,                // volume
+                    null,                // buyerQty
+                    null,                // sellerQty
+                    null,                // changePct
+                    null,                // gapPct
+                    null,                // vwapDeviationPct
+                    null,                // atr14
+                    null,                // adx14
+                    null,                // rvol
+                    null,                // vwap
+                    null,                // rsi14
+                    null,                // unfilledRatio
+                    null,                // vix
+                    null,                // open
+                    null,                // high
+                    null,                // low
+                    hit.triggerPrice(),  // close
+                    null,                // prevClose
+                    null,                // bestBid
+                    null,                // bestAsk
+                    null,                // bidQty
+                    null,                // askQty
+                    null,                // niftyChangePct
+                    null,                // stockCategory
+                    Instant.now(),       // timestamp
+                    "CHARTINK_WEBHOOK"   // triggerType
+            );
+
+            // 1. Cooldown check
+            String side = payload.inferSide();
+            if (!cooldownService.isAllowed(scannerName, hit.symbol(), side)) {
+                return Map.of("success", false, "reason", "COOLDOWN", "symbol", hit.symbol());
+            }
+            cooldownService.record(scannerName, hit.symbol(), side);
+
+            // 2. Strategy evaluation
             Signal strategySignal = strategyEvaluator.evaluate(payload);
             if (strategySignal == null || !strategySignal.isValid()) {
-                log.info("Strategy did not confirm: {} {} scanner={}",
-                        payload.symbol(), side, payload.scannerName());
-                return ResponseEntity.ok(Map.of(
+                log.debug("Strategy did not confirm: {} {} scanner={}", hit.symbol(), side, scannerName);
+                return Map.of(
                         "success", false,
                         "reason", "STRATEGY_NOT_CONFIRMED",
-                        "symbol", payload.symbol(),
-                        "scannerName", payload.scannerName()
-                ));
+                        "symbol", hit.symbol(),
+                        "scannerName", scannerName
+                );
             }
 
             log.info("Strategy CONFIRMED: {} {} | reason={} confidence={}",
-                    payload.symbol(), strategySignal.side(), strategySignal.reason(),
+                    hit.symbol(), strategySignal.side(), strategySignal.reason(),
                     strategySignal.confidence());
 
-            // 3. Map to SignalEntity and execute
-            Long strategyId = strategyRouter.resolveStrategyId(payload.scannerName());
+            // 3. Map to SignalEntity
+            Long strategyId = strategyRouter.resolveStrategyId(scannerName);
             SignalEntity entity = signalMapper.toSignalEntity(payload, null, null, strategyId);
             entity.setUserId(1L);
             entity.setConfidence(BigDecimal.valueOf(strategySignal.confidence()));
@@ -104,16 +151,17 @@ public class ChartinkWebhookController {
             // 4. Execute
             executionService.execute(entity);
 
-            return ResponseEntity.ok(Map.of(
+            return Map.of(
                     "success", true,
                     "signalId", entity.getId(),
+                    "symbol", hit.symbol(),
                     "action", isPreOpen ? "QUEUED_FOR_OPEN" : "EXECUTED",
                     "strategy", strategySignal.reason()
-            ));
+            );
 
         } catch (Exception e) {
-            log.error("Error processing Chartink webhook", e);
-            return ResponseEntity.ok(Map.of("success", false, "reason", "ERROR", "message", e.getMessage()));
+            log.error("Error processing stock {} for scanner {}", hit.symbol(), scannerName, e);
+            return Map.of("success", false, "reason", "ERROR", "symbol", hit.symbol(), "message", e.getMessage());
         }
     }
 }

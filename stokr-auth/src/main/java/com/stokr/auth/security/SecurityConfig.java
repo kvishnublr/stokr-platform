@@ -77,6 +77,6 @@ public class SecurityConfig {
     public WebSecurityCustomizer webSecurityCustomizer() {
         return web -> web
                 .ignoring()
-                .requestMatchers("/stokr-aurora-dashboard.html", "/stokr-aurora-pro-dashboard.html", "/**/*.html", "/static/**", "/assets/**", "/css/**", "/js/**", "/images/**");
+                .requestMatchers("/stokr-aurora-dashboard.html", "/stokr-aurora-pro-dashboard.html", "/static/**", "/assets/**", "/css/**", "/js/**", "/images/**");
     }
 }
