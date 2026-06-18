@@ -18,6 +18,13 @@ public class StrategyRouter {
      * Only the 5 core NSE intraday strategies.
      */
     private static final Map<String, String> SCANNER_TO_STRATEGY = Map.ofEntries(
+            // With STOKR_ prefix (Chartink scanner names)
+            Map.entry("STOKR_VWAP_TRIPLE_LONG", "VWAP_TRIPLE"),
+            Map.entry("STOKR_TRADE_BOOK_IMBALANCE", "TRADE_BOOK_IMBALANCE"),
+            Map.entry("STOKR_ORB_V_BREAKOUT", "ORB_V"),
+            Map.entry("STOKR_MORNING_SURGE_SHORT", "MORNING_SURGE"),
+            Map.entry("STOKR_PRE_OPEN_BUY", "PRE_OPEN"),
+            // Without prefix (fallback/testing)
             Map.entry("VWAP_TRIPLE_LONG", "VWAP_TRIPLE"),
             Map.entry("TRADE_BOOK_IMBALANCE", "TRADE_BOOK_IMBALANCE"),
             Map.entry("ORB_V_BREAKOUT", "ORB_V"),
@@ -29,6 +36,13 @@ public class StrategyRouter {
      * Maps scanner names to a default strategy ID.
      */
     private static final Map<String, Long> STRATEGY_IDS = Map.ofEntries(
+            // With STOKR_ prefix (Chartink scanner names)
+            Map.entry("STOKR_VWAP_TRIPLE_LONG", 1L),
+            Map.entry("STOKR_TRADE_BOOK_IMBALANCE", 2L),
+            Map.entry("STOKR_ORB_V_BREAKOUT", 3L),
+            Map.entry("STOKR_MORNING_SURGE_SHORT", 4L),
+            Map.entry("STOKR_PRE_OPEN_BUY", 5L),
+            // Without prefix (fallback/testing)
             Map.entry("VWAP_TRIPLE_LONG", 1L),
             Map.entry("TRADE_BOOK_IMBALANCE", 2L),
             Map.entry("ORB_V_BREAKOUT", 3L),
