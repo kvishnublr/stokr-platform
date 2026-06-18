@@ -28,7 +28,7 @@ public class ChartinkWebhookController {
     @Operation(summary = "Receive Chartink scanner webhook alerts")
     @PostMapping(value = "/webhook", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ApiResponse<Void> webhook(@RequestBody String rawPayload) {
-        log.info("chartink.webhook.received payload_length={}", rawPayload.length());
+        log.info("chartink.webhook.received payload_length={} raw={}", rawPayload.length(), rawPayload);
 
         ChartinkAlert alert = alertParser.parse(rawPayload);
         List<ChartinkAlert.StockAlert> stockAlerts = alertParser.toStockAlerts(alert);

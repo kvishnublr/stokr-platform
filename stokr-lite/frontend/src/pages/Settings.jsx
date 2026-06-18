@@ -7,7 +7,7 @@ export default function Settings() {
   const { data: profile, isLoading: profileLoading } = useQuery({ queryKey: ['profile'], queryFn: () => client.get('/profile').then((r) => r.data) });
   const { data: traderConfig, isLoading: configLoading } = useQuery({
     queryKey: ['trader-config'],
-    queryFn: () => client.get('/chartink/trader-config/1').then((r) => r.data),
+    queryFn: () => client.get('/chartink/trader-config/me').then((r) => r.data),
     retry: 1
   });
 
@@ -60,12 +60,12 @@ export default function Settings() {
   });
 
   const updateConfigMutation = useMutation({
-    mutationFn: (data) => client.put('/chartink/trader-config/1', data),
+    mutationFn: (data) => client.put('/chartink/trader-config/me', data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['trader-config'] }); alert('Trading config saved!'); },
   });
 
   const toggleModeMutation = useMutation({
-    mutationFn: (mode) => client.post(`/chartink/trader-config/1/mode?mode=${mode}`),
+    mutationFn: (mode) => client.post(`/chartink/trader-config/me/mode?mode=${mode}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trader-config'] }),
   });
 
