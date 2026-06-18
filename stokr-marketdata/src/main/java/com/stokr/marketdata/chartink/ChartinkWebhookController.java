@@ -47,7 +47,11 @@ public class ChartinkWebhookController {
             }
 
             // Insert signals directly into database for immediate availability
-            signalInserter.insertSignalsFromAlert(alert);
+            if (signalInserter != null) {
+                signalInserter.insertSignalsFromAlert(alert);
+            } else {
+                log.error("chartink.webhook.error signalInserter_is_null=true");
+            }
 
             return ApiResponse.ok(CorrelationIdHolder.get());
         } catch (Exception e) {
