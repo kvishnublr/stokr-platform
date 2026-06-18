@@ -12,6 +12,9 @@ server:
 spring:
   application:
     name: stokr-v5
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
   session:
     timeout: 5h
   jackson:
