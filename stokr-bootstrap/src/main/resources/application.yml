@@ -19,6 +19,11 @@ spring:
     timeout: 5h
   jackson:
     time-zone: Asia/Kolkata
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.websocket.servlet.WebSocketServletAutoConfiguration
+      - org.springframework.boot.autoconfigure.websocket.WebSocketAutoConfiguration
+      - org.springframework.boot.autoconfigure.websocket.reactive.WebSocketReactiveAutoConfiguration
   mail:
     # spring.mail.host is intentionally omitted here so an unset host does not create a broken JavaMailSender.
     # Use SPRING_MAIL_HOST / SPRING_MAIL_USERNAME / SPRING_MAIL_PASSWORD in repo-root .env (see .env.example),

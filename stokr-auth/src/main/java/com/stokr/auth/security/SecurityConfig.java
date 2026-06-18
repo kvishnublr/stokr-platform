@@ -55,6 +55,7 @@ public class SecurityConfig {
                                 "/swagger-ui.html",
                                 "/ws/**"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/**/*.html").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/strategies/catalog").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/strategies/catalog/signal-stats").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/adv-dashboard/dashboard-metrics").permitAll()

@@ -25,7 +25,7 @@ public class Deployment {
     @Column(name = "strategy_id", nullable = false)
     private Long strategyId;
 
-    @Column(name = "broker_account_id", nullable = false)
+    @Column(name = "broker_account_id")
     private Long brokerAccountId;
 
     @Column(nullable = false)
