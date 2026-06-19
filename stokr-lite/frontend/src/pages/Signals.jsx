@@ -198,7 +198,12 @@ export default function Signals() {
 
       return true;
     })
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    .sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      if (timeB !== timeA) return timeB - timeA; // Descending (latest first)
+      return b.id - a.id; // Fallback: sort by ID if timestamps are same
+    });
 
   // Calculate strategy stats based on current filter
   const strategyStats = {};
