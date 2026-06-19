@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,21 +36,21 @@ public class ChartinkWebhookController {
 
     @PostMapping("/preopen")
     public ResponseEntity<Map<String, Object>> receivePreOpen(@RequestBody ChartinkWebhookRequest request) {
-        log.info("Chartink preopen webhook: scan={} stocks={}", request.scanName(), request.stocks());
+        log.info("Chartink preopen webhook: scan={} stocks={}", request.getScanName(), request.getStocks());
         List<Map<String, Object>> results = processBatch(request, true);
         return ResponseEntity.ok(Map.of("success", true, "results", results));
     }
 
     @PostMapping("/intraday")
     public ResponseEntity<Map<String, Object>> receiveIntraday(@RequestBody ChartinkWebhookRequest request) {
-        log.info("Chartink intraday webhook: scan={} stocks={}", request.scanName(), request.stocks());
+        log.info("Chartink intraday webhook: scan={} stocks={}", request.getScanName(), request.getStocks());
         List<Map<String, Object>> results = processBatch(request, false);
         return ResponseEntity.ok(Map.of("success", true, "results", results));
     }
 
     @PostMapping("/exit")
     public ResponseEntity<Map<String, Object>> receiveExit(@RequestBody ChartinkWebhookRequest request) {
-        log.info("Chartink exit webhook: scan={} stocks={}", request.scanName(), request.stocks());
+        log.info("Chartink exit webhook: scan={} stocks={}", request.getScanName(), request.getStocks());
         List<Map<String, Object>> results = new ArrayList<>();
         for (StockHit hit : request.parseHits()) {
             executionService.closePosition(hit.symbol(), "CHARTINK_EXIT_SCANNER");
@@ -62,10 +63,86 @@ public class ChartinkWebhookController {
         return ResponseEntity.ok(Map.of("success", true, "results", results));
     }
 
+    private static final Map<String, String> FIELD_MAP = new HashMap<>();
+    static {
+        FIELD_MAP.put("vwap", "vwap");
+        FIELD_MAP.put("rsi14", "rsi14");
+        FIELD_MAP.put("rsi", "rsi14");
+        FIELD_MAP.put("atr14", "atr14");
+        FIELD_MAP.put("atr", "atr14");
+        FIELD_MAP.put("adx14", "adx14");
+        FIELD_MAP.put("volume", "volume");
+        FIELD_MAP.put("buyerqty", "buyerQty");
+        FIELD_MAP.put("buyer qty", "buyerQty");
+        FIELD_MAP.put("sellerqty", "sellerQty");
+        FIELD_MAP.put("seller qty", "sellerQty");
+        FIELD_MAP.put("bidqty", "bidQty");
+        FIELD_MAP.put("bid qty", "bidQty");
+        FIELD_MAP.put("askqty", "askQty");
+        FIELD_MAP.put("ask qty", "askQty");
+        FIELD_MAP.put("change", "changePct");
+        FIELD_MAP.put("change%", "changePct");
+        FIELD_MAP.put("change_pct", "changePct");
+        FIELD_MAP.put("gap", "gapPct");
+        FIELD_MAP.put("gap%", "gapPct");
+        FIELD_MAP.put("gap_pct", "gapPct");
+        FIELD_MAP.put("prevclose", "prevClose");
+        FIELD_MAP.put("prev close", "prevClose");
+        FIELD_MAP.put("open", "open");
+        FIELD_MAP.put("high", "high");
+        FIELD_MAP.put("low", "low");
+        FIELD_MAP.put("vix", "vix");
+        FIELD_MAP.put("unfilledratio", "unfilledRatio");
+        FIELD_MAP.put("unfilled ratio", "unfilledRatio");
+        FIELD_MAP.put("vwapdeviation", "vwapDeviationPct");
+        FIELD_MAP.put("vwap deviation", "vwapDeviationPct");
+        FIELD_MAP.put("vwap_deviation", "vwapDeviationPct");
+        FIELD_MAP.put("rvol", "rvol");
+        FIELD_MAP.put("bestbid", "bestBid");
+        FIELD_MAP.put("best ask", "bestAsk");
+        FIELD_MAP.put("bestask", "bestAsk");
+        FIELD_MAP.put("niftychange", "niftyChangePct");
+        FIELD_MAP.put("nifty change", "niftyChangePct");
+        FIELD_MAP.put("stockcategory", "stockCategory");
+        FIELD_MAP.put("stock category", "stockCategory");
+    }
+
+    private static String normalizeFieldName(String raw) {
+        String normalized = raw.toLowerCase()
+                .replaceAll("[()%]", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+        String mapped = FIELD_MAP.get(normalized);
+        if (mapped != null) return mapped;
+        String compact = normalized.replaceAll("\\s+", "");
+        mapped = FIELD_MAP.get(compact);
+        return mapped != null ? mapped : compact;
+    }
+
+    private static BigDecimal extractDecimal(Map<String, String> indicators, String rawField) {
+        String key = normalizeFieldName(rawField);
+        for (Map.Entry<String, String> entry : indicators.entrySet()) {
+            if (normalizeFieldName(entry.getKey()).equals(key)) {
+                try { return new BigDecimal(entry.getValue().trim()); } catch (NumberFormatException e) { return null; }
+            }
+        }
+        return null;
+    }
+
+    private static Long extractLong(Map<String, String> indicators, String rawField) {
+        String key = normalizeFieldName(rawField);
+        for (Map.Entry<String, String> entry : indicators.entrySet()) {
+            if (normalizeFieldName(entry.getKey()).equals(key)) {
+                try { return Long.parseLong(entry.getValue().trim()); } catch (NumberFormatException e) { return null; }
+            }
+        }
+        return null;
+    }
+
     private List<Map<String, Object>> processBatch(ChartinkWebhookRequest request, boolean isPreOpen) {
         List<Map<String, Object>> results = new ArrayList<>();
         List<StockHit> hits = request.parseHits();
-        String scannerName = request.scanName();
+        String scannerName = request.getScanName();
 
         if (hits.isEmpty()) {
             log.warn("No stocks parsed from webhook payload");
@@ -81,39 +158,46 @@ public class ChartinkWebhookController {
 
     private Map<String, Object> processSingleStock(String scannerName, StockHit hit, boolean isPreOpen) {
         try {
+            Map<String, String> ind = hit.indicators();
             ChartinkPayload payload = new ChartinkPayload(
-                    scannerName,         // scannerName
-                    scannerName,         // scanName (fallback to scannerName)
-                    hit.symbol(),        // symbol
-                    "NSE",               // exchange
-                    hit.triggerPrice(),  // ltp
-                    null,                // volume
-                    null,                // buyerQty
-                    null,                // sellerQty
-                    null,                // changePct
-                    null,                // gapPct
-                    null,                // vwapDeviationPct
-                    null,                // atr14
-                    null,                // adx14
-                    null,                // rvol
-                    null,                // vwap
-                    null,                // rsi14
-                    null,                // unfilledRatio
-                    null,                // vix
-                    null,                // open
-                    null,                // high
-                    null,                // low
-                    hit.triggerPrice(),  // close
-                    null,                // prevClose
-                    null,                // bestBid
-                    null,                // bestAsk
-                    null,                // bidQty
-                    null,                // askQty
-                    null,                // niftyChangePct
-                    null,                // stockCategory
-                    Instant.now(),       // timestamp
-                    "CHARTINK_WEBHOOK"   // triggerType
+                    scannerName,                  // scannerName
+                    scannerName,                  // scanName (fallback to scannerName)
+                    hit.symbol(),                 // symbol
+                    "NSE",                        // exchange
+                    hit.triggerPrice(),           // ltp
+                    extractLong(ind, "volume"),       // volume
+                    extractLong(ind, "buyerQty"),     // buyerQty
+                    extractLong(ind, "sellerQty"),    // sellerQty
+                    extractDecimal(ind, "changePct"), // changePct
+                    extractDecimal(ind, "gapPct"),    // gapPct
+                    extractDecimal(ind, "vwapDeviationPct"), // vwapDeviationPct
+                    extractDecimal(ind, "atr14"),         // atr14
+                    extractDecimal(ind, "adx14"),         // adx14
+                    extractDecimal(ind, "rvol"),          // rvol
+                    extractDecimal(ind, "vwap"),          // vwap
+                    extractDecimal(ind, "rsi14"),         // rsi14
+                    extractDecimal(ind, "unfilledRatio"), // unfilledRatio
+                    extractDecimal(ind, "vix"),           // vix
+                    extractDecimal(ind, "open"),          // open
+                    extractDecimal(ind, "high"),          // high
+                    extractDecimal(ind, "low"),           // low
+                    hit.triggerPrice(),                   // close
+                    extractDecimal(ind, "prevClose"),     // prevClose
+                    extractDecimal(ind, "bestBid"),       // bestBid
+                    extractDecimal(ind, "bestAsk"),       // bestAsk
+                    extractLong(ind, "bidQty"),           // bidQty
+                    extractLong(ind, "askQty"),           // askQty
+                    null,                        // niftyChangePct (String, from Chartink as Decimal)
+                    null,                        // stockCategory
+                    Instant.now(),               // timestamp
+                    "CHARTINK_WEBHOOK"           // triggerType
             );
+
+            log.info("Chartink payload: sym={} ltp={} vwap={} rsi={} atr={} buyer={} seller={} vol={}",
+                    hit.symbol(), hit.triggerPrice(),
+                    extractDecimal(ind, "vwap"), extractDecimal(ind, "rsi14"),
+                    extractDecimal(ind, "atr14"), extractLong(ind, "buyerQty"),
+                    extractLong(ind, "sellerQty"), extractLong(ind, "volume"));
 
             // 1. Cooldown check
             String side = payload.inferSide();
