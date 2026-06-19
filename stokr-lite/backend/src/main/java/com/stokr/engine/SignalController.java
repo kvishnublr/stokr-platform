@@ -30,9 +30,16 @@ public class SignalController {
         try {
             userId = SecurityUtils.currentUserId();
         } catch (Exception e) {
-            // User not authenticated, fetch public signals
+            // User not authenticated, fetch all signals
         }
-        List<SignalEntity> signals = signalRepository.findTop50ByUserIdOrUserIdIsNullOrderByCreatedAtDesc(userId);
+        List<SignalEntity> signals;
+        if (userId == null) {
+            // Unauthenticated: return all signals
+            signals = signalRepository.findTop50ByOrderByCreatedAtDesc();
+        } else {
+            // Authenticated: return user's signals or public signals
+            signals = signalRepository.findTop50ByUserIdOrUserIdIsNullOrderByCreatedAtDesc(userId);
+        }
         if (signals.isEmpty()) {
             return ResponseEntity.ok(getMockSignals());
         }
