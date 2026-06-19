@@ -26,7 +26,12 @@ public class SignalController {
 
     @GetMapping
     public ResponseEntity<List<SignalEntity>> getMySignals() {
-        Long userId = SecurityUtils.currentUserId();
+        Long userId = null;
+        try {
+            userId = SecurityUtils.currentUserId();
+        } catch (Exception e) {
+            // User not authenticated, fetch public signals
+        }
         List<SignalEntity> signals = signalRepository.findTop50ByUserIdOrUserIdIsNullOrderByCreatedAtDesc(userId);
         if (signals.isEmpty()) {
             return ResponseEntity.ok(getMockSignals());
