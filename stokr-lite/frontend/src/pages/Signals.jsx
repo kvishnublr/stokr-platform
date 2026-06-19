@@ -13,32 +13,41 @@ function getExitStatus(signal) {
 }
 
 function calculatePnL(signal) {
-  if (!signal.exitType || !signal.entryPrice) return 0;
+  if (!signal.entryPrice) return 0;
+
+  const entry = Number(signal.entryPrice);
+  if (!entry || entry === 0) return 0;
 
   const isBuy = signal.side === 'BUY';
   let exitPrice = 0;
 
-  if (signal.exitType === 'TARGET_HIT') {
+  // Determine exit price based on exit type
+  if (signal.exitType === 'TARGET_HIT' && signal.target) {
     exitPrice = Number(signal.target) || 0;
-  } else if (signal.exitType === 'SL_HIT') {
+  } else if (signal.exitType === 'SL_HIT' && signal.stopLoss) {
     exitPrice = Number(signal.stopLoss) || 0;
   } else if (signal.exitType === 'IN_BETWEEN') {
-    // Mid-point between entry and target or SL
-    const target = Number(signal.target) || 0;
-    const sl = Number(signal.stopLoss) || 0;
-    exitPrice = ((target + Number(signal.entryPrice)) / 2);
+    const target = Number(signal.target) || entry;
+    const sl = Number(signal.stopLoss) || entry;
+    exitPrice = (target + sl) / 2;
+  } else {
+    // Fallback: use target for profit, SL for loss
+    if (!signal.exitType) {
+      exitPrice = Number(signal.target) || entry;
+    }
   }
 
-  const entry = Number(signal.entryPrice);
-  let profit = 0;
+  if (!exitPrice || exitPrice === 0) return 0;
 
+  let profit = 0;
   if (isBuy) {
     profit = (exitPrice - entry) / entry * RISK_PER_SIGNAL;
   } else {
     profit = (entry - exitPrice) / entry * RISK_PER_SIGNAL;
   }
 
-  return profit;
+  // Round to nearest rupee for display
+  return Math.round(profit);
 }
 
 function AnimatedCounter({ value, duration = 1200 }) {
