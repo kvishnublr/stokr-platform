@@ -112,7 +112,7 @@ function ShellSidebar() {
   return (
     <div className={cn("flex flex-col gap-1", isLight ? "text-neutral-700" : "text-neutral-300")}>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-widest text-neutral-500">Stokr v5</span>
+        <span className="text-[11px] font-bold uppercase tracking-widest text-neutral-500">Stokr v6</span>
         <button onClick={() => setCollapsed(!collapsed)} className="text-[10px] text-neutral-400 hover:text-neutral-600">
           {collapsed ? "+" : "-"}
         </button>
@@ -155,7 +155,7 @@ function ShellTopNav() {
   const isAdmin = useSessionStore((s) => s.hasRole("ROLE_ADMIN"));
   return (
     <div className="flex items-center justify-between px-6 py-3">
-      <span className="text-sm font-semibold">Stokr v5</span>
+      <span className="text-sm font-semibold">Stokr v6</span>
       <div className="flex items-center gap-4">
         {isAdmin && location.pathname !== "/admin" && (
           <button onClick={() => navigate("/admin")} className="rounded border px-3 py-1 text-xs font-semibold hover:bg-neutral-100">
