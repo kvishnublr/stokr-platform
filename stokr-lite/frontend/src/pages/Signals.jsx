@@ -31,7 +31,6 @@ export default function Signals() {
     staleTime: 0,
     gcTime: 0,
     refetchOnWindowFocus: true,
-    enabled: isLoggedIn,
   });
 
   const { data: stats = { total: 0, today: 0, active: 0 } } = useQuery({
