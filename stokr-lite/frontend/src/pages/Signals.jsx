@@ -2,6 +2,16 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 
+const RISK_PER_SIGNAL = 5000; // ₹5000 per signal
+
+function getExitStatus(signal) {
+  if (!signal.exitType) return { label: 'PENDING', color: '#9ca3af', bg: '#f3f4f6' };
+  if (signal.exitType === 'TARGET_HIT') return { label: '✓ TARGET HIT', color: '#059669', bg: '#dcfce7' };
+  if (signal.exitType === 'SL_HIT') return { label: '✗ SL HIT', color: '#dc2626', bg: '#fee2e2' };
+  if (signal.exitType === 'IN_BETWEEN') return { label: '→ IN BETWEEN', color: '#ca8a04', bg: '#fef3c7' };
+  return { label: 'UNKNOWN', color: '#6b7280', bg: '#e5e7eb' };
+}
+
 function AnimatedCounter({ value, duration = 1200 }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
@@ -224,6 +234,19 @@ export default function Signals() {
         <p style={{ color: '#6b7280', fontSize: '15px', margin: 0 }}>Real-time strategy signals with detailed performance analytics</p>
       </div>
 
+      {/* Risk Deployment Banner */}
+      <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px', animation: 'slideDown 0.6s ease 0.15s both', boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)' }}>
+        <div style={{ fontSize: '24px' }}>💰</div>
+        <div>
+          <div style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>Risk Deployment per Signal</div>
+          <div style={{ fontSize: '24px', fontWeight: 800, color: 'white' }}>₹{RISK_PER_SIGNAL.toLocaleString('en-IN')}</div>
+        </div>
+        <div style={{ marginLeft: 'auto', fontSize: '12px', color: 'rgba(255,255,255,0.8)', textAlign: 'right' }}>
+          <div>Total Signals: {filtered.length}</div>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: 'white' }}>Total Risk: ₹{(RISK_PER_SIGNAL * filtered.length).toLocaleString('en-IN')}</div>
+        </div>
+      </div>
+
       {/* Stats Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '32px' }}>
         {statCards.map((card, i) => (
@@ -420,23 +443,23 @@ export default function Signals() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
               <colgroup>
-                <col style={{ width: '10%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '6%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8%' }} />
                 <col style={{ width: '7%' }} />
-                <col style={{ width: '9%' }} />
-                <col style={{ width: '9%' }} />
+                <col style={{ width: '11%' }} />
                 <col style={{ width: '9%' }} />
                 <col style={{ width: '8%' }} />
-                <col style={{ width: '12%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '12%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '13%' }} />
               </colgroup>
-              <thead style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
+              <thead style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
-                  {['SYMBOL', 'SIDE', 'ENTRY', 'SL', 'TARGET', 'SCORE', 'STRATEGY', 'STATUS', 'SOURCE', 'SIGNAL TIME', 'ENTRY TIME', 'EXIT TIME/TYPE'].map((h) => (
-                    <th key={h} style={{ textAlign: h === 'SYMBOL' ? 'left' : 'center', padding: '12px', color: '#6b7280', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>{h}</th>
+                  {['SYMBOL', 'SIDE', 'ENTRY', 'SL', 'TARGET', 'SCORE', 'STRATEGY', 'STATUS', 'SOURCE', 'SIGNAL TIME', 'ENTRY TIME', 'EXIT STATUS'].map((h) => (
+                    <th key={h} style={{ textAlign: h === 'SYMBOL' ? 'left' : 'center', padding: '12px', color: '#6b7280', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -480,25 +503,29 @@ export default function Signals() {
                     <td style={{ padding: '12px', textAlign: 'center', color: '#6b7280', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {s.entryTime ? new Date(s.entryTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
                     </td>
-                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                        <span style={{ color: '#6b7280' }}>
-                          {s.exitTime ? new Date(s.exitTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
-                        </span>
-                        <span style={{
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          fontSize: '9px',
-                          fontWeight: 800,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.2px',
-                          background: s.exitType === 'SL_HIT' ? '#fee2e2' : s.exitType === 'TARGET_HIT' ? '#dcfce7' : s.exitType === 'IN_BETWEEN' ? '#fef3c7' : s.exitType === 'REJECTED' ? '#fecaca' : '#e5e7eb',
-                          color: s.exitType === 'SL_HIT' ? '#dc2626' : s.exitType === 'TARGET_HIT' ? '#16a34a' : s.exitType === 'IN_BETWEEN' ? '#ca8a04' : s.exitType === 'REJECTED' ? '#ef4444' : '#6b7280',
-                          display: s.exitType ? 'inline-block' : 'none'
-                        }}>
-                          {s.exitType || '—'}
-                        </span>
-                      </div>
+                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '11px' }}>
+                      {(() => {
+                        const status = getExitStatus(s);
+                        const exitTime = s.exitTime ? new Date(s.exitTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : null;
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                            {exitTime && <span style={{ fontSize: '10px', color: '#6b7280', fontFamily: 'JetBrains Mono', fontWeight: 500 }}>{exitTime}</span>}
+                            <span style={{
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '10px',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.3px',
+                              background: status.bg,
+                              color: status.color,
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {status.label}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
