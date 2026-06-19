@@ -143,7 +143,7 @@ export function V5DashboardPage() {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center text-sm text-gray-500">
-        Loading v5 dashboard...
+        Loading v6 dashboard...
       </div>
     );
   }
