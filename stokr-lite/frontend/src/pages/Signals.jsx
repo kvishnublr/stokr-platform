@@ -543,20 +543,28 @@ export default function Signals() {
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', color: '#6b7280', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {(() => {
-                        const date = new Date(s.createdAt);
-                        const day = String(date.getDate()).padStart(2, '0');
-                        const month = String(date.getMonth() + 1).padStart(2, '0');
-                        const time = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                        return `${day}/${month} ${time}`;
+                        try {
+                          const dt = new Date(s.createdAt);
+                          const d = String(dt.getDate()).padStart(2, '0');
+                          const m = String(dt.getMonth() + 1).padStart(2, '0');
+                          const t = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                          return `${d}/${m} ${t}`;
+                        } catch (e) {
+                          return s.createdAt ? new Date(s.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+                        }
                       })()}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', color: '#6b7280', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {s.entryTime ? (() => {
-                        const date = new Date(s.entryTime);
-                        const day = String(date.getDate()).padStart(2, '0');
-                        const month = String(date.getMonth() + 1).padStart(2, '0');
-                        const time = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                        return `${day}/${month} ${time}`;
+                        try {
+                          const dt = new Date(s.entryTime);
+                          const d = String(dt.getDate()).padStart(2, '0');
+                          const m = String(dt.getMonth() + 1).padStart(2, '0');
+                          const t = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                          return `${d}/${m} ${t}`;
+                        } catch (e) {
+                          return new Date(s.entryTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                        }
                       })() : '—'}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', fontSize: '11px' }}>
