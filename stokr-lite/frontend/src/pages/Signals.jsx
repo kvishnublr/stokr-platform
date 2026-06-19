@@ -20,6 +20,7 @@ function AnimatedCounter({ value, duration = 1200 }) {
 
 export default function Signals() {
   const [filter, setFilter] = useState('ALL'); // ALL, GENERATED, EXECUTED, REJECTED, EXPIRED
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
 
   const { data: signals = [], isLoading: sigLoading } = useQuery({
     queryKey: ['signals'],
@@ -30,6 +31,7 @@ export default function Signals() {
     staleTime: 0,
     gcTime: 0,
     refetchOnWindowFocus: true,
+    enabled: isLoggedIn,
   });
 
   const { data: stats = { total: 0, today: 0, active: 0 } } = useQuery({
