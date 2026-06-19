@@ -542,15 +542,33 @@ export default function Signals() {
                       <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.3px', background: sourceColors[s.source]?.bg, color: sourceColors[s.source]?.text, display: 'inline-block', whiteSpace: 'nowrap' }}>{s.source || 'INTERNAL'}</span>
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', color: '#6b7280', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {new Date(s.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                      {(() => {
+                        const date = new Date(s.createdAt);
+                        const day = String(date.getDate()).padStart(2, '0');
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const time = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                        return `${day}/${month} ${time}`;
+                      })()}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', color: '#6b7280', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {s.entryTime ? new Date(s.entryTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                      {s.entryTime ? (() => {
+                        const date = new Date(s.entryTime);
+                        const day = String(date.getDate()).padStart(2, '0');
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const time = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                        return `${day}/${month} ${time}`;
+                      })() : '—'}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', fontSize: '11px' }}>
                       {(() => {
                         const status = getExitStatus(s);
-                        const exitTime = s.exitTime ? new Date(s.exitTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : null;
+                        const exitTime = s.exitTime ? (() => {
+                          const date = new Date(s.exitTime);
+                          const day = String(date.getDate()).padStart(2, '0');
+                          const month = String(date.getMonth() + 1).padStart(2, '0');
+                          const time = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                          return `${day}/${month} ${time}`;
+                        })() : null;
                         return (
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                             {exitTime && <span style={{ fontSize: '10px', color: '#6b7280', fontFamily: 'JetBrains Mono', fontWeight: 500 }}>{exitTime}</span>}
