@@ -19,6 +19,8 @@ public interface SignalRepository extends JpaRepository<SignalEntity, Long> {
 
     List<SignalEntity> findTop50ByUserIdOrUserIdIsNullOrderByCreatedAtDesc(Long userId);
 
+    List<SignalEntity> findTop50ByOrderByCreatedAtDesc();
+
     long countByUserIdAndCreatedAtAfter(Long userId, Instant since);
 
     long countByUserIdAndStatus(Long userId, String status);
