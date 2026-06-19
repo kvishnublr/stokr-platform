@@ -16,6 +16,9 @@ stokr.in, www.stokr.in {
     reverse_proxy /api/signals* localhost:8081
     reverse_proxy /api/auth* localhost:8081
 
+    # Chartink webhooks go to stokr-lite backend
+    reverse_proxy /webhooks/chartink* localhost:8081
+
     # Other API routes go to main backend
     reverse_proxy /api/* stokr-api:8080
 
