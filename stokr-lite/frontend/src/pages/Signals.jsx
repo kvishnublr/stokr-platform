@@ -21,6 +21,8 @@ function AnimatedCounter({ value, duration = 1200 }) {
 export default function Signals() {
   const [filter, setFilter] = useState('ALL'); // ALL, GENERATED, EXECUTED, REJECTED, EXPIRED
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
+  const [timeFilter, setTimeFilter] = useState('ALL'); // ALL, TODAY, HISTORY
+  const [searchSymbol, setSearchSymbol] = useState('');
 
   const { data: signals = [], isLoading: sigLoading } = useQuery({
     queryKey: ['signals'],
@@ -49,7 +51,23 @@ export default function Signals() {
     },
   });
 
-  const filtered = filter === 'ALL' ? signals : signals.filter(s => s.status === filter);
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const filtered = signals
+    .filter(s => {
+      if (filter !== 'ALL' && s.status !== filter) return false;
+      if (searchSymbol && !s.symbol.toUpperCase().includes(searchSymbol.toUpperCase())) return false;
+
+      const signalDate = new Date(s.createdAt);
+      signalDate.setHours(0, 0, 0, 0);
+
+      if (timeFilter === 'TODAY' && signalDate.getTime() !== todayStart.getTime()) return false;
+      if (timeFilter === 'HISTORY' && signalDate.getTime() === todayStart.getTime()) return false;
+
+      return true;
+    })
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // Sort by newest first
 
   const statCards = [
     { label: 'Total Signals', value: stats.total, icon: '📡', gradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)' },
@@ -146,33 +164,83 @@ export default function Signals() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="card-aurora" style={{ padding: '16px 20px', marginBottom: '24px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-muted)', marginRight: '8px' }}>Filter:</span>
-        {['ALL', 'GENERATED', 'EXECUTED', 'REJECTED', 'EXPIRED'].map((status) => (
-          <button
-            key={status}
-            onClick={() => setFilter(status)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '10px',
-              border: 'none',
-              fontSize: '12px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              transition: 'all 0.2s',
-              background: filter === status ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgba(148,163,184,0.1)',
-              color: filter === status ? 'white' : 'var(--text-muted)',
-            }}
-          >
-            {status === 'ALL' ? 'All Signals' : status}
-          </button>
-        ))}
-        <span style={{ marginLeft: 'auto', fontSize: '13px', color: 'var(--text-muted)' }}>
-          Showing <strong style={{ color: 'var(--text-primary)' }}>{filtered.length}</strong> of {signals.length}
-        </span>
+      {/* Search Box */}
+      <div className="card-aurora" style={{ padding: '16px 20px', marginBottom: '16px' }}>
+        <input
+          type="text"
+          placeholder="Search by symbol (e.g., WIPRO, RELIANCE)..."
+          value={searchSymbol}
+          onChange={(e) => setSearchSymbol(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '10px 14px',
+            borderRadius: '10px',
+            border: '1px solid rgba(148,163,184,0.25)',
+            fontSize: '13px',
+            color: 'var(--text-primary)',
+            background: 'rgba(148,163,184,0.05)',
+            outline: 'none',
+            transition: 'all 0.2s',
+          }}
+          onFocus={(e) => { e.target.style.borderColor = 'rgba(99,102,241,0.5)'; e.target.style.background = 'rgba(99,102,241,0.03)'; }}
+          onBlur={(e) => { e.target.style.borderColor = 'rgba(148,163,184,0.25)'; e.target.style.background = 'rgba(148,163,184,0.05)'; }}
+        />
+      </div>
+
+      {/* Time Filter and Status Filter */}
+      <div className="card-aurora" style={{ padding: '16px 20px', marginBottom: '24px' }}>
+        <div style={{ marginBottom: '12px' }}>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-muted)', marginRight: '8px' }}>Time:</span>
+          {['ALL', 'TODAY', 'HISTORY'].map((tf) => (
+            <button
+              key={tf}
+              onClick={() => setTimeFilter(tf)}
+              style={{
+                marginRight: '8px',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                border: 'none',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                textTransform: 'uppercase',
+                letterSpacing: '0.4px',
+                transition: 'all 0.2s',
+                background: timeFilter === tf ? 'linear-gradient(135deg, #06b6d4, #3b82f6)' : 'rgba(148,163,184,0.1)',
+                color: timeFilter === tf ? 'white' : 'var(--text-muted)',
+              }}
+            >
+              {tf}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-muted)', marginRight: '8px' }}>Status:</span>
+          {['ALL', 'GENERATED', 'EXECUTED', 'REJECTED', 'EXPIRED'].map((status) => (
+            <button
+              key={status}
+              onClick={() => setFilter(status)}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '10px',
+                border: 'none',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                transition: 'all 0.2s',
+                background: filter === status ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgba(148,163,184,0.1)',
+                color: filter === status ? 'white' : 'var(--text-muted)',
+              }}
+            >
+              {status === 'ALL' ? 'All Signals' : status}
+            </button>
+          ))}
+          <span style={{ marginLeft: 'auto', fontSize: '13px', color: 'var(--text-muted)' }}>
+            Showing <strong style={{ color: 'var(--text-primary)' }}>{filtered.length}</strong> of {signals.length}
+          </span>
+        </div>
       </div>
 
       {/* Signals Table */}
@@ -186,26 +254,38 @@ export default function Signals() {
             <div>Signals will appear here when your active deployments generate them.</div>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
-            <table style={{ width: '100%', minWidth: '1400px', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '100px' }} />
+                <col style={{ width: '70px' }} />
+                <col style={{ width: '100px' }} />
+                <col style={{ width: '100px' }} />
+                <col style={{ width: '100px' }} />
+                <col style={{ width: '120px' }} />
+                <col style={{ width: '120px' }} />
+                <col style={{ width: '100px' }} />
+                <col style={{ width: '80px' }} />
+                <col style={{ width: '80px' }} />
+              </colgroup>
+              <thead style={{ backgroundColor: 'rgba(148,163,184,0.05)' }}>
                 <tr style={{ borderBottom: '2px solid rgba(148,163,184,0.15)' }}>
-                  <th style={{ textAlign: 'left', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Symbol</th>
-                  <th style={{ textAlign: 'left', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Side</th>
-                  <th style={{ textAlign: 'right', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Entry</th>
-                  <th style={{ textAlign: 'right', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>SL</th>
-                  <th style={{ textAlign: 'right', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Target</th>
-                  <th style={{ textAlign: 'center', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Mvt Score</th>
-                  <th style={{ textAlign: 'left', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Scanner</th>
-                  <th style={{ textAlign: 'center', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Status</th>
-                  <th style={{ textAlign: 'center', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Source</th>
-                  <th style={{ textAlign: 'right', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Time</th>
+                  <th style={{ textAlign: 'left', padding: '12px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Symbol</th>
+                  <th style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Side</th>
+                  <th style={{ textAlign: 'right', padding: '12px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Entry</th>
+                  <th style={{ textAlign: 'right', padding: '12px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>SL</th>
+                  <th style={{ textAlign: 'right', padding: '12px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Target</th>
+                  <th style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Score</th>
+                  <th style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Strategy</th>
+                  <th style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Status</th>
+                  <th style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Source</th>
+                  <th style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Time</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((s, i) => (
                   <tr
-                    key={s.id}
+                    key={`${s.id}-${i}`}
                     className="signal-row-aurora"
                     style={{
                       borderBottom: '1px solid rgba(148,163,184,0.08)',
@@ -215,73 +295,71 @@ export default function Signals() {
                     onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(99,102,241,0.04)'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                   >
-                    <td style={{ padding: '16px 20px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' }}>{s.symbol}</td>
-                    <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.symbol}</td>
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
                       <span style={{
-                        padding: '4px 12px',
-                        borderRadius: '8px',
-                        fontSize: '11px',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        fontSize: '10px',
                         fontWeight: 800,
                         textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
+                        letterSpacing: '0.3px',
                         background: sideColors[s.side]?.bg || 'rgba(148,163,184,0.12)',
                         color: sideColors[s.side]?.text || '#64748b',
                         display: 'inline-block',
+                        whiteSpace: 'nowrap',
                       }}>{s.side}</span>
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '12px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {s.entryPrice ? Number(s.entryPrice).toFixed(2) : '—'}
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: '#e11d48', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '12px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: '#e11d48', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {s.stopLoss ? Number(s.stopLoss).toFixed(2) : '—'}
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: '#059669', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '12px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: '#059669', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {s.target ? Number(s.target).toFixed(2) : '—'}
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      {s.movementScore != null ? (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                          <div style={{ width: '50px', height: '4px', borderRadius: '2px', background: 'rgba(148,163,184,0.2)', overflow: 'hidden' }}>
-                            <div style={{ width: `${Math.min(s.movementScore, 100)}%`, height: '100%', borderRadius: '2px', background: s.movementScore >= 70 ? '#10b981' : s.movementScore >= 50 ? '#f59e0b' : '#ef4444' }} />
-                          </div>
-                          <span style={{ fontSize: '11px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>{s.movementScore.toFixed(1)}</span>
-                        </div>
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                      {s.confidence != null ? (
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '12px', color: Number(s.confidence) >= 80 ? '#10b981' : Number(s.confidence) >= 60 ? '#f59e0b' : '#ef4444' }}>
+                          {Number(s.confidence).toFixed(0)}%
+                        </span>
                       ) : (
                         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>—</span>
                       )}
                     </td>
-                    <td style={{ padding: '16px 20px', color: 'var(--text-secondary)', fontSize: '12px', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.scannerName}>
-                      {s.scannerName || '—'}
+                    <td style={{ padding: '12px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={s.reason}>
+                      {s.reason || '—'}
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
                       <span style={{
-                        padding: '4px 12px',
-                        borderRadius: '8px',
-                        fontSize: '10px',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        fontSize: '9px',
                         fontWeight: 800,
                         textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
+                        letterSpacing: '0.3px',
                         background: statusColors[s.status]?.bg || 'rgba(148,163,184,0.12)',
                         color: statusColors[s.status]?.text || '#64748b',
-                        border: `1px solid ${statusColors[s.status]?.border || 'rgba(148,163,184,0.2)'}`,
                         display: 'inline-block',
+                        whiteSpace: 'nowrap',
                       }}>{s.status}</span>
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
                       <span style={{
-                        padding: '4px 12px',
-                        borderRadius: '8px',
-                        fontSize: '10px',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        fontSize: '9px',
                         fontWeight: 800,
                         textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
+                        letterSpacing: '0.3px',
                         background: sourceColors[s.source]?.bg || 'rgba(148,163,184,0.12)',
                         color: sourceColors[s.source]?.text || '#64748b',
-                        border: `1px solid ${sourceColors[s.source]?.border || 'rgba(148,163,184,0.2)'}`,
                         display: 'inline-block',
+                        whiteSpace: 'nowrap',
                       }}>{s.source || 'INTERNAL'}</span>
                     </td>
-                    <td style={{ padding: '16px 20px', textAlign: 'right', color: 'var(--text-muted)', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {new Date(s.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                     </td>
                   </tr>
