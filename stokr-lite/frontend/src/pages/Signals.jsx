@@ -257,16 +257,16 @@ export default function Signals() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
               <colgroup>
-                <col style={{ width: '100px' }} />
-                <col style={{ width: '70px' }} />
-                <col style={{ width: '100px' }} />
-                <col style={{ width: '100px' }} />
-                <col style={{ width: '100px' }} />
                 <col style={{ width: '120px' }} />
+                <col style={{ width: '80px' }} />
+                <col style={{ width: '110px' }} />
+                <col style={{ width: '110px' }} />
+                <col style={{ width: '110px' }} />
+                <col style={{ width: '100px' }} />
+                <col style={{ width: '140px' }} />
                 <col style={{ width: '120px' }} />
                 <col style={{ width: '100px' }} />
-                <col style={{ width: '80px' }} />
-                <col style={{ width: '80px' }} />
+                <col style={{ width: '100px' }} />
               </colgroup>
               <thead style={{ backgroundColor: 'rgba(148,163,184,0.05)' }}>
                 <tr style={{ borderBottom: '2px solid rgba(148,163,184,0.15)' }}>
