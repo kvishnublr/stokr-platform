@@ -159,6 +159,9 @@ export default function Signals() {
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
   const [selectedStrategy, setSelectedStrategy] = useState(null);
+  const [backtestStrategy, setBacktestStrategy] = useState('ALL');
+  const [backtestResults, setBacktestResults] = useState(null);
+  const [backtestLoading, setBacktestLoading] = useState(false);
 
   const { data: signals = [], isLoading: sigLoading } = useQuery({
     queryKey: ['signals'],
@@ -178,6 +181,22 @@ export default function Signals() {
       return res.data;
     },
   });
+
+  const runBacktest = async () => {
+    setBacktestLoading(true);
+    try {
+      const strategy = backtestStrategy === 'ALL' ? null : backtestStrategy;
+      const res = await client.post('/backtest/run', null, {
+        params: { strategy }
+      });
+      setBacktestResults(res.data);
+    } catch (e) {
+      console.error('Backtest failed:', e);
+      setBacktestResults({ error: 'Backtest failed' });
+    } finally {
+      setBacktestLoading(false);
+    }
+  };
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -468,6 +487,59 @@ export default function Signals() {
           </div>
         </div>
       )}
+
+      {/* Backtest Panel */}
+      <div style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', borderRadius: '12px', padding: '20px', marginBottom: '24px', animation: 'slideDown 0.6s ease 0.4s both' }}>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div>
+            <label style={{ fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>Select Strategy to Backtest</label>
+            <select
+              value={backtestStrategy}
+              onChange={(e) => setBacktestStrategy(e.target.value)}
+              style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', fontSize: '14px', fontWeight: 600, cursor: 'pointer', minWidth: '200px', background: 'white', color: '#1f2937' }}
+            >
+              <option value="ALL">All Strategies</option>
+              {Object.keys(strategyStats).map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <button
+            onClick={runBacktest}
+            disabled={backtestLoading}
+            style={{ padding: '8px 20px', background: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 700, cursor: backtestLoading ? 'not-allowed' : 'pointer', color: '#f97316', transition: 'all 0.2s ease', opacity: backtestLoading ? 0.6 : 1 }}
+          >
+            {backtestLoading ? '⏳ Running...' : '▶ Run Backtest'}
+          </button>
+        </div>
+
+        {backtestResults && (
+          <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+            <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '12px', color: 'white', backdropFilter: 'blur(10px)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>TOTAL TRADES</div>
+              <div style={{ fontSize: '18px', fontWeight: 800 }}>{backtestResults.totalTrades || 0}</div>
+            </div>
+            <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '12px', color: 'white', backdropFilter: 'blur(10px)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>WIN RATE</div>
+              <div style={{ fontSize: '18px', fontWeight: 800 }}>{backtestResults.winRate?.toFixed(1) || 0}%</div>
+            </div>
+            <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '12px', color: backtestResults.totalPnL >= 0 ? '#dcfce7' : '#fee2e2', backdropFilter: 'blur(10px)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>TOTAL P&L</div>
+              <div style={{ fontSize: '18px', fontWeight: 800 }}>₹{backtestResults.totalPnL?.toLocaleString('en-IN') || 0}</div>
+            </div>
+            <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '12px', color: 'white', backdropFilter: 'blur(10px)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>AVG P&L</div>
+              <div style={{ fontSize: '18px', fontWeight: 800 }}>₹{backtestResults.avgPnL?.toLocaleString('en-IN') || 0}</div>
+            </div>
+            <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '12px', color: 'white', backdropFilter: 'blur(10px)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>PROFIT FACTOR</div>
+              <div style={{ fontSize: '18px', fontWeight: 800 }}>{backtestResults.profitFactor?.toFixed(2) || 0}</div>
+            </div>
+            <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '12px', color: 'white', backdropFilter: 'blur(10px)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>MAX DRAWDOWN</div>
+              <div style={{ fontSize: '18px', fontWeight: 800 }}>{backtestResults.maxDrawdown?.toFixed(2) || 0}%</div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Signals Table */}
       <div style={{ background: 'white', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', overflow: 'hidden', animation: 'slideDown 0.6s ease 0.45s both' }}>
