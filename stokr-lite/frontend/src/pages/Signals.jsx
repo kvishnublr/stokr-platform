@@ -255,18 +255,19 @@ export default function Signals() {
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'auto', minWidth: '1200px' }}>
+            <div style={{ overflowX: 'auto', width: '100%' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
               <colgroup>
-                <col style={{ minWidth: '130px' }} />
-                <col style={{ minWidth: '80px' }} />
-                <col style={{ minWidth: '100px' }} />
-                <col style={{ minWidth: '100px' }} />
-                <col style={{ minWidth: '100px' }} />
-                <col style={{ minWidth: '100px' }} />
-                <col style={{ minWidth: '140px' }} />
-                <col style={{ minWidth: '120px' }} />
-                <col style={{ minWidth: '100px' }} />
-                <col style={{ minWidth: '100px' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '11%' }} />
               </colgroup>
               <thead style={{ backgroundColor: 'rgba(148,163,184,0.05)' }}>
                 <tr style={{ borderBottom: '2px solid rgba(148,163,184,0.15)' }}>
@@ -295,7 +296,7 @@ export default function Signals() {
                     onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(99,102,241,0.04)'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                   >
-                    <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'normal', wordBreak: 'break-word' }}>{s.symbol}</td>
+                    <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.symbol}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <span style={{
                         padding: '3px 8px',
@@ -366,6 +367,7 @@ export default function Signals() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>
