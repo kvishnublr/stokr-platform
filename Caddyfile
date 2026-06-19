@@ -1,6 +1,16 @@
 stokr.in, www.stokr.in {
     encode gzip zstd
 
+    # Cache busting for assets
+    @assets {
+        path /assets/*
+    }
+    header @assets Cache-Control "public, max-age=31536000, immutable"
+
+    # No cache for HTML and JS
+    header /*.html Cache-Control "no-cache, no-store, must-revalidate"
+    header /*.js Cache-Control "no-cache, no-store, must-revalidate"
+
     # Signals API routes go to stokr-lite backend
     reverse_proxy /api/signals* localhost:8081
     reverse_proxy /api/auth* localhost:8081
