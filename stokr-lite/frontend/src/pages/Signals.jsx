@@ -47,7 +47,7 @@ function StrategyModal({ strategy, signals, onClose }) {
           </div>
           <div style={{ padding: '16px', backgroundColor: 'rgba(16,185,129,0.1)', borderRadius: '12px', borderLeft: '4px solid #10b981' }}>
             <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, marginBottom: '8px' }}>WIN RATE</div>
-            <div style={{ fontSize: '28px', fontWeight: 800', color: '#059669' }}>{winRate}%</div>
+            <div style={{ fontSize: '28px', fontWeight: 800, color: '#059669' }}>{winRate}%</div>
           </div>
           <div style={{ padding: '16px', backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: '12px', borderLeft: '4px solid #3b82f6' }}>
             <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, marginBottom: '8px' }}>EXECUTED</div>
