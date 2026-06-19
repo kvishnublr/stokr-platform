@@ -420,20 +420,22 @@ export default function Signals() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
               <colgroup>
-                <col style={{ width: '12%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '9%' }} />
                 <col style={{ width: '8%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '10%' }} />
-                <col style={{ width: '14%' }} />
                 <col style={{ width: '12%' }} />
-                <col style={{ width: '10%' }} />
                 <col style={{ width: '11%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '12%' }} />
               </colgroup>
               <thead style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
                 <tr>
-                  {['SYMBOL', 'SIDE', 'ENTRY', 'SL', 'TARGET', 'SCORE', 'STRATEGY', 'STATUS', 'SOURCE', 'TIME'].map((h) => (
+                  {['SYMBOL', 'SIDE', 'ENTRY', 'SL', 'TARGET', 'SCORE', 'STRATEGY', 'STATUS', 'SOURCE', 'SIGNAL TIME', 'ENTRY TIME', 'EXIT TIME/TYPE'].map((h) => (
                     <th key={h} style={{ textAlign: h === 'SYMBOL' ? 'left' : 'center', padding: '12px', color: '#6b7280', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>{h}</th>
                   ))}
                 </tr>
@@ -474,6 +476,29 @@ export default function Signals() {
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', color: '#6b7280', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {new Date(s.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                    </td>
+                    <td style={{ padding: '12px', textAlign: 'center', color: '#6b7280', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {s.entryTime ? new Date(s.entryTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                    </td>
+                    <td style={{ padding: '12px', textAlign: 'center', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                        <span style={{ color: '#6b7280' }}>
+                          {s.exitTime ? new Date(s.exitTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                        </span>
+                        <span style={{
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          fontSize: '9px',
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.2px',
+                          background: s.exitType === 'SL_HIT' ? '#fee2e2' : s.exitType === 'TARGET_HIT' ? '#dcfce7' : s.exitType === 'IN_BETWEEN' ? '#fef3c7' : s.exitType === 'REJECTED' ? '#fecaca' : '#e5e7eb',
+                          color: s.exitType === 'SL_HIT' ? '#dc2626' : s.exitType === 'TARGET_HIT' ? '#16a34a' : s.exitType === 'IN_BETWEEN' ? '#ca8a04' : s.exitType === 'REJECTED' ? '#ef4444' : '#6b7280',
+                          display: s.exitType ? 'inline-block' : 'none'
+                        }}>
+                          {s.exitType || '—'}
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 ))}

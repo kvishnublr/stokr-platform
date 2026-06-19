@@ -74,6 +74,15 @@ public class SignalEntity {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    @Column(name = "entry_time")
+    private Instant entryTime;
+
+    @Column(name = "exit_time")
+    private Instant exitTime;
+
+    @Column(name = "exit_type", length = 20)
+    private String exitType; // SL_HIT, TARGET_HIT, IN_BETWEEN, REJECTED, PENDING
+
     public enum Side { BUY, SELL }
 
     public enum SignalSource { INTERNAL, CHARTINK }
