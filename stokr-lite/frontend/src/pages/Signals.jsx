@@ -24,9 +24,12 @@ export default function Signals() {
   const { data: signals = [], isLoading: sigLoading } = useQuery({
     queryKey: ['signals'],
     queryFn: async () => {
-      const res = await client.get('/signals');
+      const res = await client.get('/signals?t=' + Date.now());
       return res.data;
     },
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const { data: stats = { total: 0, today: 0, active: 0 } } = useQuery({

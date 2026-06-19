@@ -17,6 +17,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 import java.util.List;
 
@@ -35,19 +36,26 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/api/auth/**",
-                                "/actuator/**",
-                                "/api/brokers/*/callback",
-                                "/webhooks/**",
-                                "/", "/index.html", "/assets/**",
-                                "/favicon*", "/*.svg", "/*.js", "/*.css",
-                                "/error"
-                        ).permitAll()
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .anyRequest().authenticated()
-                )
+                .authorizeHttpRequests(auth -> {
+                    auth.requestMatchers(
+                        AntPathRequestMatcher.antMatcher("/api/auth/login"),
+                        AntPathRequestMatcher.antMatcher("/api/auth/register"),
+                        AntPathRequestMatcher.antMatcher("/api/auth/refresh"),
+                        AntPathRequestMatcher.antMatcher("/actuator/**"),
+                        AntPathRequestMatcher.antMatcher("/api/brokers/*/callback"),
+                        AntPathRequestMatcher.antMatcher("/webhooks/**"),
+                        AntPathRequestMatcher.antMatcher("/"),
+                        AntPathRequestMatcher.antMatcher("/index.html"),
+                        AntPathRequestMatcher.antMatcher("/assets/**"),
+                        AntPathRequestMatcher.antMatcher("/favicon*"),
+                        AntPathRequestMatcher.antMatcher("/*.svg"),
+                        AntPathRequestMatcher.antMatcher("/*.js"),
+                        AntPathRequestMatcher.antMatcher("/*.css"),
+                        AntPathRequestMatcher.antMatcher("/error")
+                    ).permitAll();
+                    auth.requestMatchers(AntPathRequestMatcher.antMatcher("/api/admin/**")).hasRole("ADMIN");
+                    auth.anyRequest().authenticated();
+                })
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) -> {
                             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);

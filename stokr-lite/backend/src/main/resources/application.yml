@@ -35,7 +35,7 @@ spring:
 
 # JWT Configuration
 jwt:
-  secret: ${JWT_SECRET:change-this-to-a-very-long-random-secret-key-at-least-256-bits}
+  secret: ${JWT_SECRET:4uJj9/XZRn3bB7mTGI9uJVC3p8XLDwKgbA/RG7Osz90=}
   expiration: 86400000        # 24 hours in ms
   refresh-expiration: 604800000  # 7 days in ms
 

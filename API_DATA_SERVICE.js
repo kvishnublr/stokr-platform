@@ -1,9 +1,9 @@
 // STOKR Production API Data Service
-// Fetches REAL data from production server: 173.249.55.84:8080
+// Fetches REAL data from production server: 173.249.55.84:8081
 
 class STOKRDataService {
     constructor() {
-        this.apiBase = 'http://173.249.55.84:8080/api';
+        this.apiBase = 'http://173.249.55.84:8081/api';
         this.timeout = 5000;
         this.cache = {};
         this.cacheTime = 30000; // 30 seconds cache
