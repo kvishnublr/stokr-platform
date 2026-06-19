@@ -12,6 +12,35 @@ function getExitStatus(signal) {
   return { label: 'UNKNOWN', color: '#6b7280', bg: '#e5e7eb' };
 }
 
+function calculatePnL(signal) {
+  if (!signal.exitType || !signal.entryPrice) return 0;
+
+  const isBuy = signal.side === 'BUY';
+  let exitPrice = 0;
+
+  if (signal.exitType === 'TARGET_HIT') {
+    exitPrice = Number(signal.target) || 0;
+  } else if (signal.exitType === 'SL_HIT') {
+    exitPrice = Number(signal.stopLoss) || 0;
+  } else if (signal.exitType === 'IN_BETWEEN') {
+    // Mid-point between entry and target or SL
+    const target = Number(signal.target) || 0;
+    const sl = Number(signal.stopLoss) || 0;
+    exitPrice = ((target + Number(signal.entryPrice)) / 2);
+  }
+
+  const entry = Number(signal.entryPrice);
+  let profit = 0;
+
+  if (isBuy) {
+    profit = (exitPrice - entry) / entry * RISK_PER_SIGNAL;
+  } else {
+    profit = (entry - exitPrice) / entry * RISK_PER_SIGNAL;
+  }
+
+  return profit;
+}
+
 function AnimatedCounter({ value, duration = 1200 }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
@@ -443,23 +472,24 @@ export default function Signals() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
               <colgroup>
-                <col style={{ width: '9%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '5%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '7%' }} />
                 <col style={{ width: '6%' }} />
-                <col style={{ width: '8%' }} />
-                <col style={{ width: '8%' }} />
+                <col style={{ width: '10%' }} />
                 <col style={{ width: '8%' }} />
                 <col style={{ width: '7%' }} />
-                <col style={{ width: '11%' }} />
                 <col style={{ width: '9%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '11%' }} />
                 <col style={{ width: '8%' }} />
-                <col style={{ width: '10%' }} />
-                <col style={{ width: '10%' }} />
-                <col style={{ width: '13%' }} />
               </colgroup>
               <thead style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
-                  {['SYMBOL', 'SIDE', 'ENTRY', 'SL', 'TARGET', 'SCORE', 'STRATEGY', 'STATUS', 'SOURCE', 'SIGNAL TIME', 'ENTRY TIME', 'EXIT STATUS'].map((h) => (
-                    <th key={h} style={{ textAlign: h === 'SYMBOL' ? 'left' : 'center', padding: '12px', color: '#6b7280', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>{h}</th>
+                  {['SYMBOL', 'SIDE', 'ENTRY', 'SL', 'TARGET', 'SCORE', 'STRATEGY', 'STATUS', 'SOURCE', 'SIGNAL TIME', 'ENTRY TIME', 'EXIT STATUS', 'P&L'].map((h) => (
+                    <th key={h} style={{ textAlign: h === 'SYMBOL' ? 'left' : 'center', padding: '12px', color: '#6b7280', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap', background: h === 'P&L' ? 'rgba(99,102,241,0.05)' : 'transparent' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -527,10 +557,111 @@ export default function Signals() {
                         );
                       })()}
                     </td>
+                    <td style={{ padding: '12px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '12px' }}>
+                      {(() => {
+                        const pnl = calculatePnL(s);
+                        return (
+                          <span style={{
+                            color: pnl > 0 ? '#059669' : pnl < 0 ? '#dc2626' : '#6b7280',
+                            fontSize: '12px',
+                            fontWeight: 800
+                          }}>
+                            {pnl > 0 ? '+' : ''}{pnl.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </span>
+                        );
+                      })()}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Summary Footer */}
+        {filtered.length > 0 && (
+          <div style={{ marginTop: '24px', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '16px', padding: '32px', boxShadow: '0 8px 32px rgba(102, 126, 234, 0.3)', animation: 'slideDown 0.6s ease' }}>
+            <div style={{ color: 'white', marginBottom: '24px' }}>
+              <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '4px', opacity: 0.9 }}>Trading Summary</div>
+              <div style={{ fontSize: '28px', fontWeight: 800 }}>
+                Total P&L: ₹{(() => {
+                  let total = 0;
+                  filtered.forEach(s => { total += calculatePnL(s); });
+                  return total.toLocaleString('en-IN', { minimumFractionDigits: 0 });
+                })()}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
+              {/* Total Capital */}
+              <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)' }}>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>Total Capital</div>
+                <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>₹{(RISK_PER_SIGNAL * filtered.length).toLocaleString('en-IN')}</div>
+              </div>
+
+              {/* ROI */}
+              <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)' }}>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>ROI</div>
+                <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>
+                  {(() => {
+                    let total = 0;
+                    filtered.forEach(s => { total += calculatePnL(s); });
+                    const roi = ((total / (RISK_PER_SIGNAL * filtered.length)) * 100).toFixed(2);
+                    return roi + '%';
+                  })()}
+                </div>
+              </div>
+
+              {/* Profitable Trades */}
+              <div style={{ background: 'rgba(16,185,129,0.2)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)', borderLeft: '4px solid #10b981' }}>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>Profitable</div>
+                <div style={{ fontSize: '22px', fontWeight: 800, color: '#10b981' }}>
+                  {(() => {
+                    let count = 0;
+                    filtered.forEach(s => { if (calculatePnL(s) > 0) count++; });
+                    return count;
+                  })()} / {filtered.length}
+                </div>
+              </div>
+
+              {/* Loss Trades */}
+              <div style={{ background: 'rgba(239,68,68,0.2)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)', borderLeft: '4px solid #ef4444' }}>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>Loss Trades</div>
+                <div style={{ fontSize: '22px', fontWeight: 800, color: '#fca5a5' }}>
+                  {(() => {
+                    let count = 0;
+                    filtered.forEach(s => { if (calculatePnL(s) < 0) count++; });
+                    return count;
+                  })()} / {filtered.length}
+                </div>
+              </div>
+
+              {/* Win Rate */}
+              <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)' }}>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>Win Rate</div>
+                <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>
+                  {(() => {
+                    let profitable = 0;
+                    filtered.forEach(s => { if (calculatePnL(s) > 0) profitable++; });
+                    const rate = filtered.length > 0 ? ((profitable / filtered.length) * 100).toFixed(1) : 0;
+                    return rate + '%';
+                  })()}
+                </div>
+              </div>
+
+              {/* Avg P&L */}
+              <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)' }}>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>Avg P&L/Trade</div>
+                <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>
+                  ₹{(() => {
+                    let total = 0;
+                    filtered.forEach(s => { total += calculatePnL(s); });
+                    const avg = filtered.length > 0 ? (total / filtered.length).toFixed(0) : 0;
+                    return parseInt(avg).toLocaleString('en-IN');
+                  })()}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
