@@ -161,15 +161,17 @@ export default function Signals() {
     })
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
+  // Calculate strategy stats based on current filter
   const strategyStats = {};
-  signals.forEach(s => {
+  filtered.forEach(s => {
     const strat = s.reason || 'Unknown';
     if (!strategyStats[strat]) {
-      strategyStats[strat] = { total: 0, generated: 0, executed: 0 };
+      strategyStats[strat] = { total: 0, generated: 0, executed: 0, rejected: 0 };
     }
     strategyStats[strat].total++;
     if (s.status === 'GENERATED') strategyStats[strat].generated++;
     if (s.status === 'EXECUTED') strategyStats[strat].executed++;
+    if (s.status === 'REJECTED') strategyStats[strat].rejected++;
   });
 
   const statCards = [
