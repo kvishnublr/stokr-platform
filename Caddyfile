@@ -18,7 +18,10 @@ stokr.in, www.stokr.in {
     # Other API routes go to main backend
     reverse_proxy /api/* stokr-api:8080
 
-    # UI routes go to frontend
+    # Signals UI routes go to stokr-lite frontend
+    reverse_proxy /signals* localhost:8082
+
+    # All other UI routes go to main frontend
     reverse_proxy stokr-ui:80
 }
 
