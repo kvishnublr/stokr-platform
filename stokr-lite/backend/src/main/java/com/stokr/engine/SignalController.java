@@ -98,8 +98,9 @@ public class SignalController {
             signal.setSymbol(symbols[i]);
             signal.setSide(sides[i]);
             signal.setEntryPrice(new BigDecimal(prices[i]));
-            signal.setTarget(new BigDecimal(prices[i] * 1.05));
-            signal.setStopLoss(new BigDecimal(prices[i] * 0.97));
+            // More realistic intraday targets: 1.5% profit, 0.8% stop loss
+            signal.setTarget(new BigDecimal(prices[i] * 1.015));
+            signal.setStopLoss(new BigDecimal(prices[i] * 0.992));
             signal.setConfidence(new BigDecimal(confidences[i]));
             signal.setStatus(statuses[i]);
             signal.setCreatedAt(Instant.now().minusSeconds(i * 300));
