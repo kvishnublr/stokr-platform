@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 
@@ -103,9 +104,9 @@ public class ChartinkWebhookController {
                     85,
                     90.0,
                     "PENDING",
-                    detectedAt,
+                    new Timestamp(detectedAt.toEpochMilli()),
                     true,
-                    Instant.now()
+                    new Timestamp(System.currentTimeMillis())
             );
 
             log.info("chartink.signal_inserted symbol={} price={} scan={}", symbol, entryPrice, scanName);
