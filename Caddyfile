@@ -1,9 +1,13 @@
 stokr.in, www.stokr.in {
     encode gzip zstd
-    
-    # API routes go to backend
+
+    # Signals API routes go to stokr-lite backend
+    reverse_proxy /api/signals* localhost:8081
+    reverse_proxy /api/auth* localhost:8081
+
+    # Other API routes go to main backend
     reverse_proxy /api/* stokr-api:8080
-    
+
     # UI routes go to frontend
     reverse_proxy stokr-ui:80
 }
