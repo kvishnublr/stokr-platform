@@ -182,20 +182,20 @@ export default function Signals() {
             <div>Signals will appear here when your active deployments generate them.</div>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
+            <table style={{ width: '100%', minWidth: '1400px', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid rgba(148,163,184,0.15)' }}>
-                  <th style={{ textAlign: 'left', padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Symbol</th>
-                  <th style={{ textAlign: 'left', padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Side</th>
-                  <th style={{ textAlign: 'right', padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Entry</th>
-                  <th style={{ textAlign: 'right', padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>SL</th>
-                  <th style={{ textAlign: 'right', padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Target</th>
-                  <th style={{ textAlign: 'center', padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Mvt Score</th>
-                  <th style={{ textAlign: 'left', padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Scanner</th>
-                  <th style={{ textAlign: 'center', padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Status</th>
-                  <th style={{ textAlign: 'center', padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Source</th>
-                  <th style={{ textAlign: 'right', padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Time</th>
+                  <th style={{ textAlign: 'left', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Symbol</th>
+                  <th style={{ textAlign: 'left', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Side</th>
+                  <th style={{ textAlign: 'right', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Entry</th>
+                  <th style={{ textAlign: 'right', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>SL</th>
+                  <th style={{ textAlign: 'right', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Target</th>
+                  <th style={{ textAlign: 'center', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Mvt Score</th>
+                  <th style={{ textAlign: 'left', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Scanner</th>
+                  <th style={{ textAlign: 'center', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Status</th>
+                  <th style={{ textAlign: 'center', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Source</th>
+                  <th style={{ textAlign: 'right', padding: '16px 20px', color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>Time</th>
                 </tr>
               </thead>
               <tbody>
@@ -211,10 +211,10 @@ export default function Signals() {
                     onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(99,102,241,0.04)'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                   >
-                    <td style={{ padding: '14px 16px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{s.symbol}</td>
-                    <td style={{ padding: '14px 16px' }}>
+                    <td style={{ padding: '16px 20px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' }}>{s.symbol}</td>
+                    <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
                       <span style={{
-                        padding: '4px 10px',
+                        padding: '4px 12px',
                         borderRadius: '8px',
                         fontSize: '11px',
                         fontWeight: 800,
@@ -222,21 +222,22 @@ export default function Signals() {
                         letterSpacing: '0.5px',
                         background: sideColors[s.side]?.bg || 'rgba(148,163,184,0.12)',
                         color: sideColors[s.side]?.text || '#64748b',
+                        display: 'inline-block',
                       }}>{s.side}</span>
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    <td style={{ padding: '16px 20px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                       {s.entryPrice ? Number(s.entryPrice).toFixed(2) : '—'}
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: '#e11d48' }}>
+                    <td style={{ padding: '16px 20px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: '#e11d48', whiteSpace: 'nowrap' }}>
                       {s.stopLoss ? Number(s.stopLoss).toFixed(2) : '—'}
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: '#059669' }}>
+                    <td style={{ padding: '16px 20px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: '#059669', whiteSpace: 'nowrap' }}>
                       {s.target ? Number(s.target).toFixed(2) : '—'}
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                    <td style={{ padding: '16px 20px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {s.movementScore != null ? (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                          <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'rgba(148,163,184,0.2)', overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                          <div style={{ width: '50px', height: '4px', borderRadius: '2px', background: 'rgba(148,163,184,0.2)', overflow: 'hidden' }}>
                             <div style={{ width: `${Math.min(s.movementScore, 100)}%`, height: '100%', borderRadius: '2px', background: s.movementScore >= 70 ? '#10b981' : s.movementScore >= 50 ? '#f59e0b' : '#ef4444' }} />
                           </div>
                           <span style={{ fontSize: '11px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>{s.movementScore.toFixed(1)}</span>
@@ -245,12 +246,12 @@ export default function Signals() {
                         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>—</span>
                       )}
                     </td>
-                    <td style={{ padding: '14px 16px', color: 'var(--text-secondary)', fontSize: '12px', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.scannerName}>
+                    <td style={{ padding: '16px 20px', color: 'var(--text-secondary)', fontSize: '12px', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.scannerName}>
                       {s.scannerName || '—'}
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                    <td style={{ padding: '16px 20px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <span style={{
-                        padding: '4px 10px',
+                        padding: '4px 12px',
                         borderRadius: '8px',
                         fontSize: '10px',
                         fontWeight: 800,
@@ -259,11 +260,12 @@ export default function Signals() {
                         background: statusColors[s.status]?.bg || 'rgba(148,163,184,0.12)',
                         color: statusColors[s.status]?.text || '#64748b',
                         border: `1px solid ${statusColors[s.status]?.border || 'rgba(148,163,184,0.2)'}`,
+                        display: 'inline-block',
                       }}>{s.status}</span>
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                    <td style={{ padding: '16px 20px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <span style={{
-                        padding: '4px 10px',
+                        padding: '4px 12px',
                         borderRadius: '8px',
                         fontSize: '10px',
                         fontWeight: 800,
@@ -272,9 +274,10 @@ export default function Signals() {
                         background: sourceColors[s.source]?.bg || 'rgba(148,163,184,0.12)',
                         color: sourceColors[s.source]?.text || '#64748b',
                         border: `1px solid ${sourceColors[s.source]?.border || 'rgba(148,163,184,0.2)'}`,
+                        display: 'inline-block',
                       }}>{s.source || 'INTERNAL'}</span>
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right', color: 'var(--text-muted)', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace' }}>
+                    <td style={{ padding: '16px 20px', textAlign: 'right', color: 'var(--text-muted)', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' }}>
                       {new Date(s.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                     </td>
                   </tr>
