@@ -6,6 +6,7 @@ import Register from './pages/Register';
 import BrokerCallback from './pages/BrokerCallback';
 import Dashboard from './pages/Dashboard';
 import Signals from './pages/Signals';
+import AdvancedBacktest from './pages/AdvancedBacktest';
 import Strategies from './pages/Strategies';
 import Deployments from './pages/Deployments';
 import Brokers from './pages/Brokers';
@@ -33,6 +34,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/signals" element={<Signals />} />
+          <Route path="/backtest" element={<AdvancedBacktest />} />
           <Route path="/strategies" element={<Strategies />} />
           <Route path="/deployments" element={<Deployments />} />
           <Route path="/brokers" element={<Brokers />} />
