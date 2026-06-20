@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 const traderLinks = [
   { to: '/', label: 'Dashboard', icon: '📊', end: true },
   { to: '/signals', label: 'Signals', icon: '📡' },
+  { to: '/backtest', label: 'Backtest', icon: '📈' },
   { to: '/strategies', label: 'Strategies', icon: '🎯' },
   { to: '/deployments', label: 'Deployments', icon: '⚡' },
   { to: '/brokers', label: 'Brokers', icon: '🏦' },
