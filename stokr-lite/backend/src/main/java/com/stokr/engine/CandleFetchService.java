@@ -1,5 +1,7 @@
 package com.stokr.engine;
 
+import com.stokr.external.ChartinkCandleService;
+import com.stokr.external.ZerodhaCandleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -15,6 +17,8 @@ import java.util.*;
 public class CandleFetchService {
 
     private final CandleDataRepository candleRepository;
+    private final ChartinkCandleService chartinkCandleService;
+    private final ZerodhaCandleService zerodhaCandleService;
 
     public List<CandleData> fetchCandles(String symbol, String timeframe, Instant startTime, Instant endTime) {
         log.info("Fetching candles: symbol={}, timeframe={}, start={}, end={}", symbol, timeframe, startTime, endTime);
@@ -28,23 +32,25 @@ public class CandleFetchService {
             return dbCandles;
         }
 
-        log.warn("No candles in DB, would fetch from Chartink/Zerodha (implement these methods)");
+        log.info("No candles in DB, fetching from external sources...");
 
-        // TODO: 2. Try Chartink API
-        // List<CandleData> chartinkCandles = fetchFromChartink(symbol, timeframe, startTime, endTime);
-        // if (!chartinkCandles.isEmpty()) {
-        //     saveCandles(chartinkCandles);
-        //     return chartinkCandles;
-        // }
+        // 2. Try Chartink API
+        List<CandleData> chartinkCandles = chartinkCandleService.fetchCandles(symbol, timeframe, startTime, endTime);
+        if (!chartinkCandles.isEmpty()) {
+            log.info("Fetched {} candles from Chartink", chartinkCandles.size());
+            saveCandles(chartinkCandles);
+            return chartinkCandles;
+        }
 
-        // TODO: 3. Try Zerodha API with auth handling
-        // List<CandleData> zerodhaCandles = fetchFromZerodha(symbol, timeframe, startTime, endTime);
-        // if (!zerodhaCandles.isEmpty()) {
-        //     saveCandles(zerodhaCandles);
-        //     return zerodhaCandles;
-        // }
+        // 3. Try Zerodha API with auth handling
+        List<CandleData> zerodhaCandles = zerodhaCandleService.fetchCandles(symbol, timeframe, startTime, endTime);
+        if (!zerodhaCandles.isEmpty()) {
+            log.info("Fetched {} candles from Zerodha", zerodhaCandles.size());
+            saveCandles(zerodhaCandles);
+            return zerodhaCandles;
+        }
 
-        log.error("Could not fetch candles from any source");
+        log.warn("Could not fetch candles from any source, returning empty list");
         return Collections.emptyList();
     }
 
