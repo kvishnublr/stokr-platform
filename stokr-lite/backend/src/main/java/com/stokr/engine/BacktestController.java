@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Slf4j
@@ -17,6 +18,7 @@ public class BacktestController {
 
     private final SignalRepository signalRepository;
     private final CandleFetchService candleFetchService;
+    private final BacktestDataLoaderService dataLoaderService;
 
     @PostMapping("/run")
     public ResponseEntity<Map<String, Object>> runBacktest(
@@ -77,37 +79,55 @@ public class BacktestController {
         return ResponseEntity.ok(result);
     }
 
+    @PostMapping("/load-data")
+    public ResponseEntity<Map<String, Object>> loadHistoricalData(
+            @RequestParam(required = false) String strategy,
+            @RequestParam(defaultValue = "daily") String timeframe) {
+
+        log.info("Loading 1-month historical data for strategy: {}, timeframe: {}", strategy, timeframe);
+
+        try {
+            Instant now = Instant.now();
+            Instant oneMonthAgo = now.minus(30, ChronoUnit.DAYS);
+
+            Map<String, Object> result = dataLoaderService.loadStrategyData(strategy, timeframe, oneMonthAgo, now);
+
+            log.info("Data loaded: {}", result);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Data loading failed", e);
+            return ResponseEntity.badRequest().body(Map.of("error", "Data loading failed: " + e.getMessage()));
+        }
+    }
+
     @PostMapping("/advanced")
     public ResponseEntity<Map<String, Object>> runAdvancedBacktest(
             @RequestParam(required = false) String strategy,
             @RequestParam(required = false) String dateStart,
             @RequestParam(required = false) String dateEnd,
-            @RequestParam(required = false) String symbols,
             @RequestParam(defaultValue = "daily") String timeframe) {
 
-        log.info("Running advanced backtest: strategy={}, dateStart={}, dateEnd={}, symbols={}, timeframe={}",
-                strategy, dateStart, dateEnd, symbols, timeframe);
+        log.info("Running advanced backtest: strategy={}, dateStart={}, dateEnd={}, timeframe={}",
+                strategy, dateStart, dateEnd, timeframe);
 
         try {
             Instant startTime = dateStart != null ? Instant.parse(dateStart) : Instant.now().minusSeconds(2592000);
             Instant endTime = dateEnd != null ? Instant.parse(dateEnd) : Instant.now();
-            List<String> symbolList = symbols != null ? Arrays.asList(symbols.split(",")) : List.of("RELIANCE", "TCS", "WIPRO");
 
-            // Fetch candle data
+            // Get symbols for this strategy
+            List<String> symbolList = dataLoaderService.getStrategySymbols(strategy);
+            log.info("Symbols for strategy {}: {}", strategy, symbolList);
+
+            // Fetch/verify candle data
             Map<String, List<CandleData>> candlesBySymbol = new HashMap<>();
             for (String symbol : symbolList) {
                 List<CandleData> candles = candleFetchService.fetchCandles(symbol, timeframe, startTime, endTime);
-                if (candles.isEmpty()) {
-                    log.warn("No candles found for {}, generating mock data", symbol);
-                    candles = candleFetchService.generateMockCandles(symbol, timeframe, startTime, endTime);
-                    candleFetchService.saveCandles(candles);
-                }
                 candlesBySymbol.put(symbol, candles);
             }
 
-            // Get signals
+            // Get signals for this strategy
             List<SignalEntity> signals = signalRepository.findAll();
-            if (strategy != null && !strategy.isEmpty()) {
+            if (strategy != null && !strategy.isEmpty() && !"ALL".equalsIgnoreCase(strategy)) {
                 signals = signals.stream()
                     .filter(s -> s.getReason() != null && s.getReason().contains(strategy))
                     .toList();
@@ -154,6 +174,7 @@ public class BacktestController {
             result.put("profitFactor", calculateProfitFactor(signals));
             result.put("candlesLoaded", candlesBySymbol.values().stream().mapToInt(List::size).sum());
             result.put("dateRange", Map.of("start", startTime.toString(), "end", endTime.toString()));
+            result.put("symbols", symbolList);
 
             log.info("Advanced backtest complete: {}", result);
             return ResponseEntity.ok(result);

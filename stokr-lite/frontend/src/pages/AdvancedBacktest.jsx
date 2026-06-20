@@ -5,31 +5,57 @@ import client from '../api/client';
 export default function AdvancedBacktest() {
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
-  const [selectedSymbols, setSelectedSymbols] = useState(['RELIANCE', 'TCS', 'WIPRO']);
   const [selectedTimeframe, setSelectedTimeframe] = useState('daily');
   const [selectedStrategy, setSelectedStrategy] = useState('ALL');
   const [backtestResults, setBacktestResults] = useState(null);
   const [backtestLoading, setBacktestLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [dataLoadResult, setDataLoadResult] = useState(null);
 
   const { data: strategies = [] } = useQuery({
     queryKey: ['strategies'],
     queryFn: async () => {
       const res = await client.get('/signals?t=' + Date.now());
       const strategiesSet = new Set(res.data.map(s => s.reason).filter(Boolean));
-      return Array.from(strategiesSet).sort();
+      return ['ORB', 'ADV_CASH', 'VWAP_SQUEEZE', 'GAP_FILL', 'VWAP_BOUNCE'].filter(s => strategiesSet.has(s));
     },
   });
 
   const timeframes = ['1min', '5min', '15min', 'hourly', 'daily'];
-  const commonSymbols = ['RELIANCE', 'TCS', 'WIPRO', 'INFY', 'HDFC', 'ICICI', 'AXISBANK'];
 
-  const handleSymbolToggle = (symbol) => {
-    setSelectedSymbols(prev =>
-      prev.includes(symbol)
-        ? prev.filter(s => s !== symbol)
-        : [...prev, symbol]
-    );
+  const strategySymbols = {
+    'ORB': ['RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICI'],
+    'ADV_CASH': ['RELIANCE', 'TCS', 'WIPRO', 'AXISBANK', 'INFY'],
+    'VWAP_SQUEEZE': ['RELIANCE', 'TCS', 'WIPRO', 'HDFC', 'ICICI'],
+    'GAP_FILL': ['RELIANCE', 'TCS', 'INFY', 'HDFC', 'AXISBANK'],
+    'VWAP_BOUNCE': ['RELIANCE', 'TCS', 'WIPRO', 'ICICI', 'INFY'],
+    'ALL': ['RELIANCE', 'TCS', 'WIPRO', 'INFY', 'HDFC', 'ICICI', 'AXISBANK']
+  };
+
+  const getSymbolsForStrategy = (strategy) => {
+    return strategySymbols[strategy] || strategySymbols['ALL'];
+  };
+
+  const loadHistoricalData = async () => {
+    setDataLoading(true);
+    setError(null);
+    setDataLoadResult(null);
+    try {
+      const params = new URLSearchParams();
+      if (selectedStrategy && selectedStrategy !== 'ALL') {
+        params.append('strategy', selectedStrategy);
+      }
+      params.append('timeframe', selectedTimeframe);
+
+      const res = await client.post('/backtest/load-data?' + params);
+      setDataLoadResult(res.data);
+    } catch (e) {
+      console.error('Data loading failed:', e);
+      setError(e.response?.data?.error || 'Data loading failed');
+    } finally {
+      setDataLoading(false);
+    }
   };
 
   const runBacktest = async () => {
@@ -42,7 +68,6 @@ export default function AdvancedBacktest() {
       }
       if (dateStart) params.append('dateStart', new Date(dateStart).toISOString());
       if (dateEnd) params.append('dateEnd', new Date(dateEnd).toISOString());
-      if (selectedSymbols.length > 0) params.append('symbols', selectedSymbols.join(','));
       params.append('timeframe', selectedTimeframe);
 
       const res = await client.post('/backtest/advanced?' + params);
@@ -56,6 +81,8 @@ export default function AdvancedBacktest() {
     }
   };
 
+  const symbols = getSymbolsForStrategy(selectedStrategy);
+
   return (
     <div style={{ animation: 'fadeIn 0.5s ease', padding: '24px' }}>
       <style>{`
@@ -63,182 +90,172 @@ export default function AdvancedBacktest() {
         .input-group { margin-bottom: '16px'; }
         .label-text { display: 'block'; fontSize: '12px'; fontWeight: '600'; color: '#6b7280'; marginBottom: '6px'; textTransform: 'uppercase'; }
         .input-field { width: '100%'; padding: '8px 12px'; borderRadius: '8px'; border: '1px solid #d1d5db'; fontSize: '13px'; }
-        .multi-select { display: 'flex'; flexWrap: 'wrap'; gap: '8px'; }
-        .tag { padding: '4px 12px'; borderRadius: '6px'; backgroundColor: '#e0e7ff'; color: '#4f46e5'; cursor: 'pointer'; fontSize: '12px'; border: '1px solid #c7d2fe'; transition: 'all 0.2s'; }
-        .tag:hover { backgroundColor: '#c7d2fe'; }
-        .tag.active { backgroundColor: '#4f46e5'; color: 'white'; }
         .button-primary { padding: '10px 20px'; background: 'linear-gradient(135deg, #6366f1, #8b5cf6)'; color: 'white'; border: 'none'; borderRadius: '8px'; cursor: 'pointer'; fontSize: '13px'; fontWeight: '700'; transition: 'all 0.2s'; }
         .button-primary:hover { transform: 'translateY(-2px)'; boxShadow: '0 8px 16px rgba(99, 102, 241, 0.3)'; }
         .button-primary:disabled { opacity: '0.5'; cursor: 'not-allowed'; }
+        .button-secondary { padding: '10px 20px'; background: '#f3f4f6'; color: '#374151'; border: '1px solid #d1d5db'; borderRadius: '8px'; cursor: 'pointer'; fontSize: '13px'; fontWeight: '600'; transition: 'all 0.2s'; }
+        .button-secondary:hover { background: '#e5e7eb'; }
+        .symbol-badge { display: 'inline-block'; padding: '4px 10px'; background: '#e0e7ff'; color: '#4f46e5'; borderRadius: '6px'; fontSize: '12px'; margin: '2px'; }
       `}</style>
 
       {/* Header */}
       <div style={{ marginBottom: '32px' }}>
         <h1 style={{ fontSize: '32px', fontWeight: '800', color: '#1f2937', margin: 0, marginBottom: '8px' }}>
-          📊 Advanced Backtest
+          📈 Backtest by Strategy
         </h1>
         <p style={{ color: '#6b7280', fontSize: '15px', margin: 0 }}>
-          Backtest your strategies against historical candle data with date range selection
+          Load 1 month of candle data from Chartink, then backtest your strategy
         </p>
       </div>
 
       {/* Controls Panel */}
       <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: '24px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-          {/* Date Start */}
-          <div>
-            <label style={eval('({ display: "block", fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "6px", textTransform: "uppercase" })')}>
-              Start Date
-            </label>
-            <input
-              type="date"
-              value={dateStart}
-              onChange={(e) => setDateStart(e.target.value)}
-              style={eval('({ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px" })')}
-            />
-          </div>
-
-          {/* Date End */}
-          <div>
-            <label style={eval('({ display: "block", fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "6px", textTransform: "uppercase" })')}>
-              End Date
-            </label>
-            <input
-              type="date"
-              value={dateEnd}
-              onChange={(e) => setDateEnd(e.target.value)}
-              style={eval('({ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px" })')}
-            />
-          </div>
-
-          {/* Timeframe */}
-          <div>
-            <label style={eval('({ display: "block", fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "6px", textTransform: "uppercase" })')}>
-              Timeframe
-            </label>
-            <select
-              value={selectedTimeframe}
-              onChange={(e) => setSelectedTimeframe(e.target.value)}
-              style={eval('({ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px", cursor: "pointer" })')}
-            >
-              {timeframes.map(tf => <option key={tf} value={tf}>{tf}</option>)}
-            </select>
-          </div>
-
           {/* Strategy */}
           <div>
-            <label style={eval('({ display: "block", fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "6px", textTransform: "uppercase" })')}>
-              Strategy
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '6px', textTransform: 'uppercase' }}>
+              Strategy (Load Data for This)
             </label>
             <select
               value={selectedStrategy}
               onChange={(e) => setSelectedStrategy(e.target.value)}
-              style={eval('({ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px", cursor: "pointer" })')}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px', cursor: 'pointer' }}
             >
               <option value="ALL">All Strategies</option>
               {strategies.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+
+          {/* Timeframe */}
+          <div>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '6px', textTransform: 'uppercase' }}>
+              Timeframe
+            </label>
+            <select
+              value={selectedTimeframe}
+              onChange={(e) => setSelectedTimeframe(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px', cursor: 'pointer' }}
+            >
+              {timeframes.map(tf => <option key={tf} value={tf}>{tf}</option>)}
+            </select>
+          </div>
+
+          {/* Date Start */}
+          <div>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '6px', textTransform: 'uppercase' }}>
+              Backtest Start Date
+            </label>
+            <input
+              type="date"
+              value={dateStart}
+              onChange={(e) => setDateStart(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px' }}
+            />
+          </div>
+
+          {/* Date End */}
+          <div>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '6px', textTransform: 'uppercase' }}>
+              Backtest End Date
+            </label>
+            <input
+              type="date"
+              value={dateEnd}
+              onChange={(e) => setDateEnd(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px' }}
+            />
+          </div>
         </div>
 
-        {/* Symbols */}
+        {/* Symbols for selected strategy */}
         <div style={{ marginBottom: '24px' }}>
-          <label style={eval('({ display: "block", fontSize: "12px", fontWeight: "600", color: "#6b7280", marginBottom: "12px", textTransform: "uppercase" })')}>
-            Select Symbols ({selectedSymbols.length} selected)
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#6b7280', marginBottom: '8px', textTransform: 'uppercase' }}>
+            Stocks for {selectedStrategy}
           </label>
-          <div style={eval('({ display: "flex", flexWrap: "wrap", gap: "8px" })')}>
-            {commonSymbols.map(symbol => (
-              <button
-                key={symbol}
-                onClick={() => handleSymbolToggle(symbol)}
-                style={{
-                  padding: '6px 16px',
-                  borderRadius: '6px',
-                  border: selectedSymbols.includes(symbol) ? '2px solid #4f46e5' : '1px solid #d1d5db',
-                  backgroundColor: selectedSymbols.includes(symbol) ? '#eef2ff' : '#f9fafb',
-                  color: selectedSymbols.includes(symbol) ? '#4f46e5' : '#6b7280',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {symbol}
-              </button>
+          <div>
+            {symbols.map(symbol => (
+              <span key={symbol} className="symbol-badge">{symbol}</span>
             ))}
           </div>
         </div>
 
-        {/* Run Button */}
-        <button
-          onClick={runBacktest}
-          disabled={backtestLoading}
-          style={{
-            padding: '12px 24px',
-            background: backtestLoading ? '#ccc' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: backtestLoading ? 'not-allowed' : 'pointer',
-            fontSize: '14px',
-            fontWeight: '700',
-            transition: 'all 0.2s',
-            opacity: backtestLoading ? 0.6 : 1
-          }}
-        >
-          {backtestLoading ? '⏳ Running Backtest...' : '▶ Run Backtest'}
-        </button>
+        {/* Buttons */}
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <button
+            onClick={loadHistoricalData}
+            disabled={dataLoading || backtestLoading}
+            className="button-secondary"
+          >
+            {dataLoading ? '⏳ Loading Data...' : '📥 Load 1-Month Data from Chartink'}
+          </button>
+          <button
+            onClick={runBacktest}
+            disabled={backtestLoading || dataLoading}
+            className="button-primary"
+          >
+            {backtestLoading ? '⏳ Running Backtest...' : '▶ Run Backtest'}
+          </button>
+        </div>
       </div>
 
-      {/* Error Message */}
+      {/* Data Load Result */}
+      {dataLoadResult && (
+        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '12px', padding: '16px', marginBottom: '24px' }}>
+          <h3 style={{ margin: '0 0 12px 0', color: '#166534' }}>✅ Data Loaded Successfully</h3>
+          <div style={{ fontSize: '13px', color: '#166534' }}>
+            <p><strong>Strategy:</strong> {dataLoadResult.strategy}</p>
+            <p><strong>Total Candles:</strong> {dataLoadResult.totalCandles}</p>
+            <p><strong>Symbols:</strong> {dataLoadResult.symbols?.join(', ')}</p>
+            {dataLoadResult.failedSymbols?.length > 0 && (
+              <p><strong>Failed:</strong> {dataLoadResult.failedSymbols.join(', ')}</p>
+            )}
+            <p><strong>Date Range:</strong> {new Date(dataLoadResult.dateRange.start).toLocaleDateString()} to {new Date(dataLoadResult.dateRange.end).toLocaleDateString()}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Error */}
       {error && (
-        <div style={{ padding: '12px', background: '#fee2e2', color: '#dc2626', borderRadius: '8px', marginBottom: '24px', fontSize: '13px', fontWeight: '600' }}>
+        <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '12px', padding: '16px', marginBottom: '24px', color: '#991b1b' }}>
           ❌ {error}
         </div>
       )}
 
-      {/* Results */}
+      {/* Backtest Results */}
       {backtestResults && (
         <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#1f2937', marginTop: 0, marginBottom: '16px' }}>
-            📈 Backtest Results
-          </h2>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
-            <div style={{ background: '#f0f9ff', borderRadius: '8px', padding: '16px', borderLeft: '4px solid #3b82f6' }}>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', marginBottom: '4px' }}>TOTAL TRADES</div>
-              <div style={{ fontSize: '20px', fontWeight: '800', color: '#1f2937' }}>{backtestResults.totalTrades || 0}</div>
+          <h2 style={{ margin: '0 0 20px 0', color: '#1f2937' }}>📊 Backtest Results</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            <div style={{ padding: '16px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', textTransform: 'uppercase', fontWeight: '600' }}>Total Trades</div>
+              <div style={{ fontSize: '24px', fontWeight: '800', color: '#1f2937' }}>{backtestResults.totalTrades}</div>
             </div>
-            <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', borderLeft: '4px solid #10b981' }}>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', marginBottom: '4px' }}>WIN RATE</div>
-              <div style={{ fontSize: '20px', fontWeight: '800', color: '#059669' }}>{backtestResults.winRate?.toFixed(1) || 0}%</div>
+            <div style={{ padding: '16px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', textTransform: 'uppercase', fontWeight: '600' }}>Win Rate</div>
+              <div style={{ fontSize: '24px', fontWeight: '800', color: '#10b981' }}>{backtestResults.winRate.toFixed(2)}%</div>
             </div>
-            <div style={{ background: backtestResults.totalPnL >= 0 ? '#f0fdf4' : '#fef2f2', borderRadius: '8px', padding: '16px', borderLeft: backtestResults.totalPnL >= 0 ? '4px solid #10b981' : '4px solid #ef4444' }}>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', marginBottom: '4px' }}>TOTAL P&L</div>
-              <div style={{ fontSize: '20px', fontWeight: '800', color: backtestResults.totalPnL >= 0 ? '#059669' : '#dc2626' }}>
-                ₹{Math.abs(backtestResults.totalPnL || 0).toLocaleString('en-IN')}
-              </div>
+            <div style={{ padding: '16px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', textTransform: 'uppercase', fontWeight: '600' }}>Total P&L</div>
+              <div style={{ fontSize: '24px', fontWeight: '800', color: backtestResults.totalPnL >= 0 ? '#10b981' : '#ef4444' }}>₹{backtestResults.totalPnL.toFixed(2)}</div>
             </div>
-            <div style={{ background: '#f5f3ff', borderRadius: '8px', padding: '16px', borderLeft: '4px solid #7c3aed' }}>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', marginBottom: '4px' }}>AVG P&L</div>
-              <div style={{ fontSize: '20px', fontWeight: '800', color: '#7c3aed' }}>₹{backtestResults.avgPnL?.toLocaleString('en-IN') || 0}</div>
+            <div style={{ padding: '16px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', textTransform: 'uppercase', fontWeight: '600' }}>Avg P&L</div>
+              <div style={{ fontSize: '24px', fontWeight: '800', color: backtestResults.avgPnL >= 0 ? '#10b981' : '#ef4444' }}>₹{backtestResults.avgPnL.toFixed(2)}</div>
             </div>
-            <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '16px', borderLeft: '4px solid #f59e0b' }}>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', marginBottom: '4px' }}>PROFIT FACTOR</div>
-              <div style={{ fontSize: '20px', fontWeight: '800', color: '#b45309' }}>{backtestResults.profitFactor?.toFixed(2) || 0}</div>
+            <div style={{ padding: '16px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', textTransform: 'uppercase', fontWeight: '600' }}>Profit Factor</div>
+              <div style={{ fontSize: '24px', fontWeight: '800', color: '#f59e0b' }}>{backtestResults.profitFactor.toFixed(2)}</div>
             </div>
-            <div style={{ background: '#fef2f2', borderRadius: '8px', padding: '16px', borderLeft: '4px solid #ef4444' }}>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', marginBottom: '4px' }}>MAX DRAWDOWN</div>
-              <div style={{ fontSize: '20px', fontWeight: '800', color: '#dc2626' }}>{backtestResults.maxDrawdown?.toFixed(2) || 0}%</div>
+            <div style={{ padding: '16px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', textTransform: 'uppercase', fontWeight: '600' }}>Max Drawdown</div>
+              <div style={{ fontSize: '24px', fontWeight: '800', color: '#ef4444' }}>{backtestResults.maxDrawdown.toFixed(2)}%</div>
             </div>
           </div>
-
-          {backtestResults.dateRange && (
-            <div style={{ marginTop: '16px', fontSize: '12px', color: '#6b7280', padding: '12px', background: '#f9fafb', borderRadius: '8px' }}>
-              📅 Tested: {new Date(backtestResults.dateRange.start).toLocaleDateString()} to {new Date(backtestResults.dateRange.end).toLocaleDateString()}
-              {backtestResults.candlesLoaded && <div>📊 Candles loaded: {backtestResults.candlesLoaded}</div>}
-            </div>
-          )}
+          <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e5e7eb', fontSize: '12px', color: '#6b7280' }}>
+            <p><strong>Strategy:</strong> {backtestResults.strategy}</p>
+            <p><strong>Candles Loaded:</strong> {backtestResults.candlesLoaded}</p>
+            <p><strong>Date Range:</strong> {new Date(backtestResults.dateRange.start).toLocaleDateString()} to {new Date(backtestResults.dateRange.end).toLocaleDateString()}</p>
+          </div>
         </div>
       )}
     </div>
