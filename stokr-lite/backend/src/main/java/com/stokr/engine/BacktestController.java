@@ -125,40 +125,23 @@ public class BacktestController {
                 candlesBySymbol.put(symbol, candles);
             }
 
-            // Get signals for this strategy
-            List<SignalEntity> signals = signalRepository.findAll();
-            if (strategy != null && !strategy.isEmpty() && !"ALL".equalsIgnoreCase(strategy)) {
-                signals = signals.stream()
-                    .filter(s -> s.getReason() != null && s.getReason().contains(strategy))
-                    .toList();
-            }
+            // Generate signals from candles using strategy logic
+            List<Map<String, Object>> trades = generateTrades(candlesBySymbol, strategy != null ? strategy : "ORB");
 
             // Calculate metrics
             Map<String, Object> result = new LinkedHashMap<>();
             double totalPnL = 0;
             int winCount = 0;
             int lossCount = 0;
-            int totalTrades = signals.size();
+            int totalTrades = trades.size();
 
-            for (SignalEntity signal : signals) {
-                if (signal.getExitType() != null) {
-                    if ("TARGET_HIT".equals(signal.getExitType())) {
-                        winCount++;
-                        if (signal.getTarget() != null && signal.getEntryPrice() != null) {
-                            double pnl = (signal.getTarget().doubleValue() - signal.getEntryPrice().doubleValue())
-                                / signal.getEntryPrice().doubleValue() * 5000;
-                            totalPnL += pnl;
-                        }
-                    } else if ("SL_HIT".equals(signal.getExitType())) {
-                        lossCount++;
-                        if (signal.getStopLoss() != null && signal.getEntryPrice() != null) {
-                            double loss = (signal.getEntryPrice().doubleValue() - signal.getStopLoss().doubleValue())
-                                / signal.getEntryPrice().doubleValue() * 5000;
-                            totalPnL -= loss;
-                        }
-                    }
-                }
+            for (Map<String, Object> trade : trades) {
+                double pnl = (double) trade.getOrDefault("pnl", 0.0);
+                totalPnL += pnl;
+                if (pnl > 0) winCount++;
+                else if (pnl < 0) lossCount++;
             }
+
 
             double winRate = totalTrades > 0 ? (double) winCount / totalTrades * 100 : 0;
             double avgPnL = totalTrades > 0 ? totalPnL / totalTrades : 0;
@@ -224,5 +207,46 @@ public class BacktestController {
         }
 
         return grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? 999 : 0);
+    }
+
+    private List<Map<String, Object>> generateTrades(Map<String, List<CandleData>> candlesBySymbol, String strategy) {
+        List<Map<String, Object>> trades = new ArrayList<>();
+
+        for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
+            List<CandleData> candles = entry.getValue();
+            if (candles.size() < 2) continue;
+
+            for (int i = 1; i < candles.size(); i++) {
+                CandleData prevCandle = candles.get(i - 1);
+                CandleData currCandle = candles.get(i);
+
+                double prevClose = prevCandle.getClose() != null ? prevCandle.getClose().doubleValue() : 0;
+                double currOpen = currCandle.getOpen() != null ? currCandle.getOpen().doubleValue() : 0;
+                double currClose = currCandle.getClose() != null ? currCandle.getClose().doubleValue() : 0;
+                double currHigh = currCandle.getHigh() != null ? currCandle.getHigh().doubleValue() : 0;
+                double currLow = currCandle.getLow() != null ? currCandle.getLow().doubleValue() : 0;
+
+                // Simple ORB-like logic: Entry on gap up + 2% move, Target 3%, SL 1%
+                if (currOpen > prevClose * 1.01 && currClose > currOpen) {
+                    double entry = currOpen;
+                    double target = entry * 1.03;
+                    double sl = entry * 0.99;
+
+                    double exitPrice = currHigh >= target ? target : (currLow <= sl ? sl : currClose);
+                    double pnl = (exitPrice - entry) / entry * 5000;
+
+                    Map<String, Object> trade = new HashMap<>();
+                    trade.put("symbol", entry.getKey());
+                    trade.put("entry", entry);
+                    trade.put("exit", exitPrice);
+                    trade.put("pnl", pnl);
+                    trade.put("win", pnl > 0);
+                    trades.add(trade);
+                }
+            }
+        }
+
+        log.info("Generated {} trades from candles", trades.size());
+        return trades;
     }
 }
