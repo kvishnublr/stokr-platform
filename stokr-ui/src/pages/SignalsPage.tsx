@@ -49,7 +49,15 @@ type SignalRow = {
   pnl?: string | null;
 };
 
-const fmtTime = fmtDateTime;
+const fmtTime = (ts: string | null | undefined): string => {
+  if (!ts) return "—";
+  try {
+    const d = new Date(ts);
+    return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  } catch {
+    return "—";
+  }
+};
 
 const fmt = (v: string | number | null | undefined, dec = 2) =>
   v == null || v === "" ? "—" : Number(v).toFixed(dec);
