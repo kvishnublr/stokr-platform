@@ -16,9 +16,7 @@ export default function AdvancedBacktest() {
   const { data: strategies = [] } = useQuery({
     queryKey: ['strategies'],
     queryFn: async () => {
-      const res = await client.get('/signals?t=' + Date.now());
-      const strategiesSet = new Set(res.data.map(s => s.reason).filter(Boolean));
-      return ['ORB', 'ADV_CASH', 'VWAP_SQUEEZE', 'GAP_FILL', 'VWAP_BOUNCE'].filter(s => strategiesSet.has(s));
+      return ['ORB', 'ADV_CASH', 'VWAP_SQUEEZE', 'GAP_FILL', 'VWAP_BOUNCE'];
     },
   });
 
