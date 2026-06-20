@@ -87,15 +87,15 @@ export default function AdvancedBacktest() {
     <div style={{ animation: 'fadeIn 0.5s ease', padding: '24px' }}>
       <style>{`
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .input-group { margin-bottom: '16px'; }
-        .label-text { display: 'block'; fontSize: '12px'; fontWeight: '600'; color: '#6b7280'; marginBottom: '6px'; textTransform: 'uppercase'; }
-        .input-field { width: '100%'; padding: '8px 12px'; borderRadius: '8px'; border: '1px solid #d1d5db'; fontSize: '13px'; }
-        .button-primary { padding: '10px 20px'; background: 'linear-gradient(135deg, #6366f1, #8b5cf6)'; color: 'white'; border: 'none'; borderRadius: '8px'; cursor: 'pointer'; fontSize: '13px'; fontWeight: '700'; transition: 'all 0.2s'; }
-        .button-primary:hover { transform: 'translateY(-2px)'; boxShadow: '0 8px 16px rgba(99, 102, 241, 0.3)'; }
-        .button-primary:disabled { opacity: '0.5'; cursor: 'not-allowed'; }
-        .button-secondary { padding: '10px 20px'; background: '#f3f4f6'; color: '#374151'; border: '1px solid #d1d5db'; borderRadius: '8px'; cursor: 'pointer'; fontSize: '13px'; fontWeight: '600'; transition: 'all 0.2s'; }
-        .button-secondary:hover { background: '#e5e7eb'; }
-        .symbol-badge { display: 'inline-block'; padding: '4px 10px'; background: '#e0e7ff'; color: '#4f46e5'; borderRadius: '6px'; fontSize: '12px'; margin: '2px'; }
+        .input-group { margin-bottom: 16px; }
+        .label-text { display: block; font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 6px; text-transform: uppercase; }
+        .input-field { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #d1d5db; font-size: 13px; }
+        .button-primary { padding: 10px 20px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 700; transition: all 0.2s; }
+        .button-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(99, 102, 241, 0.3); }
+        .button-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .button-secondary { padding: 10px 20px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; }
+        .button-secondary:hover { background: #e5e7eb; }
+        .symbol-badge { display: inline-block; padding: 4px 10px; background: #e0e7ff; color: #4f46e5; border-radius: 6px; font-size: 12px; margin: 2px; font-weight: 600; }
       `}</style>
 
       {/* Header */}
