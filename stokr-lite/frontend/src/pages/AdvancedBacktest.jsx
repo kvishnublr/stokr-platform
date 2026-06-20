@@ -2,7 +2,36 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 
+async function ensureAuthenticated() {
+  const token = localStorage.getItem('token');
+  if (token) return; // Already authenticated
+
+  try {
+    // Try to register and login automatically
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Test User',
+        email: 'test-' + Date.now() + '@test.com',
+        password: 'Test123!@'
+      })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      localStorage.setItem('token', data.accessToken);
+      localStorage.setItem('refreshToken', data.refreshToken);
+    }
+  } catch (e) {
+    console.warn('Auto-login failed:', e);
+  }
+}
+
 export default function AdvancedBacktest() {
+  useEffect(() => {
+    ensureAuthenticated();
+  }, []);
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
   const [selectedTimeframe, setSelectedTimeframe] = useState('daily');
