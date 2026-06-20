@@ -1,5 +1,7 @@
 package com.stokr.engine;
 
+import com.stokr.strategy.UniverseGroupService;
+import com.stokr.strategy.UniverseSymbol;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -15,23 +17,43 @@ public class BacktestDataLoaderService {
 
     private final CandleFetchService candleFetchService;
     private final SignalRepository signalRepository;
+    private final UniverseGroupService universeGroupService;
 
-    // Strategy to symbols mapping (hardcoded for now, can be made dynamic)
-    private static final Map<String, List<String>> STRATEGY_SYMBOLS = Map.ofEntries(
-        Map.entry("ORB", List.of("RELIANCE", "TCS", "INFY", "HDFC", "ICICI")),
-        Map.entry("ADV_CASH", List.of("RELIANCE", "TCS", "WIPRO", "AXISBANK", "INFY")),
-        Map.entry("VWAP_SQUEEZE", List.of("RELIANCE", "TCS", "WIPRO", "HDFC", "ICICI")),
-        Map.entry("GAP_FILL", List.of("RELIANCE", "TCS", "INFY", "HDFC", "AXISBANK")),
-        Map.entry("VWAP_BOUNCE", List.of("RELIANCE", "TCS", "WIPRO", "ICICI", "INFY"))
+    // Strategy to universe mapping
+    private static final Map<String, String> STRATEGY_UNIVERSES = Map.ofEntries(
+        Map.entry("ORB", "NIFTY_50"),
+        Map.entry("ADV_CASH", "NIFTY_100"),
+        Map.entry("VWAP_SQUEEZE", "NIFTY_50"),
+        Map.entry("GAP_FILL", "NIFTY_100"),
+        Map.entry("VWAP_BOUNCE", "NIFTY_50")
     );
 
-    private static final List<String> DEFAULT_SYMBOLS = List.of("RELIANCE", "TCS", "WIPRO", "INFY", "HDFC");
+    private static final List<String> DEFAULT_SYMBOLS = List.of("RELIANCE", "TCS", "WIPRO", "INFY", "HDFC", "ICICI", "AXISBANK");
 
     public List<String> getStrategySymbols(String strategy) {
-        if (strategy == null || "ALL".equalsIgnoreCase(strategy)) {
-            return DEFAULT_SYMBOLS;
+        try {
+            // Get universe key from strategy
+            String universeKey = STRATEGY_UNIVERSES.getOrDefault(
+                strategy != null ? strategy.toUpperCase() : "ALL",
+                "NIFTY_50"
+            );
+
+            // Load symbols from database universe group
+            var group = universeGroupService.findByKey(universeKey);
+            if (group.isPresent()) {
+                List<UniverseSymbol> symbols = universeGroupService.getSymbols(group.get().getId());
+                List<String> symbolNames = symbols.stream()
+                    .map(UniverseSymbol::getSymbol)
+                    .toList();
+                log.info("Loaded {} symbols from universe {}", symbolNames.size(), universeKey);
+                return symbolNames;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to load symbols from universe, using defaults: {}", e.getMessage());
         }
-        return STRATEGY_SYMBOLS.getOrDefault(strategy.toUpperCase(), DEFAULT_SYMBOLS);
+
+        // Fallback to defaults
+        return DEFAULT_SYMBOLS;
     }
 
     public Map<String, Object> loadStrategyData(String strategy, String timeframe, Instant startTime, Instant endTime) {

@@ -48,7 +48,7 @@ export default function AdvancedBacktest() {
       }
       params.append('timeframe', selectedTimeframe);
 
-      const res = await client.post('/backtest/load-data?' + params);
+      const res = await client.post('/api/backtest/load-data?' + params);
       setDataLoadResult(res.data);
     } catch (e) {
       console.error('Data loading failed:', e);
@@ -70,7 +70,7 @@ export default function AdvancedBacktest() {
       if (dateEnd) params.append('dateEnd', new Date(dateEnd).toISOString());
       params.append('timeframe', selectedTimeframe);
 
-      const res = await client.post('/backtest/advanced?' + params);
+      const res = await client.post('/api/backtest/advanced?' + params);
       setBacktestResults(res.data);
     } catch (e) {
       console.error('Backtest failed:', e);
