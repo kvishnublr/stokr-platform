@@ -69,11 +69,28 @@ export default function AdvancedBacktest() {
     setError(null);
     setDataLoadResult(null);
     try {
+      // Auto-set 1 month date range
+      const endDate = new Date();
+      const startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - 30); // 1 month back
+
+      const formatDate = (date) => {
+        const d = String(date.getDate()).padStart(2, '0');
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const y = date.getFullYear();
+        return `${d}-${m}-${y}`;
+      };
+
+      setDateStart(formatDate(startDate));
+      setDateEnd(formatDate(endDate));
+
       const params = new URLSearchParams();
       if (selectedStrategy && selectedStrategy !== 'ALL') {
         params.append('strategy', selectedStrategy);
       }
       params.append('timeframe', selectedTimeframe);
+      params.append('dateStart', startDate.toISOString());
+      params.append('dateEnd', endDate.toISOString());
 
       const res = await client.post('/backtest/load-data?' + params);
       setDataLoadResult(res.data);
