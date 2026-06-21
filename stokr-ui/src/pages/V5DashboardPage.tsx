@@ -114,7 +114,6 @@ export function V5DashboardPage() {
     refetchInterval: 5000,
     staleTime: 2000,
     retry: 2,
-    retryDelay: 3000,
   });
 
   const haltMut = useMutation({
@@ -143,18 +142,17 @@ export function V5DashboardPage() {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center text-sm text-gray-500">
-        Loading v6 dashboard...
+        Loading v5 dashboard...
       </div>
     );
   }
 
   if (error || !dash) {
     return (
-      <div className="rounded-lg border border-orange-200 bg-orange-50 p-6 text-sm text-orange-700">
-        v5 trading API is not available — this dashboard requires the v5 backend endpoints
-        (<code className="mx-1 rounded bg-orange-100 px-1">/api/v5/dashboard</code>).
-        You can still access the full admin panel via the sidebar.
-        {error && <details className="mt-2"><summary className="cursor-pointer text-xs">Error details</summary><pre className="mt-1 text-xs">{error instanceof Error ? error.message : "Unknown error"}</pre></details>}
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+        Failed to load v5 dashboard. Is the v5 backend running on port 8081?
+        <br />
+        <span className="text-xs text-red-500">{error instanceof Error ? error.message : "Unknown error"}</span>
       </div>
     );
   }

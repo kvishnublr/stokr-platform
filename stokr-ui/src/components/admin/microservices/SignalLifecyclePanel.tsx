@@ -68,8 +68,7 @@ export function SignalLifecyclePanel() {
       setError(null);
       setSearched(true);
       const { data } = await api.get(`/api/v1/admin/signals/${signalId}/lifecycle`);
-      const payload = data?.data ?? data;
-      setLifecycle(payload?.signalId ? payload : null);
+      setLifecycle(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       setError(message);
@@ -172,7 +171,7 @@ export function SignalLifecyclePanel() {
               Execution Timeline ({lifecycle.totalLatencyMs}ms total)
             </h4>
             <div className="space-y-2">
-              {(lifecycle.events ?? []).map((event, idx) => (
+              {lifecycle.events.map((event, idx) => (
                 <div
                   key={idx}
                   className={cn(
