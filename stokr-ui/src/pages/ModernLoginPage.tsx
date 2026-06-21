@@ -1,9 +1,7 @@
 import { FormEvent, useState } from "react";
-import { Link, Navigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { ArrowRight, Lock, Mail, Zap, TrendingUp } from "lucide-react";
+import { Navigate } from "react-router-dom";
+import { Lock, Mail } from "lucide-react";
 import { api, parseAxiosMessage } from "../api/client";
-import { cn } from "../lib/utils";
 import type { AuthPayload } from "../state/session";
 import { useSessionStore } from "../state/session";
 
@@ -50,202 +48,119 @@ export function ModernLoginPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4 relative">
-      {/* Animated background elements */}
-      <motion.div
-        className="absolute top-20 left-10 w-96 h-96 rounded-full blur-3xl"
-        style={{
-          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.1) 100%)",
-        }}
-        animate={{
-          x: [0, 30, 0],
-          y: [0, 30, 0],
-        }}
-        transition={{ duration: 8, repeat: Infinity }}
-      />
-      <motion.div
-        className="absolute bottom-20 right-10 w-96 h-96 rounded-full blur-3xl"
-        style={{
-          background: "linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(99, 102, 241, 0.1) 100%)",
-        }}
-        animate={{
-          x: [0, -30, 0],
-          y: [0, -30, 0],
-        }}
-        transition={{ duration: 10, repeat: Infinity }}
-      />
+    <div className="min-h-screen flex bg-gradient-to-br from-purple-200 via-purple-100 to-cyan-100">
+      {/* Left Sidebar - Branding */}
+      <div className="hidden lg:flex lg:w-1/2 flex-col justify-center items-start p-16 text-dark">
+        <div className="max-w-lg">
+          <div className="flex items-center gap-4 mb-10">
+            <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-3xl flex items-center justify-center shadow-lg">
+              <span className="text-3xl font-bold text-white">S</span>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Stokr</h1>
+              <p className="text-xs text-gray-600 tracking-widest font-medium">AURORA PRO</p>
+            </div>
+          </div>
 
-      <div className="relative z-10 w-full max-w-md">
-        {/* Header */}
-        <motion.div
-          className="text-center mb-12"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-        >
-          <motion.div
-            className="flex items-center justify-center gap-3 mb-6"
-            initial={{ scale: 0.5, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-          >
-            <motion.div
-              className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg"
-              animate={{ rotate: [0, -10, 10, 0] }}
-              transition={{ duration: 4, repeat: Infinity }}
-            >
-              <Zap className="w-6 h-6 text-white" />
-            </motion.div>
-            <h1 className="text-4xl font-bold text-white">Stokr</h1>
-          </motion.div>
+          <h2 className="text-5xl font-bold text-gray-900 mb-8 leading-tight">
+            Algorithmic Trading<br />Made Simple
+          </h2>
 
-          <motion.p
-            className="text-indigo-200 text-lg font-light"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-          >
-            Trading Intelligence Platform
-          </motion.p>
-        </motion.div>
+          <p className="text-lg text-gray-700 mb-16 leading-relaxed">
+            Deploy strategies, connect brokers, and automate your trading with institutional-grade execution.
+          </p>
 
-        {/* Main Card */}
-        <motion.div
-          className="backdrop-blur-2xl bg-white/10 border border-white/20 rounded-2xl p-8 shadow-2xl"
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-        >
+          <div className="flex gap-16">
+            <div>
+              <p className="text-4xl font-bold text-indigo-600">3 +</p>
+              <p className="text-xs text-gray-600 uppercase tracking-wide font-semibold">Strategies</p>
+            </div>
+            <div>
+              <p className="text-4xl font-bold text-indigo-600">3</p>
+              <p className="text-xs text-gray-600 uppercase tracking-wide font-semibold">Brokers</p>
+            </div>
+            <div>
+              <p className="text-4xl font-bold text-indigo-600">30 +</p>
+              <p className="text-xs text-gray-600 uppercase tracking-wide font-semibold">NSE Stocks</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Side - Login Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-8">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 sm:p-10">
+          <div className="text-center mb-10">
+            <div className="flex justify-center mb-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center">
+                <span className="text-xl font-bold text-white">S</span>
+              </div>
+            </div>
+            <h3 className="text-3xl font-bold text-gray-900 mb-3">Stokr</h3>
+            <p className="text-gray-600 text-base">Sign in to access your trading dashboard</p>
+          </div>
+
           <form onSubmit={onSubmit} className="space-y-6">
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                {error}
+              </div>
+            )}
+
             {/* Email Input */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-            >
-              <label className="block text-sm font-semibold text-white mb-3">Email Address</label>
-              <div className="relative group">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-indigo-300 transition-colors" />
+            <div>
+              <label className="block text-sm font-semibold text-gray-800 mb-2">Email</label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type="email"
                   value={principal}
                   onChange={(e) => setPrincipal(e.target.value)}
-                  placeholder="your@email.com"
-                  className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-indigo-400/50 focus:bg-white/10 backdrop-blur-sm transition-all duration-300"
+                  placeholder="you@example.com"
+                  className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-300 bg-gray-50 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
                   autoComplete="username"
+                  required
                 />
               </div>
-            </motion.div>
+            </div>
 
             {/* Password Input */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.4 }}
-            >
-              <label className="block text-sm font-semibold text-white mb-3">Password</label>
-              <div className="relative group">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-indigo-300 transition-colors" />
+            <div>
+              <label className="block text-sm font-semibold text-gray-800 mb-2">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-indigo-400/50 focus:bg-white/10 backdrop-blur-sm transition-all duration-300"
+                  placeholder="Enter your password"
+                  className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-300 bg-gray-50 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
                   autoComplete="current-password"
+                  required
                 />
               </div>
-            </motion.div>
-
-            {/* Remember & Forgot */}
-            <motion.div
-              className="flex items-center justify-between"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.5, delay: 0.5 }}
-            >
-              <label className="flex items-center gap-2 text-sm text-white/60 hover:text-white/80 cursor-pointer transition-colors">
-                <input type="checkbox" className="rounded" />
-                Remember me
-              </label>
-              <Link to="/forgot-password" className="text-sm text-indigo-300 hover:text-indigo-200 transition-colors">
-                Forgot password?
-              </Link>
-            </motion.div>
-
-            {/* Error Message */}
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-3 rounded-lg bg-red-500/20 border border-red-500/50 text-red-200 text-sm"
-              >
-                {error}
-              </motion.div>
-            )}
+            </div>
 
             {/* Submit Button */}
-            <motion.button
+            <button
               type="submit"
               disabled={loading}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.6 }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-indigo-500/50 transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3 rounded-2xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-8"
             >
-              {loading ? (
-                <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity }}>
-                  ⟳
-                </motion.span>
-              ) : (
-                <>
-                  Sign In <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </motion.button>
+              {loading ? "Signing in..." : "Sign In"}
+            </button>
 
-            {/* Sign Up Link */}
-            <motion.p
-              className="text-center text-white/60 text-sm"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.5, delay: 0.7 }}
-            >
-              New to Stokr?{" "}
-              <Link to="/register" className="text-indigo-300 hover:text-indigo-200 font-semibold transition-colors">
+            {/* Links */}
+            <div className="flex items-center justify-between text-sm">
+              <a href="/forgot-password" className="text-indigo-600 hover:text-indigo-700 font-medium">
+                Forgot password?
+              </a>
+              <a href="/register" className="text-indigo-600 hover:text-indigo-700 font-medium">
                 Create account
-              </Link>
-            </motion.p>
+              </a>
+            </div>
           </form>
-        </motion.div>
-
-        {/* Features */}
-        <motion.div
-          className="grid grid-cols-3 gap-4 mt-12"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.8 }}
-        >
-          {[
-            { icon: TrendingUp, label: "Smart Trading" },
-            { icon: Zap, label: "Real-time Data" },
-            { icon: Lock, label: "Secure & Fast" },
-          ].map((item, i) => (
-            <motion.div
-              key={i}
-              className="text-center"
-              whileHover={{ y: -5 }}
-              transition={{ duration: 0.3 }}
-            >
-              <div className="flex justify-center mb-2">
-                <item.icon className="w-6 h-6 text-indigo-300" />
-              </div>
-              <p className="text-xs text-white/60">{item.label}</p>
-            </motion.div>
-          ))}
-        </motion.div>
+        </div>
       </div>
     </div>
   );
