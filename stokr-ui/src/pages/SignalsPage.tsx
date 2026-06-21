@@ -49,7 +49,15 @@ type SignalRow = {
   pnl?: string | null;
 };
 
-const fmtTime = fmtDateTime;
+const fmtTime = (ts: string | null | undefined): string => {
+  if (!ts) return "—";
+  try {
+    const d = new Date(ts);
+    return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  } catch {
+    return "—";
+  }
+};
 
 const fmt = (v: string | number | null | undefined, dec = 2) =>
   v == null || v === "" ? "—" : Number(v).toFixed(dec);
@@ -552,12 +560,12 @@ export function SignalsPage() {
 
       {/* Table */}
       {(q.isLoading || rows.length > 0) && (
-        <div className={cn("flex-1 min-h-[34rem] overflow-auto rounded-xl border", borderCls, bg)}>
-          <table className="w-full min-w-[1150px] text-xs">
+        <div className={cn("flex-1 overflow-auto rounded-xl border", borderCls, bg)}>
+          <table className="w-full min-w-[1350px] text-xs">
             <thead className={cn("sticky top-0 z-10 border-b", borderCls, hdrBg)}>
               <tr>
                 {["Time", "Strategy", "Symbol", "Side", "Entry", "LTP", "SL", "Target", "RR", "Rank", "P&L", "Status", "Conf", "Rationale"].map(h => (
-                  <th key={h} className={cn("whitespace-nowrap px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest", textMuted)}>{h}</th>
+                  <th key={h} className={cn("whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest", textMuted)}>{h}</th>
                 ))}
                 <th className="w-8" />
               </tr>
@@ -566,7 +574,7 @@ export function SignalsPage() {
               {q.isLoading && (
                 <tr><td colSpan={15} className={cn("px-4 py-12 text-center", textMuted)}>Loading signals...</td></tr>
               )}
-              {rows.map((r, i) => {
+              {rows.length === 0 ? null : rows.map((r, i) => {
                 const pnlVal = fmtPnl(r.pnl);
                 const confirmation = resolveConfirmation(
                   normalizeSignalRow(r as Record<string, unknown>),
@@ -580,32 +588,31 @@ export function SignalsPage() {
                       i % 2 === 0 ? rowAlt : "",
                       rowHover,
                       selectedSignal?.id === r.id && (isLight ? "bg-blue-50" : "bg-sky-500/[0.07]"),
-                      // Subtle row tinting based on P&L
                       pnlVal != null && pnlVal > 0 && !isLight && "bg-emerald-500/[0.02]",
                       pnlVal != null && pnlVal < 0 && !isLight && "bg-rose-500/[0.02]",
                     )}>
-                    <td className={cn("whitespace-nowrap px-3 py-2.5 font-mono", textMuted)}>{fmtTime(r.createdAt)}</td>
-                    <td className={cn("max-w-[120px] truncate px-3 py-2.5 font-medium", isLight ? "text-neutral-800" : "text-white")}
+                    <td className={cn("whitespace-nowrap px-4 py-3 font-mono", textMuted)}>{fmtTime(r.createdAt)}</td>
+                    <td className={cn("max-w-[140px] truncate px-4 py-3 font-medium", isLight ? "text-neutral-800" : "text-white")}
                       title={r.strategyName ?? ""}>{r.strategyName ?? "—"}</td>
-                    <td className={cn("px-3 py-2.5 font-mono font-bold", isLight ? "text-neutral-900" : "text-white")}>{r.symbol ?? "—"}</td>
-                    <td className="px-3 py-2.5"><SideChip type={r.signalType} light={isLight} /></td>
-                    <td className={cn("px-3 py-2.5 font-mono", isLight ? "text-neutral-700" : "text-neutral-300")}>{fmt(r.entryReferencePrice)}</td>
-                    <td className={cn("px-3 py-2.5 font-mono font-semibold", isLight ? "text-sky-600" : "text-sky-400")}>{fmt(r.ltp)}</td>
-                    <td className={cn("px-3 py-2.5 font-mono", isLight ? "text-rose-600" : "text-rose-400")}>{fmt(r.stopPrice)}</td>
-                    <td className={cn("px-3 py-2.5 font-mono", isLight ? "text-emerald-600" : "text-emerald-400")}>{fmt(r.targetPrice)}</td>
-                    <td className={cn("px-3 py-2.5 font-mono", isLight ? "text-violet-700" : "text-violet-300")}>
+                    <td className={cn("whitespace-nowrap px-4 py-3 font-mono font-bold", isLight ? "text-neutral-900" : "text-white")}>{r.symbol ?? "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3"><SideChip type={r.signalType} light={isLight} /></td>
+                    <td className={cn("whitespace-nowrap px-4 py-3 font-mono", isLight ? "text-neutral-700" : "text-neutral-300")}>{fmt(r.entryReferencePrice)}</td>
+                    <td className={cn("whitespace-nowrap px-4 py-3 font-mono font-semibold", isLight ? "text-sky-600" : "text-sky-400")}>{fmt(r.ltp)}</td>
+                    <td className={cn("whitespace-nowrap px-4 py-3 font-mono", isLight ? "text-rose-600" : "text-rose-400")}>{fmt(r.stopPrice)}</td>
+                    <td className={cn("whitespace-nowrap px-4 py-3 font-mono", isLight ? "text-emerald-600" : "text-emerald-400")}>{fmt(r.targetPrice)}</td>
+                    <td className={cn("whitespace-nowrap px-4 py-3 font-mono", isLight ? "text-violet-700" : "text-violet-300")}>
                       {confirmation.riskReward != null ? confirmation.riskReward.toFixed(2) : "—"}
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="whitespace-nowrap px-4 py-3">
                       <ConfirmationTierChip rank={confirmation} isLight={isLight} compact />
                     </td>
-                    <td className="px-3 py-2.5"><PnlCell value={r.pnl} light={isLight} /></td>
-                    <td className="px-3 py-2.5"><OutcomeBadge status={r.outcomeStatus} light={isLight} /></td>
-                    <td className={cn("px-3 py-2.5 font-mono", isLight ? "text-neutral-600" : "text-neutral-300")}>
+                    <td className="whitespace-nowrap px-4 py-3"><PnlCell value={r.pnl} light={isLight} /></td>
+                    <td className="whitespace-nowrap px-4 py-3"><OutcomeBadge status={r.outcomeStatus} light={isLight} /></td>
+                    <td className={cn("whitespace-nowrap px-4 py-3 font-mono", isLight ? "text-neutral-600" : "text-neutral-300")}>
                       {r.confidenceScore != null ? `${(Number(r.confidenceScore) <= 1 ? Number(r.confidenceScore) * 100 : Number(r.confidenceScore)).toFixed(0)}%` : "—"}
                     </td>
-                    <td className={cn("max-w-[160px] truncate px-3 py-2.5", textMuted)} title={r.reason ?? ""}>{r.reason ?? "—"}</td>
-                    <td className={cn("px-3 py-2.5", textMuted)}><ChevronRight className="h-3.5 w-3.5" /></td>
+                    <td className={cn("max-w-[180px] truncate px-4 py-3", textMuted)} title={r.reason ?? ""}>{r.reason ?? "—"}</td>
+                    <td className={cn("px-4 py-3", textMuted)}><ChevronRight className="h-3.5 w-3.5" /></td>
                   </tr>
                 );
               })}
