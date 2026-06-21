@@ -24,8 +24,8 @@ stokr.in, www.stokr.in {
     reverse_proxy /backtest* localhost:8082
     reverse_proxy /backtest/index.html localhost:8082
 
-    # All other UI routes go to main frontend
-    reverse_proxy stokr-ui:80
+    # All other UI routes go to stokr-lite-frontend (port 8082 UI)
+    reverse_proxy stokr-lite-frontend:80
 }
 
 new.stokr.in {
