@@ -13,7 +13,7 @@ stokr.in, www.stokr.in {
     header /index.html Cache-Control "no-cache, no-store, must-revalidate, max-age=0"
 
     # API routes (must come BEFORE UI routes to prevent capture)
-    reverse_proxy /api/* stokr-api:8080
+    reverse_proxy /api/* stokr-lite-backend:8080
 
     # Webhooks
     reverse_proxy /webhooks/chartink* localhost:8081
