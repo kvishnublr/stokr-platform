@@ -213,7 +213,7 @@ public class ZerodhaCandleService {
                 if (expiresStr != null) {
                     try {
                         Instant loginTime = Instant.parse(expiresStr);
-                        expiresIn = (int) Duration.between(loginTime, loginTime.plusHours(24)).getSeconds();
+                        expiresIn = (int) Duration.between(loginTime, loginTime.plus(24, ChronoUnit.HOURS)).getSeconds();
                     } catch (Exception ignored) {}
                 }
                 tokenManager.setAuth(accessToken, refreshToken, expiresIn);
