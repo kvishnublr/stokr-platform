@@ -10,6 +10,8 @@ services:
     ports:
       - "8082:80"
     restart: unless-stopped
+    networks:
+      - stokr-net
 
   backend:
     build:
@@ -17,10 +19,10 @@ services:
       dockerfile: Dockerfile
     container_name: stokr-lite-backend
     environment:
-      DB_HOST: aws-0-ap-southeast-1.pooler.supabase.com
+      DB_HOST: db.tzxceqjvzilmnfzvdoet.supabase.co
       DB_PORT: 5432
       DB_NAME: postgres
-      DB_USERNAME: postgres.tzxceqjvzilmnfzvdoet
+      DB_USERNAME: postgres
       DB_PASSWORD: ${DB_PASSWORD:-wfKh8p8ISQ63VF40}
       DB_SSLMODE: require
       JWT_SECRET: ${JWT_SECRET:-change-this-to-a-very-long-random-secret-key-at-least-256-bits}
@@ -31,3 +33,14 @@ services:
     ports:
       - "8081:8080"
     restart: unless-stopped
+    networks:
+      - stokr-net
+
+networks:
+  stokr-net:
+    enable_ipv6: true
+    ipam:
+      driver: default
+      config:
+        - subnet: "172.20.0.0/16"
+        - subnet: "fd00::/64"
