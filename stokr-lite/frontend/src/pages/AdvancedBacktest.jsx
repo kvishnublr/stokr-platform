@@ -300,6 +300,57 @@ export default function AdvancedBacktest() {
             <p><strong>Candles Loaded:</strong> {backtestResults.candlesLoaded}</p>
             <p><strong>Date Range:</strong> {new Date(backtestResults.dateRange.start).toLocaleDateString()} to {new Date(backtestResults.dateRange.end).toLocaleDateString()}</p>
           </div>
+
+          {/* Trades Table */}
+          {backtestResults.trades?.length > 0 && (
+            <div style={{ marginTop: '24px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1f2937', marginBottom: '12px' }}>
+                Trade Log ({backtestResults.trades.length} trades)
+              </h3>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #e5e7eb' }}>
+                      <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: '700', color: '#374151' }}>#</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: '700', color: '#374151' }}>Symbol</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: '700', color: '#374151' }}>Side</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '700', color: '#374151' }}>Entry</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '700', color: '#374151' }}>SL</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '700', color: '#374151' }}>Target</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '700', color: '#374151' }}>P&L (₹)</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: '700', color: '#374151' }}>Exit</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: '700', color: '#374151' }}>Entry Time</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: '700', color: '#374151' }}>Exit Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {backtestResults.trades.map((t, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid #e5e7eb', background: i % 2 === 0 ? '#fafafa' : 'white' }}>
+                        <td style={{ padding: '6px 10px', color: '#6b7280' }}>{i + 1}</td>
+                        <td style={{ padding: '6px 10px', fontWeight: '600', color: '#1f2937' }}>{t.symbol}</td>
+                        <td style={{ padding: '6px 10px', color: t.side === 'BUY' ? '#10b981' : '#ef4444', fontWeight: '600' }}>{t.side}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Number(t.entryPrice).toFixed(2)}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Number(t.stopLoss).toFixed(2)}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{Number(t.target).toFixed(2)}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: '700', color: t.pnl >= 0 ? '#10b981' : '#ef4444' }}>{t.pnl >= 0 ? '+' : ''}{t.pnl.toFixed(2)}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                          <span style={{
+                            display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700',
+                            background: t.exitType === 'TARGET_HIT' ? '#d1fae5' : t.exitType === 'SL_HIT' ? '#fee2e2' : '#fef3c7',
+                            color: t.exitType === 'TARGET_HIT' ? '#065f46' : t.exitType === 'SL_HIT' ? '#991b1b' : '#92400e'
+                          }}>
+                            {t.exitType === 'TARGET_HIT' ? 'WIN' : t.exitType === 'SL_HIT' ? 'LOSS' : t.exitType}
+                          </span>
+                        </td>
+                        <td style={{ padding: '6px 10px', textAlign: 'center', color: '#6b7280', fontSize: '11px' }}>{t.entryTime ? new Date(t.entryTime).toLocaleString() : '-'}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'center', color: '#6b7280', fontSize: '11px' }}>{t.exitTime ? new Date(t.exitTime).toLocaleString() : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
