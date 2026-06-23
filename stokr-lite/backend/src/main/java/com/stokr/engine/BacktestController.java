@@ -108,11 +108,10 @@ public class BacktestController {
 
                 List<CandleData> candles = candleFetchService.fetchCandles(symbol, timeframe, startTime, endTime);
                 if (candles.isEmpty()) {
-                    log.warn("No candles for {}, generating mock data", symbol);
-                    candles = candleFetchService.generateMockCandles(symbol, timeframe, startTime, endTime);
-                    candleFetchService.saveCandles(candles);
+                    log.warn("No candles for {}, skipping", symbol);
+                } else {
+                    totalCandles += candles.size();
                 }
-                totalCandles += candles.size();
             }
 
             Map<String, Object> result = new LinkedHashMap<>();
@@ -147,16 +146,15 @@ public class BacktestController {
             Instant endTime = dateEnd != null ? Instant.parse(dateEnd) : Instant.now();
             List<String> symbolList = symbols != null ? Arrays.asList(symbols.split(",")) : getSymbolsForStrategy(strategy);
 
-            // Fetch candle data
+            // Fetch candle data — skip symbols with no real data (no mock fallback)
             Map<String, List<CandleData>> candlesBySymbol = new HashMap<>();
             for (String symbol : symbolList) {
                 List<CandleData> candles = candleFetchService.fetchCandles(symbol, timeframe, startTime, endTime);
                 if (candles.isEmpty()) {
-                    log.warn("No candles found for {}, generating mock data", symbol);
-                    candles = candleFetchService.generateMockCandles(symbol, timeframe, startTime, endTime);
-                    candleFetchService.saveCandles(candles);
+                    log.warn("No candles found for {}, skipping", symbol);
+                } else {
+                    candlesBySymbol.put(symbol, candles);
                 }
-                candlesBySymbol.put(symbol, candles);
             }
 
             // Get signals
@@ -220,14 +218,14 @@ public class BacktestController {
 
     private List<String> getSymbolsForStrategy(String strategy) {
         if (strategy == null || strategy.isEmpty() || "ALL".equals(strategy)) {
-            return List.of("RELIANCE", "TCS", "WIPRO", "INFY", "HDFC", "ICICI", "AXISBANK");
+            return List.of("RELIANCE", "TCS", "WIPRO", "INFY", "HDFCBANK", "ICICIBANK", "AXISBANK");
         }
         return switch (strategy.toUpperCase()) {
-            case "ORB" -> List.of("RELIANCE", "TCS", "INFY", "HDFC", "ICICI");
+            case "ORB" -> List.of("RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK");
             case "ADV_CASH" -> List.of("RELIANCE", "TCS", "WIPRO", "AXISBANK", "INFY");
-            case "VWAP_SQUEEZE" -> List.of("RELIANCE", "TCS", "WIPRO", "HDFC", "ICICI");
-            case "GAP_FILL" -> List.of("RELIANCE", "TCS", "INFY", "HDFC", "AXISBANK");
-            case "VWAP_BOUNCE" -> List.of("RELIANCE", "TCS", "WIPRO", "ICICI", "INFY");
+            case "VWAP_SQUEEZE" -> List.of("RELIANCE", "TCS", "WIPRO", "HDFCBANK", "ICICIBANK");
+            case "GAP_FILL" -> List.of("RELIANCE", "TCS", "INFY", "HDFCBANK", "AXISBANK");
+            case "VWAP_BOUNCE" -> List.of("RELIANCE", "TCS", "WIPRO", "ICICIBANK", "INFY");
             default -> List.of("RELIANCE", "TCS", "WIPRO");
         };
     }

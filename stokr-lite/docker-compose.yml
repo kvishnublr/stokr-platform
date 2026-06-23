@@ -19,13 +19,13 @@ services:
       dockerfile: Dockerfile
     container_name: stokr-lite-backend
     environment:
-      DB_HOST: fd25::1
-      DB_PORT: 15432
-      DB_NAME: postgres
+      DB_HOST: 172.25.0.1
+      DB_PORT: 5432
+      DB_NAME: stokr_lite
       DB_USERNAME: postgres
-      DB_PASSWORD: ${DB_PASSWORD:-wfKh8p8ISQ63VF40}
-      DB_SSLMODE: require
-      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-very-long-random-secret-key-at-least-256-bits}
+      DB_PASSWORD: wfKh8p8ISQ63VF40
+      DB_SSLMODE: disable
+      JWT_SECRET: change-this-to-a-very-long-random-secret-key-at-least-256-bits
       ZERODHA_API_KEY: ${ZERODHA_API_KEY:-}
       ZERODHA_API_SECRET: ${ZERODHA_API_SECRET:-}
       DHAN_API_KEY: ${DHAN_API_KEY:-}
