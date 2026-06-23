@@ -98,7 +98,7 @@ public class CandleFetchService {
             candle.setHigh(high);
             candle.setLow(low);
             candle.setClose(close);
-            candle.setVolume(1000000L);
+            candle.setVolume((long)(1000000 + (Math.random() - 0.5) * 1800000));
 
             candles.add(candle);
             currentPrice = close;
