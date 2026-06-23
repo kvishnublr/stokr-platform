@@ -3,6 +3,7 @@ import { Suspense, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useNavigate, useLocation } from "react-router-dom";
 import { AppShell } from "./layout/AppShell";
 import { LoginPage } from "./pages/LoginPage";
+import { SplitLayoutLoginPage } from "./pages/SplitLayoutLoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
@@ -183,7 +184,7 @@ export default function App() {
       <ThemeHtmlSync />
       <SyncedToaster />
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/login" element={<SplitLayoutLoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
