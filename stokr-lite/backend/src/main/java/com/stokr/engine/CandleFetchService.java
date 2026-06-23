@@ -1,7 +1,6 @@
 package com.stokr.engine;
 
 import com.stokr.external.ChartinkCandleService;
-import com.stokr.external.YahooFinanceCandleService;
 import com.stokr.external.ZerodhaCandleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -9,7 +8,6 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Slf4j
@@ -19,7 +17,6 @@ public class CandleFetchService {
 
     private final CandleDataRepository candleRepository;
     private final ChartinkCandleService chartinkCandleService;
-    private final YahooFinanceCandleService yahooFinanceCandleService;
     private final ZerodhaCandleService zerodhaCandleService;
 
     public List<CandleData> fetchCandles(String symbol, String timeframe, Instant startTime, Instant endTime) {
@@ -36,15 +33,7 @@ public class CandleFetchService {
 
         log.info("No candles in DB, fetching from external sources...");
 
-        // 2. Try Yahoo Finance API
-        List<CandleData> yahooCandles = yahooFinanceCandleService.fetchCandles(symbol, timeframe, startTime, endTime);
-        if (!yahooCandles.isEmpty()) {
-            log.info("Fetched {} candles from Yahoo Finance", yahooCandles.size());
-            saveCandles(yahooCandles);
-            return yahooCandles;
-        }
-
-        // 3. Try Chartink API
+        // 2. Try Chartink API
         List<CandleData> chartinkCandles = chartinkCandleService.fetchCandles(symbol, timeframe, startTime, endTime);
         if (!chartinkCandles.isEmpty()) {
             log.info("Fetched {} candles from Chartink", chartinkCandles.size());
@@ -52,7 +41,7 @@ public class CandleFetchService {
             return chartinkCandles;
         }
 
-        // 4. Try Zerodha API with auth handling
+        // 3. Try Zerodha API with auth handling
         List<CandleData> zerodhaCandles = zerodhaCandleService.fetchCandles(symbol, timeframe, startTime, endTime);
         if (!zerodhaCandles.isEmpty()) {
             log.info("Fetched {} candles from Zerodha", zerodhaCandles.size());
