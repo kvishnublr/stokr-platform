@@ -29,6 +29,11 @@ function AnimatedCounter({ value, duration = 1200 }) {
 export default function AdminDashboard() {
   const { data: dashboard } = useQuery({ queryKey: ['admin-dashboard'], queryFn: () => client.get('/admin/dashboard').then((r) => r.data) });
   const { data: killSwitch } = useQuery({ queryKey: ['kill-switch'], queryFn: () => client.get('/admin/kill-switch').then((r) => r.data) });
+  const { data: chartinkData, isLoading: chartinkLoading } = useQuery({
+    queryKey: ['chartink-live-data'],
+    queryFn: () => client.get('/admin/chartink/live-data').then((r) => r.data),
+    refetchInterval: 5000 // Refresh every 5 seconds
+  });
 
   return (
     <div>
@@ -80,6 +85,99 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Chartink Live Feed */}
+      {chartinkData && (
+        <div style={{ marginBottom: '32px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+            <div style={{ width: '4px', height: '20px', borderRadius: '999px', background: 'linear-gradient(180deg, #f59e0b, #fbbf24)' }} />
+            <h2 style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>🔴 Chartink Live Feed (Premium)</h2>
+            <div style={{ fontSize: '11px', color: '#10b981', fontWeight: 600, background: 'rgba(16,185,129,0.1)', padding: '2px 8px', borderRadius: '4px' }}>
+              Live • {new Date().toLocaleTimeString()}
+            </div>
+          </div>
+
+          {/* Overall Stats */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+            <ChartinkStatBox title="Total Hits (30m)" value={chartinkData.overall.totalSignals} color="#f59e0b" />
+            <ChartinkStatBox title="Executed" value={chartinkData.overall.executed} color="#10b981" />
+            <ChartinkStatBox title="Rejected" value={chartinkData.overall.rejected} color="#ef4444" />
+            <ChartinkStatBox title="Execution Rate" value={chartinkData.overall.executionRate} color="#3b82f6" />
+          </div>
+
+          {/* Top Scanners Performance */}
+          <div style={{ marginBottom: '20px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>Top Scanners (Accuracy)</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
+              {chartinkData.topScanners.map((scanner, idx) => (
+                <div key={idx} className="card-crystal" style={{ padding: '12px', textAlign: 'center' }}>
+                  <p style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>{scanner.scanner}</p>
+                  <p style={{ fontSize: '18px', fontWeight: 800, color: '#4f46e5', marginBottom: '4px' }}>{scanner.hits}</p>
+                  <p style={{ fontSize: '11px', color: '#10b981', fontWeight: 600 }}>✓ {scanner.accuracy}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Scanner Details Table */}
+          <div style={{ marginBottom: '20px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>Scanner Breakdown</h3>
+            <div style={{ overflowX: 'auto', background: '#fff', borderRadius: '14px', padding: '14px' }}>
+              <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <th style={{ textAlign: 'left', padding: '8px', color: '#64748b', fontWeight: 600 }}>Scanner</th>
+                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Hits</th>
+                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Executed</th>
+                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Rejected</th>
+                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Target Hit</th>
+                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Accuracy</th>
+                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Hit Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(chartinkData.scanners).slice(0, 10).map(([scanner, metrics], idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#fafbfc' : '#fff' }}>
+                      <td style={{ padding: '8px', color: '#0f172a', fontWeight: 600 }}>{scanner}</td>
+                      <td style={{ textAlign: 'center', padding: '8px', color: '#0f172a' }}>{metrics.totalHits}</td>
+                      <td style={{ textAlign: 'center', padding: '8px', color: '#10b981', fontWeight: 600 }}>{metrics.executed}</td>
+                      <td style={{ textAlign: 'center', padding: '8px', color: '#ef4444', fontWeight: 600 }}>{metrics.rejected}</td>
+                      <td style={{ textAlign: 'center', padding: '8px', color: '#3b82f6', fontWeight: 600 }}>{metrics.targetHit}</td>
+                      <td style={{ textAlign: 'center', padding: '8px', color: '#6366f1', fontWeight: 600 }}>{metrics.accuracy}</td>
+                      <td style={{ textAlign: 'center', padding: '8px', color: '#8b5cf6', fontWeight: 600 }}>{metrics.hitRate}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Recent Signal Stream */}
+          <div>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>Recent Signal Stream</h3>
+            <div style={{ maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {chartinkData.recentSignals.map((signal, idx) => (
+                <div key={idx} className="card-crystal" style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '2px' }}>
+                      <span style={{ color: signal.side === 'BUY' ? '#10b981' : '#ef4444', fontWeight: 800 }}>● {signal.side}</span>
+                      {' '}{signal.symbol}{' '}
+                      <span style={{ color: '#64748b', fontSize: '10px' }}>@{signal.scanner}</span>
+                    </p>
+                    <p style={{ fontSize: '10px', color: '#94a3b8' }}>{signal.reason}</p>
+                  </div>
+                  <div style={{ textAlign: 'right', marginLeft: '12px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: getStatusColor(signal.status), marginBottom: '4px' }}>
+                      {signal.status}
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#94a3b8' }}>{new Date(signal.createdAt).toLocaleTimeString()}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Configuration & Mappings */}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
@@ -94,6 +192,29 @@ export default function AdminDashboard() {
       </div>
     </div>
   );
+}
+
+function ChartinkStatBox({ title, value, color }) {
+  return (
+    <div className="card-crystal animate-fade-in-up" style={{ padding: '12px', textAlign: 'center', borderTop: `3px solid ${color}` }}>
+      <p style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '6px', textTransform: 'uppercase' }}>{title}</p>
+      <p style={{ fontSize: '24px', fontWeight: 900, color: color }}>{value}</p>
+    </div>
+  );
+}
+
+function getStatusColor(status) {
+  switch (status) {
+    case 'EXECUTED':
+      return '#10b981';
+    case 'REJECTED':
+      return '#ef4444';
+    case 'GENERATED':
+    case 'PENDING':
+      return '#f59e0b';
+    default:
+      return '#64748b';
+  }
 }
 
 function StatBox({ title, value, icon, color, gradient }) {

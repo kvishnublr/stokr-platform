@@ -39,6 +39,7 @@ public class AdminController {
     private final UniverseGroupService universeGroupService;
     private final ExitManager exitManager;
     private final PositionService positionService;
+    private final ChartinkLiveDataService chartinkLiveDataService;
 
     // ========= Dashboard =========
 
@@ -215,6 +216,13 @@ public class AdminController {
     @GetMapping("/universe-groups/{id}/symbols")
     public ResponseEntity<List<UniverseSymbol>> getGroupSymbols(@PathVariable Long id) {
         return ResponseEntity.ok(universeGroupService.getSymbols(id));
+    }
+
+    // ========= Chartink Live Data =========
+
+    @GetMapping("/chartink/live-data")
+    public ResponseEntity<?> getChartinkLiveData() {
+        return ResponseEntity.ok(chartinkLiveDataService.getLiveChartinkData());
     }
 
     // ========= Manual Square Off =========

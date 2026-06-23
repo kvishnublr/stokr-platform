@@ -50,24 +50,8 @@ public class CandleFetchService {
             return zerodhaCandles;
         }
 
-        log.warn("Could not fetch candles from any source, falling back to mock data");
-        List<CandleData> mockCandles = generateMockCandles(symbol, timeframe, startTime, endTime);
-        if (!mockCandles.isEmpty()) {
-            log.info("Generated {} mock candles for {}", mockCandles.size(), symbol);
-            saveCandles(mockCandles);
-            return mockCandles;
-        }
+        log.warn("Could not fetch candles from any source, returning empty list");
         return Collections.emptyList();
-    }
-
-    public List<CandleData> fetchCandlesFromChartink(String symbol, String timeframe, Instant startTime, Instant endTime) {
-        log.info("Fetching candles from Chartink: symbol={}, timeframe={}", symbol, timeframe);
-        return chartinkCandleService.fetchCandles(symbol, timeframe, startTime, endTime);
-    }
-
-    public List<CandleData> fetchCandlesFromZerodha(String symbol, String timeframe, Instant startTime, Instant endTime) {
-        log.info("Fetching candles from Zerodha: symbol={}, timeframe={}", symbol, timeframe);
-        return zerodhaCandleService.fetchCandles(symbol, timeframe, startTime, endTime);
     }
 
     public void saveCandles(List<CandleData> candles) {

@@ -1,4 +1,0 @@
-# Private key for GitHub secret DEPLOY_SSH_KEY — DO NOT COMMIT
-# Add to .gitignore
-
-deploy/contabo_github_deploy.key
