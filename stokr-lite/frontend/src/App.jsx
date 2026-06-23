@@ -1,59 +1,73 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
+
+// Eager load auth pages (small, needed immediately)
 import Login from './pages/Login';
 import Register from './pages/Register';
 import BrokerCallback from './pages/BrokerCallback';
-import Dashboard from './pages/Dashboard';
-import Signals from './pages/Signals';
-import AdvancedBacktest from './pages/AdvancedBacktest';
-import Strategies from './pages/Strategies';
-import Deployments from './pages/Deployments';
-import Brokers from './pages/Brokers';
-import Orders from './pages/Orders';
-import Positions from './pages/Positions';
-import Settings from './pages/Settings';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminUsers from './pages/admin/AdminUsers';
-import AdminDeployments from './pages/admin/AdminDeployments';
-import AdminBrokerHealth from './pages/admin/AdminBrokerHealth';
-import AdminKillSwitch from './pages/admin/AdminKillSwitch';
-import AdminErrorLogs from './pages/admin/AdminErrorLogs';
-import AdminUniverseGroups from './pages/admin/AdminUniverseGroups';
-import AdminStrategyMappings from './pages/admin/AdminStrategyMappings';
-import AdminStrategyConfigs from './pages/admin/AdminStrategyConfigs';
+
+// Lazy load all other pages
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Signals = lazy(() => import('./pages/Signals'));
+const AdvancedBacktest = lazy(() => import('./pages/AdvancedBacktest'));
+const Strategies = lazy(() => import('./pages/Strategies'));
+const Deployments = lazy(() => import('./pages/Deployments'));
+const Brokers = lazy(() => import('./pages/Brokers'));
+const Orders = lazy(() => import('./pages/Orders'));
+const Positions = lazy(() => import('./pages/Positions'));
+const Settings = lazy(() => import('./pages/Settings'));
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
+const AdminDeployments = lazy(() => import('./pages/admin/AdminDeployments'));
+const AdminBrokerHealth = lazy(() => import('./pages/admin/AdminBrokerHealth'));
+const AdminKillSwitch = lazy(() => import('./pages/admin/AdminKillSwitch'));
+const AdminErrorLogs = lazy(() => import('./pages/admin/AdminErrorLogs'));
+const AdminUniverseGroups = lazy(() => import('./pages/admin/AdminUniverseGroups'));
+const AdminStrategyMappings = lazy(() => import('./pages/admin/AdminStrategyMappings'));
+const AdminStrategyConfigs = lazy(() => import('./pages/admin/AdminStrategyConfigs'));
+
+function PageLoader() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+      <div style={{ width: 32, height: 32, border: '3px solid #e5e7eb', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      {/* Broker OAuth callback - outside ProtectedRoute since broker redirects here directly */}
-      <Route path="/brokers/callback" element={<BrokerCallback />} />
-      <Route element={<ProtectedRoute />}>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/signals" element={<Signals />} />
-          <Route path="/backtest" element={<AdvancedBacktest />} />
-          <Route path="/strategies" element={<Strategies />} />
-          <Route path="/deployments" element={<Deployments />} />
-          <Route path="/brokers" element={<Brokers />} />
-          <Route path="/orders" element={<Orders />} />
-          <Route path="/positions" element={<Positions />} />
-          <Route path="/settings" element={<Settings />} />
-          {/* Admin routes */}
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/users" element={<AdminUsers />} />
-          <Route path="/admin/deployments" element={<AdminDeployments />} />
-          <Route path="/admin/brokers" element={<AdminBrokerHealth />} />
-          <Route path="/admin/kill-switch" element={<AdminKillSwitch />} />
-          <Route path="/admin/errors" element={<AdminErrorLogs />} />
-          <Route path="/admin/universe-groups" element={<AdminUniverseGroups />} />
-          <Route path="/admin/strategy-mappings" element={<AdminStrategyMappings />} />
-          <Route path="/admin/strategy-configs" element={<AdminStrategyConfigs />} />
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/brokers/callback" element={<BrokerCallback />} />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<Layout />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/signals" element={<Signals />} />
+            <Route path="/backtest" element={<AdvancedBacktest />} />
+            <Route path="/strategies" element={<Strategies />} />
+            <Route path="/deployments" element={<Deployments />} />
+            <Route path="/brokers" element={<Brokers />} />
+            <Route path="/orders" element={<Orders />} />
+            <Route path="/positions" element={<Positions />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/deployments" element={<AdminDeployments />} />
+            <Route path="/admin/brokers" element={<AdminBrokerHealth />} />
+            <Route path="/admin/kill-switch" element={<AdminKillSwitch />} />
+            <Route path="/admin/errors" element={<AdminErrorLogs />} />
+            <Route path="/admin/universe-groups" element={<AdminUniverseGroups />} />
+            <Route path="/admin/strategy-mappings" element={<AdminStrategyMappings />} />
+            <Route path="/admin/strategy-configs" element={<AdminStrategyConfigs />} />
+          </Route>
         </Route>
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
