@@ -92,6 +92,7 @@ public class SignalController {
         double[] prices = {450.50, 3050.00, 4350.00, 1920.50, 1680.25, 620.75, 1850.00, 12450.00, 1250.25, 990.50};
         String[] statuses = {"GENERATED", "EXECUTED", "GENERATED", "EXECUTED", "GENERATED", "GENERATED", "REJECTED", "GENERATED", "EXECUTED", "GENERATED"};
         int[] confidences = {85, 78, 82, 88, 75, 80, 92, 77, 81, 86};
+        String[] strategies = {"Opening Range Breakout", "VWAP Bounce", "Gap Fill", "Opening Range Breakout", "VWAP Bounce", "Gap Fill", "Opening Range Breakout", "VWAP Bounce", "Gap Fill", "Opening Range Breakout"};
 
         for (int i = 0; i < symbols.length; i++) {
             SignalEntity signal = new SignalEntity();
@@ -103,6 +104,7 @@ public class SignalController {
             signal.setStopLoss(new BigDecimal(prices[i] * 0.992));
             signal.setConfidence(new BigDecimal(confidences[i]));
             signal.setStatus(statuses[i]);
+            signal.setReason(strategies[i]);
             signal.setCreatedAt(Instant.now().minusSeconds(i * 300));
             signal.setSource(SignalEntity.SignalSource.INTERNAL);
             signals.add(signal);

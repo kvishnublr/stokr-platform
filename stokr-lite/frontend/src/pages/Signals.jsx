@@ -69,7 +69,7 @@ function AnimatedCounter({ value, duration = 1200 }) {
 function StrategyModal({ strategy, signals, onClose }) {
   if (!strategy) return null;
 
-  const strategySignals = signals.filter(s => s.reason === strategy);
+  const strategySignals = signals.filter(s => (s.reason || s.scannerName) === strategy);
   const total = strategySignals.length;
   const generated = strategySignals.filter(s => s.status === 'GENERATED').length;
   const executed = strategySignals.filter(s => s.status === 'EXECUTED').length;
@@ -604,8 +604,8 @@ export default function Signals() {
                         <span style={{ fontSize: '11px', color: '#d1d5db' }}>—</span>
                       )}
                     </td>
-                    <td style={{ padding: '12px', textAlign: 'center', color: '#6366f1', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600, cursor: 'pointer' }} onClick={() => setSelectedStrategy(s.reason)} title={s.reason}>
-                      <span style={{ color: '#6366f1', textDecoration: 'underline', cursor: 'pointer' }}>{s.reason || '—'}</span>
+                    <td style={{ padding: '12px', textAlign: 'center', color: '#6366f1', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600, cursor: 'pointer' }} onClick={() => setSelectedStrategy(s.reason || s.scannerName)} title={s.reason || s.scannerName}>
+                      <span style={{ color: '#6366f1', textDecoration: 'underline', cursor: 'pointer' }}>{s.reason || s.scannerName || '—'}</span>
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.3px', background: statusColors[s.status]?.bg, color: statusColors[s.status]?.text, display: 'inline-block', whiteSpace: 'nowrap' }}>{s.status}</span>

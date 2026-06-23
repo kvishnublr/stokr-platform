@@ -229,7 +229,9 @@ public class ChartinkWebhookController {
             entity.setConfidence(BigDecimal.valueOf(strategySignal.confidence()));
             entity.setStopLoss(strategySignal.stopLoss());
             entity.setTarget(strategySignal.target());
-            entity.setReason(strategySignal.reason());
+            if (strategySignal.reason() != null) {
+                entity.setReason(strategySignal.reason());
+            }
             entity = signalRepository.save(entity);
 
             // 4. Execute
