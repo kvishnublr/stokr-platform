@@ -30,11 +30,9 @@ function calculatePnL(signal) {
     const target = Number(signal.target) || entry;
     const sl = Number(signal.stopLoss) || entry;
     exitPrice = (target + sl) / 2;
-  } else {
-    // Fallback: use target for profit, SL for loss
-    if (!signal.exitType) {
-      exitPrice = Number(signal.target) || entry;
-    }
+  } else if (!signal.exitType) {
+    // No exit yet — can't calculate P&L
+    return null;
   }
 
   if (!exitPrice || exitPrice === 0) return 0;
@@ -672,6 +670,7 @@ export default function Signals() {
                     <td style={{ padding: '12px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '12px' }}>
                       {(() => {
                         const pnl = calculatePnL(s);
+                        if (pnl === null) return <span style={{ fontSize: '11px', color: '#d1d5db' }}>—</span>;
                         return (
                           <span style={{
                             color: pnl > 0 ? '#059669' : pnl < 0 ? '#dc2626' : '#6b7280',
@@ -698,7 +697,7 @@ export default function Signals() {
               <div style={{ fontSize: '28px', fontWeight: 800 }}>
                 Total P&L: ₹{(() => {
                   let total = 0;
-                  filtered.forEach(s => { total += calculatePnL(s); });
+                  filtered.forEach(s => { const p = calculatePnL(s); if (p !== null) total += p; });
                   return total.toLocaleString('en-IN', { minimumFractionDigits: 0 });
                 })()}
               </div>
@@ -717,7 +716,7 @@ export default function Signals() {
                 <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>
                   {(() => {
                     let total = 0;
-                    filtered.forEach(s => { total += calculatePnL(s); });
+                    filtered.forEach(s => { const p = calculatePnL(s); if (p !== null) total += p; });
                     const roi = ((total / (RISK_PER_SIGNAL * filtered.length)) * 100).toFixed(2);
                     return roi + '%';
                   })()}

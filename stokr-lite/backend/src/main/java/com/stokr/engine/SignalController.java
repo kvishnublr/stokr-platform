@@ -90,9 +90,13 @@ public class SignalController {
         String[] symbols = {"WIPRO", "RELIANCE", "TCS", "INFY", "HDFCBANK", "SBIN", "BAJAJFINSV", "MARUTI", "ADANIPORTS", "AXISBANK"};
         SignalEntity.Side[] sides = {SignalEntity.Side.BUY, SignalEntity.Side.SELL, SignalEntity.Side.BUY, SignalEntity.Side.SELL, SignalEntity.Side.BUY, SignalEntity.Side.BUY, SignalEntity.Side.SELL, SignalEntity.Side.BUY, SignalEntity.Side.SELL, SignalEntity.Side.BUY};
         double[] prices = {450.50, 3050.00, 4350.00, 1920.50, 1680.25, 620.75, 1850.00, 12450.00, 1250.25, 990.50};
-        String[] statuses = {"GENERATED", "EXECUTED", "GENERATED", "EXECUTED", "GENERATED", "GENERATED", "REJECTED", "GENERATED", "EXECUTED", "GENERATED"};
+        String[] statuses = {"GENERATED", "EXECUTED", "GENERATED", "EXECUTED", "GENERATED", "GENERATED", "REJECTED", "EXECUTED", "EXECUTED", "GENERATED"};
         int[] confidences = {85, 78, 82, 88, 75, 80, 92, 77, 81, 86};
         String[] strategies = {"Opening Range Breakout", "VWAP Bounce", "Gap Fill", "Opening Range Breakout", "VWAP Bounce", "Gap Fill", "Opening Range Breakout", "VWAP Bounce", "Gap Fill", "Opening Range Breakout"};
+        String[] exitTypes = {null, "TARGET_HIT", null, "SL_HIT", null, null, null, "TARGET_HIT", "SL_HIT", null};
+        double[] exitPrices = {0, prices[1] * 1.01, 0, prices[3] * 0.99, 0, 0, 0, prices[7] * 1.01, prices[8] * 0.99, 0};
+
+        Instant marketOpen = Instant.now().atZone(ZoneId.of("Asia/Kolkata")).withHour(9).withMinute(15).withSecond(0).toInstant();
 
         for (int i = 0; i < symbols.length; i++) {
             SignalEntity signal = new SignalEntity();
@@ -105,7 +109,14 @@ public class SignalController {
             signal.setConfidence(new BigDecimal(confidences[i]));
             signal.setStatus(statuses[i]);
             signal.setReason(strategies[i]);
-            signal.setCreatedAt(Instant.now().minusSeconds(i * 300));
+            signal.setCreatedAt(marketOpen.minusSeconds(i * 300));
+            // Set entry time 2 minutes after signal creation
+            signal.setEntryTime(signal.getCreatedAt().plusSeconds(120));
+            // Set exit type and time for EXECUTED signals
+            if (exitTypes[i] != null) {
+                signal.setExitType(exitTypes[i]);
+                signal.setExitTime(signal.getEntryTime().plusSeconds(600 + (i * 120)));
+            }
             signal.setSource(SignalEntity.SignalSource.INTERNAL);
             signals.add(signal);
         }
