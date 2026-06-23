@@ -17,10 +17,10 @@ services:
       dockerfile: Dockerfile
     container_name: stokr-lite-backend
     environment:
-      DB_HOST: db.tzxceqjvzilmnfzvdoet.supabase.co
+      DB_HOST: aws-0-ap-southeast-1.pooler.supabase.com
       DB_PORT: 5432
       DB_NAME: postgres
-      DB_USERNAME: postgres
+      DB_USERNAME: postgres.tzxceqjvzilmnfzvdoet
       DB_PASSWORD: ${DB_PASSWORD:-wfKh8p8ISQ63VF40}
       DB_SSLMODE: require
       JWT_SECRET: ${JWT_SECRET:-change-this-to-a-very-long-random-secret-key-at-least-256-bits}
