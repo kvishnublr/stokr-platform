@@ -14,7 +14,7 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const { data } = await client.post('/api/auth/login', { email, password });
+      const { data } = await client.post('/auth/login', { email, password });
       localStorage.setItem('token', data.accessToken);
       localStorage.setItem('refreshToken', data.refreshToken);
       navigate('/');
