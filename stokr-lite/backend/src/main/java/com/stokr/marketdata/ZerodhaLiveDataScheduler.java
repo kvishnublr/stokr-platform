@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -33,12 +34,13 @@ public class ZerodhaLiveDataScheduler {
 
     private static final String KITE_API_BASE  = "https://api.kite.trade";
     private static final ZoneId IST            = ZoneId.of("Asia/Kolkata");
-    private static final int    BATCH_SIZE     = 150;
-    private static final long   BATCH_DELAY_MS = 400;
+    private static final int    BATCH_SIZE     = 500;
 
     // RestTemplate with 10s connect + 15s read timeout — prevents scheduler thread hang
     private final RestTemplate restTemplate = buildRestTemplate();
     private final ObjectMapper mapper = new ObjectMapper();
+
+    private final JdbcTemplate jdbcTemplate;
 
     private final Map<String, BigDecimal> ltpCache     = new ConcurrentHashMap<>();
     private final Map<String, BigDecimal> orbHighCache = new ConcurrentHashMap<>();
@@ -141,11 +143,6 @@ public class ZerodhaLiveDataScheduler {
 
     public static final List<String> NIFTY_50 = NIFTY_500.subList(0, 50);
 
-    @Scheduled(cron = "0 */1 9-15 * * MON-FRI", zone = "Asia/Kolkata")
-    public void scheduledFetch() {
-        fetchAndStoreQuotes();
-    }
-
     public void fetchAndStoreQuotes() {
         String accessToken = resolveToken();
         if (accessToken == null) {
@@ -165,10 +162,6 @@ public class ZerodhaLiveDataScheduler {
         List<List<String>> batches = partition(NIFTY_500, BATCH_SIZE);
         for (int batchIdx = 0; batchIdx < batches.size(); batchIdx++) {
             List<String> batch = batches.get(batchIdx);
-
-            if (batchIdx > 0) {
-                try { Thread.sleep(BATCH_DELAY_MS); } catch (InterruptedException ignored) {}
-            }
 
             StringBuilder url = new StringBuilder(KITE_API_BASE + "/quote?");
             for (int i = 0; i < batch.size(); i++) {
@@ -235,13 +228,47 @@ public class ZerodhaLiveDataScheduler {
         }
 
         if (!candlesToSave.isEmpty()) {
-            // Delete existing rows for this minute then bulk insert — 2 queries vs 1000 individual upserts
-            candleDataRepository.delete1minByTimestamp(istNow);
-            candleDataRepository.saveAll(candlesToSave);
+            upsertCandles(candlesToSave);
         }
 
         log.info("Zerodha live data: stored {} 1-min candles at {} ({} batches)",
             candlesToSave.size(), istNow, batches.size());
+    }
+
+    /**
+     * Batch upsert 1-min candles via JDBC with PostgreSQL native ON CONFLICT.
+     * Bypasses Hibernate entirely so {@code GenerationType.IDENTITY} row-by-row
+     * inserts and EntityManager state issues never cause duplicate-key failures.
+     * <p>
+     * {@code ON CONFLICT DO UPDATE} merges: close and volume are replaced,
+     * high/low are widened — this is safe because the same cycle's data is
+     * self-consistent (we never merge stale data from a different cycle).
+     */
+    private void upsertCandles(List<CandleData> candles) {
+        String sql =
+            "INSERT INTO candle_data (symbol, timeframe, \"timestamp\", \"open\", high, low, \"close\", volume, created_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW()) " +
+            "ON CONFLICT (symbol, timeframe, \"timestamp\") DO UPDATE SET " +
+            "  high    = GREATEST(candle_data.high, EXCLUDED.high), " +
+            "  low     = LEAST(candle_data.low,    EXCLUDED.low), " +
+            "  \"close\" = EXCLUDED.\"close\", " +
+            "  volume  = EXCLUDED.volume " +
+            "  /* open & timestamp are immutable after first insert */";
+
+        List<Object[]> batchArgs = candles.stream()
+            .map(c -> new Object[]{
+                c.getSymbol(),
+                c.getTimeframe(),
+                c.getTimestamp(),
+                c.getOpen(),
+                c.getHigh(),
+                c.getLow(),
+                c.getClose(),
+                c.getVolume()
+            })
+            .toList();
+
+        jdbcTemplate.batchUpdate(sql, batchArgs);
     }
 
     @Scheduled(cron = "0 0 20 * * MON-FRI", zone = "Asia/Kolkata")

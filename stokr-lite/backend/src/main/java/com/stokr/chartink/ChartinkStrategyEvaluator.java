@@ -1,12 +1,18 @@
 package com.stokr.chartink;
 
+import com.stokr.engine.CandleData;
+import com.stokr.engine.IndicatorUtils;
 import com.stokr.marketdata.Candle;
+import com.stokr.marketdata.MarketDataService;
 import com.stokr.strategy.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -20,6 +26,9 @@ public class ChartinkStrategyEvaluator {
     private final ChartinkTickBuffer tickBuffer;
     private final StrategyUniverseMappingRepository mappingRepository;
     private final UniverseSymbolRepository symbolRepository;
+    private final MarketDataService marketDataService;
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     public Signal evaluate(ChartinkPayload payload) {
         String scannerName = payload.scannerName();
@@ -139,7 +148,18 @@ public class ChartinkStrategyEvaluator {
 
     private MarketContext buildContext(ChartinkPayload payload) {
         tickBuffer.add(payload);
+        String symbol = payload.symbol();
+
+        // Use tick-buffer candles if available; otherwise fall back to DB candles
         List<Candle> candles = tickBuffer.toCandles(payload.symbol());
+        if (candles.size() < 15) {
+            LocalDateTime todayOpen = LocalDate.now(IST).atTime(9, 15);
+            List<Candle> dbCandles = marketDataService.getCandlesBetween(symbol, "1min", todayOpen, LocalDateTime.now(IST));
+            if (dbCandles.size() > candles.size()) {
+                candles = dbCandles;
+            }
+        }
+
         BigDecimal currentPrice = payload.ltp() != null ? payload.ltp() : BigDecimal.ZERO;
         BigDecimal vwap = payload.vwap();
 
@@ -148,11 +168,32 @@ public class ChartinkStrategyEvaluator {
         if (payload.adx14() != null) indicators.put("ADX14", payload.adx14());
         if (payload.atr14() != null) indicators.put("ATR14", payload.atr14());
 
+        // Compute missing indicators from candle data when Chartink doesn't provide them
+        if (candles.size() >= 20) {
+            List<CandleData> cdList = candles.stream().map(c -> {
+                CandleData cd = new CandleData();
+                cd.setHigh(c.high()); cd.setLow(c.low()); cd.setOpen(c.open());
+                cd.setClose(c.close()); cd.setVolume(c.volume()); cd.setSymbol(c.symbol());
+                return cd;
+            }).collect(Collectors.toList());
+
+            IndicatorUtils.Indicators ind = IndicatorUtils.computeAll(cdList).get(candles.size() - 1);
+            if (vwap == null || vwap.compareTo(BigDecimal.ZERO) <= 0) {
+                vwap = ind.vwap();
+            }
+            if (payload.rsi14() == null && ind.rsi14() != null) {
+                indicators.put("RSI14", ind.rsi14());
+            }
+            if (payload.atr14() == null && ind.atr14() != null) {
+                indicators.put("ATR14", ind.atr14());
+            }
+        }
+
         Map<String, Object> extras = new HashMap<>();
         extras.put("buyerQty", payload.buyerQty());
         extras.put("sellerQty", payload.sellerQty());
-        extras.put("atr14", payload.atr14());
-        extras.put("rsi14", payload.rsi14());
+        extras.put("atr14", indicators.get("ATR14"));
+        extras.put("rsi14", indicators.get("RSI14"));
         extras.put("gapPct", payload.gapPct());
         extras.put("prevClose", payload.prevClose());
         extras.put("vwapDeviationPct", payload.vwapDeviationPct());
@@ -163,7 +204,7 @@ public class ChartinkStrategyEvaluator {
         extras.put("bestBid", payload.bestBid());
         extras.put("bestAsk", payload.bestAsk());
 
-        // ORB levels from tick-buffer candles for ORB_V / MORNING_SURGE strategies
+        // ORB levels from candles for ORB_V / MORNING_SURGE strategies
         if (candles.size() >= 15) {
             List<Candle> orbWindow = candles.subList(0, 15);
             BigDecimal orbHigh = orbWindow.stream().map(Candle::high)
