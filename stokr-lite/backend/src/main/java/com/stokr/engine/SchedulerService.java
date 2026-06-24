@@ -17,9 +17,9 @@ public class SchedulerService {
     private int scanIntervalSeconds;
 
     /**
-     * Main market scan - runs every minute during market hours.
+     * Main market scan - runs every minute during IST market hours.
      */
-    @Scheduled(cron = "0 */1 9-15 * * MON-FRI")
+    @Scheduled(cron = "0 */1 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public void marketScan() {
         executionEngine.runScanCycle();
     }

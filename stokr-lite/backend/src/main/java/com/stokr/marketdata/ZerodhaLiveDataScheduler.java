@@ -133,10 +133,15 @@ public class ZerodhaLiveDataScheduler {
     public static final List<String> NIFTY_50 = NIFTY_500.subList(0, 50);
 
     /**
-     * Called by ExecutionEngine before every scan cycle.
-     * Fetches Zerodha /quote for NIFTY 500 in batches of 150 (400ms between batches)
-     * and stores 1-min candles to DB.
+     * Runs every minute during IST market hours to keep candle DB populated.
+     * Also called directly by ExecutionEngine before each scan cycle.
+     * Running independently ensures data accumulates even when no deployments are active.
      */
+    @Scheduled(cron = "0 */1 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void scheduledFetch() {
+        fetchAndStoreQuotes();
+    }
+
     public void fetchAndStoreQuotes() {
         String accessToken = resolveToken();
         if (accessToken == null) {
