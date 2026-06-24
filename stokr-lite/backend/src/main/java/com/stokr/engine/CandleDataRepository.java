@@ -13,6 +13,11 @@ import java.util.Optional;
 @Repository
 public interface CandleDataRepository extends JpaRepository<CandleData, Long> {
 
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM CandleData c WHERE c.timestamp = :ts AND c.timeframe = '1min'")
+    int delete1minByTimestamp(LocalDateTime ts);
+
     List<CandleData> findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(
         String symbol, String timeframe, LocalDateTime startTime, LocalDateTime endTime);
 
