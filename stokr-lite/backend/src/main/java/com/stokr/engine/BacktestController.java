@@ -390,6 +390,14 @@ public class BacktestController {
             extras.put("rsi14",     rsi);
             extras.put("atr14",     atr);
             extras.put("prevClose", i > 0 ? candleData.get(i - 1).getClose() : null);
+            // VWAP slope: pass vwap from 5 candles ago (same day only) for trend check
+            if (i >= 5) {
+                String dayI    = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
+                String dayIminus5 = candleData.get(i - 5).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
+                extras.put("prevVwap5", dayI.equals(dayIminus5) ? dayVwap[i - 5] : null);
+            } else {
+                extras.put("prevVwap5", null);
+            }
 
             List<Candle> window = candles.subList(0, i + 1);
             MarketContext context = new MarketContext(symbol, window, candles.get(i).close(), dayVwap[i], indMap, extras);
