@@ -74,7 +74,7 @@ public class VwapTripleConfirmationStrategy implements StrategyPlugin {
             return null;
         }
 
-        // 5. ATR_15min > 0.35%
+        // 5. ATR% > threshold (0.35% for daily, or overridden via extras for shorter timeframes)
         BigDecimal atr = context.indicators() != null ? context.indicators().get("ATR14") : null;
         if (atr == null) atr = context.extra("atr14", BigDecimal.class);
         if (atr == null) {
@@ -83,8 +83,10 @@ public class VwapTripleConfirmationStrategy implements StrategyPlugin {
         }
         BigDecimal atrPct = atr.divide(close, 4, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100));
-        if (atrPct.doubleValue() <= 0.35) {
-            log.debug("VWAP Triple: ATR% {} <= 0.35%", atrPct);
+        BigDecimal atrThreshold = context.extra("atrThresholdPct", BigDecimal.class);
+        double threshold = atrThreshold != null ? atrThreshold.doubleValue() : 0.35;
+        if (atrPct.doubleValue() <= threshold) {
+            log.debug("VWAP Triple: ATR% {} <= {}%", atrPct, threshold);
             return null;
         }
 

@@ -247,13 +247,35 @@ public class BacktestController {
         List<Candle> candles = candleData.stream().map(this::toCandle).toList();
         List<IndicatorUtils.Indicators> indicators = IndicatorUtils.computeAll(candleData);
 
+        // Pre-compute per-day VWAP (resets at each trading day boundary)
+        BigDecimal[] dayVwap = computePerDayVwap(candleData);
+        // Pre-compute day open prices and prev-day close for gap calculations
+        BigDecimal[] dayOpen = new BigDecimal[n];
+        BigDecimal[] prevDayClose = new BigDecimal[n];
+        {
+            String curDay = null;
+            BigDecimal lastDayClose = null;
+            BigDecimal thisDayOpen = null;
+            for (int i = 0; i < n; i++) {
+                String d = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata"))
+                    .toLocalDate().toString();
+                if (!d.equals(curDay)) {
+                    lastDayClose = curDay != null && i > 0 ? candles.get(i - 1).close() : null;
+                    thisDayOpen = candles.get(i).open();
+                    curDay = d;
+                }
+                dayOpen[i] = thisDayOpen;
+                prevDayClose[i] = lastDayClose;
+            }
+        }
+
         int openTradeExitIdx = -1;
 
         for (int i = 14; i < n; i++) {
             if (openTradeExitIdx > 0 && i <= openTradeExitIdx) continue;
 
             List<Candle> window = candles.subList(0, i + 1);
-            BigDecimal vwap = indicators.get(i).vwap();
+            BigDecimal vwap = dayVwap[i];   // per-day VWAP
             BigDecimal rsi = indicators.get(i).rsi14();
             BigDecimal atr = indicators.get(i).atr14();
 
@@ -261,10 +283,31 @@ public class BacktestController {
             if (rsi != null) indMap.put("RSI14", rsi);
             if (atr != null) indMap.put("ATR14", atr);
 
+            // Volume-based unfilled ratio proxy: volume relative to recent avg
+            int volStart = Math.max(0, i - 9);
+            long sumVol = 0;
+            for (int v = volStart; v <= i; v++) sumVol += candles.get(v).volume();
+            long avgVol = sumVol / (i - volStart + 1);
+            double volRatio = avgVol > 0 ? (double) candles.get(i).volume() / avgVol : 1.0;
+            // unfilledRatio > 0.35 when volume >= average (proxy for pre-open order imbalance)
+            BigDecimal unfilledRatio = BigDecimal.valueOf(Math.min(1.0, volRatio * 0.4));
+
+            // Gap from prev day close to current day open
+            BigDecimal gapPct = null;
+            if (prevDayClose[i] != null && prevDayClose[i].compareTo(BigDecimal.ZERO) > 0) {
+                gapPct = dayOpen[i].subtract(prevDayClose[i])
+                    .divide(prevDayClose[i], 4, java.math.RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100));
+            }
+
             Map<String, Object> extras = new HashMap<>();
             extras.put("buyerQty", 100L);
             extras.put("sellerQty", 40L);
             extras.put("prevClose", i > 0 ? candles.get(i - 1).close() : candles.get(i).close());
+            extras.put("unfilledRatio", unfilledRatio);
+            if (gapPct != null) extras.put("gapPct", gapPct);
+            // ATR% threshold scaled by timeframe: 1min data needs ~0.05% not 0.35%
+            extras.put("atrThresholdPct", BigDecimal.valueOf(0.05));
 
             MarketContext context = new MarketContext(symbol, window, candles.get(i).close(), vwap, indMap, extras);
             Signal signal = plugin.evaluate(context, params);
@@ -302,6 +345,32 @@ public class BacktestController {
             }
         }
         return trades;
+    }
+
+    private BigDecimal[] computePerDayVwap(List<CandleData> candles) {
+        int n = candles.size();
+        BigDecimal[] result = new BigDecimal[n];
+        String curDay = null;
+        BigDecimal cumTpv = BigDecimal.ZERO;
+        long cumVol = 0;
+        for (int i = 0; i < n; i++) {
+            String d = candles.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata"))
+                .toLocalDate().toString();
+            if (!d.equals(curDay)) {
+                curDay = d;
+                cumTpv = BigDecimal.ZERO;
+                cumVol = 0;
+            }
+            CandleData c = candles.get(i);
+            BigDecimal tp = c.getHigh().add(c.getLow()).add(c.getClose())
+                .divide(BigDecimal.valueOf(3), 4, java.math.RoundingMode.HALF_UP);
+            cumTpv = cumTpv.add(tp.multiply(BigDecimal.valueOf(c.getVolume())));
+            cumVol += c.getVolume();
+            result[i] = cumVol > 0
+                ? cumTpv.divide(BigDecimal.valueOf(cumVol), 4, java.math.RoundingMode.HALF_UP)
+                : c.getClose();
+        }
+        return result;
     }
 
     private Candle toCandle(CandleData cd) {
