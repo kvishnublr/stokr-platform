@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "candle_data", indexes = {
@@ -27,7 +28,7 @@ public class CandleData {
     private String timeframe; // 1min, 5min, 15min, hourly, daily
 
     @Column(nullable = false)
-    private Instant timestamp;
+    private LocalDateTime timestamp;  // IST wall-clock time, stored as TIMESTAMP (no zone)
 
     @Column(nullable = false)
     private BigDecimal open;

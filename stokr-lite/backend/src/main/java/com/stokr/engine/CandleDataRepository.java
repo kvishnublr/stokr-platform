@@ -1,10 +1,12 @@
 package com.stokr.engine;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -12,11 +14,11 @@ import java.util.Optional;
 public interface CandleDataRepository extends JpaRepository<CandleData, Long> {
 
     List<CandleData> findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(
-        String symbol, String timeframe, Instant startTime, Instant endTime);
+        String symbol, String timeframe, LocalDateTime startTime, LocalDateTime endTime);
 
     List<CandleData> findBySymbolAndTimeframeOrderByTimestampDesc(String symbol, String timeframe);
 
-    Optional<CandleData> findBySymbolAndTimeframeAndTimestamp(String symbol, String timeframe, Instant timestamp);
+    Optional<CandleData> findBySymbolAndTimeframeAndTimestamp(String symbol, String timeframe, LocalDateTime timestamp);
 
     @Query("SELECT DISTINCT c.symbol FROM CandleData c")
     List<String> findAllSymbols();
@@ -25,12 +27,10 @@ public interface CandleDataRepository extends JpaRepository<CandleData, Long> {
     List<String> findAllTimeframes();
 
     @Query("SELECT MAX(c.timestamp) FROM CandleData c WHERE c.symbol = :symbol AND c.timeframe = :timeframe")
-    Optional<Instant> findLatestTimestamp(String symbol, String timeframe);
+    Optional<LocalDateTime> findLatestTimestamp(String symbol, String timeframe);
 
-    void deleteBySymbolAndTimeframeAndTimestampBefore(String symbol, String timeframe, Instant timestamp);
-
-    @org.springframework.data.jpa.repository.Modifying
-    @org.springframework.transaction.annotation.Transactional
+    @Modifying
+    @Transactional
     @Query("DELETE FROM CandleData c WHERE c.timestamp < :cutoff")
-    int deleteByTimestampBefore(Instant cutoff);
+    int deleteByTimestampBefore(LocalDateTime cutoff);
 }

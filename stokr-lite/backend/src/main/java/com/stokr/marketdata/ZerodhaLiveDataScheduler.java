@@ -185,7 +185,7 @@ public class ZerodhaLiveDataScheduler {
                 }
 
                 JsonNode data = root.path("data");
-                Instant ts = istNow.atZone(IST).toInstant();
+                LocalDateTime ts = istNow;  // IST wall-clock time stored as-is
 
                 for (String symbol : batch) {
                     JsonNode q = data.path("NSE:" + symbol);
@@ -243,7 +243,7 @@ public class ZerodhaLiveDataScheduler {
     /** Nightly cleanup: delete candles older than 30 days to keep DB lean. */
     @Scheduled(cron = "0 0 20 * * MON-FRI", zone = "Asia/Kolkata")
     public void cleanupOldCandles() {
-        Instant cutoff = Instant.now().minus(30, java.time.temporal.ChronoUnit.DAYS);
+        LocalDateTime cutoff = LocalDateTime.now(IST).minusDays(30);
         int deleted = candleDataRepository.deleteByTimestampBefore(cutoff);
         log.info("Candle cleanup: deleted {} rows older than 30 days", deleted);
     }
