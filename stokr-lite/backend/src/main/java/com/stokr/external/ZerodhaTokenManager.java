@@ -1,18 +1,27 @@
 package com.stokr.external;
 
+import com.stokr.broker.BrokerAccount;
+import com.stokr.broker.BrokerAccountRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class ZerodhaTokenManager {
+
+    private final BrokerAccountRepository brokerAccountRepository;
 
     @Value("${zerodha.api.key:}")
     private String zerodhaApiKey;
@@ -30,6 +39,25 @@ public class ZerodhaTokenManager {
     }
 
     private ZerodhaAuth currentAuth = new ZerodhaAuth(null, null, null, false);
+
+    @PostConstruct
+    public void loadFromDatabase() {
+        try {
+            List<BrokerAccount> accounts = brokerAccountRepository.findByBrokerNameAndStatus("ZERODHA", "ACTIVE");
+            for (BrokerAccount acc : accounts) {
+                if (acc.getAccessToken() != null && acc.getTokenExpiry() != null
+                        && Instant.now().isBefore(acc.getTokenExpiry())) {
+                    long secondsRemaining = Duration.between(Instant.now(), acc.getTokenExpiry()).getSeconds();
+                    setAuth(acc.getAccessToken(), acc.getRefreshToken(), (int) secondsRemaining);
+                    log.info("Loaded Zerodha token from DB for broker account {}, expires in {}s", acc.getId(), secondsRemaining);
+                    return;
+                }
+            }
+            log.info("No valid Zerodha token found in DB on startup — connect via Brokers page");
+        } catch (Exception e) {
+            log.warn("Could not load Zerodha token from DB: {}", e.getMessage());
+        }
+    }
 
     public ZerodhaAuth getCurrentAuth() {
         if (currentAuth.valid && currentAuth.expiresAt != null && Instant.now().isBefore(currentAuth.expiresAt)) {

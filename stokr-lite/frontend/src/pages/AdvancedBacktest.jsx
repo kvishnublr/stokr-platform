@@ -18,9 +18,12 @@ async function ensureAuthenticated() {
 }
 
 const STRATEGIES = [
-  { value: 'ORB',           label: 'ORB Breakout',     desc: 'Opening-range breakout + trailing stop' },
-  { value: 'VWAP',          label: 'VWAP Triple',      desc: 'Pullback to VWAP + RSI + volume' },
-  { value: 'MORNING_SURGE', label: 'Morning Surge',    desc: 'High-volume ORB in first hour (9:30–10:30)' },
+  { value: 'ORB',           label: 'ORB Breakout',           desc: 'Opening-range breakout + trailing stop (9:15–9:30 range)' },
+  { value: 'VWAP',          label: 'VWAP Triple',            desc: 'Pullback to VWAP + RSI confirmation + volume surge' },
+  { value: 'MORNING_SURGE', label: 'Morning Surge',          desc: 'High-volume ORB in first hour (9:30–10:30)' },
+  { value: 'SURGE_REV',     label: 'Morning Surge Reversal', desc: 'Counter-trend fade after morning surge exhaustion' },
+  { value: 'TBI',           label: 'Trade Book Imbalance',   desc: 'Buy/sell order-book imbalance with volume confirmation' },
+  { value: 'PREOPEN',       label: 'Pre-Open Trade Book',    desc: 'Pre-open session order-book imbalance signal' },
 ];
 
 function MetricCard({ label, value, color = '#1f2937', sub }) {
@@ -126,7 +129,7 @@ export default function AdvancedBacktest() {
           📈 Strategy Backtest
         </h1>
         <p style={{ color: '#6b7280', marginTop: '6px', fontSize: '14px' }}>
-          ORB · VWAP Triple · Morning Surge · Real 1-min candle data · ₹25,000/trade · Trailing SL
+          ORB · VWAP Triple · Morning Surge · Surge Reversal · Trade Book Imbalance · Pre-Open · Real 1-min candle data · ₹25,000/trade · Trailing SL
         </p>
       </div>
 
