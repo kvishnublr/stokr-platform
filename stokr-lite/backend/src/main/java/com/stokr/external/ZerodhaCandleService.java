@@ -11,6 +11,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
@@ -21,33 +23,119 @@ import java.util.*;
 @RequiredArgsConstructor
 public class ZerodhaCandleService {
 
-    @Value("${zerodha.api.key:}")
+    @Value("${broker.zerodha.api-key:}")
     private String zerodhaApiKey;
+
+    @Value("${broker.zerodha.api-secret:}")
+    private String zerodhaApiSecret;
 
     private static final String KITE_API_BASE = "https://api.kite.trade";
     private static final Map<String, String> SYMBOL_TO_TOKEN = new HashMap<>();
 
     static {
-        SYMBOL_TO_TOKEN.put("RELIANCE", "779521");
-        SYMBOL_TO_TOKEN.put("TCS", "771993");
-        SYMBOL_TO_TOKEN.put("INFY", "408065");
-        SYMBOL_TO_TOKEN.put("HDFC", "341249");
-        SYMBOL_TO_TOKEN.put("HDFCBANK", "341249");
-        SYMBOL_TO_TOKEN.put("ICICI", "1270529");
-        SYMBOL_TO_TOKEN.put("ICICIBANK", "1270529");
-        SYMBOL_TO_TOKEN.put("WIPRO", "969475");
-        SYMBOL_TO_TOKEN.put("AXISBANK", "1510401");
-        SYMBOL_TO_TOKEN.put("SBIN", "779521");
-        SYMBOL_TO_TOKEN.put("HINDUNILVR", "8894465");
-        SYMBOL_TO_TOKEN.put("ITC", "1135105");
-        SYMBOL_TO_TOKEN.put("BAJFINANCE", "10393601");
-        SYMBOL_TO_TOKEN.put("KOTAKBANK", "492033");
-        SYMBOL_TO_TOKEN.put("MARUTI", "11650561");
+        // NIFTY 50
+        SYMBOL_TO_TOKEN.put("RELIANCE",   "738561");
+        SYMBOL_TO_TOKEN.put("TCS",        "2953217");
+        SYMBOL_TO_TOKEN.put("HDFCBANK",   "341249");
+        SYMBOL_TO_TOKEN.put("ICICIBANK",  "1270529");
+        SYMBOL_TO_TOKEN.put("INFY",       "408065");
+        SYMBOL_TO_TOKEN.put("HINDUNILVR", "356865");
+        SYMBOL_TO_TOKEN.put("ITC",        "424961");
+        SYMBOL_TO_TOKEN.put("KOTAKBANK",  "492033");
+        SYMBOL_TO_TOKEN.put("LT",         "2939649");
+        SYMBOL_TO_TOKEN.put("SBIN",       "779521");
+        SYMBOL_TO_TOKEN.put("AXISBANK",   "1510401");
+        SYMBOL_TO_TOKEN.put("BAJFINANCE", "225537");
         SYMBOL_TO_TOKEN.put("BHARTIARTL", "2714625");
-        SYMBOL_TO_TOKEN.put("DMART", "15023105");
-        SYMBOL_TO_TOKEN.put("TITAN", "13798401");
-        SYMBOL_TO_TOKEN.put("ASIANPAINT", "4306177");
-        SYMBOL_TO_TOKEN.put("NESTLEIND", "12301825");
+        SYMBOL_TO_TOKEN.put("TITAN",      "897537");
+        SYMBOL_TO_TOKEN.put("MARUTI",     "2815745");
+        SYMBOL_TO_TOKEN.put("HCLTECH",    "1850625");
+        SYMBOL_TO_TOKEN.put("SUNPHARMA",  "857857");
+        SYMBOL_TO_TOKEN.put("TATAMOTORS", "884737");
+        SYMBOL_TO_TOKEN.put("NTPC",       "2977281");
+        SYMBOL_TO_TOKEN.put("BAJAJFINSV", "54273");
+        SYMBOL_TO_TOKEN.put("WIPRO",      "969473");
+        SYMBOL_TO_TOKEN.put("JSWSTEEL",   "3001089");
+        SYMBOL_TO_TOKEN.put("ONGC",       "633601");
+        SYMBOL_TO_TOKEN.put("POWERGRID",  "3834113");
+        SYMBOL_TO_TOKEN.put("COALINDIA",  "5215745");
+        SYMBOL_TO_TOKEN.put("GRASIM",     "315393");
+        SYMBOL_TO_TOKEN.put("TATASTEEL",  "895745");
+        SYMBOL_TO_TOKEN.put("BPCL",       "134657");
+        SYMBOL_TO_TOKEN.put("HINDALCO",   "348929");
+        SYMBOL_TO_TOKEN.put("ULTRACEMCO", "2952193");
+        SYMBOL_TO_TOKEN.put("ADANIENT",   "6401");
+        SYMBOL_TO_TOKEN.put("ADANIPORTS", "15083777");
+        SYMBOL_TO_TOKEN.put("APOLLOHOSP", "41729");
+        SYMBOL_TO_TOKEN.put("DIVISLAB",   "2800641");
+        SYMBOL_TO_TOKEN.put("DRREDDY",    "225537");
+        SYMBOL_TO_TOKEN.put("EICHERMOT",  "232961");
+        SYMBOL_TO_TOKEN.put("HDFCLIFE",   "119173121");
+        SYMBOL_TO_TOKEN.put("HEROMOTOCO", "345089");
+        SYMBOL_TO_TOKEN.put("INDUSINDBK", "1346049");
+        SYMBOL_TO_TOKEN.put("M&M",        "519937");
+        SYMBOL_TO_TOKEN.put("NESTLEIND",  "4598529");
+        SYMBOL_TO_TOKEN.put("SBILIFE",    "5582849");
+        SYMBOL_TO_TOKEN.put("TATACONSUM", "878593");
+        SYMBOL_TO_TOKEN.put("TECHM",      "3465729");
+        SYMBOL_TO_TOKEN.put("TRENT",      "2368513");
+        SYMBOL_TO_TOKEN.put("DMART",      "4451329");
+        SYMBOL_TO_TOKEN.put("UPL",        "2889473");
+        SYMBOL_TO_TOKEN.put("CIPLA",      "177409");
+        SYMBOL_TO_TOKEN.put("BRITANNIA",  "140033");
+        SYMBOL_TO_TOKEN.put("ASIANPAINT", "60417");
+        // NIFTY Next 50
+        SYMBOL_TO_TOKEN.put("BERGEPAINT", "70401");
+        SYMBOL_TO_TOKEN.put("CANBK",      "151041");
+        SYMBOL_TO_TOKEN.put("DABUR",      "185409");
+        SYMBOL_TO_TOKEN.put("GODREJCP",   "2672641");
+        SYMBOL_TO_TOKEN.put("HAL",        "12455425");
+        SYMBOL_TO_TOKEN.put("HAVELLS",    "14870273");
+        SYMBOL_TO_TOKEN.put("HDFCAMC",    "119076869");
+        SYMBOL_TO_TOKEN.put("IOB",        "2030849");
+        SYMBOL_TO_TOKEN.put("IRCTC",      "3502338");
+        SYMBOL_TO_TOKEN.put("LICI",       "4633601");
+        SYMBOL_TO_TOKEN.put("MCDOWELL",   "547209");
+        SYMBOL_TO_TOKEN.put("PIDILITIND", "680705");
+        SYMBOL_TO_TOKEN.put("POLYCAB",    "3455489");
+        SYMBOL_TO_TOKEN.put("SIEMENS",    "806401");
+        SYMBOL_TO_TOKEN.put("ZOMATO",     "5215745");
+        SYMBOL_TO_TOKEN.put("AMBUJACEM",  "17921");
+        SYMBOL_TO_TOKEN.put("ATGL",       "10604289");
+        SYMBOL_TO_TOKEN.put("BANDHANBNK", "579137");
+        SYMBOL_TO_TOKEN.put("BANKBARODA", "1195009");
+        SYMBOL_TO_TOKEN.put("BEL",        "87041");
+        SYMBOL_TO_TOKEN.put("CHOLAFIN",   "175361");
+        SYMBOL_TO_TOKEN.put("COFORGE",    "1691137");
+        SYMBOL_TO_TOKEN.put("COLPAL",     "177665");
+        SYMBOL_TO_TOKEN.put("DALBHARAT",  "192537");
+        SYMBOL_TO_TOKEN.put("FEDERALBNK", "261889");
+        SYMBOL_TO_TOKEN.put("GAIL",       "1207553");
+        SYMBOL_TO_TOKEN.put("GODREJPROP", "3721473");
+        SYMBOL_TO_TOKEN.put("IDFCFIRSTB", "3488001");
+        SYMBOL_TO_TOKEN.put("INDUSTOWER", "10694145");
+        SYMBOL_TO_TOKEN.put("IRFC",       "3679745");
+        SYMBOL_TO_TOKEN.put("JUBLFOOD",   "1977345");
+        SYMBOL_TO_TOKEN.put("KALYANKJIL", "5337089");
+        SYMBOL_TO_TOKEN.put("LALPATHLAB", "6386177");
+        SYMBOL_TO_TOKEN.put("LODHA",      "4949249");
+        SYMBOL_TO_TOKEN.put("LTTS",       "4561153");
+        SYMBOL_TO_TOKEN.put("LUPIN",      "2672641");
+        SYMBOL_TO_TOKEN.put("MFSL",       "3675393");
+        SYMBOL_TO_TOKEN.put("NHPC",       "820225");
+        SYMBOL_TO_TOKEN.put("NYKAA",      "5215745");
+        SYMBOL_TO_TOKEN.put("OFSS",       "621569");
+        SYMBOL_TO_TOKEN.put("PAGEIND",    "630785");
+        SYMBOL_TO_TOKEN.put("PAYTM",      "5215745");
+        SYMBOL_TO_TOKEN.put("PERSISTENT", "4254465");
+        SYMBOL_TO_TOKEN.put("RECLTD",     "738177");
+        SYMBOL_TO_TOKEN.put("SAIL",       "758529");
+        SYMBOL_TO_TOKEN.put("SHREECEM",   "794753");
+        SYMBOL_TO_TOKEN.put("TORNTPHARM", "900609");
+        SYMBOL_TO_TOKEN.put("TVSMOTOR",   "2170625");
+        SYMBOL_TO_TOKEN.put("VBL",        "5215745");
+        SYMBOL_TO_TOKEN.put("VEDL",       "952321");
+        SYMBOL_TO_TOKEN.put("VOLTAS",     "951809");
     }
 
     private final ZerodhaTokenManager tokenManager;
@@ -192,12 +280,13 @@ public class ZerodhaCandleService {
         };
     }
 
-    public boolean authenticate(String requestToken, String secret) {
+    public boolean authenticate(String requestToken) {
         try {
             log.info("Authenticating with Zerodha using request token...");
+            String checksum = sha256Hex(zerodhaApiKey + requestToken + zerodhaApiSecret);
             String url = String.format("%s/session/token", KITE_API_BASE);
             String body = String.format("api_key=%s&request_token=%s&checksum=%s",
-                zerodhaApiKey, requestToken, secret);
+                zerodhaApiKey, requestToken, checksum);
 
             HttpHeaders headers = new HttpHeaders();
             headers.set("X-Kite-Version", "3");
@@ -227,6 +316,18 @@ public class ZerodhaCandleService {
         } catch (Exception e) {
             log.error("Zerodha authentication failed: {}", e.getMessage());
             return false;
+        }
+    }
+
+    private String sha256Hex(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) hex.append(String.format("%02x", b));
+            return hex.toString();
+        } catch (Exception e) {
+            throw new RuntimeException("SHA-256 unavailable", e);
         }
     }
 

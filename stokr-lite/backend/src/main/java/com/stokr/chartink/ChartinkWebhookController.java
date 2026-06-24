@@ -214,7 +214,7 @@ public class ChartinkWebhookController {
                         "success", false,
                         "reason", "STRATEGY_NOT_CONFIRMED",
                         "symbol", hit.symbol(),
-                        "scannerName", scannerName
+                        "scannerName", scannerName != null ? scannerName : ""
                 );
             }
 
@@ -247,7 +247,7 @@ public class ChartinkWebhookController {
 
         } catch (Exception e) {
             log.error("Error processing stock {} for scanner {}", hit.symbol(), scannerName, e);
-            return Map.of("success", false, "reason", "ERROR", "symbol", hit.symbol(), "message", e.getMessage());
+            return Map.of("success", false, "reason", "ERROR", "symbol", hit.symbol(), "message", String.valueOf(e));
         }
     }
 }

@@ -1,8 +1,10 @@
 package com.stokr.engine;
 
+import com.stokr.external.ZerodhaCandleService;
 import com.stokr.external.ZerodhaTokenManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,81 +17,43 @@ import java.util.Map;
 public class ZerodhaAuthController {
 
     private final ZerodhaTokenManager tokenManager;
+    private final ZerodhaCandleService zerodhaCandleService;
 
-    @PostMapping("/request-auth")
-    public ResponseEntity<Map<String, Object>> requestAuth() {
-        log.info("Zerodha authentication requested");
+    @Value("${broker.zerodha.api-key:}")
+    private String apiKey;
 
-        // In production, this would return a login URL for the user to authenticate
-        // The user would be redirected to Zerodha's login, which returns a request_token
-        // The client would then call /callback with that request_token
-
-        String zerodhaLoginUrl = "https://kite.zerodha.com/connect/login?api_key=YOUR_API_KEY&redirect_url=https://your-domain/api/zerodha/callback";
-
+    @GetMapping("/login-url")
+    public ResponseEntity<Map<String, Object>> getLoginUrl() {
+        String loginUrl = "https://kite.zerodha.com/connect/login?v=3&api_key=" + apiKey;
         return ResponseEntity.ok(Map.of(
-            "status", "AUTH_REQUIRED",
-            "message", "Please authenticate with Zerodha",
-            "loginUrl", zerodhaLoginUrl,
-            "instructions", "Click the link above to authenticate. You will be redirected back with a request token."
+            "loginUrl", loginUrl,
+            "instructions", "Open this URL in browser, login, and paste the request_token from the redirect URL to /api/zerodha/authenticate"
         ));
     }
 
-    @PostMapping("/callback")
-    public ResponseEntity<Map<String, Object>> handleCallback(@RequestParam String requestToken) {
-        log.info("Zerodha callback received with request token");
-
+    // Accept request_token (from Zerodha redirect URL) and exchange for access token
+    @PostMapping("/authenticate")
+    public ResponseEntity<Map<String, Object>> authenticate(@RequestParam String requestToken) {
+        log.info("Zerodha authenticate: request_token={}", requestToken);
         try {
-            // Exchange request token for access token
-            // In production: call Zerodha token generation endpoint
-            boolean success = false; // zerodhaCandleService.authenticate(requestToken, apiSecret);
-
+            boolean success = zerodhaCandleService.authenticate(requestToken);
             if (success) {
                 return ResponseEntity.ok(Map.of(
                     "status", "SUCCESS",
-                    "message", "Zerodha authentication successful",
+                    "message", "Zerodha authenticated successfully",
                     "authenticated", true
                 ));
             } else {
                 return ResponseEntity.badRequest().body(Map.of(
                     "status", "ERROR",
-                    "message", "Failed to authenticate with Zerodha"
+                    "message", "Token exchange failed — request_token may be expired. Get a fresh one from /api/zerodha/login-url"
                 ));
             }
-
         } catch (Exception e) {
-            log.error("Zerodha authentication callback failed", e);
+            log.error("Zerodha authenticate failed", e);
             return ResponseEntity.badRequest().body(Map.of(
                 "status", "ERROR",
-                "message", e.getMessage()
-            ));
-        }
-    }
-
-    @PostMapping("/refresh-token")
-    public ResponseEntity<Map<String, Object>> refreshToken() {
-        log.info("Zerodha token refresh requested");
-
-        try {
-            boolean success = tokenManager.refreshToken();
-
-            if (success) {
-                return ResponseEntity.ok(Map.of(
-                    "status", "SUCCESS",
-                    "message", "Token refreshed successfully",
-                    "authenticated", true
-                ));
-            } else {
-                return ResponseEntity.badRequest().body(Map.of(
-                    "status", "ERROR",
-                    "message", "Failed to refresh token - please re-authenticate"
-                ));
-            }
-
-        } catch (Exception e) {
-            log.error("Token refresh failed", e);
-            return ResponseEntity.badRequest().body(Map.of(
-                "status", "ERROR",
-                "message", e.getMessage()
+                "message", String.valueOf(e)
             ));
         }
     }
@@ -97,11 +61,10 @@ public class ZerodhaAuthController {
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getAuthStatus() {
         boolean authenticated = tokenManager.isAuthenticated();
-
         return ResponseEntity.ok(Map.of(
             "authenticated", authenticated,
             "message", authenticated ? "Zerodha authenticated" : "Zerodha not authenticated",
-            "action", authenticated ? "ready_for_backtest" : "request_auth_required"
+            "loginUrl", authenticated ? "" : "GET /api/zerodha/login-url"
         ));
     }
 
@@ -109,10 +72,6 @@ public class ZerodhaAuthController {
     public ResponseEntity<Map<String, Object>> logout() {
         tokenManager.clearAuth();
         log.info("Zerodha logout completed");
-
-        return ResponseEntity.ok(Map.of(
-            "status", "SUCCESS",
-            "message", "Logged out from Zerodha"
-        ));
+        return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Logged out from Zerodha"));
     }
 }
