@@ -34,6 +34,8 @@ public interface CandleDataRepository extends JpaRepository<CandleData, Long> {
     @Query("SELECT MAX(c.timestamp) FROM CandleData c WHERE c.symbol = :symbol AND c.timeframe = :timeframe")
     Optional<LocalDateTime> findLatestTimestamp(String symbol, String timeframe);
 
+    long countBySymbolAndTimeframeAndTimestampBetween(String symbol, String timeframe, LocalDateTime start, LocalDateTime end);
+
     @Modifying
     @Transactional
     @Query("DELETE FROM CandleData c WHERE c.timestamp < :cutoff")

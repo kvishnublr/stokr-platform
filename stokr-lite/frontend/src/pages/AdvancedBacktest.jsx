@@ -49,6 +49,9 @@ export default function AdvancedBacktest() {
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState(null);
   const [progress, setProgress]     = useState('');
+  const [loadOpen, setLoadOpen]     = useState(false);
+  const [loadStatus, setLoadStatus] = useState(null);
+  const [loadRunning, setLoadRunning] = useState(false);
 
   // Load universe groups from API
   useEffect(() => {
@@ -63,6 +66,34 @@ export default function AdvancedBacktest() {
       .then(r => setChartinkInfo(r.data))
       .catch(() => {});
   }, []);
+
+  const loadMissingCandles = async () => {
+    setLoadRunning(true);
+    setLoadStatus(null);
+    try {
+      const params = new URLSearchParams({ dateStart, dateEnd, universe, timeframe: '1min' });
+      const res = await client.post('/admin/candles/backfill?' + params);
+      setLoadStatus(res.data);
+    } catch (e) {
+      setLoadStatus({ error: e.response?.data?.error || e.message });
+    } finally {
+      setLoadRunning(false);
+    }
+  };
+
+  const checkCoverage = async () => {
+    setLoadRunning(true);
+    setLoadStatus(null);
+    try {
+      const params = new URLSearchParams({ dateStart, dateEnd, universe, timeframe: '1min' });
+      const res = await client.get('/admin/candles/coverage?' + params);
+      setLoadStatus(res.data);
+    } catch (e) {
+      setLoadStatus({ error: e.response?.data?.error || e.message });
+    } finally {
+      setLoadRunning(false);
+    }
+  };
 
   const runBacktest = async () => {
     setLoading(true);
@@ -206,6 +237,63 @@ export default function AdvancedBacktest() {
             <label className="label">End Date</label>
             <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)} />
           </div>
+        </div>
+
+        {/* Data loader panel */}
+        <div style={{ marginBottom: '16px' }}>
+          <button
+            onClick={() => setLoadOpen(o => !o)}
+            style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '8px',
+              padding: '7px 14px', fontSize: '12px', cursor: 'pointer', color: '#374151',
+              display: 'flex', alignItems: 'center', gap: '6px' }}>
+            📦 {loadOpen ? '▲' : '▼'} Load Missing Candle Data
+          </button>
+
+          {loadOpen && (
+            <div style={{ marginTop: '12px', padding: '16px', background: '#f8fafc',
+              border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+              <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px', margin: '0 0 12px' }}>
+                Fetches missing 1-min candles from Zerodha for the selected universe + date range and saves to DB.
+                Already-complete symbols are skipped. Safe to re-run.
+              </p>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button onClick={checkCoverage} disabled={loadRunning}
+                  style={{ padding: '8px 18px', border: '1px solid #6366f1', borderRadius: '8px',
+                    background: 'white', color: '#6366f1', fontSize: '13px', fontWeight: 700,
+                    cursor: loadRunning ? 'not-allowed' : 'pointer', opacity: loadRunning ? 0.6 : 1 }}>
+                  {loadRunning ? '⏳ Checking…' : '🔍 Check Coverage'}
+                </button>
+                <button onClick={loadMissingCandles} disabled={loadRunning}
+                  style={{ padding: '8px 18px', border: 'none', borderRadius: '8px',
+                    background: loadRunning ? '#9ca3af' : '#10b981', color: 'white',
+                    fontSize: '13px', fontWeight: 700, cursor: loadRunning ? 'not-allowed' : 'pointer' }}>
+                  {loadRunning ? '⏳ Loading… (may take 1-3 min)' : '⬇ Load Missing Candles'}
+                </button>
+              </div>
+
+              {loadStatus && (
+                <div style={{ marginTop: '12px', fontSize: '12px' }}>
+                  {loadStatus.error ? (
+                    <span style={{ color: '#ef4444' }}>❌ {loadStatus.error}</span>
+                  ) : loadStatus.status === 'DONE' ? (
+                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                      <span style={{ color: '#10b981', fontWeight: 700 }}>✅ Done</span>
+                      <span>📊 {loadStatus.candlesSaved?.toLocaleString()} candles saved</span>
+                      <span>⏭ {loadStatus.symbolsSkipped} symbols skipped (already complete)</span>
+                      {loadStatus.symbolsFailed > 0 && <span style={{ color: '#f59e0b' }}>⚠ {loadStatus.symbolsFailed} failed</span>}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                      <span>🗂 {loadStatus.symbolsTotal} symbols · {loadStatus.tradingDays} trading days</span>
+                      <span style={{ color: '#10b981' }}>✅ Complete: {loadStatus.complete}</span>
+                      <span style={{ color: '#f59e0b' }}>⚡ Partial: {loadStatus.partial}</span>
+                      <span style={{ color: '#ef4444' }}>❌ Missing: {loadStatus.missing}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
