@@ -16,7 +16,6 @@ import java.util.Map;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/brokers")
 @RequiredArgsConstructor
 public class BrokerOAuthController {
 
@@ -29,7 +28,7 @@ public class BrokerOAuthController {
      * Initiate broker connection - stores userId in cookie before redirecting to broker.
      * This endpoint requires authentication.
      */
-    @GetMapping("/{brokerName}/connect")
+    @GetMapping({"/api/brokers/{brokerName}/connect", "/api/broker/{brokerName}/connect"})
     public ResponseEntity<Map<String, String>> connect(
             @PathVariable String brokerName,
             HttpServletResponse response) {
@@ -57,7 +56,9 @@ public class BrokerOAuthController {
      * On success or failure, redirects to frontend /brokers/callback page
      * with query params indicating the result.
      */
-    @GetMapping("/{brokerName}/callback")
+    // Handles both /api/brokers/zerodha/callback AND /api/broker/zerodha/callback
+    // (Zerodha developer console was registered with the singular form)
+    @GetMapping({"/api/brokers/{brokerName}/callback", "/api/broker/{brokerName}/callback"})
     public RedirectView handleCallback(
             @PathVariable String brokerName,
             @RequestParam(value = "request_token", required = false) String requestToken,
