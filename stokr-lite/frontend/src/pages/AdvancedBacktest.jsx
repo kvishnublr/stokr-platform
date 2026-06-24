@@ -371,8 +371,42 @@ export default function AdvancedBacktest() {
           {/* Trade log */}
           {r.trades?.length > 0 && (
             <div className="card">
-              <div style={{ fontWeight: 700, color: '#374151', marginBottom: '16px', fontSize: '15px' }}>
-                Trade Log <span style={{ color: '#9ca3af', fontWeight: 400 }}>({r.trades.length} trades)</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <div style={{ fontWeight: 700, color: '#374151', fontSize: '15px' }}>
+                  Trade Log <span style={{ color: '#9ca3af', fontWeight: 400 }}>({r.trades.length} trades)</span>
+                </div>
+                <button
+                  onClick={() => {
+                    const headers = ['#','Symbol','Entry Time','Side','Entry Price','Stop Loss','Target','P&L','Exit Type'];
+                    const rows = r.trades.map((t, i) => [
+                      i + 1,
+                      t.symbol,
+                      t.entryTime ? new Date(t.entryTime).toLocaleString('en-IN') : '',
+                      t.side || 'BUY',
+                      Number(t.entryPrice).toFixed(2),
+                      Number(t.stopLoss).toFixed(2),
+                      Number(t.target).toFixed(2),
+                      Number(t.pnl).toFixed(2),
+                      t.exitType || ''
+                    ]);
+                    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url  = URL.createObjectURL(blob);
+                    const a    = document.createElement('a');
+                    a.href     = url;
+                    a.download = `tradelog_${r.strategy || 'backtest'}_${new Date().toISOString().slice(0,10)}.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '6px 14px', borderRadius: '6px', border: 'none',
+                    background: '#2563eb', color: '#fff', fontWeight: 600,
+                    fontSize: '12px', cursor: 'pointer'
+                  }}
+                >
+                  ↓ Download CSV
+                </button>
               </div>
               <div style={{ overflowX: 'auto', maxHeight: '480px', overflowY: 'auto' }}>
                 <table>
