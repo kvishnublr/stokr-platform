@@ -212,18 +212,25 @@ public class ZerodhaCandleService {
         }
     }
 
+    // Kite API candle format: ["2026-04-25T09:15:00+0530", open, high, low, close, volume]
+    private static final java.time.format.DateTimeFormatter KITE_TS_FMT =
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ");
+    private static final java.time.format.DateTimeFormatter KITE_TS_FMT2 =
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     private List<CandleData> parseKiteResponse(String json, String symbol, String timeframe) {
         List<CandleData> candles = new ArrayList<>();
         try {
             String candlesKey = "\"candles\":[";
             int start = json.indexOf(candlesKey);
             if (start < 0) {
-                log.warn("No candles array in Kite response for {}", symbol);
+                log.warn("No candles in Kite response for {} — raw: {}", symbol, json.length() > 200 ? json.substring(0, 200) : json);
                 return candles;
             }
             start += candlesKey.length();
-            int end = json.lastIndexOf("]");
+            int end = json.lastIndexOf("]]");
             if (end < 0) return candles;
+            end += 1; // include first ]
 
             String candlesStr = json.substring(start, end);
             if (candlesStr.isBlank() || candlesStr.equals("null")) return candles;
@@ -238,14 +245,23 @@ public class ZerodhaCandleService {
                 } else if (c == ']') {
                     depth--;
                     if (depth == 0 && bufStart >= 0) {
-                        String[] parts = candlesStr.substring(bufStart, i).split(",");
+                        String row = candlesStr.substring(bufStart, i);
+                        // Split on comma but not inside quotes
+                        String[] parts = row.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)");
                         if (parts.length >= 6) {
                             try {
-                                long epochMs = Long.parseLong(parts[0].trim());
+                                String tsRaw = parts[0].trim().replace("\"", "");
+                                Instant ts;
+                                try {
+                                    ts = java.time.ZonedDateTime.parse(tsRaw, KITE_TS_FMT).toInstant();
+                                } catch (Exception e1) {
+                                    ts = java.time.LocalDateTime.parse(tsRaw, KITE_TS_FMT2)
+                                        .atZone(ZoneId.of("Asia/Kolkata")).toInstant();
+                                }
                                 CandleData candle = new CandleData();
                                 candle.setSymbol(symbol);
                                 candle.setTimeframe(timeframe);
-                                candle.setTimestamp(Instant.ofEpochMilli(epochMs));
+                                candle.setTimestamp(ts);
                                 candle.setOpen(new BigDecimal(parts[1].trim()));
                                 candle.setHigh(new BigDecimal(parts[2].trim()));
                                 candle.setLow(new BigDecimal(parts[3].trim()));
@@ -253,7 +269,7 @@ public class ZerodhaCandleService {
                                 candle.setVolume((long) Double.parseDouble(parts[5].trim()));
                                 candles.add(candle);
                             } catch (Exception e) {
-                                log.warn("Failed to parse candle row: {}", e.getMessage());
+                                log.warn("Failed to parse candle row [{}]: {}", row, e.getMessage());
                             }
                         }
                         bufStart = -1;
@@ -262,7 +278,7 @@ public class ZerodhaCandleService {
             }
             log.info("Parsed {} candles from Kite API for {}", candles.size(), symbol);
         } catch (Exception e) {
-            log.error("Failed to parse Kite response: {}", e.getMessage());
+            log.error("Failed to parse Kite response for {}: {}", symbol, e.getMessage());
         }
         return candles;
     }

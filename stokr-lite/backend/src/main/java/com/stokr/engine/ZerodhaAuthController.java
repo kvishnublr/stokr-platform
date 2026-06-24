@@ -58,6 +58,14 @@ public class ZerodhaAuthController {
         }
     }
 
+    // Directly set a pre-exchanged access token (use when request_token already consumed)
+    @PostMapping("/set-token")
+    public ResponseEntity<Map<String, Object>> setToken(@RequestParam String accessToken) {
+        tokenManager.setAuth(accessToken, null, 86400);
+        log.info("Zerodha access token set directly");
+        return ResponseEntity.ok(Map.of("status", "SUCCESS", "authenticated", true));
+    }
+
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getAuthStatus() {
         boolean authenticated = tokenManager.isAuthenticated();
