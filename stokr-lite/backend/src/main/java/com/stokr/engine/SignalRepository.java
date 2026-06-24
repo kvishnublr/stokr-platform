@@ -32,4 +32,7 @@ public interface SignalRepository extends JpaRepository<SignalEntity, Long> {
     long countByStatus(String status);
 
     long countAllBy();
+
+    java.util.Optional<SignalEntity> findFirstByDeploymentIdAndSymbolAndStatusOrderByCreatedAtDesc(
+        Long deploymentId, String symbol, String status);
 }
