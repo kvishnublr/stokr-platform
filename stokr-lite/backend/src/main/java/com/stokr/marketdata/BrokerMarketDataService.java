@@ -48,9 +48,9 @@ public class BrokerMarketDataService implements MarketDataService {
     @Override
     public List<Candle> getCandles(String symbol, String interval, int count) {
         String sym = symbol.toUpperCase();
-        Instant from = Instant.now().minus(count + 10, java.time.temporal.ChronoUnit.MINUTES);
+        LocalDateTime from = LocalDateTime.now(IST).minusMinutes(count + 10);
         List<CandleData> rows = candleRepo.findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(
-            sym, "1min", from, Instant.now());
+            sym, "1min", from, LocalDateTime.now(IST));
         if (rows.isEmpty()) return Collections.emptyList();
         int start = Math.max(0, rows.size() - count);
         return toCandles(sym, rows.subList(start, rows.size()));
@@ -60,10 +60,8 @@ public class BrokerMarketDataService implements MarketDataService {
     public List<Candle> getCandlesBetween(String symbol, String interval,
                                            LocalDateTime from, LocalDateTime to) {
         String sym = symbol.toUpperCase();
-        Instant fromI = from.atZone(IST).toInstant();
-        Instant toI   = to.atZone(IST).toInstant();
         List<CandleData> rows = candleRepo.findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(
-            sym, "1min", fromI, toI);
+            sym, "1min", from, to);
         return toCandles(sym, rows);
     }
 
@@ -77,7 +75,7 @@ public class BrokerMarketDataService implements MarketDataService {
         return rows.stream()
             .map(r -> new Candle(
                 symbol,
-                LocalDateTime.ofInstant(r.getTimestamp(), IST),
+                r.getTimestamp(),  // already LocalDateTime (IST)
                 r.getOpen(), r.getHigh(), r.getLow(), r.getClose(), r.getVolume()))
             .collect(Collectors.toList());
     }

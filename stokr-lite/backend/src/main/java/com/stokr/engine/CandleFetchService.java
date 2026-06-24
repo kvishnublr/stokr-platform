@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.*;
 
 @Slf4j
@@ -22,7 +22,7 @@ public class CandleFetchService {
         "1min", "5min", "15min", "hourly", "daily"
     );
 
-    public List<CandleData> fetchCandles(String symbol, String timeframe, Instant startTime, Instant endTime) {
+    public List<CandleData> fetchCandles(String symbol, String timeframe, LocalDateTime startTime, LocalDateTime endTime) {
         log.info("Fetching candles: symbol={}, timeframe={}, start={}, end={}", symbol, timeframe, startTime, endTime);
 
         // 1. Check database for exact timeframe first, then fall back to coarser timeframes
@@ -71,9 +71,8 @@ public class CandleFetchService {
         candleRepository.saveAll(candles);
     }
 
-    public List<CandleData> getCandles(String symbol, String timeframe, Instant startTime, Instant endTime) {
+    public List<CandleData> getCandles(String symbol, String timeframe, LocalDateTime startTime, LocalDateTime endTime) {
         return candleRepository
             .findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(symbol, timeframe, startTime, endTime);
     }
-
 }
