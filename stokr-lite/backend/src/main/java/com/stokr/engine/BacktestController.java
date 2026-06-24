@@ -300,14 +300,19 @@ public class BacktestController {
                     .multiply(BigDecimal.valueOf(100));
             }
 
+            // IST time-of-day for time-gated strategies
+            java.time.LocalTime istTime = candleData.get(i).getTimestamp()
+                .atZone(ZoneId.of("Asia/Kolkata")).toLocalTime();
+
             Map<String, Object> extras = new HashMap<>();
             extras.put("buyerQty", 100L);
             extras.put("sellerQty", 40L);
             extras.put("prevClose", i > 0 ? candles.get(i - 1).close() : candles.get(i).close());
             extras.put("unfilledRatio", unfilledRatio);
             if (gapPct != null) extras.put("gapPct", gapPct);
-            // ATR% threshold scaled by timeframe: 1min data needs ~0.05% not 0.35%
             extras.put("atrThresholdPct", BigDecimal.valueOf(0.05));
+            extras.put("istHour", istTime.getHour());
+            extras.put("istMinute", istTime.getMinute());
 
             MarketContext context = new MarketContext(symbol, window, candles.get(i).close(), vwap, indMap, extras);
             Signal signal = plugin.evaluate(context, params);

@@ -9,13 +9,18 @@ import java.math.RoundingMode;
 import java.util.List;
 
 /**
- * VWAP Triple Confirmation Strategy (Strategy #1).
- * Conditions (all must be true for LONG):
- *   1. price > VWAP * 1.002
- *   2. volume > 1.5 × sma(volume, 10)
- *   3. RSI(14) between 40 and 70
- *   4. buyer/seller qty ratio > 1.3
- *   5. ATR_15min > 0.35%
+ * VWAP Bounce Strategy — high-probability entries only.
+ *
+ * Edge: Price pulls back TO intraday VWAP, holds it as support, then bounces.
+ * This gives a natural tight SL (just below VWAP) and clear invalidation level.
+ *
+ * All 6 conditions must hold for a LONG:
+ *   1. Time gate: IST 9:15–11:30 only (VWAP is most predictive in first 2 hours)
+ *   2. VWAP bounce: previous candle ≤ VWAP, current close > VWAP (support confirmed)
+ *   3. Bullish body: close > open AND body ≥ 40% of candle range (real conviction)
+ *   4. Volume ≥ 2× 10-period average (smart money entering, not noise)
+ *   5. RSI 45–62: upward momentum, not overbought
+ *   6. Close > previous close: short-term direction confirmed
  */
 @Slf4j
 @Component
@@ -29,72 +34,90 @@ public class VwapTripleConfirmationStrategy implements StrategyPlugin {
     @Override
     public Signal evaluate(MarketContext context, StrategyParams params) {
         Candle latest = context.getLatestCandle();
-        if (latest == null) return null;
+        Candle prev = context.getPreviousCandle();
+        if (latest == null || prev == null) return null;
 
         List<Candle> candles = context.candles();
-        if (candles.size() < 10) return null;
+        if (candles.size() < 15) return null;
 
         BigDecimal close = latest.close();
         BigDecimal vwap = context.vwap();
         if (vwap == null || vwap.compareTo(BigDecimal.ZERO) == 0) return null;
 
-        // 1. Price > VWAP * 1.002
-        BigDecimal vwapThreshold = vwap.multiply(BigDecimal.valueOf(1.002));
-        if (close.compareTo(vwapThreshold) <= 0) {
-            log.debug("VWAP Triple: close {} <= VWAP*1.002 {}", close, vwapThreshold);
+        // 1. Time gate: IST 9:15–11:30 only
+        Integer istHour = context.extra("istHour", Integer.class);
+        Integer istMinute = context.extra("istMinute", Integer.class);
+        if (istHour != null) {
+            // Before 9:15 or after 11:30 IST
+            boolean tooEarly = istHour < 9 || (istHour == 9 && istMinute != null && istMinute < 15);
+            boolean tooLate = istHour > 11 || (istHour == 11 && istMinute != null && istMinute > 30);
+            if (tooEarly || tooLate) {
+                log.debug("VWAP Bounce: outside time gate {}:{}", istHour, istMinute);
+                return null;
+            }
+        }
+
+        // 2. VWAP bounce: previous candle must have been AT or BELOW VWAP
+        //    (price touched VWAP as support and is now bouncing above it)
+        if (prev.close().compareTo(vwap) > 0) {
+            log.debug("VWAP Bounce: prev close {} > VWAP {} — not a bounce setup", prev.close(), vwap);
+            return null;
+        }
+        // Current close must be above VWAP (confirmed bounce)
+        if (close.compareTo(vwap) <= 0) {
+            log.debug("VWAP Bounce: close {} still <= VWAP {}", close, vwap);
             return null;
         }
 
-        // 2. Volume > 1.5 × SMA(volume, 10)
-        long avgVol = candles.subList(candles.size() - 10, candles.size())
-                .stream().mapToLong(Candle::volume).sum() / 10;
-        if (avgVol == 0 || latest.volume() < avgVol * 1.5) {
-            log.debug("VWAP Triple: volume {} < 1.5x avg {}", latest.volume(), avgVol);
+        // 3. Bullish candle with real body (not a doji or tiny pin)
+        BigDecimal range = latest.high().subtract(latest.low());
+        BigDecimal body = close.subtract(latest.open()).abs();
+        if (close.compareTo(latest.open()) <= 0) {
+            log.debug("VWAP Bounce: candle is bearish");
+            return null;
+        }
+        if (range.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal bodyPct = body.divide(range, 4, RoundingMode.HALF_UP);
+            if (bodyPct.doubleValue() < 0.40) {
+                log.debug("VWAP Bounce: weak candle body {}% of range", bodyPct.multiply(BigDecimal.valueOf(100)).toPlainString());
+                return null;
+            }
+        }
+
+        // 4. Volume ≥ 2× 10-period average (conviction required)
+        int n = candles.size();
+        long volSum = candles.subList(Math.max(0, n - 10), n)
+                .stream().mapToLong(Candle::volume).sum();
+        long avgVol = volSum / Math.min(10, n);
+        if (avgVol == 0 || latest.volume() < avgVol * 2.0) {
+            log.debug("VWAP Bounce: volume {} < 2x avg {}", latest.volume(), avgVol);
             return null;
         }
 
-        // 3. RSI(14) between 40 and 70
+        // 5. RSI 45–62: trending up without being overbought
         BigDecimal rsi = context.indicators() != null ? context.indicators().get("RSI14") : null;
         if (rsi == null) rsi = context.extra("rsi14", BigDecimal.class);
-        if (rsi == null || rsi.doubleValue() < 40 || rsi.doubleValue() > 70) {
-            log.debug("VWAP Triple: RSI {} out of range [40,70]", rsi);
+        if (rsi == null || rsi.doubleValue() < 45 || rsi.doubleValue() > 62) {
+            log.debug("VWAP Bounce: RSI {} outside [45,62]", rsi);
             return null;
         }
 
-        // 4. Buyer/seller ratio > 1.3
-        Long buyerQty = context.extra("buyerQty", Long.class);
-        Long sellerQty = context.extra("sellerQty", Long.class);
-        if (buyerQty == null || sellerQty == null || sellerQty == 0) {
-            log.debug("VWAP Triple: missing buyer/seller qty");
-            return null;
-        }
-        double ratio = buyerQty / (double) sellerQty;
-        if (ratio <= 1.3) {
-            log.debug("VWAP Triple: buyer/seller ratio {} <= 1.3", ratio);
+        // 6. Momentum: close > previous close
+        if (close.compareTo(prev.close()) <= 0) {
+            log.debug("VWAP Bounce: close {} <= prev close {}", close, prev.close());
             return null;
         }
 
-        // 5. ATR% > threshold (0.35% for daily, or overridden via extras for shorter timeframes)
-        BigDecimal atr = context.indicators() != null ? context.indicators().get("ATR14") : null;
-        if (atr == null) atr = context.extra("atr14", BigDecimal.class);
-        if (atr == null) {
-            log.debug("VWAP Triple: ATR not available");
-            return null;
-        }
-        BigDecimal atrPct = atr.divide(close, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-        BigDecimal atrThreshold = context.extra("atrThresholdPct", BigDecimal.class);
-        double threshold = atrThreshold != null ? atrThreshold.doubleValue() : 0.35;
-        if (atrPct.doubleValue() <= threshold) {
-            log.debug("VWAP Triple: ATR% {} <= {}%", atrPct, threshold);
-            return null;
-        }
-
-        BigDecimal sl = params.getStopLossPrice(close, Signal.Side.BUY);
+        // SL just below VWAP — natural invalidation level
+        // (strategy params control the exact %; default 0.2% gives VWAP as floor)
+        BigDecimal sl = params.getStopLossPrice(vwap, Signal.Side.BUY); // SL from VWAP, not entry
         BigDecimal target = params.getTargetPrice(close, Signal.Side.BUY);
+
         return new Signal(context.symbol(), Signal.Side.BUY, close, sl, target,
-                0.75, "VWAP Triple LONG vw=" + vwap.setScale(2, RoundingMode.HALF_UP)
+                0.85,
+                "VWAP Bounce LONG @" + close.setScale(2, RoundingMode.HALF_UP)
+                        + " vwap=" + vwap.setScale(2, RoundingMode.HALF_UP)
                         + " rsi=" + rsi.setScale(1, RoundingMode.HALF_UP)
-                        + " ratio=" + String.format("%.2f", ratio));
+                        + " vol=" + String.format("%.1fx", (double) latest.volume() / avgVol));
     }
 }

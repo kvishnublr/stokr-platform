@@ -29,7 +29,8 @@ public record StrategyParams(
                 15, 2.0,       // ORB
                 0.3, 1.5,      // VWAP
                 1.0, 3.0, 50000, // Gap Fill
-                0.2, 0.6       // Common: 0.2% SL (₹30 on ₹15K), 0.6% target (3:1 R:R)
+                0.2, 0.4       // 0.2% SL, 0.4% target = 2:1 R:R. Need 34%+ win rate to profit.
+                               // VWAP bounce SL is from VWAP (natural support), target from entry.
         );
     }
 
