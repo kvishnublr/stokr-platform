@@ -12,6 +12,10 @@ stokr-ui/dist/
 .env.local
 .env
 
+# Local dev configs with production secrets — never commit
+**/application-local.yml
+**/vite.config.prod-proxy.js
+
 .tools/
 
 .runlogs/

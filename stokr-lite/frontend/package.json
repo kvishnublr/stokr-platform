@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:prod": "vite --config vite.config.prod-proxy.js",
     "build": "vite build",
     "preview": "vite preview"
   },
