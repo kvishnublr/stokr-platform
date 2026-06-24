@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -17,6 +18,8 @@ public class ChartinkStrategyEvaluator {
     private final StrategyRouter strategyRouter;
     private final StrategyService strategyService;
     private final ChartinkTickBuffer tickBuffer;
+    private final StrategyUniverseMappingRepository mappingRepository;
+    private final UniverseSymbolRepository symbolRepository;
 
     public Signal evaluate(ChartinkPayload payload) {
         String scannerName = payload.scannerName();
@@ -29,13 +32,20 @@ public class ChartinkStrategyEvaluator {
             return null;
         }
 
+        if (!isSymbolAllowedForStrategy(strategyId, payload.symbol())) {
+            log.debug("Symbol {} not in any mapped universe for strategy {}", payload.symbol(),
+                    strategyService.getStrategy(strategyId).getName());
+            return null;
+        }
+
         MarketContext context = buildContext(payload);
         return strategyService.evaluateSignal(strategyId, context);
     }
 
     /**
-     * Evaluate a payload against ALL enabled strategies.
-     * Returns a map of (strategyId -> Signal) for every strategy that confirmed.
+     * Evaluate a payload against ALL enabled strategies whose universe mappings
+     * include the incoming symbol. Returns a map of (strategyId -> Signal)
+     * for every strategy that confirmed.
      */
     public Map<Long, Signal> evaluateAll(ChartinkPayload payload) {
         Map<Long, Signal> results = new LinkedHashMap<>();
@@ -47,9 +57,17 @@ public class ChartinkStrategyEvaluator {
             return results;
         }
 
+        // Pre-compute allowed symbols per strategy to avoid repeated DB queries
+        Map<Long, Set<String>> allowedSymbolsByStrategy = computeAllowedSymbols(enabled);
+
         MarketContext context = buildContext(payload);
 
         for (Strategy strategy : enabled) {
+            if (!isSymbolInAllowedSet(payload.symbol(), strategy.getId(), allowedSymbolsByStrategy)) {
+                log.debug("Symbol {} not in mapped universe for strategy {}, skipping",
+                        payload.symbol(), strategy.getName());
+                continue;
+            }
             try {
                 Signal signal = strategyService.evaluateSignal(strategy.getId(), context);
                 if (signal != null && signal.isValid()) {
@@ -63,6 +81,60 @@ public class ChartinkStrategyEvaluator {
         }
 
         return results;
+    }
+
+    /**
+     * Check whether a given symbol belongs to at least one universe mapped to the strategy.
+     * If the strategy has no mappings at all, allow all symbols (backward compat).
+     */
+    private boolean isSymbolAllowedForStrategy(Long strategyId, String symbol) {
+        List<StrategyUniverseMapping> mappings = mappingRepository.findByStrategyId(strategyId);
+        if (mappings.isEmpty()) return true;
+        return mappings.stream()
+                .filter(StrategyUniverseMapping::isRuntimeEnabled)
+                .anyMatch(m -> {
+                    List<String> symbols = symbolRepository.findByGroupIdAndEnabledTrue(m.getUniverseGroupId())
+                            .stream().map(UniverseSymbol::getSymbol).toList();
+                    return symbols.contains(symbol.toUpperCase());
+                });
+    }
+
+    /**
+     * Build a lookup map: strategyId -> Set<allowedSymbol> for all enabled strategies.
+     * Strategies with no mappings get an empty set (meaning unrestricted).
+     */
+    private Map<Long, Set<String>> computeAllowedSymbols(List<Strategy> strategies) {
+        // Load all runtime-enabled mappings in one batch
+        List<StrategyUniverseMapping> allMappings = mappingRepository.findByRuntimeEnabledTrue();
+        // Group by strategyId
+        Map<Long, List<StrategyUniverseMapping>> byStrategy = allMappings.stream()
+                .collect(Collectors.groupingBy(StrategyUniverseMapping::getStrategyId));
+
+        Map<Long, Set<String>> result = new HashMap<>();
+        for (Strategy s : strategies) {
+            List<StrategyUniverseMapping> stratMappings = byStrategy.get(s.getId());
+            if (stratMappings == null || stratMappings.isEmpty()) {
+                result.put(s.getId(), Collections.emptySet()); // unrestricted
+            } else {
+                Set<String> symbols = new HashSet<>();
+                for (StrategyUniverseMapping m : stratMappings) {
+                    if (!m.isRuntimeEnabled()) continue;
+                    List<String> groupSymbols = symbolRepository.findByGroupIdAndEnabledTrue(m.getUniverseGroupId())
+                            .stream().map(UniverseSymbol::getSymbol)
+                            .map(String::toUpperCase).toList();
+                    symbols.addAll(groupSymbols);
+                }
+                result.put(s.getId(), symbols);
+            }
+        }
+        return result;
+    }
+
+    private boolean isSymbolInAllowedSet(String symbol, Long strategyId, Map<Long, Set<String>> lookup) {
+        Set<String> allowed = lookup.get(strategyId);
+        if (allowed == null) return true;    // no mappings = unrestricted
+        if (allowed.isEmpty()) return true;  // empty set = unrestricted
+        return allowed.contains(symbol.toUpperCase());
     }
 
     private MarketContext buildContext(ChartinkPayload payload) {

@@ -1,6 +1,7 @@
 package com.stokr.engine;
 
 import com.stokr.external.ZerodhaCandleService;
+import com.stokr.strategy.UniverseGroupService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,7 @@ public class CandleDataAdminController {
 
     private final CandleDataRepository candleRepository;
     private final ZerodhaCandleService zerodhaCandleService;
+    private final UniverseGroupService universeGroupService;
 
     @DeleteMapping("/flush")
     public ResponseEntity<Map<String, Object>> flushAll(
@@ -43,7 +45,9 @@ public class CandleDataAdminController {
             @RequestBody(required = false) List<String> symbols) {
 
         if (symbols == null || symbols.isEmpty()) {
-            symbols = getNifty100Symbols();
+            symbols = universeGroupService.findByKey("NIFTY_100")
+                    .map(g -> universeGroupService.resolveSymbolsForGroup(g.getId()))
+                    .orElse(List.of());
         }
 
         Instant end = Instant.now();
@@ -83,18 +87,5 @@ public class CandleDataAdminController {
         ));
     }
 
-    private List<String> getNifty100Symbols() {
-        return List.of(
-            "RELIANCE","TCS","HDFCBANK","ICICIBANK","INFY","HINDUNILVR","ITC","KOTAKBANK","LT","SBIN",
-            "AXISBANK","BAJFINANCE","BHARTIARTL","TITAN","MARUTI","HCLTECH","SUNPHARMA","TATAMOTORS","NTPC","BAJAJFINSV",
-            "WIPRO","JSWSTEEL","ONGC","POWERGRID","COALINDIA","GRASIM","TATASTEEL","BPCL","HINDALCO","ULTRACEMCO",
-            "ADANIENT","ADANIPORTS","APOLLOHOSP","DIVISLAB","DRREDDY","EICHERMOT","HDFCLIFE","HEROMOTOCO","INDUSINDBK","M&M",
-            "NESTLEIND","SBILIFE","TATACONSUM","TECHM","TRENT","DMART","UPL","CIPLA","BRITANNIA","ASIANPAINT",
-            "BERGEPAINT","CANBK","DABUR","GODREJCP","HAL","HAVELLS","IOB","IRCTC","LICI","MCDOWELL",
-            "PIDILITIND","POLYCAB","SIEMENS","ZOMATO","AMBUJACEM","ATGL","BANDHANBNK","BANKBARODA","BEL","CHOLAFIN",
-            "COFORGE","COLPAL","DALBHARAT","FEDERALBNK","GAIL","GODREJPROP","IDFCFIRSTB","INDUSTOWER","IRFC","JUBLFOOD",
-            "KALYANKJIL","LALPATHLAB","LODHA","LTTS","LUPIN","MFSL","NHPC","NYKAA","OFSS","PAGEIND",
-            "PAYTM","PERSISTENT","RECLTD","SAIL","SHREECEM","TORNTPHARM","TVSMOTOR","VBL","VEDL","VOLTAS"
-        );
-    }
+
 }

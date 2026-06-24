@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -24,6 +25,7 @@ public class BacktestController {
     private final CandleFetchService candleFetchService;
     private final CandleDataRepository candleRepository;
     private final StrategyService strategyService;
+    private final UniverseGroupService universeGroupService;
     private final List<StrategyPlugin> strategyPlugins;
 
     private static final Map<String, String> STRATEGY_PLUGIN_MAP = Map.of(
@@ -34,7 +36,7 @@ public class BacktestController {
         "VWAP_BOUNCE", "VWAP_TRIPLE"
     );
 
-    private static final double CAPITAL = 5000;
+    private static final double CAPITAL = 25000;
 
     @PostMapping("/run")
     public ResponseEntity<Map<String, Object>> runBacktest(
@@ -109,7 +111,7 @@ public class BacktestController {
             Instant startTime = dateStart != null ? Instant.parse(dateStart) : Instant.now().minusSeconds(2592000);
             Instant endTime = dateEnd != null ? Instant.parse(dateEnd) : Instant.now();
 
-            List<String> symbolList = getSymbolsForStrategy(strategy);
+            List<String> symbolList = getSymbolsForUniverse("NIFTY_100");
 
             List<String> failedSymbols = new ArrayList<>();
             int totalCandles = 0;
@@ -153,71 +155,92 @@ public class BacktestController {
             @RequestParam(required = false) String dateStart,
             @RequestParam(required = false) String dateEnd,
             @RequestParam(required = false) String symbols,
-            @RequestParam(defaultValue = "daily") String timeframe) {
+            @RequestParam(defaultValue = "1min") String timeframe,
+            @RequestParam(defaultValue = "NIFTY_100") String universe) {
 
-        log.info("Running advanced backtest: strategy={}, dateStart={}, dateEnd={}, symbols={}, timeframe={}",
-                strategy, dateStart, dateEnd, symbols, timeframe);
+        log.info("Running advanced backtest: strategy={}, universe={}, dateStart={}, dateEnd={}, timeframe={}",
+                strategy, universe, dateStart, dateEnd, timeframe);
 
         try {
             Instant startTime = dateStart != null ? Instant.parse(dateStart) : Instant.now().minusSeconds(2592000);
             Instant endTime = dateEnd != null ? Instant.parse(dateEnd) : Instant.now();
-            List<String> symbolList = symbols != null ? Arrays.asList(symbols.split(",")) : getSymbolsForStrategy(strategy);
+            List<String> symbolList = symbols != null
+                ? Arrays.asList(symbols.split(","))
+                : getSymbolsForUniverse(universe);
 
-            // Resolve strategy plugin
             String pluginType = resolvePluginType(strategy);
             StrategyPlugin plugin = findPlugin(pluginType);
             StrategyParams params = StrategyParams.defaults();
 
-            // Fetch candles from external sources
+            log.info("Loading candles for {} symbols from universe {}", symbolList.size(), universe);
             Map<String, List<CandleData>> candlesBySymbol = new HashMap<>();
             for (String symbol : symbolList) {
                 List<CandleData> candles = candleFetchService.fetchCandles(symbol, timeframe, startTime, endTime);
-                if (candles.isEmpty()) {
-                    log.warn("No candles for {}, skipping", symbol);
-                } else {
+                if (!candles.isEmpty()) {
                     candlesBySymbol.put(symbol, candles);
+                } else {
+                    log.debug("No candles for {}", symbol);
                 }
             }
 
-            // Simulate trades using strategy plugin on candle data
             List<SimulatedTrade> allTrades = new ArrayList<>();
             for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
-                List<SimulatedTrade> trades = simulateStrategy(entry.getKey(), entry.getValue(), plugin, params);
-                allTrades.addAll(trades);
+                allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params));
             }
+            // Sort trades by entry time for daily bucketing
+            allTrades.sort(java.util.Comparator.comparing(t -> t.entryTime));
 
-            // Calculate metrics
             int totalTrades = allTrades.size();
             int winCount = 0, lossCount = 0;
             double totalPnl = 0;
-
             for (SimulatedTrade t : allTrades) {
-                if ("TARGET_HIT".equals(t.exitType)) {
-                    winCount++;
-                } else if ("SL_HIT".equals(t.exitType)) {
-                    lossCount++;
-                }
+                if ("TARGET_HIT".equals(t.exitType)) winCount++;
+                else if ("SL_HIT".equals(t.exitType)) lossCount++;
                 totalPnl += t.pnl;
             }
 
+            // Daily P&L metrics
+            java.util.TreeMap<java.time.LocalDate, Double> dailyPnl = new java.util.TreeMap<>();
+            for (SimulatedTrade t : allTrades) {
+                if (t.entryTime == null) continue;
+                java.time.LocalDate d = t.entryTime.toLocalDate();
+                dailyPnl.merge(d, t.pnl, Double::sum);
+            }
+            double maxProfitDay = dailyPnl.values().stream().mapToDouble(Double::doubleValue).max().orElse(0);
+            double maxLossDay   = dailyPnl.values().stream().mapToDouble(Double::doubleValue).min().orElse(0);
+            double avgProfitDay = dailyPnl.isEmpty() ? 0
+                : dailyPnl.values().stream().mapToDouble(Double::doubleValue).sum() / dailyPnl.size();
+            int profitDays = (int) dailyPnl.values().stream().filter(p -> p > 0).count();
+            int lossDays   = (int) dailyPnl.values().stream().filter(p -> p < 0).count();
+
             double winRate = totalTrades > 0 ? (double) winCount / totalTrades * 100 : 0;
-            double avgPnl = totalTrades > 0 ? totalPnl / totalTrades : 0;
+            double avgPnl  = totalTrades > 0 ? totalPnl / totalTrades : 0;
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("strategy", strategy != null ? strategy : "ALL");
+            result.put("universe", universe);
+            result.put("symbolsLoaded", candlesBySymbol.size());
             result.put("totalTrades", totalTrades);
             result.put("winCount", winCount);
             result.put("lossCount", lossCount);
-            result.put("totalPnL", Math.round(totalPnl * 100.0) / 100.0);
-            result.put("winRate", Math.round(winRate * 100.0) / 100.0);
-            result.put("avgPnL", Math.round(avgPnl * 100.0) / 100.0);
-            result.put("maxDrawdown", calculateMaxDrawdownFromTrades(allTrades));
-            result.put("profitFactor", calculateProfitFactorFromTrades(allTrades));
-            result.put("candlesLoaded", candlesBySymbol.values().stream().mapToInt(List::size).sum());
+            result.put("totalPnL",       Math.round(totalPnl * 100.0) / 100.0);
+            result.put("winRate",        Math.round(winRate * 100.0) / 100.0);
+            result.put("avgPnL",         Math.round(avgPnl * 100.0) / 100.0);
+            result.put("maxDrawdown",    calculateMaxDrawdownFromTrades(allTrades));
+            result.put("profitFactor",   calculateProfitFactorFromTrades(allTrades));
+            result.put("maxProfitDay",   Math.round(maxProfitDay * 100.0) / 100.0);
+            result.put("maxLossDay",     Math.round(maxLossDay * 100.0) / 100.0);
+            result.put("avgProfitDay",   Math.round(avgProfitDay * 100.0) / 100.0);
+            result.put("profitDays",     profitDays);
+            result.put("lossDays",       lossDays);
+            result.put("totalTradingDays", dailyPnl.size());
+            result.put("candlesLoaded",  candlesBySymbol.values().stream().mapToInt(List::size).sum());
+            result.put("capitalPerTrade", CAPITAL);
             result.put("dateRange", Map.of("start", startTime.toString(), "end", endTime.toString()));
             result.put("trades", allTrades.stream().map(SimulatedTrade::toMap).toList());
 
-            log.info("Advanced backtest complete: {}", result);
+            log.info("Advanced backtest complete: strategy={} trades={} winRate={}% totalPnL={}",
+                strategy, totalTrades, Math.round(winRate * 10.0) / 10.0, Math.round(totalPnl));
             return ResponseEntity.ok(result);
 
         } catch (Exception e) {
@@ -313,6 +336,7 @@ public class BacktestController {
             extras.put("atrThresholdPct", BigDecimal.valueOf(0.05));
             extras.put("istHour", istTime.getHour());
             extras.put("istMinute", istTime.getMinute());
+            if (dayOpen[i] != null) extras.put("dayOpen", dayOpen[i]);
 
             MarketContext context = new MarketContext(symbol, window, candles.get(i).close(), vwap, indMap, extras);
             Signal signal = plugin.evaluate(context, params);
@@ -458,18 +482,10 @@ public class BacktestController {
         return grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? 999 : 0);
     }
 
-    private List<String> getSymbolsForStrategy(String strategy) {
-        if (strategy == null || strategy.isEmpty() || "ALL".equals(strategy)) {
-            return List.of("RELIANCE", "TCS", "WIPRO", "INFY", "HDFCBANK", "ICICIBANK", "AXISBANK");
-        }
-        return switch (strategy.toUpperCase()) {
-            case "ORB" -> List.of("RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK");
-            case "ADV_CASH" -> List.of("RELIANCE", "TCS", "WIPRO", "AXISBANK", "INFY");
-            case "VWAP_SQUEEZE" -> List.of("RELIANCE", "TCS", "WIPRO", "HDFCBANK", "ICICIBANK");
-            case "GAP_FILL" -> List.of("RELIANCE", "TCS", "INFY", "HDFCBANK", "AXISBANK");
-            case "VWAP_BOUNCE" -> List.of("RELIANCE", "TCS", "WIPRO", "ICICIBANK", "INFY");
-            default -> List.of("RELIANCE", "TCS", "WIPRO");
-        };
+    private List<String> getSymbolsForUniverse(String universe) {
+        return universeGroupService.findByKey(universe)
+                .map(g -> universeGroupService.resolveSymbolsForGroup(g.getId()))
+                .orElseThrow(() -> new IllegalArgumentException("Unknown universe: " + universe));
     }
 
     private double calculateMaxDrawdown(List<SignalEntity> signals) {
