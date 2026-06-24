@@ -3,7 +3,7 @@
 -- =============================================================
 
 -- Auth
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id              BIGSERIAL PRIMARY KEY,
     email           VARCHAR(255) NOT NULL UNIQUE,
     password_hash   VARCHAR(255) NOT NULL,
@@ -12,10 +12,10 @@ CREATE TABLE users (
     created_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 -- User Profiles
-CREATE TABLE user_profiles (
+CREATE TABLE IF NOT EXISTS user_profiles (
     id              BIGSERIAL PRIMARY KEY,
     user_id         BIGINT       NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name            VARCHAR(255),
@@ -26,10 +26,10 @@ CREATE TABLE user_profiles (
     updated_at      TIMESTAMP     NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_user_profiles_user_id ON user_profiles(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_user_id ON user_profiles(user_id);
 
 -- Broker Accounts
-CREATE TABLE broker_accounts (
+CREATE TABLE IF NOT EXISTS broker_accounts (
     id              BIGSERIAL PRIMARY KEY,
     user_id         BIGINT       NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     broker_name     VARCHAR(50)  NOT NULL,
@@ -42,11 +42,11 @@ CREATE TABLE broker_accounts (
     updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_broker_accounts_user_id ON broker_accounts(user_id);
-CREATE INDEX idx_broker_accounts_status ON broker_accounts(status);
+CREATE INDEX IF NOT EXISTS idx_broker_accounts_user_id ON broker_accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_broker_accounts_status ON broker_accounts(status);
 
 -- Strategies
-CREATE TABLE strategies (
+CREATE TABLE IF NOT EXISTS strategies (
     id              BIGSERIAL PRIMARY KEY,
     name            VARCHAR(100) NOT NULL UNIQUE,
     description     TEXT,
@@ -59,7 +59,7 @@ CREATE TABLE strategies (
 );
 
 -- Deployments
-CREATE TABLE deployments (
+CREATE TABLE IF NOT EXISTS deployments (
     id                  BIGSERIAL PRIMARY KEY,
     user_id             BIGINT       NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     strategy_id         BIGINT       NOT NULL REFERENCES strategies(id),
@@ -71,12 +71,12 @@ CREATE TABLE deployments (
     updated_at          TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_deployments_user_id ON deployments(user_id);
-CREATE INDEX idx_deployments_status ON deployments(status);
-CREATE INDEX idx_deployments_strategy_id ON deployments(strategy_id);
+CREATE INDEX IF NOT EXISTS idx_deployments_user_id ON deployments(user_id);
+CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
+CREATE INDEX IF NOT EXISTS idx_deployments_strategy_id ON deployments(strategy_id);
 
 -- Orders
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
     id                  BIGSERIAL PRIMARY KEY,
     deployment_id       BIGINT       NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
     symbol              VARCHAR(50)  NOT NULL,
@@ -92,12 +92,12 @@ CREATE TABLE orders (
     updated_at          TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_orders_deployment_id ON orders(deployment_id);
-CREATE INDEX idx_orders_status ON orders(status);
-CREATE INDEX idx_orders_created_at ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_deployment_id ON orders(deployment_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
 
 -- Trades
-CREATE TABLE trades (
+CREATE TABLE IF NOT EXISTS trades (
     id              BIGSERIAL PRIMARY KEY,
     order_id        BIGINT       NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
     fill_price      DECIMAL(15,4) NOT NULL,
@@ -105,10 +105,10 @@ CREATE TABLE trades (
     fill_time       TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_trades_order_id ON trades(order_id);
+CREATE INDEX IF NOT EXISTS idx_trades_order_id ON trades(order_id);
 
 -- Positions
-CREATE TABLE positions (
+CREATE TABLE IF NOT EXISTS positions (
     id              BIGSERIAL PRIMARY KEY,
     deployment_id   BIGINT       NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
     symbol          VARCHAR(50)  NOT NULL,
@@ -119,11 +119,11 @@ CREATE TABLE positions (
     updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_positions_deployment_symbol ON positions(deployment_id, symbol);
-CREATE INDEX idx_positions_deployment_id ON positions(deployment_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_deployment_symbol ON positions(deployment_id, symbol);
+CREATE INDEX IF NOT EXISTS idx_positions_deployment_id ON positions(deployment_id);
 
 -- Daily PnL
-CREATE TABLE daily_pnl (
+CREATE TABLE IF NOT EXISTS daily_pnl (
     id              BIGSERIAL PRIMARY KEY,
     deployment_id   BIGINT       NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
     trade_date      DATE         NOT NULL,
@@ -132,10 +132,10 @@ CREATE TABLE daily_pnl (
     trade_count     INTEGER      NOT NULL DEFAULT 0
 );
 
-CREATE UNIQUE INDEX idx_daily_pnl_deployment_date ON daily_pnl(deployment_id, trade_date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_pnl_deployment_date ON daily_pnl(deployment_id, trade_date);
 
 -- Risk Configs
-CREATE TABLE risk_configs (
+CREATE TABLE IF NOT EXISTS risk_configs (
     id                  BIGSERIAL PRIMARY KEY,
     deployment_id       BIGINT       NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
     max_daily_loss      DECIMAL(15,2) NOT NULL DEFAULT 5000,
@@ -143,10 +143,10 @@ CREATE TABLE risk_configs (
     max_qty_per_trade   INTEGER      NOT NULL DEFAULT 100
 );
 
-CREATE UNIQUE INDEX idx_risk_configs_deployment_id ON risk_configs(deployment_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_risk_configs_deployment_id ON risk_configs(deployment_id);
 
 -- Kill Switch State
-CREATE TABLE kill_switch_state (
+CREATE TABLE IF NOT EXISTS kill_switch_state (
     id              BIGSERIAL PRIMARY KEY,
     is_active       BOOLEAN      NOT NULL DEFAULT false,
     activated_by    BIGINT       REFERENCES users(id),
@@ -155,11 +155,12 @@ CREATE TABLE kill_switch_state (
     deactivated_at  TIMESTAMP
 );
 
--- Insert initial kill switch row
-INSERT INTO kill_switch_state (is_active) VALUES (false);
+-- Insert initial kill switch row only if table is empty
+INSERT INTO kill_switch_state (is_active)
+SELECT false WHERE NOT EXISTS (SELECT 1 FROM kill_switch_state);
 
 -- Error Logs
-CREATE TABLE error_logs (
+CREATE TABLE IF NOT EXISTS error_logs (
     id              BIGSERIAL PRIMARY KEY,
     deployment_id   BIGINT       REFERENCES deployments(id) ON DELETE SET NULL,
     error_type      VARCHAR(50)  NOT NULL,
@@ -169,11 +170,11 @@ CREATE TABLE error_logs (
     created_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_error_logs_created_at ON error_logs(created_at);
-CREATE INDEX idx_error_logs_severity ON error_logs(severity);
+CREATE INDEX IF NOT EXISTS idx_error_logs_created_at ON error_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_error_logs_severity ON error_logs(severity);
 
 -- Idempotency Keys
-CREATE TABLE idempotency_keys (
+CREATE TABLE IF NOT EXISTS idempotency_keys (
     id              BIGSERIAL PRIMARY KEY,
     key_hash        VARCHAR(64)  NOT NULL UNIQUE,
     order_id        BIGINT       REFERENCES orders(id),
@@ -181,10 +182,10 @@ CREATE TABLE idempotency_keys (
     expires_at      TIMESTAMP    NOT NULL
 );
 
-CREATE INDEX idx_idempotency_keys_expires ON idempotency_keys(expires_at);
+CREATE INDEX IF NOT EXISTS idx_idempotency_keys_expires ON idempotency_keys(expires_at);
 
 -- Broker Token Refresh Log
-CREATE TABLE broker_token_refresh_log (
+CREATE TABLE IF NOT EXISTS broker_token_refresh_log (
     id                  BIGSERIAL PRIMARY KEY,
     broker_account_id   BIGINT       NOT NULL REFERENCES broker_accounts(id) ON DELETE CASCADE,
     status              VARCHAR(20)  NOT NULL,
@@ -193,4 +194,4 @@ CREATE TABLE broker_token_refresh_log (
     next_refresh_at     TIMESTAMP
 );
 
-CREATE INDEX idx_token_refresh_broker_id ON broker_token_refresh_log(broker_account_id);
+CREATE INDEX IF NOT EXISTS idx_token_refresh_broker_id ON broker_token_refresh_log(broker_account_id);

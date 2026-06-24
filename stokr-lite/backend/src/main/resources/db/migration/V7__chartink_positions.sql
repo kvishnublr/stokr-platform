@@ -2,7 +2,7 @@
 -- Stokr Lite - Chartink Position Tracking
 -- =============================================================
 
-CREATE TABLE chartink_positions (
+CREATE TABLE IF NOT EXISTS chartink_positions (
     id              BIGSERIAL PRIMARY KEY,
     signal_id       BIGINT       NOT NULL UNIQUE REFERENCES strategy_signals(id),
     symbol          VARCHAR(50)  NOT NULL,
@@ -24,6 +24,6 @@ CREATE TABLE chartink_positions (
     closed_at       TIMESTAMP
 );
 
-CREATE INDEX idx_chartink_pos_status ON chartink_positions(status);
-CREATE INDEX idx_chartink_pos_symbol ON chartink_positions(symbol);
-CREATE INDEX idx_chartink_pos_open ON chartink_positions(symbol, status);
+CREATE INDEX IF NOT EXISTS idx_chartink_pos_status ON chartink_positions(status);
+CREATE INDEX IF NOT EXISTS idx_chartink_pos_symbol ON chartink_positions(symbol);
+CREATE INDEX IF NOT EXISTS idx_chartink_pos_open ON chartink_positions(symbol, status);

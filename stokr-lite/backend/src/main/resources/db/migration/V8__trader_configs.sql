@@ -1,4 +1,4 @@
-CREATE TABLE trader_configs (
+CREATE TABLE IF NOT EXISTS trader_configs (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL UNIQUE,
     mode VARCHAR(10) NOT NULL DEFAULT 'PAPER',
@@ -16,4 +16,4 @@ CREATE TABLE trader_configs (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_trader_configs_user_id ON trader_configs(user_id);
+CREATE INDEX IF NOT EXISTS idx_trader_configs_user_id ON trader_configs(user_id);
