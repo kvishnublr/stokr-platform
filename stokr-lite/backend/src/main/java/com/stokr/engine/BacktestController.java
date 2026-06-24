@@ -1,6 +1,7 @@
 package com.stokr.engine;
 
 import com.stokr.marketdata.Candle;
+import com.stokr.external.ChartinkScannerService;
 import com.stokr.strategy.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,13 +28,11 @@ public class BacktestController {
     private final StrategyService strategyService;
     private final UniverseGroupService universeGroupService;
     private final List<StrategyPlugin> strategyPlugins;
+    private final ChartinkScannerService chartinkScannerService;
 
+    // Only ORB — all other strategies removed (VWAP, GAP_FILL, ADV_CASH showed <30% win rate)
     private static final Map<String, String> STRATEGY_PLUGIN_MAP = Map.of(
-        "ORB", "ORB_V",
-        "ADV_CASH", "TRADE_BOOK_IMBALANCE",
-        "VWAP_SQUEEZE", "VWAP_TRIPLE",
-        "GAP_FILL", "PRE_OPEN",
-        "VWAP_BOUNCE", "VWAP_TRIPLE"
+        "ORB", "ORB_V"
     );
 
     private static final double CAPITAL = 25000;
@@ -164,9 +163,19 @@ public class BacktestController {
         try {
             Instant startTime = dateStart != null ? Instant.parse(dateStart) : Instant.now().minusSeconds(2592000);
             Instant endTime = dateEnd != null ? Instant.parse(dateEnd) : Instant.now();
+            // CHARTINK universe: fetch live scanner results from Chartink, fall back to NIFTY_100
+            boolean useChartinkFilter = "CHARTINK".equalsIgnoreCase(universe);
+            String resolvedUniverse = useChartinkFilter ? "NIFTY_100" : universe;
+
+            List<String> chartinkSymbols = Collections.emptyList();
+            if (useChartinkFilter) {
+                chartinkSymbols = chartinkScannerService.fetchScannerSymbols(null);
+                log.info("Chartink scan returned {} symbols for ORB", chartinkSymbols.size());
+            }
+
             List<String> symbolList = symbols != null
                 ? Arrays.asList(symbols.split(","))
-                : getSymbolsForUniverse(universe);
+                : (useChartinkFilter && !chartinkSymbols.isEmpty() ? chartinkSymbols : getSymbolsForUniverse(resolvedUniverse));
 
             String pluginType = resolvePluginType(strategy);
             StrategyPlugin plugin = findPlugin(pluginType);
@@ -187,15 +196,15 @@ public class BacktestController {
             for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
                 allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params));
             }
-            // Sort trades by entry time for daily bucketing
             allTrades.sort(java.util.Comparator.comparing(t -> t.entryTime));
 
             int totalTrades = allTrades.size();
             int winCount = 0, lossCount = 0;
             double totalPnl = 0;
             for (SimulatedTrade t : allTrades) {
-                if ("TARGET_HIT".equals(t.exitType)) winCount++;
-                else if ("SL_HIT".equals(t.exitType)) lossCount++;
+                // Win = any positive P&L exit (TARGET_HIT, TRAIL_SL with gain, EOD with gain)
+                if (t.pnl > 0) winCount++;
+                else if (t.pnl < 0) lossCount++;
                 totalPnl += t.pnl;
             }
 
@@ -217,8 +226,10 @@ public class BacktestController {
             double avgPnl  = totalTrades > 0 ? totalPnl / totalTrades : 0;
 
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("strategy", strategy != null ? strategy : "ALL");
+            result.put("strategy", "ORB");
             result.put("universe", universe);
+            result.put("chartinkSymbols", useChartinkFilter ? symbolList.size() : 0);
+            result.put("chartinkConfigured", chartinkScannerService.isConfigured());
             result.put("symbolsLoaded", candlesBySymbol.size());
             result.put("totalTrades", totalTrades);
             result.put("winCount", winCount);
@@ -249,6 +260,19 @@ public class BacktestController {
         }
     }
 
+    /** Returns live Chartink scanner results (symbols meeting the scan condition right now). */
+    @GetMapping("/chartink-scan")
+    public ResponseEntity<Map<String, Object>> getChartinkScan(
+            @RequestParam(required = false) String scanClause) {
+        List<String> symbols = chartinkScannerService.fetchScannerSymbols(scanClause);
+        return ResponseEntity.ok(Map.of(
+            "configured", chartinkScannerService.isConfigured(),
+            "symbols", symbols,
+            "count", symbols.size(),
+            "scanClause", scanClause != null ? scanClause : com.stokr.external.ChartinkScannerService.DEFAULT_ORB_SCAN
+        ));
+    }
+
     private String resolvePluginType(String strategy) {
         if (strategy == null || strategy.isEmpty() || "ALL".equals(strategy)) return "ORB_V";
         String mapped = STRATEGY_PLUGIN_MAP.get(strategy.toUpperCase());
@@ -266,117 +290,141 @@ public class BacktestController {
         List<SimulatedTrade> trades = new ArrayList<>();
         int n = candleData.size();
         if (n < 20) return trades;
-        // Max 1 trade per symbol per calendar day (intraday discipline)
-        java.util.Set<String> tradedDays = new java.util.HashSet<>();
 
         List<Candle> candles = candleData.stream().map(this::toCandle).toList();
         List<IndicatorUtils.Indicators> indicators = IndicatorUtils.computeAll(candleData);
 
-        // Pre-compute per-day VWAP (resets at each trading day boundary)
+        // Pre-compute per-day VWAP
         BigDecimal[] dayVwap = computePerDayVwap(candleData);
-        // Pre-compute day open prices and prev-day close for gap calculations
-        BigDecimal[] dayOpen = new BigDecimal[n];
-        BigDecimal[] prevDayClose = new BigDecimal[n];
+
+        // Pre-compute per-day: open, prev-day close, ORB high/low (first 15 candles of each day)
+        BigDecimal[] dayOpenArr   = new BigDecimal[n];
+        BigDecimal[] orbHighArr   = new BigDecimal[n];
+        BigDecimal[] orbLowArr    = new BigDecimal[n];
+        boolean[]    chartinkPass = new boolean[n];   // in-house "strong open" scan
         {
             String curDay = null;
-            BigDecimal lastDayClose = null;
+            int dayStart = 0;
             BigDecimal thisDayOpen = null;
+            BigDecimal runOrbHigh = null, runOrbLow = null;
+            boolean orbReady = false;
+            // Per-day first-15-min volume for in-house Chartink scan
+            long orbVol = 0;
+            long prevOrbVol = -1; // previous day's opening volume (for comparison)
+            boolean dayChartinkOk = false;
+
             for (int i = 0; i < n; i++) {
-                String d = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata"))
-                    .toLocalDate().toString();
+                String d = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
                 if (!d.equals(curDay)) {
-                    lastDayClose = curDay != null && i > 0 ? candles.get(i - 1).close() : null;
-                    thisDayOpen = candles.get(i).open();
+                    prevOrbVol = orbVol;     // save previous day's ORB volume
                     curDay = d;
+                    dayStart = i;
+                    thisDayOpen = candles.get(i).open();
+                    runOrbHigh = candles.get(i).high();
+                    runOrbLow  = candles.get(i).low();
+                    orbReady = false;
+                    orbVol = 0;
+                    dayChartinkOk = false;
                 }
-                dayOpen[i] = thisDayOpen;
-                prevDayClose[i] = lastDayClose;
+                int candleInDay = i - dayStart;
+
+                // Build ORB from first 15 candles (9:15–9:29 IST)
+                if (candleInDay < 15) {
+                    runOrbHigh = runOrbHigh.max(candles.get(i).high());
+                    runOrbLow  = runOrbLow.min(candles.get(i).low());
+                    orbVol    += candles.get(i).volume();
+                }
+                if (candleInDay == 14) {
+                    orbReady = true;
+                    // In-house Chartink scan: strong opening = net positive + volume > 1.2× prev day open vol
+                    boolean netPositive = candles.get(i).close().compareTo(thisDayOpen) > 0;
+                    boolean highVol = prevOrbVol <= 0 || orbVol > prevOrbVol * 1.2;
+                    dayChartinkOk = netPositive && highVol;
+                }
+
+                dayOpenArr[i]   = thisDayOpen;
+                orbHighArr[i]   = orbReady ? runOrbHigh : null;
+                orbLowArr[i]    = orbReady ? runOrbLow  : null;
+                chartinkPass[i] = dayChartinkOk;
             }
         }
 
+        java.util.Set<String> tradedDays = new java.util.HashSet<>();
         int openTradeExitIdx = -1;
 
-        for (int i = 14; i < n; i++) {
+        for (int i = 15; i < n; i++) {
             if (openTradeExitIdx > 0 && i <= openTradeExitIdx) continue;
+            if (orbHighArr[i] == null) continue; // ORB not formed yet
 
-            List<Candle> window = candles.subList(0, i + 1);
-            BigDecimal vwap = dayVwap[i];   // per-day VWAP
+            String istDate = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
+            if (tradedDays.contains(istDate)) continue;
+
+            java.time.LocalTime istTime = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalTime();
+
             BigDecimal rsi = indicators.get(i).rsi14();
             BigDecimal atr = indicators.get(i).atr14();
-
             Map<String, BigDecimal> indMap = new HashMap<>();
             if (rsi != null) indMap.put("RSI14", rsi);
             if (atr != null) indMap.put("ATR14", atr);
 
-            // Volume-based unfilled ratio proxy: volume relative to recent avg
-            int volStart = Math.max(0, i - 9);
-            long sumVol = 0;
-            for (int v = volStart; v <= i; v++) sumVol += candles.get(v).volume();
-            long avgVol = sumVol / (i - volStart + 1);
-            double volRatio = avgVol > 0 ? (double) candles.get(i).volume() / avgVol : 1.0;
-            // unfilledRatio > 0.35 when volume >= average (proxy for pre-open order imbalance)
-            BigDecimal unfilledRatio = BigDecimal.valueOf(Math.min(1.0, volRatio * 0.4));
-
-            // Gap from prev day close to current day open
-            BigDecimal gapPct = null;
-            if (prevDayClose[i] != null && prevDayClose[i].compareTo(BigDecimal.ZERO) > 0) {
-                gapPct = dayOpen[i].subtract(prevDayClose[i])
-                    .divide(prevDayClose[i], 4, java.math.RoundingMode.HALF_UP)
-                    .multiply(BigDecimal.valueOf(100));
-            }
-
-            // IST time-of-day for time-gated strategies
-            java.time.LocalTime istTime = candleData.get(i).getTimestamp()
-                .atZone(ZoneId.of("Asia/Kolkata")).toLocalTime();
-
             Map<String, Object> extras = new HashMap<>();
-            extras.put("buyerQty", 100L);
-            extras.put("sellerQty", 40L);
-            extras.put("prevClose", i > 0 ? candles.get(i - 1).close() : candles.get(i).close());
-            extras.put("unfilledRatio", unfilledRatio);
-            if (gapPct != null) extras.put("gapPct", gapPct);
-            extras.put("atrThresholdPct", BigDecimal.valueOf(0.05));
-            extras.put("istHour", istTime.getHour());
+            extras.put("orbHigh",   orbHighArr[i]);
+            extras.put("orbLow",    orbLowArr[i]);
+            extras.put("orbRange",  orbHighArr[i].subtract(orbLowArr[i]));
+            extras.put("dayOpen",   dayOpenArr[i]);
+            extras.put("istHour",   istTime.getHour());
             extras.put("istMinute", istTime.getMinute());
-            if (dayOpen[i] != null) extras.put("dayOpen", dayOpen[i]);
+            extras.put("chartinkOk", chartinkPass[i]);
+            extras.put("vwap", dayVwap[i]);
 
-            // One trade per day per symbol — skip if already traded today
-            String istDate = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata"))
-                .toLocalDate().toString();
-            if (tradedDays.contains(istDate)) continue;
-
-            MarketContext context = new MarketContext(symbol, window, candles.get(i).close(), vwap, indMap, extras);
+            List<Candle> window = candles.subList(0, i + 1);
+            MarketContext context = new MarketContext(symbol, window, candles.get(i).close(), dayVwap[i], indMap, extras);
             Signal signal = plugin.evaluate(context, params);
+
             if (signal != null && signal.isValid()) {
                 tradedDays.add(istDate);
                 SimulatedTrade trade = new SimulatedTrade(symbol, signal, i, candles.get(i).timestamp());
-                java.time.LocalDate entryIstDate = candleData.get(i).getTimestamp()
-                    .atZone(ZoneId.of("Asia/Kolkata")).toLocalDate();
+                java.time.LocalDate entryDate = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate();
+
+                // Trailing SL: starts at orbLow, trails 0.3% below best price seen once profit > 0.5%
+                BigDecimal currentSL  = signal.stopLoss();
+                BigDecimal bestPrice  = signal.entryPrice();
+                double entryD = signal.entryPrice().doubleValue();
+                boolean trailActivated = false;
+
                 for (int j = i + 1; j < n; j++) {
                     Candle c = candles.get(j);
+                    java.time.LocalDate exitDate = candleData.get(j).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate();
                     boolean exited = false;
-                    // Force EOD exit — intraday only, never carry overnight
-                    java.time.LocalDate exitIstDate = candleData.get(j).getTimestamp()
-                        .atZone(ZoneId.of("Asia/Kolkata")).toLocalDate();
-                    if (!exitIstDate.equals(entryIstDate)) {
-                        // Close at last candle of entry day (j-1)
-                        int eodIdx = j - 1;
-                        trade.exit(eodIdx, candles.get(eodIdx).timestamp(), "EOD_EXIT");
+
+                    // EOD exit — close at last candle of entry day (use actual price)
+                    if (!exitDate.equals(entryDate)) {
+                        Candle eod = candles.get(j - 1);
+                        trade.exitAtPrice(j - 1, eod.timestamp(), "EOD_EXIT", eod.close());
                         exited = true;
-                    } else if (signal.side() == Signal.Side.BUY) {
+                    } else {
+                        // Update trailing SL
+                        if (c.high().compareTo(bestPrice) > 0) {
+                            bestPrice = c.high();
+                            double gain = (bestPrice.doubleValue() - entryD) / entryD * 100;
+                            if (gain >= 0.5) { // trailing activates after 0.5% gain
+                                trailActivated = true;
+                            }
+                        }
+                        if (trailActivated) {
+                            BigDecimal newTrail = bestPrice.multiply(BigDecimal.valueOf(0.997))
+                                .setScale(2, java.math.RoundingMode.HALF_UP);
+                            if (newTrail.compareTo(currentSL) > 0) currentSL = newTrail;
+                        }
+
+                        // Fixed target hit
                         if (c.high().compareTo(signal.target()) >= 0) {
                             trade.exit(j, c.timestamp(), "TARGET_HIT");
                             exited = true;
-                        } else if (c.low().compareTo(signal.stopLoss()) <= 0) {
-                            trade.exit(j, c.timestamp(), "SL_HIT");
-                            exited = true;
-                        }
-                    } else {
-                        if (c.low().compareTo(signal.target()) <= 0) {
-                            trade.exit(j, c.timestamp(), "TARGET_HIT");
-                            exited = true;
-                        } else if (c.high().compareTo(signal.stopLoss()) >= 0) {
-                            trade.exit(j, c.timestamp(), "SL_HIT");
+                        // Trailing / initial SL hit
+                        } else if (c.low().compareTo(currentSL) <= 0) {
+                            String exitLabel = trailActivated ? "TRAIL_SL" : "SL_HIT";
+                            trade.exitAtPrice(j, c.timestamp(), exitLabel, currentSL);
                             exited = true;
                         }
                     }
@@ -386,7 +434,8 @@ public class BacktestController {
                     }
                 }
                 if (trade.exitType == null) {
-                    trade.exit(n - 1, candles.get(n - 1).timestamp(), "EOD_EXIT");
+                    Candle last = candles.get(n - 1);
+                    trade.exitAtPrice(n - 1, last.timestamp(), "EOD_EXIT", last.close());
                 }
                 trades.add(trade);
             }
@@ -456,10 +505,29 @@ public class BacktestController {
                 if ("TARGET_HIT".equals(exitType)) {
                     movePct = target.subtract(entryPrice).doubleValue() / entryPrice.doubleValue();
                 } else if ("SL_HIT".equals(exitType)) {
-                    movePct = entryPrice.subtract(stopLoss).doubleValue() / entryPrice.doubleValue();
-                    movePct = -movePct;
+                    movePct = -(entryPrice.subtract(stopLoss).doubleValue() / entryPrice.doubleValue());
                 } else {
                     movePct = 0;
+                }
+                this.pnl = Math.round(movePct * CAPITAL * 100.0) / 100.0;
+            }
+        }
+
+        void exitAtPrice(int exitIdx, LocalDateTime exitTime, String exitType, BigDecimal exitPrice) {
+            this.exitIdx = exitIdx;
+            this.exitTime = exitTime;
+            this.exitType = exitType;
+            if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0 && exitPrice != null) {
+                double movePct;
+                if ("TARGET_HIT".equals(exitType)) {
+                    movePct = target.subtract(entryPrice).doubleValue() / entryPrice.doubleValue();
+                } else if ("SL_HIT".equals(exitType)) {
+                    movePct = -(entryPrice.subtract(stopLoss).doubleValue() / entryPrice.doubleValue());
+                } else {
+                    // TRAIL_SL, EOD_EXIT — use actual exit price
+                    movePct = (side == Signal.Side.BUY)
+                        ? exitPrice.subtract(entryPrice).doubleValue() / entryPrice.doubleValue()
+                        : entryPrice.subtract(exitPrice).doubleValue() / entryPrice.doubleValue();
                 }
                 this.pnl = Math.round(movePct * CAPITAL * 100.0) / 100.0;
             }

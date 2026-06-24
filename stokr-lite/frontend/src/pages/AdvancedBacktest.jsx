@@ -17,7 +17,7 @@ async function ensureAuthenticated() {
   } catch (e) { /* silent */ }
 }
 
-const STRATEGIES = ['ORB', 'ADV_CASH', 'VWAP_SQUEEZE', 'GAP_FILL', 'VWAP_BOUNCE'];
+const STRATEGIES = ['ORB']; // Only ORB — VWAP/GAP/ADV strategies removed (proved <30% win rate)
 
 function MetricCard({ label, value, color = '#1f2937', sub }) {
   return (
@@ -33,8 +33,9 @@ export default function AdvancedBacktest() {
   useEffect(() => { ensureAuthenticated(); }, []);
 
   const [universes, setUniverses]   = useState([]);
-  const [strategy, setStrategy]     = useState('VWAP_SQUEEZE');
+  const [strategy, setStrategy]     = useState('ORB');
   const [universe, setUniverse]     = useState('NIFTY_100');
+  const [chartinkInfo, setChartinkInfo] = useState(null);
   const [dateStart, setDateStart]   = useState('2026-06-01');
   const [dateEnd, setDateEnd]       = useState(new Date().toISOString().slice(0, 10));
   const [results, setResults]       = useState(null);
@@ -48,10 +49,11 @@ export default function AdvancedBacktest() {
       .then(r => {
         const groups = r.data || [];
         setUniverses(groups);
-        if (groups.length > 0 && !groups.find(g => g.groupKey === universe)) {
-          setUniverse(groups[0].groupKey);
-        }
       })
+      .catch(() => {});
+    // Check Chartink scanner status
+    client.get('/backtest/chartink-scan')
+      .then(r => setChartinkInfo(r.data))
       .catch(() => {});
   }, []);
 
@@ -120,7 +122,7 @@ export default function AdvancedBacktest() {
           📈 Strategy Backtest
         </h1>
         <p style={{ color: '#6b7280', marginTop: '6px', fontSize: '14px' }}>
-          Simulate on real 1-min candle data · ₹25,000 per trade
+          ORB strategy · Real 1-min candle data · ₹25,000/trade · Trailing SL · Chartink scan support
         </p>
       </div>
 
@@ -129,7 +131,7 @@ export default function AdvancedBacktest() {
           {/* Universe toggle */}
           <div style={{ marginBottom: '20px' }}>
             <span className="label">Universe</span>
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               {universes.map(u => (
                 <button key={u.groupKey} className={`univ-btn${universe === u.groupKey ? ' active' : ''}`}
                   onClick={() => setUniverse(u.groupKey)}
@@ -137,10 +139,23 @@ export default function AdvancedBacktest() {
                   {u.displayName}
                 </button>
               ))}
-              {universes.length === 0 && (
-                <span style={{ fontSize: '13px', color: '#9ca3af' }}>Loading universes...</span>
-              )}
+              {/* Chartink universe — uses live scanner to filter stocks */}
+              <button
+                className={`univ-btn${universe === 'CHARTINK' ? ' active' : ''}`}
+                onClick={() => setUniverse('CHARTINK')}
+                style={{ borderColor: universe === 'CHARTINK' ? '#f59e0b' : undefined,
+                         background: universe === 'CHARTINK' ? '#f59e0b' : undefined }}>
+                📡 Chartink Scan
+              </button>
             </div>
+            {universe === 'CHARTINK' && (
+              <div style={{ marginTop: '10px', padding: '10px 14px', background: '#fffbeb',
+                border: '1px solid #fde68a', borderRadius: '8px', fontSize: '12px', color: '#92400e' }}>
+                {chartinkInfo?.configured
+                  ? `✅ Chartink connected — ${chartinkInfo.count || 0} stocks in scan. Runs ORB on those stocks.`
+                  : '⚠️ Chartink session cookie not set. Using in-house scan (high-volume open stocks) instead. Set chartink.session.cookie in application.properties to connect real Chartink.'}
+              </div>
+            )}
           </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
@@ -278,10 +293,20 @@ export default function AdvancedBacktest() {
                         <td style={{ textAlign: 'center' }}>
                           <span style={{
                             padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700,
-                            background: t.exitType === 'TARGET_HIT' ? '#d1fae5' : t.exitType === 'SL_HIT' ? '#fee2e2' : '#fef3c7',
-                            color:      t.exitType === 'TARGET_HIT' ? '#065f46' : t.exitType === 'SL_HIT' ? '#991b1b' : '#92400e',
+                            background: t.exitType === 'TARGET_HIT' ? '#d1fae5'
+                              : t.exitType === 'SL_HIT' ? '#fee2e2'
+                              : t.exitType === 'TRAIL_SL' ? (t.pnl > 0 ? '#dbeafe' : '#fee2e2')
+                              : '#fef3c7',
+                            color: t.exitType === 'TARGET_HIT' ? '#065f46'
+                              : t.exitType === 'SL_HIT' ? '#991b1b'
+                              : t.exitType === 'TRAIL_SL' ? (t.pnl > 0 ? '#1e40af' : '#991b1b')
+                              : '#92400e',
                           }}>
-                            {t.exitType === 'TARGET_HIT' ? 'WIN' : t.exitType === 'SL_HIT' ? 'LOSS' : t.exitType}
+                            {t.exitType === 'TARGET_HIT' ? '✓ TARGET'
+                              : t.exitType === 'SL_HIT' ? '✗ SL'
+                              : t.exitType === 'TRAIL_SL' ? (t.pnl > 0 ? '~ TRAIL+' : '~ TRAIL-')
+                              : t.exitType === 'EOD_EXIT' ? (t.pnl > 0 ? '⏱ EOD+' : '⏱ EOD-')
+                              : t.exitType}
                           </span>
                         </td>
                       </tr>

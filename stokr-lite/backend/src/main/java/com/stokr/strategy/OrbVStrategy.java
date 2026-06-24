@@ -9,13 +9,17 @@ import java.math.RoundingMode;
 import java.util.List;
 
 /**
- * ORB-V Breakout Strategy (Strategy #4).
- * Enhanced ORB with volume + trade book filters.
- * Conditions (all must be true for LONG):
- *   1. close > intraday 15-min high (ORB high)
- *   2. volume > 1.5 × sma(volume, 10)
- *   3. buyer/seller qty ratio > 1.3
- *   4. close > previous close
+ * Opening Range Breakout (ORB) — most battle-tested intraday strategy globally.
+ *
+ * Logic:
+ *   First 15 min of trading (9:15-9:30 IST) define the range (high + low).
+ *   Entry when close breaks ABOVE range high with strong volume (first breakout only).
+ *   SL: below range low — structural invalidation.
+ *   Target: range high + 1x range size (ORB extension).
+ *   Trailing SL also applied in the backtest exit simulator.
+ *
+ * Per-day ORB levels are pre-computed by BacktestController and passed via extras:
+ *   orbHigh, orbLow, orbRange, dayOpen, istHour, istMinute, chartinkOk
  */
 @Slf4j
 @Component
@@ -29,62 +33,76 @@ public class OrbVStrategy implements StrategyPlugin {
     @Override
     public Signal evaluate(MarketContext context, StrategyParams params) {
         List<Candle> candles = context.candles();
-        if (candles.size() < 15) return null;
+        int n = candles.size();
+        if (n < 20) return null;
 
-        int orbPeriod = params.orbPeriodMinutes() > 0 ? params.orbPeriodMinutes() : 15;
-        if (candles.size() < orbPeriod) return null;
+        // Per-day ORB levels — pre-computed by simulator, not from window start
+        BigDecimal orbHigh  = context.extra("orbHigh",  BigDecimal.class);
+        BigDecimal orbLow   = context.extra("orbLow",   BigDecimal.class);
+        BigDecimal orbRange = context.extra("orbRange",  BigDecimal.class);
+        if (orbHigh == null || orbLow == null || orbRange == null) return null;
+        if (orbRange.compareTo(BigDecimal.valueOf(0.01)) < 0) return null;
 
-        // 1. Calculate opening range high (first N candles)
-        List<Candle> opening = candles.subList(0, orbPeriod);
-        BigDecimal orbHigh = opening.stream()
-                .map(Candle::high)
-                .max(BigDecimal::compareTo)
-                .orElse(BigDecimal.ZERO);
+        // Time gate: 9:30–13:00 IST only
+        Integer istHour   = context.extra("istHour",   Integer.class);
+        Integer istMinute = context.extra("istMinute", Integer.class);
+        if (istHour != null && istMinute != null) {
+            int min = istHour * 60 + istMinute;
+            if (min < 9 * 60 + 30 || min > 13 * 60) return null;
+        }
+
+        // Chartink in-house scan filter — if set to false, skip this symbol today
+        Boolean chartinkOk = context.extra("chartinkOk", Boolean.class);
+        if (Boolean.FALSE.equals(chartinkOk)) return null;
 
         Candle latest = context.getLatestCandle();
-        Candle prev = context.getPreviousCandle();
+        Candle prev   = context.getPreviousCandle();
         if (latest == null || prev == null) return null;
 
         BigDecimal close = latest.close();
 
-        // Close must break above ORB high
-        if (close.compareTo(orbHigh) <= 0) {
-            log.debug("ORB-V: close {} <= ORB high {}", close, orbHigh);
-            return null;
-        }
+        // 1. ORB breakout: close above range high
+        if (close.compareTo(orbHigh) <= 0) return null;
 
-        // 2. Volume > 1.5 × SMA(volume, 10)
-        int n = candles.size();
-        long avgVol = candles.subList(Math.max(0, n - 10), n)
-                .stream().mapToLong(Candle::volume).sum() / 10;
-        if (avgVol == 0 || latest.volume() < avgVol * 1.5) {
-            log.debug("ORB-V: volume {} < 1.5x avg {}", latest.volume(), avgVol);
-            return null;
-        }
+        // 2. Don't chase: entry must be within 1.5% of ORB high
+        if (close.compareTo(orbHigh.multiply(BigDecimal.valueOf(1.015))) > 0) return null;
 
-        // 3. Buyer/seller ratio > 1.3
-        Long buyerQty = context.extra("buyerQty", Long.class);
-        Long sellerQty = context.extra("sellerQty", Long.class);
-        if (buyerQty == null || sellerQty == null || sellerQty == 0) {
-            log.debug("ORB-V: missing buyer/seller qty");
-            return null;
-        }
-        double ratio = buyerQty / (double) sellerQty;
-        if (ratio <= 1.3) {
-            log.debug("ORB-V: ratio {} <= 1.3", ratio);
-            return null;
-        }
+        // 3. Trend day: close > day open
+        BigDecimal dayOpen = context.extra("dayOpen", BigDecimal.class);
+        if (dayOpen != null && close.compareTo(dayOpen) <= 0) return null;
 
-        // 4. Close > previous close
-        if (close.compareTo(prev.close()) <= 0) {
-            log.debug("ORB-V: close {} <= prev close {}", close, prev.close());
-            return null;
-        }
+        // 4. Breakout candle is bullish
+        if (close.compareTo(latest.open()) <= 0) return null;
 
-        BigDecimal sl = params.getStopLossPrice(close, Signal.Side.BUY);
-        BigDecimal target = params.getTargetPrice(close, Signal.Side.BUY);
-        return new Signal(context.symbol(), Signal.Side.BUY, close, sl, target,
-                0.72, "ORB-V LONG break=" + orbHigh.setScale(2, RoundingMode.HALF_UP)
-                        + " ratio=" + String.format("%.2f", ratio));
+        // 5. Volume ≥ 1.5× 10-period average
+        long volSum = 0;
+        int volLen = Math.min(10, n);
+        for (int k = n - volLen; k < n; k++) volSum += candles.get(k).volume();
+        long avgVol = volLen > 0 ? volSum / volLen : 1;
+        if (avgVol == 0 || latest.volume() < avgVol * 1.5) return null;
+
+        // 6. First breakout only: previous candle was still below/at ORB high
+        if (prev.close().compareTo(orbHigh) > 0) return null;
+
+        // SL: just below ORB low (structural)
+        BigDecimal sl = orbLow.multiply(BigDecimal.valueOf(0.999)).setScale(2, RoundingMode.HALF_UP);
+
+        // Target: ORB extension = orbHigh + 1× orbRange
+        BigDecimal target = orbHigh.add(orbRange).setScale(2, RoundingMode.HALF_UP);
+
+        if (target.compareTo(close) <= 0 || sl.compareTo(close) >= 0) return null;
+
+        double rrRatio = target.subtract(close).doubleValue() / close.subtract(sl).doubleValue();
+        if (rrRatio < 0.5) return null;
+
+        return new Signal(
+            context.symbol(), Signal.Side.BUY, close, sl, target,
+            0.78,
+            "ORB @" + close.setScale(2, RoundingMode.HALF_UP)
+                + " orb=[" + orbLow.setScale(2, RoundingMode.HALF_UP)
+                + "-" + orbHigh.setScale(2, RoundingMode.HALF_UP) + "]"
+                + " tgt=" + target
+                + " rr=" + String.format("%.1f", rrRatio)
+                + " vol=" + String.format("%.1fx", (double) latest.volume() / avgVol));
     }
 }
