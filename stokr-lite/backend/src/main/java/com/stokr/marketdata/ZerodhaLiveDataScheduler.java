@@ -143,6 +143,15 @@ public class ZerodhaLiveDataScheduler {
 
     public static final List<String> NIFTY_50 = NIFTY_500.subList(0, 50);
 
+    @Scheduled(cron = "0 */1 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void scheduledFetch() {
+        try {
+            fetchAndStoreQuotes();
+        } catch (Exception e) {
+            log.error("scheduledFetch error (will retry next minute): {}", e.getMessage());
+        }
+    }
+
     public void fetchAndStoreQuotes() {
         String accessToken = resolveToken();
         if (accessToken == null) {

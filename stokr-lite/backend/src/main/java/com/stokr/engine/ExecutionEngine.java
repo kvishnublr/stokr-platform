@@ -47,9 +47,6 @@ public class ExecutionEngine {
             return;
         }
 
-        // Step 1: Fetch fresh live quotes from Zerodha → store 1-min candles to DB
-        liveDataScheduler.fetchAndStoreQuotes();
-
         List<Deployment> activeDeployments = deploymentService.getAllActiveDeployments();
         if (activeDeployments.isEmpty()) {
             log.debug("No active deployments");
