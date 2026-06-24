@@ -27,6 +27,7 @@ services:
       JWT_SECRET: change-this-to-a-very-long-random-secret-key-at-least-256-bits
       ZERODHA_API_KEY: ${ZERODHA_API_KEY:-}
       ZERODHA_API_SECRET: ${ZERODHA_API_SECRET:-}
+      STOKR_UI_BASE_URL: ${STOKR_UI_BASE_URL:-https://stokr.in}
       DHAN_API_KEY: ${DHAN_API_KEY:-}
       FYERS_API_KEY: ${FYERS_API_KEY:-}
     ports:
