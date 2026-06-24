@@ -266,6 +266,8 @@ public class BacktestController {
         List<SimulatedTrade> trades = new ArrayList<>();
         int n = candleData.size();
         if (n < 20) return trades;
+        // Max 1 trade per symbol per calendar day (intraday discipline)
+        java.util.Set<String> tradedDays = new java.util.HashSet<>();
 
         List<Candle> candles = candleData.stream().map(this::toCandle).toList();
         List<IndicatorUtils.Indicators> indicators = IndicatorUtils.computeAll(candleData);
@@ -338,14 +340,30 @@ public class BacktestController {
             extras.put("istMinute", istTime.getMinute());
             if (dayOpen[i] != null) extras.put("dayOpen", dayOpen[i]);
 
+            // One trade per day per symbol — skip if already traded today
+            String istDate = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata"))
+                .toLocalDate().toString();
+            if (tradedDays.contains(istDate)) continue;
+
             MarketContext context = new MarketContext(symbol, window, candles.get(i).close(), vwap, indMap, extras);
             Signal signal = plugin.evaluate(context, params);
             if (signal != null && signal.isValid()) {
+                tradedDays.add(istDate);
                 SimulatedTrade trade = new SimulatedTrade(symbol, signal, i, candles.get(i).timestamp());
+                java.time.LocalDate entryIstDate = candleData.get(i).getTimestamp()
+                    .atZone(ZoneId.of("Asia/Kolkata")).toLocalDate();
                 for (int j = i + 1; j < n; j++) {
                     Candle c = candles.get(j);
                     boolean exited = false;
-                    if (signal.side() == Signal.Side.BUY) {
+                    // Force EOD exit — intraday only, never carry overnight
+                    java.time.LocalDate exitIstDate = candleData.get(j).getTimestamp()
+                        .atZone(ZoneId.of("Asia/Kolkata")).toLocalDate();
+                    if (!exitIstDate.equals(entryIstDate)) {
+                        // Close at last candle of entry day (j-1)
+                        int eodIdx = j - 1;
+                        trade.exit(eodIdx, candles.get(eodIdx).timestamp(), "EOD_EXIT");
+                        exited = true;
+                    } else if (signal.side() == Signal.Side.BUY) {
                         if (c.high().compareTo(signal.target()) >= 0) {
                             trade.exit(j, c.timestamp(), "TARGET_HIT");
                             exited = true;
@@ -368,7 +386,7 @@ public class BacktestController {
                     }
                 }
                 if (trade.exitType == null) {
-                    trade.exit(n - 1, candles.get(n - 1).timestamp(), "NO_EXIT");
+                    trade.exit(n - 1, candles.get(n - 1).timestamp(), "EOD_EXIT");
                 }
                 trades.add(trade);
             }

@@ -20,12 +20,12 @@ import java.util.List;
  * All conditions (LONG):
  *   1. Time gate: IST 9:20–11:30 (let VWAP establish for first 5 min)
  *   2. Uptrend day: close > day open
- *   3. VWAP bounce: prev close ≤ VWAP, curr close in [VWAP, VWAP+0.3%]
- *   4. Bullish candle: close > open, body ≥ 40% of range
+ *   3. VWAP bounce: prev in [VWAP-0.3%, VWAP] (shallow touch), curr in [VWAP, VWAP+0.3%]
+ *   4. Bullish candle: close > open, body ≥ 50% of range (decisive candle)
  *   5. Volume ≥ 1.5× 10-period average
- *   6. RSI 42–65
+ *   6. RSI 48–62 (confirmed upward momentum, not oversold rebound)
  *   7. Close > previous close
- *   SL: 0.1% below VWAP | Target: entry + 2 × (entry − SL) = 2:1 R:R
+ *   SL: 0.1% below VWAP | Target: entry + 3 × (entry − SL) = 3:1 R:R (need only 25% win rate)
  */
 @Slf4j
 @Component
@@ -69,28 +69,20 @@ public class VwapTripleConfirmationStrategy implements StrategyPlugin {
 
         // 3. VWAP bounce zone: entry must be 0–0.3% above VWAP
         BigDecimal vwapCeiling = vwap.multiply(BigDecimal.valueOf(1.003));
-        if (close.compareTo(vwap) <= 0 || close.compareTo(vwapCeiling) > 0) {
-            log.debug("VWAP Bounce: close {} not in bounce zone [{}, {}]", close, vwap, vwapCeiling);
-            return null;
-        }
-        // Previous candle must have been AT or BELOW VWAP (confirming the touch)
-        if (prev.close().compareTo(vwap) > 0) {
-            log.debug("VWAP Bounce: prev close {} > VWAP {} — no touch", prev.close(), vwap);
-            return null;
-        }
+        if (close.compareTo(vwap) <= 0 || close.compareTo(vwapCeiling) > 0) return null;
 
-        // 4. Bullish candle with solid body
-        if (close.compareTo(latest.open()) <= 0) {
-            log.debug("VWAP Bounce: bearish candle");
-            return null;
-        }
+        // Previous candle must have touched VWAP but NOT broken more than 0.3% below it
+        // (shallow pullback = healthy bounce; deep crash through VWAP = breakdown, not bounce)
+        BigDecimal vwapFloor = vwap.multiply(BigDecimal.valueOf(0.997));
+        if (prev.close().compareTo(vwap) > 0) return null;           // no touch — skip
+        if (prev.close().compareTo(vwapFloor) < 0) return null;      // too deep below VWAP — skip
+
+        // 4. Bullish candle with strong body (≥50% of range — decisive, not a doji)
+        if (close.compareTo(latest.open()) <= 0) return null;
         BigDecimal range = latest.high().subtract(latest.low());
         if (range.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal bodyPct = close.subtract(latest.open()).divide(range, 4, RoundingMode.HALF_UP);
-            if (bodyPct.doubleValue() < 0.40) {
-                log.debug("VWAP Bounce: weak body {}%", bodyPct.multiply(BigDecimal.valueOf(100)).toPlainString());
-                return null;
-            }
+            if (bodyPct.doubleValue() < 0.50) return null;
         }
 
         // 5. Volume ≥ 1.5× 10-period average
@@ -99,32 +91,23 @@ public class VwapTripleConfirmationStrategy implements StrategyPlugin {
         int  volLen = Math.min(10, n);
         for (int k = n - volLen; k < n; k++) volSum += candles.get(k).volume();
         long avgVol = volSum / volLen;
-        if (avgVol == 0 || latest.volume() < avgVol * 1.5) {
-            log.debug("VWAP Bounce: volume {} < 1.5x avg {}", latest.volume(), avgVol);
-            return null;
-        }
+        if (avgVol == 0 || latest.volume() < avgVol * 1.5) return null;
 
-        // 6. RSI 42–65
+        // 6. RSI 48–62 (confirmed upward momentum, not oversold rebound which often fails)
         BigDecimal rsi = context.indicators() != null ? context.indicators().get("RSI14") : null;
         if (rsi == null) rsi = context.extra("rsi14", BigDecimal.class);
-        if (rsi == null || rsi.doubleValue() < 42 || rsi.doubleValue() > 65) {
-            log.debug("VWAP Bounce: RSI {} outside [42,65]", rsi);
-            return null;
-        }
+        if (rsi == null || rsi.doubleValue() < 48 || rsi.doubleValue() > 62) return null;
 
         // 7. Momentum: close > previous close
-        if (close.compareTo(prev.close()) <= 0) {
-            log.debug("VWAP Bounce: close {} <= prev close {}", close, prev.close());
-            return null;
-        }
+        if (close.compareTo(prev.close()) <= 0) return null;
 
         // SL: 0.1% below VWAP — natural invalidation level
         BigDecimal sl = vwap.multiply(BigDecimal.valueOf(0.999)).setScale(2, RoundingMode.HALF_UP);
-        if (sl.compareTo(close) >= 0) return null; // SL must be below entry
+        if (sl.compareTo(close) >= 0) return null;
 
-        // Target: 2:1 R:R from actual risk distance
+        // Target: 3:1 R:R — only 25% win rate needed to break even (vs 33% for 2:1)
         BigDecimal risk   = close.subtract(sl);
-        BigDecimal target = close.add(risk.multiply(BigDecimal.valueOf(2))).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal target = close.add(risk.multiply(BigDecimal.valueOf(3))).setScale(2, RoundingMode.HALF_UP);
 
         return new Signal(context.symbol(), Signal.Side.BUY, close, sl, target,
                 0.85,
