@@ -7,9 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 @Component
@@ -31,6 +29,43 @@ public class ChartinkStrategyEvaluator {
             return null;
         }
 
+        MarketContext context = buildContext(payload);
+        return strategyService.evaluateSignal(strategyId, context);
+    }
+
+    /**
+     * Evaluate a payload against ALL enabled strategies.
+     * Returns a map of (strategyId -> Signal) for every strategy that confirmed.
+     */
+    public Map<Long, Signal> evaluateAll(ChartinkPayload payload) {
+        Map<Long, Signal> results = new LinkedHashMap<>();
+        if (payload == null) return results;
+
+        List<Strategy> enabled = strategyService.getEnabledStrategies();
+        if (enabled.isEmpty()) {
+            log.debug("No enabled strategies to evaluate");
+            return results;
+        }
+
+        MarketContext context = buildContext(payload);
+
+        for (Strategy strategy : enabled) {
+            try {
+                Signal signal = strategyService.evaluateSignal(strategy.getId(), context);
+                if (signal != null && signal.isValid()) {
+                    results.put(strategy.getId(), signal);
+                    log.info("Strategy {} CONFIRMED for {}: side={} confidence={}",
+                            strategy.getName(), payload.symbol(), signal.side(), signal.confidence());
+                }
+            } catch (Exception e) {
+                log.warn("Error evaluating strategy {} for {}: {}", strategy.getName(), payload.symbol(), e.getMessage());
+            }
+        }
+
+        return results;
+    }
+
+    private MarketContext buildContext(ChartinkPayload payload) {
         tickBuffer.add(payload);
         List<Candle> candles = tickBuffer.toCandles(payload.symbol());
         BigDecimal currentPrice = payload.ltp() != null ? payload.ltp() : BigDecimal.ZERO;
@@ -56,10 +91,8 @@ public class ChartinkStrategyEvaluator {
         extras.put("bestBid", payload.bestBid());
         extras.put("bestAsk", payload.bestAsk());
 
-        MarketContext context = new MarketContext(
+        return new MarketContext(
                 payload.symbol(), candles, currentPrice, vwap, indicators, extras
         );
-
-        return strategyService.evaluateSignal(strategyId, context);
     }
 }

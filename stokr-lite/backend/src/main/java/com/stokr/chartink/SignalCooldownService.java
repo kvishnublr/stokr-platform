@@ -8,8 +8,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Prevents duplicate signals for the same symbol-direction within a cooldown window.
- * Chartink sends scanner hits every minute — we only want to trade once per setup.
+ * Prevents duplicate signals for the same (strategy, symbol, side) within a cooldown window.
+ * Chartink sends scanner hits every minute — we only want to trade once per setup per strategy.
  */
 @Slf4j
 @Service
@@ -20,29 +20,40 @@ public class SignalCooldownService {
 
     private String key(String scannerName, String symbol, String side) {
         String scanner = scannerName != null ? scannerName.toUpperCase() : "UNKNOWN";
-        return (scanner + "_" + symbol + "_" + side).toUpperCase();
+        return ("SCAN_" + scanner + "_" + symbol + "_" + side).toUpperCase();
     }
 
-    /**
-     * Check if a signal is allowed (not in cooldown).
-     */
+    private String key(Long strategyId, String symbol, String side) {
+        Long id = strategyId != null ? strategyId : 0L;
+        return ("STRAT_" + id + "_" + symbol + "_" + side).toUpperCase();
+    }
+
     public boolean isAllowed(String scannerName, String symbol, String side) {
         String k = key(scannerName, symbol, side);
+        return isAllowedByKey(k, scannerName, symbol, side);
+    }
+
+    public boolean isAllowed(Long strategyId, String symbol, String side) {
+        String k = key(strategyId, symbol, side);
+        return isAllowedByKey(k, String.valueOf(strategyId), symbol, side);
+    }
+
+    private boolean isAllowedByKey(String k, String label, String symbol, String side) {
         Instant last = lastSignalTime.get(k);
         if (last == null) return true;
         boolean allowed = Instant.now().isAfter(last.plusSeconds(COOLDOWN_MINUTES * 60));
         if (!allowed) {
-            log.debug("Cooldown active for {} {} {} (last: {})", scannerName, symbol, side, last);
+            log.debug("Cooldown active for {} {} {} (last: {})", label, symbol, side, last);
         }
         return allowed;
     }
 
-    /**
-     * Record that a signal was processed.
-     */
     public void record(String scannerName, String symbol, String side) {
         lastSignalTime.put(key(scannerName, symbol, side), Instant.now());
-        log.debug("Recorded signal for {} {} {}", scannerName, symbol, side);
+    }
+
+    public void record(Long strategyId, String symbol, String side) {
+        lastSignalTime.put(key(strategyId, symbol, side), Instant.now());
     }
 
     public void clear() {
