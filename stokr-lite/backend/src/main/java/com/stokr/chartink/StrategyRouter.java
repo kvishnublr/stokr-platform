@@ -22,13 +22,13 @@ public class StrategyRouter {
             Map.entry("STOKR_VWAP_TRIPLE_LONG", "VWAP_TRIPLE"),
             Map.entry("STOKR_TRADE_BOOK_IMBALANCE", "TRADE_BOOK_IMBALANCE"),
             Map.entry("STOKR_ORB_V_BREAKOUT", "ORB_V"),
-            Map.entry("STOKR_MORNING_SURGE_SHORT", "MORNING_SURGE"),
+            Map.entry("STOKR_MORNING_SURGE_SHORT", "MORNING_SURGE_REVERSAL"),
             Map.entry("STOKR_PRE_OPEN_BUY", "PRE_OPEN"),
             // Without prefix (fallback/testing)
             Map.entry("VWAP_TRIPLE_LONG", "VWAP_TRIPLE"),
             Map.entry("TRADE_BOOK_IMBALANCE", "TRADE_BOOK_IMBALANCE"),
             Map.entry("ORB_V_BREAKOUT", "ORB_V"),
-            Map.entry("MORNING_SURGE_SHORT", "MORNING_SURGE"),
+            Map.entry("MORNING_SURGE_SHORT", "MORNING_SURGE_REVERSAL"),
             Map.entry("PRE_OPEN_BUY", "PRE_OPEN")
     );
 

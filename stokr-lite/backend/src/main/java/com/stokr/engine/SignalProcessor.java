@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.*;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Evaluates all enabled strategies against real-time DB candles every scan cycle.
@@ -79,6 +80,15 @@ public class SignalProcessor {
                     // Intraday VWAP from candles
                     BigDecimal vwap = computeVwap(candles);
 
+                    Map<String, BigDecimal> indicators = new HashMap<>();
+                    if (candles.size() >= 20) {
+                        List<CandleData> cdList = toCandleDataList(candles);
+                        IndicatorUtils.Indicators ind = IndicatorUtils.computeAll(cdList).get(candles.size() - 1);
+                        if (ind.rsi14() != null) indicators.put("RSI14", ind.rsi14());
+                        if (ind.atr14() != null) indicators.put("ATR14", ind.atr14());
+                        if (ind.volSma10() != null) indicators.put("VOL_SMA_10", ind.volSma10());
+                    }
+
                     Map<String, Object> extras = new HashMap<>();
                     extras.put("orbHigh",   orbHigh);
                     extras.put("orbLow",    orbLow);
@@ -88,9 +98,11 @@ public class SignalProcessor {
                     extras.put("istMinute", istNow.getMinute());
                     extras.put("chartinkOk", Boolean.TRUE); // all symbols pass; Chartink filter optional
                     extras.put("vwap",      vwap);
+                    if (indicators.containsKey("RSI14")) extras.put("rsi14", indicators.get("RSI14"));
+                    if (indicators.containsKey("ATR14")) extras.put("atr14", indicators.get("ATR14"));
 
                     MarketContext context = new MarketContext(
-                        symbol, candles, ltp, vwap, Map.of(), extras);
+                        symbol, candles, ltp, vwap, indicators, extras);
 
                     Signal signal = strategyService.evaluateSignal(deployment.getStrategyId(), context);
                     if (signal == null || !signal.isValid()) continue;
@@ -154,5 +166,18 @@ public class SignalProcessor {
 
         if (totalVolume.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ZERO;
         return totalTpVolume.divide(totalVolume, 2, RoundingMode.HALF_UP);
+    }
+
+    private List<CandleData> toCandleDataList(List<Candle> candles) {
+        return candles.stream().map(c -> {
+            CandleData cd = new CandleData();
+            cd.setHigh(c.high());
+            cd.setLow(c.low());
+            cd.setOpen(c.open());
+            cd.setClose(c.close());
+            cd.setVolume(c.volume());
+            cd.setSymbol(c.symbol());
+            return cd;
+        }).collect(Collectors.toList());
     }
 }

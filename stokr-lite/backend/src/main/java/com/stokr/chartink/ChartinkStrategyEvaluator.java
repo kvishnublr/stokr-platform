@@ -163,6 +163,29 @@ public class ChartinkStrategyEvaluator {
         extras.put("bestBid", payload.bestBid());
         extras.put("bestAsk", payload.bestAsk());
 
+        // ORB levels from tick-buffer candles for ORB_V / MORNING_SURGE strategies
+        if (candles.size() >= 15) {
+            List<Candle> orbWindow = candles.subList(0, 15);
+            BigDecimal orbHigh = orbWindow.stream().map(Candle::high)
+                .max(BigDecimal::compareTo).orElse(null);
+            BigDecimal orbLow = orbWindow.stream().map(Candle::low)
+                .min(BigDecimal::compareTo).orElse(null);
+            if (orbHigh != null && orbLow != null) {
+                extras.put("orbHigh",   orbHigh);
+                extras.put("orbLow",    orbLow);
+                extras.put("orbRange",  orbHigh.subtract(orbLow));
+                extras.put("dayOpen",   candles.get(0).open());
+                extras.put("chartinkOk", Boolean.TRUE);
+            }
+        }
+
+        // Time info for time-gated strategies (VWAP_TRIPLE, ORB_V, MORNING_SURGE)
+        if (payload.timestamp() != null) {
+            java.time.LocalTime t = payload.timestamp().atZone(java.time.ZoneId.of("Asia/Kolkata")).toLocalTime();
+            extras.put("istHour",   t.getHour());
+            extras.put("istMinute", t.getMinute());
+        }
+
         return new MarketContext(
                 payload.symbol(), candles, currentPrice, vwap, indicators, extras
         );

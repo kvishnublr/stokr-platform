@@ -10,11 +10,15 @@ import java.util.List;
 
 /**
  * Trade Book Imbalance Strategy (Strategy #2).
+ * Detects sustained institutional buying via 3-minute order imbalance and price action.
+ *
  * Conditions (all must be true for LONG):
- *   1. buyer/seller ratio > 2.0 for 3 consecutive 1-min candles
- *   2. price rising in all 3 candles (close[i] > close[i-1])
- *   3. volume > 1.5 × sma(volume, 10)
- *   4. ATR_15min > 0.35%
+ *   1. Order flow: buyer/seller ratio > 2.0 (from latest tick, proxies sustained interest)
+ *   2. Price rising in all 3 candles (close[i] > close[i-1])
+ *   3. All 3 candles are bullish (close > open) — sustained buying each minute
+ *   4. Volume increasing across the 3 candles (c0.vol <= c1.vol <= c2.vol) — growing participation
+ *   5. Latest volume > 1.5 × SMA(volume, 10) — above-average activity
+ *   6. ATR14 > 0.35% — enough volatility for a trade
  */
 @Slf4j
 @Component
@@ -31,17 +35,13 @@ public class TradeBookImbalanceStrategy implements StrategyPlugin {
         if (candles.size() < 10) return null;
 
         int n = candles.size();
-        // Need at least 3 consecutive candles with ratio data
-        // We use the latest 3 candles
         if (n < 3) return null;
 
-        Candle c0 = candles.get(n - 3); // oldest of the 3
+        Candle c0 = candles.get(n - 3);
         Candle c1 = candles.get(n - 2);
-        Candle c2 = candles.get(n - 1); // latest
+        Candle c2 = candles.get(n - 1);
 
-        // 1. buyer/seller ratio > 2.0 for all 3 candles
-        // We store ratio in extras per candle index, or use latest extras as proxy
-        // For simplicity, we check the latest candle's ratio and verify trend
+        // 1. Order flow: buyer/seller ratio > 2.0 (from Chartink tick data)
         Long buyerQty = context.extra("buyerQty", Long.class);
         Long sellerQty = context.extra("sellerQty", Long.class);
         if (buyerQty == null || sellerQty == null || sellerQty == 0) {
@@ -54,14 +54,29 @@ public class TradeBookImbalanceStrategy implements StrategyPlugin {
             return null;
         }
 
-        // 2. Price rising in all 3 candles: close2 > close1 > close0
+        // 2. Price rising in all 3 candles
         if (c2.close().compareTo(c1.close()) <= 0 || c1.close().compareTo(c0.close()) <= 0) {
             log.debug("TBI: price not rising for 3 candles {} {} {}",
                     c0.close(), c1.close(), c2.close());
             return null;
         }
 
-        // 3. Volume > 1.5 × SMA(volume, 10)
+        // 3. All 3 candles bullish — sustained buying each minute
+        if (c2.close().compareTo(c2.open()) <= 0 ||
+            c1.close().compareTo(c1.open()) <= 0 ||
+            c0.close().compareTo(c0.open()) <= 0) {
+            log.debug("TBI: not all 3 candles are bullish");
+            return null;
+        }
+
+        // 4. Volume increasing across 3 candles — growing participation
+        if (c2.volume() < c1.volume() || c1.volume() < c0.volume()) {
+            log.debug("TBI: volume not increasing across 3 candles: {} < {} < {}",
+                    c0.volume(), c1.volume(), c2.volume());
+            return null;
+        }
+
+        // 5. Latest volume > 1.5 × SMA(volume, 10)
         long avgVol = candles.subList(n - 10, n)
                 .stream().mapToLong(Candle::volume).sum() / 10;
         if (avgVol == 0 || c2.volume() < avgVol * 1.5) {
@@ -69,7 +84,7 @@ public class TradeBookImbalanceStrategy implements StrategyPlugin {
             return null;
         }
 
-        // 4. ATR_15min > 0.35%
+        // 6. ATR14 > 0.35%
         BigDecimal atr = context.indicators() != null ? context.indicators().get("ATR14") : null;
         if (atr == null) atr = context.extra("atr14", BigDecimal.class);
         if (atr == null) {
