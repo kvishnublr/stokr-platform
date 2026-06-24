@@ -13,6 +13,7 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -199,12 +200,22 @@ public class BacktestController {
             StrategyParams params = StrategyParams.defaults();
 
             log.info("Backtesting plugin={} on {} symbols from {}", pluginType, symbolList.size(), universe);
-            Map<String, List<CandleData>> candlesBySymbol = new HashMap<>();
-            for (String symbol : symbolList) {
-                List<CandleData> candles = candleFetchService.fetchCandles(symbol, timeframe, startTime, endTime);
-                if (!candles.isEmpty()) {
-                    candlesBySymbol.put(symbol, candles);
+            // Fetch candles in parallel — max 4 concurrent Zerodha API calls to stay within rate limits
+            Map<String, List<CandleData>> candlesBySymbol = new ConcurrentHashMap<>();
+            ExecutorService pool = Executors.newFixedThreadPool(4);
+            try {
+                List<Future<?>> futures = new ArrayList<>();
+                for (String symbol : symbolList) {
+                    futures.add(pool.submit(() -> {
+                        List<CandleData> candles = candleFetchService.fetchCandles(symbol, timeframe, startTime, endTime);
+                        if (!candles.isEmpty()) candlesBySymbol.put(symbol, candles);
+                    }));
                 }
+                for (Future<?> f : futures) {
+                    try { f.get(240, TimeUnit.SECONDS); } catch (Exception ignored) {}
+                }
+            } finally {
+                pool.shutdown();
             }
 
             List<SimulatedTrade> allTrades = new ArrayList<>();
