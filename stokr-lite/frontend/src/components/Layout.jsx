@@ -1,5 +1,6 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import client from '../api/client';
 
 const traderLinks = [
   { to: '/', label: 'Dashboard', icon: '📊', end: true },
@@ -24,6 +25,128 @@ const adminLinks = [
   { to: '/admin/strategy-mappings', label: 'Strategy Mappings', icon: '🔗' },
   { to: '/admin/strategy-configs', label: 'Strategy Configs', icon: '🔧' },
 ];
+
+const POLL_INTERVAL_MS  = 2 * 60 * 1000;  // check every 2 min
+const SNOOZE_MS         = 10 * 60 * 1000; // hide popup for 10 min after dismiss
+
+function isMarketHours() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const h = now.getHours(), m = now.getMinutes(), total = h * 60 + m;
+  return total >= 9 * 60 && total <= 15 * 60 + 30;
+}
+
+function BrokerAlert() {
+  const [health, setHealth]     = useState(null); // null = loading, {ok,status,message}
+  const [visible, setVisible]   = useState(false);
+  const snoozeUntil             = useRef(0);
+  const navigate                = useNavigate();
+
+  const check = async () => {
+    try {
+      const r = await client.get('/brokers/health');
+      const h = r.data;
+      setHealth(h);
+      if (!h.ok && Date.now() > snoozeUntil.current) {
+        setVisible(true);
+      } else if (h.ok) {
+        setVisible(false);
+      }
+    } catch {
+      // silently skip if unauthenticated
+    }
+  };
+
+  useEffect(() => {
+    check();
+    const t = setInterval(check, POLL_INTERVAL_MS);
+    return () => clearInterval(t);
+  }, []);
+
+  const dismiss = () => {
+    snoozeUntil.current = Date.now() + SNOOZE_MS;
+    setVisible(false);
+  };
+
+  if (!visible || !health || health.ok) return null;
+
+  const urgent    = isMarketHours();
+  const isExpired = health.status === 'TOKEN_EXPIRED';
+
+  return (
+    <>
+      <style>{`
+        @keyframes slideDown { from { transform: translateY(-120%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes pulse-border { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); } 50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
+        .broker-alert-bar { animation: slideDown .4s cubic-bezier(.175,.885,.32,1.275); }
+        ${urgent ? '.broker-alert-bar { animation: slideDown .4s cubic-bezier(.175,.885,.32,1.275), pulse-border 2s ease infinite; }' : ''}
+      `}</style>
+
+      {/* Full-width top banner */}
+      <div className="broker-alert-bar" style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+        background: urgent
+          ? 'linear-gradient(135deg, #dc2626, #991b1b)'
+          : 'linear-gradient(135deg, #b45309, #92400e)',
+        color: 'white',
+        padding: '0 24px',
+        display: 'flex', alignItems: 'center', gap: '16px',
+        minHeight: '52px',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
+      }}>
+        {/* Pulsing icon */}
+        <div style={{ fontSize: '22px', flexShrink: 0 }}>
+          {urgent ? '🚨' : '⚠️'}
+        </div>
+
+        {/* Text */}
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 800, fontSize: '14px', letterSpacing: '0.02em' }}>
+            {isExpired ? 'ZERODHA SESSION EXPIRED' : 'ZERODHA NOT CONNECTED'}
+          </span>
+          <span style={{ fontSize: '13px', opacity: 0.85 }}>
+            {isExpired
+              ? '— Token expired. Live trading, SL/target monitoring and order placement are PAUSED.'
+              : '— No broker connected. Live trading, SL/target monitoring and order placement are PAUSED.'}
+          </span>
+          {urgent && (
+            <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em' }}>
+              MARKET HOURS — ACTION NEEDED NOW
+            </span>
+          )}
+        </div>
+
+        {/* Connect button */}
+        <button
+          onClick={() => { navigate('/brokers'); dismiss(); }}
+          style={{
+            padding: '7px 20px', background: 'white', color: urgent ? '#dc2626' : '#92400e',
+            border: 'none', borderRadius: '8px', fontWeight: 800, fontSize: '13px',
+            cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+          }}
+        >
+          {isExpired ? 'Reconnect Now' : 'Connect Zerodha'}
+        </button>
+
+        {/* Dismiss */}
+        <button
+          onClick={dismiss}
+          title="Dismiss for 10 minutes"
+          style={{
+            background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)',
+            color: 'white', borderRadius: '6px', padding: '4px 10px',
+            cursor: 'pointer', fontSize: '13px', fontWeight: 700, flexShrink: 0,
+          }}
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* Spacer so content isn't hidden behind the bar */}
+      <div style={{ height: '52px' }} />
+    </>
+  );
+}
 
 function getUserRole() {
   try {
@@ -70,6 +193,9 @@ export default function Layout() {
 
   return (
     <div className="app-wrapper" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', minHeight: '100vh' }}>
+      {/* Global broker health alert — shows on every page when Zerodha disconnected */}
+      <BrokerAlert />
+
       {/* Animated blob background */}
       <div className="blob-bg" style={{ position: 'fixed', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none' }}>
         <div className="blob animate-blob-drift" style={{ width: '500px', height: '500px', background: 'linear-gradient(135deg, #a78bfa, #60a5fa)', top: '-150px', left: '-150px', position: 'absolute', borderRadius: '50%', filter: 'blur(100px)', opacity: 0.3 }} />
