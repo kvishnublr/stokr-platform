@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
@@ -115,9 +114,14 @@ public class BacktestController {
         log.info("Loading historical data: strategy={}, dateStart={}, dateEnd={}, timeframe={}",
                 strategy, dateStart, dateEnd, timeframe);
 
+        java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
         try {
-            Instant startTime = dateStart != null ? Instant.parse(dateStart) : Instant.now().minusSeconds(2592000);
-            Instant endTime = dateEnd != null ? Instant.parse(dateEnd) : Instant.now();
+            LocalDateTime startTime = dateStart != null
+                ? LocalDateTime.parse(dateStart.replace("Z","").substring(0, 19))
+                : LocalDateTime.now(IST).minusDays(30);
+            LocalDateTime endTime = dateEnd != null
+                ? LocalDateTime.parse(dateEnd.replace("Z","").substring(0, 19))
+                : LocalDateTime.now(IST);
 
             List<String> symbolList = getSymbolsForUniverse("NIFTY_100");
 
@@ -170,8 +174,13 @@ public class BacktestController {
                 strategy, universe, dateStart, dateEnd, timeframe);
 
         try {
-            Instant startTime = dateStart != null ? Instant.parse(dateStart) : Instant.now().minusSeconds(2592000);
-            Instant endTime = dateEnd != null ? Instant.parse(dateEnd) : Instant.now();
+            java.time.ZoneId IST2 = java.time.ZoneId.of("Asia/Kolkata");
+            LocalDateTime startTime = dateStart != null
+                ? LocalDateTime.parse(dateStart.replace("Z","").substring(0, 19))
+                : LocalDateTime.now(IST2).minusDays(30);
+            LocalDateTime endTime = dateEnd != null
+                ? LocalDateTime.parse(dateEnd.replace("Z","").substring(0, 19))
+                : LocalDateTime.now(IST2);
             boolean useChartinkFilter = "CHARTINK".equalsIgnoreCase(universe);
             String resolvedUniverse = useChartinkFilter ? "NIFTY_100" : universe;
 
@@ -472,7 +481,7 @@ public class BacktestController {
     private Candle toCandle(CandleData cd) {
         return new Candle(
             cd.getSymbol(),
-            LocalDateTime.ofInstant(cd.getTimestamp(), ZoneId.systemDefault()),
+            cd.getTimestamp(),  // already LocalDateTime (IST)
             cd.getOpen(), cd.getHigh(), cd.getLow(), cd.getClose(), cd.getVolume()
         );
     }

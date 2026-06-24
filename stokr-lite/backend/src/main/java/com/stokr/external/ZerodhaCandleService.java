@@ -141,7 +141,7 @@ public class ZerodhaCandleService {
     private final ZerodhaTokenManager tokenManager;
     private final RestTemplate restTemplate = new RestTemplate();
 
-    public List<CandleData> fetchCandles(String symbol, String timeframe, Instant startTime, Instant endTime) {
+    public List<CandleData> fetchCandles(String symbol, String timeframe, java.time.LocalDateTime startTime, java.time.LocalDateTime endTime) {
         log.info("Fetching candles from Zerodha: symbol={}, timeframe={}, start={}, end={}",
             symbol, timeframe, startTime, endTime);
 
@@ -158,11 +158,9 @@ public class ZerodhaCandleService {
             }
 
             String interval = mapInterval(timeframe);
-            ZonedDateTime istStart = startTime.atZone(ZoneId.of("Asia/Kolkata"));
-            ZonedDateTime istEnd = endTime.atZone(ZoneId.of("Asia/Kolkata"));
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-            String from = istStart.format(fmt);
-            String to = istEnd.format(fmt);
+            String from = startTime.format(fmt);
+            String to = endTime.format(fmt);
 
             String url = String.format("%s/instruments/historical/%s/%s?from=%s&to=%s",
                 KITE_API_BASE, token, interval, from, to);
@@ -186,17 +184,15 @@ public class ZerodhaCandleService {
         }
     }
 
-    private List<CandleData> retryFetch(String symbol, String timeframe, Instant startTime, Instant endTime) {
+    private List<CandleData> retryFetch(String symbol, String timeframe, java.time.LocalDateTime startTime, java.time.LocalDateTime endTime) {
         try {
             String token = SYMBOL_TO_TOKEN.get(symbol.toUpperCase());
             if (token == null) return Collections.emptyList();
 
             String interval = mapInterval(timeframe);
-            ZonedDateTime istStart = startTime.atZone(ZoneId.of("Asia/Kolkata"));
-            ZonedDateTime istEnd = endTime.atZone(ZoneId.of("Asia/Kolkata"));
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
             String url = String.format("%s/instruments/historical/%s/%s?from=%s&to=%s",
-                KITE_API_BASE, token, interval, istStart.format(fmt), istEnd.format(fmt));
+                KITE_API_BASE, token, interval, startTime.format(fmt), endTime.format(fmt));
 
             HttpHeaders headers = new HttpHeaders();
             headers.set("X-Kite-Version", "3");
@@ -251,17 +247,17 @@ public class ZerodhaCandleService {
                         if (parts.length >= 6) {
                             try {
                                 String tsRaw = parts[0].trim().replace("\"", "");
-                                Instant ts;
+                                java.time.LocalDateTime ldt;
                                 try {
-                                    ts = java.time.ZonedDateTime.parse(tsRaw, KITE_TS_FMT).toInstant();
+                                    ldt = java.time.ZonedDateTime.parse(tsRaw, KITE_TS_FMT)
+                                        .withZoneSameInstant(ZoneId.of("Asia/Kolkata")).toLocalDateTime();
                                 } catch (Exception e1) {
-                                    ts = java.time.LocalDateTime.parse(tsRaw, KITE_TS_FMT2)
-                                        .atZone(ZoneId.of("Asia/Kolkata")).toInstant();
+                                    ldt = java.time.LocalDateTime.parse(tsRaw, KITE_TS_FMT2);
                                 }
                                 CandleData candle = new CandleData();
                                 candle.setSymbol(symbol);
                                 candle.setTimeframe(timeframe);
-                                candle.setTimestamp(ts);
+                                candle.setTimestamp(ldt);
                                 candle.setOpen(new BigDecimal(parts[1].trim()));
                                 candle.setHigh(new BigDecimal(parts[2].trim()));
                                 candle.setLow(new BigDecimal(parts[3].trim()));

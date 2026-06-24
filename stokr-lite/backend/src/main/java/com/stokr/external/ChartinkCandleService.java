@@ -6,10 +6,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import com.stokr.engine.CandleData;
 import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
+import java.time.LocalDateTime;
 import java.util.*;
 
 @Slf4j
@@ -21,7 +20,7 @@ public class ChartinkCandleService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    public List<CandleData> fetchCandles(String symbol, String timeframe, Instant startTime, Instant endTime) {
+    public List<CandleData> fetchCandles(String symbol, String timeframe, LocalDateTime startTime, LocalDateTime endTime) {
         log.info("Fetching candles from Chartink: symbol={}, timeframe={}, start={}, end={}",
             symbol, timeframe, startTime, endTime);
 

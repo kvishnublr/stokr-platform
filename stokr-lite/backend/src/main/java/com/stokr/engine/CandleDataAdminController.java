@@ -7,8 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -50,8 +48,8 @@ public class CandleDataAdminController {
                     .orElse(List.of());
         }
 
-        Instant end = Instant.now();
-        Instant start = end.minus(days, ChronoUnit.DAYS);
+        java.time.LocalDateTime end = java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        java.time.LocalDateTime start = end.minusDays(days);
 
         log.info("Bulk loading {} symbols × {} days of {} data from Zerodha", symbols.size(), days, timeframe);
 
