@@ -6,7 +6,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 
@@ -77,45 +76,4 @@ public class CandleFetchService {
             .findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(symbol, timeframe, startTime, endTime);
     }
 
-    // Helper: Generate mock candles for testing
-    public List<CandleData> generateMockCandles(String symbol, String timeframe, Instant startTime, Instant endTime) {
-        List<CandleData> candles = new ArrayList<>();
-        BigDecimal currentPrice = new BigDecimal("100.00");
-        Instant current = startTime;
-        long intervalMillis = getIntervalMillis(timeframe);
-
-        while (current.isBefore(endTime)) {
-            BigDecimal open = currentPrice;
-            BigDecimal close = currentPrice.add(new BigDecimal(Math.random() * 2 - 1));
-            BigDecimal high = open.max(close).add(new BigDecimal(Math.random() * 0.5));
-            BigDecimal low = open.min(close).subtract(new BigDecimal(Math.random() * 0.5));
-
-            CandleData candle = new CandleData();
-            candle.setSymbol(symbol);
-            candle.setTimeframe(timeframe);
-            candle.setTimestamp(current);
-            candle.setOpen(open);
-            candle.setHigh(high);
-            candle.setLow(low);
-            candle.setClose(close);
-            candle.setVolume((long)(1000000 + (Math.random() - 0.5) * 1800000));
-
-            candles.add(candle);
-            currentPrice = close;
-            current = current.plusMillis(intervalMillis);
-        }
-
-        return candles;
-    }
-
-    private long getIntervalMillis(String timeframe) {
-        return switch (timeframe) {
-            case "1min" -> 60_000;
-            case "5min" -> 300_000;
-            case "15min" -> 900_000;
-            case "hourly", "1hour" -> 3_600_000;
-            case "daily" -> 86_400_000;
-            default -> 60_000;
-        };
-    }
 }

@@ -168,15 +168,13 @@ public class BacktestController {
             StrategyPlugin plugin = findPlugin(pluginType);
             StrategyParams params = StrategyParams.defaults();
 
-            // Fetch candles with mock fallback
+            // Fetch candles from external sources
             Map<String, List<CandleData>> candlesBySymbol = new HashMap<>();
             for (String symbol : symbolList) {
                 List<CandleData> candles = candleFetchService.fetchCandles(symbol, timeframe, startTime, endTime);
                 if (candles.isEmpty()) {
-                    log.warn("No candles for {}, generating mock data", symbol);
-                    candles = candleFetchService.generateMockCandles(symbol, timeframe, startTime, endTime);
-                }
-                if (!candles.isEmpty()) {
+                    log.warn("No candles for {}, skipping", symbol);
+                } else {
                     candlesBySymbol.put(symbol, candles);
                 }
             }
