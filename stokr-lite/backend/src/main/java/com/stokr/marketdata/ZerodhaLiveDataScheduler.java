@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -36,8 +37,10 @@ public class ZerodhaLiveDataScheduler {
     @Value("${broker.zerodha.api-key:}")
     private String zerodhaApiKey;
 
-    private static final String KITE_API_BASE = "https://api.kite.trade";
-    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    private static final String KITE_API_BASE  = "https://api.kite.trade";
+    private static final ZoneId IST            = ZoneId.of("Asia/Kolkata");
+    private static final int    BATCH_SIZE     = 150;  // Zerodha GET URL limit
+    private static final long   BATCH_DELAY_MS = 400;  // 3 req/sec = 333ms min
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper mapper = new ObjectMapper();
@@ -51,8 +54,9 @@ public class ZerodhaLiveDataScheduler {
     private final Map<String, BigDecimal> prevLtpCache   = new ConcurrentHashMap<>();
     private final Map<String, Long>       prevVolCache   = new ConcurrentHashMap<>();
 
-    // NIFTY 50 — primary universe; NIFTY 100 additions loaded separately
-    public static final List<String> NIFTY_50 = List.of(
+    // NIFTY 500 — batched across 4 API calls (150 symbols each, 400ms apart)
+    public static final List<String> NIFTY_500 = List.of(
+        // ── NIFTY 50 ──
         "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK",
         "SBIN", "BHARTIARTL", "ITC", "KOTAKBANK", "LT",
         "HINDUNILVR", "AXISBANK", "MARUTI", "BAJFINANCE", "ASIANPAINT",
@@ -62,12 +66,76 @@ public class ZerodhaLiveDataScheduler {
         "BAJAJFINSV", "BAJAJ-AUTO", "DRREDDY", "CIPLA", "DIVISLAB",
         "EICHERMOT", "GRASIM", "HDFCLIFE", "HEROMOTOCO", "HINDALCO",
         "INDUSINDBK", "NESTLEIND", "SBILIFE", "TATACONSUM", "APOLLOHOSP",
-        "BPCL", "BRITANNIA", "LTIM", "UPL", "VEDL"
+        "BPCL", "BRITANNIA", "LTIM", "UPL", "VEDL",
+        // ── NIFTY NEXT 50 ──
+        "ADANIENT", "AMBUJACEM", "AUROPHARMA", "BANDHANBNK", "BANKBARODA",
+        "BEL", "BERGEPAINT", "BIOCON", "BOSCHLTD", "CANBK",
+        "COLPAL", "DABUR", "DLF", "ESCORTS", "EXIDEIND",
+        "FEDERALBNK", "GAIL", "GODREJCP", "GODREJPROP", "HAVELLS",
+        "HINDPETRO", "ICICIGI", "ICICIPRULI", "INDIAMART", "INDUSTOWER",
+        "IOC", "IGL", "IRCTC", "JUBLFOOD", "LICI",
+        "LUPIN", "MARICO", "MUTHOOTFIN", "NMDC", "OFSS",
+        "PAGEIND", "PEL", "PETRONET", "PIIND", "POLYCAB",
+        "SIEMENS", "SRF", "TATAPOWER", "TORNTPHARM", "VOLTAS",
+        "BAJAJHLDNG", "CHOLAFIN", "NAUKRI", "RECLTD", "TRENT",
+        // ── NIFTY MIDCAP 150 (top 100 by liquidity) ──
+        "ABB", "ACC", "ABCAPITAL", "ABFRL", "ADANIGREEN",
+        "ADANIPORTS", "ALKEM", "APLLTD", "ASTRAL", "ATUL",
+        "AUBANK", "BALKRISHNA", "BATAINDIA", "CANFINHOME", "CASTROLIND",
+        "CEATLTD", "CONCOR", "COROMANDEL", "CROMPTON", "CUMMINSIND",
+        "DEEPAKNTR", "DIXON", "DMART", "EMAMILTD", "ENDURANCE",
+        "EQUITASBNK", "FINCABLES", "GMRINFRA", "GNFC", "GRANULES",
+        "GSPL", "HFCL", "HONAUT", "IDFCFIRSTB", "IDFC",
+        "IRFC", "JKCEMENT", "JSL", "JSWENERGY", "JUBLINGREA",
+        "KAJARIACER", "KPIL", "LALPATHLAB", "LATENTVIEW", "LICHSGFIN",
+        "LINDEINDIA", "LTTS", "MGL", "METROPOLIS", "MINDTREE",
+        "MPHASIS", "MFSL", "NAUKRI", "NLCINDIA", "NOCIL",
+        "OBEROIRLTY", "OFSS", "PERSISTENT", "PHOENIXLTD", "PIDILITIND",
+        "PRESTIGE", "PVRINOX", "RADICO", "RAMCOCEM", "RELAXO",
+        "ROUTE", "SANOFI", "SCHAEFFLER", "SHREECEM", "SJVN",
+        "SKFINDIA", "SOBHA", "STARHEALTH", "SUNDARMFIN", "SUNDRMFAST",
+        "SUPREMEIND", "SYNGENE", "TATACHEM", "TCNSBRANDS", "TEAMLEASE",
+        "TIINDIA", "TIMKEN", "TTKPRESTIG", "UBLHLDNG", "UNITDSPR",
+        "AARTIIND", "APOLLOTYRE", "ASAHIINDIA", "ASHOKLEY", "BALRAMCHIN",
+        "BAYERCROP", "BHARATFORG", "BHEL", "BLUESTARCO", "BSOFT",
+        "CAMS", "CANFINHOME", "CDSL", "CENTURYPLY", "CHAMBLFERT",
+        "COCHINSHIP", "CREDITACC", "CYIENT", "DCMSHRIRAM", "DELTACORP",
+        "EICHERMOT", "ELGIEQUIP", "ENGINERSIN", "ESCORTS", "ESCOTEK",
+        "FIVESTAR", "FLUOROCHEM", "GLENMARK", "GODREJIND", "GREENPLY",
+        "GRINDWELL", "GTLINFRA", "GUJGASLTD", "HAPPSTMNDS", "HEIDELBERG",
+        "HEROMOTOCO", "HSCL", "HUDCO", "IBREALEST", "IIFL",
+        // ── NIFTY SMALLCAP 100 (most liquid) ──
+        "AARTIDRUGS", "AIAENG", "AKZOINDIA", "AMARAJABAT", "ANGELONE",
+        "ARVIND", "ASIANENE", "BAJAJCON", "BALARAMCHIN", "BANKINDIA",
+        "BBTC", "BEML", "BHARATELE", "BIKAJI", "BLS",
+        "BRIGADE", "CAPLIPOINT", "CARYSIL", "CENTURYTEX", "CERA",
+        "CHALET", "CHEMCON", "CLEAN", "CLNINDIA", "CONFIPET",
+        "CRAFTSMAN", "DATAPATTNS", "DBREALTY", "DCBBANK", "DEEPAKFERT",
+        "DEVYANI", "DHANI", "DHANUKA", "EDELWEISS", "EIDPARRY",
+        "EPL", "ESTER", "ETHOS", "FAIRCHEMOR", "FLAIR",
+        "GALAXY", "GARFIBRES", "GLS", "GMMPFAUDLR", "GPPL",
+        "HARSHA", "HLEGLAS", "HOMEFIRST", "IGARASHI", "INDIACEM",
+        "INDIANB", "INDIGO", "INFIBEAM", "INTELLECT", "IPCALAB",
+        "ITDCEM", "JAYASWALNES", "JBMA", "JBL", "JKIL",
+        "JKTYRE", "JNKINDIA", "JYOTHYLAB", "KFINTECH", "KIRLOSENG",
+        "KOLTEPATIL", "KRSNAA", "KSOLVES", "LAXMIMACH", "LEMONTREE",
+        "MANAPPURAM", "MAPMYINDIA", "MARKSANS", "MASTEK", "MEDANTA",
+        "MGLAMB", "MINDA", "MIRZAINT", "MOLDTKPAC", "NAVINFLUOR",
+        "NIACL", "NOVARTIND", "NUVAMA", "OLECTRA", "OPTIEMUS",
+        "PAYTM", "PGHH", "PNBHOUSING", "POLYMED", "POWERMECH",
+        "RAJRATAN", "RATNAMANI", "RECLTD", "REDINGTON", "SAPPHIRE",
+        "SHYAMMETL", "SICAL", "SIGNATUREG", "SOBHA", "SOLARA",
+        "SPANDANA", "SUVENPHAR", "SWANENERGY", "TANLA", "TITAGARH",
+        "TORNTPOWER", "TRIVENI", "USHAMART", "VAIBHAVGBL", "VIJAYABANK"
     );
+
+    // Keep backward compat — callers using NIFTY_50 still work
+    public static final List<String> NIFTY_50 = NIFTY_500.subList(0, 50);
 
     /**
      * Called by ExecutionEngine before every scan cycle.
-     * Fetches Zerodha /quote for all NIFTY 50 in ONE API call and stores 1-min candles.
+     * Fetches Zerodha /quote for NIFTY 500 in batches of 150 (400ms between batches)
+     * and stores 1-min candles to DB.
      */
     public void fetchAndStoreQuotes() {
         String accessToken = resolveToken();
@@ -76,89 +144,111 @@ public class ZerodhaLiveDataScheduler {
             return;
         }
 
-        // Build query string: i=NSE:SYM1&i=NSE:SYM2...
-        StringBuilder url = new StringBuilder(KITE_API_BASE + "/quote?");
-        for (int i = 0; i < NIFTY_50.size(); i++) {
-            if (i > 0) url.append("&");
-            url.append("i=NSE:").append(NIFTY_50.get(i));
-        }
-
         HttpHeaders headers = new HttpHeaders();
         headers.set("Authorization", "token " + zerodhaApiKey + ":" + accessToken);
         headers.set("X-Kite-Version", "3");
 
-        try {
-            ResponseEntity<String> resp = restTemplate.exchange(
-                url.toString(), HttpMethod.GET,
-                new HttpEntity<>(headers), String.class);
+        LocalDateTime istNow = LocalDateTime.now(IST).withSecond(0).withNano(0);
+        boolean isOrbSnapshotTime = istNow.getHour() == 9 && istNow.getMinute() == 30;
+        int totalProcessed = 0;
 
-            JsonNode root = mapper.readTree(resp.getBody());
-            if (!"success".equals(root.path("status").asText())) {
-                log.warn("Zerodha quote API returned non-success: {}", resp.getBody());
-                return;
+        // Process in batches of BATCH_SIZE to stay within Zerodha URL length limit
+        List<List<String>> batches = partition(NIFTY_500, BATCH_SIZE);
+        for (int batchIdx = 0; batchIdx < batches.size(); batchIdx++) {
+            List<String> batch = batches.get(batchIdx);
+
+            // 400ms delay between batches (Zerodha rate limit: 3 req/sec)
+            if (batchIdx > 0) {
+                try { Thread.sleep(BATCH_DELAY_MS); } catch (InterruptedException ignored) {}
             }
 
-            JsonNode data = root.path("data");
-            LocalDateTime istNow = LocalDateTime.now(IST).withSecond(0).withNano(0);
-            boolean isOrbSnapshotTime = istNow.getHour() == 9 && istNow.getMinute() == 30;
-            int processedCount = 0;
+            StringBuilder url = new StringBuilder(KITE_API_BASE + "/quote?");
+            for (int i = 0; i < batch.size(); i++) {
+                if (i > 0) url.append("&");
+                url.append("i=NSE:").append(batch.get(i));
+            }
 
-            for (String symbol : NIFTY_50) {
-                JsonNode q = data.path("NSE:" + symbol);
-                if (q.isMissingNode()) continue;
+            try {
+                ResponseEntity<String> resp = restTemplate.exchange(
+                    url.toString(), HttpMethod.GET,
+                    new HttpEntity<>(headers), String.class);
 
-                BigDecimal ltp      = bd(q, "last_price");
-                BigDecimal avgPrice = bd(q, "average_price"); // intraday VWAP
-                long totalVol       = q.path("volume").asLong(0);
-
-                JsonNode ohlc = q.path("ohlc");
-                BigDecimal dayOpen  = bd(ohlc, "open");
-                BigDecimal dayHigh  = bd(ohlc, "high");
-                BigDecimal dayLow   = bd(ohlc, "low");
-
-                // Update LTP cache
-                ltpCache.put(symbol, ltp);
-
-                // Compute per-minute volume delta
-                long prevVol    = prevVolCache.getOrDefault(symbol, 0L);
-                long minuteVol  = Math.max(0, totalVol - prevVol);
-                prevVolCache.put(symbol, totalVol);
-
-                // Build approximate 1-min candle
-                BigDecimal prevClose  = prevLtpCache.getOrDefault(symbol, dayOpen);
-                BigDecimal candleOpen = prevClose;
-                BigDecimal candleHigh = ltp.max(prevClose);
-                BigDecimal candleLow  = ltp.min(prevClose);
-                prevLtpCache.put(symbol, ltp);
-
-                // Snapshot ORB at 9:30 (day high/low after 15 opening minutes = ORB)
-                if (isOrbSnapshotTime) {
-                    orbHighCache.put(symbol, dayHigh);
-                    orbLowCache.put(symbol, dayLow);
+                JsonNode root = mapper.readTree(resp.getBody());
+                if (!"success".equals(root.path("status").asText())) {
+                    log.warn("Zerodha quote API batch {} non-success: {}", batchIdx, resp.getBody());
+                    continue;
                 }
 
-                // Upsert into candle_data
+                JsonNode data = root.path("data");
                 Instant ts = istNow.atZone(IST).toInstant();
-                CandleData candle = candleDataRepository
-                    .findBySymbolAndTimeframeAndTimestamp(symbol, "1min", ts)
-                    .orElseGet(CandleData::new);
-                candle.setSymbol(symbol);
-                candle.setTimeframe("1min");
-                candle.setTimestamp(ts);
-                candle.setOpen(candleOpen);
-                candle.setHigh(candleHigh);
-                candle.setLow(candleLow);
-                candle.setClose(ltp);
-                candle.setVolume(minuteVol);
-                candleDataRepository.save(candle);
-                processedCount++;
+
+                for (String symbol : batch) {
+                    JsonNode q = data.path("NSE:" + symbol);
+                    if (q.isMissingNode()) continue;
+
+                    BigDecimal ltp    = bd(q, "last_price");
+                    long totalVol     = q.path("volume").asLong(0);
+
+                    JsonNode ohlc     = q.path("ohlc");
+                    BigDecimal dayOpen = bd(ohlc, "open");
+                    BigDecimal dayHigh = bd(ohlc, "high");
+                    BigDecimal dayLow  = bd(ohlc, "low");
+
+                    ltpCache.put(symbol, ltp);
+
+                    long prevVol   = prevVolCache.getOrDefault(symbol, 0L);
+                    long minuteVol = Math.max(0, totalVol - prevVol);
+                    prevVolCache.put(symbol, totalVol);
+
+                    BigDecimal prevClose  = prevLtpCache.getOrDefault(symbol, dayOpen);
+                    BigDecimal candleOpen = prevClose;
+                    BigDecimal candleHigh = ltp.max(prevClose);
+                    BigDecimal candleLow  = ltp.min(prevClose);
+                    prevLtpCache.put(symbol, ltp);
+
+                    if (isOrbSnapshotTime) {
+                        orbHighCache.put(symbol, dayHigh);
+                        orbLowCache.put(symbol, dayLow);
+                    }
+
+                    CandleData candle = candleDataRepository
+                        .findBySymbolAndTimeframeAndTimestamp(symbol, "1min", ts)
+                        .orElseGet(CandleData::new);
+                    candle.setSymbol(symbol);
+                    candle.setTimeframe("1min");
+                    candle.setTimestamp(ts);
+                    candle.setOpen(candleOpen);
+                    candle.setHigh(candleHigh);
+                    candle.setLow(candleLow);
+                    candle.setClose(ltp);
+                    candle.setVolume(minuteVol);
+                    candleDataRepository.save(candle);
+                    totalProcessed++;
+                }
+
+            } catch (Exception e) {
+                log.error("Zerodha quote fetch failed for batch {}: {}", batchIdx, e.getMessage());
             }
-
-            log.info("Zerodha live data: stored {} 1-min candles at {}", processedCount, istNow);
-
-        } catch (Exception e) {
-            log.error("Zerodha quote fetch failed: {}", e.getMessage());
         }
+
+        log.info("Zerodha live data: stored {} 1-min candles at {} ({} batches)",
+            totalProcessed, istNow, batches.size());
+    }
+
+    /** Nightly cleanup: delete candles older than 30 days to keep DB lean. */
+    @Scheduled(cron = "0 0 20 * * MON-FRI", zone = "Asia/Kolkata")
+    public void cleanupOldCandles() {
+        Instant cutoff = Instant.now().minus(30, java.time.temporal.ChronoUnit.DAYS);
+        int deleted = candleDataRepository.deleteByTimestampBefore(cutoff);
+        log.info("Candle cleanup: deleted {} rows older than 30 days", deleted);
+    }
+
+    private static <T> List<List<T>> partition(List<T> list, int size) {
+        List<List<T>> parts = new ArrayList<>();
+        for (int i = 0; i < list.size(); i += size) {
+            parts.add(list.subList(i, Math.min(i + size, list.size())));
+        }
+        return parts;
     }
 
     // ── Cache accessors used by BrokerMarketDataService + SignalProcessor ──

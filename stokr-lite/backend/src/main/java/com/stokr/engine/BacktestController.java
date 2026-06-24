@@ -1,6 +1,7 @@
 package com.stokr.engine;
 
 import com.stokr.marketdata.Candle;
+import com.stokr.marketdata.ZerodhaLiveDataScheduler;
 import com.stokr.external.ChartinkScannerService;
 import com.stokr.strategy.*;
 import lombok.RequiredArgsConstructor;
@@ -29,10 +30,12 @@ public class BacktestController {
     private final UniverseGroupService universeGroupService;
     private final List<StrategyPlugin> strategyPlugins;
     private final ChartinkScannerService chartinkScannerService;
+    private final ZerodhaLiveDataScheduler zerodhaScheduler;
 
-    // Only ORB — all other strategies removed (VWAP, GAP_FILL, ADV_CASH showed <30% win rate)
     private static final Map<String, String> STRATEGY_PLUGIN_MAP = Map.of(
-        "ORB", "ORB_V"
+        "ORB",           "ORB_V",
+        "VWAP",          "VWAP_TRIPLE",
+        "MORNING_SURGE", "MORNING_SURGE"
     );
 
     private static final double CAPITAL = 25000;
@@ -226,7 +229,7 @@ public class BacktestController {
             double avgPnl  = totalTrades > 0 ? totalPnl / totalTrades : 0;
 
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("strategy", "ORB");
+            result.put("strategy", strategy != null ? strategy.toUpperCase() : "ORB");
             result.put("universe", universe);
             result.put("chartinkSymbols", useChartinkFilter ? symbolList.size() : 0);
             result.put("chartinkConfigured", chartinkScannerService.isConfigured());
@@ -275,7 +278,8 @@ public class BacktestController {
 
     private String resolvePluginType(String strategy) {
         if (strategy == null || strategy.isEmpty() || "ALL".equals(strategy)) return "ORB_V";
-        String mapped = STRATEGY_PLUGIN_MAP.get(strategy.toUpperCase());
+        String key = strategy.toUpperCase().replace("-", "_");
+        String mapped = STRATEGY_PLUGIN_MAP.get(key);
         return mapped != null ? mapped : "ORB_V";
     }
 
@@ -569,9 +573,16 @@ public class BacktestController {
     }
 
     private List<String> getSymbolsForUniverse(String universe) {
+        // NIFTY_500 — serve directly from in-memory list (DB would be too large to seed)
+        if ("NIFTY_500".equalsIgnoreCase(universe)) {
+            return ZerodhaLiveDataScheduler.NIFTY_500;
+        }
         return universeGroupService.findByKey(universe)
                 .map(g -> universeGroupService.resolveSymbolsForGroup(g.getId()))
-                .orElseThrow(() -> new IllegalArgumentException("Unknown universe: " + universe));
+                .orElseGet(() -> {
+                    log.warn("Unknown universe '{}' — falling back to NIFTY_500", universe);
+                    return ZerodhaLiveDataScheduler.NIFTY_500;
+                });
     }
 
     private double calculateMaxDrawdown(List<SignalEntity> signals) {

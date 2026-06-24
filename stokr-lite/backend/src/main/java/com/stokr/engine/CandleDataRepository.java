@@ -28,4 +28,9 @@ public interface CandleDataRepository extends JpaRepository<CandleData, Long> {
     Optional<Instant> findLatestTimestamp(String symbol, String timeframe);
 
     void deleteBySymbolAndTimeframeAndTimestampBefore(String symbol, String timeframe, Instant timestamp);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("DELETE FROM CandleData c WHERE c.timestamp < :cutoff")
+    int deleteByTimestampBefore(Instant cutoff);
 }

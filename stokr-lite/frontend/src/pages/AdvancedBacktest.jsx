@@ -17,7 +17,11 @@ async function ensureAuthenticated() {
   } catch (e) { /* silent */ }
 }
 
-const STRATEGIES = ['ORB']; // Only ORB — VWAP/GAP/ADV strategies removed (proved <30% win rate)
+const STRATEGIES = [
+  { value: 'ORB',           label: 'ORB Breakout',     desc: 'Opening-range breakout + trailing stop' },
+  { value: 'VWAP',          label: 'VWAP Triple',      desc: 'Pullback to VWAP + RSI + volume' },
+  { value: 'MORNING_SURGE', label: 'Morning Surge',    desc: 'High-volume ORB in first hour (9:30–10:30)' },
+];
 
 function MetricCard({ label, value, color = '#1f2937', sub }) {
   return (
@@ -122,7 +126,7 @@ export default function AdvancedBacktest() {
           📈 Strategy Backtest
         </h1>
         <p style={{ color: '#6b7280', marginTop: '6px', fontSize: '14px' }}>
-          ORB strategy · Real 1-min candle data · ₹25,000/trade · Trailing SL · Chartink scan support
+          ORB · VWAP Triple · Morning Surge · Real 1-min candle data · ₹25,000/trade · Trailing SL
         </p>
       </div>
 
@@ -139,6 +143,14 @@ export default function AdvancedBacktest() {
                   {u.displayName}
                 </button>
               ))}
+              {/* NIFTY 500 — symbols served from in-memory list */}
+              <button
+                className={`univ-btn${universe === 'NIFTY_500' ? ' active' : ''}`}
+                onClick={() => setUniverse('NIFTY_500')}
+                style={{ borderColor: universe === 'NIFTY_500' ? '#10b981' : undefined,
+                         background: universe === 'NIFTY_500' ? '#10b981' : undefined }}>
+                NIFTY 500
+              </button>
               {/* Chartink universe — uses live scanner to filter stocks */}
               <button
                 className={`univ-btn${universe === 'CHARTINK' ? ' active' : ''}`}
@@ -163,8 +175,17 @@ export default function AdvancedBacktest() {
           <div>
             <label className="label">Strategy</label>
             <select value={strategy} onChange={e => setStrategy(e.target.value)}>
-              {STRATEGIES.map(s => <option key={s}>{s}</option>)}
+              {STRATEGIES.map(s => (
+                <option key={s.value} value={s.value} title={s.desc}>
+                  {s.label}
+                </option>
+              ))}
             </select>
+            {strategy && (
+              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '5px' }}>
+                {STRATEGIES.find(s => s.value === strategy)?.desc}
+              </div>
+            )}
           </div>
           {/* Timeframe - locked to 1min */}
           <div>
