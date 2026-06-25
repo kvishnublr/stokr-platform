@@ -38,18 +38,22 @@ public class BrokerService {
         BrokerAccount account = repository.findByUserIdAndBrokerNameAndStatus(userId, brokerName.toUpperCase(), "ACTIVE")
                 .stream().findFirst().orElse(null);
 
+        String accessToken  = tokens[0];
+        String refreshToken = tokens.length > 1 && !tokens[1].isBlank() ? tokens[1] : null;
+        String clientId     = tokens.length > 2 && !tokens[2].isBlank() ? tokens[2] : null;
+
         if (account != null) {
-            // Update existing
-            account.setAccessToken(tokens[0]);
-            account.setRefreshToken(tokens.length > 1 ? tokens[1] : null);
+            account.setAccessToken(accessToken);
+            account.setRefreshToken(refreshToken);
             account.setTokenExpiry(Instant.now().plusSeconds(86400));
+            if (clientId != null) account.setClientId(clientId);
         } else {
-            // Create new
             account = BrokerAccount.builder()
                     .userId(userId)
                     .brokerName(brokerName.toUpperCase())
-                    .accessToken(tokens[0])
-                    .refreshToken(tokens.length > 1 ? tokens[1] : null)
+                    .accessToken(accessToken)
+                    .refreshToken(refreshToken)
+                    .clientId(clientId)
                     .tokenExpiry(Instant.now().plusSeconds(86400))
                     .status("ACTIVE")
                     .build();

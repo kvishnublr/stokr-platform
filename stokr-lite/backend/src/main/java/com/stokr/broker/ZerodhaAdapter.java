@@ -100,7 +100,8 @@ public class ZerodhaAdapter implements BrokerAdapter {
             }
 
             log.info("zerodha.token_exchange.success userId={}", userId);
-            return refreshToken != null ? new String[]{accessToken, refreshToken} : new String[]{accessToken};
+            // Return [accessToken, refreshToken, userId] — BrokerService saves userId as clientId
+            return new String[]{accessToken, refreshToken != null ? refreshToken : "", userId != null ? userId : ""};
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {

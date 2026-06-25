@@ -22,9 +22,9 @@ export default function Deployments() {
   const [confirmStop, setConfirmStop] = useState(null);
   const [form, setForm]   = useState({ strategyId: '', brokerAccountId: '', mode: 'PAPER', capital: 5000 });
 
-  const { data: deployments = [], isLoading }   = useQuery({ queryKey: ['deployments'], queryFn: fetchDeployments, refetchInterval: 15000 });
-  const { data: strategies  = [] }              = useQuery({ queryKey: ['strategies'],  queryFn: fetchStrategies });
-  const { data: brokers     = [] }              = useQuery({ queryKey: ['brokers'],     queryFn: fetchBrokers });
+  const { data: deployments = [], isLoading, isError } = useQuery({ queryKey: ['deployments'], queryFn: fetchDeployments, refetchInterval: 15000, retry: 1 });
+  const { data: strategies  = [] }                    = useQuery({ queryKey: ['strategies'],  queryFn: fetchStrategies,  retry: 1 });
+  const { data: brokers     = [] }                    = useQuery({ queryKey: ['brokers'],     queryFn: fetchBrokers,     retry: 1 });
 
   const createMut = useMutation({
     mutationFn: (body) => client.post('/deployments', body).then(r => r.data),
@@ -82,20 +82,33 @@ export default function Deployments() {
 
       {/* Loading */}
       {isLoading && (
-        <div style={{ textAlign: 'center', color: '#9ca3af', padding: '60px 0' }}>Loading deployments...</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {[1,2,3].map(i => (
+            <div key={i} style={{ height: '180px', borderRadius: '12px', background: 'linear-gradient(90deg,#f3f4f6 25%,#f9fafb 50%,#f3f4f6 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
+          ))}
+        </div>
+      )}
+
+      {/* Error — backend not reachable */}
+      {isError && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '14px', padding: '40px 32px', textAlign: 'center' }}>
+          <div style={{ fontSize: '36px', marginBottom: '12px' }}>⚠️</div>
+          <div style={{ fontWeight: 700, fontSize: '16px', color: '#dc2626', marginBottom: '6px' }}>Backend not reachable</div>
+          <div style={{ color: '#6b7280', fontSize: '13px' }}>Make sure the Spring Boot server is running at localhost:8080</div>
+        </div>
       )}
 
       {/* Empty */}
-      {!isLoading && deployments.length === 0 && (
+      {!isLoading && !isError && deployments.length === 0 && (
         <div style={{ textAlign: 'center', padding: '80px 0', color: '#9ca3af' }}>
           <div style={{ fontSize: '40px', marginBottom: '12px' }}>📋</div>
-          <div style={{ fontSize: '16px', fontWeight: '600' }}>No deployments yet</div>
+          <div style={{ fontSize: '16px', fontWeight: '600', color: '#374151' }}>No deployments yet</div>
           <div style={{ fontSize: '13px', marginTop: '6px' }}>Create one to start live or paper trading.</div>
         </div>
       )}
 
       {/* Deployment cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '18px', marginBottom: '32px' }}>
+      {!isLoading && !isError && deployments.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '18px', marginBottom: '32px' }}>
         {deployments.map(d => {
           const modeC   = MODE_COLORS[d.mode]   || MODE_COLORS.PAPER;
           const statusC = STATUS_COLORS[d.status] || STATUS_COLORS.STOPPED;
@@ -166,7 +179,7 @@ export default function Deployments() {
             </div>
           );
         })}
-      </div>
+      </div>}
 
       {/* Create modal */}
       {showCreate && (

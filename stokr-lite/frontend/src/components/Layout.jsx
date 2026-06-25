@@ -144,8 +144,7 @@ function BrokerAlert() {
         </button>
       </div>
 
-      {/* Spacer so content isn't hidden behind the bar */}
-      <div style={{ height: '52px' }} />
+      {/* Spacer handled by grid children via paddingTop, not here */}
     </>
   );
 }
@@ -194,9 +193,11 @@ export default function Layout() {
   };
 
   return (
-    <div className="app-wrapper" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', minHeight: '100vh' }}>
-      {/* Global broker health alert — shows on every page when Zerodha disconnected */}
+    <>
+      {/* Global broker health alert — outside grid so it doesn't shift columns */}
       <BrokerAlert />
+
+    <div className="app-wrapper" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', minHeight: '100vh' }}>
 
       {/* Animated blob background */}
       <div className="blob-bg" style={{ position: 'fixed', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none' }}>
@@ -281,6 +282,7 @@ export default function Layout() {
         </div>
       </main>
     </div>
+    </>
   );
 }
 

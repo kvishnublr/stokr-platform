@@ -62,10 +62,30 @@ export default function Brokers() {
     },
   });
 
-  const handleOauthResult = useCallback((result) => {
+  const handleOauthResult = useCallback(async (result) => {
+    messageReceivedRef.current = true;
+
+    // Callback sends raw request_token — we exchange it here with our JWT
+    if (result.status === 'token' && result.requestToken) {
+      try {
+        await client.post(`/brokers/${result.broker}/token`, { requestToken: result.requestToken });
+        setConnectingBroker(null);
+        popupRef.current = null;
+        setOauthResult({ status: 'ok', broker: result.broker.toUpperCase() });
+        queryClient.invalidateQueries({ queryKey: ['brokers'] });
+        queryClient.invalidateQueries({ queryKey: ['broker-health'] });
+        refetchHealth();
+      } catch (err) {
+        setConnectingBroker(null);
+        popupRef.current = null;
+        const msg = err.response?.data?.error || err.message || 'Token exchange failed';
+        setOauthResult({ status: 'error', broker: result.broker.toUpperCase(), message: msg });
+      }
+      return;
+    }
+
     setConnectingBroker(null);
     popupRef.current = null;
-    messageReceivedRef.current = true;
     if (result.status === 'ok') {
       setOauthResult({ status: 'ok', broker: result.broker });
       queryClient.invalidateQueries({ queryKey: ['brokers'] });
@@ -94,7 +114,7 @@ export default function Brokers() {
         localStorage.removeItem(OAUTH_RESULT_KEY);
         try {
           const result = JSON.parse(stored);
-          if (result.broker === connectingBroker?.toLowerCase()) handleOauthResult(result);
+          if (result.broker === connectingBroker?.toLowerCase() || result.status === 'token') handleOauthResult(result);
         } catch { /* ignore */ }
       }
     }, 300);
