@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
 
 /**
  * Combined admin controller for all admin endpoints.
@@ -40,6 +41,7 @@ public class AdminController {
     private final ExitManager exitManager;
     private final PositionService positionService;
     private final ChartinkLiveDataService chartinkLiveDataService;
+    private final AuditLogService auditLogService;
 
     // ========= Dashboard =========
 
@@ -61,6 +63,29 @@ public class AdminController {
         return ResponseEntity.ok(userService.getAllUsers());
     }
 
+    @PatchMapping("/users/{id}")
+    public ResponseEntity<?> updateUser(@PathVariable Long id, @RequestBody Map<String, Object> req) {
+        var admin = SecurityUtils.currentUser();
+        com.stokr.auth.AuthUser updated = null;
+        StringBuilder desc = new StringBuilder();
+
+        if (req.containsKey("role")) {
+            String newRole = (String) req.get("role");
+            updated = userService.updateRole(id, newRole);
+            desc.append("role→").append(newRole).append(" ");
+        }
+        if (req.containsKey("enabled")) {
+            boolean enabled = (Boolean) req.get("enabled");
+            updated = userService.updateStatus(id, enabled);
+            desc.append("enabled→").append(enabled);
+        }
+        if (updated != null) {
+            auditLogService.log(admin.getId(), admin.getEmail(), "UPDATE_USER",
+                    "USER", String.valueOf(id), desc.toString().trim());
+        }
+        return ResponseEntity.ok(updated != null ? updated : userService.getUser(id));
+    }
+
     // ========= Deployments =========
 
     @GetMapping("/deployments")
@@ -70,12 +95,19 @@ public class AdminController {
 
     @PostMapping("/deployments/{id}/force-stop")
     public ResponseEntity<Deployment> forceStopDeployment(@PathVariable Long id) {
-        return ResponseEntity.ok(deploymentService.forceStop(id));
+        var admin = SecurityUtils.currentUser();
+        Deployment d = deploymentService.forceStop(id);
+        auditLogService.log(admin.getId(), admin.getEmail(), "FORCE_STOP_DEPLOYMENT",
+                "DEPLOYMENT", String.valueOf(id), "Force-stopped deployment " + id);
+        return ResponseEntity.ok(d);
     }
 
     @PostMapping("/deployments/stop-all")
     public ResponseEntity<Map<String, String>> stopAllDeployments() {
+        var admin = SecurityUtils.currentUser();
         deploymentService.stopAllDeployments();
+        auditLogService.log(admin.getId(), admin.getEmail(), "STOP_ALL_DEPLOYMENTS",
+                "SYSTEM", null, "Stopped all deployments");
         return ResponseEntity.ok(Map.of("status", "All deployments stopped"));
     }
 
@@ -104,18 +136,22 @@ public class AdminController {
 
     @PostMapping("/kill-switch/activate")
     public ResponseEntity<Map<String, Object>> activateKillSwitch(@RequestBody Map<String, String> request) {
-        killSwitchService.activate(SecurityUtils.currentUserId(),
-                request.getOrDefault("reason", "Admin activated"));
+        var admin = SecurityUtils.currentUser();
+        String reason = request.getOrDefault("reason", "Admin activated");
+        killSwitchService.activate(admin.getId(), reason);
         deploymentService.stopAllDeployments();
-        return ResponseEntity.ok(Map.of("status", "Kill switch ACTIVATED",
-                "active", true));
+        auditLogService.log(admin.getId(), admin.getEmail(), "KILL_SWITCH_ACTIVATE",
+                "SYSTEM", null, "reason=" + reason);
+        return ResponseEntity.ok(Map.of("status", "Kill switch ACTIVATED", "active", true));
     }
 
     @PostMapping("/kill-switch/deactivate")
     public ResponseEntity<Map<String, Object>> deactivateKillSwitch() {
+        var admin = SecurityUtils.currentUser();
         killSwitchService.deactivate();
-        return ResponseEntity.ok(Map.of("status", "Kill switch DEACTIVATED",
-                "active", false));
+        auditLogService.log(admin.getId(), admin.getEmail(), "KILL_SWITCH_DEACTIVATE",
+                "SYSTEM", null, "Kill switch deactivated");
+        return ResponseEntity.ok(Map.of("status", "Kill switch DEACTIVATED", "active", false));
     }
 
     @GetMapping("/kill-switch")
@@ -161,7 +197,11 @@ public class AdminController {
 
     @PutMapping("/strategy-configs/{strategyId}")
     public ResponseEntity<StrategyConfig> updateStrategyConfig(@PathVariable Long strategyId, @RequestBody StrategyConfig patch) {
-        return ResponseEntity.ok(strategyConfigService.update(strategyId, patch));
+        var admin = SecurityUtils.currentUser();
+        StrategyConfig updated = strategyConfigService.update(strategyId, patch);
+        auditLogService.log(admin.getId(), admin.getEmail(), "UPDATE_STRATEGY_CONFIG",
+                "STRATEGY", String.valueOf(strategyId), "Updated strategy config for strategy " + strategyId);
+        return ResponseEntity.ok(updated);
     }
 
     // ========= Strategy Universe Mappings =========
@@ -223,6 +263,15 @@ public class AdminController {
     @GetMapping("/chartink/live-data")
     public ResponseEntity<?> getChartinkLiveData() {
         return ResponseEntity.ok(chartinkLiveDataService.getLiveChartinkData());
+    }
+
+    // ========= Audit Logs =========
+
+    @GetMapping("/audit-logs")
+    public ResponseEntity<?> getAuditLogs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return ResponseEntity.ok(auditLogService.getAll(PageRequest.of(page, size)));
     }
 
     // ========= Manual Square Off =========

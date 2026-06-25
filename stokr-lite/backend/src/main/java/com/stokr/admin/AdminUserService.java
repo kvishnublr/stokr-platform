@@ -1,6 +1,7 @@
 package com.stokr.admin;
 
 import com.stokr.auth.AuthRepository;
+import com.stokr.auth.AuthRole;
 import com.stokr.auth.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,5 +25,17 @@ public class AdminUserService {
 
     public long getUserCount() {
         return authRepository.count();
+    }
+
+    public AuthUser updateRole(Long userId, String role) {
+        AuthUser user = getUser(userId);
+        user.setRole(AuthRole.valueOf(role.toUpperCase()));
+        return authRepository.save(user);
+    }
+
+    public AuthUser updateStatus(Long userId, boolean enabled) {
+        AuthUser user = getUser(userId);
+        user.setEnabled(enabled);
+        return authRepository.save(user);
     }
 }

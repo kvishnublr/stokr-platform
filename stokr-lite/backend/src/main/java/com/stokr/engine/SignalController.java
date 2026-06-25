@@ -7,11 +7,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.List;
-import java.util.Map;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/signals")
@@ -70,5 +72,45 @@ public class SignalController {
     @GetMapping("/positions/all")
     public ResponseEntity<List<ChartinkPosition>> getAllChartinkPositions() {
         return ResponseEntity.ok(chartinkPositionRepository.findAll());
+    }
+
+    @GetMapping("/pnl-history")
+    public ResponseEntity<List<Map<String, Object>>> getPnlHistory(
+            @RequestParam(defaultValue = "30") int days) {
+        Long userId = SecurityUtils.currentUserId();
+        Instant since = Instant.now().minus(days, ChronoUnit.DAYS);
+        List<SignalEntity> signals = signalRepository.findByUserIdAndExitTimeAfter(userId, since);
+
+        // Group closed signals by IST date, compute estimated PnL per trade
+        Map<LocalDate, Double> byDate = new TreeMap<>();
+        for (SignalEntity s : signals) {
+            if (s.getExitTime() == null || s.getExitType() == null) continue;
+            if (s.getEntryPrice() == null) continue;
+
+            double pnl = 0;
+            double entry = s.getEntryPrice().doubleValue();
+            if ("TARGET_HIT".equals(s.getExitType()) && s.getTarget() != null) {
+                double pct = (s.getTarget().doubleValue() - entry) / entry;
+                pnl = pct * 5000;
+            } else if ("SL_HIT".equals(s.getExitType()) && s.getStopLoss() != null) {
+                double pct = (s.getStopLoss().doubleValue() - entry) / entry;
+                pnl = pct * 5000;
+            }
+            LocalDate date = s.getExitTime().atZone(IST).toLocalDate();
+            byDate.merge(date, pnl, Double::sum);
+        }
+
+        // Build cumulative equity curve
+        List<Map<String, Object>> result = new ArrayList<>();
+        double cumulative = 0;
+        for (Map.Entry<LocalDate, Double> e : byDate.entrySet()) {
+            cumulative += e.getValue();
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("date", e.getKey().toString());
+            row.put("daily", Math.round(e.getValue() * 100.0) / 100.0);
+            row.put("cumulative", Math.round(cumulative * 100.0) / 100.0);
+            result.add(row);
+        }
+        return ResponseEntity.ok(result);
     }
 }

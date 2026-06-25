@@ -21,9 +21,11 @@ const adminLinks = [
   { to: '/admin/deployments', label: 'All Deploys', icon: '🚀' },
   { to: '/admin/brokers', label: 'Broker Health', icon: '💓' },
   { to: '/admin/errors', label: 'Error Logs', icon: '🐛' },
+  { to: '/admin/orders', label: 'Orders', icon: '📋' },
   { to: '/admin/universe-groups', label: 'Universe Groups', icon: '🌌' },
   { to: '/admin/strategy-mappings', label: 'Strategy Mappings', icon: '🔗' },
   { to: '/admin/strategy-configs', label: 'Strategy Configs', icon: '🔧' },
+  { to: '/admin/audit-log', label: 'Audit Log', icon: '📋' },
 ];
 
 const POLL_INTERVAL_MS  = 2 * 60 * 1000;  // check every 2 min
