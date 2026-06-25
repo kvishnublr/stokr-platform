@@ -64,10 +64,15 @@ public class EntryManager {
             return;
         }
 
-        // Risk check (simplified - would need full context in production)
+        // Real daily realized PnL from open positions
+        BigDecimal todayPnl = openPositions.stream()
+                .map(Position::getRealizedPnl)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
         RiskContext riskContext = new RiskContext(
                 deployment.getId(), deployment.getUserId(), signal.symbol(),
-                quantity, signal.entryPrice(), openPositions.size(), BigDecimal.ZERO,
+                quantity, signal.entryPrice(), openPositions.size(), todayPnl,
                 BigDecimal.ZERO, deployment.getCapital(),
                 3, new BigDecimal("5000"), 100, 0);
 
@@ -80,7 +85,7 @@ public class EntryManager {
             return;
         }
 
-        // Place order
+        // Place order with one retry on failure
         try {
             var order = orderService.createOrder(deployment.getId(), signal.symbol(),
                     signal.side().name(), quantity, signal.entryPrice(), "MARKET");
@@ -108,6 +113,14 @@ public class EntryManager {
                     .build();
 
             BrokerOrderResponse response = adapter.placeOrder(accessToken, request);
+
+            // One retry on transient failure
+            if (!response.isSuccess()) {
+                log.warn("Order attempt 1 failed for {} — retrying in 200ms: {}",
+                        signal.symbol(), response.message());
+                try { Thread.sleep(200); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                response = adapter.placeOrder(accessToken, request);
+            }
 
             if (response.isSuccess()) {
                 orderService.completeOrder(order, response.orderId(),

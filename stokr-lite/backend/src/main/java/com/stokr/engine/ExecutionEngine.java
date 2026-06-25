@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -73,7 +74,7 @@ public class ExecutionEngine {
 
     /**
      * Check every open position against its SL and target.
-     * Trailing SL activates after +0.5% gain, trails at 0.3% below best price.
+     * Uses per-signal trailTriggerPct / trailDistancePct instead of hardcoded values.
      */
     private void processExits(Deployment deployment) {
         List<Position> open = positionService.getOpenPositions(deployment.getId());
@@ -87,7 +88,6 @@ public class ExecutionEngine {
                     continue;
                 }
 
-                // Retrieve the signal that opened this position
                 SignalEntity signal = signalRepository
                     .findFirstByDeploymentIdAndSymbolAndStatusOrderByCreatedAtDesc(
                         deployment.getId(), pos.getSymbol(), "EXECUTED")
@@ -105,26 +105,30 @@ public class ExecutionEngine {
 
                 if (entry == null || sl == null || target == null) continue;
 
-                // Update trailing best price
-                BigDecimal best = bestPriceMap.merge(
-                    pos.getId(), ltp, BigDecimal::max);
+                // Per-signal trailing stop params
+                double trailTrigger  = signal.getTrailTriggerPct()  != null ? signal.getTrailTriggerPct()  : 0.5;
+                double trailDistance = signal.getTrailDistancePct() != null ? signal.getTrailDistancePct() : 0.3;
+                double trailFactor   = 1.0 - trailDistance / 100.0;
 
-                // Trailing SL: activates after +0.5% gain, trails 0.3% below best
+                // Update trailing best price
+                BigDecimal best = bestPriceMap.merge(pos.getId(), ltp, BigDecimal::max);
+
                 BigDecimal gainPct = ltp.subtract(entry)
                     .divide(entry, 6, java.math.RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100));
 
-                if (gainPct.compareTo(BigDecimal.valueOf(0.5)) >= 0) {
-                    BigDecimal trailSl = best.multiply(BigDecimal.valueOf(0.997));
-                    if (trailSl.compareTo(sl) > 0) sl = trailSl; // ratchet up SL
+                if (gainPct.compareTo(BigDecimal.valueOf(trailTrigger)) >= 0) {
+                    BigDecimal trailSl = best.multiply(BigDecimal.valueOf(trailFactor));
+                    if (trailSl.compareTo(sl) > 0) sl = trailSl;
                 }
 
-                // --- Exit checks ---
                 if (ltp.compareTo(sl) <= 0) {
                     log.info("SL hit: {} ltp={} sl={}", pos.getSymbol(), ltp, sl);
+                    updateSignalStatus(signal, "SL_HIT");
                     squareOff(deployment, pos, ltp);
                 } else if (ltp.compareTo(target) >= 0) {
                     log.info("TARGET hit: {} ltp={} target={}", pos.getSymbol(), ltp, target);
+                    updateSignalStatus(signal, "TARGET_HIT");
                     squareOff(deployment, pos, ltp);
                 }
 
@@ -141,12 +145,27 @@ public class ExecutionEngine {
         for (Position pos : open) {
             BigDecimal ltp = marketDataService.getLtp(pos.getSymbol());
             if (ltp.compareTo(BigDecimal.ZERO) <= 0) ltp = pos.getAvgPrice();
+            // Mark signal as EOD_EXIT before squaring off
+            signalRepository.findFirstByDeploymentIdAndSymbolAndStatusOrderByCreatedAtDesc(
+                    deployment.getId(), pos.getSymbol(), "EXECUTED")
+                .ifPresent(s -> updateSignalStatus(s, "EOD_EXIT"));
             squareOff(deployment, pos, ltp);
         }
     }
 
     private void squareOff(Deployment deployment, Position pos, BigDecimal exitPrice) {
         exitManager.squareOffPosition(deployment, pos, exitPrice);
-        bestPriceMap.remove(pos.getId()); // clear trailing state
+        bestPriceMap.remove(pos.getId());
+    }
+
+    private void updateSignalStatus(SignalEntity signal, String exitType) {
+        try {
+            signal.setStatus(exitType);
+            signal.setExitType(exitType);
+            signal.setExitTime(Instant.now());
+            signalRepository.save(signal);
+        } catch (Exception e) {
+            log.warn("Failed to update signal {} status to {}: {}", signal.getId(), exitType, e.getMessage());
+        }
     }
 }

@@ -131,36 +131,134 @@ public class ZerodhaAdapter implements BrokerAdapter {
 
     @Override
     public BrokerOrderResponse placeOrder(String accessToken, BrokerOrderRequest request) {
-        log.info("Placing Zerodha order: {} {} {} qty={}",
-                request.side(), request.symbol(), request.orderType(), request.quantity());
-        // TODO: POST /orders/regular via Kite Connect API
-        throw new UnsupportedOperationException("Zerodha order placement requires kiteconnect SDK");
+        log.info("Placing Zerodha order: {} {} qty={}", request.side(), request.symbol(), request.quantity());
+
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("tradingsymbol", request.symbol());
+        form.add("exchange",       request.exchange() != null ? request.exchange() : "NSE");
+        form.add("transaction_type", request.side().name());
+        form.add("order_type",     "MARKET");
+        form.add("product",        request.productType() != null ? request.productType() : "MIS");
+        form.add("quantity",       String.valueOf(request.quantity()));
+        form.add("validity",       "DAY");
+
+        try {
+            String body = http.post()
+                    .uri(KITE_API_BASE + "/orders/regular")
+                    .header("X-Kite-Version", "3")
+                    .header("Authorization", "token " + apiKey + ":" + accessToken)
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(form)
+                    .retrieve()
+                    .body(String.class);
+
+            JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            if ("success".equalsIgnoreCase(root.path("status").asText())) {
+                String orderId = root.path("data").path("order_id").asText();
+                log.info("Zerodha order placed: {} {}", request.symbol(), orderId);
+                return new BrokerOrderResponse(orderId, "COMPLETE", "Order placed");
+            }
+            String msg = root.path("message").asText("Order rejected");
+            log.warn("Zerodha order rejected: {}", msg);
+            return new BrokerOrderResponse(null, "REJECTED", msg);
+        } catch (Exception e) {
+            String msg = extractZerodhaMessage(e);
+            log.error("Zerodha placeOrder failed for {}: {}", request.symbol(), msg != null ? msg : e.getMessage());
+            return new BrokerOrderResponse(null, "REJECTED", msg != null ? msg : e.getMessage());
+        }
     }
 
     @Override
     public void cancelOrder(String accessToken, String orderId) {
         log.info("Cancelling Zerodha order: {}", orderId);
-        // TODO: DELETE /orders/regular/{order_id}
+        try {
+            http.delete()
+                    .uri(KITE_API_BASE + "/orders/regular/" + orderId)
+                    .header("X-Kite-Version", "3")
+                    .header("Authorization", "token " + apiKey + ":" + accessToken)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception e) {
+            log.warn("Cancel order {} failed: {}", orderId, e.getMessage());
+        }
     }
 
     @Override
     public List<BrokerPosition> getPositions(String accessToken) {
         log.info("Fetching Zerodha positions");
-        // TODO: GET /portfolio/positions
-        return Collections.emptyList();
+        try {
+            String body = http.get()
+                    .uri(KITE_API_BASE + "/portfolio/positions")
+                    .header("X-Kite-Version", "3")
+                    .header("Authorization", "token " + apiKey + ":" + accessToken)
+                    .retrieve()
+                    .body(String.class);
+
+            JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            if (!"success".equalsIgnoreCase(root.path("status").asText())) return Collections.emptyList();
+
+            List<BrokerPosition> result = new java.util.ArrayList<>();
+            JsonNode net = root.path("data").path("net");
+            if (net.isArray()) {
+                for (JsonNode p : net) {
+                    int qty = p.path("quantity").asInt(0);
+                    if (qty == 0) continue;
+                    BigDecimal avgPrice = new BigDecimal(p.path("average_price").asText("0"));
+                    BigDecimal lastPrice = new BigDecimal(p.path("last_price").asText("0"));
+                    BigDecimal unrealizedPnl = new BigDecimal(p.path("unrealised").asText("0"));
+                    BigDecimal realizedPnl = new BigDecimal(p.path("realised").asText("0"));
+                    result.add(new BrokerPosition(
+                            p.path("tradingsymbol").asText(),
+                            p.path("exchange").asText("NSE"),
+                            qty, avgPrice, lastPrice, unrealizedPnl, realizedPnl,
+                            p.path("product").asText("MIS")
+                    ));
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("getPositions failed: {}", e.getMessage());
+            return Collections.emptyList();
+        }
     }
 
     @Override
     public BigDecimal getAvailableMargin(String accessToken) {
-        log.info("Fetching Zerodha margins");
-        // TODO: GET /user/margins
-        return BigDecimal.ZERO;
+        try {
+            String body = http.get()
+                    .uri(KITE_API_BASE + "/user/margins")
+                    .header("X-Kite-Version", "3")
+                    .header("Authorization", "token " + apiKey + ":" + accessToken)
+                    .retrieve()
+                    .body(String.class);
+
+            JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            String balance = root.path("data").path("equity").path("available").path("live_balance").asText("0");
+            return new BigDecimal(balance);
+        } catch (Exception e) {
+            log.warn("getAvailableMargin failed: {}", e.getMessage());
+            return BigDecimal.ZERO;
+        }
     }
 
     @Override
     public String getOrderStatus(String accessToken, String orderId) {
-        log.info("Fetching Zerodha order status: {}", orderId);
-        // TODO: GET /orders/{order_id}
+        try {
+            String body = http.get()
+                    .uri(KITE_API_BASE + "/orders/" + orderId)
+                    .header("X-Kite-Version", "3")
+                    .header("Authorization", "token " + apiKey + ":" + accessToken)
+                    .retrieve()
+                    .body(String.class);
+
+            JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            JsonNode data = root.path("data");
+            if (data.isArray() && data.size() > 0) {
+                return data.get(data.size() - 1).path("status").asText("UNKNOWN");
+            }
+        } catch (Exception e) {
+            log.warn("getOrderStatus {} failed: {}", orderId, e.getMessage());
+        }
         return "UNKNOWN";
     }
 }

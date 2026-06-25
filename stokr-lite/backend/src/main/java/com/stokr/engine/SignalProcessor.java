@@ -131,6 +131,8 @@ public class SignalProcessor {
                         .reason(signal.reason())
                         .status("GENERATED")
                         .source(SignalEntity.SignalSource.INTERNAL)
+                        .trailTriggerPct(signal.trailTriggerPct())
+                        .trailDistancePct(signal.trailDistancePct())
                         .build();
                     signalRepository.save(entity);
 

@@ -27,7 +27,7 @@ public record StrategyParams(
     public static StrategyParams defaults() {
         return new StrategyParams(
                 15, 2.0,       // ORB
-                0.3, 1.5,      // VWAP
+                0.3, 2.0,      // VWAP
                 1.0, 3.0, 50000, // Gap Fill
                 0.2, 0.4       // 0.2% SL, 0.4% target = 2:1 R:R. Need 34%+ win rate to profit.
                                // VWAP bounce SL is from VWAP (natural support), target from entry.

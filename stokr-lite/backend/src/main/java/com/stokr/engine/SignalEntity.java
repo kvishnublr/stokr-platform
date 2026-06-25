@@ -81,7 +81,15 @@ public class SignalEntity {
     private Instant exitTime;
 
     @Column(name = "exit_type", length = 20)
-    private String exitType; // SL_HIT, TARGET_HIT, IN_BETWEEN, REJECTED, PENDING
+    private String exitType; // SL_HIT, TARGET_HIT, EOD_EXIT, REJECTED, PENDING
+
+    @Column(name = "trail_trigger_pct")
+    @Builder.Default
+    private Double trailTriggerPct = 0.5;
+
+    @Column(name = "trail_distance_pct")
+    @Builder.Default
+    private Double trailDistancePct = 0.3;
 
     public enum Side { BUY, SELL }
 

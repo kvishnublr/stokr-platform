@@ -2,284 +2,253 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import client from '../api/client';
 
-const LIVE_STRATEGIES = [
-  {
-    id: 1,
-    key: 'ORB',
-    name: 'Opening Range Breakout (ORB)',
-    description: 'Trend-following strategy using opening range breakouts with trailing stops',
-    status: 'LIVE',
-    mode: 'LIVE',
-    capital: 5000,
-    daily_loss_cap: 1000,
-    symbols: ['RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICI'],
-    timeframe: '1m',
-    win_rate: 62.5,
-    avg_profit: 145.50,
-    total_trades: 48,
-    edge: 'Trend momentum + trailing stop',
-    last_signal: '2026-06-20 09:30:00'
-  },
-  {
-    id: 2,
-    key: 'ADV_CASH',
-    name: 'ADV Cash Flow',
-    description: 'Order flow analysis using advance/decline and cash metrics',
-    status: 'LIVE',
-    mode: 'LIVE',
-    capital: 5000,
-    daily_loss_cap: 1000,
-    symbols: ['RELIANCE', 'TCS', 'WIPRO', 'AXISBANK', 'INFY'],
-    timeframe: '5m',
-    win_rate: 58.3,
-    avg_profit: 112.75,
-    total_trades: 36,
-    edge: 'Order book pressure + ADV momentum',
-    last_signal: '2026-06-20 10:15:00'
-  },
-  {
-    id: 3,
-    key: 'VWAP_SQUEEZE',
-    name: 'VWAP Squeeze Breakout',
-    description: 'Breakout strategy triggered by volatility compression around VWAP',
-    status: 'LIVE',
-    mode: 'LIVE',
-    capital: 5000,
-    daily_loss_cap: 1000,
-    symbols: ['RELIANCE', 'TCS', 'WIPRO', 'HDFC', 'ICICI'],
-    timeframe: '15m',
-    win_rate: 55.2,
-    avg_profit: 98.30,
-    total_trades: 29,
-    edge: 'Mean reversion + volatility squeeze',
-    last_signal: '2026-06-20 11:45:00'
-  }
-];
+const fetchDeployments = () => client.get('/deployments').then(r => r.data);
+const fetchStrategies  = () => client.get('/strategies').then(r => r.data);
+const fetchBrokers     = () => client.get('/brokers').then(r => r.data);
+
+const MODE_COLORS = {
+  LIVE:  { bg: '#fef2f2', text: '#991b1b', border: '#fca5a5' },
+  PAPER: { bg: '#eff6ff', text: '#1d4ed8', border: '#93c5fd' },
+};
+const STATUS_COLORS = {
+  ACTIVE:  { bg: '#f0fdf4', text: '#15803d', border: '#86efac' },
+  STOPPED: { bg: '#f9fafb', text: '#6b7280', border: '#d1d5db' },
+  PAUSED:  { bg: '#fffbeb', text: '#92400e', border: '#fcd34d' },
+};
 
 export default function Deployments() {
-  const [hoveredCard, setHoveredCard] = useState(null);
+  const qc = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(null);
+  const [form, setForm]   = useState({ strategyId: '', brokerAccountId: '', mode: 'PAPER', capital: 5000 });
 
-  const getStatusColor = (status) => {
-    switch(status) {
-      case 'LIVE': return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
-      case 'PAPER': return 'bg-blue-50 text-blue-700 border border-blue-200';
-      case 'PAUSED': return 'bg-amber-50 text-amber-700 border border-amber-200';
-      default: return 'bg-slate-50 text-slate-700 border border-slate-200';
-    }
-  };
+  const { data: deployments = [], isLoading }   = useQuery({ queryKey: ['deployments'], queryFn: fetchDeployments, refetchInterval: 15000 });
+  const { data: strategies  = [] }              = useQuery({ queryKey: ['strategies'],  queryFn: fetchStrategies });
+  const { data: brokers     = [] }              = useQuery({ queryKey: ['brokers'],     queryFn: fetchBrokers });
 
-  const getModeIcon = (mode) => {
-    return mode === 'LIVE' ? '🔴' : '📄';
-  };
+  const createMut = useMutation({
+    mutationFn: (body) => client.post('/deployments', body).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries(['deployments']); setShowCreate(false); setForm({ strategyId: '', brokerAccountId: '', mode: 'PAPER', capital: 5000 }); },
+  });
+  const stopMut = useMutation({
+    mutationFn: (id) => client.delete(`/deployments/${id}`).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries(['deployments']); setConfirmStop(null); },
+  });
+
+  const active   = deployments.filter(d => d.status === 'ACTIVE');
+  const totalCap = active.reduce((s, d) => s + (d.capital || 0), 0);
+  const totalPnl = deployments.reduce((s, d) => s + (d.todayPnl || 0), 0);
 
   return (
-    <div style={{ animation: 'fadeIn 0.5s ease', padding: '24px' }}>
+    <div style={{ padding: '24px', animation: 'fadeIn 0.4s ease' }}>
       <style>{`
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .strategy-card { transition: all 0.3s ease; cursor: pointer; }
-        .strategy-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.12); }
-        .metric-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: #f3f4f6; border-radius: 6px; font-size: 12px; font-weight: 600; color: #6b7280; }
-        .metric-positive { color: #059669; background: #d1fae5; }
+        .dep-card { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; transition: box-shadow 0.2s; }
+        .dep-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
+        .metric-box { padding: 10px; background: #f9fafb; border-radius: 8px; }
+        .btn { padding: 8px 14px; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+        .btn:hover { opacity: 0.85; }
+        .btn-primary { background: #4f46e5; color: white; }
+        .btn-danger  { background: #fecaca; color: #991b1b; }
+        .btn-ghost   { background: #f3f4f6; color: #374151; }
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal { background: white; border-radius: 12px; padding: 28px; width: 440px; max-width: 95vw; }
+        .form-row { margin-bottom: 16px; }
+        .form-row label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; text-transform: uppercase; }
+        .form-row select, .form-row input { width: 100%; padding: 9px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+        .form-row select:focus, .form-row input:focus { outline: 2px solid #4f46e5; border-color: transparent; }
+        .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; border-width: 1px; border-style: solid; }
       `}</style>
 
       {/* Header */}
-      <div style={{ marginBottom: '32px' }}>
-        <h1 style={{ fontSize: '32px', fontWeight: '800', color: '#1f2937', margin: 0, marginBottom: '8px' }}>
-          🚀 Live Deployments
-        </h1>
-        <p style={{ color: '#6b7280', fontSize: '15px', margin: 0 }}>
-          3 strategies actively trading · ₹15,000 total capital · ₹3,000 daily loss cap
-        </p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '28px' }}>
+        <div>
+          <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#1f2937', margin: 0, marginBottom: '6px' }}>
+            Deployments
+          </h1>
+          <p style={{ color: '#6b7280', fontSize: '14px', margin: 0 }}>
+            {active.length} active · ₹{totalCap.toLocaleString('en-IN')} deployed
+            {totalPnl !== 0 && (
+              <span style={{ marginLeft: '12px', color: totalPnl >= 0 ? '#059669' : '#dc2626', fontWeight: 700 }}>
+                {totalPnl >= 0 ? '+' : ''}₹{totalPnl.toFixed(0)} today
+              </span>
+            )}
+          </p>
+        </div>
+        <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+          + New Deployment
+        </button>
       </div>
 
-      {/* Strategy Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px', marginBottom: '40px' }}>
-        {LIVE_STRATEGIES.map((strategy) => (
-          <div
-            key={strategy.id}
-            className="strategy-card"
-            onMouseEnter={() => setHoveredCard(strategy.id)}
-            onMouseLeave={() => setHoveredCard(null)}
-            style={{
-              background: 'white',
-              border: '1px solid #e5e7eb',
-              borderRadius: '12px',
-              padding: '20px',
-              boxShadow: hoveredCard === strategy.id ? '0 12px 24px rgba(0,0,0,0.12)' : '0 2px 8px rgba(0,0,0,0.08)'
-            }}
-          >
-            {/* Header */}
-            <div style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #f3f4f6' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <div style={{ flex: 1 }}>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1f2937' }}>
-                    {getModeIcon(strategy.mode)} {strategy.name}
-                  </h3>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#6b7280' }}>
-                    {strategy.description}
-                  </p>
-                </div>
-                <span className={`metric-badge ${getStatusColor(strategy.status)}`} style={{ padding: '6px 12px', borderRadius: '6px' }}>
-                  {strategy.status}
-                </span>
-              </div>
-            </div>
+      {/* Loading */}
+      {isLoading && (
+        <div style={{ textAlign: 'center', color: '#9ca3af', padding: '60px 0' }}>Loading deployments...</div>
+      )}
 
-            {/* Metrics Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-              <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '8px' }}>
-                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px', textTransform: 'uppercase', fontWeight: '600' }}>
-                  Capital Risk
-                </div>
-                <div style={{ fontSize: '16px', fontWeight: '800', color: '#1f2937' }}>
-                  ₹{strategy.capital}
-                </div>
-                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                  ₹{strategy.daily_loss_cap}/day cap
-                </div>
-              </div>
+      {/* Empty */}
+      {!isLoading && deployments.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '80px 0', color: '#9ca3af' }}>
+          <div style={{ fontSize: '40px', marginBottom: '12px' }}>📋</div>
+          <div style={{ fontSize: '16px', fontWeight: '600' }}>No deployments yet</div>
+          <div style={{ fontSize: '13px', marginTop: '6px' }}>Create one to start live or paper trading.</div>
+        </div>
+      )}
 
-              <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '8px' }}>
-                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px', textTransform: 'uppercase', fontWeight: '600' }}>
-                  Win Rate
-                </div>
-                <div style={{ fontSize: '16px', fontWeight: '800', color: '#059669' }}>
-                  {strategy.win_rate}%
-                </div>
-                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                  {strategy.total_trades} trades
-                </div>
-              </div>
+      {/* Deployment cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '18px', marginBottom: '32px' }}>
+        {deployments.map(d => {
+          const modeC   = MODE_COLORS[d.mode]   || MODE_COLORS.PAPER;
+          const statusC = STATUS_COLORS[d.status] || STATUS_COLORS.STOPPED;
+          const pnl = d.todayPnl || 0;
+          const isActive = d.status === 'ACTIVE';
 
-              <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '8px' }}>
-                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px', textTransform: 'uppercase', fontWeight: '600' }}>
-                  Avg P&L
+          return (
+            <div key={d.id} className="dep-card">
+              {/* Top */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid #f3f4f6' }}>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: '700', color: '#111827', marginBottom: '4px' }}>
+                    {d.strategyName || `Strategy #${d.strategyId}`}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#6b7280' }}>{d.brokerName || 'Paper'} · ID #{d.id}</div>
                 </div>
-                <div style={{ fontSize: '16px', fontWeight: '800', color: '#059669' }}>
-                  ₹{strategy.avg_profit.toFixed(2)}
-                </div>
-                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                  per signal
-                </div>
-              </div>
-
-              <div style={{ padding: '10px', background: '#f9fafb', borderRadius: '8px' }}>
-                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px', textTransform: 'uppercase', fontWeight: '600' }}>
-                  Timeframe
-                </div>
-                <div style={{ fontSize: '16px', fontWeight: '800', color: '#1f2937' }}>
-                  {strategy.timeframe}
-                </div>
-                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                  {strategy.symbols.length} symbols
-                </div>
-              </div>
-            </div>
-
-            {/* Edge */}
-            <div style={{ padding: '10px', background: '#eef2ff', borderRadius: '8px', marginBottom: '12px', borderLeft: '3px solid #4f46e5' }}>
-              <div style={{ fontSize: '11px', color: '#4f46e5', fontWeight: '600', marginBottom: '2px' }}>
-                💡 Edge
-              </div>
-              <div style={{ fontSize: '13px', color: '#4f46e5', fontWeight: '500' }}>
-                {strategy.edge}
-              </div>
-            </div>
-
-            {/* Symbols */}
-            <div style={{ marginBottom: '12px' }}>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', marginBottom: '6px', textTransform: 'uppercase' }}>
-                Symbols ({strategy.symbols.length})
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                {strategy.symbols.map(sym => (
-                  <span key={sym} style={{ display: 'inline-block', padding: '3px 8px', background: '#e0e7ff', color: '#4f46e5', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
-                    {sym}
+                <div style={{ display: 'flex', gap: '6px', flexDirection: 'column', alignItems: 'flex-end' }}>
+                  <span className="badge" style={{ background: modeC.bg, color: modeC.text, borderColor: modeC.border }}>
+                    {d.mode === 'LIVE' ? '🔴' : '📄'} {d.mode}
                   </span>
-                ))}
+                  <span className="badge" style={{ background: statusC.bg, color: statusC.text, borderColor: statusC.border }}>
+                    {d.status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Metrics */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                <div className="metric-box">
+                  <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: '600', textTransform: 'uppercase', marginBottom: '3px' }}>Capital</div>
+                  <div style={{ fontSize: '18px', fontWeight: '800', color: '#111827' }}>₹{(d.capital || 0).toLocaleString('en-IN')}</div>
+                </div>
+                <div className="metric-box">
+                  <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: '600', textTransform: 'uppercase', marginBottom: '3px' }}>Today P&L</div>
+                  <div style={{ fontSize: '18px', fontWeight: '800', color: pnl >= 0 ? '#059669' : '#dc2626' }}>
+                    {pnl >= 0 ? '+' : ''}₹{pnl.toFixed(0)}
+                  </div>
+                </div>
+                <div className="metric-box">
+                  <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: '600', textTransform: 'uppercase', marginBottom: '3px' }}>Open Positions</div>
+                  <div style={{ fontSize: '18px', fontWeight: '800', color: '#111827' }}>{d.openPositions ?? 0}</div>
+                </div>
+                <div className="metric-box">
+                  <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: '600', textTransform: 'uppercase', marginBottom: '3px' }}>Signals Today</div>
+                  <div style={{ fontSize: '18px', fontWeight: '800', color: '#111827' }}>{d.signalsToday ?? 0}</div>
+                </div>
+              </div>
+
+              {/* Last signal */}
+              {d.lastSignalAt && (
+                <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '12px' }}>
+                  Last signal: {new Date(d.lastSignalAt).toLocaleString('en-IN')}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px solid #f3f4f6' }}>
+                {isActive && (
+                  <button className="btn btn-danger" style={{ flex: 1 }}
+                    onClick={() => setConfirmStop(d)}>
+                    Stop
+                  </button>
+                )}
+                {!isActive && (
+                  <span style={{ flex: 1, textAlign: 'center', fontSize: '12px', color: '#9ca3af', padding: '8px' }}>Inactive</span>
+                )}
               </div>
             </div>
-
-            {/* Last Signal */}
-            <div style={{ fontSize: '11px', color: '#6b7280', borderTop: '1px solid #f3f4f6', paddingTop: '12px', marginTop: '12px' }}>
-              📡 Last signal: <strong>{strategy.last_signal}</strong>
-            </div>
-
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #f3f4f6' }}>
-              <button style={{
-                flex: 1,
-                padding: '8px 12px',
-                background: '#f3f4f6',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: '600',
-                color: '#4b5563',
-                transition: 'all 0.2s'
-              }} onMouseEnter={(e) => e.target.style.background = '#e5e7eb'} onMouseLeave={(e) => e.target.style.background = '#f3f4f6'}>
-                📊 View Stats
-              </button>
-              <button style={{
-                flex: 1,
-                padding: '8px 12px',
-                background: '#fecaca',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: '600',
-                color: '#991b1b',
-                transition: 'all 0.2s'
-              }} onMouseEnter={(e) => e.target.style.background = '#fca5a5'} onMouseLeave={(e) => e.target.style.background = '#fecaca'}>
-                🛑 Stop
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Summary Stats */}
-      <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '24px' }}>
-        <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#1f2937', margin: '0 0 16px 0' }}>
-          📈 Summary
-        </h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-          <div style={{ paddingBottom: '12px', borderBottom: '1px solid #f3f4f6' }}>
-            <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: '600', marginBottom: '4px', textTransform: 'uppercase' }}>
-              Total Capital Deployed
+      {/* Create modal */}
+      {showCreate && (
+        <div className="overlay" onClick={() => setShowCreate(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2 style={{ margin: '0 0 20px 0', fontSize: '18px', fontWeight: '700' }}>New Deployment</h2>
+
+            <div className="form-row">
+              <label>Strategy</label>
+              <select value={form.strategyId} onChange={e => setForm(f => ({ ...f, strategyId: e.target.value }))}>
+                <option value="">Select strategy...</option>
+                {strategies.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
             </div>
-            <div style={{ fontSize: '20px', fontWeight: '800', color: '#1f2937' }}>
-              ₹15,000
+
+            <div className="form-row">
+              <label>Mode</label>
+              <select value={form.mode} onChange={e => setForm(f => ({ ...f, mode: e.target.value }))}>
+                <option value="PAPER">Paper (simulated)</option>
+                <option value="LIVE">Live (real money)</option>
+              </select>
             </div>
-          </div>
-          <div style={{ paddingBottom: '12px', borderBottom: '1px solid #f3f4f6' }}>
-            <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: '600', marginBottom: '4px', textTransform: 'uppercase' }}>
-              Daily Loss Cap
+
+            {form.mode === 'LIVE' && (
+              <div className="form-row">
+                <label>Broker Account</label>
+                <select value={form.brokerAccountId} onChange={e => setForm(f => ({ ...f, brokerAccountId: e.target.value }))}>
+                  <option value="">Select broker...</option>
+                  {brokers.map(b => <option key={b.id} value={b.id}>{b.brokerName} — {b.clientId}</option>)}
+                </select>
+              </div>
+            )}
+
+            <div className="form-row">
+              <label>Capital (₹)</label>
+              <input type="number" min="1000" step="500" value={form.capital}
+                onChange={e => setForm(f => ({ ...f, capital: Number(e.target.value) }))} />
             </div>
-            <div style={{ fontSize: '20px', fontWeight: '800', color: '#991b1b' }}>
-              ₹3,000
-            </div>
-          </div>
-          <div style={{ paddingBottom: '12px', borderBottom: '1px solid #f3f4f6' }}>
-            <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: '600', marginBottom: '4px', textTransform: 'uppercase' }}>
-              Avg Win Rate
-            </div>
-            <div style={{ fontSize: '20px', fontWeight: '800', color: '#059669' }}>
-              58.7%
-            </div>
-          </div>
-          <div style={{ paddingBottom: '12px', borderBottom: '1px solid #f3f4f6' }}>
-            <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: '600', marginBottom: '4px', textTransform: 'uppercase' }}>
-              Total Trades (Today)
-            </div>
-            <div style={{ fontSize: '20px', fontWeight: '800', color: '#1f2937' }}>
-              113
+
+            {createMut.isError && (
+              <div style={{ background: '#fef2f2', color: '#991b1b', padding: '10px 12px', borderRadius: '6px', fontSize: '13px', marginBottom: '14px' }}>
+                {createMut.error?.response?.data?.message || 'Failed to create deployment'}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button className="btn btn-primary"
+                disabled={!form.strategyId || (form.mode === 'LIVE' && !form.brokerAccountId) || createMut.isPending}
+                onClick={() => createMut.mutate({
+                  strategyId: Number(form.strategyId),
+                  brokerAccountId: form.brokerAccountId ? Number(form.brokerAccountId) : null,
+                  mode: form.mode,
+                  capital: form.capital,
+                })}>
+                {createMut.isPending ? 'Creating...' : 'Deploy'}
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Confirm stop modal */}
+      {confirmStop && (
+        <div className="overlay" onClick={() => setConfirmStop(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: '360px' }}>
+            <h2 style={{ margin: '0 0 12px 0', fontSize: '18px', fontWeight: '700', color: '#dc2626' }}>Stop Deployment?</h2>
+            <p style={{ color: '#6b7280', fontSize: '14px', margin: '0 0 20px 0' }}>
+              This will halt <strong>{confirmStop.strategyName || `Deployment #${confirmStop.id}`}</strong> and stop all new signals.
+              Open positions will NOT be closed automatically.
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setConfirmStop(null)}>Cancel</button>
+              <button className="btn btn-danger"
+                disabled={stopMut.isPending}
+                onClick={() => stopMut.mutate(confirmStop.id)}>
+                {stopMut.isPending ? 'Stopping...' : 'Stop Deployment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

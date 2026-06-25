@@ -1,0 +1,3 @@
+ALTER TABLE strategy_signals
+    ADD COLUMN IF NOT EXISTS trail_trigger_pct  DOUBLE PRECISION DEFAULT 0.5,
+    ADD COLUMN IF NOT EXISTS trail_distance_pct DOUBLE PRECISION DEFAULT 0.3;

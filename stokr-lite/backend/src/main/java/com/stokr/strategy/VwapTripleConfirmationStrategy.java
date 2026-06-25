@@ -14,19 +14,19 @@ import java.util.List;
  * Entry logic:
  *   2-candle confirmation: touch candle dips to VWAP, bounce candle closes above it,
  *   entry candle also closes above it (= confirmed hold).
- *   SL sits 0.1% below VWAP (natural invalidation).
- *   Target dynamically computed at 3:1 R:R from actual risk distance.
+ *   SL sits 0.5% below VWAP (room for noise).
+ *   Target dynamically computed at 2:1 R:R from actual risk distance.
  *
  * All conditions (LONG):
- *   1. Time gate: IST 9:20–13:00
- *   2. VWAP slope: current VWAP > VWAP 5 candles ago (rising accumulation)
+ *   1. Time gate: IST 9:45–12:00 (VWAP settled + enough runway for target)
+ *   2. VWAP slope: current VWAP > VWAP 1-min ago AND > VWAP 5-min ago (rising momentum)
  *   3. 2-candle bounce: touch candle in [VWAP-0.3%, VWAP], bounce candle above VWAP,
  *      entry candle also above VWAP (0–0.3% zone)
  *   4. Bullish candle: close > open, body ≥ 60% of range
  *   5. Volume ≥ 1.5× 10-period average (prior candles only)
- *   6. RSI 53–68 (genuine upward momentum, not oversold rebound)
+ *   6. RSI 53–63 (genuine upward momentum, not oversold rebound)
  *   7. Close > previous close
- *   SL: 0.1% below VWAP | Target: entry + 3×(entry − SL) = 3:1 R:R
+ *   SL: 0.5% below VWAP | Target: entry + 2×(entry − SL) = 2:1 R:R
  */
 @Slf4j
 @Component
@@ -51,18 +51,23 @@ public class VwapTripleConfirmationStrategy implements StrategyPlugin {
         BigDecimal vwap  = context.vwap();
         if (vwap == null || vwap.compareTo(BigDecimal.ZERO) == 0) return null;
 
-        // 1. Time gate: IST 9:20–13:00
+        // 1. Time gate: IST 9:45–12:00 (avoid opening VWAP instability + give time for target to hit)
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
         if (istHour != null && istMinute != null) {
             int totalMin = istHour * 60 + istMinute;
-            if (totalMin < 9 * 60 + 20 || totalMin > 13 * 60 + 0) return null;
+            if (totalMin < 9 * 60 + 45 || totalMin > 12 * 60 + 0) return null;
         }
 
-        // 2. VWAP slope: VWAP must be rising (current VWAP > VWAP 5 candles ago)
+        // 2. VWAP slope: current VWAP must be above VWAP 1-min ago AND 5-min ago (rising momentum)
+        BigDecimal prevVwap1 = context.extra("prevVwap1", BigDecimal.class);
         BigDecimal prevVwap5 = context.extra("prevVwap5", BigDecimal.class);
         if (prevVwap5 != null && vwap.compareTo(prevVwap5) <= 0) {
-            log.debug("VWAP Bounce: VWAP not rising ({} <= {})", vwap, prevVwap5);
+            log.debug("VWAP Bounce: VWAP not rising over 5-min ({} <= {})", vwap, prevVwap5);
+            return null;
+        }
+        if (prevVwap1 != null && vwap.compareTo(prevVwap1) <= 0) {
+            log.debug("VWAP Bounce: VWAP not rising in last min ({} <= {})", vwap, prevVwap1);
             return null;
         }
 
@@ -96,21 +101,26 @@ public class VwapTripleConfirmationStrategy implements StrategyPlugin {
         long avgVol = volSum / volLen;
         if (avgVol == 0 || latest.volume() < avgVol * 1.5) return null;
 
-        // 6. RSI 53–68: genuine upward momentum (not neutral or overstretched)
+        // 6. RSI 53–63: genuine upward momentum (not oversold rebound, not overstretched)
         BigDecimal rsi = context.indicators() != null ? context.indicators().get("RSI14") : null;
         if (rsi == null) rsi = context.extra("rsi14", BigDecimal.class);
-        if (rsi == null || rsi.doubleValue() < 53 || rsi.doubleValue() > 68) return null;
+        if (rsi == null || rsi.doubleValue() < 53 || rsi.doubleValue() > 63) return null;
 
         // 7. Momentum: close > previous close
         if (close.compareTo(prev.close()) <= 0) return null;
 
-        // SL: 0.1% below VWAP — natural invalidation level
-        BigDecimal sl = vwap.multiply(BigDecimal.valueOf(0.999)).setScale(2, RoundingMode.HALF_UP);
+        // SL: 0.5% below VWAP — room for intraday noise
+        BigDecimal sl = vwap.multiply(BigDecimal.valueOf(0.995)).setScale(2, RoundingMode.HALF_UP);
         if (sl.compareTo(close) >= 0) return null;
 
-        // Target: 3:1 R:R
+        // Target: 2:1 R:R
         BigDecimal risk   = close.subtract(sl);
-        BigDecimal target = close.add(risk.multiply(BigDecimal.valueOf(3))).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal target = close.add(risk.multiply(BigDecimal.valueOf(2))).setScale(2, RoundingMode.HALF_UP);
+
+        // Trailing stop: proportional to SL distance so it doesn't cut winners before target
+        double slPct = risk.doubleValue() / close.doubleValue() * 100.0;
+        double trailTrigger = Math.max(0.8, slPct * 1.2);   // activate after 1.2× SL distance
+        double trailDistance = Math.max(0.3, slPct * 0.6);  // trail at 0.6× SL below peak
 
         return new Signal(context.symbol(), Signal.Side.BUY, close, sl, target,
                 0.85,
@@ -119,6 +129,7 @@ public class VwapTripleConfirmationStrategy implements StrategyPlugin {
                 + " sl=" + sl
                 + " tgt=" + target
                 + " rsi=" + rsi.setScale(1, RoundingMode.HALF_UP)
-                + " vol=" + String.format("%.1fx", (double) latest.volume() / avgVol));
+                + " vol=" + String.format("%.1fx", (double) latest.volume() / avgVol),
+                trailTrigger, trailDistance);
     }
 }
