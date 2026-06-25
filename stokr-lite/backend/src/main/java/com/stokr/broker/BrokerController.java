@@ -37,12 +37,6 @@ public class BrokerController {
         return ResponseEntity.ok(Map.of("authUrl", brokerService.getAuthUrl(brokerName)));
     }
 
-    /** Frontend calls /connect — same as auth-url, returns the Kite login URL */
-    @GetMapping("/{brokerName}/connect")
-    public ResponseEntity<Map<String, String>> connect(@PathVariable String brokerName) {
-        return ResponseEntity.ok(Map.of("authUrl", brokerService.getAuthUrl(brokerName.toUpperCase())));
-    }
-
     /**
      * OAuth callback from Zerodha after login.
      * Zerodha redirects to this URL with ?request_token=XXX&status=success
