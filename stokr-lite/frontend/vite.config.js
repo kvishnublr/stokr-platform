@@ -10,8 +10,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
-        timeout: 300000,        // 5 min — backtest endpoints can be slow
-        proxyTimeout: 300000,
+        timeout: 900000,        // 15 min — 100-symbol backtest takes ~8 min
+        proxyTimeout: 900000,
       },
     },
   },
