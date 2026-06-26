@@ -533,7 +533,8 @@ export default function Signals() {
             </div>
             <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '12px', color: 'white', backdropFilter: 'blur(10px)' }}>
               <div style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>MAX DRAWDOWN</div>
-              <div style={{ fontSize: '18px', fontWeight: 800 }}>{backtestResults.maxDrawdown?.toFixed(2) || 0}%</div>
+              <div style={{ fontSize: '18px', fontWeight: 800 }}>₹{backtestResults.maxDrawdown?.toFixed(0) || 0}</div>
+              <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>({backtestResults.maxDrawdown ? (backtestResults.maxDrawdown / 250).toFixed(1) : 0}%)</div>
             </div>
           </div>
         )}

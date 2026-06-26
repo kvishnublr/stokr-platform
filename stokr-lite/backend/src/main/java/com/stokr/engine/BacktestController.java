@@ -32,14 +32,10 @@ public class BacktestController {
     private final PairsTradingService pairsTradingService;
 
     private static final Map<String, String> STRATEGY_PLUGIN_MAP = new LinkedHashMap<>(Map.ofEntries(
-        Map.entry("ORB_V",         "ORB_V"),
-        Map.entry("ORB",           "ORB_V"),
         Map.entry("MORNING_SURGE", "MORNING_SURGE"),
         Map.entry("SURGE",         "MORNING_SURGE"),
         Map.entry("MORNING_SURGE_REVERSAL", "MORNING_SURGE_REVERSAL"),
         Map.entry("SURGE_REV",     "MORNING_SURGE_REVERSAL"),
-        Map.entry("VWAP_TRIPLE",   "VWAP_TRIPLE"),
-        Map.entry("VWAP",          "VWAP_TRIPLE"),
         Map.entry("TRADE_BOOK_IMBALANCE", "TRADE_BOOK_IMBALANCE"),
         Map.entry("TBI",           "TRADE_BOOK_IMBALANCE"),
         Map.entry("PRE_OPEN",      "PRE_OPEN"),
@@ -174,7 +170,7 @@ public class BacktestController {
             @RequestParam(required = false) String symbols,
             @RequestParam(defaultValue = "1min") String timeframe,
             @RequestParam(defaultValue = "NIFTY_100") String universe,
-            @RequestParam(defaultValue = "40") int brokerage) {
+            @RequestParam(defaultValue = "0") int brokerage) {
 
         log.info("Running advanced backtest: strategy={}, universe={}, dateStart={}, dateEnd={}, timeframe={}",
                 strategy, universe, dateStart, dateEnd, timeframe);
@@ -698,6 +694,22 @@ public class BacktestController {
         );
     }
 
+    static double zerodhaIntradayBrokerage(double capital) {
+        double brkgPerOrder = Math.min(20, 0.0003 * capital);
+        double txNse = 0.0000307 * capital;
+        double sebi = 10.0 / 10000000 * capital;
+        double stamp = 0.00003 * capital;
+        double sttSell = 0.00025 * capital;
+
+        double buyFees = brkgPerOrder + txNse + sebi + stamp;
+        double buyGst = 0.18 * (brkgPerOrder + txNse + sebi);
+
+        double sellFees = brkgPerOrder + sttSell + txNse + sebi;
+        double sellGst = 0.18 * (brkgPerOrder + txNse + sebi);
+
+        return Math.round((buyFees + buyGst + sellFees + sellGst) * 100.0) / 100.0;
+    }
+
     private static class SimulatedTrade {
         String symbol;
         Signal.Side side;
@@ -757,7 +769,11 @@ public class BacktestController {
         }
 
         void deductBrokerage() {
-            this.brokerage = perTradeCost;
+            if (perTradeCost > 0) {
+                this.brokerage = perTradeCost;
+            } else {
+                this.brokerage = zerodhaIntradayBrokerage(CAPITAL);
+            }
         }
 
         Map<String, Object> toMap() {

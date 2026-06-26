@@ -18,13 +18,11 @@ async function ensureAuthenticated() {
 }
 
 const STRATEGIES = [
-  { value: 'ORB',           label: 'ORB Breakout',           desc: 'Opening-range breakout + trailing stop (9:15–9:30 range)' },
-  { value: 'VWAP',          label: 'VWAP Triple',            desc: 'Pullback to VWAP + RSI confirmation + volume surge' },
   { value: 'MORNING_SURGE', label: 'Morning Surge',          desc: 'High-volume ORB in first hour (9:30–10:30)' },
   { value: 'SURGE_REV',     label: 'Morning Surge Reversal', desc: 'Counter-trend fade after morning surge exhaustion' },
   { value: 'TBI',           label: 'Trade Book Imbalance',   desc: 'Buy/sell order-book imbalance with volume confirmation' },
   { value: 'PREOPEN',       label: 'Pre-Open Trade Book',    desc: 'Pre-open session order-book imbalance signal' },
-  { value: 'VWAP_REV',      label: 'VWAP Reversion',        desc: 'Mean reversion when price deviates >0.8% from VWAP with volume confirmation. 2:1 R:R.' },
+  { value: 'VWAP_REV',      label: 'VWAP Reversion',        desc: 'Mean reversion when price deviates >1.0% from VWAP. 61.7% win rate, PF 1.85.' },
 ];
 
 const ALL_PAIRS = [
@@ -56,7 +54,7 @@ export default function AdvancedBacktest() {
 
   // Strategy mode state
   const [universes, setUniverses]   = useState([]);
-  const [strategy, setStrategy]     = useState('ORB');
+  const [strategy, setStrategy]     = useState('VWAP_REV');
   const [universe, setUniverse]     = useState('NIFTY_100');
   const [chartinkInfo, setChartinkInfo] = useState(null);
   const [brokerage, setBrokerage]   = useState(40);

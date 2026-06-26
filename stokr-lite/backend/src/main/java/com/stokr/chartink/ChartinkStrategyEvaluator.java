@@ -169,6 +169,7 @@ public class ChartinkStrategyEvaluator {
         if (payload.atr14() != null) indicators.put("ATR14", payload.atr14());
 
         // Compute missing indicators from candle data when Chartink doesn't provide them
+        List<IndicatorUtils.Indicators> allInd = null;
         if (candles.size() >= 20) {
             List<CandleData> cdList = candles.stream().map(c -> {
                 CandleData cd = new CandleData();
@@ -177,7 +178,8 @@ public class ChartinkStrategyEvaluator {
                 return cd;
             }).collect(Collectors.toList());
 
-            IndicatorUtils.Indicators ind = IndicatorUtils.computeAll(cdList).get(candles.size() - 1);
+            allInd = IndicatorUtils.computeAll(cdList);
+            IndicatorUtils.Indicators ind = allInd.get(candles.size() - 1);
             if (vwap == null || vwap.compareTo(BigDecimal.ZERO) <= 0) {
                 vwap = ind.vwap();
             }
@@ -225,6 +227,14 @@ public class ChartinkStrategyEvaluator {
             java.time.LocalTime t = payload.timestamp().atZone(java.time.ZoneId.of("Asia/Kolkata")).toLocalTime();
             extras.put("istHour",   t.getHour());
             extras.put("istMinute", t.getMinute());
+        }
+
+        // VWAP slope: pass historical VWAP values for multi-candle rising check
+        if (allInd != null && allInd.size() >= 16) {
+            int last = allInd.size() - 1;
+            extras.put("prevVwap1", allInd.get(last - 1).vwap());
+            extras.put("prevVwap3", allInd.get(last - 3).vwap());
+            extras.put("prevVwap5", allInd.get(last - 5).vwap());
         }
 
         return new MarketContext(

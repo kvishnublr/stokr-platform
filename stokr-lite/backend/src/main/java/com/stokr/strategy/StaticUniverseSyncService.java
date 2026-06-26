@@ -1,5 +1,6 @@
 package com.stokr.strategy;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -16,6 +17,7 @@ public class StaticUniverseSyncService implements ApplicationRunner {
 
     private final UniverseGroupRepository groupRepository;
     private final UniverseSymbolRepository symbolRepository;
+    private final EntityManager entityManager;
 
     private static final Map<String, List<String>> STATIC_UNIVERSES = new LinkedHashMap<>();
 
@@ -29,13 +31,20 @@ public class StaticUniverseSyncService implements ApplicationRunner {
             "SBILIFE","TATACONSUM","UPL","MCDOWELL","HINDALCO","TATASTEEL"
         ));
         STATIC_UNIVERSES.put("NIFTY_100", List.of(
+            // Nifty 50
             "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","SBIN","BHARTIARTL","ITC","KOTAKBANK","LT",
             "HINDUNILVR","AXISBANK","MARUTI","BAJFINANCE","ASIANPAINT","SUNPHARMA","TITAN","ULTRACEMCO",
             "WIPRO","HCLTECH","TATAMOTORS","ONGC","NTPC","POWERGRID","ADANIPORTS","JSWSTEEL","TATASTEEL",
             "COALINDIA","M&M","TECHM","ADANIENT","GRASIM","BAJAJFINSV","CIPLA","NESTLEIND","DRREDDY",
             "DIVISLAB","APOLLOHOSP","EICHERMOT","BRITANNIA","HEROMOTOCO","BPCL","INDUSINDBK","HDFCLIFE",
-            "SBILIFE","TATACONSUM","UPL","MCDOWELL","HINDALCO","PIDILITIND","SIEMENS","DABUR","GODREJCP",
-            "HAVELLS","BERGEPAINT","DMART","TRENT","IRCTC","ZOMATO","POLYCAB","HAL","LICI","IOB","CANBK"
+            "SBILIFE","TATACONSUM","UPL","MCDOWELL","HINDALCO","BAJAJ-AUTO",
+            // Nifty Next 50
+            "PIDILITIND","SIEMENS","DABUR","GODREJCP","HAVELLS","BERGEPAINT","DMART","TRENT","IRCTC",
+            "ZOMATO","POLYCAB","HAL","LICI","IOB","CANBK",
+            "ABB","AMBUJACEM","AUROPHARMA","BANKBARODA","BEL","BOSCHLTD","CHOLAFIN","COLPAL","DLF",
+            "GAIL","GODREJPROP","ICICIPRULI","INDHOTEL","IOC","JIOFIN","LTIMINDTREE","LUPIN","MAXHEALTH",
+            "NAUKRI","NHPC","OFSS","PAGEIND","PFC","RECLTD","SHRIRAMFIN","SRF","TATAELXSI","TATAPOWER",
+            "TORNTPHARM","TVSMOTOR","VEDL","ZYDUSLIFE","ATGL","TIINDIA","ADANIGREEN"
         ));
         STATIC_UNIVERSES.put("NIFTY_200", List.of(
             "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","SBIN","BHARTIARTL","ITC","KOTAKBANK","LT",
@@ -118,6 +127,7 @@ public class StaticUniverseSyncService implements ApplicationRunner {
                 });
 
         symbolRepository.deleteByGroupId(group.getId());
+        entityManager.clear();
         for (String sym : symbols) {
             UniverseSymbol s = UniverseSymbol.builder()
                     .groupId(group.getId())

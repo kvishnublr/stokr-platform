@@ -29,11 +29,18 @@ function AnimatedCounter({ value, duration = 1200 }) {
 export default function AdminDashboard() {
   const { data: dashboard } = useQuery({ queryKey: ['admin-dashboard'], queryFn: () => client.get('/admin/dashboard').then((r) => r.data) });
   const { data: killSwitch } = useQuery({ queryKey: ['kill-switch'], queryFn: () => client.get('/admin/kill-switch').then((r) => r.data) });
+  const { data: marketStatus } = useQuery({ queryKey: ['market-status'], queryFn: () => client.get('/market/status').then((r) => r.data) });
+  const { data: recentErrors } = useQuery({ queryKey: ['admin-errors-recent'], queryFn: () => client.get('/admin/errors', { params: { page: 0, size: 5 } }).then((r) => r.data?.content || r.data) });
   const { data: chartinkData, isLoading: chartinkLoading } = useQuery({
     queryKey: ['chartink-live-data'],
     queryFn: () => client.get('/admin/chartink/live-data').then((r) => r.data),
-    refetchInterval: 5000 // Refresh every 5 seconds
+    refetchInterval: 5000
   });
+
+  const userCount = dashboard?.userCount ?? 0;
+  const activeDeployments = dashboard?.activeDeployments ?? 0;
+  const orderStats = dashboard?.orderStats || {};
+  const brokerStats = dashboard?.brokerStats || {};
 
   return (
     <div>
@@ -66,10 +73,37 @@ export default function AdminDashboard() {
 
       {/* Stats Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '18px', marginBottom: '32px' }}>
-        <StatBox title="Total Users" value={dashboard?.totalUsers || 0} icon="👥" color="#4f46e5" gradient="linear-gradient(90deg, #6366f1, #a78bfa)" />
-        <StatBox title="Active Deployments" value={dashboard?.activeDeployments || 0} icon="🚀" color="#059669" gradient="linear-gradient(90deg, #10b981, #34d399)" />
-        <StatBox title="Orders Today" value={dashboard?.ordersToday || 0} icon="📋" color="#2563eb" gradient="linear-gradient(90deg, #3b82f6, #60a5fa)" />
-        <StatBox title="Pending Orders" value={dashboard?.pendingOrders || 0} icon="⏳" color="#d97706" gradient="linear-gradient(90deg, #f59e0b, #fbbf24)" />
+        <StatBox title="Total Users" value={userCount} icon="👥" color="#4f46e5" gradient="linear-gradient(90deg, #6366f1, #a78bfa)" />
+        <StatBox title="Active Deployments" value={activeDeployments} icon="🚀" color="#059669" gradient="linear-gradient(90deg, #10b981, #34d399)" />
+        <StatBox title="Orders Today" value={orderStats?.total || 0} icon="📋" color="#2563eb" gradient="linear-gradient(90deg, #3b82f6, #60a5fa)" />
+        <StatBox title="Pending Orders" value={orderStats?.pending || 0} icon="⏳" color="#d97706" gradient="linear-gradient(90deg, #f59e0b, #fbbf24)" />
+      </div>
+
+      {/* Orders + Broker sub-stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px', marginBottom: '32px' }}>
+        <div className="card-crystal" style={{ padding: '18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(37,99,235,0.15), rgba(96,165,250,0.1))' }}>📋</div>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>Orders Breakdown</h3>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+            <MiniStat label="Total" value={orderStats?.total || 0} color="#3b82f6" />
+            <MiniStat label="Pending" value={orderStats?.pending || 0} color="#f59e0b" />
+            <MiniStat label="Complete" value={orderStats?.complete || 0} color="#10b981" />
+            <MiniStat label="Rejected" value={orderStats?.rejected || 0} color="#ef4444" />
+          </div>
+        </div>
+        <div className="card-crystal" style={{ padding: '18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(110,231,183,0.1))' }}>💓</div>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>Broker Health</h3>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+            <MiniStat label="Total Active" value={brokerStats?.totalActive || 0} color="#64748b" />
+            <MiniStat label="Healthy" value={brokerStats?.healthy || 0} color="#10b981" />
+            <MiniStat label="Token Expired" value={brokerStats?.tokenExpired || 0} color="#ef4444" />
+          </div>
+        </div>
       </div>
 
       {/* Quick Actions */}
@@ -85,6 +119,52 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Market Status + Recent Errors */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px', marginBottom: '32px' }}>
+        <div className="card-crystal" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(251,191,36,0.1))' }}>🏛️</div>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>Market Status</h3>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px', borderRadius: '12px', background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.5))', border: '2px solid rgba(255,255,255,0.6)' }}>
+            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: marketStatus?.isOpen ? '#10b981' : '#ef4444', animation: marketStatus?.isOpen ? 'pulse-dot 1.5s ease-in-out infinite' : 'none' }} />
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{marketStatus?.isOpen ? 'Market is Open' : 'Market is Closed'}</div>
+              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>09:15 - 15:30 IST</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="card-crystal" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', background: 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(248,113,113,0.1))' }}>🐛</div>
+              <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>Recent Errors</h3>
+            </div>
+            <Link to="/admin/errors" style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', padding: '4px 10px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', color: '#6366f1', textDecoration: 'none' }}>View All</Link>
+          </div>
+          {!recentErrors || recentErrors.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '13px' }}>
+              <div style={{ fontSize: '24px', marginBottom: '6px' }}>✅</div>
+              No recent errors
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {recentErrors.slice(0, 5).map((e) => (
+                <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '10px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(148,163,184,0.1)' }}>
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: e.severity === 'CRITICAL' ? '#ef4444' : e.severity === 'ERROR' ? '#f59e0b' : '#94a3b8' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.message}</div>
+                    <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '1px' }}>{e.errorType} · {new Date(e.createdAt).toLocaleTimeString()}</div>
+                  </div>
+                  <span style={{ fontSize: '9px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', flexShrink: 0, background: e.severity === 'CRITICAL' ? '#fef2f2' : e.severity === 'ERROR' ? '#fffbeb' : '#f8fafc', color: e.severity === 'CRITICAL' ? '#dc2626' : e.severity === 'ERROR' ? '#d97706' : '#64748b' }}>{e.severity}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Chartink Live Feed */}
       {chartinkData && (
         <div style={{ marginBottom: '32px' }}>
@@ -96,85 +176,87 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Overall Stats */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
-            <ChartinkStatBox title="Total Hits (30m)" value={chartinkData.overall.totalSignals} color="#f59e0b" />
-            <ChartinkStatBox title="Executed" value={chartinkData.overall.executed} color="#10b981" />
-            <ChartinkStatBox title="Rejected" value={chartinkData.overall.rejected} color="#ef4444" />
-            <ChartinkStatBox title="Execution Rate" value={chartinkData.overall.executionRate} color="#3b82f6" />
+            <ChartinkStatBox title="Total Hits (30m)" value={chartinkData.overall?.totalSignals} color="#f59e0b" />
+            <ChartinkStatBox title="Executed" value={chartinkData.overall?.executed} color="#10b981" />
+            <ChartinkStatBox title="Rejected" value={chartinkData.overall?.rejected} color="#ef4444" />
+            <ChartinkStatBox title="Execution Rate" value={chartinkData.overall?.executionRate} color="#3b82f6" />
           </div>
 
-          {/* Top Scanners Performance */}
-          <div style={{ marginBottom: '20px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>Top Scanners (Accuracy)</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
-              {chartinkData.topScanners.map((scanner, idx) => (
-                <div key={idx} className="card-crystal" style={{ padding: '12px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>{scanner.scanner}</p>
-                  <p style={{ fontSize: '18px', fontWeight: 800, color: '#4f46e5', marginBottom: '4px' }}>{scanner.hits}</p>
-                  <p style={{ fontSize: '11px', color: '#10b981', fontWeight: 600 }}>✓ {scanner.accuracy}</p>
-                </div>
-              ))}
+          {chartinkData.topScanners && (
+            <div style={{ marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>Top Scanners (Accuracy)</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
+                {chartinkData.topScanners.map((scanner, idx) => (
+                  <div key={idx} className="card-crystal" style={{ padding: '12px', textAlign: 'center' }}>
+                    <p style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>{scanner.scanner}</p>
+                    <p style={{ fontSize: '18px', fontWeight: 800, color: '#4f46e5', marginBottom: '4px' }}>{scanner.hits}</p>
+                    <p style={{ fontSize: '11px', color: '#10b981', fontWeight: 600 }}>✓ {scanner.accuracy}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Scanner Details Table */}
-          <div style={{ marginBottom: '20px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>Scanner Breakdown</h3>
-            <div style={{ overflowX: 'auto', background: '#fff', borderRadius: '14px', padding: '14px' }}>
-              <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <th style={{ textAlign: 'left', padding: '8px', color: '#64748b', fontWeight: 600 }}>Scanner</th>
-                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Hits</th>
-                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Executed</th>
-                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Rejected</th>
-                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Target Hit</th>
-                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Accuracy</th>
-                    <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Hit Rate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(chartinkData.scanners).slice(0, 10).map(([scanner, metrics], idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#fafbfc' : '#fff' }}>
-                      <td style={{ padding: '8px', color: '#0f172a', fontWeight: 600 }}>{scanner}</td>
-                      <td style={{ textAlign: 'center', padding: '8px', color: '#0f172a' }}>{metrics.totalHits}</td>
-                      <td style={{ textAlign: 'center', padding: '8px', color: '#10b981', fontWeight: 600 }}>{metrics.executed}</td>
-                      <td style={{ textAlign: 'center', padding: '8px', color: '#ef4444', fontWeight: 600 }}>{metrics.rejected}</td>
-                      <td style={{ textAlign: 'center', padding: '8px', color: '#3b82f6', fontWeight: 600 }}>{metrics.targetHit}</td>
-                      <td style={{ textAlign: 'center', padding: '8px', color: '#6366f1', fontWeight: 600 }}>{metrics.accuracy}</td>
-                      <td style={{ textAlign: 'center', padding: '8px', color: '#8b5cf6', fontWeight: 600 }}>{metrics.hitRate}</td>
+          {chartinkData.scanners && (
+            <div style={{ marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>Scanner Breakdown</h3>
+              <div style={{ overflowX: 'auto', background: '#fff', borderRadius: '14px', padding: '14px' }}>
+                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <th style={{ textAlign: 'left', padding: '8px', color: '#64748b', fontWeight: 600 }}>Scanner</th>
+                      <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Hits</th>
+                      <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Executed</th>
+                      <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Rejected</th>
+                      <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Target Hit</th>
+                      <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Accuracy</th>
+                      <th style={{ textAlign: 'center', padding: '8px', color: '#64748b', fontWeight: 600 }}>Hit Rate</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {Object.entries(chartinkData.scanners).slice(0, 10).map(([scanner, metrics], idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#fafbfc' : '#fff' }}>
+                        <td style={{ padding: '8px', color: '#0f172a', fontWeight: 600 }}>{scanner}</td>
+                        <td style={{ textAlign: 'center', padding: '8px', color: '#0f172a' }}>{metrics.totalHits}</td>
+                        <td style={{ textAlign: 'center', padding: '8px', color: '#10b981', fontWeight: 600 }}>{metrics.executed}</td>
+                        <td style={{ textAlign: 'center', padding: '8px', color: '#ef4444', fontWeight: 600 }}>{metrics.rejected}</td>
+                        <td style={{ textAlign: 'center', padding: '8px', color: '#3b82f6', fontWeight: 600 }}>{metrics.targetHit}</td>
+                        <td style={{ textAlign: 'center', padding: '8px', color: '#6366f1', fontWeight: 600 }}>{metrics.accuracy}</td>
+                        <td style={{ textAlign: 'center', padding: '8px', color: '#8b5cf6', fontWeight: 600 }}>{metrics.hitRate}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Recent Signal Stream */}
-          <div>
-            <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>Recent Signal Stream</h3>
-            <div style={{ maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {chartinkData.recentSignals.map((signal, idx) => (
-                <div key={idx} className="card-crystal" style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '2px' }}>
-                      <span style={{ color: signal.side === 'BUY' ? '#10b981' : '#ef4444', fontWeight: 800 }}>● {signal.side}</span>
-                      {' '}{signal.symbol}{' '}
-                      <span style={{ color: '#64748b', fontSize: '10px' }}>@{signal.scanner}</span>
-                    </p>
-                    <p style={{ fontSize: '10px', color: '#94a3b8' }}>{signal.reason}</p>
-                  </div>
-                  <div style={{ textAlign: 'right', marginLeft: '12px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: getStatusColor(signal.status), marginBottom: '4px' }}>
-                      {signal.status}
+          {chartinkData.recentSignals && (
+            <div>
+              <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '12px' }}>Recent Signal Stream</h3>
+              <div style={{ maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {chartinkData.recentSignals.map((signal, idx) => (
+                  <div key={idx} className="card-crystal" style={{ padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '2px' }}>
+                        <span style={{ color: signal.side === 'BUY' ? '#10b981' : '#ef4444', fontWeight: 800 }}>● {signal.side}</span>
+                        {' '}{signal.symbol}{' '}
+                        <span style={{ color: '#64748b', fontSize: '10px' }}>@{signal.scanner}</span>
+                      </p>
+                      <p style={{ fontSize: '10px', color: '#94a3b8' }}>{signal.reason}</p>
                     </div>
-                    <div style={{ fontSize: '10px', color: '#94a3b8' }}>{new Date(signal.createdAt).toLocaleTimeString()}</div>
+                    <div style={{ textAlign: 'right', marginLeft: '12px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 600, color: getStatusColor(signal.status), marginBottom: '4px' }}>
+                        {signal.status}
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#94a3b8' }}>{new Date(signal.createdAt).toLocaleTimeString()}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -198,22 +280,27 @@ function ChartinkStatBox({ title, value, color }) {
   return (
     <div className="card-crystal animate-fade-in-up" style={{ padding: '12px', textAlign: 'center', borderTop: `3px solid ${color}` }}>
       <p style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '6px', textTransform: 'uppercase' }}>{title}</p>
-      <p style={{ fontSize: '24px', fontWeight: 900, color: color }}>{value}</p>
+      <p style={{ fontSize: '24px', fontWeight: 900, color: color }}>{value ?? '—'}</p>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, color }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '10px', borderRadius: '10px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(148,163,184,0.1)' }}>
+      <div style={{ fontSize: '20px', fontWeight: 900, color }}>{value}</div>
+      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#94a3b8', marginTop: '4px' }}>{label}</div>
     </div>
   );
 }
 
 function getStatusColor(status) {
   switch (status) {
-    case 'EXECUTED':
-      return '#10b981';
-    case 'REJECTED':
-      return '#ef4444';
+    case 'EXECUTED': return '#10b981';
+    case 'REJECTED': return '#ef4444';
     case 'GENERATED':
-    case 'PENDING':
-      return '#f59e0b';
-    default:
-      return '#64748b';
+    case 'PENDING': return '#f59e0b';
+    default: return '#64748b';
   }
 }
 

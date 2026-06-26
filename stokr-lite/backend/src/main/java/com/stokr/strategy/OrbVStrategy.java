@@ -43,15 +43,15 @@ public class OrbVStrategy implements StrategyPlugin {
         if (orbHigh == null || orbLow == null || orbRange == null) return null;
         if (orbRange.compareTo(BigDecimal.valueOf(0.01)) < 0) return null;
 
-        // Time gate: 9:30–13:00 IST only
+        // Time gate: 9:30–10:30 IST only (first hour breakouts are strongest)
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
         if (istHour != null && istMinute != null) {
             int min = istHour * 60 + istMinute;
-            if (min < 9 * 60 + 30 || min > 13 * 60) return null;
+            if (min < 9 * 60 + 30 || min > 10 * 60 + 30) return null;
         }
 
-        // Chartink in-house scan filter — if set to false, skip this symbol today
+        // Chartink in-house scan filter
         Boolean chartinkOk = context.extra("chartinkOk", Boolean.class);
         if (Boolean.FALSE.equals(chartinkOk)) return null;
 
@@ -60,49 +60,76 @@ public class OrbVStrategy implements StrategyPlugin {
         if (latest == null || prev == null) return null;
 
         BigDecimal close = latest.close();
-
-        // 1. ORB breakout: close above range high
-        if (close.compareTo(orbHigh) <= 0) return null;
-
-        // 2. Don't chase: entry must be within 1.5% of ORB high
-        if (close.compareTo(orbHigh.multiply(BigDecimal.valueOf(1.015))) > 0) return null;
-
-        // 3. Trend day: close > day open
         BigDecimal dayOpen = context.extra("dayOpen", BigDecimal.class);
-        if (dayOpen != null && close.compareTo(dayOpen) <= 0) return null;
 
-        // 4. Breakout candle is bullish
-        if (close.compareTo(latest.open()) <= 0) return null;
+        // Meaningful ORB range: at least 0.5% of orbHigh
+        if (orbRange.divide(orbHigh, 6, RoundingMode.HALF_UP).compareTo(BigDecimal.valueOf(0.005)) < 0) return null;
 
-        // 5. Volume ≥ 1.5× 10-period average
+        boolean isLong = close.compareTo(orbHigh) > 0;
+        boolean isShort = close.compareTo(orbLow) < 0;
+        if (!isLong && !isShort) return null;
+
+        // Don't chase: entry within 0.8% of the range boundary
+        if (isLong && close.compareTo(orbHigh.multiply(BigDecimal.valueOf(1.008))) > 0) return null;
+        if (isShort && close.compareTo(orbLow.multiply(BigDecimal.valueOf(0.992))) < 0) return null;
+
+        // Trend alignment: long needs price above open, short below open
+        if (isLong && dayOpen != null && close.compareTo(dayOpen) <= 0) return null;
+        if (isShort && dayOpen != null && close.compareTo(dayOpen) >= 0) return null;
+
+        // Candle direction must match breakout direction
+        if (isLong && close.compareTo(latest.open()) <= 0) return null;
+        if (isShort && close.compareTo(latest.open()) >= 0) return null;
+
+        // Strong body: at least 70% of range
+        BigDecimal candleRange = latest.high().subtract(latest.low());
+        double bodyPct = 0;
+        if (candleRange.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal body = close.subtract(latest.open()).abs();
+            bodyPct = body.divide(candleRange, 4, RoundingMode.HALF_UP).doubleValue();
+        }
+        if (bodyPct < 0.70) return null;
+
+        // Volume ≥ 3× 10-period average (prior candles only)
         long volSum = 0;
-        int volLen = Math.min(10, n);
-        for (int k = n - volLen; k < n; k++) volSum += candles.get(k).volume();
+        int volLen = Math.min(10, n - 1);
+        for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
         long avgVol = volLen > 0 ? volSum / volLen : 1;
-        if (avgVol == 0 || latest.volume() < avgVol * 1.5) return null;
+        if (avgVol == 0 || latest.volume() < avgVol * 3.0) return null;
 
-        // 6. First breakout only: previous candle was still below/at ORB high
-        if (prev.close().compareTo(orbHigh) > 0) return null;
+        // First breakout only: previous candle still inside range
+        boolean firstBreakout = isLong ? prev.close().compareTo(orbHigh) <= 0 : prev.close().compareTo(orbLow) >= 0;
+        if (!firstBreakout) return null;
 
-        // SL: just below ORB low (structural)
-        BigDecimal sl = orbLow.multiply(BigDecimal.valueOf(0.999)).setScale(2, RoundingMode.HALF_UP);
-
-        // Target: ORB extension = orbHigh + 1× orbRange
-        BigDecimal target = orbHigh.add(orbRange).setScale(2, RoundingMode.HALF_UP);
+        // SL: 0.5% from entry
+        BigDecimal sl, target;
+        if (isLong) {
+            sl = close.multiply(BigDecimal.valueOf(0.995)).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal risk = close.subtract(sl);
+            target = close.add(risk.multiply(BigDecimal.valueOf(2.0))).setScale(2, RoundingMode.HALF_UP);
+        } else {
+            sl = close.multiply(BigDecimal.valueOf(1.005)).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal risk = sl.subtract(close);
+            target = close.subtract(risk.multiply(BigDecimal.valueOf(2.0))).setScale(2, RoundingMode.HALF_UP);
+        }
 
         if (target.compareTo(close) <= 0 || sl.compareTo(close) >= 0) return null;
 
-        double rrRatio = target.subtract(close).doubleValue() / close.subtract(sl).doubleValue();
-        if (rrRatio < 0.5) return null;
+        double rrRatio = isLong
+            ? target.subtract(close).doubleValue() / close.subtract(sl).doubleValue()
+            : close.subtract(target).doubleValue() / sl.subtract(close).doubleValue();
+        if (rrRatio < 1.0) return null;
 
+        Signal.Side side = isLong ? Signal.Side.BUY : Signal.Side.SELL;
         return new Signal(
-            context.symbol(), Signal.Side.BUY, close, sl, target,
+            context.symbol(), side, close, sl, target,
             0.78,
-            "ORB @" + close.setScale(2, RoundingMode.HALF_UP)
+            (isLong ? "ORB Long" : "ORB Short") + " @" + close.setScale(2, RoundingMode.HALF_UP)
                 + " orb=[" + orbLow.setScale(2, RoundingMode.HALF_UP)
                 + "-" + orbHigh.setScale(2, RoundingMode.HALF_UP) + "]"
                 + " tgt=" + target
                 + " rr=" + String.format("%.1f", rrRatio)
-                + " vol=" + String.format("%.1fx", (double) latest.volume() / avgVol));
+                + " vol=" + String.format("%.1fx", (double) latest.volume() / avgVol),
+            1.0, 0.5);
     }
 }

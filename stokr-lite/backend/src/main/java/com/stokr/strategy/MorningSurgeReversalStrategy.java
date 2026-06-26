@@ -14,7 +14,7 @@ import java.util.List;
  * Detects failed breakouts and bearish reversals after the morning surge:
  *   - Price initially broke above ORB high but reversed back below it (failed breakout)
  *   - OR: price breaks below ORB low with strong volume (breakdown)
- *   - Requires bearish candle with ≥ 60% body, volume ≥ 2× average, time 9:30–10:30
+ *   - Requires bearish candle with ≥ 70% body, volume ≥ 2.5× average, time 9:30–10:30
  *
  * Target: ORB low − 1.5× orbRange | SL: above ORB high | Min R:R: 1:1
  */
@@ -65,22 +65,22 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         // Bearish candle: close < open
         if (close.compareTo(latest.open()) >= 0) return null;
 
-        // Strong body ≥ 50% of range (decisive rejection)
+        // Strong body ≥ 70% of range (decisive rejection)
         BigDecimal range = latest.high().subtract(latest.low());
         if (range.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal bodyPct = latest.open().subtract(close)
                 .divide(range, 4, RoundingMode.HALF_UP);
-            if (bodyPct.doubleValue() < 0.50) return null;
+            if (bodyPct.doubleValue() < 0.70) return null;
         }
 
-        // Volume ≥ 2× 10-period average (strong conviction sell-off)
+        // Volume ≥ 2× 10-period average (prior candles only, not latest)
         long volSum = 0;
-        int volLen = Math.min(10, n);
-        for (int k = n - volLen; k < n; k++) volSum += candles.get(k).volume();
+        int volLen = Math.min(10, n - 1);
+        for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
         long avgVol = volLen > 0 ? volSum / volLen : 1;
-        if (avgVol == 0 || latest.volume() < avgVol * 2) return null;
+        if (avgVol == 0 || latest.volume() < avgVol * 2.5) return null;
 
-        // SL: above ORB high
+        // SL: above ORB high (structural)
         BigDecimal sl = orbHigh.multiply(BigDecimal.valueOf(1.001)).setScale(2, RoundingMode.HALF_UP);
         // Target: orbLow − 1.5× orbRange
         BigDecimal target = orbLow.subtract(orbRange.multiply(BigDecimal.valueOf(1.5)))
@@ -88,8 +88,16 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
 
         if (target.compareTo(close) >= 0 || sl.compareTo(close) <= 0) return null;
 
-        double rrRatio = sl.subtract(close).doubleValue() / close.subtract(target).doubleValue();
+        // R:R = reward / risk — must be > 1.0 (good trades)
+        double risk = sl.subtract(close).doubleValue();
+        double reward = close.subtract(target).doubleValue();
+        double rrRatio = risk > 0 ? reward / risk : 0;
         if (rrRatio < 1.0) return null;
+
+        // Trailing stop proportional to SL distance
+        double pctDist = risk / close.doubleValue() * 100.0;
+        double trailTrigger = Math.max(0.6, pctDist * 1.2);
+        double trailDistance = Math.max(0.3, pctDist * 0.6);
 
         String label = failedBreakout ? "FAILED_BREAKOUT" : "BREAKDOWN";
         return new Signal(
@@ -100,6 +108,7 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                 + "-" + orbHigh.setScale(2, RoundingMode.HALF_UP) + "]"
                 + " tgt=" + target
                 + " rr=" + String.format("%.1f", rrRatio)
-                + " vol=" + String.format("%.1fx", (double) latest.volume() / avgVol));
+                + " vol=" + String.format("%.1fx", (double) latest.volume() / avgVol),
+            trailTrigger, trailDistance);
     }
 }

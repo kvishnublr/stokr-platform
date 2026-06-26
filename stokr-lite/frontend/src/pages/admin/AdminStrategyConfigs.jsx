@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import client from '../../api/client';
 
@@ -81,7 +81,12 @@ export default function AdminStrategyConfigs() {
               <StatusBadge active={c.liveEnabled} label="Live" activeColor="emerald" />
               <StatusBadge active={c.paperEnabled} label="Paper" activeColor="sky" />
               <StatusBadge active={c.forceFixedQty} label="Fixed Qty" activeColor="indigo" />
-              <StatusBadge active={c.enabled} label="Enabled" activeColor="violet" />
+              <button onClick={() => updateMutation.mutate({ strategyId: c.strategyId, body: { enabled: !c.enabled } })}
+                className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all ${
+                  c.enabled ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+                }`}>
+                {c.enabled ? 'Enabled' : 'Disabled'}
+              </button>
             </div>
           </div>
         ))}

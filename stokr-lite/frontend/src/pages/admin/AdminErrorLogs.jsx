@@ -2,13 +2,18 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../../api/client';
 
+const SEVERITY_OPTIONS = ['ALL', 'ERROR', 'CRITICAL', 'WARN'];
+
 export default function AdminErrorLogs() {
   const [page, setPage] = useState(0);
+  const [severity, setSeverity] = useState('ALL');
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin-errors', page],
-    queryFn: () => client.get('/admin/errors', { params: { page, size: 20 } }).then((r) => r.data),
-  });
+  const queryKey = severity === 'ALL' ? ['admin-errors', page] : ['admin-errors', severity, page];
+  const queryFn = severity === 'ALL'
+    ? () => client.get('/admin/errors', { params: { page, size: 20 } }).then((r) => r.data)
+    : () => client.get(`/admin/errors/${severity}`, { params: { page, size: 20 } }).then((r) => r.data);
+
+  const { data, isLoading } = useQuery({ queryKey, queryFn });
 
   const errors = data?.content || data || [];
 
@@ -32,6 +37,26 @@ export default function AdminErrorLogs() {
       <div className="flex items-center gap-3 mb-6">
         <div className="w-1 h-7 rounded-full bg-gradient-to-b from-rose-500 to-orange-500" />
         <h1 className="text-3xl font-bold text-slate-800">Error Logs</h1>
+      </div>
+
+      {/* Severity Filter */}
+      <div className="flex items-center gap-3 mb-4">
+        <span className="text-xs font-medium text-slate-500">Severity:</span>
+        <div className="flex gap-1.5">
+          {SEVERITY_OPTIONS.map((s) => (
+            <button key={s} onClick={() => { setSeverity(s); setPage(0); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                severity === s
+                  ? s === 'ALL' ? 'bg-indigo-50 text-indigo-600 border border-indigo-200'
+                    : s === 'ERROR' ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                    : s === 'CRITICAL' ? 'bg-red-100 text-red-700 border border-red-300'
+                    : 'bg-amber-50 text-amber-600 border border-amber-200'
+                  : 'bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100'
+              }`}>
+              {s === 'ALL' ? 'All' : s}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="card-crystal overflow-hidden">

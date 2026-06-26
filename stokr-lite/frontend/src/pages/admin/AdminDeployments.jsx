@@ -19,6 +19,11 @@ export default function AdminDeployments() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-deployments'] }),
   });
 
+  const squareOffMutation = useMutation({
+    mutationFn: (id) => client.post(`/admin/square-off/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-deployments'] }),
+  });
+
   if (isLoading) return (
     <div className="flex items-center justify-center h-64">
       <div className="animate-spin w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full" />
@@ -68,9 +73,15 @@ export default function AdminDeployments() {
                   <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide uppercase ${d.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'}`}>{d.status}</span>
                 </td>
                 <td className="p-4">
-                  {d.status === 'ACTIVE' && (
-                    <button onClick={() => forceStopMutation.mutate(d.id)} className="text-rose-600 hover:text-rose-700 text-xs font-medium transition-colors">Force Stop</button>
-                  )}
+                  <div className="flex gap-2">
+                    {d.status === 'ACTIVE' && (
+                      <>
+                        <button onClick={() => { if (confirm(`Square off all positions for deployment #${d.id}?`)) squareOffMutation.mutate(d.id); }}
+                          className="text-amber-600 hover:text-amber-700 text-xs font-medium transition-colors">Square Off</button>
+                        <button onClick={() => forceStopMutation.mutate(d.id)} className="text-rose-600 hover:text-rose-700 text-xs font-medium transition-colors">Force Stop</button>
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
