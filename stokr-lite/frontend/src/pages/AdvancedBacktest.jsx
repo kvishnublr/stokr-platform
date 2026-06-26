@@ -18,10 +18,7 @@ async function ensureAuthenticated() {
 }
 
 const STRATEGIES = [
-  { value: 'MORNING_SURGE', label: 'Morning Surge',          desc: 'High-volume ORB in first hour (9:30–10:30)' },
-  { value: 'SURGE_REV',     label: 'Morning Surge Reversal', desc: 'Counter-trend fade after morning surge exhaustion' },
-  { value: 'TBI',           label: 'Trade Book Imbalance',   desc: 'Buy/sell order-book imbalance with volume confirmation' },
-  { value: 'PREOPEN',       label: 'Pre-Open Trade Book',    desc: 'Pre-open session order-book imbalance signal' },
+  { value: 'SURGE_REV',     label: 'Morning Surge Reversal', desc: 'Counter-trend fade after morning surge exhaustion. 52.5% win rate, PF 1.67.' },
   { value: 'VWAP_REV',      label: 'VWAP Reversion',        desc: 'Mean reversion when price deviates >1.0% from VWAP. 61.7% win rate, PF 1.85.' },
 ];
 

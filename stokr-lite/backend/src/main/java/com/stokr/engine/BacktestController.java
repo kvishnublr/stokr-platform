@@ -32,14 +32,8 @@ public class BacktestController {
     private final PairsTradingService pairsTradingService;
 
     private static final Map<String, String> STRATEGY_PLUGIN_MAP = new LinkedHashMap<>(Map.ofEntries(
-        Map.entry("MORNING_SURGE", "MORNING_SURGE"),
-        Map.entry("SURGE",         "MORNING_SURGE"),
         Map.entry("MORNING_SURGE_REVERSAL", "MORNING_SURGE_REVERSAL"),
         Map.entry("SURGE_REV",     "MORNING_SURGE_REVERSAL"),
-        Map.entry("TRADE_BOOK_IMBALANCE", "TRADE_BOOK_IMBALANCE"),
-        Map.entry("TBI",           "TRADE_BOOK_IMBALANCE"),
-        Map.entry("PRE_OPEN",      "PRE_OPEN"),
-        Map.entry("PREOPEN",       "PRE_OPEN"),
         Map.entry("VWAP_REVERSION", "VWAP_REVERSION"),
         Map.entry("VWAP_REV",      "VWAP_REVERSION"),
         Map.entry("REVERSION",     "VWAP_REVERSION")
@@ -469,9 +463,9 @@ public class BacktestController {
 
     private String resolvePluginType(String strategy) {
         if (strategy == null || strategy.isEmpty() || "ALL".equalsIgnoreCase(strategy))
-            return "ORB_V";
+            return "MORNING_SURGE_REVERSAL";
         String mapped = STRATEGY_PLUGIN_MAP.get(strategy.toUpperCase());
-        return mapped != null ? mapped : "ORB_V";
+        return mapped != null ? mapped : "MORNING_SURGE_REVERSAL";
     }
 
     private StrategyPlugin findPlugin(String type) {

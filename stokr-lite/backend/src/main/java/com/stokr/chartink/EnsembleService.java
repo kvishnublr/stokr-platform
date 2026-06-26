@@ -24,9 +24,6 @@ public class EnsembleService {
 
     // Weights from the NSE document + STOKR_ prefixed scanners
     private static final Map<String, Double> SCANNER_WEIGHTS = Map.ofEntries(
-            // Legacy names
-            Map.entry("PREOPEN_UNFILLED", 0.20),
-            Map.entry("PREOPEN_IMBALANCE", 0.15),
             Map.entry("VWAP_DEVIATION", 0.10),
             Map.entry("GAP_UP", 0.10),
             Map.entry("GAP_DOWN", 0.10),
@@ -34,12 +31,7 @@ public class EnsembleService {
             Map.entry("VOLUME_SPIKE", 0.10),
             Map.entry("BUYER_SELLER_IMBALANCE", 0.10),
             Map.entry("OFI_PROXY", 0.10),
-            // STOKR_ prefixed scanner names (Chartink)
-            Map.entry("STOKR_VWAP_TRIPLE_LONG", 0.15),
-            Map.entry("STOKR_TRADE_BOOK_IMBALANCE", 0.15),
-            Map.entry("STOKR_ORB_V_BREAKOUT", 0.20),
-            Map.entry("STOKR_MORNING_SURGE_SHORT", 0.15),
-            Map.entry("STOKR_PRE_OPEN_BUY", 0.20)
+            Map.entry("STOKR_MORNING_SURGE_SHORT", 0.15)
     );
 
     /**
