@@ -29,6 +29,7 @@ public class BacktestController {
     private final UniverseGroupService universeGroupService;
     private final List<StrategyPlugin> strategyPlugins;
     private final ChartinkScannerService chartinkScannerService;
+    private final PairsTradingService pairsTradingService;
 
     private static final Map<String, String> STRATEGY_PLUGIN_MAP = new LinkedHashMap<>(Map.ofEntries(
         Map.entry("ORB_V",         "ORB_V"),
@@ -42,7 +43,10 @@ public class BacktestController {
         Map.entry("TRADE_BOOK_IMBALANCE", "TRADE_BOOK_IMBALANCE"),
         Map.entry("TBI",           "TRADE_BOOK_IMBALANCE"),
         Map.entry("PRE_OPEN",      "PRE_OPEN"),
-        Map.entry("PREOPEN",       "PRE_OPEN")
+        Map.entry("PREOPEN",       "PRE_OPEN"),
+        Map.entry("VWAP_REVERSION", "VWAP_REVERSION"),
+        Map.entry("VWAP_REV",      "VWAP_REVERSION"),
+        Map.entry("REVERSION",     "VWAP_REVERSION")
     ));
 
     private static final double CAPITAL = 25000;
@@ -169,7 +173,8 @@ public class BacktestController {
             @RequestParam(required = false) String dateEnd,
             @RequestParam(required = false) String symbols,
             @RequestParam(defaultValue = "1min") String timeframe,
-            @RequestParam(defaultValue = "NIFTY_100") String universe) {
+            @RequestParam(defaultValue = "NIFTY_100") String universe,
+            @RequestParam(defaultValue = "40") int brokerage) {
 
         log.info("Running advanced backtest: strategy={}, universe={}, dateStart={}, dateEnd={}, timeframe={}",
                 strategy, universe, dateStart, dateEnd, timeframe);
@@ -218,19 +223,21 @@ public class BacktestController {
                 pool.shutdown();
             }
 
+            double perTradeCost = brokerage;
             List<SimulatedTrade> allTrades = new ArrayList<>();
             for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
-                allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params));
+                allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params, perTradeCost));
             }
             allTrades.sort(java.util.Comparator.comparing(t -> t.entryTime));
 
             int totalTrades = allTrades.size();
             int winCount = 0, lossCount = 0;
-            double totalPnl = 0;
+            double totalPnl = 0, totalBrokerage = 0;
             for (SimulatedTrade t : allTrades) {
                 if (t.pnl > 0) winCount++;
                 else if (t.pnl < 0) lossCount++;
                 totalPnl += t.pnl;
+                totalBrokerage += t.brokerage;
             }
 
             java.util.TreeMap<java.time.LocalDate, Double> dailyPnl = new java.util.TreeMap<>();
@@ -259,7 +266,11 @@ public class BacktestController {
             result.put("totalTrades", totalTrades);
             result.put("winCount", winCount);
             result.put("lossCount", lossCount);
+            double netPnl = totalPnl - totalBrokerage;
             result.put("totalPnL",       Math.round(totalPnl * 100.0) / 100.0);
+            result.put("totalBrokerage", Math.round(totalBrokerage * 100.0) / 100.0);
+            result.put("netPnL",         Math.round(netPnl * 100.0) / 100.0);
+            result.put("brokeragePerTrade", perTradeCost);
             result.put("winRate",        Math.round(winRate * 100.0) / 100.0);
             result.put("avgPnL",         Math.round(avgPnl * 100.0) / 100.0);
             result.put("maxDrawdown",    calculateMaxDrawdownFromTrades(allTrades));
@@ -284,6 +295,166 @@ public class BacktestController {
             return ResponseEntity.badRequest().body(Map.of("error", "Backtest failed: " + e.getMessage()));
         }
     }
+
+    /**
+     * Pairs / Statistical Arbitrage backtest.
+     * pairs: comma-separated "HDFCBANK:ICICIBANK,TCS:INFY" — uses defaults if blank.
+     * zWindow: rolling period for mean/std (default 20 candles = 20 minutes on 1-min data)
+     * zEntry:  z-score threshold to enter (default 2.0)
+     * zExit:   z-score reversion target to close position (default 0.3)
+     * zStop:   z-score stop loss if spread widens (default 3.5)
+     * brokerage: ₹ per pair trade (4 legs × ₹20 default = 80)
+     */
+    @PostMapping("/pairs")
+    public ResponseEntity<Map<String, Object>> runPairsBacktest(
+            @RequestParam(required = false) String pairs,
+            @RequestParam(required = false) String dateStart,
+            @RequestParam(required = false) String dateEnd,
+            @RequestParam(defaultValue = "20")  int    zWindow,
+            @RequestParam(defaultValue = "2.0") double zEntry,
+            @RequestParam(defaultValue = "0.3") double zExit,
+            @RequestParam(defaultValue = "3.5") double zStop,
+            @RequestParam(defaultValue = "80")  double brokerage) {
+
+        log.info("Pairs backtest: pairs={}, zEntry={}, zExit={}, zStop={}, zWindow={}", pairs, zEntry, zExit, zStop, zWindow);
+        try {
+            java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
+            LocalDateTime startTime = dateStart != null
+                ? LocalDateTime.parse(dateStart.replace("Z","").substring(0, 19))
+                : LocalDateTime.now(IST).minusDays(30);
+            LocalDateTime endTime = dateEnd != null
+                ? LocalDateTime.parse(dateEnd.replace("Z","").substring(0, 19))
+                : LocalDateTime.now(IST);
+
+            // Parse custom pairs or use defaults
+            List<String[]> pairList;
+            if (pairs != null && !pairs.isBlank()) {
+                pairList = Arrays.stream(pairs.split(","))
+                    .map(p -> p.trim().split(":"))
+                    .filter(p -> p.length == 2)
+                    .toList();
+            } else {
+                pairList = PairsTradingService.DEFAULT_PAIRS;
+            }
+
+            // Fetch candles for all unique symbols in parallel
+            java.util.Set<String> allSymbols = new java.util.LinkedHashSet<>();
+            for (String[] pair : pairList) { allSymbols.add(pair[0]); allSymbols.add(pair[1]); }
+
+            Map<String, List<CandleData>> candleCache = new ConcurrentHashMap<>();
+            ExecutorService pool = Executors.newFixedThreadPool(4);
+            try {
+                List<Future<?>> futures = new ArrayList<>();
+                for (String sym : allSymbols) {
+                    final LocalDateTime s = startTime, e = endTime;
+                    futures.add(pool.submit(() -> {
+                        List<CandleData> c = candleFetchService.fetchCandles(sym, "1min", s, e);
+                        if (!c.isEmpty()) candleCache.put(sym, c);
+                    }));
+                }
+                for (Future<?> f : futures) {
+                    try { f.get(240, TimeUnit.SECONDS); } catch (Exception ignored) {}
+                }
+            } finally { pool.shutdown(); }
+
+            // Run backtest per pair
+            List<Map<String, Object>> pairResults = new ArrayList<>();
+            List<PairsTradingService.PairsTradeResult> allTrades = new ArrayList<>();
+            List<String> skippedPairs = new ArrayList<>();
+
+            for (String[] pair : pairList) {
+                String symA = pair[0].trim(), symB = pair[1].trim();
+                List<CandleData> ca = candleCache.get(symA);
+                List<CandleData> cb = candleCache.get(symB);
+                if (ca == null || cb == null || ca.size() < 50 || cb.size() < 50) {
+                    log.warn("Skipping pair {}/{}: insufficient candles ({}/{})",
+                        symA, symB, ca == null ? 0 : ca.size(), cb == null ? 0 : cb.size());
+                    skippedPairs.add(symA + "/" + symB);
+                    continue;
+                }
+
+                List<PairsTradingService.PairsTradeResult> pTrades =
+                    pairsTradingService.backtestPair(symA, symB, ca, cb, zWindow, zEntry, zExit, zStop, brokerage);
+
+                double corr      = pairsTradingService.computeCorrelation(ca, cb);
+                int    wins      = (int) pTrades.stream().filter(t -> t.netPnl() > 0).count();
+                int    losses    = (int) pTrades.stream().filter(t -> t.netPnl() < 0).count();
+                double pairPnl   = pTrades.stream().mapToDouble(PairsTradingService.PairsTradeResult::netPnl).sum();
+                double pairWin   = pTrades.isEmpty() ? 0 : (double) wins / pTrades.size() * 100;
+
+                Map<String, Object> pr = new LinkedHashMap<>();
+                pr.put("pair",        symA + "/" + symB);
+                pr.put("symbolA",     symA);
+                pr.put("symbolB",     symB);
+                pr.put("correlation", rnd2(corr));
+                pr.put("trades",      pTrades.size());
+                pr.put("wins",        wins);
+                pr.put("losses",      losses);
+                pr.put("winRate",     rnd2(pairWin));
+                pr.put("totalPnl",    rnd2(pairPnl));
+                pr.put("avgPnl",      pTrades.isEmpty() ? 0 : rnd2(pairPnl / pTrades.size()));
+                pr.put("tradeList",   pTrades.stream().map(PairsTradingService.PairsTradeResult::toMap).toList());
+                pairResults.add(pr);
+                allTrades.addAll(pTrades);
+            }
+
+            // Aggregate
+            int    totalTrades = allTrades.size();
+            int    totalWins   = (int) allTrades.stream().filter(t -> t.netPnl() > 0).count();
+            int    totalLosses = (int) allTrades.stream().filter(t -> t.netPnl() < 0).count();
+            double totalPnl    = allTrades.stream().mapToDouble(PairsTradingService.PairsTradeResult::netPnl).sum();
+            double winRate     = totalTrades > 0 ? (double) totalWins / totalTrades * 100 : 0;
+
+            // Max drawdown on cumulative PnL series
+            double peak = 0, trough = 0, maxDd = 0, running = 0;
+            for (PairsTradingService.PairsTradeResult t : allTrades) {
+                running += t.netPnl();
+                if (running > peak) peak = running;
+                double dd = peak > 0 ? (peak - running) / peak * 100 : 0;
+                if (dd > maxDd) maxDd = dd;
+            }
+
+            // Profit factor
+            double gProfit = 0, gLoss = 0;
+            for (PairsTradingService.PairsTradeResult t : allTrades) {
+                if (t.netPnl() > 0) gProfit += t.netPnl();
+                else gLoss += Math.abs(t.netPnl());
+            }
+            double pf = gLoss > 0 ? gProfit / gLoss : (gProfit > 0 ? 999 : 0);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("strategy",        "PAIRS_ARB");
+            result.put("pairsCount",      pairResults.size());
+            result.put("skippedPairs",    skippedPairs);
+            result.put("zWindow",         zWindow);
+            result.put("zEntry",          zEntry);
+            result.put("zExit",           zExit);
+            result.put("zStop",           zStop);
+            result.put("capitalPerLeg",   PairsTradingService.CAPITAL_PER_LEG);
+            result.put("capitalTotal",    PairsTradingService.CAPITAL_PER_LEG * 2);
+            result.put("totalTrades",     totalTrades);
+            result.put("winCount",        totalWins);
+            result.put("lossCount",       totalLosses);
+            result.put("winRate",         rnd2(winRate));
+            result.put("totalPnL",        rnd2(totalPnl));
+            result.put("avgPnL",          totalTrades > 0 ? rnd2(totalPnl / totalTrades) : 0);
+            result.put("maxDrawdown",     rnd2(maxDd));
+            result.put("profitFactor",    rnd2(pf));
+            result.put("brokeragePerTrade", brokerage);
+            result.put("pairs",           pairResults);
+            result.put("dateRange",       Map.of("start", startTime.toString(), "end", endTime.toString()));
+
+            log.info("Pairs backtest done: {} pairs, {} trades, {:.1f}% win rate, ₹{:.0f} PnL",
+                pairResults.size(), totalTrades, winRate, totalPnl);
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            log.error("Pairs backtest failed", e);
+            return ResponseEntity.badRequest().body(Map.of("error", "Pairs backtest failed: " + e.getMessage()));
+        }
+    }
+
+    private double rnd2(double v) { return Math.round(v * 100.0) / 100.0; }
 
     @GetMapping("/chartink-scan")
     public ResponseEntity<Map<String, Object>> getChartinkScan(
@@ -311,7 +482,7 @@ public class BacktestController {
         return strategyPlugins.isEmpty() ? null : strategyPlugins.get(0);
     }
 
-    private List<SimulatedTrade> simulateStrategy(String symbol, List<CandleData> candleData, StrategyPlugin plugin, StrategyParams params) {
+    private List<SimulatedTrade> simulateStrategy(String symbol, List<CandleData> candleData, StrategyPlugin plugin, StrategyParams params, double perTradeCost) {
         List<SimulatedTrade> trades = new ArrayList<>();
         int n = candleData.size();
         if (n < 20) return trades;
@@ -390,12 +561,18 @@ public class BacktestController {
             extras.put("rsi14",     rsi);
             extras.put("atr14",     atr);
             extras.put("prevClose", i > 0 ? candleData.get(i - 1).getClose() : null);
-            // VWAP slope: pass vwap from 5 candles ago (same day only) for trend check
+            // VWAP slope: pass vwap from 1, 3, 5 candles ago (same day only) for trend check
             if (i >= 5) {
                 String dayI    = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
+                String dayIminus1 = candleData.get(i - 1).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
+                String dayIminus3 = candleData.get(i - 3).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
                 String dayIminus5 = candleData.get(i - 5).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
+                extras.put("prevVwap1", dayI.equals(dayIminus1) ? dayVwap[i - 1] : null);
+                extras.put("prevVwap3", dayI.equals(dayIminus3) ? dayVwap[i - 3] : null);
                 extras.put("prevVwap5", dayI.equals(dayIminus5) ? dayVwap[i - 5] : null);
             } else {
+                extras.put("prevVwap1", null);
+                extras.put("prevVwap3", null);
                 extras.put("prevVwap5", null);
             }
 
@@ -405,13 +582,15 @@ public class BacktestController {
 
             if (signal != null && signal.isValid()) {
                 tradedDays.add(istDate);
-                SimulatedTrade trade = new SimulatedTrade(symbol, signal, i, candles.get(i).timestamp());
+                SimulatedTrade trade = new SimulatedTrade(symbol, signal, i, candles.get(i).timestamp(), perTradeCost);
                 java.time.LocalDate entryDate = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate();
 
                 BigDecimal currentSL  = signal.stopLoss();
                 BigDecimal bestPrice  = signal.entryPrice();
                 double entryD = signal.entryPrice().doubleValue();
                 boolean trailActivated = false;
+                double trailTrigger  = signal.trailTriggerPct();
+                double trailDistance = signal.trailDistancePct() / 100.0;
 
                 for (int j = i + 1; j < n; j++) {
                     Candle c = candles.get(j);
@@ -427,10 +606,10 @@ public class BacktestController {
                             if (c.high().compareTo(bestPrice) > 0) {
                                 bestPrice = c.high();
                                 double gain = (bestPrice.doubleValue() - entryD) / entryD * 100;
-                                if (gain >= 0.5) trailActivated = true;
+                                if (gain >= trailTrigger) trailActivated = true;
                             }
                             if (trailActivated) {
-                                BigDecimal newTrail = bestPrice.multiply(BigDecimal.valueOf(0.997))
+                                BigDecimal newTrail = bestPrice.multiply(BigDecimal.valueOf(1.0 - trailDistance))
                                     .setScale(2, java.math.RoundingMode.HALF_UP);
                                 if (newTrail.compareTo(currentSL) > 0) currentSL = newTrail;
                             }
@@ -438,22 +617,33 @@ public class BacktestController {
                             if (c.low().compareTo(bestPrice) < 0) {
                                 bestPrice = c.low();
                                 double gain = (entryD - bestPrice.doubleValue()) / entryD * 100;
-                                if (gain >= 0.5) trailActivated = true;
+                                if (gain >= trailTrigger) trailActivated = true;
                             }
                             if (trailActivated) {
-                                BigDecimal newTrail = bestPrice.multiply(BigDecimal.valueOf(1.003))
+                                BigDecimal newTrail = bestPrice.multiply(BigDecimal.valueOf(1.0 + trailDistance))
                                     .setScale(2, java.math.RoundingMode.HALF_UP);
                                 if (newTrail.compareTo(currentSL) < 0) currentSL = newTrail;
                             }
                         }
 
-                        if (c.high().compareTo(signal.target()) >= 0) {
-                            trade.exit(j, c.timestamp(), "TARGET_HIT");
-                            exited = true;
-                        } else if (c.low().compareTo(currentSL) <= 0) {
-                            String exitLabel = trailActivated ? "TRAIL_SL" : "SL_HIT";
-                            trade.exitAtPrice(j, c.timestamp(), exitLabel, currentSL);
-                            exited = true;
+                        if (signal.side() == Signal.Side.BUY) {
+                            if (c.high().compareTo(signal.target()) >= 0) {
+                                trade.exit(j, c.timestamp(), "TARGET_HIT");
+                                exited = true;
+                            } else if (c.low().compareTo(currentSL) <= 0) {
+                                String exitLabel = trailActivated ? "TRAIL_SL" : "SL_HIT";
+                                trade.exitAtPrice(j, c.timestamp(), exitLabel, currentSL);
+                                exited = true;
+                            }
+                        } else {
+                            if (c.low().compareTo(signal.target()) <= 0) {
+                                trade.exit(j, c.timestamp(), "TARGET_HIT");
+                                exited = true;
+                            } else if (c.high().compareTo(currentSL) >= 0) {
+                                String exitLabel = trailActivated ? "TRAIL_SL" : "SL_HIT";
+                                trade.exitAtPrice(j, c.timestamp(), exitLabel, currentSL);
+                                exited = true;
+                            }
                         }
                     }
                     if (exited) {
@@ -512,9 +702,9 @@ public class BacktestController {
         int entryIdx, exitIdx;
         LocalDateTime entryTime, exitTime;
         String exitType;
-        double pnl;
+        double pnl, brokerage, perTradeCost;
 
-        SimulatedTrade(String symbol, Signal signal, int entryIdx, LocalDateTime entryTime) {
+        SimulatedTrade(String symbol, Signal signal, int entryIdx, LocalDateTime entryTime, double perTradeCost) {
             this.symbol = symbol;
             this.side = signal.side();
             this.entryPrice = signal.entryPrice();
@@ -522,6 +712,7 @@ public class BacktestController {
             this.target = signal.target();
             this.entryIdx = entryIdx;
             this.entryTime = entryTime;
+            this.perTradeCost = perTradeCost;
         }
 
         void exit(int exitIdx, LocalDateTime exitTime, String exitType) {
@@ -529,16 +720,13 @@ public class BacktestController {
             this.exitTime = exitTime;
             this.exitType = exitType;
             if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
-                double movePct;
-                if ("TARGET_HIT".equals(exitType)) {
-                    movePct = target.subtract(entryPrice).doubleValue() / entryPrice.doubleValue();
-                } else if ("SL_HIT".equals(exitType)) {
-                    movePct = -(entryPrice.subtract(stopLoss).doubleValue() / entryPrice.doubleValue());
-                } else {
-                    movePct = 0;
-                }
+                BigDecimal refPrice = "TARGET_HIT".equals(exitType) ? target : stopLoss;
+                double movePct = (side == Signal.Side.BUY)
+                    ? refPrice.subtract(entryPrice).doubleValue() / entryPrice.doubleValue()
+                    : entryPrice.subtract(refPrice).doubleValue() / entryPrice.doubleValue();
                 this.pnl = Math.round(movePct * CAPITAL * 100.0) / 100.0;
             }
+            deductBrokerage();
         }
 
         void exitAtPrice(int exitIdx, LocalDateTime exitTime, String exitType, BigDecimal exitPrice) {
@@ -548,9 +736,13 @@ public class BacktestController {
             if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0 && exitPrice != null) {
                 double movePct;
                 if ("TARGET_HIT".equals(exitType)) {
-                    movePct = target.subtract(entryPrice).doubleValue() / entryPrice.doubleValue();
+                    movePct = (side == Signal.Side.BUY)
+                        ? target.subtract(entryPrice).doubleValue() / entryPrice.doubleValue()
+                        : entryPrice.subtract(target).doubleValue() / entryPrice.doubleValue();
                 } else if ("SL_HIT".equals(exitType)) {
-                    movePct = -(entryPrice.subtract(stopLoss).doubleValue() / entryPrice.doubleValue());
+                    movePct = (side == Signal.Side.BUY)
+                        ? -(entryPrice.subtract(stopLoss).doubleValue() / entryPrice.doubleValue())
+                        : -(stopLoss.subtract(entryPrice).doubleValue() / entryPrice.doubleValue());
                 } else {
                     movePct = (side == Signal.Side.BUY)
                         ? exitPrice.subtract(entryPrice).doubleValue() / entryPrice.doubleValue()
@@ -558,6 +750,11 @@ public class BacktestController {
                 }
                 this.pnl = Math.round(movePct * CAPITAL * 100.0) / 100.0;
             }
+            deductBrokerage();
+        }
+
+        void deductBrokerage() {
+            this.brokerage = perTradeCost;
         }
 
         Map<String, Object> toMap() {
@@ -571,6 +768,7 @@ public class BacktestController {
             m.put("exitTime", exitTime != null ? exitTime.toString() : null);
             m.put("exitType", exitType);
             m.put("pnl", pnl);
+            m.put("brokerage", brokerage);
             return m;
         }
     }

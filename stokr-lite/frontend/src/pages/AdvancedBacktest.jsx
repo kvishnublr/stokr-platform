@@ -24,6 +24,18 @@ const STRATEGIES = [
   { value: 'SURGE_REV',     label: 'Morning Surge Reversal', desc: 'Counter-trend fade after morning surge exhaustion' },
   { value: 'TBI',           label: 'Trade Book Imbalance',   desc: 'Buy/sell order-book imbalance with volume confirmation' },
   { value: 'PREOPEN',       label: 'Pre-Open Trade Book',    desc: 'Pre-open session order-book imbalance signal' },
+  { value: 'VWAP_REV',      label: 'VWAP Reversion',        desc: 'Mean reversion when price deviates >0.8% from VWAP with volume confirmation. 2:1 R:R.' },
+];
+
+const ALL_PAIRS = [
+  { key: 'HDFCBANK:ICICIBANK',   labelA: 'HDFCBANK',   labelB: 'ICICIBANK',   sector: 'Banking',  corr: '~95%' },
+  { key: 'TCS:INFY',             labelA: 'TCS',        labelB: 'INFY',        sector: 'IT',        corr: '~92%' },
+  { key: 'SBIN:AXISBANK',        labelA: 'SBIN',       labelB: 'AXISBANK',    sector: 'Banking',  corr: '~88%' },
+  { key: 'WIPRO:HCLTECH',        labelA: 'WIPRO',      labelB: 'HCLTECH',     sector: 'IT',        corr: '~86%' },
+  { key: 'BAJFINANCE:BAJAJFINSV',labelA: 'BAJFINANCE', labelB: 'BAJAJFINSV',  sector: 'Finance',  corr: '~80%' },
+  { key: 'RELIANCE:ONGC',        labelA: 'RELIANCE',   labelB: 'ONGC',        sector: 'Energy',   corr: '~82%' },
+  { key: 'KOTAKBANK:AXISBANK',   labelA: 'KOTAKBANK',  labelB: 'AXISBANK',    sector: 'Banking',  corr: '~85%' },
+  { key: 'MARUTI:TATAMOTORS',    labelA: 'MARUTI',     labelB: 'TATAMOTORS',  sector: 'Auto',     corr: '~78%' },
 ];
 
 function MetricCard({ label, value, color = '#1f2937', sub }) {
@@ -39,10 +51,15 @@ function MetricCard({ label, value, color = '#1f2937', sub }) {
 export default function AdvancedBacktest() {
   useEffect(() => { ensureAuthenticated(); }, []);
 
+  // Mode toggle: 'strategy' | 'pairs'
+  const [mode, setMode] = useState('strategy');
+
+  // Strategy mode state
   const [universes, setUniverses]   = useState([]);
   const [strategy, setStrategy]     = useState('ORB');
   const [universe, setUniverse]     = useState('NIFTY_100');
   const [chartinkInfo, setChartinkInfo] = useState(null);
+  const [brokerage, setBrokerage]   = useState(40);
   const [dateStart, setDateStart]   = useState('2026-06-01');
   const [dateEnd, setDateEnd]       = useState(new Date().toISOString().slice(0, 10));
   const [results, setResults]       = useState(null);
@@ -52,6 +69,17 @@ export default function AdvancedBacktest() {
   const [loadOpen, setLoadOpen]     = useState(false);
   const [loadStatus, setLoadStatus] = useState(null);
   const [loadRunning, setLoadRunning] = useState(false);
+
+  // Pairs Arb mode state
+  const [selectedPairs, setSelectedPairs] = useState(
+    ALL_PAIRS.reduce((acc, p) => ({ ...acc, [p.key]: true }), {})
+  );
+  const [zWindow, setZWindow]   = useState(20);
+  const [zEntry,  setZEntry]    = useState(2.0);
+  const [zExit,   setZExit]     = useState(0.3);
+  const [zStop,   setZStop]     = useState(3.5);
+  const [pairsResults, setPairsResults] = useState(null);
+  const [expandedPair, setExpandedPair] = useState(null);
 
   // Load universe groups from API
   useEffect(() => {
@@ -106,6 +134,7 @@ export default function AdvancedBacktest() {
         strategy,
         universe,
         timeframe: '1min',
+        brokerage,
         dateStart: new Date(dateStart).toISOString(),
         dateEnd:   new Date(dateEnd + 'T23:59:59').toISOString(),
       });
@@ -114,6 +143,35 @@ export default function AdvancedBacktest() {
       setResults(res.data);
     } catch (e) {
       setError(e.response?.data?.error || e.message || 'Backtest failed');
+    } finally {
+      setLoading(false);
+      setProgress('');
+    }
+  };
+
+  const runPairsBacktest = async () => {
+    setLoading(true);
+    setError(null);
+    setPairsResults(null);
+    setExpandedPair(null);
+    const activePairs = ALL_PAIRS.filter(p => selectedPairs[p.key]).map(p => p.key.replace(':', ':')).join(',');
+    setProgress('Fetching candles for all pairs…');
+    try {
+      const params = new URLSearchParams({
+        pairs:     activePairs,
+        dateStart: new Date(dateStart).toISOString(),
+        dateEnd:   new Date(dateEnd + 'T23:59:59').toISOString(),
+        zWindow,
+        zEntry,
+        zExit,
+        zStop,
+        brokerage: 80,
+      });
+      setProgress('Running z-score simulation…');
+      const res = await client.post('/backtest/pairs?' + params);
+      setPairsResults(res.data);
+    } catch (e) {
+      setError(e.response?.data?.error || e.message || 'Pairs backtest failed');
     } finally {
       setLoading(false);
       setProgress('');
@@ -141,7 +199,9 @@ export default function AdvancedBacktest() {
         .run-btn { padding: 12px 32px; background: linear-gradient(135deg,#6366f1,#8b5cf6);
           color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 800;
           cursor: pointer; transition: all .2s; }
+        .run-btn.pairs { background: linear-gradient(135deg,#059669,#10b981); }
         .run-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99,102,241,.35); }
+        .run-btn.pairs:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(5,150,105,.35); }
         .run-btn:disabled { opacity: .55; cursor: not-allowed; }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
         .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
@@ -152,20 +212,259 @@ export default function AdvancedBacktest() {
           border-bottom: 2px solid #e5e7eb; }
         td { padding: 7px 10px; border-bottom: 1px solid #f3f4f6; }
         tr:hover td { background: #fafafa; }
+        .mode-tab { padding: 10px 24px; border-radius: 8px; border: 2px solid #e5e7eb;
+          background: white; font-size: 13px; font-weight: 700; cursor: pointer; color: #6b7280; transition: all .15s; }
+        .mode-tab.active-strat { border-color: #6366f1; background: #6366f1; color: white; }
+        .mode-tab.active-pairs { border-color: #059669; background: #059669; color: white; }
+        .pair-checkbox { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+          border-radius: 10px; border: 1.5px solid #e5e7eb; cursor: pointer; transition: all .15s; }
+        .pair-checkbox.checked { border-color: #059669; background: #f0fdf4; }
+        .z-input { width: 80px; padding: 7px 10px; border-radius: 8px; border: 1px solid #d1d5db;
+          font-size: 13px; font-weight: 700; text-align: center; }
       `}</style>
 
       {/* Header */}
-      <div style={{ marginBottom: '28px' }}>
+      <div style={{ marginBottom: '20px' }}>
         <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#1f2937', margin: 0 }}>
           📈 Strategy Backtest
         </h1>
         <p style={{ color: '#6b7280', marginTop: '6px', fontSize: '14px' }}>
-          ORB · VWAP Triple · Morning Surge · Surge Reversal · Trade Book Imbalance · Pre-Open · Real 1-min candle data · ₹25,000/trade · Trailing SL
+          Real 1-min candle data · ₹25,000/trade · Intraday simulation
         </p>
       </div>
 
-      {/* Controls */}
-      <div className="card">
+      {/* Mode toggle */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+        <button
+          className={`mode-tab${mode === 'strategy' ? ' active-strat' : ''}`}
+          onClick={() => { setMode('strategy'); setResults(null); setError(null); }}>
+          📊 Strategy Backtest
+        </button>
+        <button
+          className={`mode-tab${mode === 'pairs' ? ' active-pairs' : ''}`}
+          onClick={() => { setMode('pairs'); setPairsResults(null); setError(null); }}>
+          📐 Pairs Arbitrage
+        </button>
+      </div>
+
+      {/* ============ PAIRS ARB CONTROLS ============ */}
+      {mode === 'pairs' && (
+        <>
+          <div className="card">
+            <div style={{ fontWeight: 800, fontSize: '15px', marginBottom: '16px', color: '#065f46' }}>
+              📐 Pairs to Backtest
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+              {ALL_PAIRS.map(p => (
+                <div key={p.key}
+                  className={`pair-checkbox${selectedPairs[p.key] ? ' checked' : ''}`}
+                  onClick={() => setSelectedPairs(prev => ({ ...prev, [p.key]: !prev[p.key] }))}>
+                  <input type="checkbox" checked={!!selectedPairs[p.key]} readOnly
+                    style={{ width: '16px', height: '16px', accentColor: '#059669', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '13px' }}>
+                      <span style={{ color: '#1d4ed8' }}>{p.labelA}</span>
+                      <span style={{ color: '#9ca3af', margin: '0 6px' }}>/</span>
+                      <span style={{ color: '#059669' }}>{p.labelB}</span>
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>
+                      {p.sector} · corr {p.corr}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '20px', flexWrap: 'wrap', marginBottom: '20px' }}>
+              <div>
+                <label className="label">Date From</label>
+                <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)}
+                  style={{ width: '160px', padding: '9px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px' }} />
+              </div>
+              <div>
+                <label className="label">Date To</label>
+                <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)}
+                  style={{ width: '160px', padding: '9px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px' }} />
+              </div>
+              <div>
+                <label className="label">Z-Window <span style={{ color: '#d1d5db' }}>(candles)</span></label>
+                <input className="z-input" type="number" min={5} max={60} value={zWindow}
+                  onChange={e => setZWindow(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="label">Z-Entry <span style={{ color: '#d1d5db' }}>(σ to enter)</span></label>
+                <input className="z-input" type="number" min={1} max={4} step={0.1} value={zEntry}
+                  onChange={e => setZEntry(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="label">Z-Exit <span style={{ color: '#d1d5db' }}>(σ = profit)</span></label>
+                <input className="z-input" type="number" min={0} max={1} step={0.1} value={zExit}
+                  onChange={e => setZExit(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="label">Z-Stop <span style={{ color: '#d1d5db' }}>(σ = loss)</span></label>
+                <input className="z-input" type="number" min={2} max={6} step={0.1} value={zStop}
+                  onChange={e => setZStop(Number(e.target.value))} />
+              </div>
+            </div>
+
+            <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px',
+              padding: '10px 14px', marginBottom: '20px', fontSize: '12px', color: '#166534' }}>
+              💡 Entry: short the expensive stock, long the cheap one when |z| ≥ {zEntry}σ.
+              Exit: z reverts to ±{zExit}σ (profit) or widens to ±{zStop}σ (stop).
+              Capital: ₹25,000/leg × 2 = ₹50,000/pair. Brokerage: ₹80/pair trade (4 legs × ₹20).
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <button className="run-btn pairs" onClick={runPairsBacktest} disabled={loading}>
+                {loading ? '⏳ ' + progress : '▶ Run Pairs Backtest'}
+              </button>
+              <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                {ALL_PAIRS.filter(p => selectedPairs[p.key]).length} pairs selected
+              </span>
+            </div>
+          </div>
+
+          {/* Pairs results */}
+          {pairsResults && (() => {
+            const pr = pairsResults;
+            return (
+              <>
+                {/* Summary metrics */}
+                <div className="card">
+                  <div style={{ fontWeight: 800, fontSize: '15px', marginBottom: '16px' }}>Overall Pairs Performance</div>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                    <span className="tag" style={{ background: '#d1fae5', color: '#065f46' }}>PAIRS ARB</span>
+                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>{pr.pairsCount} pairs</span>
+                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>Z-entry ±{pr.zEntry}σ</span>
+                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>Z-stop ±{pr.zStop}σ</span>
+                    <span style={{ fontSize: '12px', color: '#9ca3af' }}>
+                      {new Date(pr.dateRange.start).toLocaleDateString()} → {new Date(pr.dateRange.end).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="grid-4">
+                    <MetricCard label="Total Signals"   value={pr.totalTrades} />
+                    <MetricCard label="Win Rate"        value={pr.winRate?.toFixed(1) + '%'}
+                      color={pr.winRate >= 60 ? '#10b981' : pr.winRate >= 45 ? '#f59e0b' : '#ef4444'} />
+                    <MetricCard label="Net P&L"         value={'₹' + pr.totalPnL?.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                      color={pnlColor(pr.totalPnL)} />
+                    <MetricCard label="Avg P&L / Trade" value={'₹' + pr.avgPnL?.toFixed(0)}
+                      color={pnlColor(pr.avgPnL)} />
+                    <MetricCard label="Wins"            value={pr.winCount} color="#10b981" sub={pr.lossCount + ' losses'} />
+                    <MetricCard label="Profit Factor"   value={pr.profitFactor?.toFixed(2)}
+                      color={pr.profitFactor >= 1.5 ? '#10b981' : pr.profitFactor >= 1.0 ? '#f59e0b' : '#ef4444'} />
+                    <MetricCard label="Max Drawdown"    value={'₹' + (pr.maxDrawdown?.toFixed(0) || 0)}
+                      sub={(pr.maxDrawdown ? (pr.maxDrawdown / 250).toFixed(1) : 0) + '%'}
+                      color={pr.maxDrawdown <= 250 ? '#10b981' : pr.maxDrawdown <= 750 ? '#f59e0b' : '#ef4444'} />
+                    <MetricCard label="Capital / Pair"  value="₹50,000" sub="₹25k per leg" />
+                  </div>
+                </div>
+
+                {/* Per-pair breakdown */}
+                <div className="card">
+                  <div style={{ fontWeight: 800, fontSize: '15px', marginBottom: '16px' }}>Per-Pair Breakdown</div>
+                  {pr.pairs.map(pair => (
+                    <div key={pair.pair} style={{ marginBottom: '12px', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
+                      <div
+                        onClick={() => setExpandedPair(expandedPair === pair.pair ? null : pair.pair)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '14px 16px',
+                          background: '#fafafa', cursor: 'pointer', flexWrap: 'wrap' }}>
+                        <div style={{ fontWeight: 800, fontSize: '14px', minWidth: '180px' }}>
+                          <span style={{ color: '#1d4ed8' }}>{pair.symbolA}</span>
+                          <span style={{ color: '#9ca3af', margin: '0 8px' }}>/</span>
+                          <span style={{ color: '#059669' }}>{pair.symbolB}</span>
+                        </div>
+                        <span className="tag" style={{ background: '#dbeafe', color: '#1e40af' }}>
+                          corr {(pair.correlation * 100).toFixed(0)}%
+                        </span>
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{pair.trades} trades</span>
+                        <span style={{ fontSize: '13px', fontWeight: 800,
+                          color: pair.winRate >= 60 ? '#059669' : pair.winRate >= 45 ? '#d97706' : '#dc2626' }}>
+                          {pair.winRate?.toFixed(1)}% win
+                        </span>
+                        <span style={{ fontSize: '14px', fontWeight: 800, marginLeft: 'auto',
+                          color: pair.totalPnl > 0 ? '#059669' : '#dc2626' }}>
+                          {pair.totalPnl > 0 ? '+' : ''}₹{pair.totalPnl?.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        </span>
+                        <span style={{ color: '#9ca3af', fontSize: '12px' }}>{expandedPair === pair.pair ? '▲' : '▼'}</span>
+                      </div>
+                      {expandedPair === pair.pair && pair.tradeList?.length > 0 && (
+                        <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
+                          <table>
+                            <thead style={{ position: 'sticky', top: 0 }}>
+                              <tr>
+                                <th>#</th><th>Entry Time</th><th>Direction</th>
+                                <th style={{ textAlign: 'right' }}>Entry A/B</th>
+                                <th style={{ textAlign: 'right' }}>Exit A/B</th>
+                                <th style={{ textAlign: 'right' }}>Z-Entry</th>
+                                <th style={{ textAlign: 'right' }}>Z-Exit</th>
+                                <th style={{ textAlign: 'right' }}>Net P&L</th>
+                                <th style={{ textAlign: 'center' }}>Exit</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pair.tradeList.map((t, i) => (
+                                <tr key={i}>
+                                  <td style={{ color: '#9ca3af' }}>{i + 1}</td>
+                                  <td style={{ fontSize: '11px', color: '#6b7280' }}>
+                                    {t.entryTime ? new Date(t.entryTime).toLocaleString('en-IN', {
+                                      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-'}
+                                  </td>
+                                  <td>
+                                    <span style={{ fontSize: '10px', fontWeight: 700,
+                                      color: t.direction === 'SHORT_A_LONG_B' ? '#7c3aed' : '#1d4ed8' }}>
+                                      {t.direction === 'SHORT_A_LONG_B'
+                                        ? `↓${pair.symbolA} ↑${pair.symbolB}`
+                                        : `↑${pair.symbolA} ↓${pair.symbolB}`}
+                                    </span>
+                                  </td>
+                                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px' }}>
+                                    {Number(t.entryA).toFixed(1)} / {Number(t.entryB).toFixed(1)}
+                                  </td>
+                                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px' }}>
+                                    {Number(t.exitA).toFixed(1)} / {Number(t.exitB).toFixed(1)}
+                                  </td>
+                                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px',
+                                    color: Math.abs(t.entryZScore) >= 2.5 ? '#dc2626' : '#6b7280' }}>
+                                    {Number(t.entryZScore).toFixed(2)}σ
+                                  </td>
+                                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px' }}>
+                                    {Number(t.exitZScore).toFixed(2)}σ
+                                  </td>
+                                  <td style={{ textAlign: 'right', fontWeight: 700,
+                                    color: t.netPnl > 0 ? '#10b981' : t.netPnl < 0 ? '#ef4444' : '#6b7280' }}>
+                                    {t.netPnl > 0 ? '+' : ''}₹{Number(t.netPnl).toFixed(0)}
+                                  </td>
+                                  <td style={{ textAlign: 'center' }}>
+                                    <span style={{
+                                      padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700,
+                                      background: t.exitReason === 'ZSCORE_REVERSION' ? '#d1fae5'
+                                        : t.exitReason === 'ZSCORE_STOP' ? '#fee2e2' : '#fef3c7',
+                                      color: t.exitReason === 'ZSCORE_REVERSION' ? '#065f46'
+                                        : t.exitReason === 'ZSCORE_STOP' ? '#991b1b' : '#92400e',
+                                    }}>
+                                      {t.exitReason === 'ZSCORE_REVERSION' ? '✓ REVERTED'
+                                        : t.exitReason === 'ZSCORE_STOP' ? '✗ STOP'
+                                        : '⏱ EOD'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
+        </>
+      )}
+
+      {/* ============ STRATEGY CONTROLS ============ */}
+      {mode === 'strategy' && <div className="card">
           {/* Universe toggle */}
           <div style={{ marginBottom: '20px' }}>
             <span className="label">Universe</span>
@@ -220,6 +519,15 @@ export default function AdvancedBacktest() {
                 {STRATEGIES.find(s => s.value === strategy)?.desc}
               </div>
             )}
+          </div>
+          {/* Brokerage per trade */}
+          <div>
+            <label className="label">Brokerage (₹/trade)</label>
+            <input type="number" min="0" max="500" step="5"
+              value={brokerage}
+              onChange={e => setBrokerage(Number(e.target.value))}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px',
+                border: '1px solid #d1d5db', fontSize: '13px' }} />
           </div>
           {/* Timeframe - locked to 1min */}
           <div>
@@ -304,7 +612,7 @@ export default function AdvancedBacktest() {
             <span style={{ fontSize: '13px', color: '#6b7280' }}>{progress}</span>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Error */}
       {error && (
@@ -314,8 +622,8 @@ export default function AdvancedBacktest() {
         </div>
       )}
 
-      {/* Results */}
-      {r && (
+      {/* Strategy Results */}
+      {mode === 'strategy' && r && (
         <>
           {/* Overview strip */}
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px', alignItems: 'center' }}>
@@ -337,14 +645,18 @@ export default function AdvancedBacktest() {
               <MetricCard label="Total Trades"    value={r.totalTrades} />
               <MetricCard label="Win Rate"        value={r.winRate?.toFixed(1) + '%'}
                 color={r.winRate >= 40 ? '#10b981' : r.winRate >= 30 ? '#f59e0b' : '#ef4444'} />
-              <MetricCard label="Total P&L"       value={'₹' + r.totalPnL?.toLocaleString('en-IN', {maximumFractionDigits:0})}
+              <MetricCard label="Gross P&L"       value={'₹' + r.totalPnL?.toLocaleString('en-IN', {maximumFractionDigits:0})}
                 color={pnlColor(r.totalPnL)} />
+              <MetricCard label="Net P&L (post-brokerage)" value={'₹' + (r.netPnL || 0)?.toLocaleString('en-IN', {maximumFractionDigits:0})}
+                color={pnlColor(r.netPnL)}
+                sub={'Brokerage: ₹' + (r.totalBrokerage || 0)?.toLocaleString('en-IN', {maximumFractionDigits:0}) + ' · ₹' + r.brokeragePerTrade + '/trade'} />
               <MetricCard label="Avg P&L / Trade" value={'₹' + r.avgPnL?.toFixed(0)}
                 color={pnlColor(r.avgPnL)} />
               <MetricCard label="Profit Factor"   value={r.profitFactor?.toFixed(2)}
                 color={r.profitFactor >= 1.5 ? '#10b981' : r.profitFactor >= 1.0 ? '#f59e0b' : '#ef4444'} />
-              <MetricCard label="Max Drawdown"    value={r.maxDrawdown?.toFixed(1) + '%'}
-                color={r.maxDrawdown <= 30 ? '#10b981' : r.maxDrawdown <= 60 ? '#f59e0b' : '#ef4444'} />
+              <MetricCard label="Max Drawdown"    value={'₹' + (r.maxDrawdown?.toFixed(0) || 0)}
+                sub={(r.maxDrawdown ? (r.maxDrawdown / 250).toFixed(1) : 0) + '%'}
+                color={r.maxDrawdown <= 250 ? '#10b981' : r.maxDrawdown <= 750 ? '#f59e0b' : '#ef4444'} />
               <MetricCard label="Wins"            value={r.winCount}
                 color="#10b981" sub={r.lossCount + ' losses'} />
               <MetricCard label="Capital / Trade" value={'₹' + Number(r.capitalPerTrade)?.toLocaleString('en-IN')} />
