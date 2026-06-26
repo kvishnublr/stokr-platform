@@ -12,7 +12,10 @@ spring:
       minimum-idle: 5
       idle-timeout: 300000
       connection-timeout: 20000
-      max-lifetime: 600000
+      max-lifetime: 1500000
+      keepalive-time: 60000
+      connection-test-query: SELECT 1
+      validation-timeout: 3000
 
   jpa:
     hibernate:
