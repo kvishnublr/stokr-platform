@@ -51,7 +51,11 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         Integer istMinute = context.extra("istMinute", Integer.class);
         if (istHour != null && istMinute != null) {
             int min = istHour * 60 + istMinute;
-            if (min < 9 * 60 + 30 || min > 10 * 60 + 30) return null;
+            // Active windows: 9:30–9:44 (early surge) and 10:00–10:30 (confirmed reversal)
+            // 9:45–9:59 is noise — skip it (tested: -Rs 123/trade net in that window)
+            if (min < 9 * 60 + 30) return null;
+            if (min >= 9 * 60 + 45 && min < 10 * 60 + 0) return null;
+            if (min > 10 * 60 + 30) return null;
         }
 
         Candle latest = context.getLatestCandle();
