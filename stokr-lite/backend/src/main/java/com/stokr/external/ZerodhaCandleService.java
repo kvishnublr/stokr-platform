@@ -240,6 +240,8 @@ public class ZerodhaCandleService {
         SYMBOL_TO_TOKEN.put("TATAPOWER",  "877057");
         SYMBOL_TO_TOKEN.put("TEAMLEASE",  "3255297");
         SYMBOL_TO_TOKEN.put("TIINDIA",    "79873");
+        SYMBOL_TO_TOKEN.put("TATAELXSI", "873217");
+        SYMBOL_TO_TOKEN.put("JIOFIN",    "4644609");
         SYMBOL_TO_TOKEN.put("TIMKEN",     "3634689");
         SYMBOL_TO_TOKEN.put("TTKPRESTIG", "907777");
         SYMBOL_TO_TOKEN.put("UNIONBANK",  "2752769");
