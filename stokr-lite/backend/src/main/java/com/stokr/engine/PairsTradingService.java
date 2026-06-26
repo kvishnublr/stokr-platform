@@ -8,7 +8,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
-import java.util.concurrent.*;
 
 @Slf4j
 @Service
@@ -35,53 +34,63 @@ public class PairsTradingService {
         LocalDateTime entryTime, LocalDateTime exitTime,
         double entryA, double entryB,
         double exitA,  double exitB,
-        double entryZScore, double exitZScore,
-        String direction,  // "SHORT_A_LONG_B" | "LONG_A_SHORT_B"
-        String exitReason, // "ZSCORE_REVERSION" | "ZSCORE_STOP" | "EOD_EXIT"
+        double entrySpreadPct, double exitSpreadPct,
+        String direction,   // "SHORT_A_LONG_B" | "LONG_A_SHORT_B"
+        String exitReason,  // "SPREAD_REVERSION" | "SPREAD_STOP" | "EOD_EXIT"
         double legAGross, double legBGross,
         double netPnl, double brokerage
     ) {
         public Map<String, Object> toMap() {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("pair",        symbolA + "/" + symbolB);
-            m.put("symbolA",     symbolA);
-            m.put("symbolB",     symbolB);
-            m.put("direction",   direction);
-            m.put("entryTime",   entryTime != null ? entryTime.toString() : null);
-            m.put("exitTime",    exitTime  != null ? exitTime.toString()  : null);
-            m.put("entryA",      r2(entryA)); m.put("entryB", r2(entryB));
-            m.put("exitA",       r2(exitA));  m.put("exitB",  r2(exitB));
-            m.put("entryZScore", r2(entryZScore));
-            m.put("exitZScore",  r2(exitZScore));
-            m.put("legAGross",   r2(legAGross));
-            m.put("legBGross",   r2(legBGross));
-            m.put("netPnl",      r2(netPnl));
-            m.put("brokerage",   r2(brokerage));
-            m.put("exitReason",  exitReason);
+            m.put("pair",            symbolA + "/" + symbolB);
+            m.put("symbolA",         symbolA);
+            m.put("symbolB",         symbolB);
+            m.put("direction",       direction);
+            m.put("entryTime",       entryTime != null ? entryTime.toString() : null);
+            m.put("exitTime",        exitTime  != null ? exitTime.toString()  : null);
+            m.put("entryA",          r2(entryA)); m.put("entryB", r2(entryB));
+            m.put("exitA",           r2(exitA));  m.put("exitB",  r2(exitB));
+            m.put("entryZScore",     r2(entrySpreadPct));   // keep key name for UI compatibility
+            m.put("exitZScore",      r2(exitSpreadPct));
+            m.put("entrySpreadPct",  r2(entrySpreadPct));
+            m.put("exitSpreadPct",   r2(exitSpreadPct));
+            m.put("legAGross",       r2(legAGross));
+            m.put("legBGross",       r2(legBGross));
+            m.put("netPnl",          r2(netPnl));
+            m.put("brokerage",       r2(brokerage));
+            m.put("exitReason",      exitReason);
             return m;
         }
         private static double r2(double v) { return Math.round(v * 100.0) / 100.0; }
     }
 
     /**
-     * Backtest a single pair over the aligned candle data.
+     * Backtest a pair using the DAILY ANCHOR SPREAD method.
      *
-     * @param zWindow  rolling window to compute mean/std of ratio (e.g. 20 = 20 candles)
-     * @param zEntry   z-score threshold to enter (default 2.0)
-     * @param zExit    z-score threshold to exit on reversion (default 0.3, near mean)
-     * @param zStop    z-score stop loss — exit if spread widens further (default 3.5)
+     * Each day's opening ratio (9:15am) is the fair-value anchor.
+     * Spread% = (current_ratio - anchor_ratio) / anchor_ratio * 100
+     *
+     * Entry:  spread > +entryPct (A expensive → short A, long B)
+     *      OR spread < -entryPct (B expensive → long A, short B)
+     * Exit:   spread reverts to within ±exitPct of zero
+     * Stop:   |spread| > stopPct (relationship broke for today)
+     *
+     * @param entryPct  % deviation from daily open ratio to enter (default 1.5)
+     * @param exitPct   % reversion back toward anchor to exit (default 0.2)
+     * @param stopPct   % stop loss on spread (default 3.0)
      */
     public List<PairsTradeResult> backtestPair(
         String symbolA, String symbolB,
         List<CandleData> candlesA, List<CandleData> candlesB,
-        int zWindow, double zEntry, double zExit, double zStop,
+        int zWindow,   // kept for API compatibility, not used in spread mode
+        double entryPct, double exitPct, double stopPct,
         double brokeragePer
     ) {
         // Align on timestamp
         Map<LocalDateTime, CandleData> mapB = new HashMap<>();
         for (CandleData c : candlesB) mapB.put(c.getTimestamp(), c);
 
-        List<double[]> aligned = new ArrayList<>();  // [closeA, closeB]
+        List<double[]> aligned     = new ArrayList<>();  // [closeA, closeB]
         List<LocalDateTime> timestamps = new ArrayList<>();
         for (CandleData ca : candlesA) {
             CandleData cb = mapB.get(ca.getTimestamp());
@@ -91,81 +100,93 @@ public class PairsTradingService {
         }
 
         int n = aligned.size();
-        if (n < zWindow + 10) return List.of();
+        if (n < 20) return List.of();
 
-        // Ratio series + rolling z-score
-        double[] ratios  = new double[n];
-        double[] zscores = new double[n];
-        for (int i = 0; i < n; i++) ratios[i] = aligned.get(i)[0] / aligned.get(i)[1];
-
+        // Compute daily opening ratio anchors (9:15am candle for each date)
+        Map<LocalDate, Double> dailyAnchor = new HashMap<>();
         for (int i = 0; i < n; i++) {
-            if (i < zWindow) { zscores[i] = 0; continue; }
-            double mean = 0, std = 0;
-            for (int k = i - zWindow; k < i; k++) mean += ratios[k];
-            mean /= zWindow;
-            for (int k = i - zWindow; k < i; k++) {
-                double d = ratios[k] - mean;
-                std += d * d;
+            LocalDate d = timestamps.get(i).atZone(IST).toLocalDate();
+            int h = timestamps.get(i).atZone(IST).getHour();
+            int m = timestamps.get(i).atZone(IST).getMinute();
+            // First candle of the day (9:15am) is the anchor
+            if (!dailyAnchor.containsKey(d) && h == 9 && m == 15) {
+                double[] a = aligned.get(i);
+                if (a[1] > 0) dailyAnchor.put(d, a[0] / a[1]);
             }
-            std = Math.sqrt(std / zWindow);
-            zscores[i] = std < 1e-12 ? 0 : (ratios[i] - mean) / std;
+        }
+
+        // Compute spread% for each candle: (ratio - anchor) / anchor * 100
+        double[] spreadPct = new double[n];
+        for (int i = 0; i < n; i++) {
+            LocalDate d = timestamps.get(i).atZone(IST).toLocalDate();
+            Double anchor = dailyAnchor.get(d);
+            if (anchor == null || anchor == 0) { spreadPct[i] = 0; continue; }
+            double ratio = aligned.get(i)[0] / aligned.get(i)[1];
+            spreadPct[i] = (ratio - anchor) / anchor * 100.0;
         }
 
         List<PairsTradeResult> trades = new ArrayList<>();
-        boolean inTrade   = false;
-        String  direction = null;
-        int     entryIdx  = -1;
+        boolean   inTrade   = false;
+        String    direction = null;
+        int       entryIdx  = -1;
         LocalDate entryDate = null;
 
-        for (int i = zWindow; i < n; i++) {
+        for (int i = 0; i < n; i++) {
             LocalDateTime ts = timestamps.get(i);
             LocalDate date   = ts.atZone(IST).toLocalDate();
             int h = ts.atZone(IST).getHour();
             int m = ts.atZone(IST).getMinute();
             int minOfDay = h * 60 + m;
 
+            // If no anchor for this day, skip
+            if (!dailyAnchor.containsKey(date)) continue;
+
             // ---- Force EOD exit ----
             if (inTrade && (minOfDay >= 15 * 60 + 5 || !date.equals(entryDate))) {
                 int refIdx = !date.equals(entryDate) ? (i - 1) : i;
-                PairsTradeResult t = buildTrade(symbolA, symbolB, direction,
-                    timestamps.get(entryIdx), timestamps.get(refIdx),
-                    aligned.get(entryIdx), aligned.get(refIdx),
-                    zscores[entryIdx], zscores[refIdx], "EOD_EXIT", brokeragePer);
-                trades.add(t);
+                if (refIdx >= 0 && refIdx < n) {
+                    trades.add(buildTrade(symbolA, symbolB, direction,
+                        timestamps.get(entryIdx), timestamps.get(refIdx),
+                        aligned.get(entryIdx), aligned.get(refIdx),
+                        spreadPct[entryIdx], spreadPct[refIdx], "EOD_EXIT", brokeragePer));
+                }
                 inTrade = false; direction = null; entryIdx = -1; entryDate = null;
             }
 
-            // Only enter between 9:20 and 14:45 IST
-            if (!inTrade && (minOfDay < 9 * 60 + 20 || minOfDay > 14 * 60 + 45)) continue;
+            // Entry window: 9:30 to 14:30 IST (skip first 15 min and last hour)
+            if (!inTrade && (minOfDay < 9 * 60 + 30 || minOfDay > 14 * 60 + 30)) continue;
 
             if (!inTrade) {
-                if (zscores[i] >= zEntry) {
+                // A expensive relative to today's open → short A, long B
+                if (spreadPct[i] >= entryPct) {
                     inTrade = true; direction = "SHORT_A_LONG_B";
                     entryIdx = i; entryDate = date;
-                } else if (zscores[i] <= -zEntry) {
+                // B expensive relative to today's open → long A, short B
+                } else if (spreadPct[i] <= -entryPct) {
                     inTrade = true; direction = "LONG_A_SHORT_B";
                     entryIdx = i; entryDate = date;
                 }
             } else {
-                boolean hitStop   = Math.abs(zscores[i]) >= zStop;
-                // For SHORT_A_LONG_B (z was positive), revert = z drops to ≤ +zExit
-                // For LONG_A_SHORT_B  (z was negative), revert = z rises to ≥ -zExit
+                double sp = spreadPct[i];
+                boolean hitStop = Math.abs(sp) >= stopPct;
+                // Reversion: spread has collapsed back toward zero (within ±exitPct of anchor)
                 boolean hitTarget = "SHORT_A_LONG_B".equals(direction)
-                    ? zscores[i] <= zExit
-                    : zscores[i] >= -zExit;
+                    ? sp <= exitPct      // was positive (A expensive), now near zero or negative
+                    : sp >= -exitPct;    // was negative (B expensive), now near zero or positive
 
                 if (hitTarget || hitStop) {
-                    String reason = hitStop ? "ZSCORE_STOP" : "ZSCORE_REVERSION";
-                    PairsTradeResult t = buildTrade(symbolA, symbolB, direction,
+                    String reason = hitStop ? "SPREAD_STOP" : "SPREAD_REVERSION";
+                    trades.add(buildTrade(symbolA, symbolB, direction,
                         timestamps.get(entryIdx), ts,
                         aligned.get(entryIdx), aligned.get(i),
-                        zscores[entryIdx], zscores[i], reason, brokeragePer);
-                    trades.add(t);
+                        spreadPct[entryIdx], sp, reason, brokeragePer));
                     inTrade = false; direction = null; entryIdx = -1; entryDate = null;
                 }
             }
         }
 
+        log.info("Pair {}/{}: {} aligned candles, {} anchor days, {} trades",
+            symbolA, symbolB, n, dailyAnchor.size(), trades.size());
         return trades;
     }
 
@@ -200,7 +221,7 @@ public class PairsTradingService {
         String symbolA, String symbolB, String direction,
         LocalDateTime entryTime, LocalDateTime exitTime,
         double[] entry, double[] exit,
-        double entryZ, double exitZ,
+        double entrySpread, double exitSpread,
         String exitReason, double brokerage
     ) {
         double eA = entry[0], eB = entry[1];
@@ -208,15 +229,15 @@ public class PairsTradingService {
         double legAPnl, legBPnl;
 
         if ("SHORT_A_LONG_B".equals(direction)) {
-            legAPnl = (eA - xA) / eA * CAPITAL_PER_LEG;  // short A
-            legBPnl = (xB - eB) / eB * CAPITAL_PER_LEG;  // long  B
+            legAPnl = (eA - xA) / eA * CAPITAL_PER_LEG;  // short A: profit when A falls
+            legBPnl = (xB - eB) / eB * CAPITAL_PER_LEG;  // long  B: profit when B rises
         } else {
-            legAPnl = (xA - eA) / eA * CAPITAL_PER_LEG;  // long  A
-            legBPnl = (eB - xB) / eB * CAPITAL_PER_LEG;  // short B
+            legAPnl = (xA - eA) / eA * CAPITAL_PER_LEG;  // long  A: profit when A rises
+            legBPnl = (eB - xB) / eB * CAPITAL_PER_LEG;  // short B: profit when B falls
         }
 
         return new PairsTradeResult(symbolA, symbolB, entryTime, exitTime,
-            eA, eB, xA, xB, entryZ, exitZ,
+            eA, eB, xA, xB, entrySpread, exitSpread,
             direction, exitReason, legAPnl, legBPnl, legAPnl + legBPnl - brokerage, brokerage);
     }
 }

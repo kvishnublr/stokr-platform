@@ -75,9 +75,9 @@ export default function AdvancedBacktest() {
     ALL_PAIRS.reduce((acc, p) => ({ ...acc, [p.key]: true }), {})
   );
   const [zWindow, setZWindow]   = useState(60);
-  const [zEntry,  setZEntry]    = useState(2.0);
-  const [zExit,   setZExit]     = useState(0.3);
-  const [zStop,   setZStop]     = useState(3.5);
+  const [zEntry,  setZEntry]    = useState(1.5);   // entryPct%
+  const [zExit,   setZExit]     = useState(0.2);   // exitPct%
+  const [zStop,   setZStop]     = useState(3.0);   // stopPct%
   const [pairsResults, setPairsResults] = useState(null);
   const [expandedPair, setExpandedPair] = useState(null);
 
@@ -167,7 +167,7 @@ export default function AdvancedBacktest() {
         zStop,
         brokerage: 80,
       });
-      setProgress('Running z-score simulation…');
+      setProgress('Running spread simulation…');
       const res = await client.post('/backtest/pairs?' + params);
       setPairsResults(res.data);
     } catch (e) {
@@ -287,32 +287,28 @@ export default function AdvancedBacktest() {
                   style={{ width: '160px', padding: '9px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px' }} />
               </div>
               <div>
-                <label className="label">Z-Window <span style={{ color: '#d1d5db' }}>(candles)</span></label>
-                <input className="z-input" type="number" min={5} max={60} value={zWindow}
-                  onChange={e => setZWindow(Number(e.target.value))} />
-              </div>
-              <div>
-                <label className="label">Z-Entry <span style={{ color: '#d1d5db' }}>(σ to enter)</span></label>
-                <input className="z-input" type="number" min={1} max={4} step={0.1} value={zEntry}
+                <label className="label">Entry Spread <span style={{ color: '#d1d5db' }}>(%)</span></label>
+                <input className="z-input" type="number" min={0.5} max={5} step={0.1} value={zEntry}
                   onChange={e => setZEntry(Number(e.target.value))} />
               </div>
               <div>
-                <label className="label">Z-Exit <span style={{ color: '#d1d5db' }}>(σ = profit)</span></label>
-                <input className="z-input" type="number" min={0} max={1} step={0.1} value={zExit}
+                <label className="label">Exit Spread <span style={{ color: '#d1d5db' }}>(%)</span></label>
+                <input className="z-input" type="number" min={0} max={1} step={0.05} value={zExit}
                   onChange={e => setZExit(Number(e.target.value))} />
               </div>
               <div>
-                <label className="label">Z-Stop <span style={{ color: '#d1d5db' }}>(σ = loss)</span></label>
-                <input className="z-input" type="number" min={2} max={6} step={0.1} value={zStop}
+                <label className="label">Stop Spread <span style={{ color: '#d1d5db' }}>(%)</span></label>
+                <input className="z-input" type="number" min={1} max={8} step={0.1} value={zStop}
                   onChange={e => setZStop(Number(e.target.value))} />
               </div>
             </div>
 
             <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px',
               padding: '10px 14px', marginBottom: '20px', fontSize: '12px', color: '#166534' }}>
-              💡 Entry: short the expensive stock, long the cheap one when |z| ≥ {zEntry}σ.
-              Exit: z reverts to ±{zExit}σ (profit) or widens to ±{zStop}σ (stop).
-              Capital: ₹25,000/leg × 2 = ₹50,000/pair. Brokerage: ₹80/pair trade (4 legs × ₹20).
+              💡 <strong>Daily Anchor Spread:</strong> anchors to today's 9:15am opening ratio.
+              Entry: spread deviates ≥ {zEntry}% from open ratio → short the expensive leg, long the cheap one.
+              Exit: spread reverts to within ±{zExit}% of anchor (profit) or widens to {zStop}% (stop).
+              Capital: ₹25,000/leg × 2 = ₹50,000/pair. Brokerage: ₹80/pair.
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -336,8 +332,9 @@ export default function AdvancedBacktest() {
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
                     <span className="tag" style={{ background: '#d1fae5', color: '#065f46' }}>PAIRS ARB</span>
                     <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>{pr.pairsCount} pairs</span>
-                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>Z-entry ±{pr.zEntry}σ</span>
-                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>Z-stop ±{pr.zStop}σ</span>
+                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>Entry ±{pr.entryPct || pr.zEntry}%</span>
+                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>Stop ±{pr.stopPct || pr.zStop}%</span>
+                    <span className="tag" style={{ background: '#d1fae5', color: '#065f46' }}>Daily Anchor</span>
                     <span style={{ fontSize: '12px', color: '#9ca3af' }}>
                       {new Date(pr.dateRange.start).toLocaleDateString()} → {new Date(pr.dateRange.end).toLocaleDateString()}
                     </span>
@@ -396,8 +393,8 @@ export default function AdvancedBacktest() {
                                 <th>#</th><th>Entry Time</th><th>Direction</th>
                                 <th style={{ textAlign: 'right' }}>Entry A/B</th>
                                 <th style={{ textAlign: 'right' }}>Exit A/B</th>
-                                <th style={{ textAlign: 'right' }}>Z-Entry</th>
-                                <th style={{ textAlign: 'right' }}>Z-Exit</th>
+                                <th style={{ textAlign: 'right' }}>Entry Spread</th>
+                                <th style={{ textAlign: 'right' }}>Exit Spread</th>
                                 <th style={{ textAlign: 'right' }}>Net P&L</th>
                                 <th style={{ textAlign: 'center' }}>Exit</th>
                               </tr>
@@ -425,11 +422,11 @@ export default function AdvancedBacktest() {
                                     {Number(t.exitA).toFixed(1)} / {Number(t.exitB).toFixed(1)}
                                   </td>
                                   <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px',
-                                    color: Math.abs(t.entryZScore) >= 2.5 ? '#dc2626' : '#6b7280' }}>
-                                    {Number(t.entryZScore).toFixed(2)}σ
+                                    color: Math.abs(t.entrySpreadPct || t.entryZScore) >= 2.5 ? '#dc2626' : '#6b7280' }}>
+                                    {Number(t.entrySpreadPct ?? t.entryZScore).toFixed(2)}%
                                   </td>
                                   <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px' }}>
-                                    {Number(t.exitZScore).toFixed(2)}σ
+                                    {Number(t.exitSpreadPct ?? t.exitZScore).toFixed(2)}%
                                   </td>
                                   <td style={{ textAlign: 'right', fontWeight: 700,
                                     color: t.netPnl > 0 ? '#10b981' : t.netPnl < 0 ? '#ef4444' : '#6b7280' }}>
@@ -438,13 +435,13 @@ export default function AdvancedBacktest() {
                                   <td style={{ textAlign: 'center' }}>
                                     <span style={{
                                       padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700,
-                                      background: t.exitReason === 'ZSCORE_REVERSION' ? '#d1fae5'
-                                        : t.exitReason === 'ZSCORE_STOP' ? '#fee2e2' : '#fef3c7',
-                                      color: t.exitReason === 'ZSCORE_REVERSION' ? '#065f46'
-                                        : t.exitReason === 'ZSCORE_STOP' ? '#991b1b' : '#92400e',
+                                      background: (t.exitReason === 'SPREAD_REVERSION' || t.exitReason === 'ZSCORE_REVERSION') ? '#d1fae5'
+                                        : (t.exitReason === 'SPREAD_STOP' || t.exitReason === 'ZSCORE_STOP') ? '#fee2e2' : '#fef3c7',
+                                      color: (t.exitReason === 'SPREAD_REVERSION' || t.exitReason === 'ZSCORE_REVERSION') ? '#065f46'
+                                        : (t.exitReason === 'SPREAD_STOP' || t.exitReason === 'ZSCORE_STOP') ? '#991b1b' : '#92400e',
                                     }}>
-                                      {t.exitReason === 'ZSCORE_REVERSION' ? '✓ REVERTED'
-                                        : t.exitReason === 'ZSCORE_STOP' ? '✗ STOP'
+                                      {(t.exitReason === 'SPREAD_REVERSION' || t.exitReason === 'ZSCORE_REVERSION') ? '✓ REVERTED'
+                                        : (t.exitReason === 'SPREAD_STOP' || t.exitReason === 'ZSCORE_STOP') ? '✗ STOP'
                                         : '⏱ EOD'}
                                     </span>
                                   </td>

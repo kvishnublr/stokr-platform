@@ -297,26 +297,25 @@ public class BacktestController {
     }
 
     /**
-     * Pairs / Statistical Arbitrage backtest.
-     * pairs: comma-separated "HDFCBANK:ICICIBANK,TCS:INFY" — uses defaults if blank.
-     * zWindow: rolling period for mean/std (default 20 candles = 20 minutes on 1-min data)
-     * zEntry:  z-score threshold to enter (default 2.0)
-     * zExit:   z-score reversion target to close position (default 0.3)
-     * zStop:   z-score stop loss if spread widens (default 3.5)
-     * brokerage: ₹ per pair trade (4 legs × ₹20 default = 80)
+     * Pairs / Statistical Arbitrage backtest — daily-anchor spread method.
+     * pairs:      comma-separated "HDFCBANK:ICICIBANK,TCS:INFY" — uses defaults if blank.
+     * entryPct:  % deviation from daily opening ratio to enter (default 1.5%)
+     * exitPct:   % reversion back toward anchor to exit (default 0.2%)
+     * stopPct:   % stop loss on spread widening (default 3.0%)
+     * brokerage: ₹ per pair trade (4 legs × ₹20 = ₹80)
      */
     @PostMapping("/pairs")
     public ResponseEntity<Map<String, Object>> runPairsBacktest(
             @RequestParam(required = false) String pairs,
             @RequestParam(required = false) String dateStart,
             @RequestParam(required = false) String dateEnd,
-            @RequestParam(defaultValue = "60")  int    zWindow,   // 60-min window on 1-min data
-            @RequestParam(defaultValue = "2.0") double zEntry,
-            @RequestParam(defaultValue = "0.3") double zExit,
-            @RequestParam(defaultValue = "3.5") double zStop,
+            @RequestParam(defaultValue = "60")  int    zWindow,
+            @RequestParam(defaultValue = "1.5") double zEntry,    // entryPct — kept as zEntry for UI compat
+            @RequestParam(defaultValue = "0.2") double zExit,     // exitPct
+            @RequestParam(defaultValue = "3.0") double zStop,     // stopPct
             @RequestParam(defaultValue = "80")  double brokerage) {
 
-        log.info("Pairs backtest: pairs={}, zEntry={}, zExit={}, zStop={}, zWindow={}", pairs, zEntry, zExit, zStop, zWindow);
+        log.info("Pairs backtest: pairs={}, entryPct={}, exitPct={}, stopPct={}", pairs, zEntry, zExit, zStop);
         try {
             java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
             LocalDateTime startTime = dateStart != null
@@ -424,12 +423,16 @@ public class BacktestController {
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("strategy",        "PAIRS_ARB");
+            result.put("method",          "DAILY_ANCHOR_SPREAD");
             result.put("pairsCount",      pairResults.size());
             result.put("skippedPairs",    skippedPairs);
             result.put("zWindow",         zWindow);
-            result.put("zEntry",          zEntry);
-            result.put("zExit",           zExit);
-            result.put("zStop",           zStop);
+            result.put("zEntry",          zEntry);   // entryPct%
+            result.put("zExit",           zExit);    // exitPct%
+            result.put("zStop",           zStop);    // stopPct%
+            result.put("entryPct",        zEntry);
+            result.put("exitPct",         zExit);
+            result.put("stopPct",         zStop);
             result.put("capitalPerLeg",   PairsTradingService.CAPITAL_PER_LEG);
             result.put("capitalTotal",    PairsTradingService.CAPITAL_PER_LEG * 2);
             result.put("totalTrades",     totalTrades);
