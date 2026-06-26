@@ -35,7 +35,7 @@ public class VwapReversionStrategy implements StrategyPlugin {
         Integer minute = context.extra("istMinute", Integer.class);
         if (hour != null && minute != null) {
             int totalMin = hour * 60 + minute;
-            if (totalMin < 9 * 60 + 30 || totalMin > 14 * 60 + 0) return null;
+            if (totalMin < 9 * 60 + 30 || totalMin > 10 * 60 + 59) return null;
         }
 
         double deviationPct = close.subtract(vwap).divide(vwap, 6, RoundingMode.HALF_UP).doubleValue() * 100;
@@ -77,13 +77,13 @@ public class VwapReversionStrategy implements StrategyPlugin {
         if (side == Signal.Side.BUY) {
             sl = close.multiply(BigDecimal.valueOf(0.990)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal risk = close.subtract(sl);
-            target = close.add(risk.multiply(BigDecimal.valueOf(1.6))).setScale(2, RoundingMode.HALF_UP);
-            rRatio = 1.6;
+            target = close.add(risk.multiply(BigDecimal.valueOf(1.4))).setScale(2, RoundingMode.HALF_UP);
+            rRatio = 1.4;
         } else {
             sl = close.multiply(BigDecimal.valueOf(1.010)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal risk = sl.subtract(close);
-            target = close.subtract(risk.multiply(BigDecimal.valueOf(1.6))).setScale(2, RoundingMode.HALF_UP);
-            rRatio = 1.6;
+            target = close.subtract(risk.multiply(BigDecimal.valueOf(1.4))).setScale(2, RoundingMode.HALF_UP);
+            rRatio = 1.4;
         }
 
         double confidence = 0.75 + (Math.abs(deviationPct) / 10.0) * 0.15;

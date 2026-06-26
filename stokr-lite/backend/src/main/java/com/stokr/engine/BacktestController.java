@@ -1,5 +1,6 @@
 package com.stokr.engine;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.marketdata.Candle;
 import com.stokr.external.ChartinkScannerService;
 import com.stokr.strategy.*;
@@ -10,6 +11,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
@@ -30,16 +34,24 @@ public class BacktestController {
     private final List<StrategyPlugin> strategyPlugins;
     private final ChartinkScannerService chartinkScannerService;
     private final PairsTradingService pairsTradingService;
+    private final BacktestCacheRepository backtestCacheRepository;
+    private final ObjectMapper objectMapper;
 
     private static final Map<String, String> STRATEGY_PLUGIN_MAP = new LinkedHashMap<>(Map.ofEntries(
         Map.entry("MORNING_SURGE_REVERSAL", "MORNING_SURGE_REVERSAL"),
         Map.entry("SURGE_REV",     "MORNING_SURGE_REVERSAL"),
         Map.entry("VWAP_REVERSION", "VWAP_REVERSION"),
         Map.entry("VWAP_REV",      "VWAP_REVERSION"),
-        Map.entry("REVERSION",     "VWAP_REVERSION")
+        Map.entry("REVERSION",     "VWAP_REVERSION"),
+        Map.entry("SMART_MONEY_FLOW", "SMART_MONEY_FLOW"),
+        Map.entry("SMF",           "SMART_MONEY_FLOW"),
+        Map.entry("MOMENTUM_TRAIL", "MOMENTUM_TRAIL"),
+        Map.entry("MT",            "MOMENTUM_TRAIL"),
+        Map.entry("GAP_REVERSAL",  "GAP_REVERSAL"),
+        Map.entry("GAP_REV",       "GAP_REVERSAL")
     ));
 
-    private static final double CAPITAL = 25000;
+    private static double CAPITAL = 25000;
 
     @PostMapping("/run")
     public ResponseEntity<Map<String, Object>> runBacktest(
@@ -164,12 +176,14 @@ public class BacktestController {
             @RequestParam(required = false) String symbols,
             @RequestParam(defaultValue = "1min") String timeframe,
             @RequestParam(defaultValue = "NIFTY_100") String universe,
-            @RequestParam(defaultValue = "0") int brokerage) {
+            @RequestParam(defaultValue = "0") int brokerage,
+            @RequestParam(defaultValue = "25000") double capital) {
 
-        log.info("Running advanced backtest: strategy={}, universe={}, dateStart={}, dateEnd={}, timeframe={}",
-                strategy, universe, dateStart, dateEnd, timeframe);
+        log.info("Running advanced backtest: strategy={}, universe={}, dateStart={}, dateEnd={}, timeframe={}, capital={}",
+                strategy, universe, dateStart, dateEnd, timeframe, capital);
 
         try {
+            CAPITAL = capital;
             java.time.ZoneId IST2 = java.time.ZoneId.of("Asia/Kolkata");
             LocalDateTime startTime = dateStart != null
                 ? LocalDateTime.parse(dateStart.replace("Z","").substring(0, 19))
@@ -177,6 +191,25 @@ public class BacktestController {
             LocalDateTime endTime = dateEnd != null
                 ? LocalDateTime.parse(dateEnd.replace("Z","").substring(0, 19))
                 : LocalDateTime.now(IST2);
+
+            String pluginType = resolvePluginType(strategy);
+            String cacheKey = computeCacheKey(pluginType, universe, startTime, endTime, brokerage);
+            boolean cached = false;
+
+            // Check cache first (only for non-Chartink universes)
+            if (!"CHARTINK".equalsIgnoreCase(universe)) {
+                Optional<BacktestCache> cachedResult = backtestCacheRepository.findByCacheKey(cacheKey);
+                if (cachedResult.isPresent()) {
+                    log.info("Returning cached backtest result for key={}", cacheKey);
+                    BacktestCache cache = cachedResult.get();
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> result = objectMapper.readValue(cache.getResultJson(), LinkedHashMap.class);
+                    result.put("cached", true);
+                    result.put("cachedAt", cache.getCreatedAt().toString());
+                    return ResponseEntity.ok(result);
+                }
+            }
+
             boolean useChartinkFilter = "CHARTINK".equalsIgnoreCase(universe);
             String resolvedUniverse = useChartinkFilter ? "NIFTY_100" : universe;
 
@@ -190,7 +223,6 @@ public class BacktestController {
                 ? Arrays.asList(symbols.split(","))
                 : (useChartinkFilter && !chartinkSymbols.isEmpty() ? chartinkSymbols : getSymbolsForUniverse(resolvedUniverse));
 
-            String pluginType = resolvePluginType(strategy);
             StrategyPlugin plugin = findPlugin(pluginType);
             StrategyParams params = StrategyParams.defaults();
 
@@ -248,6 +280,8 @@ public class BacktestController {
 
             String strategyName = plugin != null ? plugin.getStrategyType() : (strategy != null ? strategy : "ALL");
             Map<String, Object> result = new LinkedHashMap<>();
+            result.put("cached", false);
+            result.put("cacheKey", cacheKey);
             result.put("strategy", strategyName);
             result.put("universe", universe);
             result.put("chartinkSymbols", useChartinkFilter ? symbolList.size() : 0);
@@ -275,6 +309,25 @@ public class BacktestController {
             result.put("capitalPerTrade", CAPITAL);
             result.put("dateRange", Map.of("start", startTime.toString(), "end", endTime.toString()));
             result.put("trades", allTrades.stream().map(SimulatedTrade::toMap).toList());
+
+            // Save to cache (non-Chartink only)
+            if (!"CHARTINK".equalsIgnoreCase(universe)) {
+                try {
+                    String json = objectMapper.writeValueAsString(result);
+                    BacktestCache cache = new BacktestCache();
+                    cache.setCacheKey(cacheKey);
+                    cache.setStrategyType(strategyName);
+                    cache.setUniverse(universe);
+                    cache.setDateStart(startTime);
+                    cache.setDateEnd(endTime);
+                    cache.setBrokerage(brokerage);
+                    cache.setResultJson(json);
+                    cache.setCreatedAt(LocalDateTime.now());
+                    backtestCacheRepository.save(cache);
+                } catch (Exception e) {
+                    log.warn("Failed to cache backtest result: {}", e.getMessage());
+                }
+            }
 
             log.info("Backtest complete: strategy={} trades={} winRate={}% totalPnL={}",
                 strategyName, totalTrades, Math.round(winRate * 10.0) / 10.0, Math.round(totalPnl));
@@ -449,6 +502,31 @@ public class BacktestController {
 
     private double rnd2(double v) { return Math.round(v * 100.0) / 100.0; }
 
+    @PostMapping("/clear-cache")
+    public ResponseEntity<Map<String, Object>> clearBacktestCache() {
+        long count = backtestCacheRepository.count();
+        backtestCacheRepository.deleteAll();
+        log.info("Cleared {} cached backtest results", count);
+        return ResponseEntity.ok(Map.of("cleared", count));
+    }
+
+    private String computeCacheKey(String pluginType, String universe, LocalDateTime startTime, LocalDateTime endTime, int brokerage) {
+        try {
+            String raw = pluginType + "|" + universe + "|" + startTime.toString() + "|" + endTime.toString() + "|" + brokerage + "|" + (int) CAPITAL;
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(raw.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(64);
+            for (byte b : hash) hex.append(String.format("%02x", b));
+            return hex.substring(0, 16);
+        } catch (NoSuchAlgorithmException e) {
+            return String.valueOf(rawForFallback(pluginType, universe, startTime, endTime, brokerage));
+        }
+    }
+
+    private int rawForFallback(String pluginType, String universe, LocalDateTime startTime, LocalDateTime endTime, int brokerage) {
+        return (pluginType + "|" + universe + "|" + startTime.toString() + "|" + endTime.toString() + "|" + brokerage).hashCode();
+    }
+
     @GetMapping("/chartink-scan")
     public ResponseEntity<Map<String, Object>> getChartinkScan(
             @RequestParam(required = false) String scanClause) {
@@ -465,7 +543,8 @@ public class BacktestController {
         if (strategy == null || strategy.isEmpty() || "ALL".equalsIgnoreCase(strategy))
             return "MORNING_SURGE_REVERSAL";
         String mapped = STRATEGY_PLUGIN_MAP.get(strategy.toUpperCase());
-        return mapped != null ? mapped : "MORNING_SURGE_REVERSAL";
+        // If not in map, try direct match (allows arbitrary plugin types like MOMENTUM_TRAIL)
+        return mapped != null ? mapped : strategy.toUpperCase();
     }
 
     private StrategyPlugin findPlugin(String type) {
@@ -485,7 +564,8 @@ public class BacktestController {
 
         BigDecimal[] dayVwap = computePerDayVwap(candleData);
 
-        BigDecimal[] dayOpenArr   = new BigDecimal[n];
+        BigDecimal[] dayOpenArr       = new BigDecimal[n];
+        BigDecimal[] prevDayCloseArr  = new BigDecimal[n];
         BigDecimal[] orbHighArr   = new BigDecimal[n];
         BigDecimal[] orbLowArr    = new BigDecimal[n];
         BigDecimal[] orbRangeArr  = new BigDecimal[n];
@@ -493,12 +573,17 @@ public class BacktestController {
             String curDay = null;
             int dayStart = 0;
             BigDecimal thisDayOpen = null;
+            BigDecimal thisPrevDayClose = null;
             BigDecimal runOrbHigh = null, runOrbLow = null;
             boolean orbReady = false;
 
             for (int i = 0; i < n; i++) {
                 String d = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
                 if (!d.equals(curDay)) {
+                    // Record previous day's close (last candle before day boundary)
+                    if (curDay != null && dayStart > 0) {
+                        thisPrevDayClose = candles.get(i - 1).close();
+                    }
                     curDay = d;
                     dayStart = i;
                     thisDayOpen = candles.get(i).open();
@@ -516,7 +601,8 @@ public class BacktestController {
                     orbReady = true;
                 }
 
-                dayOpenArr[i]   = thisDayOpen;
+                dayOpenArr[i]      = thisDayOpen;
+                prevDayCloseArr[i] = thisPrevDayClose;
                 orbHighArr[i]   = orbReady ? runOrbHigh : null;
                 orbLowArr[i]    = orbReady ? runOrbLow  : null;
                 orbRangeArr[i]  = orbReady ? runOrbHigh.subtract(runOrbLow) : null;
@@ -553,7 +639,8 @@ public class BacktestController {
             extras.put("vwap",      dayVwap[i]);
             extras.put("rsi14",     rsi);
             extras.put("atr14",     atr);
-            extras.put("prevClose", i > 0 ? candleData.get(i - 1).getClose() : null);
+            extras.put("prevClose",    i > 0 ? candleData.get(i - 1).getClose() : null);
+            extras.put("prevDayClose", prevDayCloseArr[i]);
             // VWAP slope: pass vwap from 1, 3, 5 candles ago (same day only) for trend check
             if (i >= 5) {
                 String dayI    = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();

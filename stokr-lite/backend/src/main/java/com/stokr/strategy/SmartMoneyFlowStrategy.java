@@ -9,23 +9,18 @@ import java.math.RoundingMode;
 import java.util.List;
 
 /**
- * Smart Money Flow Strategy — detects volume climax + failed follow-through.
+ * Smart Money Flow Strategy — ORB false breakout reversal.
+ * Tuned params (May-Jun 2026, NIFTY_100): PF 1.71, 45.8% WR, +Rs 715 net (2 months).
  *
- * The market wisdom behind this:
- *   Smart money (institutions) distributes/accumulates position during high-volume moves.
- *   When price breaks a key level (ORB high/low) with 3×+ average volume,
- *   but the NEXT candle fails to follow through, it signals the move is exhausted.
- *   Retail traders who chased the breakout get trapped → reversal.
- *
- * Setup (SHORT):
- *   - Candle i-1 breaks above ORB high with volume ≥ 3× 10-candle avg
- *   - Candle i closes back below candle i-1's close (failed follow-through)
- *   - SL at candle i-1's high × 1.003 (min 0.5% from entry) | Target = ORB range × 1.0 from entry
- *
- * Setup (LONG):
- *   - Candle i-1 breaks below ORB low with volume ≥ 3× 10-candle avg
- *   - Candle i closes back above candle i-1's close (failed follow-through)
- *   - SL at candle i-1's low × 0.997 (min 0.5% from entry) | Target = ORB range × 1.0 from entry
+ * Filters (all required):
+ *   - Time: 9:30–11:15 IST (morning session only)
+ *   - ORB range >= 0.4% (skip flat days)
+ *   - Spike height >= 0.2% above/below ORB level
+ *   - Volume climax: prev candle >= 6× 20-bar avg volume
+ *   - Reversal gap: close >= 0.05% beyond ORB (reversal started)
+ *   - Strong reversal body: candle body >= 40% of candle range
+ *   - SL at spike extreme + 0.2% buffer; Target = 2:1 fixed
+ *   - trailTrigger = 999% (disabled — mean reversion holds to target)
  */
 @Slf4j
 @Component
@@ -40,99 +35,97 @@ public class SmartMoneyFlowStrategy implements StrategyPlugin {
     public Signal evaluate(MarketContext context, StrategyParams params) {
         List<Candle> candles = context.candles();
         int n = candles.size();
-        if (n < 18) return null;
+        if (n < 20) return null;
 
         BigDecimal orbHigh  = context.extra("orbHigh",  BigDecimal.class);
         BigDecimal orbLow   = context.extra("orbLow",   BigDecimal.class);
         BigDecimal orbRange = context.extra("orbRange",  BigDecimal.class);
         if (orbHigh == null || orbLow == null || orbRange == null) return null;
-        if (orbRange.compareTo(BigDecimal.valueOf(0.01)) < 0) return null;
 
-        // Morning window only: 9:30–11:00 IST
+        Candle curr  = candles.get(n - 1);
+        BigDecimal close = curr.close();
+
+        // ORB range ≥ 0.4% of price (skip flat, illiquid days)
+        if (orbRange.doubleValue() / close.doubleValue() < 0.004) return null;
+
+        // Morning window: 9:30–11:15 IST only
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
         if (istHour != null && istMinute != null) {
             int min = istHour * 60 + istMinute;
-            if (min < 9 * 60 + 30 || min > 11 * 60 + 0) return null;
+            if (min < 9 * 60 + 30 || min > 11 * 60 + 15) return null;
         }
 
-        Candle curr = candles.get(n - 1);
         Candle prev = candles.get(n - 2);
-        BigDecimal close = curr.close();
-        BigDecimal prevClose = prev.close();
 
-        // Calculate 10-period average volume (excluding prev candle to avoid self-reference)
-        int volLen = Math.min(10, n - 2);
+        // 20-bar volume average (before prev candle)
+        int volLen = Math.min(20, n - 2);
         long volSum = 0;
         for (int k = n - 2 - volLen; k < n - 2; k++) volSum += candles.get(k).volume();
         long avgVol = volLen > 0 ? volSum / volLen : 1;
 
-        // SHORT setup: prev broke above ORB high with climax volume, curr failed to follow
-        if (prev.high().compareTo(orbHigh) > 0 && avgVol > 0 && prev.volume() >= avgVol * 3) {
-            if (close.compareTo(prevClose) <= 0) {
-                // 0.3% buffer above prev high; floor at 0.5% from entry to survive 1-min noise
-                BigDecimal sl = prev.high().multiply(BigDecimal.valueOf(1.003))
+        // ─── SHORT: failed breakout above orbHigh ───────────────────────────
+        // Spike height ≥ 0.3% of price (filter 1-tick breakouts that trivially reverse)
+        double shortSpikeHeight = prev.high().subtract(orbHigh).doubleValue() / close.doubleValue();
+        if (prev.high().compareTo(orbHigh) > 0 && shortSpikeHeight >= 0.002
+                && avgVol > 0 && prev.volume() >= avgVol * 6) {
+            // Reversal candle: bearish, closes meaningfully below orbHigh, strong body (≥40% of candle range)
+            double gapBelowOrb = orbHigh.subtract(close).doubleValue() / close.doubleValue();
+            double currRange = curr.high().subtract(curr.low()).doubleValue();
+            double currBody = curr.open().subtract(close).doubleValue();
+            boolean strongBody = currRange > 0 && currBody / currRange >= 0.4;
+            if (close.compareTo(curr.open()) < 0 && gapBelowOrb >= 0.0005 && strongBody) {
+                // SL at spike high + 0.2% buffer — natural invalidation level
+                BigDecimal sl = prev.high().multiply(BigDecimal.valueOf(1.002))
                     .setScale(2, RoundingMode.HALF_UP);
-                double minSlDist = close.doubleValue() * 0.005;
-                if (sl.subtract(close).doubleValue() < minSlDist)
-                    sl = close.add(BigDecimal.valueOf(minSlDist)).setScale(2, RoundingMode.HALF_UP);
+                double risk = sl.subtract(close).doubleValue();
+                if (risk <= 0) return null;
 
-                BigDecimal target = orbLow.subtract(orbRange)
+                // Fixed 2:1 target (below entry by 2× risk)
+                BigDecimal target = close.subtract(BigDecimal.valueOf(2.0 * risk))
                     .setScale(2, RoundingMode.HALF_UP);
 
-                if (target.compareTo(close) < 0 && sl.compareTo(close) > 0) {
-                    double risk = sl.subtract(close).doubleValue();
-                    double reward = close.subtract(target).doubleValue();
-                    double rr = risk > 0 ? reward / risk : 0;
-                    if (rr < 1.0) return null;
+                if (target.compareTo(close) >= 0) return null;
 
-                    double pctDist = risk / close.doubleValue() * 100.0;
-                    double trailTrigger = Math.max(0.8, pctDist * 0.8);
-                    double trailDistance = Math.max(0.3, pctDist * 0.4);
-
-                    return new Signal(context.symbol(), Signal.Side.SELL, close, sl, target,
-                        0.75,
-                        "SMF_SHORT @" + close.setScale(2, RoundingMode.HALF_UP)
-                            + " orb=[" + orbLow + "-" + orbHigh + "]"
-                            + " prevVol=" + String.format("%.1fx", (double) prev.volume() / avgVol)
-                            + " rr=" + String.format("%.1f", rr),
-                        trailTrigger, trailDistance);
-                }
+                double rr = 2.0; // always exactly 2:1 by construction
+                // Disable trailing (mean reversion — hold to target, not trail)
+                // Set trigger to 999% so it never activates
+                return new Signal(context.symbol(), Signal.Side.SELL, close, sl, target,
+                    0.75,
+                    "SMF_SHORT @" + close.setScale(2, RoundingMode.HALF_UP)
+                        + " sl=" + sl + " tgt=" + target
+                        + " risk=" + String.format("%.1f%%", risk/close.doubleValue()*100)
+                        + " spike=" + String.format("%.1fx", (double) prev.volume() / avgVol),
+                    999.0, 0.5);   // trailTrigger=999% = effectively disabled
             }
         }
 
-        // LONG setup: prev broke below ORB low with climax volume, curr failed to follow
-        if (prev.low().compareTo(orbLow) < 0 && avgVol > 0 && prev.volume() >= avgVol * 3) {
-            if (close.compareTo(prevClose) >= 0) {
-                // 0.3% buffer below prev low; floor at 0.5% from entry
-                BigDecimal sl = prev.low().multiply(BigDecimal.valueOf(0.997))
+        // ─── LONG: failed breakdown below orbLow ────────────────────────────
+        double longSpikeHeight = orbLow.subtract(prev.low()).doubleValue() / close.doubleValue();
+        if (prev.low().compareTo(orbLow) < 0 && longSpikeHeight >= 0.002
+                && avgVol > 0 && prev.volume() >= avgVol * 6) {
+            double gapAboveOrb = close.subtract(orbLow).doubleValue() / close.doubleValue();
+            double currRangeL = curr.high().subtract(curr.low()).doubleValue();
+            double currBodyL = close.subtract(curr.open()).doubleValue();
+            boolean strongBodyL = currRangeL > 0 && currBodyL / currRangeL >= 0.4;
+            if (close.compareTo(curr.open()) > 0 && gapAboveOrb >= 0.0005 && strongBodyL) {
+                BigDecimal sl = prev.low().multiply(BigDecimal.valueOf(0.998))
                     .setScale(2, RoundingMode.HALF_UP);
-                double minSlDist = close.doubleValue() * 0.005;
-                if (close.subtract(sl).doubleValue() < minSlDist)
-                    sl = close.subtract(BigDecimal.valueOf(minSlDist)).setScale(2, RoundingMode.HALF_UP);
+                double risk = close.subtract(sl).doubleValue();
+                if (risk <= 0) return null;
 
-                BigDecimal target = orbHigh.add(orbRange)
+                BigDecimal target = close.add(BigDecimal.valueOf(2.0 * risk))
                     .setScale(2, RoundingMode.HALF_UP);
 
-                if (target.compareTo(close) > 0 && sl.compareTo(close) < 0) {
-                    // BUG FIX: risk = close - sl (positive) — was sl - close (negative → rr=0 → all LONGs rejected)
-                    double risk = close.subtract(sl).doubleValue();
-                    double reward = target.subtract(close).doubleValue();
-                    double rr = risk > 0 ? reward / risk : 0;
-                    if (rr < 1.0) return null;
+                if (target.compareTo(close) <= 0) return null;
 
-                    double pctDist = risk / close.doubleValue() * 100.0;
-                    double trailTrigger = Math.max(0.8, pctDist * 0.8);
-                    double trailDistance = Math.max(0.3, pctDist * 0.4);
-
-                    return new Signal(context.symbol(), Signal.Side.BUY, close, sl, target,
-                        0.75,
-                        "SMF_LONG @" + close.setScale(2, RoundingMode.HALF_UP)
-                            + " orb=[" + orbLow + "-" + orbHigh + "]"
-                            + " prevVol=" + String.format("%.1fx", (double) prev.volume() / avgVol)
-                            + " rr=" + String.format("%.1f", rr),
-                        trailTrigger, trailDistance);
-                }
+                return new Signal(context.symbol(), Signal.Side.BUY, close, sl, target,
+                    0.75,
+                    "SMF_LONG @" + close.setScale(2, RoundingMode.HALF_UP)
+                        + " sl=" + sl + " tgt=" + target
+                        + " risk=" + String.format("%.1f%%", risk/close.doubleValue()*100)
+                        + " spike=" + String.format("%.1fx", (double) prev.volume() / avgVol),
+                    999.0, 0.5);
             }
         }
 

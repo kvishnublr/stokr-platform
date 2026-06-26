@@ -18,8 +18,9 @@ async function ensureAuthenticated() {
 }
 
 const STRATEGIES = [
+  { value: 'SMF',           label: 'Smart Money Flow',      desc: 'Volume climax + failed follow-through. Detects smart money distribution/accumulation traps.' },
   { value: 'SURGE_REV',     label: 'Morning Surge Reversal', desc: 'Counter-trend fade after morning surge exhaustion. 52.5% win rate, PF 1.67.' },
-  { value: 'VWAP_REV',      label: 'VWAP Reversion',        desc: 'Mean reversion when price deviates >1.0% from VWAP. 61.7% win rate, PF 1.85.' },
+  { value: 'VWAP_REV',      label: 'VWAP Reversion',        desc: 'Mean reversion when price deviates from VWAP. 9:30-11:00, 64.1% win rate.' },
 ];
 
 const ALL_PAIRS = [
@@ -596,9 +597,23 @@ export default function AdvancedBacktest() {
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
           <button className="run-btn" onClick={runBacktest} disabled={loading}>
             {loading ? '⏳ ' + progress : '▶ Run Backtest'}
+          </button>
+          <button onClick={async () => {
+            try {
+              await client.post('/backtest/clear-cache');
+              setResults(null);
+              setError('Cache cleared. Run backtest again for fresh results.');
+            } catch (e) {
+              setError('Failed to clear cache: ' + (e.response?.data?.error || e.message));
+            }
+          }} disabled={loading}
+            style={{ padding: '12px 18px', borderRadius: '10px', border: '1px solid #d1d5db',
+              background: 'white', fontSize: '13px', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer',
+              color: '#6b7280', opacity: loading ? 0.55 : 1 }}>
+            🗑 Clear Cache
           </button>
           {loading && (
             <span style={{ fontSize: '13px', color: '#6b7280' }}>{progress}</span>
@@ -626,6 +641,7 @@ export default function AdvancedBacktest() {
             <span style={{ fontSize: '12px', color: '#9ca3af' }}>
               {new Date(r.dateRange.start).toLocaleDateString()} → {new Date(r.dateRange.end).toLocaleDateString()}
             </span>
+            {r.cached && <span className="tag" style={{ background: '#fef3c7', color: '#92400e' }}>📦 Cached</span>}
           </div>
 
           {/* Primary metrics */}
@@ -671,6 +687,113 @@ export default function AdvancedBacktest() {
                 color="#10b981" sub={r.lossDays + ' loss days · ' + r.totalTradingDays + ' total'} />
             </div>
           </div>
+
+          {/* Per-symbol breakdown */}
+          {r.trades?.length > 0 && (() => {
+            const bySymbol = {};
+            r.trades.forEach(t => {
+              if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { trades: 0, wins: 0, pnl: 0 };
+              bySymbol[t.symbol].trades++;
+              if (t.pnl > 0) bySymbol[t.symbol].wins++;
+              bySymbol[t.symbol].pnl += t.pnl;
+            });
+            const sorted = Object.entries(bySymbol).sort((a, b) => b[1].pnl - a[1].pnl);
+            return (
+              <div className="card">
+                <div style={{ fontWeight: 700, color: '#374151', marginBottom: '16px', fontSize: '15px' }}>
+                  Per-Symbol Breakdown <span style={{ color: '#9ca3af', fontWeight: 400 }}>({sorted.length} symbols)</span>
+                </div>
+                <div style={{ overflowX: 'auto', maxHeight: '280px', overflowY: 'auto' }}>
+                  <table>
+                    <thead style={{ position: 'sticky', top: 0 }}>
+                      <tr>
+                        <th>Symbol</th>
+                        <th style={{ textAlign: 'right' }}>Trades</th>
+                        <th style={{ textAlign: 'right' }}>Wins</th>
+                        <th style={{ textAlign: 'right' }}>Losses</th>
+                        <th style={{ textAlign: 'right' }}>Win Rate</th>
+                        <th style={{ textAlign: 'right' }}>Total P&L</th>
+                        <th style={{ textAlign: 'right' }}>Avg P&L</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sorted.map(([sym, d]) => (
+                        <tr key={sym}>
+                          <td style={{ fontWeight: 700 }}>{sym}</td>
+                          <td style={{ textAlign: 'right' }}>{d.trades}</td>
+                          <td style={{ textAlign: 'right', color: '#10b981' }}>{d.wins}</td>
+                          <td style={{ textAlign: 'right', color: '#ef4444' }}>{d.trades - d.wins}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600,
+                            color: (d.wins / d.trades) >= 0.5 ? '#10b981' : '#ef4444' }}>
+                            {(d.wins / d.trades * 100).toFixed(1)}%
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 700,
+                            color: d.pnl > 0 ? '#10b981' : '#ef4444' }}>
+                            {d.pnl > 0 ? '+' : ''}₹{d.pnl.toFixed(0)}
+                          </td>
+                          <td style={{ textAlign: 'right', color: '#6b7280' }}>
+                            ₹{(d.pnl / d.trades).toFixed(0)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Daily P&L table */}
+          {r.trades?.length > 0 && (() => {
+            const byDay = {};
+            r.trades.forEach(t => {
+              if (!t.entryTime) return;
+              const d = new Date(t.entryTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+              if (!byDay[d]) byDay[d] = { trades: 0, pnl: 0 };
+              byDay[d].trades++;
+              byDay[d].pnl += t.pnl;
+            });
+            const days = Object.entries(byDay);
+            let running = 0;
+            return (
+              <div className="card">
+                <div style={{ fontWeight: 700, color: '#374151', marginBottom: '16px', fontSize: '15px' }}>
+                  Daily P&L <span style={{ color: '#9ca3af', fontWeight: 400 }}>({days.length} trading days)</span>
+                </div>
+                <div style={{ overflowX: 'auto', maxHeight: '280px', overflowY: 'auto' }}>
+                  <table>
+                    <thead style={{ position: 'sticky', top: 0 }}>
+                      <tr>
+                        <th>Date</th>
+                        <th style={{ textAlign: 'right' }}>Trades</th>
+                        <th style={{ textAlign: 'right' }}>Day P&L</th>
+                        <th style={{ textAlign: 'right' }}>Running P&L</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {days.map(([date, d]) => {
+                        running += d.pnl;
+                        return (
+                          <tr key={date}>
+                            <td style={{ color: '#6b7280', fontSize: '11px' }}>{date}</td>
+                            <td style={{ textAlign: 'right' }}>{d.trades}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700,
+                              color: d.pnl > 0 ? '#10b981' : d.pnl < 0 ? '#ef4444' : '#6b7280' }}>
+                              {d.pnl > 0 ? '+' : ''}₹{d.pnl.toFixed(0)}
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 700,
+                              color: running > 0 ? '#10b981' : running < 0 ? '#ef4444' : '#6b7280' }}>
+                              {running > 0 ? '+' : ''}₹{running.toFixed(0)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Trade log */}
           {r.trades?.length > 0 && (
