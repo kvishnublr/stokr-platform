@@ -41,14 +41,28 @@ public class TradeBookImbalanceStrategy implements StrategyPlugin {
         Candle c1 = candles.get(n - 2);
         Candle c2 = candles.get(n - 1);
 
-        // 1. Order flow: buyer/seller ratio > 2.0 (from Chartink tick data)
+        // 1. Order flow: buyer/seller ratio > 2.0
+        // Live mode: use real order book qty. Backtest: proxy via CLV × volume across 3 candles.
+        // CLV = (2×close - high - low) / (high - low) measures close position within the bar.
         Long buyerQty = context.extra("buyerQty", Long.class);
         Long sellerQty = context.extra("sellerQty", Long.class);
-        if (buyerQty == null || sellerQty == null || sellerQty == 0) {
-            log.debug("TBI: missing buyer/seller qty");
-            return null;
+        double ratio;
+        if (buyerQty != null && sellerQty != null && sellerQty > 0) {
+            ratio = buyerQty / (double) sellerQty;
+        } else {
+            double buyPressure = 0, sellPressure = 0;
+            for (Candle c : List.of(c0, c1, c2)) {
+                double range = c.high().subtract(c.low()).doubleValue();
+                if (range <= 0) continue;
+                double clv = c.close().subtract(c.low())
+                        .subtract(c.high().subtract(c.close()))
+                        .doubleValue() / range;
+                double vol = c.volume();
+                buyPressure  += vol * Math.max(0, clv);
+                sellPressure += vol * Math.max(0, -clv);
+            }
+            ratio = (sellPressure == 0) ? 3.0 : buyPressure / sellPressure;
         }
-        double ratio = buyerQty / (double) sellerQty;
         if (ratio <= 2.0) {
             log.debug("TBI: ratio {} <= 2.0", ratio);
             return null;
@@ -61,22 +75,27 @@ public class TradeBookImbalanceStrategy implements StrategyPlugin {
             return null;
         }
 
-        // 3. All 3 candles bullish — sustained buying each minute
-        if (c2.close().compareTo(c2.open()) <= 0 ||
-            c1.close().compareTo(c1.open()) <= 0 ||
-            c0.close().compareTo(c0.open()) <= 0) {
-            log.debug("TBI: not all 3 candles are bullish");
-            return null;
+        // 3. All 3 candles bullish (close > open) with decent body (≥30% of range — no doji)
+        for (Candle c : List.of(c0, c1, c2)) {
+            double body  = c.close().subtract(c.open()).doubleValue();
+            double range = c.high().subtract(c.low()).doubleValue();
+            if (body <= 0) {
+                log.debug("TBI: candle not bullish");
+                return null;
+            }
+            if (range > 0 && body / range < 0.30) {
+                log.debug("TBI: wick-heavy candle body/range={}", body / range);
+                return null;
+            }
         }
 
         // 4. Volume increasing across 3 candles — growing participation
         if (c2.volume() < c1.volume() || c1.volume() < c0.volume()) {
-            log.debug("TBI: volume not increasing across 3 candles: {} < {} < {}",
-                    c0.volume(), c1.volume(), c2.volume());
+            log.debug("TBI: volume not increasing {} {} {}", c0.volume(), c1.volume(), c2.volume());
             return null;
         }
 
-        // 5. Latest volume > 1.5 × SMA(volume, 10)
+        // 5. Latest volume > 1.5 × SMA(volume, 10) — above-average activity
         long avgVol = candles.subList(n - 10, n)
                 .stream().mapToLong(Candle::volume).sum() / 10;
         if (avgVol == 0 || c2.volume() < avgVol * 1.5) {
@@ -84,17 +103,21 @@ public class TradeBookImbalanceStrategy implements StrategyPlugin {
             return null;
         }
 
-        // 6. ATR14 > 0.35%
+        // 6. ATR14 volatility check.
+        // Live mode: ATR comes from Chartink daily feed (~1-3% scale, threshold 0.35%).
+        // Backtest mode: ATR is computed from 1-min bars (~0.05-0.15% scale, threshold 0.05%).
         BigDecimal atr = context.indicators() != null ? context.indicators().get("ATR14") : null;
         if (atr == null) atr = context.extra("atr14", BigDecimal.class);
         if (atr == null) {
             log.debug("TBI: ATR not available");
             return null;
         }
-        BigDecimal atrPct = atr.divide(c2.close(), 4, RoundingMode.HALF_UP)
+        BigDecimal atrPct = atr.divide(c2.close(), 6, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100));
-        if (atrPct.doubleValue() <= 0.35) {
-            log.debug("TBI: ATR% {} <= 0.35%", atrPct);
+        boolean isLiveMode = (buyerQty != null && sellerQty != null);
+        double atrThreshold = isLiveMode ? 0.35 : 0.05;
+        if (atrPct.doubleValue() <= atrThreshold) {
+            log.debug("TBI: ATR% {} <= {}% (live={})", atrPct, atrThreshold, isLiveMode);
             return null;
         }
 
