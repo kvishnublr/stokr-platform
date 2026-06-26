@@ -74,7 +74,7 @@ export default function AdvancedBacktest() {
   const [selectedPairs, setSelectedPairs] = useState(
     ALL_PAIRS.reduce((acc, p) => ({ ...acc, [p.key]: true }), {})
   );
-  const [zWindow, setZWindow]   = useState(20);
+  const [zWindow, setZWindow]   = useState(60);
   const [zEntry,  setZEntry]    = useState(2.0);
   const [zExit,   setZExit]     = useState(0.3);
   const [zStop,   setZStop]     = useState(3.5);

@@ -310,7 +310,7 @@ public class BacktestController {
             @RequestParam(required = false) String pairs,
             @RequestParam(required = false) String dateStart,
             @RequestParam(required = false) String dateEnd,
-            @RequestParam(defaultValue = "20")  int    zWindow,
+            @RequestParam(defaultValue = "60")  int    zWindow,   // 60-min window on 1-min data
             @RequestParam(defaultValue = "2.0") double zEntry,
             @RequestParam(defaultValue = "0.3") double zExit,
             @RequestParam(defaultValue = "3.5") double zStop,
@@ -444,8 +444,8 @@ public class BacktestController {
             result.put("pairs",           pairResults);
             result.put("dateRange",       Map.of("start", startTime.toString(), "end", endTime.toString()));
 
-            log.info("Pairs backtest done: {} pairs, {} trades, {:.1f}% win rate, ₹{:.0f} PnL",
-                pairResults.size(), totalTrades, winRate, totalPnl);
+            log.info("Pairs backtest done: {} pairs, {} trades, {}% win rate, ₹{} PnL",
+                pairResults.size(), totalTrades, String.format("%.1f", winRate), Math.round(totalPnl));
             return ResponseEntity.ok(result);
 
         } catch (Exception e) {
