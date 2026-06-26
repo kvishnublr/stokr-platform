@@ -17,16 +17,16 @@ public class PairsTradingService {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     static final double CAPITAL_PER_LEG = 25_000.0;
 
-    // Default pairs to backtest (all NSE, high co-integration)
+    // Default pairs: high correlation (>80%) AND same sector/business model
     public static final List<String[]> DEFAULT_PAIRS = List.of(
-        new String[]{"HDFCBANK",   "ICICIBANK"},
-        new String[]{"TCS",        "INFY"},
-        new String[]{"SBIN",       "AXISBANK"},
-        new String[]{"WIPRO",      "HCLTECH"},
-        new String[]{"BAJFINANCE", "BAJAJFINSV"},
-        new String[]{"RELIANCE",   "ONGC"},
-        new String[]{"KOTAKBANK",  "AXISBANK"},
-        new String[]{"MARUTI",     "TATAMOTORS"}
+        new String[]{"HDFCBANK",  "ICICIBANK"},   // private banks
+        new String[]{"TCS",       "INFY"},         // large-cap IT
+        new String[]{"WIPRO",     "HCLTECH"},      // mid-large IT
+        new String[]{"SBIN",      "BANKBARODA"},   // PSU banks
+        new String[]{"KOTAKBANK", "AXISBANK"},     // private banks
+        new String[]{"SUNPHARMA", "DRREDDY"},      // large pharma
+        new String[]{"HINDALCO",  "TATASTEEL"},    // metals
+        new String[]{"NTPC",      "POWERGRID"}     // PSU power
     );
 
     public record PairsTradeResult(
@@ -130,6 +130,8 @@ public class PairsTradingService {
         String    direction = null;
         int       entryIdx  = -1;
         LocalDate entryDate = null;
+        // One trade per pair per day — track which days already had a completed trade
+        Set<LocalDate> tradedDays = new HashSet<>();
 
         for (int i = 0; i < n; i++) {
             LocalDateTime ts = timestamps.get(i);
@@ -149,12 +151,14 @@ public class PairsTradingService {
                         timestamps.get(entryIdx), timestamps.get(refIdx),
                         aligned.get(entryIdx), aligned.get(refIdx),
                         spreadPct[entryIdx], spreadPct[refIdx], "EOD_EXIT", brokeragePer));
+                    tradedDays.add(entryDate);
                 }
                 inTrade = false; direction = null; entryIdx = -1; entryDate = null;
             }
 
-            // Entry window: 9:30 to 14:30 IST (skip first 15 min and last hour)
+            // Entry window: 9:30 to 14:30 IST; skip if already traded today
             if (!inTrade && (minOfDay < 9 * 60 + 30 || minOfDay > 14 * 60 + 30)) continue;
+            if (!inTrade && tradedDays.contains(date)) continue;
 
             if (!inTrade) {
                 // A expensive relative to today's open → short A, long B
@@ -169,10 +173,11 @@ public class PairsTradingService {
             } else {
                 double sp = spreadPct[i];
                 boolean hitStop = Math.abs(sp) >= stopPct;
-                // Reversion: spread has collapsed back toward zero (within ±exitPct of anchor)
+                // Full reversion: spread crosses back through zero (or past -exitPct margin)
+                // exitPct is a small buffer around zero (default 0.2), not a big target
                 boolean hitTarget = "SHORT_A_LONG_B".equals(direction)
-                    ? sp <= exitPct      // was positive (A expensive), now near zero or negative
-                    : sp >= -exitPct;    // was negative (B expensive), now near zero or positive
+                    ? sp <= exitPct         // entered +1.5%, exit at 0 ± exitPct
+                    : sp >= -exitPct;       // entered -1.5%, exit at 0 ± exitPct
 
                 if (hitTarget || hitStop) {
                     String reason = hitStop ? "SPREAD_STOP" : "SPREAD_REVERSION";
@@ -180,6 +185,7 @@ public class PairsTradingService {
                         timestamps.get(entryIdx), ts,
                         aligned.get(entryIdx), aligned.get(i),
                         spreadPct[entryIdx], sp, reason, brokeragePer));
+                    tradedDays.add(date);
                     inTrade = false; direction = null; entryIdx = -1; entryDate = null;
                 }
             }
