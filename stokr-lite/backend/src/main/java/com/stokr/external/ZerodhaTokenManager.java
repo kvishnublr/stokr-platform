@@ -63,6 +63,11 @@ public class ZerodhaTokenManager {
         if (currentAuth.valid && currentAuth.expiresAt != null && Instant.now().isBefore(currentAuth.expiresAt)) {
             return currentAuth;
         }
+        // Memory token stale/missing — try reloading from DB (token may have been added after startup)
+        loadFromDatabase();
+        if (currentAuth.valid && currentAuth.expiresAt != null && Instant.now().isBefore(currentAuth.expiresAt)) {
+            return currentAuth;
+        }
         log.warn("Zerodha auth token expired or invalid");
         return null;
     }

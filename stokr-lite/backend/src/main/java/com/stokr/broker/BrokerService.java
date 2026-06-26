@@ -1,5 +1,6 @@
 package com.stokr.broker;
 
+import com.stokr.external.ZerodhaTokenManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ public class BrokerService {
 
     private final BrokerAccountRepository repository;
     private final BrokerRegistry registry;
+    private final ZerodhaTokenManager zerodhaTokenManager;
 
     public List<BrokerAccount> getUserBrokers(Long userId) {
         return repository.findByUserId(userId);
@@ -59,7 +61,15 @@ public class BrokerService {
                     .build();
         }
 
-        return repository.save(account);
+        BrokerAccount saved = repository.save(account);
+
+        // Immediately push token into ZerodhaTokenManager memory so live engine + backfill work without restart
+        if ("ZERODHA".equalsIgnoreCase(brokerName)) {
+            zerodhaTokenManager.setAuth(accessToken, refreshToken, 86400);
+            log.info("ZerodhaTokenManager in-memory token updated for user {}", userId);
+        }
+
+        return saved;
     }
 
     @Transactional
