@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -25,8 +26,16 @@ public class EntryManager {
     private final ErrorLogService errorLogService;
     private final PaperBroker paperBroker;
     private final PositionService positionService;
+    private final DailyPnlTracker dailyPnlTracker;
 
-    public void processEntrySignal(Deployment deployment, Signal signal) {
+    // Cooldown: tracks last successful signal time per deployment+symbol
+    private final ConcurrentHashMap<String, Long> lastSignalTime = new ConcurrentHashMap<>();
+
+    /**
+     * Process an entry signal. Returns true if the order was placed successfully.
+     * Caller should update signal status based on the return value.
+     */
+    public boolean processEntrySignal(Deployment deployment, Signal signal) {
         log.info("Processing entry signal for deployment {}: {} {} @ {}",
                 deployment.getId(), signal.side(), signal.symbol(), signal.entryPrice());
 
@@ -37,14 +46,14 @@ public class EntryManager {
         if (hasPositionInSymbol) {
             log.info("Deployment {} already has open position in {}, skipping entry",
                     deployment.getId(), signal.symbol());
-            return;
+            return false;
         }
 
         // Check max positions limit (default: 5 per deployment)
         if (openPositions.size() >= 5) {
             log.info("Deployment {} has {} open positions (max 5), skipping entry",
                     deployment.getId(), openPositions.size());
-            return;
+            return false;
         }
 
         // Dedup check
@@ -52,29 +61,36 @@ public class EntryManager {
                 deployment.getId().toString(), signal.symbol(), signal.side().name())) {
             log.info("Duplicate signal suppressed for deployment {} {} {}",
                     deployment.getId(), signal.symbol(), signal.side());
-            return;
+            return false;
         }
 
-        // Calculate quantity based on capital and entry price
-        BigDecimal capitalPerPosition = deployment.getCapital()
-                .divide(BigDecimal.valueOf(5), 0, java.math.RoundingMode.DOWN); // Max 5 positions
-        int quantity = calculateQuantity(capitalPerPosition, signal.entryPrice());
+        // Each position gets full capital (position value = capital; MIS margin is at broker level)
+        int quantity = calculateQuantity(deployment.getCapital(), signal.entryPrice());
         if (quantity <= 0) {
             log.warn("Calculated quantity is 0 for deployment {}", deployment.getId());
-            return;
+            return false;
         }
 
-        // Real daily realized PnL from open positions
-        BigDecimal todayPnl = openPositions.stream()
-                .map(Position::getRealizedPnl)
-                .filter(java.util.Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Today's realized P&L from DailyPnlTracker (updated on each exit)
+        BigDecimal todayPnl = dailyPnlTracker.getTodayPnl(deployment.getId());
+
+        // totalDeployedCapital = what is currently in open positions
+        BigDecimal deployedCapital = deployment.getCapital()
+                .multiply(BigDecimal.valueOf(openPositions.size()));
+
+        // availableCapital = maxPositions × capital (allows up to 5 simultaneous full-capital positions)
+        BigDecimal availableCapital = deployment.getCapital().multiply(BigDecimal.valueOf(5));
+
+        // Cooldown: last successful signal time for this deployment+symbol
+        String cooldownKey = deployment.getId() + ":" + signal.symbol();
+        long lastMs = lastSignalTime.getOrDefault(cooldownKey, 0L);
 
         RiskContext riskContext = new RiskContext(
                 deployment.getId(), deployment.getUserId(), signal.symbol(),
                 quantity, signal.entryPrice(), openPositions.size(), todayPnl,
-                BigDecimal.ZERO, deployment.getCapital(),
-                3, new BigDecimal("5000"), 100, 0);
+                availableCapital,
+                deployedCapital,
+                5, new BigDecimal("5000"), 1000, lastMs);
 
         RiskRule.RiskDecision riskDecision = riskEngine.evaluate(riskContext);
         if (!riskDecision.passed()) {
@@ -82,7 +98,7 @@ public class EntryManager {
                     deployment.getId(), riskDecision.reason());
             errorLogService.logError(deployment.getId(), "RISK_REJECT",
                     riskDecision.reason(), null, "WARN");
-            return;
+            return false;
         }
 
         // Place order with one retry on failure
@@ -125,14 +141,18 @@ public class EntryManager {
             if (response.isSuccess()) {
                 orderService.completeOrder(order, response.orderId(),
                         signal.entryPrice(), quantity);
+                lastSignalTime.put(cooldownKey, System.currentTimeMillis());
+                return true;
             } else {
                 orderService.rejectOrder(order, response.message());
                 errorLogService.logError(deployment.getId(), "ORDER_REJECTED",
                         response.message(), null, "ERROR");
+                return false;
             }
         } catch (Exception e) {
             log.error("Order placement failed for deployment {}", deployment.getId(), e);
             errorLogService.logError(deployment.getId(), "ORDER_ERROR", e);
+            return false;
         }
     }
 

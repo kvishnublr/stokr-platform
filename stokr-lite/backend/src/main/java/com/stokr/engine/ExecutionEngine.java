@@ -105,31 +105,53 @@ public class ExecutionEngine {
 
                 if (entry == null || sl == null || target == null) continue;
 
+                // Determine direction: SHORT = sl above entry, LONG = sl below entry
+                boolean isShort = sl.compareTo(entry) > 0;
+
                 // Per-signal trailing stop params
                 double trailTrigger  = signal.getTrailTriggerPct()  != null ? signal.getTrailTriggerPct()  : 0.5;
                 double trailDistance = signal.getTrailDistancePct() != null ? signal.getTrailDistancePct() : 0.3;
-                double trailFactor   = 1.0 - trailDistance / 100.0;
 
-                // Update trailing best price
-                BigDecimal best = bestPriceMap.merge(pos.getId(), ltp, BigDecimal::max);
+                // Best price: for SHORT track lowest (most favourable), for LONG track highest
+                BigDecimal best = isShort
+                    ? bestPriceMap.merge(pos.getId(), ltp, BigDecimal::min)
+                    : bestPriceMap.merge(pos.getId(), ltp, BigDecimal::max);
 
-                BigDecimal gainPct = ltp.subtract(entry)
-                    .divide(entry, 6, java.math.RoundingMode.HALF_UP)
-                    .multiply(BigDecimal.valueOf(100));
+                // gainPct: positive when in profit regardless of direction
+                BigDecimal gainPct = isShort
+                    ? entry.subtract(ltp).divide(entry, 6, java.math.RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
+                    : ltp.subtract(entry).divide(entry, 6, java.math.RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
 
                 if (gainPct.compareTo(BigDecimal.valueOf(trailTrigger)) >= 0) {
-                    BigDecimal trailSl = best.multiply(BigDecimal.valueOf(trailFactor));
-                    if (trailSl.compareTo(sl) > 0) sl = trailSl;
+                    if (isShort) {
+                        // Trail SL down toward profit: best (low) + trailDistance% above it
+                        BigDecimal trailSl = best.multiply(BigDecimal.valueOf(1.0 + trailDistance / 100.0));
+                        if (trailSl.compareTo(sl) < 0) sl = trailSl; // tighten SL down
+                    } else {
+                        // Trail SL up toward profit: best (high) - trailDistance% below it
+                        BigDecimal trailSl = best.multiply(BigDecimal.valueOf(1.0 - trailDistance / 100.0));
+                        if (trailSl.compareTo(sl) > 0) sl = trailSl; // tighten SL up
+                    }
                 }
 
-                if (ltp.compareTo(sl) <= 0) {
-                    log.info("SL hit: {} ltp={} sl={}", pos.getSymbol(), ltp, sl);
-                    updateSignalStatus(signal, "SL_HIT");
-                    squareOff(deployment, pos, ltp);
-                } else if (ltp.compareTo(target) >= 0) {
-                    log.info("TARGET hit: {} ltp={} target={}", pos.getSymbol(), ltp, target);
-                    updateSignalStatus(signal, "TARGET_HIT");
-                    squareOff(deployment, pos, ltp);
+                // Direction-aware SL and target checks
+                // IMPORTANT: update signal status ONLY after squareOff succeeds to avoid orphaned positions
+                if (isShort) {
+                    if (ltp.compareTo(sl) >= 0) {
+                        log.info("SL hit (SHORT): {} ltp={} sl={}", pos.getSymbol(), ltp, sl);
+                        if (squareOff(deployment, pos, ltp)) updateSignalStatus(signal, "SL_HIT");
+                    } else if (ltp.compareTo(target) <= 0) {
+                        log.info("TARGET hit (SHORT): {} ltp={} target={}", pos.getSymbol(), ltp, target);
+                        if (squareOff(deployment, pos, ltp)) updateSignalStatus(signal, "TARGET_HIT");
+                    }
+                } else {
+                    if (ltp.compareTo(sl) <= 0) {
+                        log.info("SL hit (LONG): {} ltp={} sl={}", pos.getSymbol(), ltp, sl);
+                        if (squareOff(deployment, pos, ltp)) updateSignalStatus(signal, "SL_HIT");
+                    } else if (ltp.compareTo(target) >= 0) {
+                        log.info("TARGET hit (LONG): {} ltp={} target={}", pos.getSymbol(), ltp, target);
+                        if (squareOff(deployment, pos, ltp)) updateSignalStatus(signal, "TARGET_HIT");
+                    }
                 }
 
             } catch (Exception e) {
@@ -145,17 +167,18 @@ public class ExecutionEngine {
         for (Position pos : open) {
             BigDecimal ltp = marketDataService.getLtp(pos.getSymbol());
             if (ltp.compareTo(BigDecimal.ZERO) <= 0) ltp = pos.getAvgPrice();
-            // Mark signal as EOD_EXIT before squaring off
-            signalRepository.findFirstByDeploymentIdAndSymbolAndStatusOrderByCreatedAtDesc(
-                    deployment.getId(), pos.getSymbol(), "EXECUTED")
-                .ifPresent(s -> updateSignalStatus(s, "EOD_EXIT"));
-            squareOff(deployment, pos, ltp);
+            if (squareOff(deployment, pos, ltp)) {
+                signalRepository.findFirstByDeploymentIdAndSymbolAndStatusOrderByCreatedAtDesc(
+                        deployment.getId(), pos.getSymbol(), "EXECUTED")
+                    .ifPresent(s -> updateSignalStatus(s, "EOD_EXIT"));
+            }
         }
     }
 
-    private void squareOff(Deployment deployment, Position pos, BigDecimal exitPrice) {
-        exitManager.squareOffPosition(deployment, pos, exitPrice);
-        bestPriceMap.remove(pos.getId());
+    private boolean squareOff(Deployment deployment, Position pos, BigDecimal exitPrice) {
+        boolean ok = exitManager.squareOffPosition(deployment, pos, exitPrice);
+        if (ok) bestPriceMap.remove(pos.getId());
+        return ok;
     }
 
     private void updateSignalStatus(SignalEntity signal, String exitType) {

@@ -5,6 +5,7 @@ import com.stokr.marketdata.MarketDataService;
 import com.stokr.marketdata.Universe;
 import com.stokr.marketdata.ZerodhaLiveDataScheduler;
 import com.stokr.strategy.*;
+import com.stokr.strategy.UniverseGroupService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,24 +31,30 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SignalProcessor {
 
-    private final StrategyService            strategyService;
-    private final MarketDataService          marketDataService;
-    private final ZerodhaLiveDataScheduler   liveData;
-    private final EntryManager               entryManager;
-    private final SignalRepository           signalRepository;
-    private final Universe                   universe;
+    private final StrategyService                    strategyService;
+    private final MarketDataService                  marketDataService;
+    private final ZerodhaLiveDataScheduler           liveData;
+    private final EntryManager                       entryManager;
+    private final SignalRepository                   signalRepository;
+    private final Universe                           universe;
+    private final StrategyUniverseMappingRepository  universeMappingRepo;
+    private final UniverseGroupService               universeGroupService;
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     public void processDeployment(Deployment deployment) {
         try {
+            // Fetch strategy once — used both for enabled check and universe resolution
             Strategy strategy = strategyService.getStrategy(deployment.getStrategyId());
             if (!strategy.isEnabled()) return;
 
             LocalDateTime istNow    = LocalDateTime.now(IST);
             LocalDateTime todayOpen = LocalDate.now(IST).atTime(9, 15);
 
-            List<String> symbols = universe.getSymbols();
+            // Use the universe mapped to this strategy; fall back to default symbols
+            List<String> symbols = strategy.getStrategyType() != null
+                    ? universe.getSymbolsForGroup(resolveUniverseGroup(deployment.getStrategyId()))
+                    : universe.getSymbols();
             int signalCount = 0;
 
             for (String symbol : symbols) {
@@ -89,15 +96,26 @@ public class SignalProcessor {
                         if (ind.volSma10() != null) indicators.put("VOL_SMA_10", ind.volSma10());
                     }
 
+                    // Previous day close for gap filter — fetch only the last 1-min candle of yesterday
+                    BigDecimal prevDayClose = null;
+                    LocalDateTime yesterdayClose = LocalDate.now(IST).minusDays(1).atTime(15, 30);
+                    LocalDateTime yesterdayCloseStart = yesterdayClose.minusMinutes(2);
+                    List<Candle> ydayCandles = marketDataService.getCandlesBetween(
+                            symbol, "1min", yesterdayCloseStart, yesterdayClose);
+                    if (!ydayCandles.isEmpty()) {
+                        prevDayClose = ydayCandles.get(ydayCandles.size() - 1).close();
+                    }
+
                     Map<String, Object> extras = new HashMap<>();
-                    extras.put("orbHigh",   orbHigh);
-                    extras.put("orbLow",    orbLow);
-                    extras.put("orbRange",  orbRange);
-                    extras.put("dayOpen",   candles.get(0).open());
-                    extras.put("istHour",   istNow.getHour());
-                    extras.put("istMinute", istNow.getMinute());
-                    extras.put("chartinkOk", Boolean.TRUE); // all symbols pass; Chartink filter optional
-                    extras.put("vwap",      vwap);
+                    extras.put("orbHigh",      orbHigh);
+                    extras.put("orbLow",       orbLow);
+                    extras.put("orbRange",     orbRange);
+                    extras.put("dayOpen",      candles.get(0).open());
+                    extras.put("istHour",      istNow.getHour());
+                    extras.put("istMinute",    istNow.getMinute());
+                    extras.put("chartinkOk",   Boolean.TRUE);
+                    extras.put("vwap",         vwap);
+                    extras.put("prevDayClose", prevDayClose);
                     if (indicators.containsKey("RSI14")) extras.put("rsi14", indicators.get("RSI14"));
                     if (indicators.containsKey("ATR14")) extras.put("atr14", indicators.get("ATR14"));
 
@@ -136,8 +154,10 @@ public class SignalProcessor {
                         .build();
                     signalRepository.save(entity);
 
-                    entryManager.processEntrySignal(deployment, signal);
-                    signalCount++;
+                    boolean entered = entryManager.processEntrySignal(deployment, signal);
+                    entity.setStatus(entered ? "EXECUTED" : "REJECTED");
+                    signalRepository.save(entity);
+                    if (entered) signalCount++;
 
                 } catch (Exception e) {
                     log.error("Error processing symbol {} for deployment {}", symbol, deployment.getId(), e);
@@ -168,6 +188,17 @@ public class SignalProcessor {
 
         if (totalVolume.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ZERO;
         return totalTpVolume.divide(totalVolume, 2, RoundingMode.HALF_UP);
+    }
+
+    // Returns the first runtime-enabled universe group key mapped to this strategy,
+    // or "NIFTY_100" as fallback. Used to scan the correct symbol set per deployment.
+    private String resolveUniverseGroup(Long strategyId) {
+        return universeMappingRepo.findByStrategyId(strategyId).stream()
+            .filter(StrategyUniverseMapping::isRuntimeEnabled)
+            .findFirst()
+            .map(m -> universeGroupService.findById(m.getUniverseGroupId())
+                .map(g -> g.getGroupKey()).orElse("NIFTY_100"))
+            .orElse("NIFTY_100");
     }
 
     private List<CandleData> toCandleDataList(List<Candle> candles) {

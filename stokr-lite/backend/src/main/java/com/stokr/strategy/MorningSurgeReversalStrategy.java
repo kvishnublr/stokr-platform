@@ -64,6 +64,14 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
 
         BigDecimal close = latest.close();
 
+        // Gap filter: skip stocks that gapped up >1.5% at open (bullish momentum day — shorts fail)
+        BigDecimal prevDayClose = context.extra("prevDayClose", BigDecimal.class);
+        BigDecimal dayOpen = context.extra("dayOpen", BigDecimal.class);
+        if (prevDayClose != null && dayOpen != null && prevDayClose.compareTo(BigDecimal.ZERO) > 0) {
+            double gapUp = dayOpen.subtract(prevDayClose).doubleValue() / prevDayClose.doubleValue();
+            if (gapUp > 0.015) return null;  // skip >1.5% gap-up days
+        }
+
         // Volume >= 2.5x 10-period average
         long volSum = 0;
         int volLen = Math.min(10, n - 1);
@@ -94,10 +102,11 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                 double reward = close.subtract(target).doubleValue();
                 double rrRatio = risk > 0 ? reward / risk : 0;
                 if (rrRatio >= 1.0) {
-                    double pctDist = risk / close.doubleValue() * 100.0;
-                    double trailTrigger = Math.max(0.6, pctDist * 1.2);
-                    double trailDistance = Math.max(0.3, pctDist * 0.6);
                     String label = failedBreakout ? "FAILED_BREAKOUT" : "BREAKDOWN";
+                    // failedBreakout: clean trap setup — let it run to full target (trail disabled)
+                    // directBreakdown: riskier late-entry — protect with 0.8% trail against full reversals
+                    double trailTrigger  = failedBreakout ? 999.0 : 0.8;
+                    double trailDistance = 0.8;
                     return new Signal(
                         context.symbol(), Signal.Side.SELL, close, sl, target, 0.70,
                         "MSR_SHORT " + label + " @" + close.setScale(2, RoundingMode.HALF_UP)

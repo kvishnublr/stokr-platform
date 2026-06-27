@@ -40,6 +40,7 @@ public class AuthService {
         return buildAuthResponse(user);
     }
 
+    @Transactional
     public AuthResponse login(LoginRequest request) {
         AuthUser user = authRepository.findByEmail(request.email())
                 .orElseThrow(() -> new IllegalArgumentException("Invalid credentials"));
@@ -52,7 +53,23 @@ public class AuthService {
             throw new IllegalArgumentException("Account is disabled");
         }
 
+        // Promote owner accounts to ADMIN
+        if (("kvishnu.blr@gmail.com".equals(user.getEmail()) || "admin@stokr.in".equals(user.getEmail()))
+                && user.getRole() != AuthRole.ADMIN) {
+            user.setRole(AuthRole.ADMIN);
+            authRepository.save(user);
+        }
+
         return buildAuthResponse(user);
+    }
+
+    @Transactional
+    public void resetOwnerPassword(String email, String newPassword) {
+        AuthUser user = authRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setRole(AuthRole.ADMIN);
+        authRepository.save(user);
     }
 
     public AuthResponse refresh(String refreshToken) {

@@ -30,7 +30,7 @@ public class EodSquareOffService {
     /**
      * Runs at 15:15 IST every trading day to square off all open positions.
      */
-    @Scheduled(cron = "0 15 15 * * MON-FRI")
+    @Scheduled(cron = "0 15 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void triggerEodSquareOff() {
         log.info("=== EOD SQUARE-OFF TRIGGERED ===");
 

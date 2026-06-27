@@ -3,6 +3,9 @@ package com.stokr.risk;
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,22 +24,37 @@ public class IdempotencyService {
     }
 
     /**
-     * Check if an order with this key was already placed.
+     * Check if a non-expired order with this key was already placed.
      * Returns true if this is a NEW request (not duplicate).
      */
     @Transactional
     public boolean tryAcquire(String deploymentId, String symbol, String side) {
         String key = hash(deploymentId + ":" + symbol + ":" + side);
 
-        if (repository.existsByKeyHash(key)) {
+        // Only block if a non-expired key exists (expired = previous day's trade, allow re-entry)
+        if (repository.existsByKeyHashAndExpiresAtAfter(key, Instant.now())) {
             return false; // Duplicate
         }
+
+        // Delete any stale expired key for this hash before inserting fresh one
+        repository.deleteExpiredByKeyHash(key);
 
         IdempotencyKey entry = new IdempotencyKey();
         entry.setKeyHash(key);
         entry.setExpiresAt(Instant.now().plusSeconds(3600)); // 1 hour TTL
         repository.save(entry);
         return true;
+    }
+
+    /** Purge expired keys every 30 minutes to keep the table clean. */
+    @Scheduled(fixedRate = 30 * 60 * 1000)
+    @Transactional
+    public void purgeExpiredKeys() {
+        int deleted = repository.deleteExpired(Instant.now());
+        if (deleted > 0) {
+            org.slf4j.LoggerFactory.getLogger(IdempotencyService.class)
+                .info("Purged {} expired idempotency keys", deleted);
+        }
     }
 
     @Transactional
@@ -83,6 +101,14 @@ class IdempotencyKey {
 }
 
 interface IdempotencyKeyRepository extends JpaRepository<IdempotencyKey, Long> {
-    boolean existsByKeyHash(String keyHash);
+    boolean existsByKeyHashAndExpiresAtAfter(String keyHash, Instant now);
     Optional<IdempotencyKey> findByKeyHash(String keyHash);
+
+    @Modifying
+    @Query("DELETE FROM IdempotencyKey k WHERE k.expiresAt < :now")
+    int deleteExpired(Instant now);
+
+    @Modifying
+    @Query("DELETE FROM IdempotencyKey k WHERE k.keyHash = :hash AND k.expiresAt < :#{T(java.time.Instant).now()}")
+    void deleteExpiredByKeyHash(String hash);
 }
