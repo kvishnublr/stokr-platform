@@ -102,17 +102,50 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                 double reward = close.subtract(target).doubleValue();
                 double rrRatio = risk > 0 ? reward / risk : 0;
                 if (rrRatio >= 1.0) {
+                    // ─── CONFIDENCE SCORE FILTER ─────────────────────────────
+                    // Score 0–100. Only emit signal if score >= 55.
+                    // Filters weak-setup SL_HITs while preserving TARGET_HITs.
+                    int score = 0;
+
+                    // 1. ORB range quality (0–30 pts): larger range = stronger conviction
+                    double orbRangePct = orbRange.doubleValue() / close.doubleValue() * 100.0;
+                    if      (orbRangePct >= 1.0) score += 30;
+                    else if (orbRangePct >= 0.5) score += 15;
+
+                    // 2. Volume multiplier (0–25 pts): volume conviction
+                    double volMult = (double) latest.volume() / Math.max(avgVol, 1);
+                    if      (volMult >= 3.5) score += 25;
+                    else if (volMult >= 2.5) score += 15;
+
+                    // 3. Body ratio (0–20 pts): cleaner candle = higher quality signal
+                    if      (bodyPct >= 0.85) score += 20;
+                    else if (bodyPct >= 0.70) score += 10;
+
+                    // 4. Signal type (0–15 pts): directBreakdown is stronger confirmation
+                    score += directBreakdown ? 15 : 5;
+
+                    // 5. Entry window (0–10 pts): early morning window is cleaner
+                    if (istHour != null && istMinute != null) {
+                        int min = istHour * 60 + istMinute;
+                        if (min >= 9 * 60 + 30 && min < 9 * 60 + 45)  score += 10;
+                        else if (min >= 10 * 60 + 0 && min <= 10 * 60 + 30) score += 5;
+                    }
+
+                    if (score < 65) {
+                        log.debug("MSR filtered score={}/100 for {}", score, context.symbol());
+                        return null;
+                    }
+
                     String label = failedBreakout ? "FAILED_BREAKOUT" : "BREAKDOWN";
-                    // failedBreakout: clean trap setup — let it run to full target (trail disabled)
-                    // directBreakdown: riskier late-entry — protect with 0.8% trail against full reversals
                     double trailTrigger  = failedBreakout ? 999.0 : 0.8;
                     double trailDistance = 0.8;
                     return new Signal(
-                        context.symbol(), Signal.Side.SELL, close, sl, target, 0.70,
-                        "MSR_SHORT " + label + " @" + close.setScale(2, RoundingMode.HALF_UP)
+                        context.symbol(), Signal.Side.SELL, close, sl, target, score / 100.0,
+                        "MSR_SHORT " + label + " score=" + score + "/100"
+                            + " @" + close.setScale(2, RoundingMode.HALF_UP)
                             + " orb=[" + orbLow.setScale(2, RoundingMode.HALF_UP) + "-" + orbHigh.setScale(2, RoundingMode.HALF_UP) + "]"
                             + " tgt=" + target + " rr=" + String.format("%.1f", rrRatio)
-                            + " vol=" + String.format("%.1fx", (double) latest.volume() / avgVol),
+                            + " vol=" + String.format("%.1fx", volMult),
                         trailTrigger, trailDistance);
                 }
             }
