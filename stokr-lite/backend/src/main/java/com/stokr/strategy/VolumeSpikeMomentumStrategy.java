@@ -12,18 +12,19 @@ import java.util.List;
  * Volume Spike Momentum Strategy — intraday breakout on volume surge.
  *
  * BUY setup:
- *   - Current candle closes ABOVE the 15-min rolling high (fresh breakout)
- *   - Previous candle was still below that level (not already running)
- *   - Volume >= 2.5x 20-bar average (institutional footprint)
- *   - Bullish body >= 60% of candle range (clean breakout candle, no doji)
+ *   - Current candle closes ABOVE the 15-min rolling high by at least 0.3% (meaningful breakout)
+ *   - Previous candle was still below that level (fresh, not already running)
+ *   - Volume >= 4.0x 20-bar average (strong institutional footprint)
+ *   - Bullish body >= 75% of candle range (strong clean candle)
+ *   - Candle range > 1.2x ATR14 (expanded range = real momentum)
  *   - Close > VWAP (trend alignment)
  *   - Close > 20-EMA (medium-term trend)
- *   - RSI < 72 (not overbought)
+ *   - RSI between 45–65 (sweet spot: momentum but not overbought)
  *   - SL: max(0.5 × ATR14, 0.3%) below entry (volatility-adjusted)
  *   - Target: 2:1 R:R from entry
  *   - Trail: activates at 1.2% gain, trails 0.6% from peak
  *
- * Window: 9:45–14:30 IST (skips ORB formation; avoids EOD volatility)
+ * Window: 9:45–12:30 IST (prime momentum window; avoids lunch chop and EOD)
  */
 @Slf4j
 @Component
@@ -38,13 +39,13 @@ public class VolumeSpikeMomentumStrategy implements StrategyPlugin {
         int n = candles.size();
         if (n < 25) return null;
 
-        // Session window: 9:45–14:30 IST
+        // Session window: 9:45–12:30 IST (prime momentum window)
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
         if (istHour != null && istMinute != null) {
             int min = istHour * 60 + istMinute;
             if (min < 9 * 60 + 45)  return null;
-            if (min > 14 * 60 + 30) return null;
+            if (min > 12 * 60 + 30) return null;
         }
 
         Candle curr = candles.get(n - 1);
@@ -54,12 +55,12 @@ public class VolumeSpikeMomentumStrategy implements StrategyPlugin {
         // Must be a bullish candle
         if (close.compareTo(curr.open()) <= 0) return null;
 
-        // Candle body quality >= 60% of range (filters doji / wick spikes)
+        // Candle body quality >= 75% (strong clean candle, no doji / wick spikes)
         BigDecimal range = curr.high().subtract(curr.low());
         if (range.compareTo(BigDecimal.ZERO) <= 0) return null;
         BigDecimal body = close.subtract(curr.open()).abs();
         double bodyPct = body.divide(range, 4, RoundingMode.HALF_UP).doubleValue();
-        if (bodyPct < 0.60) return null;
+        if (bodyPct < 0.75) return null;
 
         // 20-bar volume avg (excluding current candle)
         int volLen = Math.min(20, n - 1);
@@ -68,8 +69,14 @@ public class VolumeSpikeMomentumStrategy implements StrategyPlugin {
         long avgVol = volLen > 0 ? volSum / volLen : 1;
         if (avgVol == 0) return null;
 
+        // Volume >= 4x avg (strong institutional footprint)
         double volMult = (double) curr.volume() / avgVol;
-        if (volMult < 2.5) return null;
+        if (volMult < 4.0) return null;
+
+        // ATR check: candle range must exceed 1.2x ATR14 (expanded range = real momentum)
+        BigDecimal atr14 = context.extra("atr14", BigDecimal.class);
+        double atrValue = atr14 != null ? atr14.doubleValue() : 0;
+        if (atrValue > 0 && range.doubleValue() < atrValue * 1.2) return null;
 
         // 15-min rolling high from the 15 candles BEFORE current
         int lookback = Math.min(15, n - 1);
@@ -78,8 +85,10 @@ public class VolumeSpikeMomentumStrategy implements StrategyPlugin {
             if (candles.get(k).high().compareTo(rollingHigh) > 0)
                 rollingHigh = candles.get(k).high();
         }
-        // Fresh breakout: current close above, previous close was still below
-        if (close.compareTo(rollingHigh) <= 0) return null;
+        // Fresh breakout: current close above rollingHigh by >= 0.3% (meaningful, not micro)
+        double breakoutPct = (close.doubleValue() - rollingHigh.doubleValue()) / rollingHigh.doubleValue();
+        if (breakoutPct < 0.003) return null;
+        // Previous close must have been at or below rollingHigh (fresh, not already running)
         if (prev.close().compareTo(rollingHigh) > 0) return null;
 
         // VWAP alignment: must close above VWAP
@@ -90,13 +99,14 @@ public class VolumeSpikeMomentumStrategy implements StrategyPlugin {
         double ema20 = computeEMA(candles, 20, n);
         if (close.doubleValue() <= ema20) return null;
 
-        // RSI filter: skip overbought (>= 72)
+        // RSI sweet spot: 45–65 (momentum building, not yet overbought)
         BigDecimal rsi14bd = context.extra("rsi14", BigDecimal.class);
-        if (rsi14bd != null && rsi14bd.doubleValue() >= 72.0) return null;
+        if (rsi14bd != null) {
+            double rsi = rsi14bd.doubleValue();
+            if (rsi < 45.0 || rsi > 65.0) return null;
+        }
 
         // ATR-based SL: max(0.5 × ATR14, 0.3%) below entry
-        BigDecimal atr14 = context.extra("atr14", BigDecimal.class);
-        double atrValue = atr14 != null ? atr14.doubleValue() : 0;
         double minSlDist = close.doubleValue() * 0.003;
         double slDistance = Math.max(0.5 * atrValue, minSlDist);
         BigDecimal sl = close.subtract(BigDecimal.valueOf(slDistance)).setScale(2, RoundingMode.HALF_UP);
@@ -111,18 +121,15 @@ public class VolumeSpikeMomentumStrategy implements StrategyPlugin {
 
         // Confidence score
         int score = 0;
-        if (volMult >= 4.0)       score += 35;
-        else if (volMult >= 2.5)  score += 20;
-        if (bodyPct >= 0.80)      score += 25;
-        else if (bodyPct >= 0.60) score += 15;
+        if (volMult >= 6.0)       score += 35;
+        else if (volMult >= 4.0)  score += 25;
+        if (bodyPct >= 0.85)      score += 25;
+        else if (bodyPct >= 0.75) score += 15;
         if (vwap != null && close.compareTo(vwap) > 0) score += 20;
-        if (rsi14bd != null) {
-            double rsi = rsi14bd.doubleValue();
-            if      (rsi >= 55 && rsi < 65) score += 20;
-            else if (rsi >= 50 && rsi < 72) score += 10;
-        }
+        if (breakoutPct >= 0.006) score += 20;
+        else if (breakoutPct >= 0.003) score += 10;
 
-        log.debug("VSM signal: {} vol={:.1f}x body={:.0f}% score={}", context.symbol(), volMult, bodyPct * 100, score);
+        log.debug("VSM: {} vol={:.1f}x body={:.0f}% brk={:.2f}% score={}", context.symbol(), volMult, bodyPct * 100, breakoutPct * 100, score);
 
         return new Signal(
             context.symbol(), Signal.Side.BUY, close, sl, target,
