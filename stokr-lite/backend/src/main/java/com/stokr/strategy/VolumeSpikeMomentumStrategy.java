@@ -12,7 +12,7 @@ import java.util.List;
  * Volume Spike Momentum Strategy — gap-and-run continuation on volume surge.
  *
  * Triple confirmation BUY setup:
- *   1. GAP: stock gapped up >= 0.3% at open (institutional pre-market conviction)
+ *   1. GAP: stock gapped up >= 0.15% at open (institutional pre-market conviction)
  *   2. ORB: close is already above orbHigh (confirmed bullish day structure)
  *   3. BREAKOUT: close breaks 15-min rolling high by >= 0.2% with volume >= 3.5x avg
  *
@@ -60,7 +60,7 @@ public class VolumeSpikeMomentumStrategy implements StrategyPlugin {
         BigDecimal dayOpen      = context.extra("dayOpen",      BigDecimal.class);
         if (prevDayClose != null && dayOpen != null && prevDayClose.compareTo(BigDecimal.ZERO) > 0) {
             double gapPct = (dayOpen.doubleValue() - prevDayClose.doubleValue()) / prevDayClose.doubleValue();
-            if (gapPct < 0.003) return null;
+            if (gapPct < 0.0015) return null;  // >= 0.15% gap up
         }
 
         // ── GATE 2: ORB confirmation ──────────────────────────────────────────
