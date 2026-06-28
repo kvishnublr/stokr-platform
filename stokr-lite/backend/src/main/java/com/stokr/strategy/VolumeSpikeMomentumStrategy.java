@@ -21,7 +21,7 @@ import java.util.List;
  *   - Close > 20-EMA (medium-term trend)
  *   - RSI < 70 (not overbought)
  *   - SL: max(0.5 × ATR14, 0.3%) below entry (volatility-adjusted)
- *   - Target: 2:1 R:R from entry
+ *   - Target: 3:1 R:R from entry (break-even at 25% WR)
  *   - Trail: activates at 1.2% gain, trails 0.6% from peak
  *
  * Window: 9:45–13:30 IST (morning momentum window)
@@ -111,10 +111,10 @@ public class VolumeSpikeMomentumStrategy implements StrategyPlugin {
         double risk = close.doubleValue() - sl.doubleValue();
         if (risk <= 0) return null;
 
-        // Target: 2:1 R:R
-        BigDecimal target = close.add(BigDecimal.valueOf(2.0 * risk)).setScale(2, RoundingMode.HALF_UP);
+        // Target: 3:1 R:R (break-even at 25% WR; gives edge at observed 34%+ WR)
+        BigDecimal target = close.add(BigDecimal.valueOf(3.0 * risk)).setScale(2, RoundingMode.HALF_UP);
         double rrRatio = (target.doubleValue() - close.doubleValue()) / risk;
-        if (rrRatio < 1.5) return null;
+        if (rrRatio < 2.5) return null;
 
         // Confidence score
         int score = 0;
