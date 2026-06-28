@@ -48,7 +48,9 @@ public class BacktestController {
         Map.entry("MOMENTUM_TRAIL", "MOMENTUM_TRAIL"),
         Map.entry("MT",            "MOMENTUM_TRAIL"),
         Map.entry("GAP_REVERSAL",  "GAP_REVERSAL"),
-        Map.entry("GAP_REV",       "GAP_REVERSAL")
+        Map.entry("GAP_REV",       "GAP_REVERSAL"),
+        Map.entry("VOLUME_SPIKE_MOMENTUM", "VOLUME_SPIKE_MOMENTUM"),
+        Map.entry("VSM",           "VOLUME_SPIKE_MOMENTUM")
     ));
 
     private static double CAPITAL = 25000;
