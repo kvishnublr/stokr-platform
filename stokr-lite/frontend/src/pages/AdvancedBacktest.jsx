@@ -18,9 +18,12 @@ async function ensureAuthenticated() {
 }
 
 const STRATEGIES = [
-  { value: 'SMF',           label: 'Smart Money Flow',      desc: 'Volume climax + failed follow-through. Detects smart money distribution/accumulation traps.' },
-  { value: 'SURGE_REV',     label: 'Morning Surge Reversal', desc: 'Counter-trend fade after morning surge exhaustion. 52.5% win rate, PF 1.67.' },
-  { value: 'VWAP_REV',      label: 'VWAP Reversion',        desc: 'Mean reversion when price deviates from VWAP. 9:30-11:00, 64.1% win rate.' },
+  { value: 'SURGE_REV',     label: 'Morning Surge Reversal', desc: 'ORB false breakout fade. SHORT only. 62.8% win rate, PF 2.27. Best performing.' },
+  { value: 'MT',            label: 'Momentum Trail',         desc: 'ORB confirmed breakout with trailing stop. BUY/SELL. 9:30-10:15 window.' },
+  { value: 'GAP_REV',       label: 'Gap Reversal',           desc: 'Gap-up 1-3% then bearish reversal. SHORT only. 9:30-11:00 window.' },
+  { value: 'VWAP_REV',      label: 'VWAP Reversion',        desc: 'Mean reversion when price deviates from VWAP. 9:30-11:00 window.' },
+  { value: 'VSM',           label: 'Volume Spike Momentum',  desc: 'Gap-and-run continuation: gap ≥0.3% + above ORB + rolling-high breakout with volume. BUY only. 10:00-13:30.' },
+  { value: 'SMF',           label: 'Smart Money Flow',       desc: 'Volume climax + failed follow-through. Smart money distribution/accumulation traps.' },
 ];
 
 const ALL_PAIRS = [
