@@ -87,6 +87,10 @@ public class ThreeDayMomentumSwingStrategy implements StrategyPlugin {
         double ema50 = computeEma(candles, n - 1, 50);
         if (c3 < ema50) return null;
 
+        // RSI(14) on Day-3: must be 55–75 — momentum building, not yet overbought
+        double rsi = computeRsi(candles, n - 1, 14);
+        if (rsi < 55 || rsi > 75) return null;
+
         // Day-3 body ≥ 60% (strong conviction candle, no doji or shooting star)
         double range3 = h3 - l3;
         if (range3 <= 0) return null;
@@ -150,5 +154,22 @@ public class ThreeDayMomentumSwingStrategy implements StrategyPlugin {
             ema = candles.get(i).close().doubleValue() * k + ema * (1 - k);
         }
         return ema;
+    }
+
+    private double computeRsi(List<com.stokr.marketdata.Candle> candles, int endIdx, int period) {
+        int start = Math.max(1, endIdx - period * 3);
+        double avgGain = 0, avgLoss = 0;
+        for (int i = start; i <= endIdx; i++) {
+            double change = candles.get(i).close().doubleValue() - candles.get(i - 1).close().doubleValue();
+            if (change > 0) avgGain += change;
+            else            avgLoss += -change;
+        }
+        int bars = endIdx - start + 1;
+        if (bars == 0) return 50;
+        avgGain /= bars;
+        avgLoss /= bars;
+        if (avgLoss == 0) return 100;
+        double rs = avgGain / avgLoss;
+        return 100 - (100 / (1 + rs));
     }
 }
