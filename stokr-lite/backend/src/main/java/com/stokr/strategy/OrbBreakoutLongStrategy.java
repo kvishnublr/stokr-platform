@@ -124,7 +124,7 @@ public class OrbBreakoutLongStrategy implements StrategyPlugin {
         if (riskPct > 0.012) return null;
         if (riskPct < 0.002) return null;
 
-        // Fixed 2:1 target (higher WR than trailing stop)
+        // Fixed 2:1 target
         BigDecimal target = close.add(BigDecimal.valueOf(2.0 * risk)).setScale(2, RoundingMode.HALF_UP);
 
         // Confidence score

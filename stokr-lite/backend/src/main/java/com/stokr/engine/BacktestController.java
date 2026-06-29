@@ -63,8 +63,10 @@ public class BacktestController {
         Map.entry("IHB",           "INTRADAY_HIGH_BREAKOUT"),
         Map.entry("VWAP_BOUNCE_V2", "VWAP_BOUNCE_V2"),
         Map.entry("VBL2",          "VWAP_BOUNCE_V2"),
-        Map.entry("SECTOR_ORB",    "SECTOR_ORB"),
-        Map.entry("SORB",          "SECTOR_ORB")
+        Map.entry("SECTOR_ORB",          "SECTOR_ORB"),
+        Map.entry("SORB",               "SECTOR_ORB"),
+        Map.entry("THREE_DAY_MOMENTUM", "THREE_DAY_MOMENTUM"),
+        Map.entry("3DM",                "THREE_DAY_MOMENTUM")
     ));
 
     private static double CAPITAL = 25000;
@@ -517,6 +519,190 @@ public class BacktestController {
     }
 
     private double rnd2(double v) { return Math.round(v * 100.0) / 100.0; }
+
+    // ─── SWING (POSITIONAL) BACKTEST ─────────────────────────────────────────────
+
+    /**
+     * Swing backtest on DAILY candles aggregated from 1-min candle data already in DB.
+     * Strategy: THREE_DAY_MOMENTUM (and any future daily-bar strategies).
+     * Entry at Day-3 close; hold up to 10 trading days; exit on SL, target, or max-hold.
+     */
+    @PostMapping("/swing")
+    public ResponseEntity<Map<String, Object>> runSwingBacktest(
+            @RequestParam(defaultValue = "THREE_DAY_MOMENTUM") String strategy,
+            @RequestParam(defaultValue = "FO_STOCKS") String universe,
+            @RequestParam(required = false) String dateStart,
+            @RequestParam(required = false) String dateEnd,
+            @RequestParam(defaultValue = "40") int brokerage,
+            @RequestParam(defaultValue = "25000") double capital) {
+
+        java.time.ZoneId IST2 = java.time.ZoneId.of("Asia/Kolkata");
+        LocalDateTime startTime = dateStart != null ? parseDateParam(dateStart) : LocalDateTime.now(IST2).minusMonths(3);
+        LocalDateTime endTime   = dateEnd   != null ? parseDateParam(dateEnd)   : LocalDateTime.now(IST2);
+
+        log.info("Swing backtest: strategy={} universe={} {} to {} capital={}", strategy, universe, startTime, endTime, capital);
+
+        try {
+            StrategyPlugin plugin = findPlugin(strategy);
+            StrategyParams params = StrategyParams.defaults();
+            List<String> symbols = getSymbolsForUniverse(universe);
+
+            List<SimulatedTrade> allTrades = new ArrayList<>();
+            Set<String> tradedSymbolMonth = new HashSet<>();
+            // Per-date signal count cap: max 3 swing signals per trading day across all symbols
+            Map<java.time.LocalDate, Integer> dailySignalCount = new java.util.HashMap<>();
+
+            for (String sym : symbols) {
+                List<CandleData> raw = candleRepository
+                    .findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(sym, "1min", startTime, endTime);
+                if (raw.isEmpty()) continue;
+
+                List<DailyBar> bars = aggregateToDailyBars(raw);
+                if (bars.size() < 25) continue;
+
+                for (int i = 24; i < bars.size(); i++) {
+                    java.time.LocalDate signalDate = bars.get(i).date;
+
+                    // Cap: max 3 swing signals per day (position concentration limit)
+                    if (dailySignalCount.getOrDefault(signalDate, 0) >= 3) continue;
+
+                    List<com.stokr.marketdata.Candle> window = new ArrayList<>();
+                    for (int k = 0; k <= i; k++) {
+                        window.add(bars.get(k).toCandle());
+                    }
+
+                    BigDecimal lastClose = BigDecimal.valueOf(bars.get(i).close);
+                    MarketContext ctx = new MarketContext(sym, window, lastClose, lastClose,
+                        java.util.Collections.emptyMap(), java.util.Collections.emptyMap());
+                    Signal sig = plugin.evaluate(ctx, params);
+                    if (sig == null) continue;
+
+                    // One trade per symbol per month
+                    String monthKey = sym + "_" + signalDate.getYear() + "_" + signalDate.getMonthValue();
+                    if (tradedSymbolMonth.contains(monthKey)) continue;
+                    tradedSymbolMonth.add(monthKey);
+
+                    dailySignalCount.merge(signalDate, 1, Integer::sum);
+
+                    // Use closeTs (last 1-min candle of day) as entry time — entry at day's close
+                    SimulatedTrade trade = simulateSwingExit(sig, bars, i, capital, brokerage);
+                    if (trade != null) allTrades.add(trade);
+                }
+            }
+
+            // Sort trades by entry time
+            allTrades.sort(Comparator.comparing(t -> t.entryTime));
+
+            double totalPnl = allTrades.stream().mapToDouble(t -> t.pnl - t.brokerage).sum();
+            long wins = allTrades.stream().filter(t -> t.pnl > t.brokerage).count();
+            int totalTrades = allTrades.size();
+            double winRate = totalTrades > 0 ? 100.0 * wins / totalTrades : 0;
+            double maxDd = calculateMaxDrawdownFromTrades(allTrades);
+            double pf = calculateProfitFactorFromTrades(allTrades);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("strategy",      strategy);
+            result.put("universe",      universe);
+            result.put("symbolsLoaded", allTrades.stream().map(t -> t.symbol).distinct().count());
+            result.put("totalTrades",   totalTrades);
+            result.put("winCount",      (int) wins);
+            result.put("lossCount",     totalTrades - (int) wins);
+            result.put("netPnL",        rnd2(totalPnl));
+            result.put("winRate",       rnd2(winRate));
+            result.put("profitFactor",  rnd2(pf));
+            result.put("maxDrawdown",   rnd2(maxDd));
+            result.put("brokeragePerTrade", brokerage);
+            result.put("capitalPerTrade",   capital);
+            result.put("dateRange",     Map.of("start", startTime.toString(), "end", endTime.toString()));
+            result.put("trades", allTrades.stream().map(SimulatedTrade::toMap).collect(java.util.stream.Collectors.toList()));
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            log.error("Swing backtest failed", e);
+            return ResponseEntity.badRequest().body(Map.of("error", "Swing backtest failed: " + e.getMessage()));
+        }
+    }
+
+    /** Aggregate 1-min candles into daily OHLCV bars. Uses last-candle timestamp as closeTs (entry time). */
+    private List<DailyBar> aggregateToDailyBars(List<CandleData> candles) {
+        Map<java.time.LocalDate, DailyBar> map = new java.util.TreeMap<>();
+        for (CandleData c : candles) {
+            java.time.LocalDate day = c.getTimestamp().toLocalDate();
+            map.merge(day, new DailyBar(day, c.getOpen().doubleValue(), c.getHigh().doubleValue(),
+                    c.getLow().doubleValue(), c.getClose().doubleValue(), c.getVolume(),
+                    c.getTimestamp(), c.getTimestamp()),
+                (existing, newBar) -> {
+                    existing.high    = Math.max(existing.high,  newBar.high);
+                    existing.low     = Math.min(existing.low,   newBar.low);
+                    existing.close   = newBar.close;
+                    existing.closeTs = newBar.openTs;  // track last candle timestamp = close time
+                    existing.volume  += newBar.volume;
+                    return existing;
+                });
+        }
+        return new ArrayList<>(map.values());
+    }
+
+    static class DailyBar {
+        java.time.LocalDate date;
+        double open, high, low, close;
+        long volume;
+        LocalDateTime openTs;   // first candle of day (bar open)
+        LocalDateTime closeTs;  // last candle of day (bar close — use for swing entry time)
+
+        DailyBar(java.time.LocalDate d, double o, double h, double l, double c, long v, LocalDateTime openTs, LocalDateTime closeTs) {
+            this.date = d; this.open = o; this.high = h; this.low = l; this.close = c; this.volume = v;
+            this.openTs = openTs; this.closeTs = closeTs;
+        }
+
+        com.stokr.marketdata.Candle toCandle() {
+            return new com.stokr.marketdata.Candle(null, openTs,
+                BigDecimal.valueOf(open), BigDecimal.valueOf(high),
+                BigDecimal.valueOf(low),  BigDecimal.valueOf(close), volume);
+        }
+    }
+
+    /** Simulate swing exit: check subsequent daily bars for SL, target, or 10-day EOD. */
+    private SimulatedTrade simulateSwingExit(Signal sig, List<DailyBar> bars, int entryIdx,
+                                              double capital, int brokerageCost) {
+        SimulatedTrade trade = new SimulatedTrade(sig.symbol(), sig, entryIdx, bars.get(entryIdx).closeTs, brokerageCost);
+
+        double entry = sig.entryPrice().doubleValue();
+        double sl    = sig.stopLoss().doubleValue();
+        double tgt   = sig.target().doubleValue();
+
+        int maxHold = 7;  // 7 trading days hold max — swing momentum decays quickly
+        for (int k = entryIdx + 1; k < bars.size() && k <= entryIdx + maxHold; k++) {
+            DailyBar bar = bars.get(k);
+            if (bar.low <= sl) {
+                trade.exitAtPrice(k, bar.closeTs, "SL_HIT", sig.stopLoss());
+                trade.pnl = rnd2((sl - entry) / entry * capital);
+                trade.deductBrokerage();
+                return trade;
+            }
+            if (bar.high >= tgt) {
+                trade.exitAtPrice(k, bar.closeTs, "TARGET_HIT", sig.target());
+                trade.pnl = rnd2((tgt - entry) / entry * capital);
+                trade.deductBrokerage();
+                return trade;
+            }
+            if (k == entryIdx + maxHold) {
+                trade.exitAtPrice(k, bar.closeTs, "MAX_HOLD_EXIT", BigDecimal.valueOf(bar.close));
+                trade.pnl = rnd2((bar.close - entry) / entry * capital);
+                trade.deductBrokerage();
+                return trade;
+            }
+        }
+
+        if (entryIdx + 1 < bars.size()) {
+            DailyBar last = bars.get(bars.size() - 1);
+            trade.exitAtPrice(bars.size() - 1, last.closeTs, "OPEN_AT_EOD", BigDecimal.valueOf(last.close));
+            trade.pnl = rnd2((last.close - entry) / entry * capital);
+            trade.deductBrokerage();
+            return trade;
+        }
+        return null;
+    }
 
     @PostMapping("/clear-cache")
     public ResponseEntity<Map<String, Object>> clearBacktestCache() {

@@ -118,6 +118,13 @@ public class StaticUniverseSyncService implements ApplicationRunner {
             "TANLA","THERMAX","TORNTPOWER","VGUARD","LTTS","LTIM","APLAPOLLO","ICICIGI",
             "INDIGO","ALKEM","MINDA","AJANTPHARM","AARTIIND"
         ));
+        STATIC_UNIVERSES.put("MSR_WHITELIST", List.of(
+            "RELIANCE","DABUR","DMART","IRCTC","SRF","CHOLAFIN","BEL","UPL","BAJAJFINSV",
+            "NTPC","TATAMOTORS","NHPC","POLYCAB","TVSMOTOR","HINDUNILVR","ASIANPAINT","WIPRO",
+            "TIINDIA","GAIL","ITC","INFY","ZOMATO","INDHOTEL","SHRIRAMFIN","TCS","GRASIM",
+            "PAGEIND","POWERGRID","BHARTIARTL","DRREDDY","GODREJCP","CIPLA","HDFCBANK",
+            "AUROPHARMA","SUNPHARMA","BAJAJ-AUTO","AXISBANK","HCLTECH","TATAPOWER"
+        ));
     }
 
     @Override
