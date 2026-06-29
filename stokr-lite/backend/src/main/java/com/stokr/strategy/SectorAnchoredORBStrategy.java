@@ -72,16 +72,9 @@ public class SectorAnchoredORBStrategy implements StrategyPlugin {
         double breakoutPct = (close.doubleValue() - orbHigh.doubleValue()) / orbHigh.doubleValue();
         if (breakoutPct < 0.0025) return null;
 
-        // --- SECTOR ANCHOR FILTER ---
-        // Stock must already be up ≥ 0.8% from dayOpen at breakout time.
-        // All ORB breakouts will be above orbHigh (>0.3% from open), but only
-        // genuine sector leaders are up >0.8% from open — these show sustained
-        // institutional demand and produce higher-WR continuation moves.
+        // Capture dayOpen for morning-RS scoring (not a hard gate — ORB breakouts inherently
+        // show morning strength; we use this only to boost score for extra-strong leaders)
         BigDecimal dayOpen = context.extra("dayOpen", BigDecimal.class);
-        if (dayOpen != null && dayOpen.compareTo(BigDecimal.ZERO) > 0) {
-            double morningRS = (close.doubleValue() - dayOpen.doubleValue()) / dayOpen.doubleValue();
-            if (morningRS < 0.008) return null;
-        }
 
         // Bullish candle
         if (close.compareTo(curr.open()) <= 0) return null;
