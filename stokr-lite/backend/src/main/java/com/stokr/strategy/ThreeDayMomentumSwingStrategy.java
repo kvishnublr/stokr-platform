@@ -87,10 +87,6 @@ public class ThreeDayMomentumSwingStrategy implements StrategyPlugin {
         double ema50 = computeEma(candles, n - 1, 50);
         if (c3 < ema50) return null;
 
-        // RSI(14) on Day-3: must be ≥ 55 — confirms momentum; no upper cap (high RSI = strength)
-        double rsi = computeRsi(candles, n - 1, 14);
-        if (rsi < 55) return null;
-
         // Day-3 body ≥ 60% (strong conviction candle, no doji or shooting star)
         double range3 = h3 - l3;
         if (range3 <= 0) return null;
