@@ -75,7 +75,7 @@ public class ThreeDayMomentumSwingStrategy implements StrategyPlugin {
         if (l3 <= l2) return null;
         if (c3 <= o3) return null;
 
-        // Day-3 volume ≥ 2.0× Day-1 volume (institutional demand surge)
+        // Day-3 volume ≥ 2.0× Day-1 volume (institutional demand surge on breakout day)
         long v1 = d1.volume();
         long v3 = d3.volume();
         if (v1 <= 0 || (double) v3 / v1 < 2.0) return null;
