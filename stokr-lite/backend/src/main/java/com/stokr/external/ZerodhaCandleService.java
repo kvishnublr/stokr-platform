@@ -462,6 +462,9 @@ public class ZerodhaCandleService {
         SYMBOL_TO_TOKEN.put("WONDERLA",   "768513");
         SYMBOL_TO_TOKEN.put("ZEEL",       "975873");
         SYMBOL_TO_TOKEN.put("ZENSARTECH", "275457");
+        // Market indices — for regime filters
+        SYMBOL_TO_TOKEN.put("NIFTY_50",   "256265");  // Nifty 50 index
+        SYMBOL_TO_TOKEN.put("BANKNIFTY",  "260105");  // Bank Nifty index
         // FO_STOCKS additions — tokens verified from Zerodha instruments API 2026-06-29
         SYMBOL_TO_TOKEN.put("BALKRISIND", "85761");   // Balkrishna Industries
         SYMBOL_TO_TOKEN.put("IEX",        "56321");   // India Energy Exchange

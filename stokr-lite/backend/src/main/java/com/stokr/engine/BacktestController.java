@@ -555,6 +555,9 @@ public class BacktestController {
             // Per-date signal count cap: max 3 swing signals per trading day across all symbols
             Map<java.time.LocalDate, Integer> dailySignalCount = new java.util.HashMap<>();
 
+            // Nifty regime filter: map of date -> is Nifty above 50-day EMA?
+            Map<java.time.LocalDate, Boolean> niftyBullish = buildNiftyRegimeMap(startTime, endTime, useDailyApi);
+
             for (String sym : symbols) {
                 List<DailyBar> bars;
                 if (useDailyApi) {
@@ -572,6 +575,9 @@ public class BacktestController {
 
                 for (int i = 24; i < bars.size(); i++) {
                     java.time.LocalDate signalDate = bars.get(i).date;
+
+                    // Regime filter: skip signals when Nifty is below 50-day EMA (bear market)
+                    if (!niftyBullish.getOrDefault(signalDate, true)) continue;
 
                     // Cap: max 3 swing signals per day (position concentration limit)
                     if (dailySignalCount.getOrDefault(signalDate, 0) >= 3) continue;
@@ -651,6 +657,48 @@ public class BacktestController {
                 });
         }
         return new ArrayList<>(map.values());
+    }
+
+    /**
+     * Build a date -> bullish map for Nifty 50.
+     * Bullish = Nifty close > 50-day EMA on that date.
+     * If Nifty data unavailable for a date, defaults to true (no filter applied).
+     */
+    private Map<java.time.LocalDate, Boolean> buildNiftyRegimeMap(LocalDateTime startTime, LocalDateTime endTime, boolean useDailyApi) {
+        try {
+            List<DailyBar> niftyBars;
+            // Fetch ~50 extra days before startTime so EMA-50 is seeded from day 1
+            LocalDateTime niftyStart = startTime.minusDays(80);
+            if (useDailyApi) {
+                List<CandleData> raw = zerodhaCandleService.fetchCandles("NIFTY_50", "daily", niftyStart, endTime);
+                if (raw.isEmpty()) return Collections.emptyMap();
+                niftyBars = toDailyBarsFromDayCandles(raw);
+            } else {
+                List<CandleData> raw = candleRepository
+                    .findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc("NIFTY_50", "1min", niftyStart, endTime);
+                if (raw.isEmpty()) return Collections.emptyMap();
+                niftyBars = aggregateToDailyBars(raw);
+            }
+            Map<java.time.LocalDate, Boolean> regime = new java.util.HashMap<>();
+            double ema = 0;
+            double k = 2.0 / 51;
+            int seeded = 0;
+            for (DailyBar bar : niftyBars) {
+                if (seeded < 50) {
+                    ema = seeded == 0 ? bar.close : ema + k * (bar.close - ema);
+                    seeded++;
+                } else {
+                    ema = ema + k * (bar.close - ema);
+                    regime.put(bar.date, bar.close >= ema);
+                }
+            }
+            log.info("Nifty regime map built: {} dates, {} bullish", regime.size(),
+                regime.values().stream().filter(b -> b).count());
+            return regime;
+        } catch (Exception e) {
+            log.warn("Failed to build Nifty regime map: {} — no regime filter applied", e.getMessage());
+            return Collections.emptyMap();
+        }
     }
 
     /** Convert Zerodha "day" interval candles (1 candle per trading day) directly to DailyBars. */
