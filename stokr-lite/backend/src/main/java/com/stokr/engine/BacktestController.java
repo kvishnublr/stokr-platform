@@ -58,7 +58,13 @@ public class BacktestController {
         Map.entry("VWAP_BOUNCE_LONG", "VWAP_BOUNCE_LONG"),
         Map.entry("VBL",           "VWAP_BOUNCE_LONG"),
         Map.entry("GAP_VWAP_RETEST", "GAP_VWAP_RETEST"),
-        Map.entry("GVR",           "GAP_VWAP_RETEST")
+        Map.entry("GVR",           "GAP_VWAP_RETEST"),
+        Map.entry("INTRADAY_HIGH_BREAKOUT", "INTRADAY_HIGH_BREAKOUT"),
+        Map.entry("IHB",           "INTRADAY_HIGH_BREAKOUT"),
+        Map.entry("VWAP_BOUNCE_V2", "VWAP_BOUNCE_V2"),
+        Map.entry("VBL2",          "VWAP_BOUNCE_V2"),
+        Map.entry("SECTOR_ORB",    "SECTOR_ORB"),
+        Map.entry("SORB",          "SECTOR_ORB")
     ));
 
     private static double CAPITAL = 25000;
@@ -196,10 +202,10 @@ public class BacktestController {
             CAPITAL = capital;
             java.time.ZoneId IST2 = java.time.ZoneId.of("Asia/Kolkata");
             LocalDateTime startTime = dateStart != null
-                ? LocalDateTime.parse(dateStart.replace("Z","").substring(0, 19))
+                ? parseDateParam(dateStart)
                 : LocalDateTime.now(IST2).minusDays(30);
             LocalDateTime endTime = dateEnd != null
-                ? LocalDateTime.parse(dateEnd.replace("Z","").substring(0, 19))
+                ? parseDateParam(dateEnd)
                 : LocalDateTime.now(IST2);
 
             String pluginType = resolvePluginType(strategy);
@@ -547,6 +553,12 @@ public class BacktestController {
             "count", symbols.size(),
             "scanClause", scanClause != null ? scanClause : com.stokr.external.ChartinkScannerService.DEFAULT_ORB_SCAN
         ));
+    }
+
+    private LocalDateTime parseDateParam(String s) {
+        s = s.replace("Z", "");
+        if (s.length() <= 10) return LocalDateTime.parse(s + "T00:00:00");
+        return LocalDateTime.parse(s.substring(0, 19));
     }
 
     private String resolvePluginType(String strategy) {
