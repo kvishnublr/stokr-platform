@@ -72,16 +72,12 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
             if (gapUp > 0.015) return null;  // skip >1.5% gap-up days
         }
 
-        // Volume >= 3.0x 10-period average (raised from 2.5x — higher conviction only)
+        // Volume >= 2.5x 10-period average
         long volSum = 0;
         int volLen = Math.min(10, n - 1);
         for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
         double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
-        if (avgVol == 0 || latest.volume() < avgVol * 3.0) return null;
-
-        // RSI > 48 for SHORT confirmation — stock must have been overbought during the surge
-        BigDecimal rsi = context.indicators() != null ? context.indicators().get("RSI14") : null;
-        if (rsi == null) rsi = context.extra("rsi14", BigDecimal.class);
+        if (avgVol == 0 || latest.volume() < avgVol * 2.5) return null;
 
         // Strong body (>= 70% of candle range)
         BigDecimal range = latest.high().subtract(latest.low());
@@ -96,9 +92,6 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         boolean failedBreakout = close.compareTo(orbHigh) <= 0
             && prev.close().compareTo(orbHigh) > 0;
         boolean directBreakdown = close.compareTo(orbLow) <= 0;
-
-        // RSI must be > 48 for SHORT: confirms stock was in overbought state during surge
-        if (rsi != null && rsi.doubleValue() < 48) return null;
 
         if ((failedBreakout || directBreakdown) && close.compareTo(latest.open()) < 0) {
             BigDecimal sl = orbHigh.multiply(BigDecimal.valueOf(1.001)).setScale(2, RoundingMode.HALF_UP);
