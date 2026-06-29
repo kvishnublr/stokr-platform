@@ -131,7 +131,7 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                         else if (min >= 10 * 60 + 0 && min <= 10 * 60 + 30) score += 5;
                     }
 
-                    if (score < 80) {
+                    if (score < 75) {
                         log.debug("MSR filtered score={}/100 for {}", score, context.symbol());
                         return null;
                     }
@@ -192,7 +192,7 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                         else if (min >= 10 * 60 + 0 && min <= 10 * 60 + 30) score += 5;
                     }
 
-                    if (score < 80) {
+                    if (score < 75) {
                         log.debug("MSR LONG filtered score={}/100 for {}", score, context.symbol());
                         return null;
                     }
