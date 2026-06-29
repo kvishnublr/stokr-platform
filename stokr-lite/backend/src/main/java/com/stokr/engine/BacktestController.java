@@ -667,8 +667,8 @@ public class BacktestController {
     private Map<java.time.LocalDate, Boolean> buildNiftyRegimeMap(LocalDateTime startTime, LocalDateTime endTime, boolean useDailyApi) {
         try {
             List<DailyBar> niftyBars;
-            // Fetch ~50 extra days before startTime so EMA-50 is seeded from day 1
-            LocalDateTime niftyStart = startTime.minusDays(80);
+            // Fetch 1 year before startTime so 50-day EMA is fully converged at backtest start
+            LocalDateTime niftyStart = startTime.minusDays(365);
             if (useDailyApi) {
                 List<CandleData> raw = zerodhaCandleService.fetchCandles("NIFTY_50", "daily", niftyStart, endTime);
                 if (raw.isEmpty()) return Collections.emptyMap();
@@ -684,7 +684,8 @@ public class BacktestController {
             double k = 2.0 / 51;
             int seeded = 0;
             for (DailyBar bar : niftyBars) {
-                if (seeded < 50) {
+                if (seeded < 150) {
+                    // Warm up EMA for 150 bars (~6 months) so it's fully converged
                     ema = seeded == 0 ? bar.close : ema + k * (bar.close - ema);
                     seeded++;
                 } else {
