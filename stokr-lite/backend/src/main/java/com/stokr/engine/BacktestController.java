@@ -753,8 +753,8 @@ public class BacktestController {
                 trade.deductBrokerage();
                 return trade;
             }
-            // 3-day time-stop: if no profit after 3 days the momentum has stalled — cut it
-            if (k == entryIdx + 3 && bar.close <= entry) {
+            // 5-day time-stop: if no profit after 5 days the momentum has stalled — cut it
+            if (k == entryIdx + 5 && bar.close <= entry) {
                 trade.exitAtPrice(k, bar.closeTs, "TIME_STOP", BigDecimal.valueOf(bar.close));
                 trade.pnl = rnd2((bar.close - entry) / entry * capital);
                 trade.deductBrokerage();
