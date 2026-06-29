@@ -62,10 +62,10 @@ public class SmartMoneyFlowStrategy implements StrategyPlugin {
         int volLen = Math.min(20, n - 2);
         long volSum = 0;
         for (int k = n - 2 - volLen; k < n - 2; k++) volSum += candles.get(k).volume();
-        long avgVol = volLen > 0 ? volSum / volLen : 1;
+        double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
 
         // ─── SHORT: failed breakout above orbHigh ───────────────────────────
-        // Spike height ≥ 0.3% of price (filter 1-tick breakouts that trivially reverse)
+        // Spike height ≥ 0.2% of price (filter 1-tick breakouts that trivially reverse)
         double shortSpikeHeight = prev.high().subtract(orbHigh).doubleValue() / close.doubleValue();
         if (prev.high().compareTo(orbHigh) > 0 && shortSpikeHeight >= 0.002
                 && avgVol > 0 && prev.volume() >= avgVol * 6) {
@@ -80,6 +80,8 @@ public class SmartMoneyFlowStrategy implements StrategyPlugin {
                     .setScale(2, RoundingMode.HALF_UP);
                 double risk = sl.subtract(close).doubleValue();
                 if (risk <= 0) return null;
+                // Cap risk at 1.5% — reject trades where spike was too extreme (midcap spikes)
+                if (risk / close.doubleValue() > 0.015) return null;
 
                 // Fixed 2:1 target (below entry by 2× risk)
                 BigDecimal target = close.subtract(BigDecimal.valueOf(2.0 * risk))
@@ -113,6 +115,8 @@ public class SmartMoneyFlowStrategy implements StrategyPlugin {
                     .setScale(2, RoundingMode.HALF_UP);
                 double risk = close.subtract(sl).doubleValue();
                 if (risk <= 0) return null;
+                // Cap risk at 1.5% — reject trades where spike was too extreme
+                if (risk / close.doubleValue() > 0.015) return null;
 
                 BigDecimal target = close.add(BigDecimal.valueOf(2.0 * risk))
                     .setScale(2, RoundingMode.HALF_UP);

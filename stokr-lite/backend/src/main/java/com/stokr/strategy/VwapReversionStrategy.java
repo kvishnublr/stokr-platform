@@ -35,31 +35,35 @@ public class VwapReversionStrategy implements StrategyPlugin {
         Integer minute = context.extra("istMinute", Integer.class);
         if (hour != null && minute != null) {
             int totalMin = hour * 60 + minute;
-            if (totalMin < 9 * 60 + 30 || totalMin > 10 * 60 + 59) return null;
+            // Extended window: 9:30–13:00 (VWAP reversion works all morning session)
+            if (totalMin < 9 * 60 + 30 || totalMin > 13 * 60) return null;
         }
 
         double deviationPct = close.subtract(vwap).divide(vwap, 6, RoundingMode.HALF_UP).doubleValue() * 100;
 
-        boolean isLong = deviationPct <= -1.0 && deviationPct >= -2.5;
-        boolean isShort = deviationPct >= 1.0 && deviationPct <= 2.5;
+        // Widened deviation band: 0.6–3.5% (was 1.0–2.5%)
+        boolean isLong = deviationPct <= -0.6 && deviationPct >= -3.5;
+        boolean isShort = deviationPct >= 0.6 && deviationPct <= 3.5;
         if (!isLong && !isShort) return null;
 
         int volLen = Math.min(10, n - 1);
         long volSum = 0;
         for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
-        long avgVol = volLen > 0 ? volSum / volLen : 1;
-        if (avgVol > 0 && latest.volume() < avgVol * 1.8) return null;
+        double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
+        if (avgVol > 0 && latest.volume() < avgVol * 1.5) return null;
 
         BigDecimal rsi = context.indicators() != null ? context.indicators().get("RSI14") : null;
         if (rsi == null) rsi = context.extra("rsi14", BigDecimal.class);
 
         Signal.Side side;
         if (isLong) {
-            if (rsi != null && (rsi.doubleValue() < 20 || rsi.doubleValue() > 45)) return null;
+            // Long: RSI 25–55 (oversold/neutral dip toward VWAP)
+            if (rsi != null && (rsi.doubleValue() < 25 || rsi.doubleValue() > 55)) return null;
             if (close.compareTo(prevClose) <= 0) return null;
             side = Signal.Side.BUY;
         } else {
-            if (rsi != null && (rsi.doubleValue() < 55 || rsi.doubleValue() > 80)) return null;
+            // Short: RSI 45–78 (overbought/neutral push above VWAP)
+            if (rsi != null && (rsi.doubleValue() < 45 || rsi.doubleValue() > 78)) return null;
             if (close.compareTo(prevClose) >= 0) return null;
             side = Signal.Side.SELL;
         }
@@ -70,18 +74,21 @@ public class VwapReversionStrategy implements StrategyPlugin {
             BigDecimal body = close.subtract(latest.open()).abs();
             bodyPct = body.divide(range, 4, RoundingMode.HALF_UP).doubleValue();
         }
-        if (bodyPct < 0.40) return null;
+        if (bodyPct < 0.35) return null;
 
+        // SL anchored to VWAP (if price reverts back through VWAP, thesis is wrong)
         BigDecimal sl, target;
         double rRatio;
         if (side == Signal.Side.BUY) {
-            sl = close.multiply(BigDecimal.valueOf(0.990)).setScale(2, RoundingMode.HALF_UP);
+            sl = vwap.multiply(BigDecimal.valueOf(0.997)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal risk = close.subtract(sl);
+            if (risk.compareTo(BigDecimal.ZERO) <= 0) return null;
             target = close.add(risk.multiply(BigDecimal.valueOf(1.4))).setScale(2, RoundingMode.HALF_UP);
             rRatio = 1.4;
         } else {
-            sl = close.multiply(BigDecimal.valueOf(1.010)).setScale(2, RoundingMode.HALF_UP);
+            sl = vwap.multiply(BigDecimal.valueOf(1.003)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal risk = sl.subtract(close);
+            if (risk.compareTo(BigDecimal.ZERO) <= 0) return null;
             target = close.subtract(risk.multiply(BigDecimal.valueOf(1.4))).setScale(2, RoundingMode.HALF_UP);
             rRatio = 1.4;
         }

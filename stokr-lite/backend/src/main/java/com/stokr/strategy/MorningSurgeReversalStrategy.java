@@ -76,7 +76,7 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         long volSum = 0;
         int volLen = Math.min(10, n - 1);
         for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
-        long avgVol = volLen > 0 ? volSum / volLen : 1;
+        double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
         if (avgVol == 0 || latest.volume() < avgVol * 2.5) return null;
 
         // Strong body (>= 70% of candle range)
@@ -147,6 +147,64 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                             + " tgt=" + target + " rr=" + String.format("%.1f", rrRatio)
                             + " vol=" + String.format("%.1fx", volMult),
                         trailTrigger, trailDistance);
+                }
+            }
+        }
+
+        // ─── LONG: failed downside breakdown reversal (mirror of SHORT failedBreakout) ──
+        // Price briefly went below orbLow (wash trade) then closed back above → high-WR reversal
+        // Skip gap-down days (>1.5% down gap) — bearish day structure kills LONG recovery odds
+        if (prevDayClose != null && dayOpen != null && prevDayClose.compareTo(BigDecimal.ZERO) > 0) {
+            double gapDown = prevDayClose.subtract(dayOpen).doubleValue() / prevDayClose.doubleValue();
+            if (gapDown > 0.015) return null;  // skip >1.5% gap-down days for LONG
+        }
+
+        boolean failedBreakdown = close.compareTo(orbLow) >= 0
+            && prev.close().compareTo(orbLow) < 0;
+
+        if (failedBreakdown && close.compareTo(latest.open()) > 0) {
+            BigDecimal sl = orbLow.multiply(BigDecimal.valueOf(0.999)).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal target = orbHigh.add(orbRange.multiply(BigDecimal.valueOf(1.5))).setScale(2, RoundingMode.HALF_UP);
+
+            if (target.compareTo(close) > 0 && sl.compareTo(close) < 0) {
+                double risk = close.subtract(sl).doubleValue();
+                double reward = target.subtract(close).doubleValue();
+                double rrRatio = risk > 0 ? reward / risk : 0;
+                if (rrRatio >= 1.0) {
+                    int score = 0;
+
+                    double orbRangePct = orbRange.doubleValue() / close.doubleValue() * 100.0;
+                    if      (orbRangePct >= 1.0) score += 30;
+                    else if (orbRangePct >= 0.5) score += 15;
+
+                    double volMult = (double) latest.volume() / Math.max(avgVol, 1);
+                    if      (volMult >= 3.5) score += 25;
+                    else if (volMult >= 2.5) score += 15;
+
+                    if      (bodyPct >= 0.85) score += 20;
+                    else if (bodyPct >= 0.70) score += 10;
+
+                    score += 15;  // failedBreakdown = strong confirmation (only this pattern)
+
+                    if (istHour != null && istMinute != null) {
+                        int min = istHour * 60 + istMinute;
+                        if (min >= 9 * 60 + 30 && min < 9 * 60 + 45)  score += 10;
+                        else if (min >= 10 * 60 + 0 && min <= 10 * 60 + 30) score += 5;
+                    }
+
+                    if (score < 65) {
+                        log.debug("MSR LONG filtered score={}/100 for {}", score, context.symbol());
+                        return null;
+                    }
+
+                    return new Signal(
+                        context.symbol(), Signal.Side.BUY, close, sl, target, score / 100.0,
+                        "MSR_LONG FAILED_BREAKDOWN score=" + score + "/100"
+                            + " @" + close.setScale(2, RoundingMode.HALF_UP)
+                            + " orb=[" + orbLow.setScale(2, RoundingMode.HALF_UP) + "-" + orbHigh.setScale(2, RoundingMode.HALF_UP) + "]"
+                            + " tgt=" + target + " rr=" + String.format("%.1f", rrRatio)
+                            + " vol=" + String.format("%.1fx", volMult),
+                        999.0, 0.8);
                 }
             }
         }
