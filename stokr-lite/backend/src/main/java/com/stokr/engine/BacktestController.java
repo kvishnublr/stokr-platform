@@ -679,19 +679,13 @@ public class BacktestController {
                 if (raw.isEmpty()) return Collections.emptyMap();
                 niftyBars = aggregateToDailyBars(raw);
             }
+            // Momentum filter: Nifty close > Nifty close 20 bars ago (market trending up)
+            // No EMA lag — directly confirms the market is moving higher over the past month
             Map<java.time.LocalDate, Boolean> regime = new java.util.HashMap<>();
-            double ema = 0;
-            double k = 2.0 / 21;   // 20-day EMA — responsive enough to catch recovery rallies
-            int seeded = 0;
-            for (DailyBar bar : niftyBars) {
-                if (seeded < 60) {
-                    // Warm up EMA for 60 bars (~3 months)
-                    ema = seeded == 0 ? bar.close : ema + k * (bar.close - ema);
-                    seeded++;
-                } else {
-                    ema = ema + k * (bar.close - ema);
-                    regime.put(bar.date, bar.close >= ema);
-                }
+            int sz = niftyBars.size();
+            for (int i = 20; i < sz; i++) {
+                boolean bullish = niftyBars.get(i).close > niftyBars.get(i - 20).close;
+                regime.put(niftyBars.get(i).date, bullish);
             }
             log.info("Nifty regime map built: {} dates, {} bullish", regime.size(),
                 regime.values().stream().filter(b -> b).count());
