@@ -42,9 +42,9 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         BigDecimal orbLow   = context.extra("orbLow",   BigDecimal.class);
         BigDecimal orbRange = context.extra("orbRange",  BigDecimal.class);
         if (orbHigh == null || orbLow == null || orbRange == null) return null;
-        // Minimum 0.6% ORB range — skip flat/illiquid days (raised from 0.3%)
+        // Minimum 0.3% ORB range — skip flat/illiquid days
         Candle tmpClose = candles.get(n - 1);
-        if (orbRange.doubleValue() / tmpClose.close().doubleValue() < 0.006) return null;
+        if (orbRange.doubleValue() / tmpClose.close().doubleValue() < 0.003) return null;
 
         // Tight morning window only: 9:30–10:30 IST
         Integer istHour   = context.extra("istHour",   Integer.class);
