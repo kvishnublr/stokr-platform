@@ -18,12 +18,9 @@ services:
       dockerfile: Dockerfile
     container_name: stokr-lite-backend
     environment:
-      DB_HOST: db.tzxceqjvzilmnfzvdoet.supabase.co
-      DB_PORT: 5432
-      DB_NAME: postgres
-      DB_USERNAME: postgres
-      DB_PASSWORD: ${DB_PASSWORD:-wfKh8p8ISQ63VF40}
-      DB_SSLMODE: require
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://173.249.55.84:5432/stokr_lite}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-wfKh8p8ISQ63VF40}
       JWT_SECRET: change-this-to-a-very-long-random-secret-key-at-least-256-bits
       ZERODHA_API_KEY: ${ZERODHA_API_KEY:-}
       ZERODHA_API_SECRET: ${ZERODHA_API_SECRET:-}

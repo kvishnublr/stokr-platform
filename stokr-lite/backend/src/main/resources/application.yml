@@ -3,9 +3,9 @@ spring:
     name: stokr-lite
 
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:stokr_lite}?sslmode=${DB_SSLMODE:disable}&reWriteBatchedInserts=true
-    username: ${DB_USERNAME:stokr}
-    password: ${DB_PASSWORD:stokr_pass}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/stokr_lite}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 20

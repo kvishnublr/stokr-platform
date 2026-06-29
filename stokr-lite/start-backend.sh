@@ -18,8 +18,8 @@ fi
 > "$LOG_FILE"
 
 # Start application
-export DB_PASSWORD=root123
-export DB_HOST=localhost
+export DB_PASSWORD=wfKh8p8ISQ63VF40
+export DB_HOST=173.249.55.84
 export DB_PORT=5432
 export DB_NAME=stokr_lite
 export DB_USERNAME=stokr

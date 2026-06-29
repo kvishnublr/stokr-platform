@@ -129,14 +129,18 @@ public class StaticUniverseSyncService implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        for (Map.Entry<String, List<String>> entry : STATIC_UNIVERSES.entrySet()) {
-            try {
-                syncGroup(entry.getKey(), entry.getValue());
-            } catch (Exception e) {
-                log.warn("Failed to sync universe group {} (will retry on next restart): {}", entry.getKey(), e.getMessage());
+        try {
+            for (Map.Entry<String, List<String>> entry : STATIC_UNIVERSES.entrySet()) {
+                try {
+                    syncGroup(entry.getKey(), entry.getValue());
+                } catch (Exception e) {
+                    log.warn("Failed to sync universe group {} (will retry on next restart): {}", entry.getKey(), e.getMessage());
+                }
             }
+            log.info("Static universe sync completed. {} groups processed.", STATIC_UNIVERSES.size());
+        } catch (Exception e) {
+            log.error("Static universe sync failed: {}", e.getMessage(), e);
         }
-        log.info("Static universe sync completed. {} groups processed.", STATIC_UNIVERSES.size());
     }
 
     @Transactional
