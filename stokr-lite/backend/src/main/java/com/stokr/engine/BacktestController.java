@@ -50,7 +50,15 @@ public class BacktestController {
         Map.entry("GAP_REVERSAL",  "GAP_REVERSAL"),
         Map.entry("GAP_REV",       "GAP_REVERSAL"),
         Map.entry("VOLUME_SPIKE_MOMENTUM", "VOLUME_SPIKE_MOMENTUM"),
-        Map.entry("VSM",           "VOLUME_SPIKE_MOMENTUM")
+        Map.entry("VSM",           "VOLUME_SPIKE_MOMENTUM"),
+        Map.entry("ORB_BREAKOUT_LONG", "ORB_BREAKOUT_LONG"),
+        Map.entry("OBL",           "ORB_BREAKOUT_LONG"),
+        Map.entry("ORB_RETEST_LONG", "ORB_RETEST_LONG"),
+        Map.entry("ORL",           "ORB_RETEST_LONG"),
+        Map.entry("VWAP_BOUNCE_LONG", "VWAP_BOUNCE_LONG"),
+        Map.entry("VBL",           "VWAP_BOUNCE_LONG"),
+        Map.entry("GAP_VWAP_RETEST", "GAP_VWAP_RETEST"),
+        Map.entry("GVR",           "GAP_VWAP_RETEST")
     ));
 
     private static double CAPITAL = 25000;
