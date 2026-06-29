@@ -371,7 +371,7 @@ public class ZerodhaCandleService {
         SYMBOL_TO_TOKEN.put("LEMONTREE",  "667137");
         SYMBOL_TO_TOKEN.put("LGHL",       "5088257");
         SYMBOL_TO_TOKEN.put("LINC",       "1779457");
-        SYMBOL_TO_TOKEN.put("LTIMINDTREE","3316481");
+        SYMBOL_TO_TOKEN.put("LTIMINDTREE","4561409"); // renamed to LTM on NSE
         SYMBOL_TO_TOKEN.put("MAITHANALL", "6281729");
         SYMBOL_TO_TOKEN.put("MANAPPURAM", "4879617");
         SYMBOL_TO_TOKEN.put("MANGALAM",   "3025153");
@@ -462,21 +462,21 @@ public class ZerodhaCandleService {
         SYMBOL_TO_TOKEN.put("WONDERLA",   "768513");
         SYMBOL_TO_TOKEN.put("ZEEL",       "975873");
         SYMBOL_TO_TOKEN.put("ZENSARTECH", "275457");
-        // FO_STOCKS additions — missing from original map
-        SYMBOL_TO_TOKEN.put("BALKRISIND", "2606337"); // Balkrishna Industries (BALKRISHNA alias)
-        SYMBOL_TO_TOKEN.put("IEX",        "2426497"); // India Energy Exchange
-        SYMBOL_TO_TOKEN.put("NATIONALUM", "2475137"); // National Aluminium
-        SYMBOL_TO_TOKEN.put("NCC",        "590593");  // NCC Ltd
-        SYMBOL_TO_TOKEN.put("SONACOMS",   "4498177"); // Sona BLW Precision
-        SYMBOL_TO_TOKEN.put("SUNTV",      "3506945"); // Sun TV Network
-        SYMBOL_TO_TOKEN.put("TATACOMM",   "877313");  // Tata Communications
-        SYMBOL_TO_TOKEN.put("MCX",        "5120769"); // Multi Commodity Exchange
-        SYMBOL_TO_TOKEN.put("MRF",        "3906817"); // MRF Ltd
-        SYMBOL_TO_TOKEN.put("KPITTECH",   "2349057"); // KPIT Technologies
-        SYMBOL_TO_TOKEN.put("LAURUSLABS", "4503297"); // Laurus Labs
-        SYMBOL_TO_TOKEN.put("MOTILALOFS", "4561409"); // Motilal Oswal Financial
-        SYMBOL_TO_TOKEN.put("LTIM",       "3316481"); // LTIMindtree (same as LTIMINDTREE)
-        SYMBOL_TO_TOKEN.put("APLAPOLLO",  "3529985"); // APL Apollo Tubes
+        // FO_STOCKS additions — tokens verified from Zerodha instruments API 2026-06-29
+        SYMBOL_TO_TOKEN.put("BALKRISIND", "85761");   // Balkrishna Industries
+        SYMBOL_TO_TOKEN.put("IEX",        "56321");   // India Energy Exchange
+        SYMBOL_TO_TOKEN.put("NATIONALUM", "1629185"); // National Aluminium (NALCO)
+        SYMBOL_TO_TOKEN.put("NCC",        "593665");  // NCC Ltd
+        SYMBOL_TO_TOKEN.put("SONACOMS",   "1199105"); // Sona BLW Precision
+        SYMBOL_TO_TOKEN.put("SUNTV",      "3431425"); // Sun TV Network
+        SYMBOL_TO_TOKEN.put("TATACOMM",   "952577");  // Tata Communications
+        SYMBOL_TO_TOKEN.put("MCX",        "7982337"); // Multi Commodity Exchange
+        SYMBOL_TO_TOKEN.put("MRF",        "582913");  // MRF Ltd
+        SYMBOL_TO_TOKEN.put("KPITTECH",   "2478849"); // KPIT Technologies
+        SYMBOL_TO_TOKEN.put("LAURUSLABS", "4923905"); // Laurus Labs
+        SYMBOL_TO_TOKEN.put("MOTILALOFS", "3826433"); // Motilal Oswal Financial
+        SYMBOL_TO_TOKEN.put("LTIM",       "4561409"); // LTIMindtree (NSE symbol now LTM)
+        SYMBOL_TO_TOKEN.put("APLAPOLLO",  "6599681"); // APL Apollo Tubes
     }
 
     private final ZerodhaTokenManager tokenManager;
