@@ -80,9 +80,12 @@ public class ThreeDayMomentumSwingStrategy implements StrategyPlugin {
         long v3 = d3.volume();
         if (v1 <= 0 || (double) v3 / v1 < 2.0) return null;
 
-        // 20-day EMA: close must be above it (uptrend confirmation)
+        // Must be above both 20-day and 50-day EMA (confirmed uptrend, not dead-cat bounce)
         double ema20 = computeEma(candles, n - 1, 20);
         if (c3 < ema20) return null;
+        if (n < 55) return null;
+        double ema50 = computeEma(candles, n - 1, 50);
+        if (c3 < ema50) return null;
 
         // Day-3 body ≥ 60% (strong conviction candle, no doji or shooting star)
         double range3 = h3 - l3;

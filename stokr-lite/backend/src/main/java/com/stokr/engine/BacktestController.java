@@ -555,8 +555,8 @@ public class BacktestController {
             // Per-date signal count cap: max 3 swing signals per trading day across all symbols
             Map<java.time.LocalDate, Integer> dailySignalCount = new java.util.HashMap<>();
 
-            // Nifty regime filter: map of date -> is Nifty above 50-day EMA?
-            Map<java.time.LocalDate, Boolean> niftyBullish = buildNiftyRegimeMap(startTime, endTime, useDailyApi);
+            // Regime filter disabled — stock-level 50-day EMA in strategy handles trend filtering
+            Map<java.time.LocalDate, Boolean> niftyBullish = Collections.emptyMap();
 
             for (String sym : symbols) {
                 List<DailyBar> bars;
@@ -571,9 +571,9 @@ public class BacktestController {
                     if (raw.isEmpty()) continue;
                     bars = aggregateToDailyBars(raw);
                 }
-                if (bars.size() < 25) continue;
+                if (bars.size() < 55) continue;
 
-                for (int i = 24; i < bars.size(); i++) {
+                for (int i = 54; i < bars.size(); i++) {
                     java.time.LocalDate signalDate = bars.get(i).date;
 
                     // Regime filter: skip signals when Nifty is below 50-day EMA (bear market)
