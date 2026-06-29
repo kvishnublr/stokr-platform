@@ -77,21 +77,35 @@ public class VwapReversionStrategy implements StrategyPlugin {
         }
         if (bodyPct < 0.30) return null;
 
-        // SL anchored to VWAP (if price reverts back through VWAP, thesis is wrong)
+        // For LONG: close < VWAP (price is below VWAP, expect reversion up to VWAP)
+        //   SL = 0.7% below close (tight stop), Target = VWAP (the mean-reversion point)
+        //   Require deviation >= 1.0% so RR >= 1.0/0.7 ≈ 1.4
+        // For SHORT: close > VWAP (price is above VWAP, expect reversion down to VWAP)
+        //   SL = 0.7% above close, Target = VWAP
+        if (Math.abs(deviationPct) < 1.0) return null;  // RR gate: need 1%+ deviation for 1.4+ RR
+
         BigDecimal sl, target;
         double rRatio;
         if (side == Signal.Side.BUY) {
-            sl = vwap.multiply(BigDecimal.valueOf(0.997)).setScale(2, RoundingMode.HALF_UP);
+            sl = close.multiply(BigDecimal.valueOf(0.993)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal risk = close.subtract(sl);
             if (risk.compareTo(BigDecimal.ZERO) <= 0) return null;
-            target = close.add(risk.multiply(BigDecimal.valueOf(1.4))).setScale(2, RoundingMode.HALF_UP);
-            rRatio = 1.4;
+            // Target at VWAP + small overshoot buffer
+            target = vwap.multiply(BigDecimal.valueOf(1.001)).setScale(2, RoundingMode.HALF_UP);
+            double reward = target.subtract(close).doubleValue();
+            if (reward <= 0) return null;
+            rRatio = reward / risk.doubleValue();
+            if (rRatio < 1.0) return null;
         } else {
-            sl = vwap.multiply(BigDecimal.valueOf(1.003)).setScale(2, RoundingMode.HALF_UP);
+            sl = close.multiply(BigDecimal.valueOf(1.007)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal risk = sl.subtract(close);
             if (risk.compareTo(BigDecimal.ZERO) <= 0) return null;
-            target = close.subtract(risk.multiply(BigDecimal.valueOf(1.4))).setScale(2, RoundingMode.HALF_UP);
-            rRatio = 1.4;
+            // Target at VWAP - small undershoot buffer
+            target = vwap.multiply(BigDecimal.valueOf(0.999)).setScale(2, RoundingMode.HALF_UP);
+            double reward = close.subtract(target).doubleValue();
+            if (reward <= 0) return null;
+            rRatio = reward / risk.doubleValue();
+            if (rRatio < 1.0) return null;
         }
 
         double confidence = 0.75 + (Math.abs(deviationPct) / 10.0) * 0.15;
