@@ -3,6 +3,7 @@ package com.stokr.engine;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.marketdata.Candle;
 import com.stokr.external.ChartinkScannerService;
+import com.stokr.external.ZerodhaCandleService;
 import com.stokr.strategy.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +37,7 @@ public class BacktestController {
     private final PairsTradingService pairsTradingService;
     private final BacktestCacheRepository backtestCacheRepository;
     private final ObjectMapper objectMapper;
+    private final ZerodhaCandleService zerodhaCandleService;
 
     private static final Map<String, String> STRATEGY_PLUGIN_MAP = new LinkedHashMap<>(Map.ofEntries(
         Map.entry("MORNING_SURGE_REVERSAL", "MORNING_SURGE_REVERSAL"),
@@ -534,13 +536,14 @@ public class BacktestController {
             @RequestParam(required = false) String dateStart,
             @RequestParam(required = false) String dateEnd,
             @RequestParam(defaultValue = "40") int brokerage,
-            @RequestParam(defaultValue = "25000") double capital) {
+            @RequestParam(defaultValue = "25000") double capital,
+            @RequestParam(defaultValue = "false") boolean useDailyApi) {
 
         java.time.ZoneId IST2 = java.time.ZoneId.of("Asia/Kolkata");
         LocalDateTime startTime = dateStart != null ? parseDateParam(dateStart) : LocalDateTime.now(IST2).minusMonths(3);
         LocalDateTime endTime   = dateEnd   != null ? parseDateParam(dateEnd)   : LocalDateTime.now(IST2);
 
-        log.info("Swing backtest: strategy={} universe={} {} to {} capital={}", strategy, universe, startTime, endTime, capital);
+        log.info("Swing backtest: strategy={} universe={} {} to {} capital={} useDailyApi={}", strategy, universe, startTime, endTime, capital, useDailyApi);
 
         try {
             StrategyPlugin plugin = findPlugin(strategy);
@@ -553,11 +556,18 @@ public class BacktestController {
             Map<java.time.LocalDate, Integer> dailySignalCount = new java.util.HashMap<>();
 
             for (String sym : symbols) {
-                List<CandleData> raw = candleRepository
-                    .findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(sym, "1min", startTime, endTime);
-                if (raw.isEmpty()) continue;
-
-                List<DailyBar> bars = aggregateToDailyBars(raw);
+                List<DailyBar> bars;
+                if (useDailyApi) {
+                    // Fetch day-interval candles directly from Zerodha (supports multi-year history)
+                    List<CandleData> raw = zerodhaCandleService.fetchCandles(sym, "daily", startTime, endTime);
+                    if (raw.isEmpty()) continue;
+                    bars = toDailyBarsFromDayCandles(raw);
+                } else {
+                    List<CandleData> raw = candleRepository
+                        .findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(sym, "1min", startTime, endTime);
+                    if (raw.isEmpty()) continue;
+                    bars = aggregateToDailyBars(raw);
+                }
                 if (bars.size() < 25) continue;
 
                 for (int i = 24; i < bars.size(); i++) {
@@ -641,6 +651,20 @@ public class BacktestController {
                 });
         }
         return new ArrayList<>(map.values());
+    }
+
+    /** Convert Zerodha "day" interval candles (1 candle per trading day) directly to DailyBars. */
+    private List<DailyBar> toDailyBarsFromDayCandles(List<CandleData> dayCand) {
+        List<DailyBar> bars = new ArrayList<>();
+        for (CandleData c : dayCand) {
+            java.time.LocalDate d = c.getTimestamp().toLocalDate();
+            LocalDateTime openTs  = d.atTime(9, 15);
+            LocalDateTime closeTs = d.atTime(15, 29);
+            bars.add(new DailyBar(d, c.getOpen().doubleValue(), c.getHigh().doubleValue(),
+                    c.getLow().doubleValue(), c.getClose().doubleValue(), c.getVolume(), openTs, closeTs));
+        }
+        bars.sort(Comparator.comparing(b -> b.date));
+        return bars;
     }
 
     static class DailyBar {
