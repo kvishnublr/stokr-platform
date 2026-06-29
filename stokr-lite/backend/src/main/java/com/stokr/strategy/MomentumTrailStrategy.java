@@ -59,7 +59,7 @@ public class MomentumTrailStrategy implements StrategyPlugin {
         int volLen = Math.min(20, n - 2);
         long volSum = 0;
         for (int k = n - 2 - volLen; k < n - 2; k++) volSum += candles.get(k).volume();
-        long avgVol = volLen > 0 ? volSum / volLen : 1;
+        double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
 
         // ─── LONG: FRESH ORB breakout — prev is the FIRST candle to close above orbHigh
         // The candle before prev must have been at or below orbHigh (fresh, not already running)

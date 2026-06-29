@@ -9,11 +9,12 @@ import java.math.RoundingMode;
 import java.util.List;
 
 /**
- * Sector-Anchored ORB — ORB breakout with morning relative strength filter.
+ * Sector-Anchored ORB — ORB breakout with morning relative strength bonus.
  *
  * All OBL V13 rules preserved, plus:
- *   - At breakout time, stock must already be up ≥ 0.3% from dayOpen.
- *     This filters to stocks that led their sector from the open —
+ *   - Morning RS (gain from dayOpen) boosts confidence score.
+ *     Stocks up ≥ 0.8% from open get +10 score bonus.
+ *     This rewards stocks that led their sector from the open —
  *     institutional accumulation that predicts sustainable breakouts.
  *
  * Rationale: A stock breaking ORB while already +0.3% from open is showing
@@ -93,7 +94,7 @@ public class SectorAnchoredORBStrategy implements StrategyPlugin {
         int volLen = Math.min(20, n - 1);
         long volSum = 0;
         for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
-        long avgVol = volLen > 0 ? volSum / volLen : 1;
+        double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
         if (avgVol == 0) return null;
         double volMult = (double) curr.volume() / avgVol;
         if (volMult < 2.0) return null;

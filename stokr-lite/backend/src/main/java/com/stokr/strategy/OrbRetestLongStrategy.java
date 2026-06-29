@@ -106,7 +106,7 @@ public class OrbRetestLongStrategy implements StrategyPlugin {
         int volLen = Math.min(20, n - 1);
         long volSum = 0;
         for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
-        long avgVol = volLen > 0 ? volSum / volLen : 1;
+        double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
         double volMult = avgVol > 0 ? (double) curr.volume() / avgVol : 0;
         if (volMult < 1.5) return null;
 

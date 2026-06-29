@@ -9,7 +9,7 @@ import java.math.RoundingMode;
 import java.util.List;
 
 /**
- * Intraday High Breakout — fires when a stock makes a new session high in the 11:30–14:00
+ * Intraday High Breakout — fires when a stock makes a new session high in the 11:30–13:00
  * window on days where the ORB already resolved bullish. Targets the second momentum leg.
  *
  * Rationale: ORB captures the first breakout (10:00–13:00). IHB captures continuation
@@ -18,16 +18,16 @@ import java.util.List;
  *
  * Entry:
  *   1. Tue/Wed/Thu only (Mon/Fri excluded — same rationale as ORB)
- *   2. Window 11:30–14:00 IST (post-ORB-resolution, pre-late-day noise)
+ *   2. Window 11:30–13:00 IST (post-ORB-resolution, pre-late-day noise)
  *   3. Stock is above orbHigh (ORB already resolved bullish on this stock)
  *   4. Current candle's close is the HIGHEST close of the session so far
- *   5. Breakout above previous intraday high by 0.1–0.8% (conviction, not overextended)
+ *   5. Breakout above previous intraday high by 0.15–0.8% (conviction, not overextended)
  *   6. Bullish candle: body ≥ 55%, close > open
- *   7. Upper wick ≤ 30% (no rejection at highs)
- *   8. Volume ≥ 1.8x 20-bar avg
+ *   7. Upper wick ≤ 25% (no rejection at highs)
+ *   8. Volume ≥ 2.0x 20-bar avg
  *   9. Close above VWAP (bullish intraday structure)
  *   10. RSI 50–68 (momentum building, not yet overbought)
- *   11. Gap ≥ -0.2% (positive or near-flat open)
+ *   11. Gap ≥ -0.3% (allow flat/slight gap-down but skip big negative gaps)
  *
  * SL: 0.15% below the previous intraday high (key support now)
  * Target: 1.5:1 (continuation moves are smaller than initial ORB breaks)
@@ -106,7 +106,7 @@ public class IntradayHighBreakoutStrategy implements StrategyPlugin {
         int volLen = Math.min(20, n - 1);
         long volSum = 0;
         for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
-        long avgVol = volLen > 0 ? volSum / volLen : 1;
+        double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
         if (avgVol == 0) return null;
         double volMult = (double) curr.volume() / avgVol;
         if (volMult < 2.0) return null;

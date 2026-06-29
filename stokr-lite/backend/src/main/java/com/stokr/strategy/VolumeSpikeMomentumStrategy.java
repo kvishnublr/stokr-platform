@@ -55,7 +55,7 @@ public class VolumeSpikeMomentumStrategy implements StrategyPlugin {
         BigDecimal close = curr.close();
 
         // ── GATE 1: Gap-up confirmation ──────────────────────────────────────
-        // Stock must have opened >= 0.3% above previous close (institutional pre-market conviction)
+        // Stock must have opened >= 0.15% above previous close (institutional pre-market conviction)
         BigDecimal prevDayClose = context.extra("prevDayClose", BigDecimal.class);
         BigDecimal dayOpen      = context.extra("dayOpen",      BigDecimal.class);
         if (prevDayClose != null && dayOpen != null && prevDayClose.compareTo(BigDecimal.ZERO) > 0) {
@@ -85,7 +85,7 @@ public class VolumeSpikeMomentumStrategy implements StrategyPlugin {
         int volLen = Math.min(20, n - 1);
         long volSum = 0;
         for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
-        long avgVol = volLen > 0 ? volSum / volLen : 1;
+        double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
         if (avgVol == 0) return null;
 
         // Volume >= 3.5x avg

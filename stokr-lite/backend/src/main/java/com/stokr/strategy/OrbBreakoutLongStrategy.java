@@ -89,7 +89,7 @@ public class OrbBreakoutLongStrategy implements StrategyPlugin {
         int volLen = Math.min(20, n - 1);
         long volSum = 0;
         for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
-        long avgVol = volLen > 0 ? volSum / volLen : 1;
+        double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
         if (avgVol == 0) return null;
         double volMult = (double) curr.volume() / avgVol;
         if (volMult < 2.0) return null;

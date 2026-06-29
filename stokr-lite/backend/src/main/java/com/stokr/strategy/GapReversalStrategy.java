@@ -74,7 +74,7 @@ public class GapReversalStrategy implements StrategyPlugin {
         int volLen = Math.min(10, n - 1);
         long volSum = 0;
         for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
-        long avgVol = volLen > 0 ? volSum / volLen : 1;
+        double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
         if (avgVol == 0 || latest.volume() < avgVol * 2.5) return null;
 
         // SL: use orbHigh + 0.2% (morning high invalidation)

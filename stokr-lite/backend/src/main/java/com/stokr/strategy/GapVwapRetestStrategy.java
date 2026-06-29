@@ -65,8 +65,8 @@ public class GapVwapRetestStrategy implements StrategyPlugin {
         if (orbHigh == null || orbLow == null) return null;
 
         Candle curr = candles.get(n - 1);
-        Candle prev = candles.get(n - 2);
         BigDecimal close = curr.close();
+        Candle prev = candles.get(n - 2);
 
         if (close.compareTo(orbHigh) < 0) return null;  // must be above orbHigh
 
@@ -103,7 +103,7 @@ public class GapVwapRetestStrategy implements StrategyPlugin {
         int volLen = Math.min(20, n - 1);
         long volSum = 0;
         for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
-        long avgVol = volLen > 0 ? volSum / volLen : 1;
+        double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
         double volMult = avgVol > 0 ? (double) curr.volume() / avgVol : 0;
         if (volMult < 1.5) return null;
 

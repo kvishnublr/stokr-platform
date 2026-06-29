@@ -144,28 +144,15 @@ public class ThreeDayMomentumSwingStrategy implements StrategyPlugin {
 
     private double computeEma(List<com.stokr.marketdata.Candle> candles, int endIdx, int period) {
         int start = Math.max(0, endIdx - period * 3);
+        int warmup = endIdx - start + 1;
+        if (warmup < period) return candles.get(endIdx).close().doubleValue();
         double k = 2.0 / (period + 1);
-        double ema = candles.get(start).close().doubleValue();
-        for (int i = start + 1; i <= endIdx; i++) {
+        double ema = 0;
+        for (int i = start; i < start + period; i++) ema += candles.get(i).close().doubleValue();
+        ema /= period;
+        for (int i = start + period; i <= endIdx; i++) {
             ema = candles.get(i).close().doubleValue() * k + ema * (1 - k);
         }
         return ema;
-    }
-
-    private double computeRsi(List<com.stokr.marketdata.Candle> candles, int endIdx, int period) {
-        int start = Math.max(1, endIdx - period * 3);
-        double avgGain = 0, avgLoss = 0;
-        for (int i = start; i <= endIdx; i++) {
-            double change = candles.get(i).close().doubleValue() - candles.get(i - 1).close().doubleValue();
-            if (change > 0) avgGain += change;
-            else            avgLoss += -change;
-        }
-        int bars = endIdx - start + 1;
-        if (bars == 0) return 50;
-        avgGain /= bars;
-        avgLoss /= bars;
-        if (avgLoss == 0) return 100;
-        double rs = avgGain / avgLoss;
-        return 100 - (100 / (1 + rs));
     }
 }

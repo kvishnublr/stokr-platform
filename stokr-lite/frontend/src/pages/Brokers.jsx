@@ -126,7 +126,7 @@ export default function Brokers() {
     setConnectingBroker(brokerName);
     messageReceivedRef.current = false;
     try {
-      const { data } = await client.get(`/brokers/${brokerName}/connect`);
+      const { data } = await client.get(`/brokers/${brokerName}/auth-url`);
       if (data.authUrl) {
         const width = 600, height = 700;
         const left = window.screenX + (window.outerWidth - width) / 2;
