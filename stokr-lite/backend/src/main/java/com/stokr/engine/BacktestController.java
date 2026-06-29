@@ -681,11 +681,11 @@ public class BacktestController {
             }
             Map<java.time.LocalDate, Boolean> regime = new java.util.HashMap<>();
             double ema = 0;
-            double k = 2.0 / 51;
+            double k = 2.0 / 21;   // 20-day EMA — responsive enough to catch recovery rallies
             int seeded = 0;
             for (DailyBar bar : niftyBars) {
-                if (seeded < 150) {
-                    // Warm up EMA for 150 bars (~6 months) so it's fully converged
+                if (seeded < 60) {
+                    // Warm up EMA for 60 bars (~3 months)
                     ema = seeded == 0 ? bar.close : ema + k * (bar.close - ema);
                     seeded++;
                 } else {
