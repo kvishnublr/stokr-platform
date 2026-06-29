@@ -51,20 +51,20 @@ public class VwapReversionStrategy implements StrategyPlugin {
         long volSum = 0;
         for (int k = n - 1 - volLen; k < n - 1; k++) volSum += candles.get(k).volume();
         double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
-        if (avgVol > 0 && latest.volume() < avgVol * 1.2) return null;
+        if (avgVol > 0 && latest.volume() < avgVol * 1.5) return null;
 
         BigDecimal rsi = context.indicators() != null ? context.indicators().get("RSI14") : null;
         if (rsi == null) rsi = context.extra("rsi14", BigDecimal.class);
 
         Signal.Side side;
         if (isLong) {
-            // Long: RSI 20–60 (widened — allow more oversold dips toward VWAP)
-            if (rsi != null && (rsi.doubleValue() < 20 || rsi.doubleValue() > 60)) return null;
+            // Long: RSI 25–52 (tightened — price below VWAP with mild oversold/neutral RSI)
+            if (rsi != null && (rsi.doubleValue() < 25 || rsi.doubleValue() > 52)) return null;
             if (close.compareTo(prevClose) <= 0) return null;
             side = Signal.Side.BUY;
         } else {
-            // Short: RSI 40–82 (widened — allow overbought pushes above VWAP)
-            if (rsi != null && (rsi.doubleValue() < 40 || rsi.doubleValue() > 82)) return null;
+            // Short: RSI 48–78 (tightened — price above VWAP with mild overbought/neutral RSI)
+            if (rsi != null && (rsi.doubleValue() < 48 || rsi.doubleValue() > 78)) return null;
             if (close.compareTo(prevClose) >= 0) return null;
             side = Signal.Side.SELL;
         }
@@ -75,7 +75,7 @@ public class VwapReversionStrategy implements StrategyPlugin {
             BigDecimal body = close.subtract(latest.open()).abs();
             bodyPct = body.divide(range, 4, RoundingMode.HALF_UP).doubleValue();
         }
-        if (bodyPct < 0.30) return null;
+        if (bodyPct < 0.40) return null;  // tighter body — cleaner reversion candle
 
         // For LONG: close < VWAP (price is below VWAP, expect reversion up to VWAP)
         //   SL = 0.7% below close (tight stop), Target = VWAP (the mean-reversion point)
