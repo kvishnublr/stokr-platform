@@ -462,6 +462,21 @@ public class ZerodhaCandleService {
         SYMBOL_TO_TOKEN.put("WONDERLA",   "768513");
         SYMBOL_TO_TOKEN.put("ZEEL",       "975873");
         SYMBOL_TO_TOKEN.put("ZENSARTECH", "275457");
+        // FO_STOCKS additions — missing from original map
+        SYMBOL_TO_TOKEN.put("BALKRISIND", "2606337"); // Balkrishna Industries (BALKRISHNA alias)
+        SYMBOL_TO_TOKEN.put("IEX",        "2426497"); // India Energy Exchange
+        SYMBOL_TO_TOKEN.put("NATIONALUM", "2475137"); // National Aluminium
+        SYMBOL_TO_TOKEN.put("NCC",        "590593");  // NCC Ltd
+        SYMBOL_TO_TOKEN.put("SONACOMS",   "4498177"); // Sona BLW Precision
+        SYMBOL_TO_TOKEN.put("SUNTV",      "3506945"); // Sun TV Network
+        SYMBOL_TO_TOKEN.put("TATACOMM",   "877313");  // Tata Communications
+        SYMBOL_TO_TOKEN.put("MCX",        "5120769"); // Multi Commodity Exchange
+        SYMBOL_TO_TOKEN.put("MRF",        "3906817"); // MRF Ltd
+        SYMBOL_TO_TOKEN.put("KPITTECH",   "2349057"); // KPIT Technologies
+        SYMBOL_TO_TOKEN.put("LAURUSLABS", "4503297"); // Laurus Labs
+        SYMBOL_TO_TOKEN.put("MOTILALOFS", "4561409"); // Motilal Oswal Financial
+        SYMBOL_TO_TOKEN.put("LTIM",       "3316481"); // LTIMindtree (same as LTIMINDTREE)
+        SYMBOL_TO_TOKEN.put("APLAPOLLO",  "3529985"); // APL Apollo Tubes
     }
 
     private final ZerodhaTokenManager tokenManager;
