@@ -74,6 +74,8 @@ public class BacktestController {
         Map.entry("NPA_V2",             "NPA_V2"),
         Map.entry("EOD_MOMENTUM",       "EOD_MOMENTUM"),
         Map.entry("EOD",                "EOD_MOMENTUM"),
+        Map.entry("VWAP_REJECTION",      "VWAP_REJECTION"),
+        Map.entry("VRS",                "VWAP_REJECTION"),
         Map.entry("VWAP_DIP_BUY",       "VWAP_DIP_BUY"),
         Map.entry("VDB",                "VWAP_DIP_BUY"),
         Map.entry("AFTERNOON_BREAKOUT", "AFTERNOON_BREAKOUT"),
