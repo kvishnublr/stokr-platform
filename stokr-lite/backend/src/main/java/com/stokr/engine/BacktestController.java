@@ -70,7 +70,10 @@ public class BacktestController {
         Map.entry("THREE_DAY_MOMENTUM", "THREE_DAY_MOMENTUM"),
         Map.entry("3DM",                "THREE_DAY_MOMENTUM"),
         Map.entry("NIFTY_PULSE",        "NIFTY_PULSE"),
-        Map.entry("NPA",                "NIFTY_PULSE")
+        Map.entry("NPA",                "NIFTY_PULSE"),
+        Map.entry("NPA_V2",             "NPA_V2"),
+        Map.entry("EOD_MOMENTUM",       "EOD_MOMENTUM"),
+        Map.entry("EOD",                "EOD_MOMENTUM")
     ));
 
     private static double CAPITAL = 25000;
