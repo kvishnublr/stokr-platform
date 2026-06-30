@@ -42,9 +42,9 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         BigDecimal orbLow   = context.extra("orbLow",   BigDecimal.class);
         BigDecimal orbRange = context.extra("orbRange",  BigDecimal.class);
         if (orbHigh == null || orbLow == null || orbRange == null) return null;
-        // Minimum 0.6% ORB range — small ORBs give tiny targets, mostly EOD drift
+        // Minimum 0.5% ORB range — small ORBs give tiny targets, mostly EOD drift
         Candle tmpClose = candles.get(n - 1);
-        if (orbRange.doubleValue() / tmpClose.close().doubleValue() < 0.006) return null;
+        if (orbRange.doubleValue() / tmpClose.close().doubleValue() < 0.005) return null;
 
         // Only 10:00–10:30 IST — ORB fully formed, confirmed reversal window
         // 9:30–9:44 REMOVED: backtest showed -₹1,259 net (48.9% WR vs 57.7% at 10:00)
@@ -94,11 +94,6 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
             BigDecimal sl = orbHigh.multiply(BigDecimal.valueOf(1.001)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal target = orbLow.subtract(orbRange.multiply(BigDecimal.valueOf(1.5))).setScale(2, RoundingMode.HALF_UP);
 
-            // Max SL distance 1.5%: rejects high-risk direct-breakdown with huge ORB
-            // Failed-breakout SL is always <0.2% (entry ≈ orbHigh), always passes
-            double slDistancePct = sl.subtract(close).doubleValue() / close.doubleValue() * 100.0;
-            if (slDistancePct > 1.5) return null;
-
             if (target.compareTo(close) < 0 && sl.compareTo(close) > 0) {
                 double risk = sl.subtract(close).doubleValue();
                 double reward = close.subtract(target).doubleValue();
@@ -121,15 +116,14 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                     if      (bodyPct >= 0.85) score += 20;
                     else if (bodyPct >= 0.70) score += 10;
 
-                    // 4. Signal type (0–15 pts): failed breakout scores higher — precise entry, tiny SL risk
-                    // Breakdown scores lower — larger SL distance, bigger risk per trade
-                    score += failedBreakout ? 15 : 5;
+                    // 4. Signal type (0–15 pts): breakdown = direct momentum confirmation
+                    score += directBreakdown ? 15 : 5;
 
-                    // 5. SL distance (0–10 pts): tighter SL = better entry precision
-                    if      (slDistancePct < 0.5) score += 10;
-                    else if (slDistancePct < 1.0) score += 5;
+                    // 5. RR ratio bonus (0–10 pts): stronger reward/risk = higher conviction
+                    if      (rrRatio >= 2.0) score += 10;
+                    else if (rrRatio >= 1.5) score += 5;
 
-                    if (score < 80) {
+                    if (score < 75) {
                         log.debug("MSR filtered score={}/100 for {}", score, context.symbol());
                         return null;
                     }
