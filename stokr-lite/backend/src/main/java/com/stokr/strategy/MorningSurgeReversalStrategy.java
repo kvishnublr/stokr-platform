@@ -42,20 +42,17 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         BigDecimal orbLow   = context.extra("orbLow",   BigDecimal.class);
         BigDecimal orbRange = context.extra("orbRange",  BigDecimal.class);
         if (orbHigh == null || orbLow == null || orbRange == null) return null;
-        // Minimum 0.3% ORB range — skip flat/illiquid days
+        // Minimum 0.6% ORB range — small ORBs give tiny targets, mostly EOD drift
         Candle tmpClose = candles.get(n - 1);
-        if (orbRange.doubleValue() / tmpClose.close().doubleValue() < 0.003) return null;
+        if (orbRange.doubleValue() / tmpClose.close().doubleValue() < 0.006) return null;
 
-        // Tight morning window only: 9:30–10:30 IST
+        // Only 10:00–10:30 IST — ORB fully formed, confirmed reversal window
+        // 9:30–9:44 REMOVED: backtest showed -₹1,259 net (48.9% WR vs 57.7% at 10:00)
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
         if (istHour != null && istMinute != null) {
             int min = istHour * 60 + istMinute;
-            // Active windows: 9:30–9:44 (early surge) and 10:00–10:30 (confirmed reversal)
-            // 9:45–9:59 is noise — skip it (tested: -Rs 123/trade net in that window)
-            if (min < 9 * 60 + 30) return null;
-            if (min >= 9 * 60 + 45 && min < 10 * 60 + 0) return null;
-            if (min > 10 * 60 + 30) return null;
+            if (min < 10 * 60 + 0 || min > 10 * 60 + 30) return null;
         }
 
         Candle latest = context.getLatestCandle();
@@ -97,41 +94,42 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
             BigDecimal sl = orbHigh.multiply(BigDecimal.valueOf(1.001)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal target = orbLow.subtract(orbRange.multiply(BigDecimal.valueOf(1.5))).setScale(2, RoundingMode.HALF_UP);
 
+            // Max SL distance 1.5%: rejects high-risk direct-breakdown with huge ORB
+            // Failed-breakout SL is always <0.2% (entry ≈ orbHigh), always passes
+            double slDistancePct = sl.subtract(close).doubleValue() / close.doubleValue() * 100.0;
+            if (slDistancePct > 1.5) return null;
+
             if (target.compareTo(close) < 0 && sl.compareTo(close) > 0) {
                 double risk = sl.subtract(close).doubleValue();
                 double reward = close.subtract(target).doubleValue();
                 double rrRatio = risk > 0 ? reward / risk : 0;
                 if (rrRatio >= 1.0) {
                     // ─── CONFIDENCE SCORE FILTER ─────────────────────────────
-                    // Score 0–100. Only emit signal if score >= 55.
-                    // Filters weak-setup SL_HITs while preserving TARGET_HITs.
                     int score = 0;
 
-                    // 1. ORB range quality (0–30 pts): larger range = stronger conviction
+                    // 1. ORB range quality (0–30 pts): larger ORB = stronger conviction
                     double orbRangePct = orbRange.doubleValue() / close.doubleValue() * 100.0;
                     if      (orbRangePct >= 1.0) score += 30;
-                    else if (orbRangePct >= 0.5) score += 15;
+                    else if (orbRangePct >= 0.6) score += 15;
 
-                    // 2. Volume multiplier (0–25 pts): volume conviction
+                    // 2. Volume multiplier (0–25 pts)
                     double volMult = (double) latest.volume() / Math.max(avgVol, 1);
                     if      (volMult >= 3.5) score += 25;
                     else if (volMult >= 2.5) score += 15;
 
-                    // 3. Body ratio (0–20 pts): cleaner candle = higher quality signal
+                    // 3. Body ratio (0–20 pts)
                     if      (bodyPct >= 0.85) score += 20;
                     else if (bodyPct >= 0.70) score += 10;
 
-                    // 4. Signal type (0–15 pts): directBreakdown is stronger confirmation
-                    score += directBreakdown ? 15 : 5;
+                    // 4. Signal type (0–15 pts): failed breakout scores higher — precise entry, tiny SL risk
+                    // Breakdown scores lower — larger SL distance, bigger risk per trade
+                    score += failedBreakout ? 15 : 5;
 
-                    // 5. Entry window (0–10 pts): early morning window is cleaner
-                    if (istHour != null && istMinute != null) {
-                        int min = istHour * 60 + istMinute;
-                        if (min >= 9 * 60 + 30 && min < 9 * 60 + 45)  score += 10;
-                        else if (min >= 10 * 60 + 0 && min <= 10 * 60 + 30) score += 5;
-                    }
+                    // 5. SL distance (0–10 pts): tighter SL = better entry precision
+                    if      (slDistancePct < 0.5) score += 10;
+                    else if (slDistancePct < 1.0) score += 5;
 
-                    if (score < 75) {
+                    if (score < 80) {
                         log.debug("MSR filtered score={}/100 for {}", score, context.symbol());
                         return null;
                     }

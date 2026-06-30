@@ -1097,6 +1097,7 @@ public class BacktestController {
         int qty;
         double tradeCapital;
         BigDecimal exitPriceFinal;
+        String reason;
 
         SimulatedTrade(String symbol, Signal signal, int entryIdx, LocalDateTime entryTime, double perTradeCost) {
             this.symbol = symbol;
@@ -1111,6 +1112,7 @@ public class BacktestController {
             this.qty = (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0)
                 ? (int)(CAPITAL / entryPrice.doubleValue()) : 0;
             this.tradeCapital = qty * (entryPrice != null ? entryPrice.doubleValue() : 0);
+            this.reason = signal.reason();
         }
 
         void exit(int exitIdx, LocalDateTime exitTime, String exitType) {
@@ -1161,6 +1163,7 @@ public class BacktestController {
             m.put("exitTime", exitTime != null ? exitTime.toString() : null);
             m.put("exitType", exitType);
             m.put("exitPrice", exitPriceFinal);
+            m.put("reason", reason);
             m.put("pnl", pnl);
             m.put("brokerage", brokerage);
             m.put("netPnl", Math.round((pnl - brokerage) * 100.0) / 100.0);
