@@ -70,7 +70,13 @@ public class BacktestController {
         Map.entry("THREE_DAY_MOMENTUM", "THREE_DAY_MOMENTUM"),
         Map.entry("3DM",                "THREE_DAY_MOMENTUM"),
         Map.entry("NIFTY_PULSE",        "NIFTY_PULSE"),
-        Map.entry("NPA",                "NIFTY_PULSE")
+        Map.entry("NPA",                "NIFTY_PULSE"),
+        Map.entry("FIVE_MIN_ORB",       "FIVE_MIN_ORB"),
+        Map.entry("5ORB",               "FIVE_MIN_ORB"),
+        Map.entry("VOLUME_SPIKE_SCALP", "VOLUME_SPIKE_SCALP"),
+        Map.entry("VSS",                "VOLUME_SPIKE_SCALP"),
+        Map.entry("OPENING_GAP_FADE",   "OPENING_GAP_FADE"),
+        Map.entry("GAP_FADE",           "OPENING_GAP_FADE")
     ));
 
     private static double CAPITAL = 25000;
@@ -907,9 +913,11 @@ public class BacktestController {
         java.util.Set<String> tradedDays = new java.util.HashSet<>();
         int openTradeExitIdx = -1;
 
-        for (int i = 15; i < n; i++) {
+        // Start at i=1 so early-entry strategies (5-min ORB, gap fade, volume spike)
+        // can evaluate pre-10am candles. MSR/NPA return null before 10:00 via their own checks.
+        for (int i = 1; i < n; i++) {
             if (openTradeExitIdx > 0 && i <= openTradeExitIdx) continue;
-            if (orbHighArr[i] == null) continue;
+            // orbHighArr null = 1-hour ORB not yet ready; strategies that need it check themselves
 
             String istDate = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
             if (tradedDays.contains(istDate)) continue;
