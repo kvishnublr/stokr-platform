@@ -511,15 +511,6 @@ export default function AdvancedBacktest() {
               </div>
             )}
           </div>
-          {/* Brokerage per trade */}
-          <div>
-            <label className="label">Brokerage (₹/trade)</label>
-            <input type="number" min="0" max="500" step="5"
-              value={brokerage}
-              onChange={e => setBrokerage(Number(e.target.value))}
-              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px',
-                border: '1px solid #d1d5db', fontSize: '13px' }} />
-          </div>
           {/* Timeframe - locked to 1min */}
           <div>
             <label className="label">Timeframe</label>
@@ -655,7 +646,7 @@ export default function AdvancedBacktest() {
                 color={pnlColor(r.totalPnL)} />
               <MetricCard label="Net P&L (post-brokerage)" value={'₹' + (r.netPnL || 0)?.toLocaleString('en-IN', {maximumFractionDigits:0})}
                 color={pnlColor(r.netPnL)}
-                sub={'Brokerage: ₹' + (r.totalBrokerage || 0)?.toLocaleString('en-IN', {maximumFractionDigits:0}) + ' · ₹' + r.brokeragePerTrade + '/trade'} />
+                sub={'Zerodha brokerage: ₹' + (r.totalBrokerage || 0)?.toLocaleString('en-IN', {maximumFractionDigits:0})} />
               <MetricCard label="Avg P&L / Trade" value={'₹' + r.avgPnL?.toFixed(0)}
                 color={pnlColor(r.avgPnL)} />
               <MetricCard label="Profit Factor"   value={r.profitFactor?.toFixed(2)}
@@ -802,16 +793,20 @@ export default function AdvancedBacktest() {
                 </div>
                 <button
                   onClick={() => {
-                    const headers = ['#','Symbol','Entry Time','Side','Entry Price','Stop Loss','Target','P&L','Exit Type'];
+                    const headers = ['#','Symbol','Entry Time','Side','Qty','Entry Price','Capital','Stop Loss','Target','Gross P&L','Brokerage','Net P&L','Exit Type'];
                     const rows = r.trades.map((t, i) => [
                       i + 1,
                       t.symbol,
                       t.entryTime ? new Date(t.entryTime).toLocaleString('en-IN') : '',
-                      t.side || 'BUY',
+                      t.side || 'SELL',
+                      t.qty || '',
                       Number(t.entryPrice).toFixed(2),
+                      Number(t.tradeCapital || 0).toFixed(0),
                       Number(t.stopLoss).toFixed(2),
                       Number(t.target).toFixed(2),
                       Number(t.pnl).toFixed(2),
+                      Number(t.brokerage || 0).toFixed(2),
+                      Number(t.netPnl ?? t.pnl).toFixed(2),
                       t.exitType || ''
                     ]);
                     const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
@@ -838,10 +833,14 @@ export default function AdvancedBacktest() {
                   <thead style={{ position: 'sticky', top: 0 }}>
                     <tr>
                       <th>#</th><th>Symbol</th><th>Entry Time</th>
+                      <th style={{textAlign:'right'}}>Qty</th>
                       <th style={{textAlign:'right'}}>Entry ₹</th>
+                      <th style={{textAlign:'right'}}>Capital ₹</th>
                       <th style={{textAlign:'right'}}>SL ₹</th>
                       <th style={{textAlign:'right'}}>Target ₹</th>
-                      <th style={{textAlign:'right'}}>P&L ₹</th>
+                      <th style={{textAlign:'right'}}>Gross ₹</th>
+                      <th style={{textAlign:'right'}}>Brok ₹</th>
+                      <th style={{textAlign:'right'}}>Net ₹</th>
                       <th style={{textAlign:'center'}}>Exit</th>
                     </tr>
                   </thead>
@@ -854,12 +853,23 @@ export default function AdvancedBacktest() {
                           {t.entryTime ? new Date(t.entryTime).toLocaleString('en-IN', {
                             day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '-'}
                         </td>
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{t.qty}</td>
                         <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{Number(t.entryPrice).toFixed(2)}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#6366f1' }}>
+                          {Number(t.tradeCapital || 0).toLocaleString('en-IN', {maximumFractionDigits:0})}
+                        </td>
                         <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#ef4444' }}>{Number(t.stopLoss).toFixed(2)}</td>
                         <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#10b981' }}>{Number(t.target).toFixed(2)}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700,
+                        <td style={{ textAlign: 'right', fontWeight: 600,
                           color: t.pnl > 0 ? '#10b981' : t.pnl < 0 ? '#ef4444' : '#6b7280' }}>
                           {t.pnl > 0 ? '+' : ''}{Number(t.pnl).toFixed(0)}
+                        </td>
+                        <td style={{ textAlign: 'right', color: '#9ca3af', fontSize: '11px' }}>
+                          {Number(t.brokerage || 0).toFixed(0)}
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 700,
+                          color: (t.netPnl ?? t.pnl) > 0 ? '#10b981' : (t.netPnl ?? t.pnl) < 0 ? '#ef4444' : '#6b7280' }}>
+                          {(t.netPnl ?? t.pnl) > 0 ? '+' : ''}{Number(t.netPnl ?? t.pnl).toFixed(0)}
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <span style={{
@@ -882,6 +892,47 @@ export default function AdvancedBacktest() {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Daily PnL Table */}
+          {r.dailyPnl && Object.keys(r.dailyPnl).length > 0 && (
+            <div className="card-crystal" style={{ padding: '24px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '16px', color: '#1e293b' }}>
+                Daily P&L Breakdown
+              </h3>
+              <div style={{ overflowX: 'auto', maxHeight: '360px', overflowY: 'auto' }}>
+                <table>
+                  <thead style={{ position: 'sticky', top: 0 }}>
+                    <tr>
+                      <th>Date</th>
+                      <th style={{textAlign:'right'}}>Net P&L ₹</th>
+                      <th style={{textAlign:'right'}}>Cumulative ₹</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      let cum = 0;
+                      return Object.entries(r.dailyPnl).map(([date, pnl]) => {
+                        cum += pnl;
+                        return (
+                          <tr key={date}>
+                            <td style={{ fontFamily: 'monospace', color: '#6b7280', fontSize: '12px' }}>{date}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700,
+                              color: pnl > 0 ? '#10b981' : pnl < 0 ? '#ef4444' : '#6b7280' }}>
+                              {pnl > 0 ? '+' : ''}₹{Number(pnl).toFixed(0)}
+                            </td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace',
+                              color: cum > 0 ? '#10b981' : cum < 0 ? '#ef4444' : '#6b7280' }}>
+                              {cum > 0 ? '+' : ''}₹{Math.round(cum).toLocaleString('en-IN')}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>

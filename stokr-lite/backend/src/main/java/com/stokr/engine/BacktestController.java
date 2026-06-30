@@ -196,9 +196,9 @@ public class BacktestController {
             @RequestParam(required = false) String symbols,
             @RequestParam(defaultValue = "1min") String timeframe,
             @RequestParam(defaultValue = "NIFTY_100") String universe,
-            @RequestParam(defaultValue = "0") int brokerage,
             @RequestParam(defaultValue = "25000") double capital) {
 
+        int brokerage = 0; // always use Zerodha formula — no manual brokerage input
         log.info("Running advanced backtest: strategy={}, universe={}, dateStart={}, dateEnd={}, timeframe={}, capital={}",
                 strategy, universe, dateStart, dateEnd, timeframe, capital);
 
@@ -314,7 +314,6 @@ public class BacktestController {
             result.put("totalPnL",       Math.round(totalPnl * 100.0) / 100.0);
             result.put("totalBrokerage", Math.round(totalBrokerage * 100.0) / 100.0);
             result.put("netPnL",         Math.round(netPnl * 100.0) / 100.0);
-            result.put("brokeragePerTrade", perTradeCost);
             result.put("winRate",        Math.round(winRate * 100.0) / 100.0);
             result.put("avgPnL",         Math.round(avgPnl * 100.0) / 100.0);
             result.put("maxDrawdown",    calculateMaxDrawdownFromTrades(allTrades));
@@ -329,6 +328,10 @@ public class BacktestController {
             result.put("capitalPerTrade", CAPITAL);
             result.put("dateRange", Map.of("start", startTime.toString(), "end", endTime.toString()));
             result.put("trades", allTrades.stream().map(SimulatedTrade::toMap).toList());
+            // Daily PnL breakdown: {date -> net pnl for that day}
+            Map<String, Double> dailyPnlOut = new java.util.LinkedHashMap<>();
+            dailyPnl.forEach((d, v) -> dailyPnlOut.put(d.toString(), Math.round(v * 100.0) / 100.0));
+            result.put("dailyPnl", dailyPnlOut);
 
             // Save to cache (non-Chartink only)
             if (!"CHARTINK".equalsIgnoreCase(universe)) {
@@ -1087,6 +1090,8 @@ public class BacktestController {
         LocalDateTime entryTime, exitTime;
         String exitType;
         double pnl, brokerage, perTradeCost;
+        int qty;
+        double tradeCapital;
 
         SimulatedTrade(String symbol, Signal signal, int entryIdx, LocalDateTime entryTime, double perTradeCost) {
             this.symbol = symbol;
@@ -1097,6 +1102,10 @@ public class BacktestController {
             this.entryIdx = entryIdx;
             this.entryTime = entryTime;
             this.perTradeCost = perTradeCost;
+            // qty = floor(capital / entryPrice); tradeCapital = actual amount deployed
+            this.qty = (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0)
+                ? (int)(CAPITAL / entryPrice.doubleValue()) : 0;
+            this.tradeCapital = qty * (entryPrice != null ? entryPrice.doubleValue() : 0);
         }
 
         void exit(int exitIdx, LocalDateTime exitTime, String exitType) {
@@ -1108,7 +1117,7 @@ public class BacktestController {
                 double movePct = (side == Signal.Side.BUY)
                     ? refPrice.subtract(entryPrice).doubleValue() / entryPrice.doubleValue()
                     : entryPrice.subtract(refPrice).doubleValue() / entryPrice.doubleValue();
-                this.pnl = Math.round(movePct * CAPITAL * 100.0) / 100.0;
+                this.pnl = Math.round(movePct * tradeCapital * 100.0) / 100.0;
             }
             deductBrokerage();
         }
@@ -1132,31 +1141,31 @@ public class BacktestController {
                         ? exitPrice.subtract(entryPrice).doubleValue() / entryPrice.doubleValue()
                         : entryPrice.subtract(exitPrice).doubleValue() / entryPrice.doubleValue();
                 }
-                this.pnl = Math.round(movePct * CAPITAL * 100.0) / 100.0;
+                this.pnl = Math.round(movePct * tradeCapital * 100.0) / 100.0;
             }
             deductBrokerage();
         }
 
         void deductBrokerage() {
-            if (perTradeCost > 0) {
-                this.brokerage = perTradeCost;
-            } else {
-                this.brokerage = zerodhaIntradayBrokerage(CAPITAL);
-            }
+            // Always use Zerodha actual formula based on real deployed capital
+            this.brokerage = zerodhaIntradayBrokerage(tradeCapital > 0 ? tradeCapital : CAPITAL);
         }
 
         Map<String, Object> toMap() {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("symbol", symbol);
             m.put("side", side);
+            m.put("qty", qty);
             m.put("entryPrice", entryPrice);
             m.put("stopLoss", stopLoss);
             m.put("target", target);
+            m.put("tradeCapital", Math.round(tradeCapital * 100.0) / 100.0);
             m.put("entryTime", entryTime != null ? entryTime.toString() : null);
             m.put("exitTime", exitTime != null ? exitTime.toString() : null);
             m.put("exitType", exitType);
             m.put("pnl", pnl);
             m.put("brokerage", brokerage);
+            m.put("netPnl", Math.round((pnl - brokerage) * 100.0) / 100.0);
             return m;
         }
     }
