@@ -1095,6 +1095,7 @@ public class BacktestController {
         double pnl, brokerage, perTradeCost;
         int qty;
         double tradeCapital;
+        BigDecimal exitPriceFinal;
 
         SimulatedTrade(String symbol, Signal signal, int entryIdx, LocalDateTime entryTime, double perTradeCost) {
             this.symbol = symbol;
@@ -1117,6 +1118,7 @@ public class BacktestController {
             this.exitType = exitType;
             if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
                 BigDecimal refPrice = "TARGET_HIT".equals(exitType) ? target : stopLoss;
+                this.exitPriceFinal = refPrice;
                 double movePct = (side == Signal.Side.BUY)
                     ? refPrice.subtract(entryPrice).doubleValue() / entryPrice.doubleValue()
                     : entryPrice.subtract(refPrice).doubleValue() / entryPrice.doubleValue();
@@ -1129,21 +1131,12 @@ public class BacktestController {
             this.exitIdx = exitIdx;
             this.exitTime = exitTime;
             this.exitType = exitType;
+            this.exitPriceFinal = exitPrice;
+            // Always use the actual exit price for PnL — target/SL passed as exitPrice by caller
             if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0 && exitPrice != null) {
-                double movePct;
-                if ("TARGET_HIT".equals(exitType)) {
-                    movePct = (side == Signal.Side.BUY)
-                        ? target.subtract(entryPrice).doubleValue() / entryPrice.doubleValue()
-                        : entryPrice.subtract(target).doubleValue() / entryPrice.doubleValue();
-                } else if ("SL_HIT".equals(exitType)) {
-                    movePct = (side == Signal.Side.BUY)
-                        ? -(entryPrice.subtract(stopLoss).doubleValue() / entryPrice.doubleValue())
-                        : -(stopLoss.subtract(entryPrice).doubleValue() / entryPrice.doubleValue());
-                } else {
-                    movePct = (side == Signal.Side.BUY)
-                        ? exitPrice.subtract(entryPrice).doubleValue() / entryPrice.doubleValue()
-                        : entryPrice.subtract(exitPrice).doubleValue() / entryPrice.doubleValue();
-                }
+                double movePct = (side == Signal.Side.BUY)
+                    ? exitPrice.subtract(entryPrice).doubleValue() / entryPrice.doubleValue()
+                    : entryPrice.subtract(exitPrice).doubleValue() / entryPrice.doubleValue();
                 this.pnl = Math.round(movePct * tradeCapital * 100.0) / 100.0;
             }
             deductBrokerage();
@@ -1166,6 +1159,7 @@ public class BacktestController {
             m.put("entryTime", entryTime != null ? entryTime.toString() : null);
             m.put("exitTime", exitTime != null ? exitTime.toString() : null);
             m.put("exitType", exitType);
+            m.put("exitPrice", exitPriceFinal);
             m.put("pnl", pnl);
             m.put("brokerage", brokerage);
             m.put("netPnl", Math.round((pnl - brokerage) * 100.0) / 100.0);

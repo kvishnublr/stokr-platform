@@ -137,10 +137,10 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                     }
 
                     String label = failedBreakout ? "FAILED_BREAKOUT" : "BREAKDOWN";
-                    // Trail: activate at 0.6% profit (before typical target hit), trail 0.35% tight
-                    // Engine trails-after-target — locks in ≥target on all wins, captures runners
-                    double trailTrigger  = 0.6;
-                    double trailDistance = 0.35;
+                    // Pre-target trail disabled (999 = never triggers) — don't cut winners short
+                    // Post-target: trail 0.5% behind best price to capture runners beyond target
+                    double trailTrigger  = 999.0;
+                    double trailDistance = 0.5;
                     return new Signal(
                         context.symbol(), Signal.Side.SELL, close, sl, target, score / 100.0,
                         "MSR_SHORT " + label + " score=" + score + "/100"
