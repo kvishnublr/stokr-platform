@@ -18,10 +18,13 @@ async function ensureAuthenticated() {
 }
 
 const STRATEGIES = [
-  { value: 'SURGE_REV',    label: 'Morning Surge Reversal', desc: 'ORB false breakout fade. SHORT only. 61% win rate, PF 2.0.' },
-  { value: 'NIFTY_PULSE',  label: 'NIFTY Pulse (NPA)',      desc: 'ORB SHORT only when NIFTY down >0.2%. 68.75% win rate, PF 2.66.' },
-  { value: 'NPA_V2',       label: 'NPA V2 (Volume Filter)', desc: 'NPA with volume fade filter + NIFTY >0.15%. More signals, higher quality.' },
-  { value: 'EOD_MOMENTUM', label: 'EOD Momentum Lock',      desc: 'End-of-day trend continuation at 14:30–15:10. BUY/SELL with institutional flow.' },
+  { value: 'SURGE_REV',         label: 'Morning Surge Reversal',    desc: 'ORB false breakout fade. SHORT only. 61% win rate, PF 2.0.' },
+  { value: 'NIFTY_PULSE',       label: 'NIFTY Pulse (NPA)',         desc: 'ORB SHORT only when NIFTY down >0.2%. 68.75% win rate, PF 2.66.' },
+  { value: 'NPA_V2',            label: 'NPA V2 (Volume Filter)',    desc: 'NPA with volume fade filter + NIFTY >0.15%. More signals, higher quality.' },
+  { value: 'EOD_MOMENTUM',      label: 'EOD Momentum Lock',         desc: 'End-of-day trend continuation at 14:30–15:10. BUY/SELL with institutional flow.' },
+  { value: 'VWAP_DIP_BUY',      label: 'VWAP Dip Buy',             desc: 'LONG when NIFTY up >0.2%. Buys stock pullback to VWAP (institutional support). 10:30–12:00.' },
+  { value: 'AFTERNOON_BREAKOUT',label: 'Afternoon Breakout',        desc: 'Post-consolidation range breakout 12:00–13:30. BUY/SELL on 3x volume with ≥1.2% target.' },
+  { value: 'GAP_CONTINUATION',  label: 'Gap Continuation',          desc: 'Gap >0.5% that holds 15 min → follow gap direction. Entry 9:30–9:35. Uncorrelated to ORB.' },
 ];
 
 const ALL_PAIRS = [

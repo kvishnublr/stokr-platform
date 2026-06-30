@@ -73,7 +73,14 @@ public class BacktestController {
         Map.entry("NPA",                "NIFTY_PULSE"),
         Map.entry("NPA_V2",             "NPA_V2"),
         Map.entry("EOD_MOMENTUM",       "EOD_MOMENTUM"),
-        Map.entry("EOD",                "EOD_MOMENTUM")
+        Map.entry("EOD",                "EOD_MOMENTUM"),
+        Map.entry("VWAP_DIP_BUY",       "VWAP_DIP_BUY"),
+        Map.entry("VDB",                "VWAP_DIP_BUY"),
+        Map.entry("AFTERNOON_BREAKOUT", "AFTERNOON_BREAKOUT"),
+        Map.entry("AFB",                "AFTERNOON_BREAKOUT"),
+        Map.entry("GAP_CONTINUATION",   "GAP_CONTINUATION"),
+        Map.entry("GAP_CONT",           "GAP_CONTINUATION"),
+        Map.entry("GC",                 "GAP_CONTINUATION")
     ));
 
     private static double CAPITAL = 25000;
