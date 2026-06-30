@@ -962,6 +962,7 @@ public class BacktestController {
                 double entryD = signal.entryPrice().doubleValue();
                 boolean trailActivated = false;
                 boolean targetLocked = false; // trail-after-target: lock SL at target, keep trailing
+                boolean breakevenLocked = false; // at 50% of target distance, move SL to entry
                 double trailTrigger  = signal.trailTriggerPct();
                 double trailDistance = signal.trailDistancePct() / 100.0;
 
@@ -987,13 +988,22 @@ public class BacktestController {
                                 trailActivated = true;
                                 if (signal.target().compareTo(currentSL) > 0) currentSL = signal.target();
                             }
+                            // Breakeven lock: at 50% toward target, move SL to entry — prevents full SL loss on reversal
+                            if (!targetLocked && !breakevenLocked) {
+                                double halfTarget = (entryD + signal.target().doubleValue()) / 2.0;
+                                if (bestPrice.doubleValue() >= halfTarget) {
+                                    breakevenLocked = true;
+                                    BigDecimal breakevenSL = signal.entryPrice();
+                                    if (breakevenSL.compareTo(currentSL) > 0) currentSL = breakevenSL;
+                                }
+                            }
                             if (trailActivated) {
                                 BigDecimal newTrail = bestPrice.multiply(BigDecimal.valueOf(1.0 - trailDistance))
                                     .setScale(2, java.math.RoundingMode.HALF_UP);
                                 if (newTrail.compareTo(currentSL) > 0) currentSL = newTrail;
                             }
                             if (c.low().compareTo(currentSL) <= 0) {
-                                String exitLabel = targetLocked ? "TARGET_HIT" : (trailActivated ? "TRAIL_SL" : "SL_HIT");
+                                String exitLabel = targetLocked ? "TARGET_HIT" : (trailActivated ? "TRAIL_SL" : (breakevenLocked ? "BREAKEVEN_SL" : "SL_HIT"));
                                 trade.exitAtPrice(j, c.timestamp(), exitLabel, currentSL);
                                 exited = true;
                             }
@@ -1009,13 +1019,22 @@ public class BacktestController {
                                 trailActivated = true;
                                 if (signal.target().compareTo(currentSL) < 0) currentSL = signal.target();
                             }
+                            // Breakeven lock: at 50% toward target, move SL to entry — prevents full SL loss on reversal
+                            if (!targetLocked && !breakevenLocked) {
+                                double halfTarget = (entryD + signal.target().doubleValue()) / 2.0;
+                                if (bestPrice.doubleValue() <= halfTarget) {
+                                    breakevenLocked = true;
+                                    BigDecimal breakevenSL = signal.entryPrice();
+                                    if (breakevenSL.compareTo(currentSL) < 0) currentSL = breakevenSL;
+                                }
+                            }
                             if (trailActivated) {
                                 BigDecimal newTrail = bestPrice.multiply(BigDecimal.valueOf(1.0 + trailDistance))
                                     .setScale(2, java.math.RoundingMode.HALF_UP);
                                 if (newTrail.compareTo(currentSL) < 0) currentSL = newTrail;
                             }
                             if (c.high().compareTo(currentSL) >= 0) {
-                                String exitLabel = targetLocked ? "TARGET_HIT" : (trailActivated ? "TRAIL_SL" : "SL_HIT");
+                                String exitLabel = targetLocked ? "TARGET_HIT" : (trailActivated ? "TRAIL_SL" : (breakevenLocked ? "BREAKEVEN_SL" : "SL_HIT"));
                                 trade.exitAtPrice(j, c.timestamp(), exitLabel, currentSL);
                                 exited = true;
                             }
