@@ -68,7 +68,9 @@ public class BacktestController {
         Map.entry("SECTOR_ORB",          "SECTOR_ORB"),
         Map.entry("SORB",               "SECTOR_ORB"),
         Map.entry("THREE_DAY_MOMENTUM", "THREE_DAY_MOMENTUM"),
-        Map.entry("3DM",                "THREE_DAY_MOMENTUM")
+        Map.entry("3DM",                "THREE_DAY_MOMENTUM"),
+        Map.entry("NIFTY_PULSE",        "NIFTY_PULSE"),
+        Map.entry("NPA",                "NIFTY_PULSE")
     ));
 
     private static double CAPITAL = 25000;
@@ -266,9 +268,11 @@ public class BacktestController {
             }
 
             double perTradeCost = brokerage;
+            // Build NIFTY 50 minute-level pct-change map for strategies that need market regime
+            Map<java.time.LocalDateTime, Double> niftyPctByTs = buildNiftyMinutePct(startTime, endTime);
             List<SimulatedTrade> allTrades = new ArrayList<>();
             for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
-                allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params, perTradeCost));
+                allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params, perTradeCost, niftyPctByTs));
             }
             allTrades.sort(java.util.Comparator.comparing(t -> t.entryTime));
 
@@ -840,7 +844,7 @@ public class BacktestController {
         return strategyPlugins.isEmpty() ? null : strategyPlugins.get(0);
     }
 
-    private List<SimulatedTrade> simulateStrategy(String symbol, List<CandleData> candleData, StrategyPlugin plugin, StrategyParams params, double perTradeCost) {
+    private List<SimulatedTrade> simulateStrategy(String symbol, List<CandleData> candleData, StrategyPlugin plugin, StrategyParams params, double perTradeCost, Map<java.time.LocalDateTime, Double> niftyPctByTs) {
         List<SimulatedTrade> trades = new ArrayList<>();
         int n = candleData.size();
         if (n < 20) return trades;
@@ -941,6 +945,10 @@ public class BacktestController {
                 extras.put("prevVwap3", null);
                 extras.put("prevVwap5", null);
             }
+            // NIFTY 50 % change from prev close — used by NIFTY_PULSE and similar regime-gated strategies
+            java.time.LocalDateTime evalTs = candleData.get(i).getTimestamp()
+                .truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+            extras.put("niftyPctChange", niftyPctByTs.isEmpty() ? null : niftyPctByTs.get(evalTs));
 
             List<Candle> window = candles.subList(0, i + 1);
             MarketContext context = new MarketContext(symbol, window, candles.get(i).close(), dayVwap[i], indMap, extras);
@@ -1034,6 +1042,67 @@ public class BacktestController {
             }
         }
         return trades;
+    }
+
+    /**
+     * Build a map of LocalDateTime → NIFTY 50 % change from previous day's close.
+     * Key is truncated to minutes (matches evaluation timestamps in simulateStrategy).
+     * Returns an empty map if NIFTY data is unavailable — strategies should sit out when empty.
+     */
+    private Map<java.time.LocalDateTime, Double> buildNiftyMinutePct(java.time.LocalDateTime start, java.time.LocalDateTime end) {
+        // Load from DB first (candle_data table, symbol="NIFTY_50")
+        // Fetch 1 extra day before start so we have prev-day close for the first backtest day
+        java.time.LocalDateTime fetchStart = start.minusDays(2);
+        List<CandleData> niftyCandles = candleRepository
+            .findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc("NIFTY_50", "1min", fetchStart, end);
+
+        if (niftyCandles.isEmpty()) {
+            // Try Zerodha API (requires valid token)
+            log.info("NIFTY_50 not in DB — attempting Zerodha fetch for regime filter");
+            niftyCandles = zerodhaCandleService.fetchCandles("NIFTY_50", "1min", fetchStart, end);
+            if (niftyCandles.isEmpty()) {
+                log.warn("NIFTY_50 candle data unavailable — NIFTY_PULSE will produce 0 signals (backfill NIFTY_50 first)");
+                return Collections.emptyMap();
+            }
+            // Save to DB for future runs
+            try { candleRepository.saveAll(niftyCandles); } catch (Exception ignored) {}
+        }
+
+        log.info("NIFTY_50 candles loaded: {} (for regime filter)", niftyCandles.size());
+
+        // Group by IST date
+        ZoneId IST = ZoneId.of("Asia/Kolkata");
+        java.util.Map<java.time.LocalDate, List<CandleData>> byDate = niftyCandles.stream()
+            .collect(Collectors.groupingBy(c -> c.getTimestamp().toLocalDate()));
+
+        List<java.time.LocalDate> dates = new ArrayList<>(byDate.keySet());
+        Collections.sort(dates);
+
+        // Build prevDayClose map: each date → last candle close of the PREVIOUS trading day
+        java.util.Map<java.time.LocalDate, Double> prevCloseByDate = new java.util.HashMap<>();
+        for (int i = 1; i < dates.size(); i++) {
+            java.time.LocalDate prev = dates.get(i - 1);
+            List<CandleData> prevCandles = byDate.get(prev);
+            if (prevCandles != null && !prevCandles.isEmpty()) {
+                double lastClose = prevCandles.get(prevCandles.size() - 1).getClose().doubleValue();
+                prevCloseByDate.put(dates.get(i), lastClose);
+            }
+        }
+
+        // Build minute-level pct change map
+        Map<java.time.LocalDateTime, Double> result = new java.util.HashMap<>();
+        for (CandleData c : niftyCandles) {
+            java.time.LocalDate date = c.getTimestamp().toLocalDate();
+            Double prevClose = prevCloseByDate.get(date);
+            if (prevClose != null && prevClose > 0) {
+                double pct = (c.getClose().doubleValue() - prevClose) / prevClose * 100.0;
+                java.time.LocalDateTime key = c.getTimestamp().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+                result.put(key, pct);
+            }
+        }
+
+        log.info("NIFTY pct map built: {} minute entries across {} dates", result.size(), dates.size());
+        return result;
     }
 
     private BigDecimal[] computePerDayVwap(List<CandleData> candles) {
