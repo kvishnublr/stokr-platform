@@ -39,6 +39,14 @@ public class EntryManager {
         log.info("Processing entry signal for deployment {}: {} {} @ {}",
                 deployment.getId(), signal.side(), signal.symbol(), signal.entryPrice());
 
+        // Price filter: only trade stocks between ₹100 and ₹3000
+        double entryPx = signal.entryPrice().doubleValue();
+        if (entryPx < 100.0 || entryPx > 3000.0) {
+            log.info("Deployment {} skipping {} — price ₹{} outside ₹100–₹3000 range",
+                    deployment.getId(), signal.symbol(), signal.entryPrice());
+            return false;
+        }
+
         // Check if deployment already has an open position in this symbol
         List<Position> openPositions = positionService.getOpenPositions(deployment.getId());
         boolean hasPositionInSymbol = openPositions.stream()

@@ -942,6 +942,12 @@ public class BacktestController {
             MarketContext context = new MarketContext(symbol, window, candles.get(i).close(), dayVwap[i], indMap, extras);
             Signal signal = plugin != null ? plugin.evaluate(context, params) : null;
 
+            // Price filter: only trade stocks between ₹100 and ₹3000
+            if (signal != null && signal.isValid()) {
+                double px = signal.entryPrice().doubleValue();
+                if (px < 100.0 || px > 3000.0) signal = null;
+            }
+
             if (signal != null && signal.isValid()) {
                 tradedDays.add(istDate);
                 SimulatedTrade trade = new SimulatedTrade(symbol, signal, i, candles.get(i).timestamp(), perTradeCost);
