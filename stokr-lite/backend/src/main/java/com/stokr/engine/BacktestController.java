@@ -272,15 +272,24 @@ public class BacktestController {
 
             double perTradeCost = brokerage;
             // Build NIFTY 50 minute-level pct-change map for strategies that need market regime.
-            // Falls back to whitelist consensus if NIFTY_50 data unavailable (e.g. expired auth).
+            // Zerodha only serves ~60 days of 1-min history, so older backtest dates may have gaps.
+            // Always compute consensus as a secondary source and use it to fill gaps.
             Map<java.time.LocalDateTime, Double> niftyPctByTs = buildNiftyMinutePct(startTime, endTime);
-            if (niftyPctByTs.isEmpty() && !candlesBySymbol.isEmpty()) {
-                log.info("NIFTY_50 unavailable — using whitelist consensus as market regime proxy");
-                niftyPctByTs = buildConsensusMarketPct(candlesBySymbol);
+            Map<java.time.LocalDateTime, Double> consensusPctByTs = Collections.emptyMap();
+            if (!candlesBySymbol.isEmpty()) {
+                if (niftyPctByTs.isEmpty()) {
+                    log.info("NIFTY_50 unavailable — using whitelist consensus as market regime proxy");
+                    niftyPctByTs = buildConsensusMarketPct(candlesBySymbol);
+                } else {
+                    // Partial NIFTY data (Zerodha 60-day limit): build consensus for gap-filling
+                    consensusPctByTs = buildConsensusMarketPct(candlesBySymbol);
+                    log.info("NIFTY_50 partial data ({} entries) — consensus built as gap-fill fallback", niftyPctByTs.size());
+                }
             }
+            final Map<java.time.LocalDateTime, Double> finalConsensusByTs = consensusPctByTs;
             List<SimulatedTrade> allTrades = new ArrayList<>();
             for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
-                allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params, perTradeCost, niftyPctByTs));
+                allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params, perTradeCost, niftyPctByTs, finalConsensusByTs));
             }
             allTrades.sort(java.util.Comparator.comparing(t -> t.entryTime));
 
@@ -852,7 +861,7 @@ public class BacktestController {
         return strategyPlugins.isEmpty() ? null : strategyPlugins.get(0);
     }
 
-    private List<SimulatedTrade> simulateStrategy(String symbol, List<CandleData> candleData, StrategyPlugin plugin, StrategyParams params, double perTradeCost, Map<java.time.LocalDateTime, Double> niftyPctByTs) {
+    private List<SimulatedTrade> simulateStrategy(String symbol, List<CandleData> candleData, StrategyPlugin plugin, StrategyParams params, double perTradeCost, Map<java.time.LocalDateTime, Double> niftyPctByTs, Map<java.time.LocalDateTime, Double> consensusPctByTs) {
         List<SimulatedTrade> trades = new ArrayList<>();
         int n = candleData.size();
         if (n < 20) return trades;
@@ -958,7 +967,10 @@ public class BacktestController {
             // NIFTY 50 % change from prev close — used by NIFTY_PULSE and similar regime-gated strategies
             java.time.LocalDateTime evalTs = candleData.get(i).getTimestamp()
                 .truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
-            extras.put("niftyPctChange", niftyPctByTs.isEmpty() ? null : niftyPctByTs.get(evalTs));
+            // Use NIFTY_50 data; fall back to consensus for timestamps where Zerodha has gaps
+            Double niftyVal = niftyPctByTs.isEmpty() ? null : niftyPctByTs.get(evalTs);
+            if (niftyVal == null && !consensusPctByTs.isEmpty()) niftyVal = consensusPctByTs.get(evalTs);
+            extras.put("niftyPctChange", niftyVal);
 
             List<Candle> window = candles.subList(0, i + 1);
             MarketContext context = new MarketContext(symbol, window, candles.get(i).close(), dayVwap[i], indMap, extras);

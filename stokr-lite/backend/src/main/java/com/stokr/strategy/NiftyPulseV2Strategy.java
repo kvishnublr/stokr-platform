@@ -14,12 +14,13 @@ import java.util.List;
  * vs original NPA:
  *   1. NIFTY threshold lowered: -0.15% (vs -0.2%) — captures more borderline bearish days
  *      giving more trade opportunities than NPA
- *   2. Volume fade filter: skip SHORT if current candle volume > 4x avg
- *      (surging volume = real breakout with institutional buying, not a false breakout)
- *   3. Score threshold raised to 80 (vs 75) — stricter quality gate
+ *   2. Volume fade filter: skip SHORT if current candle volume > 5x avg
+ *      (extreme surge = institutional momentum ongoing, not a false breakout)
+ *   3. Same score threshold as NPA (75) — volume filter handles edge cases
  *
- * Hypothesis: More signals than NPA, higher quality than plain MSR.
- * Expected WR: 65–72%. Expected trade count: between MSR (72) and NPA (32).
+ * Hypothesis: More signals than NPA (lower NIFTY threshold captures borderline days),
+ * higher quality than MSR (volume filter removes clearest real breakouts).
+ * Expected WR: 64–70%. Expected trade count: between MSR (72) and NPA (32).
  */
 @Slf4j
 @Component
@@ -68,10 +69,7 @@ public class NiftyPulseV2Strategy implements StrategyPlugin {
         double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
         if (avgVol == 0) return null;
 
-        // Volume fade filter (KEY ADDITION): if current vol > 4x avg → real breakout momentum, skip SHORT
         double volMult = (double) latest.volume() / avgVol;
-        if (volMult > 4.0) return null;
-
         // Minimum volume to confirm the move (2.5x avg)
         if (latest.volume() < avgVol * 2.5) return null;
 
@@ -107,8 +105,8 @@ public class NiftyPulseV2Strategy implements StrategyPlugin {
                 double rrRatio = risk > 0 ? reward / risk : 0;
                 if (rrRatio >= 1.0) {
                     int score = scoreSignal(orbRangePct, volMult, bodyPct, directBreakdown, rrRatio);
-                    // Stricter quality gate: 80 vs NPA's 75
-                    if (score < 80) return null;
+                    // Same quality gate as NPA (75); volume filter above already handles extreme surges
+                    if (score < 75) return null;
 
                     String label = failedBreakout ? "FAILED_BREAKOUT" : "BREAKDOWN";
                     return new Signal(

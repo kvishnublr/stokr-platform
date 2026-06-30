@@ -82,10 +82,11 @@ public class EodMomentumStrategy implements StrategyPlugin {
         for (int k = n - 10; k < n - 5; k++) prev5vol += candles.get(k).volume();
         if (prev5vol == 0) return null;
         double volRatio = (double) last5vol / prev5vol;
-        if (volRatio < 1.3) return null; // volume must be clearly accelerating into close
+        if (volRatio < 1.6) return null; // volume must be strongly accelerating into close
 
-        // Only stocks with clear daily trend (avoid sideways)
-        if (Math.abs(dayReturnPct) < 0.5) return null;
+        // Only stocks with a STRONG daily trend — avoids noisy sideways stocks
+        // 1.5% threshold: roughly top 10% of trending stocks on any given day
+        if (Math.abs(dayReturnPct) < 1.5) return null;
 
         boolean trendUp   = dayReturnPct > 0 && close.compareTo(vwap) > 0;
         boolean trendDown = dayReturnPct < 0 && close.compareTo(vwap) < 0;
