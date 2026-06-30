@@ -36,13 +36,12 @@ public class NiftyPulseStrategy implements StrategyPlugin {
         int n = candles.size();
         if (n < 20) return null;
 
-        // Gate by NIFTY direction — if data unavailable, sit out entirely
+        // Gate by NIFTY direction — only SHORT when market is clearly down; LONG removed (tested, 32% WR)
         Double niftyPct = context.extra("niftyPctChange", Double.class);
         if (niftyPct == null) return null;
 
-        boolean niftyBearish = niftyPct <= -0.3;
-        boolean niftyBullish = niftyPct >= 0.3;
-        if (!niftyBearish && !niftyBullish) return null;
+        // 0.2% threshold: captures more bearish days than 0.3% while still filtering flat/bullish days
+        if (niftyPct > -0.2) return null;
 
         BigDecimal orbHigh  = context.extra("orbHigh",  BigDecimal.class);
         BigDecimal orbLow   = context.extra("orbLow",   BigDecimal.class);
@@ -88,75 +87,37 @@ public class NiftyPulseStrategy implements StrategyPlugin {
         double orbRangePct = orbRange.doubleValue() / close.doubleValue() * 100.0;
         double volMult     = (double) latest.volume() / Math.max(avgVol, 1);
 
-        if (niftyBearish) {
-            // ─── SHORT: NIFTY down >0.3% — stock breaks ORB low ─────────────────
-            // Skip gap-up days >1.5% (bullish momentum fights shorts)
-            if (prevDayClose != null && dayOpen != null && prevDayClose.compareTo(BigDecimal.ZERO) > 0) {
-                double gapUp = dayOpen.subtract(prevDayClose).doubleValue() / prevDayClose.doubleValue();
-                if (gapUp > 0.015) return null;
-            }
+        // ─── SHORT: market down >0.2% — stock breaks ORB low ────────────────────
+        // Skip gap-up days >1.5% (bullish gap fights shorts even on bearish NIFTY days)
+        if (prevDayClose != null && dayOpen != null && prevDayClose.compareTo(BigDecimal.ZERO) > 0) {
+            double gapUp = dayOpen.subtract(prevDayClose).doubleValue() / prevDayClose.doubleValue();
+            if (gapUp > 0.015) return null;
+        }
 
-            boolean failedBreakout  = close.compareTo(orbHigh) <= 0 && prev.close().compareTo(orbHigh) > 0;
-            boolean directBreakdown = close.compareTo(orbLow) <= 0;
+        boolean failedBreakout  = close.compareTo(orbHigh) <= 0 && prev.close().compareTo(orbHigh) > 0;
+        boolean directBreakdown = close.compareTo(orbLow) <= 0;
 
-            if ((failedBreakout || directBreakdown) && close.compareTo(latest.open()) < 0) {
-                BigDecimal sl     = orbHigh.multiply(BigDecimal.valueOf(1.001)).setScale(2, RoundingMode.HALF_UP);
-                BigDecimal target = orbLow.subtract(orbRange.multiply(BigDecimal.valueOf(1.5))).setScale(2, RoundingMode.HALF_UP);
+        if ((failedBreakout || directBreakdown) && close.compareTo(latest.open()) < 0) {
+            BigDecimal sl     = orbHigh.multiply(BigDecimal.valueOf(1.001)).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal target = orbLow.subtract(orbRange.multiply(BigDecimal.valueOf(1.5))).setScale(2, RoundingMode.HALF_UP);
 
-                if (target.compareTo(close) < 0 && sl.compareTo(close) > 0) {
-                    double risk    = sl.subtract(close).doubleValue();
-                    double reward  = close.subtract(target).doubleValue();
-                    double rrRatio = risk > 0 ? reward / risk : 0;
-                    if (rrRatio >= 1.0) {
-                        int score = scoreSignal(orbRangePct, volMult, bodyPct, directBreakdown, rrRatio);
-                        if (score < 75) return null;
+            if (target.compareTo(close) < 0 && sl.compareTo(close) > 0) {
+                double risk    = sl.subtract(close).doubleValue();
+                double reward  = close.subtract(target).doubleValue();
+                double rrRatio = risk > 0 ? reward / risk : 0;
+                if (rrRatio >= 1.0) {
+                    int score = scoreSignal(orbRangePct, volMult, bodyPct, directBreakdown, rrRatio);
+                    if (score < 75) return null;
 
-                        String label = failedBreakout ? "FAILED_BREAKOUT" : "BREAKDOWN";
-                        return new Signal(
-                            context.symbol(), Signal.Side.SELL, close, sl, target, score / 100.0,
-                            "NPA_SHORT " + label + " NIFTY=" + String.format("%.2f%%", niftyPct)
-                                + " score=" + score + "/100"
-                                + " @" + close.setScale(2, RoundingMode.HALF_UP)
-                                + " orb=[" + orbLow.setScale(2, RoundingMode.HALF_UP) + "-" + orbHigh.setScale(2, RoundingMode.HALF_UP) + "]"
-                                + " tgt=" + target + " rr=" + String.format("%.1f", rrRatio),
-                            999.0, 0.5);
-                    }
-                }
-            }
-
-        } else {
-            // ─── LONG: NIFTY up >0.3% — stock breaks ORB high ───────────────────
-            // Skip gap-down days >1.5% (individual weakness despite market strength = stay out)
-            if (prevDayClose != null && dayOpen != null && prevDayClose.compareTo(BigDecimal.ZERO) > 0) {
-                double gapDown = prevDayClose.subtract(dayOpen).doubleValue() / prevDayClose.doubleValue();
-                if (gapDown > 0.015) return null;
-            }
-
-            boolean failedBreakdown = close.compareTo(orbLow) >= 0 && prev.close().compareTo(orbLow) < 0;
-            boolean directBreakout  = close.compareTo(orbHigh) >= 0;
-
-            if ((failedBreakdown || directBreakout) && close.compareTo(latest.open()) > 0) {
-                BigDecimal sl     = orbLow.multiply(BigDecimal.valueOf(0.999)).setScale(2, RoundingMode.HALF_UP);
-                BigDecimal target = orbHigh.add(orbRange.multiply(BigDecimal.valueOf(1.5))).setScale(2, RoundingMode.HALF_UP);
-
-                if (target.compareTo(close) > 0 && sl.compareTo(close) < 0) {
-                    double risk    = close.subtract(sl).doubleValue();
-                    double reward  = target.subtract(close).doubleValue();
-                    double rrRatio = risk > 0 ? reward / risk : 0;
-                    if (rrRatio >= 1.0) {
-                        int score = scoreSignal(orbRangePct, volMult, bodyPct, directBreakout, rrRatio);
-                        if (score < 75) return null;
-
-                        String label = failedBreakdown ? "FAILED_BREAKDOWN" : "BREAKOUT";
-                        return new Signal(
-                            context.symbol(), Signal.Side.BUY, close, sl, target, score / 100.0,
-                            "NPA_LONG " + label + " NIFTY=" + String.format("%.2f%%", niftyPct)
-                                + " score=" + score + "/100"
-                                + " @" + close.setScale(2, RoundingMode.HALF_UP)
-                                + " orb=[" + orbLow.setScale(2, RoundingMode.HALF_UP) + "-" + orbHigh.setScale(2, RoundingMode.HALF_UP) + "]"
-                                + " tgt=" + target + " rr=" + String.format("%.1f", rrRatio),
-                            999.0, 0.5);
-                    }
+                    String label = failedBreakout ? "FAILED_BREAKOUT" : "BREAKDOWN";
+                    return new Signal(
+                        context.symbol(), Signal.Side.SELL, close, sl, target, score / 100.0,
+                        "NPA_SHORT " + label + " NIFTY=" + String.format("%.2f%%", niftyPct)
+                            + " score=" + score + "/100"
+                            + " @" + close.setScale(2, RoundingMode.HALF_UP)
+                            + " orb=[" + orbLow.setScale(2, RoundingMode.HALF_UP) + "-" + orbHigh.setScale(2, RoundingMode.HALF_UP) + "]"
+                            + " tgt=" + target + " rr=" + String.format("%.1f", rrRatio),
+                        999.0, 0.5);
                 }
             }
         }
