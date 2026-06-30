@@ -9,19 +9,15 @@ import java.math.RoundingMode;
 import java.util.List;
 
 /**
- * Morning Surge Reversal Strategy — ORB false breakout/breakdown reversal.
+ * Morning Surge Reversal — SHORT-only ORB breakdown strategy.
  *
- * SHORT setup (failed upside breakout):
- *   - Price briefly went above orbHigh then closed back below (failed breakout)
- *   - OR price breaks directly below orbLow (momentum breakdown)
- *   - Strong bearish body (>= 70%), volume >= 2.5x avg
- *   - SL: above orbHigh, Target: orbLow - 1.5x orbRange
+ * Setup: price breaks below orbLow (direct momentum) OR briefly went above
+ * orbHigh then failed (bull trap). Window: 10:00–10:30 IST only.
+ * LONG breakout tested and rejected — buying orbHigh at 10:00 is too late
+ * (breakout already ran), 38% WR vs 61% for SHORT.
  *
- * LONG setup (failed downside breakdown — mirror):
- *   - Price briefly went below orbLow then closed back above (failed breakdown)
- *   - OR price breaks directly above orbHigh (momentum breakout)
- *   - Strong bullish body (>= 70%), volume >= 2.5x avg
- *   - SL: below orbLow, Target: orbHigh + 1.5x orbRange
+ * SL: orbHigh + 0.1%, Target: orbLow - 1.5 × orbRange
+ * Trail: activates after target hit, 0.5% behind best price.
  */
 @Slf4j
 @Component
@@ -42,12 +38,12 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         BigDecimal orbLow   = context.extra("orbLow",   BigDecimal.class);
         BigDecimal orbRange = context.extra("orbRange",  BigDecimal.class);
         if (orbHigh == null || orbLow == null || orbRange == null) return null;
-        // Minimum 0.5% ORB range — small ORBs give tiny targets, mostly EOD drift
+
+        // Minimum 0.5% ORB range — small ORBs give tiny targets
         Candle tmpClose = candles.get(n - 1);
         if (orbRange.doubleValue() / tmpClose.close().doubleValue() < 0.005) return null;
 
-        // Only 10:00–10:30 IST — ORB fully formed, confirmed reversal window
-        // 9:30–9:44 REMOVED: backtest showed -₹1,259 net (48.9% WR vs 57.7% at 10:00)
+        // Only 10:00–10:30 IST — 9:30-9:44 removed (backtest: -₹1,259 net, 48.9% WR)
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
         if (istHour != null && istMinute != null) {
@@ -61,12 +57,12 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
 
         BigDecimal close = latest.close();
 
-        // Gap filter: skip stocks that gapped up >1.5% at open (bullish momentum day — shorts fail)
+        // Skip gap-up days >1.5% — bullish momentum fights shorts
         BigDecimal prevDayClose = context.extra("prevDayClose", BigDecimal.class);
-        BigDecimal dayOpen = context.extra("dayOpen", BigDecimal.class);
+        BigDecimal dayOpen      = context.extra("dayOpen", BigDecimal.class);
         if (prevDayClose != null && dayOpen != null && prevDayClose.compareTo(BigDecimal.ZERO) > 0) {
             double gapUp = dayOpen.subtract(prevDayClose).doubleValue() / prevDayClose.doubleValue();
-            if (gapUp > 0.015) return null;  // skip >1.5% gap-up days
+            if (gapUp > 0.015) return null;
         }
 
         // Volume >= 2.5x 10-period average
@@ -76,7 +72,7 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
         if (avgVol == 0 || latest.volume() < avgVol * 2.5) return null;
 
-        // Strong body (>= 70% of candle range)
+        // Strong bearish body (>= 70%)
         BigDecimal range = latest.high().subtract(latest.low());
         double bodyPct = 0;
         if (range.compareTo(BigDecimal.ZERO) > 0) {
@@ -85,41 +81,30 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         }
         if (bodyPct < 0.70) return null;
 
-        // ─── SHORT: failed upside breakout OR direct breakdown ───────────────
-        boolean failedBreakout = close.compareTo(orbHigh) <= 0
-            && prev.close().compareTo(orbHigh) > 0;
+        // ─── SHORT: failed upside breakout OR direct breakdown ────────────────
+        boolean failedBreakout  = close.compareTo(orbHigh) <= 0 && prev.close().compareTo(orbHigh) > 0;
         boolean directBreakdown = close.compareTo(orbLow) <= 0;
 
         if ((failedBreakout || directBreakdown) && close.compareTo(latest.open()) < 0) {
-            BigDecimal sl = orbHigh.multiply(BigDecimal.valueOf(1.001)).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal sl     = orbHigh.multiply(BigDecimal.valueOf(1.001)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal target = orbLow.subtract(orbRange.multiply(BigDecimal.valueOf(1.5))).setScale(2, RoundingMode.HALF_UP);
 
             if (target.compareTo(close) < 0 && sl.compareTo(close) > 0) {
-                double risk = sl.subtract(close).doubleValue();
-                double reward = close.subtract(target).doubleValue();
+                double risk    = sl.subtract(close).doubleValue();
+                double reward  = close.subtract(target).doubleValue();
                 double rrRatio = risk > 0 ? reward / risk : 0;
                 if (rrRatio >= 1.0) {
-                    // ─── CONFIDENCE SCORE FILTER ─────────────────────────────
                     int score = 0;
-
-                    // 1. ORB range quality (0–30 pts): larger ORB = stronger conviction
                     double orbRangePct = orbRange.doubleValue() / close.doubleValue() * 100.0;
+                    double volMult     = (double) latest.volume() / Math.max(avgVol, 1);
+
                     if      (orbRangePct >= 1.0) score += 30;
                     else if (orbRangePct >= 0.6) score += 15;
-
-                    // 2. Volume multiplier (0–25 pts)
-                    double volMult = (double) latest.volume() / Math.max(avgVol, 1);
                     if      (volMult >= 3.5) score += 25;
                     else if (volMult >= 2.5) score += 15;
-
-                    // 3. Body ratio (0–20 pts)
                     if      (bodyPct >= 0.85) score += 20;
                     else if (bodyPct >= 0.70) score += 10;
-
-                    // 4. Signal type (0–15 pts): breakdown = direct momentum confirmation
                     score += directBreakdown ? 15 : 5;
-
-                    // 5. RR ratio bonus (0–10 pts): stronger reward/risk = higher conviction
                     if      (rrRatio >= 2.0) score += 10;
                     else if (rrRatio >= 1.5) score += 5;
 
@@ -129,10 +114,6 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                     }
 
                     String label = failedBreakout ? "FAILED_BREAKOUT" : "BREAKDOWN";
-                    // Pre-target trail disabled (999 = never triggers) — don't cut winners short
-                    // Post-target: trail 0.5% behind best price to capture runners beyond target
-                    double trailTrigger  = 999.0;
-                    double trailDistance = 0.5;
                     return new Signal(
                         context.symbol(), Signal.Side.SELL, close, sl, target, score / 100.0,
                         "MSR_SHORT " + label + " score=" + score + "/100"
@@ -140,7 +121,7 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                             + " orb=[" + orbLow.setScale(2, RoundingMode.HALF_UP) + "-" + orbHigh.setScale(2, RoundingMode.HALF_UP) + "]"
                             + " tgt=" + target + " rr=" + String.format("%.1f", rrRatio)
                             + " vol=" + String.format("%.1fx", volMult),
-                        trailTrigger, trailDistance);
+                        999.0, 0.5);
                 }
             }
         }
