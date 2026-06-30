@@ -54,7 +54,10 @@ export default function AdvancedBacktest() {
   const [universe, setUniverse]     = useState('NIFTY_100');
   const [chartinkInfo, setChartinkInfo] = useState(null);
   const [brokerage, setBrokerage]   = useState(40);
-  const [dateStart, setDateStart]   = useState('2026-06-01');
+  const [dateStart, setDateStart]   = useState(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 2); d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
   const [dateEnd, setDateEnd]       = useState(new Date().toISOString().slice(0, 10));
   const [results, setResults]       = useState(null);
   const [loading, setLoading]       = useState(false);
