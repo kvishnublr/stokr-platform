@@ -286,7 +286,8 @@ public class BacktestController {
             for (SimulatedTrade t : allTrades) {
                 if (t.entryTime == null) continue;
                 java.time.LocalDate d = t.entryTime.toLocalDate();
-                dailyPnl.merge(d, t.pnl, Double::sum);
+                double netPnl = Math.round((t.pnl - t.brokerage) * 100.0) / 100.0;
+                dailyPnl.merge(d, netPnl, Double::sum);
             }
             double maxProfitDay = dailyPnl.values().stream().mapToDouble(Double::doubleValue).max().orElse(0);
             double maxLossDay   = dailyPnl.values().stream().mapToDouble(Double::doubleValue).min().orElse(0);
