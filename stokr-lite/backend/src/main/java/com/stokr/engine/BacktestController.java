@@ -268,8 +268,13 @@ public class BacktestController {
             }
 
             double perTradeCost = brokerage;
-            // Build NIFTY 50 minute-level pct-change map for strategies that need market regime
+            // Build NIFTY 50 minute-level pct-change map for strategies that need market regime.
+            // Falls back to whitelist consensus if NIFTY_50 data unavailable (e.g. expired auth).
             Map<java.time.LocalDateTime, Double> niftyPctByTs = buildNiftyMinutePct(startTime, endTime);
+            if (niftyPctByTs.isEmpty() && !candlesBySymbol.isEmpty()) {
+                log.info("NIFTY_50 unavailable — using whitelist consensus as market regime proxy");
+                niftyPctByTs = buildConsensusMarketPct(candlesBySymbol);
+            }
             List<SimulatedTrade> allTrades = new ArrayList<>();
             for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
                 allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params, perTradeCost, niftyPctByTs));
@@ -1102,6 +1107,56 @@ public class BacktestController {
         }
 
         log.info("NIFTY pct map built: {} minute entries across {} dates", result.size(), dates.size());
+        return result;
+    }
+
+    /**
+     * Compute market direction from the median % change of all loaded universe stocks.
+     * Used as a NIFTY proxy when NIFTY_50 index data is unavailable.
+     * Each stock's prevDayClose is computed from the last candle of the previous trading day.
+     */
+    private Map<java.time.LocalDateTime, Double> buildConsensusMarketPct(Map<String, List<CandleData>> candlesBySymbol) {
+        if (candlesBySymbol.isEmpty()) return Collections.emptyMap();
+
+        // prevClose[sym][date] = last candle close of the previous day for that symbol
+        Map<String, Map<java.time.LocalDate, Double>> prevCloseBySymbol = new java.util.HashMap<>();
+        for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
+            String sym = entry.getKey();
+            Map<java.time.LocalDate, List<CandleData>> byDate = entry.getValue().stream()
+                .collect(Collectors.groupingBy(c -> c.getTimestamp().toLocalDate()));
+            List<java.time.LocalDate> dates = new ArrayList<>(byDate.keySet());
+            Collections.sort(dates);
+            Map<java.time.LocalDate, Double> prevClose = new java.util.HashMap<>();
+            for (int i = 1; i < dates.size(); i++) {
+                List<CandleData> prev = byDate.get(dates.get(i - 1));
+                if (prev != null && !prev.isEmpty())
+                    prevClose.put(dates.get(i), prev.get(prev.size() - 1).getClose().doubleValue());
+            }
+            prevCloseBySymbol.put(sym, prevClose);
+        }
+
+        // Collect all stocks' pct-change per minute timestamp
+        Map<java.time.LocalDateTime, List<Double>> pctsByTs = new java.util.HashMap<>();
+        for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
+            Map<java.time.LocalDate, Double> prevClose = prevCloseBySymbol.get(entry.getKey());
+            for (CandleData c : entry.getValue()) {
+                java.time.LocalDate date = c.getTimestamp().toLocalDate();
+                Double pc = prevClose.get(date);
+                if (pc == null || pc <= 0) continue;
+                double pct = (c.getClose().doubleValue() - pc) / pc * 100.0;
+                java.time.LocalDateTime key = c.getTimestamp().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+                pctsByTs.computeIfAbsent(key, k -> new ArrayList<>()).add(pct);
+            }
+        }
+
+        // Median of all stocks' pct-change at each minute = consensus market direction
+        Map<java.time.LocalDateTime, Double> result = new java.util.HashMap<>();
+        for (Map.Entry<java.time.LocalDateTime, List<Double>> e : pctsByTs.entrySet()) {
+            List<Double> vals = new ArrayList<>(e.getValue());
+            Collections.sort(vals);
+            result.put(e.getKey(), vals.get(vals.size() / 2));
+        }
+        log.info("Consensus market pct map built: {} minute entries from {} symbols", result.size(), candlesBySymbol.size());
         return result;
     }
 
