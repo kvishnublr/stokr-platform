@@ -18,7 +18,8 @@ async function ensureAuthenticated() {
 }
 
 const STRATEGIES = [
-  { value: 'SURGE_REV', label: 'Morning Surge Reversal', desc: 'ORB false breakout fade. SHORT only. 62.8% win rate, PF 2.27.' },
+  { value: 'SURGE_REV',    label: 'Morning Surge Reversal',   desc: 'ORB false breakout fade. SHORT only. 61% win rate, PF 2.0.' },
+  { value: 'NIFTY_PULSE',  label: 'NIFTY Pulse Alignment',    desc: 'ORB SHORT only when market is down >0.2%. 68.75% win rate, PF 2.66.' },
 ];
 
 const ALL_PAIRS = [
