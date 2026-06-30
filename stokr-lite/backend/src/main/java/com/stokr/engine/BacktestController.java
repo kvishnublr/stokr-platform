@@ -960,6 +960,7 @@ public class BacktestController {
                 BigDecimal bestPrice  = signal.entryPrice();
                 double entryD = signal.entryPrice().doubleValue();
                 boolean trailActivated = false;
+                boolean targetLocked = false; // trail-after-target: lock SL at target, keep trailing
                 double trailTrigger  = signal.trailTriggerPct();
                 double trailDistance = signal.trailDistancePct() / 100.0;
 
@@ -979,10 +980,21 @@ public class BacktestController {
                                 double gain = (bestPrice.doubleValue() - entryD) / entryD * 100;
                                 if (gain >= trailTrigger) trailActivated = true;
                             }
+                            // When target hit, lock SL at target and continue trailing for bigger moves
+                            if (!targetLocked && c.high().compareTo(signal.target()) >= 0) {
+                                targetLocked = true;
+                                trailActivated = true;
+                                if (signal.target().compareTo(currentSL) > 0) currentSL = signal.target();
+                            }
                             if (trailActivated) {
                                 BigDecimal newTrail = bestPrice.multiply(BigDecimal.valueOf(1.0 - trailDistance))
                                     .setScale(2, java.math.RoundingMode.HALF_UP);
                                 if (newTrail.compareTo(currentSL) > 0) currentSL = newTrail;
+                            }
+                            if (c.low().compareTo(currentSL) <= 0) {
+                                String exitLabel = targetLocked ? "TARGET_HIT" : (trailActivated ? "TRAIL_SL" : "SL_HIT");
+                                trade.exitAtPrice(j, c.timestamp(), exitLabel, currentSL);
+                                exited = true;
                             }
                         } else {
                             if (c.low().compareTo(bestPrice) < 0) {
@@ -990,28 +1002,19 @@ public class BacktestController {
                                 double gain = (entryD - bestPrice.doubleValue()) / entryD * 100;
                                 if (gain >= trailTrigger) trailActivated = true;
                             }
+                            // When target hit, lock SL at target and continue trailing for bigger moves
+                            if (!targetLocked && c.low().compareTo(signal.target()) <= 0) {
+                                targetLocked = true;
+                                trailActivated = true;
+                                if (signal.target().compareTo(currentSL) < 0) currentSL = signal.target();
+                            }
                             if (trailActivated) {
                                 BigDecimal newTrail = bestPrice.multiply(BigDecimal.valueOf(1.0 + trailDistance))
                                     .setScale(2, java.math.RoundingMode.HALF_UP);
                                 if (newTrail.compareTo(currentSL) < 0) currentSL = newTrail;
                             }
-                        }
-
-                        if (signal.side() == Signal.Side.BUY) {
-                            if (c.high().compareTo(signal.target()) >= 0) {
-                                trade.exit(j, c.timestamp(), "TARGET_HIT");
-                                exited = true;
-                            } else if (c.low().compareTo(currentSL) <= 0) {
-                                String exitLabel = trailActivated ? "TRAIL_SL" : "SL_HIT";
-                                trade.exitAtPrice(j, c.timestamp(), exitLabel, currentSL);
-                                exited = true;
-                            }
-                        } else {
-                            if (c.low().compareTo(signal.target()) <= 0) {
-                                trade.exit(j, c.timestamp(), "TARGET_HIT");
-                                exited = true;
-                            } else if (c.high().compareTo(currentSL) >= 0) {
-                                String exitLabel = trailActivated ? "TRAIL_SL" : "SL_HIT";
+                            if (c.high().compareTo(currentSL) >= 0) {
+                                String exitLabel = targetLocked ? "TARGET_HIT" : (trailActivated ? "TRAIL_SL" : "SL_HIT");
                                 trade.exitAtPrice(j, c.timestamp(), exitLabel, currentSL);
                                 exited = true;
                             }

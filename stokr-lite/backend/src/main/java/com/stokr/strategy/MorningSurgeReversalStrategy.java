@@ -95,10 +95,7 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
 
         if ((failedBreakout || directBreakdown) && close.compareTo(latest.open()) < 0) {
             BigDecimal sl = orbHigh.multiply(BigDecimal.valueOf(1.001)).setScale(2, RoundingMode.HALF_UP);
-            // directBreakdown has stronger momentum — give it a bigger target (2.5×)
-            // failedBreakout is a weaker setup — use conservative 1.8× to still collect
-            double targetMult = directBreakdown ? 2.5 : 1.8;
-            BigDecimal target = orbLow.subtract(orbRange.multiply(BigDecimal.valueOf(targetMult))).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal target = orbLow.subtract(orbRange.multiply(BigDecimal.valueOf(1.5))).setScale(2, RoundingMode.HALF_UP);
 
             if (target.compareTo(close) < 0 && sl.compareTo(close) > 0) {
                 double risk = sl.subtract(close).doubleValue();
@@ -140,10 +137,10 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                     }
 
                     String label = failedBreakout ? "FAILED_BREAKOUT" : "BREAKDOWN";
-                    // Trail: activate at 1.2% profit, trail 0.5% behind best price
-                    // Locks in gains when momentum continues past target
-                    double trailTrigger  = 1.2;
-                    double trailDistance = 0.5;
+                    // Trail: activate at 0.6% profit (before typical target hit), trail 0.35% tight
+                    // Engine trails-after-target — locks in ≥target on all wins, captures runners
+                    double trailTrigger  = 0.6;
+                    double trailDistance = 0.35;
                     return new Signal(
                         context.symbol(), Signal.Side.SELL, close, sl, target, score / 100.0,
                         "MSR_SHORT " + label + " score=" + score + "/100"
