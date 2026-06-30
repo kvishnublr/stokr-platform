@@ -18,11 +18,8 @@ async function ensureAuthenticated() {
 }
 
 const STRATEGIES = [
-  { value: 'SURGE_REV',    label: 'Morning Surge Reversal',   desc: 'ORB false breakout fade. SHORT only. 61% win rate, PF 2.0.' },
-  { value: 'NIFTY_PULSE',  label: 'NIFTY Pulse Alignment',    desc: 'ORB SHORT only when market is down >0.2%. 68.75% win rate, PF 2.66.' },
-  { value: 'FIVE_MIN_ORB', label: '5-Min ORB Scalp',          desc: 'Breakout of 9:15–9:19 range at 9:20–9:45. BUY or SELL. Quick 20–30 min hold.' },
-  { value: 'VOLUME_SPIKE_SCALP', label: 'Volume Spike Scalp', desc: '8x volume spike with 85%+ body = institutional move. 1% target, tight SL.' },
-  { value: 'OPENING_GAP_FADE',   label: 'Opening Gap Fade',   desc: 'Gap >0.8% at open → fade back to prev close. 60-70% gaps fill within 2hrs.' },
+  { value: 'SURGE_REV',   label: 'Morning Surge Reversal',  desc: 'ORB false breakout fade. SHORT only. 61% win rate, PF 2.0.' },
+  { value: 'NIFTY_PULSE', label: 'NIFTY Pulse Alignment',   desc: 'ORB SHORT only when market is down >0.2%. 68.75% win rate, PF 2.66.' },
 ];
 
 const ALL_PAIRS = [

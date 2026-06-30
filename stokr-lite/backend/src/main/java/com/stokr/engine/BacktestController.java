@@ -70,13 +70,7 @@ public class BacktestController {
         Map.entry("THREE_DAY_MOMENTUM", "THREE_DAY_MOMENTUM"),
         Map.entry("3DM",                "THREE_DAY_MOMENTUM"),
         Map.entry("NIFTY_PULSE",        "NIFTY_PULSE"),
-        Map.entry("NPA",                "NIFTY_PULSE"),
-        Map.entry("FIVE_MIN_ORB",       "FIVE_MIN_ORB"),
-        Map.entry("5ORB",               "FIVE_MIN_ORB"),
-        Map.entry("VOLUME_SPIKE_SCALP", "VOLUME_SPIKE_SCALP"),
-        Map.entry("VSS",                "VOLUME_SPIKE_SCALP"),
-        Map.entry("OPENING_GAP_FADE",   "OPENING_GAP_FADE"),
-        Map.entry("GAP_FADE",           "OPENING_GAP_FADE")
+        Map.entry("NPA",                "NIFTY_PULSE")
     ));
 
     private static double CAPITAL = 25000;
