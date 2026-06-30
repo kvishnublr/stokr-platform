@@ -40,6 +40,19 @@ public class BrokerAccount {
     @Builder.Default
     private String status = "ACTIVE";
 
+    @Column(name = "zerodha_password", columnDefinition = "TEXT")
+    private String zerodhaPassword;
+
+    @Column(name = "zerodha_totp_secret", columnDefinition = "TEXT")
+    private String zerodhaTotpSecret;
+
+    @Column(name = "auto_reconnect")
+    @Builder.Default
+    private Boolean autoReconnect = false;
+
+    @Column(name = "last_auto_reconnect")
+    private Instant lastAutoReconnect;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

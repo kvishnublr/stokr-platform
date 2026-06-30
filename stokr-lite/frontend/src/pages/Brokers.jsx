@@ -54,11 +54,67 @@ export default function Brokers() {
     staleTime: 60 * 1000,
   });
 
+  const [disconnectError, setDisconnectError] = useState(null);
+
+  // Auto-reconnect state
+  const [arOpen, setArOpen]           = useState(false);
+  const [arPassword, setArPassword]   = useState('');
+  const [arTotp, setArTotp]           = useState('');
+  const [arEnabled, setArEnabled]     = useState(false);
+  const [arSaving, setArSaving]       = useState(false);
+  const [arTrigger, setArTrigger]     = useState(null);
+  const [arMsg, setArMsg]             = useState(null);
+
+  const { data: arStatus, refetch: refetchAr } = useQuery({
+    queryKey: ['ar-status'],
+    queryFn: () => client.get('/brokers/zerodha/auto-reconnect').then(r => r.data),
+    enabled: false,
+  });
+
+  const openAr = () => {
+    setArOpen(true);
+    refetchAr().then(({ data }) => {
+      if (data) {
+        setArEnabled(!!data.autoReconnect);
+        setArPassword(data.configured ? '••••••••' : '');
+        setArTotp(data.configured ? '••••••••••••••••' : '');
+      }
+    });
+  };
+
+  const saveAr = async () => {
+    setArSaving(true); setArMsg(null);
+    try {
+      const body = { autoReconnect: arEnabled };
+      if (arPassword && !arPassword.startsWith('••')) body.zerodhaPassword = arPassword;
+      if (arTotp     && !arTotp.startsWith('••'))     body.zerodhaTotpSecret = arTotp;
+      await client.post('/brokers/zerodha/auto-reconnect', body);
+      refetchAr();
+      setArMsg({ ok: true, text: 'Settings saved. Auto-reconnect runs at 8:30 AM IST every weekday.' });
+    } catch(e) {
+      setArMsg({ ok: false, text: e.response?.data?.error || e.message });
+    } finally { setArSaving(false); }
+  };
+
+  const triggerAr = async () => {
+    setArTrigger('running'); setArMsg(null);
+    try {
+      const { data } = await client.post('/brokers/zerodha/auto-reconnect/trigger');
+      setArTrigger(null);
+      setArMsg({ ok: data.result === 'OK', text: data.result === 'OK' ? 'Reconnected successfully!' : data.result });
+      if (data.result === 'OK') { queryClient.invalidateQueries({ queryKey: ['broker-health'] }); refetchHealth(); refetchAr(); }
+    } catch(e) { setArTrigger(null); setArMsg({ ok: false, text: e.response?.data?.error || e.message }); }
+  };
+
   const disconnectMutation = useMutation({
     mutationFn: (id) => client.delete(`/brokers/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['brokers'] });
       queryClient.invalidateQueries({ queryKey: ['broker-health'] });
+      setDisconnectError(null);
+    },
+    onError: (err) => {
+      setDisconnectError(err.response?.data?.error || err.message || 'Failed to disconnect');
     },
   });
 
@@ -274,12 +330,22 @@ export default function Brokers() {
         </div>
       )}
 
+      {/* Disconnect error */}
+      {disconnectError && (
+        <div style={{ marginBottom: '24px', padding: '12px 16px', borderRadius: '12px',
+          border: '2px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.08)',
+          color: '#dc2626', fontSize: '13px', fontWeight: 600 }}>
+          Disconnect failed: {disconnectError}
+        </div>
+      )}
+
       {/* Connected Brokers */}
       {brokers?.length > 0 && (
         <div style={{ marginBottom: '40px' }}>
           <SectionTitle color="linear-gradient(180deg, #10b981, #34d399)">Connected Accounts</SectionTitle>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '18px' }}>
-            {brokers.map((b, i) => {
+            {/* Deduplicate by broker name, keep first occurrence */}
+            {brokers.filter((b, idx, self) => self.findIndex((x) => x.brokerName === b.brokerName) === idx).map((b, i) => {
               const meta = BROKER_META[b.brokerName] || {
                 color: 'linear-gradient(135deg, #64748b, #475569)', letter: b.brokerName[0], glow: 'rgba(100,116,139,0.3)',
               };
@@ -320,16 +386,119 @@ export default function Brokers() {
                       <span>●</span> Live data fetching every minute
                     </div>
                   )}
-                  <button onClick={() => disconnectMutation.mutate(b.id)}
+                  <button onClick={() => { setDisconnectError(null); disconnectMutation.mutate(b.id); }}
+                    disabled={disconnectMutation.isPending}
                     style={{ background: 'none', border: '2px solid rgba(239,68,68,0.15)', color: '#ef4444',
                       fontSize: '12px', fontWeight: 600, padding: '8px 16px', borderRadius: '10px',
-                      cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.3)'; }}
+                      cursor: disconnectMutation.isPending ? 'not-allowed' : 'pointer',
+                      opacity: disconnectMutation.isPending ? 0.5 : 1,
+                      transition: 'all 0.2s', width: '100%' }}
+                    onMouseEnter={(e) => { if (!disconnectMutation.isPending) { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.3)'; } }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.15)'; }}
-                  >Disconnect</button>
+                  >{disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect'}</button>
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Reconnect Panel — shown when Zerodha is connected */}
+      {brokers?.some(b => b.brokerName === 'ZERODHA') && (
+        <div style={{ marginBottom: '40px' }}>
+          <SectionTitle color="linear-gradient(180deg, #f59e0b, #fbbf24)">Zerodha Auto-Reconnect</SectionTitle>
+          <div className="card-crystal" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: arOpen ? '20px' : 0 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '15px', color: '#0f172a', marginBottom: '4px' }}>
+                  Daily Token Refresh
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>
+                  {arStatus?.autoReconnect
+                    ? `Auto-reconnect ON — runs 8:30 AM IST${arStatus.lastAutoReconnect ? ` · last: ${new Date(arStatus.lastAutoReconnect).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',dateStyle:'short',timeStyle:'short'})}` : ''}`
+                    : 'Eliminates daily manual reconnect. Store your Zerodha password + TOTP secret.'}
+                </div>
+              </div>
+              <button onClick={arOpen ? () => setArOpen(false) : openAr}
+                style={{ padding: '8px 18px', borderRadius: '10px', border: '2px solid rgba(245,158,11,0.3)',
+                  background: arOpen ? 'rgba(245,158,11,0.08)' : 'none',
+                  color: '#d97706', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+                {arOpen ? 'Close' : (arStatus?.configured ? 'Edit Settings' : 'Set Up')}
+              </button>
+            </div>
+
+            {arOpen && (
+              <div>
+                {/* Enable toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px',
+                  padding: '12px', background: 'rgba(245,158,11,0.06)', borderRadius: '10px' }}>
+                  <input type="checkbox" id="ar-enabled" checked={arEnabled} onChange={e => setArEnabled(e.target.checked)}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                  <label htmlFor="ar-enabled" style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', cursor: 'pointer' }}>
+                    Enable auto-reconnect at 8:30 AM IST every trading day
+                  </label>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '16px' }}>
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
+                      letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+                      Zerodha Password
+                    </label>
+                    <input type="password" value={arPassword} onChange={e => setArPassword(e.target.value)}
+                      placeholder="Your Zerodha login password"
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px',
+                        border: '1.5px solid rgba(148,163,184,0.3)', fontSize: '13px',
+                        background: '#f8fafc', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
+                      letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+                      TOTP Secret Key
+                    </label>
+                    <input type="password" value={arTotp} onChange={e => setArTotp(e.target.value)}
+                      placeholder="32-char Base32 key (not the 6-digit code)"
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px',
+                        border: '1.5px solid rgba(148,163,184,0.3)', fontSize: '13px',
+                        background: '#f8fafc', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '16px', lineHeight: 1.6 }}>
+                  TOTP Secret: open Zerodha → My Profile → Security → External TOTP → Show QR → copy the secret key (32 chars, not the 6-digit code).
+                  Credentials are stored in your database on this server.
+                </div>
+
+                {arMsg && (
+                  <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '14px',
+                    background: arMsg.ok ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+                    border: `1.5px solid ${arMsg.ok ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+                    color: arMsg.ok ? '#059669' : '#dc2626', fontSize: '12px', fontWeight: 600 }}>
+                    {arMsg.ok ? '✅' : '❌'} {arMsg.text}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={saveAr} disabled={arSaving}
+                    style={{ padding: '10px 22px', borderRadius: '10px', border: 'none',
+                      background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                      color: 'white', fontWeight: 700, fontSize: '13px', cursor: arSaving ? 'not-allowed' : 'pointer',
+                      opacity: arSaving ? 0.6 : 1 }}>
+                    {arSaving ? 'Saving...' : 'Save Settings'}
+                  </button>
+                  {arStatus?.configured && (
+                    <button onClick={triggerAr} disabled={arTrigger === 'running'}
+                      style={{ padding: '10px 22px', borderRadius: '10px',
+                        border: '2px solid rgba(99,102,241,0.3)', background: 'none',
+                        color: '#4f46e5', fontWeight: 700, fontSize: '13px',
+                        cursor: arTrigger === 'running' ? 'not-allowed' : 'pointer',
+                        opacity: arTrigger === 'running' ? 0.6 : 1 }}>
+                      {arTrigger === 'running' ? 'Reconnecting...' : 'Test Now'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

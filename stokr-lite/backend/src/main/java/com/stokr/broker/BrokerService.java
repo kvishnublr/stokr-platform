@@ -19,7 +19,16 @@ public class BrokerService {
     private final ZerodhaTokenManager zerodhaTokenManager;
 
     public List<BrokerAccount> getUserBrokers(Long userId) {
-        return repository.findByUserId(userId);
+        // Only return ACTIVE accounts — disconnected ones shouldn't show
+        List<BrokerAccount> active = repository.findByUserIdAndStatus(userId, "ACTIVE");
+        // Deduplicate by brokerName: keep the latest (highest id) per broker
+        return active.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        BrokerAccount::getBrokerName,
+                        java.util.function.Function.identity(),
+                        (a, b) -> a.getId() > b.getId() ? a : b
+                ))
+                .values().stream().toList();
     }
 
     public BrokerAccount getBrokerAccount(Long accountId, Long userId) {
@@ -36,9 +45,15 @@ public class BrokerService {
         BrokerAdapter adapter = registry.getAdapter(brokerName);
         String[] tokens = adapter.exchangeToken(requestToken);
 
-        // Upsert: if user already has an active account for this broker, update it
+        // Upsert: if user already has an account (any status) for this broker, reactivate it
         BrokerAccount account = repository.findByUserIdAndBrokerNameAndStatus(userId, brokerName.toUpperCase(), "ACTIVE")
                 .stream().findFirst().orElse(null);
+        if (account == null) {
+            // Reactivate a disconnected account instead of creating a new row
+            account = repository.findByUserIdAndBrokerName(userId, brokerName.toUpperCase())
+                    .stream().findFirst().orElse(null);
+            if (account != null) account.setStatus("ACTIVE");
+        }
 
         String accessToken  = tokens[0];
         String refreshToken = tokens.length > 1 && !tokens[1].isBlank() ? tokens[1] : null;

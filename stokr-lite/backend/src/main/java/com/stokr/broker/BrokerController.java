@@ -1,6 +1,7 @@
 package com.stokr.broker;
 
 import com.stokr.config.SecurityUtils;
+import com.stokr.engine.BrokerTokenRefresher;
 import com.stokr.marketdata.ZerodhaLiveDataScheduler;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -9,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,8 +21,10 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class BrokerController {
 
-    private final BrokerService brokerService;
+    private final BrokerService           brokerService;
+    private final BrokerAccountRepository brokerAccountRepository;
     private final ZerodhaLiveDataScheduler zerodhaScheduler;
+    private final BrokerTokenRefresher    tokenRefresher;
 
     @GetMapping
     public ResponseEntity<List<BrokerAccount>> getMyBrokers() {
@@ -84,6 +88,68 @@ public class BrokerController {
             log.warn("Zerodha token exchange failed: {}", e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * Save auto-reconnect credentials for Zerodha.
+     * Body: { zerodhaPassword, zerodhaTotpSecret, autoReconnect }
+     */
+    @PostMapping("/zerodha/auto-reconnect")
+    public ResponseEntity<Map<String, Object>> saveAutoReconnect(@RequestBody Map<String, Object> body) {
+        Long userId = SecurityUtils.currentUserId();
+        List<BrokerAccount> accounts = brokerAccountRepository.findByUserIdAndBrokerNameAndStatus(userId, "ZERODHA", "ACTIVE");
+        if (accounts.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "No active Zerodha account found. Connect Zerodha first."));
+        }
+        BrokerAccount account = accounts.get(0);
+        String password   = (String) body.get("zerodhaPassword");
+        String totpSecret = (String) body.get("zerodhaTotpSecret");
+        Boolean enabled   = body.get("autoReconnect") instanceof Boolean b ? b : Boolean.parseBoolean(String.valueOf(body.get("autoReconnect")));
+
+        if (password   != null) account.setZerodhaPassword(password);
+        if (totpSecret != null) account.setZerodhaTotpSecret(totpSecret.trim().toUpperCase().replace(" ", ""));
+        if (enabled    != null) account.setAutoReconnect(enabled);
+
+        brokerAccountRepository.save(account);
+        log.info("Auto-reconnect settings saved for Zerodha account {} (enabled={})", account.getId(), enabled);
+        return ResponseEntity.ok(Map.of(
+            "status", "saved",
+            "autoReconnect", account.getAutoReconnect(),
+            "credentialsStored", account.getZerodhaPassword() != null && account.getZerodhaTotpSecret() != null,
+            "lastAutoReconnect", account.getLastAutoReconnect() != null ? account.getLastAutoReconnect().toString() : null
+        ));
+    }
+
+    /** Get auto-reconnect status for the user's Zerodha account. */
+    @GetMapping("/zerodha/auto-reconnect")
+    public ResponseEntity<Map<String, Object>> getAutoReconnectStatus() {
+        Long userId = SecurityUtils.currentUserId();
+        List<BrokerAccount> accounts = brokerAccountRepository.findByUserIdAndBrokerNameAndStatus(userId, "ZERODHA", "ACTIVE");
+        if (accounts.isEmpty()) {
+            return ResponseEntity.ok(Map.of("configured", false));
+        }
+        BrokerAccount acc = accounts.get(0);
+        boolean credentialsStored = acc.getZerodhaPassword() != null && acc.getZerodhaTotpSecret() != null;
+        return ResponseEntity.ok(Map.of(
+            "configured",       credentialsStored,
+            "autoReconnect",    Boolean.TRUE.equals(acc.getAutoReconnect()),
+            "lastAutoReconnect", acc.getLastAutoReconnect() != null ? acc.getLastAutoReconnect().toString() : null,
+            "accountId",        acc.getId()
+        ));
+    }
+
+    /** Manually trigger auto-reconnect now (for testing). */
+    @PostMapping("/zerodha/auto-reconnect/trigger")
+    public ResponseEntity<Map<String, Object>> triggerAutoReconnect() {
+        Long userId = SecurityUtils.currentUserId();
+        List<BrokerAccount> accounts = brokerAccountRepository.findByUserIdAndBrokerNameAndStatus(userId, "ZERODHA", "ACTIVE");
+        if (accounts.isEmpty()) return ResponseEntity.badRequest().body(Map.of("error", "No active Zerodha account"));
+        BrokerAccount acc = accounts.get(0);
+        if (!Boolean.TRUE.equals(acc.getAutoReconnect()) || acc.getZerodhaPassword() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Auto-reconnect not configured"));
+        }
+        String result = tokenRefresher.triggerManualReconnect(acc.getId());
+        return ResponseEntity.ok(Map.of("result", result, "timestamp", Instant.now().toString()));
     }
 
     @DeleteMapping("/{accountId}")

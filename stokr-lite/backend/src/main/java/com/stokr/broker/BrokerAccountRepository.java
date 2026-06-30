@@ -16,4 +16,8 @@ public interface BrokerAccountRepository extends JpaRepository<BrokerAccount, Lo
     List<BrokerAccount> findByBrokerNameAndStatus(String brokerName, String status);
 
     List<BrokerAccount> findByUserIdAndBrokerNameAndStatus(Long userId, String brokerName, String status);
+
+    List<BrokerAccount> findByUserIdAndStatus(Long userId, String status);
+
+    List<BrokerAccount> findByUserIdAndBrokerName(Long userId, String brokerName);
 }
