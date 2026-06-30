@@ -12,7 +12,6 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @RestController
@@ -49,52 +48,37 @@ public class CandleDataAdminController {
         log.info("Backfill: universe={} symbols={} range={} to {} tradingDays={} minComplete={}",
             universe, symbols.size(), dateStart, dateEnd, tradingDays, minComplete);
 
-        AtomicInteger candlesSaved  = new AtomicInteger();
-        AtomicInteger symbolsDone   = new AtomicInteger();
-        AtomicInteger symbolsSkipped = new AtomicInteger();
-        List<String> failed = Collections.synchronizedList(new ArrayList<>());
+        int candlesSaved  = 0;
+        int symbolsSkipped = 0;
+        List<String> failed = new ArrayList<>();
 
-        ExecutorService pool = Executors.newFixedThreadPool(4);
-        List<Future<?>> futures = new ArrayList<>();
-
+        // Sequential with 400ms delay — Zerodha rate-limits at ~3 req/sec; 4-thread parallel causes 429
         for (String symbol : symbols) {
-            futures.add(pool.submit(() -> {
-                try {
-                    long existing = candleRepository.countBySymbolAndTimeframeAndTimestampBetween(
-                        symbol, timeframe, start, end);
+            try {
+                long existing = candleRepository.countBySymbolAndTimeframeAndTimestampBetween(
+                    symbol, timeframe, start, end);
 
-                    if (existing >= minComplete) {
-                        log.debug("{} already has {} candles — skipping", symbol, existing);
-                        symbolsSkipped.incrementAndGet();
-                        symbolsDone.incrementAndGet();
-                        return;
-                    }
-
-                    log.info("{}: {} candles in DB, fetching from Zerodha...", symbol, existing);
-                    List<CandleData> candles = zerodhaCandleService.fetchCandles(symbol, timeframe, start, end);
-                    if (!candles.isEmpty()) {
-                        upsertCandles(candles);
-                        candlesSaved.addAndGet(candles.size());
-                        log.info("{}: saved {} candles", symbol, candles.size());
-                    } else {
-                        log.warn("{}: Zerodha returned 0 candles", symbol);
-                        failed.add(symbol);
-                    }
-                    symbolsDone.incrementAndGet();
-                } catch (Exception e) {
-                    log.error("Backfill failed for {}: {}", symbol, e.getMessage());
-                    failed.add(symbol);
-                    symbolsDone.incrementAndGet();
+                if (existing >= minComplete) {
+                    log.debug("{} already has {} candles — skipping", symbol, existing);
+                    symbolsSkipped++;
+                    continue;
                 }
-            }));
-        }
 
-        try {
-            for (Future<?> f : futures) {
-                try { f.get(4, TimeUnit.MINUTES); } catch (Exception ignored) {}
+                log.info("{}: {} candles in DB, fetching from Zerodha...", symbol, existing);
+                List<CandleData> candles = zerodhaCandleService.fetchCandles(symbol, timeframe, start, end);
+                if (!candles.isEmpty()) {
+                    upsertCandles(candles);
+                    candlesSaved += candles.size();
+                    log.info("{}: saved {} candles", symbol, candles.size());
+                } else {
+                    log.warn("{}: Zerodha returned 0 candles", symbol);
+                    failed.add(symbol);
+                }
+                Thread.sleep(400); // respect Zerodha rate limit
+            } catch (Exception e) {
+                log.error("Backfill failed for {}: {}", symbol, e.getMessage());
+                failed.add(symbol);
             }
-        } finally {
-            pool.shutdown();
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -103,9 +87,9 @@ public class CandleDataAdminController {
         result.put("dateRange", dateStart + " to " + dateEnd);
         result.put("tradingDays", tradingDays);
         result.put("symbolsTotal", symbols.size());
-        result.put("symbolsSkipped", symbolsSkipped.get());
+        result.put("symbolsSkipped", symbolsSkipped);
         result.put("symbolsFailed", failed.size());
-        result.put("candlesSaved", candlesSaved.get());
+        result.put("candlesSaved", candlesSaved);
         result.put("failedSymbols", failed);
         log.info("Backfill complete: {}", result);
         return ResponseEntity.ok(result);
