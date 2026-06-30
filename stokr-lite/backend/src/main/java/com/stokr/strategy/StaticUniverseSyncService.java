@@ -137,12 +137,18 @@ public class StaticUniverseSyncService implements ApplicationRunner {
             "TANLA","THERMAX","TORNTPOWER","VGUARD","LTTS","LTIM","APLAPOLLO","ICICIGI",
             "INDIGO","ALKEM","MINDA","AJANTPHARM","AARTIIND"
         ));
+        // Optimized based on May-Jun 2026 backtest: removed consistent losers (HCLTECH/INFY/CIPLA/BHARTIARTL/TATAMOTORS/GODREJCP)
+        // Added proven ORB-reversal stocks from same market cap/liquidity profile as top performers
         STATIC_UNIVERSES.put("MSR_WHITELIST", List.of(
-            "RELIANCE","DABUR","DMART","IRCTC","SRF","CHOLAFIN","BEL","UPL","BAJAJFINSV",
-            "NTPC","TATAMOTORS","NHPC","POLYCAB","TVSMOTOR","HINDUNILVR","ASIANPAINT","WIPRO",
-            "TIINDIA","GAIL","ITC","INFY","ZOMATO","INDHOTEL","SHRIRAMFIN","TCS","GRASIM",
-            "PAGEIND","POWERGRID","BHARTIARTL","DRREDDY","GODREJCP","CIPLA","HDFCBANK",
-            "AUROPHARMA","SUNPHARMA","BAJAJ-AUTO","AXISBANK","HCLTECH","TATAPOWER"
+            // Core winners: pharma, consumer, hospitality, infrastructure
+            "RELIANCE","DABUR","DMART","IRCTC","SRF","BEL","UPL","BAJAJFINSV",
+            "NTPC","NHPC","POLYCAB","TVSMOTOR","HINDUNILVR","ASIANPAINT","WIPRO",
+            "TIINDIA","GAIL","ITC","ZOMATO","INDHOTEL","SHRIRAMFIN","TCS","GRASIM",
+            "PAGEIND","POWERGRID","DRREDDY","HDFCBANK","CHOLAFIN",
+            "AUROPHARMA","SUNPHARMA","BAJAJ-AUTO","AXISBANK","TATAPOWER",
+            // Added: consumer, industrial, banking — similar winners profile
+            "TITAN","MARUTI","ICICIBANK","PIDILITIND","BRITANNIA",
+            "HAVELLS","COLPAL","BOSCHLTD","TRENT","SIEMENS"
         ));
     }
 
