@@ -48,6 +48,26 @@ function calculatePnL(signal) {
   return Math.round(profit);
 }
 
+// Signal `reason` fields often embed live metadata, e.g.
+// "MSR_SHORT_BREAKDOWN score=80/100 @1982.10 orb=[1982.20-2001.00] tgt=1954.00 rr=1.3 vol=4.5x"
+// Extract just the leading strategy code so signals group correctly.
+function extractStrategyName(reason) {
+  if (!reason) return 'Unknown';
+  const spaceIdx = reason.indexOf(' ');
+  return spaceIdx > 0 ? reason.substring(0, spaceIdx) : reason;
+}
+
+const STRATEGY_ICONS = {
+  MSR_SHORT_BREAKDOWN: '📉',
+  SURGE_REV: '🔄',
+  NIFTY_PULSE: '💓',
+  NPA_V2: '📊',
+  EOD_MOMENTUM: '🌙',
+  OVERNIGHT_TRAP: '🪤',
+  DEAD_CAT_BOUNCE: '🐈',
+  THREE_DAY_EXHAUSTION: '⏳',
+};
+
 function AnimatedCounter({ value, duration = 1200 }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
@@ -67,7 +87,7 @@ function AnimatedCounter({ value, duration = 1200 }) {
 function StrategyModal({ strategy, signals, onClose }) {
   if (!strategy) return null;
 
-  const strategySignals = signals.filter(s => (s.reason || s.scannerName) === strategy);
+  const strategySignals = signals.filter(s => extractStrategyName(s.reason || s.scannerName) === strategy);
   const total = strategySignals.length;
   const generated = strategySignals.filter(s => s.status === 'GENERATED').length;
   const executed = strategySignals.filter(s => s.status === 'EXECUTED').length;
@@ -81,7 +101,7 @@ function StrategyModal({ strategy, signals, onClose }) {
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, animation: 'fadeIn 0.3s ease' }}>
       <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '32px', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', animation: 'slideUp 0.3s ease' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: 800, color: '#1f2937', margin: 0 }}>📊 {strategy} Strategy</h2>
+          <h2 style={{ fontSize: '24px', fontWeight: 800, color: '#1f2937', margin: 0 }}>{STRATEGY_ICONS[strategy] || '📊'} {strategy} Strategy</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#6b7280' }}>✕</button>
         </div>
 
@@ -231,17 +251,23 @@ export default function Signals() {
       return b.id - a.id; // Fallback: sort by ID if timestamps are same
     });
 
-  // Calculate strategy stats based on current filter
+  // Calculate strategy stats based on current filter (grouped by clean strategy code)
   const strategyStats = {};
   filtered.forEach(s => {
-    const strat = s.reason || 'Unknown';
+    const strat = extractStrategyName(s.reason || s.scannerName);
     if (!strategyStats[strat]) {
-      strategyStats[strat] = { total: 0, generated: 0, executed: 0, rejected: 0 };
+      strategyStats[strat] = { total: 0, generated: 0, executed: 0, rejected: 0, pnlSum: 0, pnlCount: 0, wins: 0 };
     }
     strategyStats[strat].total++;
     if (s.status === 'GENERATED') strategyStats[strat].generated++;
     if (s.status === 'EXECUTED') strategyStats[strat].executed++;
     if (s.status === 'REJECTED') strategyStats[strat].rejected++;
+    const pnl = calculatePnL(s);
+    if (pnl !== null) {
+      strategyStats[strat].pnlSum += pnl;
+      strategyStats[strat].pnlCount++;
+      if (pnl > 0) strategyStats[strat].wins++;
+    }
   });
 
   const statCards = [
@@ -445,43 +471,95 @@ export default function Signals() {
       {/* Strategy Stats Cards */}
       {Object.keys(strategyStats).length > 0 && (
         <div style={{ marginBottom: '24px', animation: 'slideDown 0.6s ease 0.4s both' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>STRATEGY PERFORMANCE</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-            {Object.entries(strategyStats).map(([strategy, stats], i) => (
-              <div
-                key={i}
-                onClick={() => setSelectedStrategy(strategy)}
-                style={{
-                  padding: '16px',
-                  background: 'white',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                  border: '1px solid #e5e7eb',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  animation: `slideDown 0.6s ease ${0.4 + i * 50}ms both`,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px)';
-                  e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)';
-                }}
-              >
-                <div style={{ fontSize: '14px', fontWeight: 700, color: '#1f2937', marginBottom: '8px', cursor: 'pointer' }}>
-                  <span className="strategy-link">{strategy}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '8px' }}>
-                  <span style={{ color: '#6b7280' }}>Total: <strong style={{ color: '#1f2937' }}>{stats.total}</strong></span>
-                  <span style={{ color: '#059669' }}>✓ {stats.executed}</span>
-                </div>
-                <div style={{ height: '4px', backgroundColor: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(stats.executed/stats.total)*100}%`, backgroundColor: '#10b981', transition: 'width 0.3s ease' }} />
-                </div>
-              </div>
-            ))}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.8px', margin: 0 }}>STRATEGY PERFORMANCE</h3>
+            <span style={{ fontSize: '11px', color: '#9ca3af' }}>{Object.keys(strategyStats).length} active {Object.keys(strategyStats).length === 1 ? 'strategy' : 'strategies'} · click a card for details</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px' }}>
+            {Object.entries(strategyStats)
+              .sort((a, b) => b[1].total - a[1].total)
+              .map(([strategy, stats], i) => {
+                const execRate = stats.total > 0 ? (stats.executed / stats.total) * 100 : 0;
+                const rejRate  = stats.total > 0 ? (stats.rejected / stats.total) * 100 : 0;
+                const genRate  = stats.total > 0 ? (stats.generated / stats.total) * 100 : 0;
+                const winRate  = stats.pnlCount > 0 ? (stats.wins / stats.pnlCount) * 100 : null;
+                const avgPnl   = stats.pnlCount > 0 ? stats.pnlSum / stats.pnlCount : null;
+                const pnlPositive = stats.pnlSum >= 0;
+                return (
+                  <div
+                    key={i}
+                    onClick={() => setSelectedStrategy(strategy)}
+                    style={{
+                      position: 'relative',
+                      padding: '18px 18px 16px',
+                      background: 'white',
+                      borderRadius: '14px',
+                      boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+                      border: '1px solid #eef0f4',
+                      cursor: 'pointer',
+                      transition: 'all 0.25s ease',
+                      overflow: 'hidden',
+                      animation: `slideDown 0.5s ease ${Math.min(i, 8) * 50}ms both`,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-5px)';
+                      e.currentTarget.style.boxShadow = '0 14px 28px rgba(99,102,241,0.16)';
+                      e.currentTarget.style.borderColor = '#c7d2fe';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 2px 10px rgba(0,0,0,0.05)';
+                      e.currentTarget.style.borderColor = '#eef0f4';
+                    }}
+                  >
+                    {/* Top accent bar */}
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, #6366f1, #8b5cf6)' }} />
+
+                    {/* Header row */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                        <span style={{ fontSize: '18px', flexShrink: 0 }}>{STRATEGY_ICONS[strategy] || '📈'}</span>
+                        <span style={{
+                          fontSize: '13px', fontWeight: 800, color: '#1f2937',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }} title={strategy}>{strategy}</span>
+                      </div>
+                      <span style={{
+                        flexShrink: 0, fontSize: '10px', fontWeight: 800, padding: '3px 8px', borderRadius: '20px',
+                        background: 'rgba(99,102,241,0.1)', color: '#4f46e5',
+                      }}>{stats.total}</span>
+                    </div>
+
+                    {/* Win rate + Avg P&L row */}
+                    <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
+                      <div style={{ flex: 1, background: '#f9fafb', borderRadius: '10px', padding: '8px 10px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '3px' }}>Win Rate</div>
+                        <div style={{ fontSize: '16px', fontWeight: 800, color: winRate === null ? '#d1d5db' : winRate >= 55 ? '#059669' : winRate >= 40 ? '#d97706' : '#dc2626' }}>
+                          {winRate === null ? '—' : `${winRate.toFixed(0)}%`}
+                        </div>
+                      </div>
+                      <div style={{ flex: 1, background: '#f9fafb', borderRadius: '10px', padding: '8px 10px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '3px' }}>Avg P&L</div>
+                        <div style={{ fontSize: '16px', fontWeight: 800, color: avgPnl === null ? '#d1d5db' : avgPnl >= 0 ? '#059669' : '#dc2626' }}>
+                          {avgPnl === null ? '—' : `${avgPnl >= 0 ? '+' : ''}₹${Math.round(avgPnl).toLocaleString('en-IN')}`}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Distribution bar */}
+                    <div style={{ display: 'flex', height: '6px', borderRadius: '4px', overflow: 'hidden', backgroundColor: '#f0f1f3', marginBottom: '8px' }}>
+                      {genRate > 0 && <div style={{ width: `${genRate}%`, backgroundColor: '#6366f1' }} title={`Generated: ${stats.generated}`} />}
+                      {execRate > 0 && <div style={{ width: `${execRate}%`, backgroundColor: '#10b981' }} title={`Executed: ${stats.executed}`} />}
+                      {rejRate > 0 && <div style={{ width: `${rejRate}%`, backgroundColor: '#ef4444' }} title={`Rejected: ${stats.rejected}`} />}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#9ca3af', fontWeight: 600 }}>
+                      <span><span style={{ color: '#6366f1' }}>●</span> {stats.generated} gen</span>
+                      <span><span style={{ color: '#10b981' }}>●</span> {stats.executed} exec</span>
+                      <span><span style={{ color: '#ef4444' }}>●</span> {stats.rejected} rej</span>
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}
@@ -603,8 +681,8 @@ export default function Signals() {
                         <span style={{ fontSize: '11px', color: '#d1d5db' }}>—</span>
                       )}
                     </td>
-                    <td style={{ padding: '12px', textAlign: 'center', color: '#6366f1', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600, cursor: 'pointer' }} onClick={() => setSelectedStrategy(s.reason || s.scannerName)} title={s.reason || s.scannerName}>
-                      <span style={{ color: '#6366f1', textDecoration: 'underline', cursor: 'pointer' }}>{s.reason || s.scannerName || '—'}</span>
+                    <td style={{ padding: '12px', textAlign: 'center', color: '#6366f1', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600, cursor: 'pointer' }} onClick={() => setSelectedStrategy(extractStrategyName(s.reason || s.scannerName))} title={s.reason || s.scannerName}>
+                      <span style={{ color: '#6366f1', textDecoration: 'underline', cursor: 'pointer' }}>{extractStrategyName(s.reason || s.scannerName) || '—'}</span>
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.3px', background: statusColors[s.status]?.bg, color: statusColors[s.status]?.text, display: 'inline-block', whiteSpace: 'nowrap' }}>{s.status}</span>
