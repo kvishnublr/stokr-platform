@@ -78,11 +78,16 @@ public class BrokerTokenRefresher {
                 if (requestToken == null || requestToken.isBlank()) {
                     throw new RuntimeException("Failed to obtain request_token from Zerodha");
                 }
-                // Exchange request_token → access_token (same as manual OAuth flow)
+                // Exchange request_token → access_token (same as manual OAuth flow).
+                // completeOAuth persists the fresh access_token on this account row.
                 brokerService.completeOAuth(account.getUserId(), "ZERODHA", requestToken);
-                // Record last successful auto-reconnect
-                account.setLastAutoReconnect(Instant.now());
-                brokerAccountRepository.save(account);
+                // Re-fetch before touching the row: our in-memory `account` still holds
+                // the OLD access_token, so saving it here would clobber the fresh token
+                // completeOAuth just wrote (lost-update). Update only lastAutoReconnect
+                // on the freshly-loaded entity.
+                BrokerAccount fresh = brokerAccountRepository.findById(account.getId()).orElse(account);
+                fresh.setLastAutoReconnect(Instant.now());
+                brokerAccountRepository.save(fresh);
                 log.info("=== AUTO-RECONNECT SUCCESS for account {} ===", account.getId());
             } catch (Exception e) {
                 log.error("Auto-reconnect FAILED for account {}: {}", account.getId(), e.getMessage());
@@ -138,50 +143,39 @@ public class BrokerTokenRefresher {
                 .build(),
             HttpResponse.BodyHandlers.ofString());
 
-        // ── Step 3: Extract request_token from redirects ───────────────────────
-        // After twofa, Zerodha returns a redirect_url in the JSON body or a 302 header
-        // pointing to kite.zerodha.com/connect/finish?...&request_token=TOKEN
-        // which then redirects to our redirect_uri?request_token=TOKEN
-        String requestToken = findRequestToken(twoFaResp, http);
-        log.debug("Zerodha login step 2+3 OK, request_token obtained: {}", requestToken != null);
+        JsonNode twoFaJson = objectMapper.readTree(twoFaResp.body());
+        if (!"success".equalsIgnoreCase(twoFaJson.path("status").asText())) {
+            throw new RuntimeException("2FA failed: " + twoFaJson.path("message").asText());
+        }
+        log.debug("Zerodha login step 2 (TOTP) OK");
+
+        // ── Step 3: Trigger request_token via the OAuth connect endpoint ────────
+        // The /api/twofa response only authenticates the session cookies — it does
+        // NOT contain a request_token. We must now hit the OAuth login endpoint
+        // WITH those cookies and api_key; Zerodha then 302-redirects through
+        // connect/finish to our registered redirect_uri carrying request_token.
+        if (zerodhaApiKey == null || zerodhaApiKey.isBlank()) {
+            throw new RuntimeException("ZERODHA_API_KEY not configured on server");
+        }
+        String connectUrl = "https://kite.zerodha.com/connect/login?api_key="
+            + urlEncode(zerodhaApiKey) + "&v=3";
+        String requestToken = followUntilRequestToken(connectUrl, http);
+        log.debug("Zerodha login step 3 (connect) done, request_token obtained: {}", requestToken != null);
         return requestToken;
     }
 
-    private String findRequestToken(HttpResponse<String> startResp, HttpClient http)
+    /**
+     * Follows 302 redirects (redirects disabled on the client) starting from the
+     * OAuth connect URL, extracting request_token from the first Location/URL that
+     * carries it — without needing to actually fetch our own redirect_uri.
+     */
+    private String followUntilRequestToken(String startUrl, HttpClient http)
             throws IOException, InterruptedException {
-
-        // Check body for redirect_url (JSON response case)
-        String redirectUrl = null;
-        try {
-            JsonNode json = objectMapper.readTree(startResp.body());
-            if ("success".equalsIgnoreCase(json.path("status").asText())) {
-                redirectUrl = json.path("data").path("redirect_url").asText(null);
-                // Some variants put request_token directly in data
-                String rt = json.path("data").path("request_token").asText(null);
-                if (rt != null && !rt.isBlank()) return rt;
-            } else {
-                throw new RuntimeException("2FA failed: " + json.path("message").asText());
-            }
-        } catch (Exception e) {
-            if (e.getMessage() != null && e.getMessage().startsWith("2FA failed")) throw (RuntimeException) e;
-        }
-
-        // Check Location header (HTTP redirect case)
-        if (redirectUrl == null || redirectUrl.isBlank()) {
-            redirectUrl = startResp.headers().firstValue("location").orElse(null);
-        }
-
-        // Follow redirects until we find request_token in the URL
-        int maxHops = 8;
-        String cur = redirectUrl;
+        String cur = startUrl;
+        int maxHops = 10;
         while (cur != null && maxHops-- > 0) {
-            String extracted = extractQueryParam(cur, "request_token");
-            if (extracted != null) return extracted;
-
-            // Don't follow our own redirect_uri — just extract from the URL
-            if (cur.contains("localhost") || cur.contains("stokr")) {
-                return extractQueryParam(cur, "request_token");
-            }
+            String rt = extractQueryParam(cur, "request_token");
+            if (rt != null && !rt.isBlank()) return rt;
 
             HttpResponse<String> resp = http.send(
                 HttpRequest.newBuilder()
@@ -192,13 +186,16 @@ public class BrokerTokenRefresher {
                 HttpResponse.BodyHandlers.ofString());
 
             String location = resp.headers().firstValue("location").orElse(null);
-            if (location != null) {
-                String rt = extractQueryParam(location, "request_token");
-                if (rt != null) return rt;
-                cur = location;
-            } else {
-                break;
+            if (location == null || location.isBlank()) break;
+
+            // Resolve relative redirects (e.g. "/connect/finish?...")
+            if (location.startsWith("/")) {
+                URI base = URI.create(cur);
+                location = base.getScheme() + "://" + base.getHost() + location;
             }
+            String rtLoc = extractQueryParam(location, "request_token");
+            if (rtLoc != null && !rtLoc.isBlank()) return rtLoc;
+            cur = location;
         }
         return null;
     }
@@ -225,8 +222,12 @@ public class BrokerTokenRefresher {
                 account.getClientId(), account.getZerodhaPassword(), account.getZerodhaTotpSecret());
             if (requestToken == null) return "FAILED: could not get request_token";
             brokerService.completeOAuth(account.getUserId(), "ZERODHA", requestToken);
-            account.setLastAutoReconnect(Instant.now());
-            brokerAccountRepository.save(account);
+            // Re-fetch: `account` holds the pre-exchange (stale) access_token; saving it
+            // would overwrite the fresh token completeOAuth just persisted. Only bump
+            // lastAutoReconnect on the reloaded entity.
+            BrokerAccount fresh = brokerAccountRepository.findById(account.getId()).orElse(account);
+            fresh.setLastAutoReconnect(Instant.now());
+            brokerAccountRepository.save(fresh);
             return "OK";
         } catch (Exception e) {
             return "FAILED: " + e.getMessage();
