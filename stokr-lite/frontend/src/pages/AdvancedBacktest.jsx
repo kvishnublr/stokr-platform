@@ -24,7 +24,6 @@ const STRATEGIES = [
   { value: 'EOD_MOMENTUM',      label: 'EOD Momentum Lock',         desc: 'End-of-day trend continuation at 14:30–15:10. BUY/SELL with institutional flow.' },
   { value: 'OVERNIGHT_TRAP',   label: 'Overnight Trap SHORT',      desc: 'Yesterday strong close traps latecomers. Gap flat today → panic sell. 9:30–10:30.' },
   { value: 'DEAD_CAT_BOUNCE', label: 'Dead Cat Bounce Fade',      desc: 'Morning drop >1%, fake recovery, SHORT when bounce stalls below VWAP. 10:30–13:00.' },
-  { value: 'THREE_DAY_EXHAUSTION', label: '3-Day Exhaustion SHORT', desc: '3-day uptrend + gap-up today fills → all gap buyers trapped. 9:30–10:30.' },
 ];
 
 const ALL_PAIRS = [
