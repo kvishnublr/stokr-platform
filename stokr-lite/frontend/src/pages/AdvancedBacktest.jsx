@@ -22,8 +22,6 @@ const STRATEGIES = [
   { value: 'NIFTY_PULSE',       label: 'NIFTY Pulse (NPA)',         desc: 'ORB SHORT only when NIFTY down >0.2%. 68.75% win rate, PF 2.66.' },
   { value: 'NPA_V2',            label: 'NPA V2 (Volume Filter)',    desc: 'NPA with volume fade filter + NIFTY >0.15%. More signals, higher quality.' },
   { value: 'EOD_MOMENTUM',      label: 'EOD Momentum Lock',         desc: 'End-of-day trend continuation at 14:30–15:10. BUY/SELL with institutional flow.' },
-  { value: 'OVERNIGHT_TRAP',   label: 'Overnight Trap SHORT',      desc: 'Yesterday strong close traps latecomers. Gap flat today → panic sell. 9:30–10:30.' },
-  { value: 'DEAD_CAT_BOUNCE', label: 'Dead Cat Bounce Fade',      desc: 'Morning drop >1%, fake recovery, SHORT when bounce stalls below VWAP. 10:30–13:00.' },
 ];
 
 const ALL_PAIRS = [
