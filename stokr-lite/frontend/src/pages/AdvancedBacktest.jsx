@@ -447,8 +447,8 @@ export default function AdvancedBacktest() {
                     <MetricCard label="Profit Factor"   value={pr.profitFactor?.toFixed(2)}
                       color={pr.profitFactor >= 1.5 ? '#10b981' : pr.profitFactor >= 1.0 ? '#f59e0b' : '#ef4444'} />
                     <MetricCard label="Max Drawdown"    value={'₹' + (pr.maxDrawdown?.toFixed(0) || 0)}
-                      sub={(pr.maxDrawdown ? (pr.maxDrawdown / 250).toFixed(1) : 0) + '%'}
-                      color={pr.maxDrawdown <= 250 ? '#10b981' : pr.maxDrawdown <= 750 ? '#f59e0b' : '#ef4444'} />
+                      sub={(pr.maxDrawdown ? (pr.maxDrawdown / 50000 * 100).toFixed(1) : 0) + '% of capital'}
+                      color={pr.maxDrawdown <= 2500 ? '#10b981' : pr.maxDrawdown <= 7500 ? '#f59e0b' : '#ef4444'} />
                     <MetricCard label="Capital / Pair"  value="₹50,000" sub="₹25k per leg" />
                   </div>
                 </div>
@@ -948,8 +948,8 @@ export default function AdvancedBacktest() {
               <MetricCard label="Profit Factor"   value={r.profitFactor?.toFixed(2)}
                 color={r.profitFactor >= 1.5 ? '#10b981' : r.profitFactor >= 1.0 ? '#f59e0b' : '#ef4444'} />
               <MetricCard label="Max Drawdown"    value={'₹' + (r.maxDrawdown?.toFixed(0) || 0)}
-                sub={(r.maxDrawdown ? (r.maxDrawdown / 250).toFixed(1) : 0) + '%'}
-                color={r.maxDrawdown <= 250 ? '#10b981' : r.maxDrawdown <= 750 ? '#f59e0b' : '#ef4444'} />
+                sub={(r.maxDrawdown && r.capitalPerTrade ? (r.maxDrawdown / r.capitalPerTrade * 100).toFixed(1) : 0) + '% of capital'}
+                color={!r.capitalPerTrade || !r.maxDrawdown ? '#10b981' : (r.maxDrawdown / r.capitalPerTrade) <= 0.1 ? '#10b981' : (r.maxDrawdown / r.capitalPerTrade) <= 0.3 ? '#f59e0b' : '#ef4444'} />
               <MetricCard label="Wins"            value={r.winCount}
                 color="#10b981" sub={r.lossCount + ' losses'} />
               <MetricCard label="Capital / Trade" value={'₹' + Number(r.capitalPerTrade)?.toLocaleString('en-IN')} />

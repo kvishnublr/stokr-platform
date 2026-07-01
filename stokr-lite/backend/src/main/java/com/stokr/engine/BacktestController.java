@@ -511,12 +511,17 @@ public class BacktestController {
             double totalPnl    = allTrades.stream().mapToDouble(PairsTradingService.PairsTradeResult::netPnl).sum();
             double winRate     = totalTrades > 0 ? (double) totalWins / totalTrades * 100 : 0;
 
-            // Max drawdown on cumulative PnL series
-            double peak = 0, trough = 0, maxDd = 0, running = 0;
+            // Max drawdown on cumulative PnL series, in absolute Rupees (matches
+            // what the frontend expects — it prefixes this value with "₹" directly).
+            // NOTE: the previous version divided by `peak` to get a percentage, which
+            // silently reported 0 drawdown whenever the strategy never turned a net
+            // profit (peak stuck at 0) — exactly the case for a losing strategy, i.e.
+            // the one case where drawdown reporting matters most.
+            double peak = 0, maxDd = 0, running = 0;
             for (PairsTradingService.PairsTradeResult t : allTrades) {
                 running += t.netPnl();
                 if (running > peak) peak = running;
-                double dd = peak > 0 ? (peak - running) / peak * 100 : 0;
+                double dd = peak - running;
                 if (dd > maxDd) maxDd = dd;
             }
 
@@ -672,6 +677,18 @@ public class BacktestController {
             double grossLoss   = Math.abs(allTrades.stream().filter(t -> t.netPnl() < 0).mapToDouble(PairsTradingService.PairsTradeResult::netPnl).sum());
             double pf          = grossLoss > 0 ? grossWins / grossLoss : 0;
 
+            // Absolute-Rupee max drawdown on the chronological equity curve (sort by
+            // entry time first — allTrades is grouped by pair, not time-ordered).
+            List<PairsTradingService.PairsTradeResult> chronoTrades = new ArrayList<>(allTrades);
+            chronoTrades.sort(java.util.Comparator.comparing(PairsTradingService.PairsTradeResult::entryTime));
+            double peak = 0, maxDd = 0, running = 0;
+            for (PairsTradingService.PairsTradeResult t : chronoTrades) {
+                running += t.netPnl();
+                if (running > peak) peak = running;
+                double dd = peak - running;
+                if (dd > maxDd) maxDd = dd;
+            }
+
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("method",       "OPENING_DRIFT");
             result.put("dateStart",    startTime.toString());
@@ -685,6 +702,7 @@ public class BacktestController {
             result.put("winRate",      rnd2(winRate));
             result.put("profitFactor", rnd2(pf));
             result.put("totalNetPnl",  rnd2(totalPnl));
+            result.put("maxDrawdown",  rnd2(maxDd));
             result.put("pairsCount",   pairResults.size());
             result.put("pairs",        pairResults);
 
@@ -1465,12 +1483,20 @@ public class BacktestController {
         }
     }
 
+    /**
+     * Absolute-Rupee max drawdown (NOT a percentage). Every frontend caller
+     * prefixes this value with "₹" directly, so it must stay in Rupees.
+     * The previous version divided by `peak` to get a percentage, which
+     * silently returned 0 whenever the equity curve never turned net
+     * positive (peak stuck at 0) — i.e. exactly the losing-strategy case
+     * where drawdown visibility matters most.
+     */
     private double calculateMaxDrawdownFromTrades(List<SimulatedTrade> trades) {
         double peak = 0, drawdown = 0, running = 0;
         for (SimulatedTrade t : trades) {
             running += t.pnl;
             peak = Math.max(peak, running);
-            double dd = peak > 0 ? (peak - running) / peak * 100 : 0;
+            double dd = peak - running;
             drawdown = Math.max(drawdown, dd);
         }
         return Math.round(drawdown * 100.0) / 100.0;
@@ -1491,6 +1517,15 @@ public class BacktestController {
                 .orElseThrow(() -> new IllegalArgumentException("Unknown universe: " + universe));
     }
 
+    /**
+     * Absolute-Rupee max drawdown (see calculateMaxDrawdownFromTrades for why:
+     * frontend prefixes this with "₹" directly). The previous version divided
+     * by Math.max(peak, 1) to dodge a divide-by-zero, but that makes the
+     * "percentage" meaningless whenever peak <= 0 (e.g. a Rs 5,000 drawdown
+     * would render as "500000%") rather than actually hiding it — a
+     * different failure mode of the same underlying peak<=0 problem seen in
+     * the other drawdown calculators in this file.
+     */
     private double calculateMaxDrawdown(List<SignalEntity> signals) {
         double peak = 0;
         double drawdown = 0;
@@ -1507,12 +1542,12 @@ public class BacktestController {
 
                 runningBalance += tradePnL;
                 peak = Math.max(peak, runningBalance);
-                double currentDD = (peak - runningBalance) / Math.max(peak, 1);
+                double currentDD = peak - runningBalance;
                 drawdown = Math.max(drawdown, currentDD);
             }
         }
 
-        return Math.round(drawdown * 10000.0) / 100.0;
+        return Math.round(drawdown * 100.0) / 100.0;
     }
 
     private double calculateProfitFactor(List<SignalEntity> signals) {
