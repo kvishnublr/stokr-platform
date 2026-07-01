@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import client from '../api/client';
 
 async function ensureAuthenticated() {
@@ -81,15 +81,10 @@ export default function AdvancedBacktest() {
   const [loadStatus, setLoadStatus] = useState(null);
   const [loadRunning, setLoadRunning] = useState(false);
 
-  // Pairs Arb mode state
+  // Pairs Arb mode state (pair selection shared with Opening-Drift tab)
   const [selectedPairs, setSelectedPairs] = useState(
     ALL_PAIRS.reduce((acc, p) => ({ ...acc, [p.key]: true }), {})
   );
-  const [zWindow, setZWindow]   = useState(300);
-  const [zEntry,  setZEntry]    = useState(2.0);
-  const [zExit,   setZExit]     = useState(0.5);
-  const [zStop,   setZStop]     = useState(3.5);
-  const [pairsResults, setPairsResults] = useState(null);
   const [expandedPair, setExpandedPair] = useState(null);
 
   // Opening-Drift mode state
@@ -201,35 +196,6 @@ export default function AdvancedBacktest() {
     }
   };
 
-  const runPairsBacktest = async () => {
-    setLoading(true);
-    setError(null);
-    setPairsResults(null);
-    setExpandedPair(null);
-    const activePairs = ALL_PAIRS.filter(p => selectedPairs[p.key]).map(p => p.key.replace(':', ':')).join(',');
-    setProgress('Fetching candles for all pairs…');
-    try {
-      const params = new URLSearchParams({
-        pairs:     activePairs,
-        dateStart: new Date(dateStart).toISOString(),
-        dateEnd:   new Date(dateEnd + 'T23:59:59').toISOString(),
-        zWindow,
-        zEntry,
-        zExit,
-        zStop,
-        brokerage: 80,
-      });
-      setProgress('Running spread simulation…');
-      const res = await client.post('/backtest/pairs?' + params);
-      setPairsResults(res.data);
-    } catch (e) {
-      setError(e.response?.data?.error || e.message || 'Pairs backtest failed');
-    } finally {
-      setLoading(false);
-      setProgress('');
-    }
-  };
-
   const runDriftBacktest = async () => {
     setLoading(true);
     setError(null);
@@ -323,11 +289,6 @@ export default function AdvancedBacktest() {
           📊 Strategy Backtest
         </button>
         <button
-          className={`mode-tab${mode === 'pairs' ? ' active-pairs' : ''}`}
-          onClick={() => { setMode('pairs'); setPairsResults(null); setError(null); }}>
-          📐 Pairs Z-Score (Intraday)
-        </button>
-        <button
           className={`mode-tab${mode === 'drift' ? ' active-pairs' : ''}`}
           style={mode === 'drift' ? { borderColor: '#7c3aed', background: '#7c3aed' } : { borderColor: '#7c3aed', color: '#7c3aed' }}
           onClick={() => { setMode('drift'); setDriftResults(null); setError(null); }}>
@@ -342,219 +303,6 @@ export default function AdvancedBacktest() {
           🔴 Pairs Live Dashboard
         </button>
       </div>
-
-      {/* ============ PAIRS ARB CONTROLS ============ */}
-      {mode === 'pairs' && (
-        <>
-          <div className="card">
-            <div style={{ fontWeight: 800, fontSize: '15px', marginBottom: '16px', color: '#065f46' }}>
-              📐 Pairs to Backtest
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '10px', marginBottom: '20px' }}>
-              {ALL_PAIRS.map(p => (
-                <div key={p.key}
-                  className={`pair-checkbox${selectedPairs[p.key] ? ' checked' : ''}`}
-                  onClick={() => setSelectedPairs(prev => ({ ...prev, [p.key]: !prev[p.key] }))}>
-                  <input type="checkbox" checked={!!selectedPairs[p.key]} readOnly
-                    style={{ width: '16px', height: '16px', accentColor: '#059669', flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: '13px' }}>
-                      <span style={{ color: '#1d4ed8' }}>{p.labelA}</span>
-                      <span style={{ color: '#9ca3af', margin: '0 6px' }}>/</span>
-                      <span style={{ color: '#059669' }}>{p.labelB}</span>
-                    </div>
-                    <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>
-                      {p.sector} · corr {p.corr}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '20px', flexWrap: 'wrap', marginBottom: '20px' }}>
-              <div>
-                <label className="label">Date From</label>
-                <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)}
-                  style={{ width: '160px', padding: '9px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px' }} />
-              </div>
-              <div>
-                <label className="label">Date To</label>
-                <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)}
-                  style={{ width: '160px', padding: '9px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px' }} />
-              </div>
-              <div>
-                <label className="label">Entry Spread <span style={{ color: '#d1d5db' }}>(%)</span></label>
-                <input className="z-input" type="number" min={0.5} max={5} step={0.1} value={zEntry}
-                  onChange={e => setZEntry(Number(e.target.value))} />
-              </div>
-              <div>
-                <label className="label">Exit Spread <span style={{ color: '#d1d5db' }}>(%)</span></label>
-                <input className="z-input" type="number" min={0} max={1} step={0.05} value={zExit}
-                  onChange={e => setZExit(Number(e.target.value))} />
-              </div>
-              <div>
-                <label className="label">Stop Spread <span style={{ color: '#d1d5db' }}>(%)</span></label>
-                <input className="z-input" type="number" min={1} max={8} step={0.1} value={zStop}
-                  onChange={e => setZStop(Number(e.target.value))} />
-              </div>
-            </div>
-
-            <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px',
-              padding: '10px 14px', marginBottom: '20px', fontSize: '12px', color: '#166534' }}>
-              💡 <strong>Daily Anchor Spread:</strong> anchors to today's 9:15am opening ratio.
-              Entry: spread deviates ≥ {zEntry}% from open ratio → short the expensive leg, long the cheap one.
-              Exit: spread reverts to within ±{zExit}% of anchor (profit) or widens to {zStop}% (stop).
-              Capital: ₹25,000/leg × 2 = ₹50,000/pair. Brokerage: ₹80/pair.
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <button className="run-btn pairs" onClick={runPairsBacktest} disabled={loading}>
-                {loading ? '⏳ ' + progress : '▶ Run Pairs Backtest'}
-              </button>
-              <span style={{ fontSize: '12px', color: '#6b7280' }}>
-                {ALL_PAIRS.filter(p => selectedPairs[p.key]).length} pairs selected
-              </span>
-            </div>
-          </div>
-
-          {/* Pairs results */}
-          {pairsResults && (() => {
-            const pr = pairsResults;
-            return (
-              <>
-                {/* Summary metrics */}
-                <div className="card">
-                  <div style={{ fontWeight: 800, fontSize: '15px', marginBottom: '16px' }}>Overall Pairs Performance</div>
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
-                    <span className="tag" style={{ background: '#d1fae5', color: '#065f46' }}>PAIRS ARB</span>
-                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>{pr.pairsCount} pairs</span>
-                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>Entry ±{pr.entryPct || pr.zEntry}%</span>
-                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>Stop ±{pr.stopPct || pr.zStop}%</span>
-                    <span className="tag" style={{ background: '#d1fae5', color: '#065f46' }}>Daily Anchor</span>
-                    <span style={{ fontSize: '12px', color: '#9ca3af' }}>
-                      {new Date(pr.dateRange.start).toLocaleDateString()} → {new Date(pr.dateRange.end).toLocaleDateString()}
-                    </span>
-                  </div>
-                  <div className="grid-4">
-                    <MetricCard label="Total Signals"   value={pr.totalTrades} />
-                    <MetricCard label="Win Rate"        value={pr.winRate?.toFixed(1) + '%'}
-                      color={pr.winRate >= 60 ? '#10b981' : pr.winRate >= 45 ? '#f59e0b' : '#ef4444'} />
-                    <MetricCard label="Net P&L"         value={'₹' + pr.totalPnL?.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                      color={pnlColor(pr.totalPnL)} />
-                    <MetricCard label="Avg P&L / Trade" value={'₹' + pr.avgPnL?.toFixed(0)}
-                      color={pnlColor(pr.avgPnL)} />
-                    <MetricCard label="Wins"            value={pr.winCount} color="#10b981" sub={pr.lossCount + ' losses'} />
-                    <MetricCard label="Profit Factor"   value={pr.profitFactor?.toFixed(2)}
-                      color={pr.profitFactor >= 1.5 ? '#10b981' : pr.profitFactor >= 1.0 ? '#f59e0b' : '#ef4444'} />
-                    <MetricCard label="Max Drawdown"    value={'₹' + (pr.maxDrawdown?.toFixed(0) || 0)}
-                      sub={(pr.maxDrawdown ? (pr.maxDrawdown / 50000 * 100).toFixed(1) : 0) + '% of capital'}
-                      color={pr.maxDrawdown <= 2500 ? '#10b981' : pr.maxDrawdown <= 7500 ? '#f59e0b' : '#ef4444'} />
-                    <MetricCard label="Capital / Pair"  value="₹50,000" sub="₹25k per leg" />
-                  </div>
-                </div>
-
-                {/* Per-pair breakdown */}
-                <div className="card">
-                  <div style={{ fontWeight: 800, fontSize: '15px', marginBottom: '16px' }}>Per-Pair Breakdown</div>
-                  {pr.pairs.map(pair => (
-                    <div key={pair.pair} style={{ marginBottom: '12px', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
-                      <div
-                        onClick={() => setExpandedPair(expandedPair === pair.pair ? null : pair.pair)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '14px 16px',
-                          background: '#fafafa', cursor: 'pointer', flexWrap: 'wrap' }}>
-                        <div style={{ fontWeight: 800, fontSize: '14px', minWidth: '180px' }}>
-                          <span style={{ color: '#1d4ed8' }}>{pair.symbolA}</span>
-                          <span style={{ color: '#9ca3af', margin: '0 8px' }}>/</span>
-                          <span style={{ color: '#059669' }}>{pair.symbolB}</span>
-                        </div>
-                        <span className="tag" style={{ background: '#dbeafe', color: '#1e40af' }}>
-                          corr {(pair.correlation * 100).toFixed(0)}%
-                        </span>
-                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{pair.trades} trades</span>
-                        <span style={{ fontSize: '13px', fontWeight: 800,
-                          color: pair.winRate >= 60 ? '#059669' : pair.winRate >= 45 ? '#d97706' : '#dc2626' }}>
-                          {pair.winRate?.toFixed(1)}% win
-                        </span>
-                        <span style={{ fontSize: '14px', fontWeight: 800, marginLeft: 'auto',
-                          color: pair.totalPnl > 0 ? '#059669' : '#dc2626' }}>
-                          {pair.totalPnl > 0 ? '+' : ''}₹{pair.totalPnl?.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                        </span>
-                        <span style={{ color: '#9ca3af', fontSize: '12px' }}>{expandedPair === pair.pair ? '▲' : '▼'}</span>
-                      </div>
-                      {expandedPair === pair.pair && pair.tradeList?.length > 0 && (
-                        <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
-                          <table>
-                            <thead style={{ position: 'sticky', top: 0 }}>
-                              <tr>
-                                <th>#</th><th>Entry Time</th><th>Direction</th>
-                                <th style={{ textAlign: 'right' }}>Entry A/B</th>
-                                <th style={{ textAlign: 'right' }}>Exit A/B</th>
-                                <th style={{ textAlign: 'right' }}>Entry Spread</th>
-                                <th style={{ textAlign: 'right' }}>Exit Spread</th>
-                                <th style={{ textAlign: 'right' }}>Net P&L</th>
-                                <th style={{ textAlign: 'center' }}>Exit</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {pair.tradeList.map((t, i) => (
-                                <tr key={i}>
-                                  <td style={{ color: '#9ca3af' }}>{i + 1}</td>
-                                  <td style={{ fontSize: '11px', color: '#6b7280' }}>
-                                    {t.entryTime ? new Date(t.entryTime).toLocaleString('en-IN', {
-                                      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-'}
-                                  </td>
-                                  <td>
-                                    <span style={{ fontSize: '10px', fontWeight: 700,
-                                      color: t.direction === 'SHORT_A_LONG_B' ? '#7c3aed' : '#1d4ed8' }}>
-                                      {t.direction === 'SHORT_A_LONG_B'
-                                        ? `↓${pair.symbolA} ↑${pair.symbolB}`
-                                        : `↑${pair.symbolA} ↓${pair.symbolB}`}
-                                    </span>
-                                  </td>
-                                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px' }}>
-                                    {Number(t.entryA).toFixed(1)} / {Number(t.entryB).toFixed(1)}
-                                  </td>
-                                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px' }}>
-                                    {Number(t.exitA).toFixed(1)} / {Number(t.exitB).toFixed(1)}
-                                  </td>
-                                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px',
-                                    color: Math.abs(t.entrySpreadPct || t.entryZScore) >= 2.5 ? '#dc2626' : '#6b7280' }}>
-                                    {Number(t.entrySpreadPct ?? t.entryZScore).toFixed(2)}%
-                                  </td>
-                                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px' }}>
-                                    {Number(t.exitSpreadPct ?? t.exitZScore).toFixed(2)}%
-                                  </td>
-                                  <td style={{ textAlign: 'right', fontWeight: 700,
-                                    color: t.netPnl > 0 ? '#10b981' : t.netPnl < 0 ? '#ef4444' : '#6b7280' }}>
-                                    {t.netPnl > 0 ? '+' : ''}₹{Number(t.netPnl).toFixed(0)}
-                                  </td>
-                                  <td style={{ textAlign: 'center' }}>
-                                    <span style={{
-                                      padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700,
-                                      background: (t.exitReason === 'SPREAD_REVERSION' || t.exitReason === 'ZSCORE_REVERSION') ? '#d1fae5'
-                                        : (t.exitReason === 'SPREAD_STOP' || t.exitReason === 'ZSCORE_STOP') ? '#fee2e2' : '#fef3c7',
-                                      color: (t.exitReason === 'SPREAD_REVERSION' || t.exitReason === 'ZSCORE_REVERSION') ? '#065f46'
-                                        : (t.exitReason === 'SPREAD_STOP' || t.exitReason === 'ZSCORE_STOP') ? '#991b1b' : '#92400e',
-                                    }}>
-                                      {(t.exitReason === 'SPREAD_REVERSION' || t.exitReason === 'ZSCORE_REVERSION') ? '✓ REVERTED'
-                                        : (t.exitReason === 'SPREAD_STOP' || t.exitReason === 'ZSCORE_STOP') ? '✗ STOP'
-                                        : '⏱ EOD'}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </>
-            );
-          })()}
-        </>
-      )}
 
       {/* ============ OPENING DRIFT CONTROLS ============ */}
       {mode === 'drift' && (
