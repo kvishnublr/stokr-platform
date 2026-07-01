@@ -82,7 +82,15 @@ public class BacktestController {
         Map.entry("AFB",                "AFTERNOON_BREAKOUT"),
         Map.entry("GAP_CONTINUATION",   "GAP_CONTINUATION"),
         Map.entry("GAP_CONT",           "GAP_CONTINUATION"),
-        Map.entry("GC",                 "GAP_CONTINUATION")
+        Map.entry("GC",                 "GAP_CONTINUATION"),
+        Map.entry("VOLUME_COIL",           "VOLUME_COIL"),
+        Map.entry("VCS",                   "VOLUME_COIL"),
+        Map.entry("OVERNIGHT_TRAP",        "OVERNIGHT_TRAP"),
+        Map.entry("OT",                    "OVERNIGHT_TRAP"),
+        Map.entry("DEAD_CAT_BOUNCE",       "DEAD_CAT_BOUNCE"),
+        Map.entry("DCB",                   "DEAD_CAT_BOUNCE"),
+        Map.entry("THREE_DAY_EXHAUSTION",  "THREE_DAY_EXHAUSTION"),
+        Map.entry("3DE",                   "THREE_DAY_EXHAUSTION")
     ));
 
     private static double CAPITAL = 25000;
@@ -406,20 +414,20 @@ public class BacktestController {
             @RequestParam(required = false) String pairs,
             @RequestParam(required = false) String dateStart,
             @RequestParam(required = false) String dateEnd,
-            @RequestParam(defaultValue = "60")  int    zWindow,
-            @RequestParam(defaultValue = "1.5") double zEntry,    // entryPct — kept as zEntry for UI compat
-            @RequestParam(defaultValue = "0.2") double zExit,     // exitPct
-            @RequestParam(defaultValue = "3.0") double zStop,     // stopPct
+            @RequestParam(defaultValue = "300") int    zWindow,   // rolling z-score window (candles)
+            @RequestParam(defaultValue = "2.0") double zEntry,    // z-score entry threshold
+            @RequestParam(defaultValue = "0.5") double zExit,     // z-score exit threshold
+            @RequestParam(defaultValue = "3.5") double zStop,     // z-score stop-loss threshold
             @RequestParam(defaultValue = "80")  double brokerage) {
 
-        log.info("Pairs backtest: pairs={}, entryPct={}, exitPct={}, stopPct={}", pairs, zEntry, zExit, zStop);
+        log.info("Pairs backtest: pairs={}, zEntry={}, zExit={}, zStop={}, zWindow={}", pairs, zEntry, zExit, zStop, zWindow);
         try {
             java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
             LocalDateTime startTime = dateStart != null
-                ? LocalDateTime.parse(dateStart.replace("Z","").substring(0, 19))
+                ? parseDateParam(dateStart)
                 : LocalDateTime.now(IST).minusDays(30);
             LocalDateTime endTime = dateEnd != null
-                ? LocalDateTime.parse(dateEnd.replace("Z","").substring(0, 19))
+                ? parseDateParam(dateEnd)
                 : LocalDateTime.now(IST);
 
             // Parse custom pairs or use defaults
@@ -433,7 +441,7 @@ public class BacktestController {
                 pairList = PairsTradingService.DEFAULT_PAIRS;
             }
 
-            // Fetch candles for all unique symbols in parallel
+            // Load candles directly from DB (no Zerodha API call — token may be expired)
             java.util.Set<String> allSymbols = new java.util.LinkedHashSet<>();
             for (String[] pair : pairList) { allSymbols.add(pair[0]); allSymbols.add(pair[1]); }
 
@@ -444,12 +452,14 @@ public class BacktestController {
                 for (String sym : allSymbols) {
                     final LocalDateTime s = startTime, e = endTime;
                     futures.add(pool.submit(() -> {
-                        List<CandleData> c = candleFetchService.fetchCandles(sym, "1min", s, e);
+                        List<CandleData> c = candleRepository
+                            .findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(sym, "1min", s, e);
                         if (!c.isEmpty()) candleCache.put(sym, c);
+                        else log.warn("Pairs: no DB candles for {} between {} and {}", sym, s, e);
                     }));
                 }
                 for (Future<?> f : futures) {
-                    try { f.get(240, TimeUnit.SECONDS); } catch (Exception ignored) {}
+                    try { f.get(60, TimeUnit.SECONDS); } catch (Exception ignored) {}
                 }
             } finally { pool.shutdown(); }
 
@@ -520,7 +530,7 @@ public class BacktestController {
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("strategy",        "PAIRS_ARB");
-            result.put("method",          "DAILY_ANCHOR_SPREAD");
+            result.put("method",          "ROLLING_ZSCORE");
             result.put("pairsCount",      pairResults.size());
             result.put("skippedPairs",    skippedPairs);
             result.put("zWindow",         zWindow);
@@ -551,6 +561,140 @@ public class BacktestController {
         } catch (Exception e) {
             log.error("Pairs backtest failed", e);
             return ResponseEntity.badRequest().body(Map.of("error", "Pairs backtest failed: " + e.getMessage()));
+        }
+    }
+
+    // ─── OPENING-DRIFT PAIRS BACKTEST ────────────────────────────────────────────
+
+    /**
+     * Opening-Drift pairs backtest.
+     *
+     * Uses 20-day rolling daily close log-ratio distribution.
+     * Enters at 9:30 when today's opening ratio is z > zEntry std devs from history.
+     * The daily std dev is 5-10× larger than the intraday std dev → each trade captures
+     * a much larger spread, making brokerage irrelevant.
+     */
+    @PostMapping("/pairs-drift")
+    public ResponseEntity<Map<String, Object>> runPairsDriftBacktest(
+            @RequestParam(required = false) String pairs,
+            @RequestParam(required = false) String dateStart,
+            @RequestParam(required = false) String dateEnd,
+            @RequestParam(defaultValue = "20")  int    dailyWindow, // trading-day lookback for z-score
+            @RequestParam(defaultValue = "1.5") double zEntry,      // opening z-score min threshold (moderate divergence)
+            @RequestParam(defaultValue = "2.5") double zEntryMax,   // opening z-score max (skip extreme=real events)
+            @RequestParam(defaultValue = "0.5") double zExit,       // intraday z-score target to exit
+            @RequestParam(defaultValue = "3.0") double zStop,       // intraday z-score stop loss
+            @RequestParam(defaultValue = "80")  double brokerage) {
+
+        log.info("Pairs-Drift backtest: zEntry={}-{}, zExit={}, zStop={}, window={}", zEntry, zEntryMax, zExit, zStop, dailyWindow);
+        try {
+            java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
+            LocalDateTime startTime = dateStart != null
+                ? parseDateParam(dateStart) : LocalDateTime.now(IST).minusDays(90);
+            LocalDateTime endTime = dateEnd != null
+                ? parseDateParam(dateEnd)   : LocalDateTime.now(IST);
+
+            List<String[]> pairList;
+            if (pairs != null && !pairs.isBlank()) {
+                pairList = Arrays.stream(pairs.split(","))
+                    .map(p -> p.trim().split(":"))
+                    .filter(p -> p.length == 2)
+                    .toList();
+            } else {
+                pairList = PairsTradingService.DEFAULT_PAIRS;
+            }
+
+            // Load candles from DB
+            java.util.Set<String> allSymbols = new java.util.LinkedHashSet<>();
+            for (String[] pair : pairList) { allSymbols.add(pair[0]); allSymbols.add(pair[1]); }
+
+            Map<String, List<CandleData>> candleCache = new ConcurrentHashMap<>();
+            ExecutorService pool = Executors.newFixedThreadPool(4);
+            try {
+                List<Future<?>> futures = new ArrayList<>();
+                for (String sym : allSymbols) {
+                    final LocalDateTime s = startTime, e = endTime;
+                    futures.add(pool.submit(() -> {
+                        List<CandleData> c = candleRepository
+                            .findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(sym, "1min", s, e);
+                        if (!c.isEmpty()) candleCache.put(sym, c);
+                        else log.warn("PairsDrift: no DB candles for {} between {} and {}", sym, s, e);
+                    }));
+                }
+                for (Future<?> f : futures) { try { f.get(); } catch (Exception ex) { log.warn("Candle load error", ex); } }
+            } finally {
+                pool.shutdown();
+            }
+
+            List<Map<String, Object>> pairResults = new ArrayList<>();
+            List<PairsTradingService.PairsTradeResult> allTrades = new ArrayList<>();
+
+            for (String[] pair : pairList) {
+                String symA = pair[0].trim(), symB = pair[1].trim();
+                List<CandleData> ca = candleCache.get(symA);
+                List<CandleData> cb = candleCache.get(symB);
+                if (ca == null || cb == null || ca.size() < 50 || cb.size() < 50) {
+                    log.warn("Skipping drift pair {}/{}: insufficient candles", symA, symB);
+                    continue;
+                }
+
+                List<PairsTradingService.PairsTradeResult> pTrades =
+                    pairsTradingService.backtestPairOpeningDrift(symA, symB, ca, cb,
+                        dailyWindow, zEntry, zEntryMax, zExit, zStop, brokerage);
+
+                double corr  = pairsTradingService.computeCorrelation(ca, cb);
+                int    wins  = (int) pTrades.stream().filter(t -> t.netPnl() > 0).count();
+                int    loss  = (int) pTrades.stream().filter(t -> t.netPnl() < 0).count();
+                double pnl   = pTrades.stream().mapToDouble(PairsTradingService.PairsTradeResult::netPnl).sum();
+                double wr    = pTrades.isEmpty() ? 0 : (double) wins / pTrades.size() * 100;
+
+                Map<String, Object> pr = new LinkedHashMap<>();
+                pr.put("pair",        symA + "/" + symB);
+                pr.put("symbolA",     symA);
+                pr.put("symbolB",     symB);
+                pr.put("correlation", rnd2(corr));
+                pr.put("trades",      pTrades.size());
+                pr.put("wins",        wins);
+                pr.put("losses",      loss);
+                pr.put("winRate",     rnd2(wr));
+                pr.put("totalPnl",    rnd2(pnl));
+                pr.put("avgPnl",      pTrades.isEmpty() ? 0 : rnd2(pnl / pTrades.size()));
+                pr.put("tradeList",   pTrades.stream().map(PairsTradingService.PairsTradeResult::toMap).toList());
+                pairResults.add(pr);
+                allTrades.addAll(pTrades);
+            }
+
+            int    totalTrades = allTrades.size();
+            int    totalWins   = (int) allTrades.stream().filter(t -> t.netPnl() > 0).count();
+            double totalPnl    = allTrades.stream().mapToDouble(PairsTradingService.PairsTradeResult::netPnl).sum();
+            double winRate     = totalTrades > 0 ? (double) totalWins / totalTrades * 100 : 0;
+            double grossWins   = allTrades.stream().filter(t -> t.netPnl() > 0).mapToDouble(PairsTradingService.PairsTradeResult::netPnl).sum();
+            double grossLoss   = Math.abs(allTrades.stream().filter(t -> t.netPnl() < 0).mapToDouble(PairsTradingService.PairsTradeResult::netPnl).sum());
+            double pf          = grossLoss > 0 ? grossWins / grossLoss : 0;
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("method",       "OPENING_DRIFT");
+            result.put("dateStart",    startTime.toString());
+            result.put("dateEnd",      endTime.toString());
+            result.put("dailyWindow",  dailyWindow);
+            result.put("zEntry",       zEntry);
+            result.put("zEntryMax",    zEntryMax);
+            result.put("zExit",        zExit);
+            result.put("zStop",        zStop);
+            result.put("totalTrades",  totalTrades);
+            result.put("winRate",      rnd2(winRate));
+            result.put("profitFactor", rnd2(pf));
+            result.put("totalNetPnl",  rnd2(totalPnl));
+            result.put("pairsCount",   pairResults.size());
+            result.put("pairs",        pairResults);
+
+            log.info("Pairs-Drift done: {} pairs, {} trades, {:.1f}% WR, Rs{} PnL",
+                pairResults.size(), totalTrades, winRate, Math.round(totalPnl));
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            log.error("Pairs-Drift backtest failed", e);
+            return ResponseEntity.badRequest().body(Map.of("error", "Pairs-Drift failed: " + e.getMessage()));
         }
     }
 

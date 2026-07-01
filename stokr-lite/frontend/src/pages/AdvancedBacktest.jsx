@@ -22,17 +22,28 @@ const STRATEGIES = [
   { value: 'NIFTY_PULSE',       label: 'NIFTY Pulse (NPA)',         desc: 'ORB SHORT only when NIFTY down >0.2%. 68.75% win rate, PF 2.66.' },
   { value: 'NPA_V2',            label: 'NPA V2 (Volume Filter)',    desc: 'NPA with volume fade filter + NIFTY >0.15%. More signals, higher quality.' },
   { value: 'EOD_MOMENTUM',      label: 'EOD Momentum Lock',         desc: 'End-of-day trend continuation at 14:30–15:10. BUY/SELL with institutional flow.' },
+  { value: 'OVERNIGHT_TRAP',   label: 'Overnight Trap SHORT',      desc: 'Yesterday strong close traps latecomers. Gap flat today → panic sell. 9:30–10:30.' },
+  { value: 'DEAD_CAT_BOUNCE', label: 'Dead Cat Bounce Fade',      desc: 'Morning drop >1%, fake recovery, SHORT when bounce stalls below VWAP. 10:30–13:00.' },
+  { value: 'THREE_DAY_EXHAUSTION', label: '3-Day Exhaustion SHORT', desc: '3-day uptrend + gap-up today fills → all gap buyers trapped. 9:30–10:30.' },
 ];
 
 const ALL_PAIRS = [
-  { key: 'HDFCBANK:ICICIBANK',   labelA: 'HDFCBANK',   labelB: 'ICICIBANK',   sector: 'Banking',  corr: '~95%' },
-  { key: 'TCS:INFY',             labelA: 'TCS',        labelB: 'INFY',        sector: 'IT',        corr: '~92%' },
-  { key: 'SBIN:AXISBANK',        labelA: 'SBIN',       labelB: 'AXISBANK',    sector: 'Banking',  corr: '~88%' },
-  { key: 'WIPRO:HCLTECH',        labelA: 'WIPRO',      labelB: 'HCLTECH',     sector: 'IT',        corr: '~86%' },
-  { key: 'BAJFINANCE:BAJAJFINSV',labelA: 'BAJFINANCE', labelB: 'BAJAJFINSV',  sector: 'Finance',  corr: '~80%' },
-  { key: 'RELIANCE:ONGC',        labelA: 'RELIANCE',   labelB: 'ONGC',        sector: 'Energy',   corr: '~82%' },
-  { key: 'KOTAKBANK:AXISBANK',   labelA: 'KOTAKBANK',  labelB: 'AXISBANK',    sector: 'Banking',  corr: '~85%' },
-  { key: 'MARUTI:TATAMOTORS',    labelA: 'MARUTI',     labelB: 'TATAMOTORS',  sector: 'Auto',     corr: '~78%' },
+  { key: 'HDFCBANK:ICICIBANK',     labelA: 'HDFCBANK',   labelB: 'ICICIBANK',   sector: 'Banking',   corr: '~74%' },
+  { key: 'KOTAKBANK:AXISBANK',     labelA: 'KOTAKBANK',  labelB: 'AXISBANK',    sector: 'Banking',   corr: '~88%' },
+  { key: 'TCS:INFY',               labelA: 'TCS',        labelB: 'INFY',        sector: 'IT',        corr: '~64%' },
+  { key: 'WIPRO:HCLTECH',          labelA: 'WIPRO',      labelB: 'HCLTECH',     sector: 'IT',        corr: '~85%' },
+  { key: 'INFY:HCLTECH',           labelA: 'INFY',       labelB: 'HCLTECH',     sector: 'IT',        corr: '~80%' },
+  { key: 'SBIN:BANKBARODA',        labelA: 'SBIN',       labelB: 'BANKBARODA',  sector: 'PSU Bank',  corr: '~47%' },
+  { key: 'SUNPHARMA:DRREDDY',      labelA: 'SUNPHARMA',  labelB: 'DRREDDY',     sector: 'Pharma',    corr: '~67%' },
+  { key: 'CIPLA:LUPIN',            labelA: 'CIPLA',      labelB: 'LUPIN',       sector: 'Pharma',    corr: '~10%' },
+  { key: 'NTPC:POWERGRID',         labelA: 'NTPC',       labelB: 'POWERGRID',   sector: 'PSU Power', corr: '~88%' },
+  { key: 'RELIANCE:ONGC',          labelA: 'RELIANCE',   labelB: 'ONGC',        sector: 'Energy',    corr: '~59%' },
+  { key: 'HINDALCO:TATASTEEL',     labelA: 'HINDALCO',   labelB: 'TATASTEEL',   sector: 'Metals',    corr: '~71%' },
+  { key: 'BAJFINANCE:BAJAJFINSV',  labelA: 'BAJFINANCE', labelB: 'BAJAJFINSV',  sector: 'Finance',   corr: '~20%' },
+  { key: 'HDFCLIFE:SBILIFE',       labelA: 'HDFCLIFE',   labelB: 'SBILIFE',     sector: 'Insurance', corr: '~91%' },
+  { key: 'ASIANPAINT:BERGEPAINT',  labelA: 'ASIANPAINT', labelB: 'BERGEPAINT',  sector: 'Paints',    corr: '~65%' },
+  { key: 'HINDUNILVR:ITC',         labelA: 'HINDUNILVR', labelB: 'ITC',         sector: 'FMCG',      corr: '~78%' },
+  { key: 'BAJAJ-AUTO:HEROMOTOCO',  labelA: 'BAJAJ-AUTO', labelB: 'HEROMOTOCO',  sector: '2-Wheelers',corr: '~35%' },
 ];
 
 function MetricCard({ label, value, color = '#1f2937', sub }) {
@@ -74,12 +85,20 @@ export default function AdvancedBacktest() {
   const [selectedPairs, setSelectedPairs] = useState(
     ALL_PAIRS.reduce((acc, p) => ({ ...acc, [p.key]: true }), {})
   );
-  const [zWindow, setZWindow]   = useState(60);
-  const [zEntry,  setZEntry]    = useState(1.5);   // entryPct%
-  const [zExit,   setZExit]     = useState(0.2);   // exitPct%
-  const [zStop,   setZStop]     = useState(3.0);   // stopPct%
+  const [zWindow, setZWindow]   = useState(300);
+  const [zEntry,  setZEntry]    = useState(2.0);
+  const [zExit,   setZExit]     = useState(0.5);
+  const [zStop,   setZStop]     = useState(3.5);
   const [pairsResults, setPairsResults] = useState(null);
   const [expandedPair, setExpandedPair] = useState(null);
+
+  // Opening-Drift mode state
+  const [driftDailyWindow, setDriftDailyWindow] = useState(20);
+  const [driftZEntry,    setDriftZEntry]    = useState(1.5);
+  const [driftZEntryMax, setDriftZEntryMax] = useState(2.5);
+  const [driftZExit,     setDriftZExit]     = useState(0.5);
+  const [driftZStop,     setDriftZStop]     = useState(3.0);
+  const [driftResults,   setDriftResults]   = useState(null);
 
   // Load universe groups from API
   useEffect(() => {
@@ -178,6 +197,36 @@ export default function AdvancedBacktest() {
     }
   };
 
+  const runDriftBacktest = async () => {
+    setLoading(true);
+    setError(null);
+    setDriftResults(null);
+    setExpandedPair(null);
+    const activePairs = ALL_PAIRS.filter(p => selectedPairs[p.key]).map(p => p.key).join(',');
+    setProgress('Loading candles for all pairs…');
+    try {
+      const params = new URLSearchParams({
+        pairs:       activePairs,
+        dateStart:   new Date(dateStart).toISOString(),
+        dateEnd:     new Date(dateEnd + 'T23:59:59').toISOString(),
+        dailyWindow: driftDailyWindow,
+        zEntry:      driftZEntry,
+        zEntryMax:   driftZEntryMax,
+        zExit:       driftZExit,
+        zStop:       driftZStop,
+        brokerage:   80,
+      });
+      setProgress('Running opening-drift simulation…');
+      const res = await client.post('/backtest/pairs-drift?' + params);
+      setDriftResults(res.data);
+    } catch (e) {
+      setError(e.response?.data?.error || e.message || 'Opening-drift backtest failed');
+    } finally {
+      setLoading(false);
+      setProgress('');
+    }
+  };
+
   const r = results;
   const pnlColor  = (v) => v > 0 ? '#10b981' : v < 0 ? '#ef4444' : '#1f2937';
 
@@ -234,7 +283,7 @@ export default function AdvancedBacktest() {
       </div>
 
       {/* Mode toggle */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <button
           className={`mode-tab${mode === 'strategy' ? ' active-strat' : ''}`}
           onClick={() => { setMode('strategy'); setResults(null); setError(null); }}>
@@ -243,7 +292,13 @@ export default function AdvancedBacktest() {
         <button
           className={`mode-tab${mode === 'pairs' ? ' active-pairs' : ''}`}
           onClick={() => { setMode('pairs'); setPairsResults(null); setError(null); }}>
-          📐 Pairs Arbitrage
+          📐 Pairs Z-Score (Intraday)
+        </button>
+        <button
+          className={`mode-tab${mode === 'drift' ? ' active-pairs' : ''}`}
+          style={mode === 'drift' ? { borderColor: '#7c3aed', background: '#7c3aed' } : { borderColor: '#7c3aed', color: '#7c3aed' }}
+          onClick={() => { setMode('drift'); setDriftResults(null); setError(null); }}>
+          🌅 Opening Drift (Daily Z-Score)
         </button>
       </div>
 
@@ -445,6 +500,200 @@ export default function AdvancedBacktest() {
                                         : '⏱ EOD'}
                                     </span>
                                   </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
+        </>
+      )}
+
+      {/* ============ OPENING DRIFT CONTROLS ============ */}
+      {mode === 'drift' && (
+        <>
+          <div className="card">
+            <div style={{ fontWeight: 800, fontSize: '15px', marginBottom: '8px', color: '#6d28d9' }}>
+              🌅 Opening-Drift Pairs Strategy
+            </div>
+            <div style={{ background: '#f5f3ff', border: '1px solid #c4b5fd', borderRadius: '10px',
+              padding: '12px 16px', marginBottom: '20px', fontSize: '12px', color: '#4c1d95', lineHeight: '1.7' }}>
+              <strong>How it works:</strong> Computes {driftDailyWindow}-day rolling mean/std of daily close log-ratios.
+              At 9:30 each morning, if opening ratio z is between <strong>{driftZEntry} and {driftZEntryMax}</strong>,
+              the pair has drifted overnight (but not too much — extreme z={driftZEntryMax}+ = real event, skip).
+              Enter opposite direction, exit when spread reverts to z &lt; {driftZExit}, stop at z &gt; {driftZStop}.
+              <br />
+              <strong>Key filter:</strong> Moderate z ({driftZEntry}–{driftZEntryMax}) = random drift → reverts.
+              Extreme z ({driftZEntryMax}+) = real event (earnings/news) → does NOT revert → skip.
+            </div>
+
+            {/* Pair selection (reuse same checkboxes) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+              {ALL_PAIRS.map(p => (
+                <div key={p.key}
+                  className={`pair-checkbox${selectedPairs[p.key] ? ' checked' : ''}`}
+                  style={selectedPairs[p.key] ? { borderColor: '#7c3aed', background: '#f5f3ff' } : {}}
+                  onClick={() => setSelectedPairs(prev => ({ ...prev, [p.key]: !prev[p.key] }))}>
+                  <input type="checkbox" checked={!!selectedPairs[p.key]} readOnly
+                    style={{ width: '16px', height: '16px', accentColor: '#7c3aed', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '13px' }}>
+                      <span style={{ color: '#1d4ed8' }}>{p.labelA}</span>
+                      <span style={{ color: '#9ca3af', margin: '0 6px' }}>/</span>
+                      <span style={{ color: '#7c3aed' }}>{p.labelB}</span>
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>{p.sector} · corr {p.corr}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Parameters */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '20px', flexWrap: 'wrap', marginBottom: '20px' }}>
+              <div>
+                <label className="label">Date From</label>
+                <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)}
+                  style={{ width: '160px', padding: '9px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px' }} />
+              </div>
+              <div>
+                <label className="label">Date To</label>
+                <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)}
+                  style={{ width: '160px', padding: '9px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px' }} />
+              </div>
+              <div>
+                <label className="label">Daily Lookback <span style={{ color: '#c4b5fd' }}>(days)</span></label>
+                <input className="z-input" type="number" min={10} max={60} step={5} value={driftDailyWindow}
+                  onChange={e => setDriftDailyWindow(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="label">Entry Z Min</label>
+                <input className="z-input" type="number" min={1.0} max={4} step={0.25} value={driftZEntry}
+                  onChange={e => setDriftZEntry(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="label">Entry Z Max <span style={{ color: '#c4b5fd', fontSize: '10px' }}>cap</span></label>
+                <input className="z-input" type="number" min={1.5} max={6} step={0.25} value={driftZEntryMax}
+                  onChange={e => setDriftZEntryMax(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="label">Exit Z-Score</label>
+                <input className="z-input" type="number" min={0} max={2} step={0.25} value={driftZExit}
+                  onChange={e => setDriftZExit(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="label">Stop Z-Score</label>
+                <input className="z-input" type="number" min={2} max={6} step={0.5} value={driftZStop}
+                  onChange={e => setDriftZStop(Number(e.target.value))} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <button
+                className="run-btn"
+                style={{ background: 'linear-gradient(135deg,#7c3aed,#a78bfa)' }}
+                onClick={runDriftBacktest} disabled={loading}>
+                {loading ? '⏳ ' + progress : '▶ Run Opening-Drift Backtest'}
+              </button>
+              <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                {ALL_PAIRS.filter(p => selectedPairs[p.key]).length} pairs · ₹25k/leg · ₹80 brokerage/trade
+              </span>
+            </div>
+          </div>
+
+          {/* Drift results */}
+          {driftResults && (() => {
+            const dr = driftResults;
+            const totalPnl = dr.pairs?.reduce((s, p) => s + (p.totalPnl || 0), 0) || 0;
+            return (
+              <>
+                <div className="card">
+                  <div style={{ fontWeight: 800, fontSize: '15px', marginBottom: '16px' }}>Opening-Drift Performance</div>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                    <span className="tag" style={{ background: '#ede9fe', color: '#4c1d95' }}>OPENING DRIFT</span>
+                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>{dr.pairsCount} pairs</span>
+                    <span className="tag" style={{ background: '#f3f4f6', color: '#374151' }}>window={dr.dailyWindow}d  entry z={dr.zEntry}</span>
+                  </div>
+                  <div className="grid-4">
+                    <MetricCard label="Total Trades"    value={dr.totalTrades} />
+                    <MetricCard label="Win Rate"        value={dr.winRate?.toFixed(1) + '%'}
+                      color={dr.winRate >= 60 ? '#10b981' : dr.winRate >= 45 ? '#f59e0b' : '#ef4444'} />
+                    <MetricCard label="Net P&L"         value={'₹' + Math.round(totalPnl).toLocaleString('en-IN')}
+                      color={pnlColor(totalPnl)} />
+                    <MetricCard label="Profit Factor"   value={dr.profitFactor?.toFixed(2)}
+                      color={dr.profitFactor >= 1.5 ? '#10b981' : dr.profitFactor >= 1.0 ? '#f59e0b' : '#ef4444'} />
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div style={{ fontWeight: 800, fontSize: '15px', marginBottom: '16px' }}>Per-Pair Breakdown</div>
+                  {[...dr.pairs].sort((a, b) => b.totalPnl - a.totalPnl).map(pair => (
+                    <div key={pair.pair} style={{ marginBottom: '12px', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
+                      <div
+                        onClick={() => setExpandedPair(expandedPair === pair.pair ? null : pair.pair)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '14px 16px',
+                          background: '#fafafa', cursor: 'pointer', flexWrap: 'wrap' }}>
+                        <div style={{ fontWeight: 800, fontSize: '14px', minWidth: '200px' }}>
+                          <span style={{ color: '#1d4ed8' }}>{pair.symbolA}</span>
+                          <span style={{ color: '#9ca3af', margin: '0 8px' }}>/</span>
+                          <span style={{ color: '#7c3aed' }}>{pair.symbolB}</span>
+                        </div>
+                        <span className="tag" style={{ background: '#dbeafe', color: '#1e40af' }}>
+                          corr {(pair.correlation * 100).toFixed(0)}%
+                        </span>
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{pair.trades} trades</span>
+                        <span style={{ fontSize: '13px', fontWeight: 800,
+                          color: pair.winRate >= 60 ? '#059669' : pair.winRate >= 45 ? '#d97706' : '#dc2626' }}>
+                          {pair.winRate?.toFixed(1)}% win
+                        </span>
+                        <span style={{ fontSize: '14px', fontWeight: 800, marginLeft: 'auto',
+                          color: pair.totalPnl > 0 ? '#059669' : '#dc2626' }}>
+                          {pair.totalPnl > 0 ? '+' : ''}₹{Math.round(pair.totalPnl).toLocaleString('en-IN')}
+                        </span>
+                        <span style={{ color: '#9ca3af', fontSize: '12px' }}>{expandedPair === pair.pair ? '▲' : '▼'}</span>
+                      </div>
+                      {expandedPair === pair.pair && pair.tradeList?.length > 0 && (
+                        <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
+                          <table>
+                            <thead style={{ position: 'sticky', top: 0 }}>
+                              <tr>
+                                <th>Date</th><th>Direction</th><th>Entry Z</th><th>Exit Z</th>
+                                <th>Leg A P&L</th><th>Leg B P&L</th><th>Net P&L</th><th>Exit Reason</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pair.tradeList.map((t, i) => (
+                                <tr key={i}>
+                                  <td>{t.entryTime?.slice(0, 16)}</td>
+                                  <td><span className="tag" style={{ background: t.direction === 'SHORT_A_LONG_B' ? '#fee2e2' : '#dcfce7',
+                                    color: t.direction === 'SHORT_A_LONG_B' ? '#991b1b' : '#166534' }}>
+                                    {t.direction === 'SHORT_A_LONG_B' ? `↓${pair.symbolA} ↑${pair.symbolB}` : `↑${pair.symbolA} ↓${pair.symbolB}`}
+                                  </span></td>
+                                  <td style={{ fontWeight: 700, color: Math.abs(t.entryZScore) >= driftZEntry ? '#7c3aed' : '#374151' }}>
+                                    {t.entryZScore?.toFixed(2)}
+                                  </td>
+                                  <td style={{ color: '#6b7280' }}>{t.exitZScore?.toFixed(2)}</td>
+                                  <td style={{ color: t.legAGross > 0 ? '#059669' : '#dc2626', fontWeight: 700 }}>
+                                    {t.legAGross > 0 ? '+' : ''}₹{Math.round(t.legAGross)}
+                                  </td>
+                                  <td style={{ color: t.legBGross > 0 ? '#059669' : '#dc2626', fontWeight: 700 }}>
+                                    {t.legBGross > 0 ? '+' : ''}₹{Math.round(t.legBGross)}
+                                  </td>
+                                  <td style={{ color: t.netPnl > 0 ? '#059669' : '#dc2626', fontWeight: 800, fontSize: '13px' }}>
+                                    {t.netPnl > 0 ? '+' : ''}₹{Math.round(t.netPnl)}
+                                  </td>
+                                  <td><span className="tag" style={{
+                                    background: t.exitReason === 'SPREAD_REVERSION' ? '#dcfce7' :
+                                               t.exitReason === 'SPREAD_STOP' ? '#fee2e2' : '#fef3c7',
+                                    color: t.exitReason === 'SPREAD_REVERSION' ? '#166534' :
+                                           t.exitReason === 'SPREAD_STOP' ? '#991b1b' : '#92400e' }}>
+                                    {t.exitReason}
+                                  </span></td>
                                 </tr>
                               ))}
                             </tbody>
