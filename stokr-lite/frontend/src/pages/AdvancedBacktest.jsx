@@ -100,6 +100,39 @@ export default function AdvancedBacktest() {
   const [driftZStop,     setDriftZStop]     = useState(3.0);
   const [driftResults,   setDriftResults]   = useState(null);
 
+  // Pairs Live Dashboard state
+  const [pairsLiveData,    setPairsLiveData]    = useState(null);
+  const [pairsLiveHistory, setPairsLiveHistory] = useState(null);
+  const [pairsLiveLoading, setPairsLiveLoading] = useState(false);
+  const [pairsLiveMode,    setPairsLiveMode]    = useState('PAPER');
+
+  const loadPairsLiveStatus = async () => {
+    setPairsLiveLoading(true);
+    try {
+      const [status, history] = await Promise.all([
+        client.get('/pairs/live/status'),
+        client.get('/pairs/live/history?days=30'),
+      ]);
+      setPairsLiveData(status.data);
+      setPairsLiveHistory(history.data);
+      setPairsLiveMode(status.data.mode || 'PAPER');
+    } catch (e) {
+      console.error('Pairs live load error:', e);
+    } finally {
+      setPairsLiveLoading(false);
+    }
+  };
+
+  const togglePairsMode = async (newMode) => {
+    try {
+      await client.post(`/pairs/live/mode?mode=${newMode}`);
+      setPairsLiveMode(newMode);
+      await loadPairsLiveStatus();
+    } catch (e) {
+      console.error('Mode switch error:', e);
+    }
+  };
+
   // Load universe groups from API
   useEffect(() => {
     client.get('/universe-groups')
@@ -299,6 +332,14 @@ export default function AdvancedBacktest() {
           style={mode === 'drift' ? { borderColor: '#7c3aed', background: '#7c3aed' } : { borderColor: '#7c3aed', color: '#7c3aed' }}
           onClick={() => { setMode('drift'); setDriftResults(null); setError(null); }}>
           🌅 Opening Drift (Daily Z-Score)
+        </button>
+        <button
+          className="mode-tab"
+          style={mode === 'live-pairs'
+            ? { borderColor: '#dc2626', background: '#dc2626', color: 'white' }
+            : { borderColor: '#dc2626', color: '#dc2626' }}
+          onClick={() => { setMode('live-pairs'); setError(null); loadPairsLiveStatus(); }}>
+          🔴 Pairs Live Dashboard
         </button>
       </div>
 
@@ -1194,6 +1235,238 @@ export default function AdvancedBacktest() {
             </div>
           )}
         </>
+      )}
+
+      {/* ============ PAIRS LIVE DASHBOARD ============ */}
+      {mode === 'live-pairs' && (
+        <div>
+          {/* Mode control + refresh */}
+          <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <div style={{ fontWeight: 800, fontSize: '15px', color: '#1f2937' }}>🔴 Pairs Live Engine</div>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <span style={{ fontSize: '12px', color: '#6b7280' }}>Mode:</span>
+              <button
+                onClick={() => togglePairsMode('PAPER')}
+                style={{
+                  padding: '6px 16px', borderRadius: '6px', border: '2px solid',
+                  fontWeight: 700, fontSize: '12px', cursor: 'pointer',
+                  borderColor: pairsLiveMode === 'PAPER' ? '#6366f1' : '#d1d5db',
+                  background: pairsLiveMode === 'PAPER' ? '#6366f1' : 'white',
+                  color: pairsLiveMode === 'PAPER' ? 'white' : '#6b7280',
+                }}>PAPER</button>
+              <button
+                onClick={() => togglePairsMode('LIVE')}
+                style={{
+                  padding: '6px 16px', borderRadius: '6px', border: '2px solid',
+                  fontWeight: 700, fontSize: '12px', cursor: 'pointer',
+                  borderColor: pairsLiveMode === 'LIVE' ? '#dc2626' : '#d1d5db',
+                  background: pairsLiveMode === 'LIVE' ? '#dc2626' : 'white',
+                  color: pairsLiveMode === 'LIVE' ? 'white' : '#6b7280',
+                }}>LIVE</button>
+              <button
+                onClick={loadPairsLiveStatus}
+                disabled={pairsLiveLoading}
+                style={{ padding: '6px 16px', borderRadius: '6px', background: '#f3f4f6',
+                  border: '1px solid #e5e7eb', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+                {pairsLiveLoading ? '⏳' : '🔄 Refresh'}
+              </button>
+            </div>
+          </div>
+
+          {pairsLiveLoading && (
+            <div className="card" style={{ textAlign: 'center', color: '#6b7280', padding: '40px' }}>
+              Loading pairs live data…
+            </div>
+          )}
+
+          {pairsLiveData && (
+            <>
+              {/* Today summary */}
+              <div className="card">
+                <div style={{ fontWeight: 800, fontSize: '15px', marginBottom: '16px', color: '#1f2937' }}>
+                  Today's Pairs Trades
+                </div>
+                <div className="grid-4" style={{ marginBottom: '20px' }}>
+                  <MetricCard label="Open Trades" value={pairsLiveData.openCount} />
+                  <MetricCard label="Closed Today" value={pairsLiveData.closedCount} />
+                  <MetricCard label="Today P&L"
+                    value={`${pairsLiveData.todayPnl >= 0 ? '+' : ''}₹${Number(pairsLiveData.todayPnl).toFixed(0)}`}
+                    color={pairsLiveData.todayPnl >= 0 ? '#10b981' : '#ef4444'} />
+                  <MetricCard label="Mode" value={pairsLiveData.mode}
+                    color={pairsLiveData.mode === 'LIVE' ? '#dc2626' : '#6366f1'} />
+                </div>
+
+                {pairsLiveData.today && pairsLiveData.today.length > 0 ? (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Pair</th>
+                          <th>Direction</th>
+                          <th>Entry Time</th>
+                          <th style={{textAlign:'right'}}>Entry Z</th>
+                          <th style={{textAlign:'right'}}>Entry A</th>
+                          <th style={{textAlign:'right'}}>Entry B</th>
+                          <th style={{textAlign:'right'}}>Exit Z</th>
+                          <th style={{textAlign:'right'}}>Net P&L</th>
+                          <th>Exit Reason</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pairsLiveData.today.map(t => (
+                          <tr key={t.id}>
+                            <td style={{ fontWeight: 700 }}>{t.pairKey}</td>
+                            <td style={{ fontSize: '11px', color: t.direction === 'SHORT_A_LONG_B' ? '#ef4444' : '#10b981' }}>
+                              {t.direction === 'SHORT_A_LONG_B' ? '↓A ↑B' : '↑A ↓B'}
+                            </td>
+                            <td style={{ fontFamily: 'monospace', fontSize: '11px', color: '#6b7280' }}>
+                              {t.entryTime ? new Date(t.entryTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                            </td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{t.entryZ}</td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>₹{t.entryPriceA?.toFixed(1)}</td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>₹{t.entryPriceB?.toFixed(1)}</td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#6b7280' }}>{t.exitZ ?? '—'}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700,
+                              color: t.netPnl > 0 ? '#10b981' : t.netPnl < 0 ? '#ef4444' : '#6b7280' }}>
+                              {t.netPnl != null ? `${t.netPnl >= 0 ? '+' : ''}₹${t.netPnl?.toFixed(0)}` : '—'}
+                            </td>
+                            <td style={{ fontSize: '11px', color: '#6b7280' }}>{t.exitReason ?? '—'}</td>
+                            <td>
+                              <span className="tag" style={{
+                                background: t.status === 'OPEN' ? '#fef3c7' : t.netPnl > 0 ? '#d1fae5' : '#fee2e2',
+                                color: t.status === 'OPEN' ? '#92400e' : t.netPnl > 0 ? '#065f46' : '#991b1b',
+                              }}>{t.status}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', color: '#9ca3af', padding: '24px', fontSize: '14px' }}>
+                    No pair trades today. Engine enters at 9:30 AM when z ∈ [1.5, 2.5].
+                  </div>
+                )}
+              </div>
+
+              {/* 30-day history summary */}
+              {pairsLiveHistory && (
+                <div className="card">
+                  <div style={{ fontWeight: 800, fontSize: '15px', marginBottom: '16px', color: '#1f2937' }}>
+                    30-Day Performance
+                  </div>
+                  <div className="grid-4" style={{ marginBottom: '20px' }}>
+                    <MetricCard label="Total Trades" value={pairsLiveHistory.totalTrades} />
+                    <MetricCard label="Win Rate" value={`${pairsLiveHistory.winRate}%`}
+                      color={pairsLiveHistory.winRate >= 60 ? '#10b981' : pairsLiveHistory.winRate >= 50 ? '#f59e0b' : '#ef4444'} />
+                    <MetricCard label="Total P&L"
+                      value={`${pairsLiveHistory.totalPnl >= 0 ? '+' : ''}₹${Number(pairsLiveHistory.totalPnl).toFixed(0)}`}
+                      color={pairsLiveHistory.totalPnl >= 0 ? '#10b981' : '#ef4444'} />
+                    <MetricCard label="Avg / Trade"
+                      value={`${pairsLiveHistory.avgPnlPerTrade >= 0 ? '+' : ''}₹${Number(pairsLiveHistory.avgPnlPerTrade).toFixed(0)}`}
+                      color={pairsLiveHistory.avgPnlPerTrade >= 0 ? '#10b981' : '#ef4444'} />
+                  </div>
+
+                  {pairsLiveHistory.trades && pairsLiveHistory.trades.filter(t => t.status === 'CLOSED').length > 0 && (
+                    <div style={{ overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
+                      <table>
+                        <thead style={{ position: 'sticky', top: 0 }}>
+                          <tr>
+                            <th>Date</th>
+                            <th>Pair</th>
+                            <th>Dir</th>
+                            <th style={{textAlign:'right'}}>Entry Z</th>
+                            <th style={{textAlign:'right'}}>Exit Z</th>
+                            <th style={{textAlign:'right'}}>Leg A ₹</th>
+                            <th style={{textAlign:'right'}}>Leg B ₹</th>
+                            <th style={{textAlign:'right'}}>Net ₹</th>
+                            <th>Reason</th>
+                            <th>Mode</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pairsLiveHistory.trades.filter(t => t.status === 'CLOSED').map(t => (
+                            <tr key={t.id}>
+                              <td style={{ fontFamily: 'monospace', fontSize: '11px', color: '#6b7280' }}>
+                                {t.entryTime ? new Date(t.entryTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '-'}
+                              </td>
+                              <td style={{ fontWeight: 700, fontSize: '12px' }}>{t.pairKey}</td>
+                              <td style={{ fontSize: '11px', color: t.direction === 'SHORT_A_LONG_B' ? '#ef4444' : '#10b981' }}>
+                                {t.direction === 'SHORT_A_LONG_B' ? '↓A↑B' : '↑A↓B'}
+                              </td>
+                              <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{t.entryZ}</td>
+                              <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#6b7280' }}>{t.exitZ ?? '—'}</td>
+                              <td style={{ textAlign: 'right', fontFamily: 'monospace',
+                                color: t.legAPnl > 0 ? '#10b981' : '#ef4444' }}>
+                                {t.legAPnl != null ? `${t.legAPnl >= 0 ? '+' : ''}₹${Number(t.legAPnl).toFixed(0)}` : '—'}
+                              </td>
+                              <td style={{ textAlign: 'right', fontFamily: 'monospace',
+                                color: t.legBPnl > 0 ? '#10b981' : '#ef4444' }}>
+                                {t.legBPnl != null ? `${t.legBPnl >= 0 ? '+' : ''}₹${Number(t.legBPnl).toFixed(0)}` : '—'}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 700,
+                                color: t.netPnl > 0 ? '#10b981' : t.netPnl < 0 ? '#ef4444' : '#6b7280' }}>
+                                {t.netPnl != null ? `${t.netPnl >= 0 ? '+' : ''}₹${Number(t.netPnl).toFixed(0)}` : '—'}
+                              </td>
+                              <td style={{ fontSize: '11px', color: '#6b7280' }}>{t.exitReason}</td>
+                              <td>
+                                <span className="tag" style={{
+                                  background: t.mode === 'LIVE' ? '#fee2e2' : '#ede9fe',
+                                  color: t.mode === 'LIVE' ? '#991b1b' : '#5b21b6',
+                                }}>{t.mode}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Configured pairs info */}
+              <div className="card">
+                <div style={{ fontWeight: 800, fontSize: '14px', marginBottom: '12px', color: '#1f2937' }}>
+                  Active Pairs (exact-segment, validated Jun 2026: 68% WR, PF 2.37)
+                </div>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  {[
+                    'BAJAJ-AUTO / HEROMOTOCO — 2-Wheeler',
+                    'KOTAKBANK / AXISBANK — Private Banking',
+                    'HINDALCO / TATASTEEL — Metals',
+                    'ASIANPAINT / BERGEPAINT — Paints',
+                    'CIPLA / LUPIN — Pharma',
+                  ].map(p => (
+                    <span key={p} style={{
+                      padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700,
+                      background: '#f0fdf4', border: '1px solid #6ee7b7', color: '#065f46',
+                    }}>{p}</span>
+                  ))}
+                </div>
+                <div style={{ marginTop: '12px', fontSize: '11px', color: '#9ca3af', lineHeight: '1.6' }}>
+                  Entry: z ∈ [1.5, 2.5] at 9:30 AM · Exit: z ≤ 0.5 (reversion) or z ≥ 4.0 (stop) · EOD close: 15:05
+                </div>
+              </div>
+            </>
+          )}
+
+          {!pairsLiveLoading && !pairsLiveData && (
+            <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+              <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔴</div>
+              <div style={{ fontWeight: 700, fontSize: '16px', color: '#1f2937', marginBottom: '8px' }}>
+                Pairs Live Engine
+              </div>
+              <div style={{ color: '#6b7280', fontSize: '14px', marginBottom: '20px' }}>
+                Click Refresh to load today's pairs activity
+              </div>
+              <button onClick={loadPairsLiveStatus} style={{
+                padding: '10px 24px', borderRadius: '8px', background: '#dc2626', color: 'white',
+                border: 'none', fontWeight: 700, cursor: 'pointer',
+              }}>Load Dashboard</button>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
