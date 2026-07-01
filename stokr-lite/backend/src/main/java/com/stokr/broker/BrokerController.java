@@ -112,12 +112,14 @@ public class BrokerController {
 
         brokerAccountRepository.save(account);
         log.info("Auto-reconnect settings saved for Zerodha account {} (enabled={})", account.getId(), enabled);
-        return ResponseEntity.ok(Map.of(
-            "status", "saved",
-            "autoReconnect", account.getAutoReconnect(),
-            "credentialsStored", account.getZerodhaPassword() != null && account.getZerodhaTotpSecret() != null,
-            "lastAutoReconnect", account.getLastAutoReconnect() != null ? account.getLastAutoReconnect().toString() : null
-        ));
+        // NOTE: Map.of() rejects null values — lastAutoReconnect is null until the
+        // first reconnect runs, so build a null-tolerant map instead.
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("status", "saved");
+        resp.put("autoReconnect", Boolean.TRUE.equals(account.getAutoReconnect()));
+        resp.put("credentialsStored", account.getZerodhaPassword() != null && account.getZerodhaTotpSecret() != null);
+        resp.put("lastAutoReconnect", account.getLastAutoReconnect() != null ? account.getLastAutoReconnect().toString() : null);
+        return ResponseEntity.ok(resp);
     }
 
     /** Get auto-reconnect status for the user's Zerodha account. */
@@ -130,12 +132,13 @@ public class BrokerController {
         }
         BrokerAccount acc = accounts.get(0);
         boolean credentialsStored = acc.getZerodhaPassword() != null && acc.getZerodhaTotpSecret() != null;
-        return ResponseEntity.ok(Map.of(
-            "configured",       credentialsStored,
-            "autoReconnect",    Boolean.TRUE.equals(acc.getAutoReconnect()),
-            "lastAutoReconnect", acc.getLastAutoReconnect() != null ? acc.getLastAutoReconnect().toString() : null,
-            "accountId",        acc.getId()
-        ));
+        // Map.of() rejects null values — lastAutoReconnect is null until first reconnect.
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("configured", credentialsStored);
+        resp.put("autoReconnect", Boolean.TRUE.equals(acc.getAutoReconnect()));
+        resp.put("lastAutoReconnect", acc.getLastAutoReconnect() != null ? acc.getLastAutoReconnect().toString() : null);
+        resp.put("accountId", acc.getId());
+        return ResponseEntity.ok(resp);
     }
 
     /** Manually trigger auto-reconnect now (for testing). */
