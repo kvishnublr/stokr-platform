@@ -3,11 +3,11 @@ name: Auto Deploy to Contabo
 on:
   push:
     branches:
-      - Release_v1
+      - Release_v8
   workflow_dispatch:
 
 concurrency:
-  group: contabo-deploy-release-v1
+  group: contabo-deploy-release-v8
   cancel-in-progress: true
 
 jobs:
