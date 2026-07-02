@@ -90,7 +90,9 @@ public class BacktestController {
         Map.entry("DEAD_CAT_BOUNCE",       "DEAD_CAT_BOUNCE"),
         Map.entry("DCB",                   "DEAD_CAT_BOUNCE"),
         Map.entry("THREE_DAY_EXHAUSTION",  "THREE_DAY_EXHAUSTION"),
-        Map.entry("3DE",                   "THREE_DAY_EXHAUSTION")
+        Map.entry("3DE",                   "THREE_DAY_EXHAUSTION"),
+        Map.entry("CASH_IGNITION",         "CASH_IGNITION"),
+        Map.entry("CLI",                   "CASH_IGNITION")
     ));
 
     private static double CAPITAL = 25000;
@@ -1044,6 +1046,8 @@ public class BacktestController {
 
         BigDecimal[] dayOpenArr       = new BigDecimal[n];
         BigDecimal[] prevDayCloseArr  = new BigDecimal[n];
+        BigDecimal[] prevDayHighArr   = new BigDecimal[n];
+        BigDecimal[] prevDayLowArr    = new BigDecimal[n];
         BigDecimal[] orbHighArr   = new BigDecimal[n];
         BigDecimal[] orbLowArr    = new BigDecimal[n];
         BigDecimal[] orbRangeArr  = new BigDecimal[n];
@@ -1052,21 +1056,28 @@ public class BacktestController {
             int dayStart = 0;
             BigDecimal thisDayOpen = null;
             BigDecimal thisPrevDayClose = null;
+            BigDecimal thisPrevDayHigh = null;
+            BigDecimal thisPrevDayLow = null;
             BigDecimal runOrbHigh = null, runOrbLow = null;
+            BigDecimal runDayHigh = null, runDayLow = null;
             boolean orbReady = false;
 
             for (int i = 0; i < n; i++) {
                 String d = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
                 if (!d.equals(curDay)) {
-                    // Record previous day's close (last candle before day boundary)
+                    // Record previous day's OHLC from the running high/low we tracked
                     if (curDay != null && dayStart > 0) {
                         thisPrevDayClose = candles.get(i - 1).close();
+                        thisPrevDayHigh = runDayHigh;
+                        thisPrevDayLow = runDayLow;
                     }
                     curDay = d;
                     dayStart = i;
                     thisDayOpen = candles.get(i).open();
                     runOrbHigh = candles.get(i).high();
                     runOrbLow  = candles.get(i).low();
+                    runDayHigh = candles.get(i).high();
+                    runDayLow  = candles.get(i).low();
                     orbReady = false;
                 }
                 int candleInDay = i - dayStart;
@@ -1078,9 +1089,13 @@ public class BacktestController {
                 if (candleInDay == 14) {
                     orbReady = true;
                 }
+                runDayHigh = runDayHigh.max(candles.get(i).high());
+                runDayLow  = runDayLow.min(candles.get(i).low());
 
                 dayOpenArr[i]      = thisDayOpen;
                 prevDayCloseArr[i] = thisPrevDayClose;
+                prevDayHighArr[i]  = thisPrevDayHigh;
+                prevDayLowArr[i]   = thisPrevDayLow;
                 orbHighArr[i]   = orbReady ? runOrbHigh : null;
                 orbLowArr[i]    = orbReady ? runOrbLow  : null;
                 orbRangeArr[i]  = orbReady ? runOrbHigh.subtract(runOrbLow) : null;
@@ -1105,9 +1120,11 @@ public class BacktestController {
             BigDecimal rsi = indicators.get(i).rsi14();
             BigDecimal atr = indicators.get(i).atr14();
             BigDecimal volSma = indicators.get(i).volSma10();
+            BigDecimal adx = indicators.get(i).adx14();
             if (rsi != null) indMap.put("RSI14", rsi);
             if (atr != null) indMap.put("ATR14", atr);
             if (volSma != null) indMap.put("VOL_SMA_10", volSma);
+            if (adx != null) indMap.put("ADX14", adx);
 
             Map<String, Object> extras = new HashMap<>();
             extras.put("orbHigh",   orbHighArr[i]);
@@ -1119,8 +1136,11 @@ public class BacktestController {
             extras.put("vwap",      dayVwap[i]);
             extras.put("rsi14",     rsi);
             extras.put("atr14",     atr);
+            extras.put("adx14",     adx);
             extras.put("prevClose",    i > 0 ? candleData.get(i - 1).getClose() : null);
             extras.put("prevDayClose", prevDayCloseArr[i]);
+            extras.put("prevDayHigh",  prevDayHighArr[i]);
+            extras.put("prevDayLow",   prevDayLowArr[i]);
             // VWAP slope: pass vwap from 1, 3, 5 candles ago (same day only) for trend check
             if (i >= 5) {
                 String dayI    = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();

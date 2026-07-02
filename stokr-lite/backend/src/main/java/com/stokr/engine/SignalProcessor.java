@@ -94,16 +94,23 @@ public class SignalProcessor {
                         if (ind.rsi14() != null) indicators.put("RSI14", ind.rsi14());
                         if (ind.atr14() != null) indicators.put("ATR14", ind.atr14());
                         if (ind.volSma10() != null) indicators.put("VOL_SMA_10", ind.volSma10());
+                        if (ind.adx14() != null) indicators.put("ADX14", ind.adx14());
                     }
 
-                    // Previous day close for gap filter — fetch only the last 1-min candle of yesterday
+                    // Previous day OHLC for gap/breakout filter — fetch last 15 min of yesterday
                     BigDecimal prevDayClose = null;
+                    BigDecimal prevDayHigh = null;
+                    BigDecimal prevDayLow = null;
                     LocalDateTime yesterdayClose = LocalDate.now(IST).minusDays(1).atTime(15, 30);
-                    LocalDateTime yesterdayCloseStart = yesterdayClose.minusMinutes(2);
+                    LocalDateTime yesterdayStart = yesterdayClose.minusMinutes(15);
                     List<Candle> ydayCandles = marketDataService.getCandlesBetween(
-                            symbol, "1min", yesterdayCloseStart, yesterdayClose);
+                            symbol, "1min", yesterdayStart, yesterdayClose);
                     if (!ydayCandles.isEmpty()) {
                         prevDayClose = ydayCandles.get(ydayCandles.size() - 1).close();
+                        prevDayHigh = ydayCandles.stream().map(Candle::high)
+                            .max(BigDecimal::compareTo).orElse(null);
+                        prevDayLow = ydayCandles.stream().map(Candle::low)
+                            .min(BigDecimal::compareTo).orElse(null);
                     }
 
                     Map<String, Object> extras = new HashMap<>();
@@ -116,8 +123,11 @@ public class SignalProcessor {
                     extras.put("chartinkOk",   Boolean.TRUE);
                     extras.put("vwap",         vwap);
                     extras.put("prevDayClose", prevDayClose);
+                    extras.put("prevDayHigh",  prevDayHigh);
+                    extras.put("prevDayLow",   prevDayLow);
                     if (indicators.containsKey("RSI14")) extras.put("rsi14", indicators.get("RSI14"));
                     if (indicators.containsKey("ATR14")) extras.put("atr14", indicators.get("ATR14"));
+                    if (indicators.containsKey("ADX14")) extras.put("adx14", indicators.get("ADX14"));
 
                     MarketContext context = new MarketContext(
                         symbol, candles, ltp, vwap, indicators, extras);

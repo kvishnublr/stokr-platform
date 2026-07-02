@@ -4,6 +4,7 @@
     "module": "esnext",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["vite/client"],
+    "allowJs": true,
     "skipLibCheck": true,
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
@@ -16,5 +17,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src/**/*"]
 }

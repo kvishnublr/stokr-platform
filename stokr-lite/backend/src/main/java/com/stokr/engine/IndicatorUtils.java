@@ -10,7 +10,8 @@ public class IndicatorUtils {
         BigDecimal vwap,
         BigDecimal rsi14,
         BigDecimal atr14,
-        BigDecimal volSma10
+        BigDecimal volSma10,
+        BigDecimal adx14
     ) {}
 
     public static List<Indicators> computeAll(List<CandleData> candles) {
@@ -21,13 +22,15 @@ public class IndicatorUtils {
         BigDecimal[] rsis = computeRsi(candles, 14);
         BigDecimal[] atrs = computeAtr(candles, 14);
         BigDecimal[] volSmas = computeVolSma(candles, 10);
+        BigDecimal[] adxs = computeAdx(candles, 14);
 
         for (int i = 0; i < n; i++) {
             result.add(new Indicators(
                 vwaps[i],
                 rsis[i],
                 atrs[i],
-                volSmas[i]
+                volSmas[i],
+                adxs[i]
             ));
         }
         return result;
@@ -135,6 +138,73 @@ public class IndicatorUtils {
                 result[i] = BigDecimal.valueOf(sum)
                     .divide(BigDecimal.valueOf(period), 0, RoundingMode.HALF_UP);
             }
+        }
+        return result;
+    }
+
+    /**
+     * Compute ADX(14) — Average Directional Index.
+     * Measures trend strength: ADX > 25 = trending, ADX < 20 = range-bound.
+     */
+    public static BigDecimal[] computeAdx(List<CandleData> candles, int period) {
+        int n = candles.size();
+        BigDecimal[] result = new BigDecimal[n];
+        Arrays.fill(result, null);
+
+        if (n < period * 2 + 1) return result;
+
+        double[] plusDm = new double[n];
+        double[] minusDm = new double[n];
+        double[] tr = new double[n];
+
+        for (int i = 1; i < n; i++) {
+            CandleData c = candles.get(i);
+            CandleData p = candles.get(i - 1);
+            double upMove = c.getHigh().doubleValue() - p.getHigh().doubleValue();
+            double downMove = p.getLow().doubleValue() - c.getLow().doubleValue();
+            plusDm[i] = (upMove > downMove && upMove > 0) ? upMove : 0;
+            minusDm[i] = (downMove > upMove && downMove > 0) ? downMove : 0;
+
+            double hl = c.getHigh().doubleValue() - c.getLow().doubleValue();
+            double hpc = Math.abs(c.getHigh().doubleValue() - p.getClose().doubleValue());
+            double lpc = Math.abs(c.getLow().doubleValue() - p.getClose().doubleValue());
+            tr[i] = Math.max(hl, Math.max(hpc, lpc));
+        }
+
+        // Smoothed +DM, -DM, TR using Wilder's method
+        double smPlusDm = 0, smMinusDm = 0, smTr = 0;
+        for (int i = 1; i <= period; i++) {
+            smPlusDm += plusDm[i];
+            smMinusDm += minusDm[i];
+            smTr += tr[i];
+        }
+
+        double[] dx = new double[n];
+        for (int i = period; i < n; i++) {
+            if (i > period) {
+                smPlusDm = smPlusDm - smPlusDm / period + plusDm[i];
+                smMinusDm = smMinusDm - smMinusDm / period + minusDm[i];
+                smTr = smTr - smTr / period + tr[i];
+            }
+
+            double plusDi = smTr > 0 ? (smPlusDm / smTr) * 100 : 0;
+            double minusDi = smTr > 0 ? (smMinusDm / smTr) * 100 : 0;
+            double diSum = plusDi + minusDi;
+            dx[i] = diSum > 0 ? Math.abs(plusDi - minusDi) / diSum * 100 : 0;
+        }
+
+        // ADX = smoothed DX over `period`
+        int adxStart = period * 2;
+        if (adxStart >= n) return result;
+
+        double adxSum = 0;
+        for (int i = period; i < adxStart; i++) adxSum += dx[i];
+        double adx = adxSum / period;
+        result[adxStart] = BigDecimal.valueOf(adx).setScale(2, RoundingMode.HALF_UP);
+
+        for (int i = adxStart + 1; i < n; i++) {
+            adx = (adx * (period - 1) + dx[i]) / period;
+            result[i] = BigDecimal.valueOf(adx).setScale(2, RoundingMode.HALF_UP);
         }
         return result;
     }
