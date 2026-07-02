@@ -46,10 +46,9 @@ public class GapReversalStrategy implements StrategyPlugin {
         // Window: 9:30–11:00 IST
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
-        if (istHour != null && istMinute != null) {
-            int min = istHour * 60 + istMinute;
-            if (min < 9 * 60 + 30 || min > 11 * 60 + 0) return null;
-        }
+        if (istHour == null || istMinute == null) return null;
+        int min = istHour * 60 + istMinute;
+        if (min < 9 * 60 + 30 || min > 11 * 60 + 0) return null;
 
         Candle latest = context.getLatestCandle();
         Candle prev   = context.getPreviousCandle();

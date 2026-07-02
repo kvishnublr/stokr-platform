@@ -44,11 +44,10 @@ public class VolumeSpikeMomentumStrategy implements StrategyPlugin {
         // Session window: 10:00–13:30 IST (ORB must be formed; prime continuation window)
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
-        if (istHour != null && istMinute != null) {
-            int min = istHour * 60 + istMinute;
-            if (min < 10 * 60)       return null;
-            if (min > 13 * 60 + 30) return null;
-        }
+        if (istHour == null || istMinute == null) return null;
+        int min = istHour * 60 + istMinute;
+        if (min < 10 * 60)       return null;
+        if (min > 13 * 60 + 30) return null;
 
         Candle curr = candles.get(n - 1);
         Candle prev = candles.get(n - 2);

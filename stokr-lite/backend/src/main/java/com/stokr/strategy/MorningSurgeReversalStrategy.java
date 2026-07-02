@@ -46,10 +46,9 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         // Only 10:00–10:30 IST — 9:30-9:44 removed (backtest: -₹1,259 net, 48.9% WR)
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
-        if (istHour != null && istMinute != null) {
-            int min = istHour * 60 + istMinute;
-            if (min < 10 * 60 + 0 || min > 10 * 60 + 30) return null;
-        }
+        if (istHour == null || istMinute == null) return null;
+        int min = istHour * 60 + istMinute;
+        if (min < 10 * 60 + 0 || min > 10 * 60 + 30) return null;
 
         Candle latest = context.getLatestCandle();
         Candle prev   = context.getPreviousCandle();

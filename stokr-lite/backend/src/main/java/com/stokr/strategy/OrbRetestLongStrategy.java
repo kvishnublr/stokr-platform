@@ -41,11 +41,10 @@ public class OrbRetestLongStrategy implements StrategyPlugin {
         // Time window: 9:35–12:30 IST (need breakout candle + retest candle)
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
-        if (istHour != null && istMinute != null) {
-            int min = istHour * 60 + istMinute;
-            if (min < 9 * 60 + 35)  return null;
-            if (min > 12 * 60 + 30) return null;
-        }
+        if (istHour == null || istMinute == null) return null;
+        int min = istHour * 60 + istMinute;
+        if (min < 9 * 60 + 35)  return null;
+        if (min > 12 * 60 + 30) return null;
 
         BigDecimal orbHigh  = context.extra("orbHigh",  BigDecimal.class);
         BigDecimal orbLow   = context.extra("orbLow",   BigDecimal.class);

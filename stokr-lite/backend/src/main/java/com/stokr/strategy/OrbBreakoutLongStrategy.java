@@ -40,11 +40,10 @@ public class OrbBreakoutLongStrategy implements StrategyPlugin {
         // Window: 10:00–13:00 — post-opening-volatility, quality breakout window
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
-        if (istHour != null && istMinute != null) {
-            int min = istHour * 60 + istMinute;
-            if (min < 10 * 60)       return null;
-            if (min > 13 * 60)       return null;
-        }
+        if (istHour == null || istMinute == null) return null;
+        int min = istHour * 60 + istMinute;
+        if (min < 10 * 60)       return null;
+        if (min > 13 * 60)       return null;
 
         // Skip Fridays and Mondays — weekend bracket days have chaotic ORB ranges
         // Fridays: late-day risk-off selling reverses breakouts; Mondays: post-weekend gaps make ORB unreliable

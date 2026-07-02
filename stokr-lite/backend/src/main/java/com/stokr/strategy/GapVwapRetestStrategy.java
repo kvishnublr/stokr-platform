@@ -45,11 +45,10 @@ public class GapVwapRetestStrategy implements StrategyPlugin {
         // Window: 10:00–13:30 IST
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
-        if (istHour != null && istMinute != null) {
-            int min = istHour * 60 + istMinute;
-            if (min < 10 * 60)       return null;
-            if (min > 13 * 60 + 30) return null;
-        }
+        if (istHour == null || istMinute == null) return null;
+        int min = istHour * 60 + istMinute;
+        if (min < 10 * 60)       return null;
+        if (min > 13 * 60 + 30) return null;
 
         // --- CONFIRMATION 1: GAP UP ---
         BigDecimal prevDayClose = context.extra("prevDayClose", BigDecimal.class);

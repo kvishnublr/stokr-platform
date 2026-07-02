@@ -40,11 +40,10 @@ public class SectorAnchoredORBStrategy implements StrategyPlugin {
         // Window: 10:00–13:00 IST
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
-        if (istHour != null && istMinute != null) {
-            int min = istHour * 60 + istMinute;
-            if (min < 10 * 60) return null;
-            if (min > 13 * 60) return null;
-        }
+        if (istHour == null || istMinute == null) return null;
+        int min = istHour * 60 + istMinute;
+        if (min < 10 * 60) return null;
+        if (min > 13 * 60) return null;
 
         // Tue/Wed/Thu only
         java.time.LocalDateTime ts = candles.get(n - 1).timestamp();

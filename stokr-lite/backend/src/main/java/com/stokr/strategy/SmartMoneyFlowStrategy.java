@@ -51,10 +51,9 @@ public class SmartMoneyFlowStrategy implements StrategyPlugin {
         // Morning window: 9:30–11:15 IST only
         Integer istHour   = context.extra("istHour",   Integer.class);
         Integer istMinute = context.extra("istMinute", Integer.class);
-        if (istHour != null && istMinute != null) {
-            int min = istHour * 60 + istMinute;
-            if (min < 9 * 60 + 30 || min > 11 * 60 + 15) return null;
-        }
+        if (istHour == null || istMinute == null) return null;
+        int min = istHour * 60 + istMinute;
+        if (min < 9 * 60 + 30 || min > 11 * 60 + 15) return null;
 
         Candle prev = candles.get(n - 2);
 

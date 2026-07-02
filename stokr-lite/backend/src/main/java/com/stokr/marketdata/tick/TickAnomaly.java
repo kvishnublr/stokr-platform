@@ -52,7 +52,7 @@ public class TickAnomaly {
     @Column(name = "signal_id")
     private Long signalId;
 
-    @Column(columnDefinition = "jsonb default '{}'")
+    @Column(columnDefinition = "text default ''")
     private String metadata;
 
     @Column(name = "created_at", nullable = false, updatable = false)

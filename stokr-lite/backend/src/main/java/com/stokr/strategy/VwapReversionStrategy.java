@@ -34,11 +34,10 @@ public class VwapReversionStrategy implements StrategyPlugin {
 
         Integer hour = context.extra("istHour", Integer.class);
         Integer minute = context.extra("istMinute", Integer.class);
-        if (hour != null && minute != null) {
-            int totalMin = hour * 60 + minute;
-            // Wide window: 9:25–14:00
-            if (totalMin < 9 * 60 + 25 || totalMin > 14 * 60) return null;
-        }
+        if (hour == null || minute == null) return null;
+        int totalMin = hour * 60 + minute;
+        // Wide window: 9:25–14:00
+        if (totalMin < 9 * 60 + 25 || totalMin > 14 * 60) return null;
 
         double deviationPct = close.subtract(vwap).divide(vwap, 6, RoundingMode.HALF_UP).doubleValue() * 100;
 
