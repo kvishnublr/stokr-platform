@@ -21,6 +21,7 @@ const STRATEGIES = [
   { value: 'ORB',           label: 'ORB Breakout',     desc: 'Opening-range breakout + trailing stop' },
   { value: 'VWAP',          label: 'VWAP Triple',      desc: 'Pullback to VWAP + RSI + volume' },
   { value: 'MORNING_SURGE', label: 'Morning Surge',    desc: 'High-volume ORB in first hour (9:30–10:30)' },
+  { value: 'AI_ENSEMBLE', label: 'AI Ensemble',     desc: '12-factor adaptive scoring with regime weights' },
 ];
 
 function MetricCard({ label, value, color = '#1f2937', sub }) {
@@ -126,7 +127,7 @@ export default function AdvancedBacktest() {
           📈 Strategy Backtest
         </h1>
         <p style={{ color: '#6b7280', marginTop: '6px', fontSize: '14px' }}>
-          ORB · VWAP Triple · Morning Surge · Real 1-min candle data · ₹25,000/trade · Trailing SL
+          ORB · VWAP Triple · Morning Surge · AI Ensemble · Real 1-min candle data · ₹25,000/trade · Trailing SL
         </p>
       </div>
 

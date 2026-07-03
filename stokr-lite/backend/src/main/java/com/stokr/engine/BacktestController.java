@@ -42,7 +42,10 @@ public class BacktestController {
         Map.entry("TRADE_BOOK_IMBALANCE", "TRADE_BOOK_IMBALANCE"),
         Map.entry("TBI",           "TRADE_BOOK_IMBALANCE"),
         Map.entry("PRE_OPEN",      "PRE_OPEN"),
-        Map.entry("PREOPEN",       "PRE_OPEN")
+        Map.entry("PREOPEN",       "PRE_OPEN"),
+        Map.entry("AI_ENSEMBLE",   "AI_ENSEMBLE"),
+        Map.entry("AI_ENS",        "AI_ENSEMBLE"),
+        Map.entry("AI",            "AI_ENSEMBLE")
     ));
 
     private static final double CAPITAL = 25000;
