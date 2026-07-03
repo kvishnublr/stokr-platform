@@ -167,10 +167,13 @@ public class BacktestController {
             @RequestParam(required = false) String dateEnd,
             @RequestParam(required = false) String symbols,
             @RequestParam(defaultValue = "1min") String timeframe,
-            @RequestParam(defaultValue = "NIFTY_100") String universe) {
+            @RequestParam(defaultValue = "NIFTY_100") String universe,
+            @RequestParam(defaultValue = "40") double commissionPerTrade,
+            @RequestParam(defaultValue = "0.05") double slippagePct,
+            @RequestParam(defaultValue = "true") boolean dynamicSizing) {
 
-        log.info("Running advanced backtest: strategy={}, universe={}, dateStart={}, dateEnd={}, timeframe={}",
-                strategy, universe, dateStart, dateEnd, timeframe);
+        log.info("Running advanced backtest: strategy={}, universe={}, dateStart={}, dateEnd={}, timeframe={}, comm={}, slip={}, dynSizing={}",
+                strategy, universe, dateStart, dateEnd, timeframe, commissionPerTrade, slippagePct, dynamicSizing);
 
         try {
             Instant startTime = dateStart != null ? Instant.parse(dateStart) : Instant.now().minusSeconds(2592000);
@@ -203,17 +206,21 @@ public class BacktestController {
 
             List<SimulatedTrade> allTrades = new ArrayList<>();
             for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
-                allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params));
+                allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params,
+                    commissionPerTrade, slippagePct, dynamicSizing));
             }
             allTrades.sort(java.util.Comparator.comparing(t -> t.entryTime));
 
             int totalTrades = allTrades.size();
             int winCount = 0, lossCount = 0;
-            double totalPnl = 0;
+            double grossPnl = 0, netPnl = 0, totalCommission = 0, totalSlippage = 0;
             for (SimulatedTrade t : allTrades) {
-                if (t.pnl > 0) winCount++;
-                else if (t.pnl < 0) lossCount++;
-                totalPnl += t.pnl;
+                if (t.grossPnl > 0) winCount++;
+                else if (t.grossPnl < 0) lossCount++;
+                grossPnl += t.grossPnl;
+                netPnl += t.pnl;
+                totalCommission += t.commission;
+                totalSlippage += t.slippageCost;
             }
 
             java.util.TreeMap<java.time.LocalDate, Double> dailyPnl = new java.util.TreeMap<>();
@@ -230,7 +237,7 @@ public class BacktestController {
             int lossDays   = (int) dailyPnl.values().stream().filter(p -> p < 0).count();
 
             double winRate = totalTrades > 0 ? (double) winCount / totalTrades * 100 : 0;
-            double avgPnl  = totalTrades > 0 ? totalPnl / totalTrades : 0;
+            double avgPnl  = totalTrades > 0 ? netPnl / totalTrades : 0;
 
             String strategyName = plugin != null ? plugin.getStrategyType() : (strategy != null ? strategy : "ALL");
             Map<String, Object> result = new LinkedHashMap<>();
@@ -242,11 +249,16 @@ public class BacktestController {
             result.put("totalTrades", totalTrades);
             result.put("winCount", winCount);
             result.put("lossCount", lossCount);
-            result.put("totalPnL",       Math.round(totalPnl * 100.0) / 100.0);
+            result.put("grossPnl",       Math.round(grossPnl * 100.0) / 100.0);
+            result.put("netPnl",         Math.round(netPnl * 100.0) / 100.0);
+            result.put("totalPnL",       Math.round(netPnl * 100.0) / 100.0);
+            result.put("totalCommission",Math.round(totalCommission * 100.0) / 100.0);
+            result.put("totalSlippage",  Math.round(totalSlippage * 100.0) / 100.0);
             result.put("winRate",        Math.round(winRate * 100.0) / 100.0);
-            result.put("avgPnL",         Math.round(avgPnl * 100.0) / 100.0);
+            result.put("avgPnl",         Math.round(avgPnl * 100.0) / 100.0);
             result.put("maxDrawdown",    calculateMaxDrawdownFromTrades(allTrades));
             result.put("profitFactor",   calculateProfitFactorFromTrades(allTrades));
+            result.put("grossProfitFactor", calculateGrossProfitFactorFromTrades(allTrades));
             result.put("maxProfitDay",   Math.round(maxProfitDay * 100.0) / 100.0);
             result.put("maxLossDay",     Math.round(maxLossDay * 100.0) / 100.0);
             result.put("avgProfitDay",   Math.round(avgProfitDay * 100.0) / 100.0);
@@ -255,11 +267,14 @@ public class BacktestController {
             result.put("totalTradingDays", dailyPnl.size());
             result.put("candlesLoaded",  candlesBySymbol.values().stream().mapToInt(List::size).sum());
             result.put("capitalPerTrade", CAPITAL);
+            result.put("commissionPerTrade", commissionPerTrade);
+            result.put("slippagePct", slippagePct);
+            result.put("dynamicSizing", dynamicSizing);
             result.put("dateRange", Map.of("start", startTime.toString(), "end", endTime.toString()));
             result.put("trades", allTrades.stream().map(SimulatedTrade::toMap).toList());
 
-            log.info("Backtest complete: strategy={} trades={} winRate={}% totalPnL={}",
-                strategyName, totalTrades, Math.round(winRate * 10.0) / 10.0, Math.round(totalPnl));
+            log.info("Backtest complete: strategy={} trades={} winRate={}% grossPnl={} netPnl={} comm={} slip={}",
+                strategyName, totalTrades, Math.round(winRate * 10.0) / 10.0, Math.round(grossPnl), Math.round(netPnl), Math.round(totalCommission), Math.round(totalSlippage));
             return ResponseEntity.ok(result);
 
         } catch (Exception e) {
@@ -294,7 +309,8 @@ public class BacktestController {
         return strategyPlugins.isEmpty() ? null : strategyPlugins.get(0);
     }
 
-    private List<SimulatedTrade> simulateStrategy(String symbol, List<CandleData> candleData, StrategyPlugin plugin, StrategyParams params) {
+    private List<SimulatedTrade> simulateStrategy(String symbol, List<CandleData> candleData, StrategyPlugin plugin, StrategyParams params,
+                                                   double commissionPerTrade, double slippagePct, boolean dynamicSizing) {
         List<SimulatedTrade> trades = new ArrayList<>();
         int n = candleData.size();
         if (n < 20) return trades;
@@ -380,7 +396,18 @@ public class BacktestController {
 
             if (signal != null && signal.isValid()) {
                 tradedDays.add(istDate);
-                SimulatedTrade trade = new SimulatedTrade(symbol, signal, i, candles.get(i).timestamp());
+
+                // Dynamic position sizing: scale capital by confidence
+                double effectiveCapital = CAPITAL;
+                if (dynamicSizing && signal.confidence() > 0) {
+                    double conf = signal.confidence();
+                    // Map confidence (0.5-0.7 typical range) to sizing multiplier (0.5x-1.5x)
+                    double sizeMultiplier = 0.5 + (conf - 0.45) * 3.33;
+                    sizeMultiplier = Math.max(0.5, Math.min(2.0, sizeMultiplier));
+                    effectiveCapital = CAPITAL * sizeMultiplier;
+                }
+
+                SimulatedTrade trade = new SimulatedTrade(symbol, signal, i, candles.get(i).timestamp(), effectiveCapital);
                 java.time.LocalDate entryDate = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate();
 
                 BigDecimal currentSL  = signal.stopLoss();
@@ -440,6 +467,19 @@ public class BacktestController {
                     Candle last = candles.get(n - 1);
                     trade.exitAtPrice(n - 1, last.timestamp(), "EOD_EXIT", last.close());
                 }
+
+                // Apply slippage: entry price gets slightly worse
+                double slipFactor = slippagePct / 100.0;
+                if (trade.side == Signal.Side.BUY) {
+                    trade.slippageCost = Math.round(effectiveCapital * slipFactor * 100.0) / 100.0;
+                } else {
+                    trade.slippageCost = Math.round(effectiveCapital * slipFactor * 100.0) / 100.0;
+                }
+
+                // Apply commission (round-trip: entry + exit)
+                trade.commission = commissionPerTrade;
+                trade.pnl = Math.round((trade.grossPnl - trade.commission - trade.slippageCost) * 100.0) / 100.0;
+
                 trades.add(trade);
             }
         }
@@ -487,9 +527,13 @@ public class BacktestController {
         int entryIdx, exitIdx;
         LocalDateTime entryTime, exitTime;
         String exitType;
-        double pnl;
+        double grossPnl;
+        double pnl;          // net after commission + slippage
+        double commission;
+        double slippageCost;
+        double capital;      // effective capital for this trade
 
-        SimulatedTrade(String symbol, Signal signal, int entryIdx, LocalDateTime entryTime) {
+        SimulatedTrade(String symbol, Signal signal, int entryIdx, LocalDateTime entryTime, double capital) {
             this.symbol = symbol;
             this.side = signal.side();
             this.entryPrice = signal.entryPrice();
@@ -497,6 +541,7 @@ public class BacktestController {
             this.target = signal.target();
             this.entryIdx = entryIdx;
             this.entryTime = entryTime;
+            this.capital = capital;
         }
 
         void exit(int exitIdx, LocalDateTime exitTime, String exitType) {
@@ -512,7 +557,8 @@ public class BacktestController {
                 } else {
                     movePct = 0;
                 }
-                this.pnl = Math.round(movePct * CAPITAL * 100.0) / 100.0;
+                this.grossPnl = Math.round(movePct * capital * 100.0) / 100.0;
+                this.pnl = this.grossPnl;
             }
         }
 
@@ -531,7 +577,8 @@ public class BacktestController {
                         ? exitPrice.subtract(entryPrice).doubleValue() / entryPrice.doubleValue()
                         : entryPrice.subtract(exitPrice).doubleValue() / entryPrice.doubleValue();
                 }
-                this.pnl = Math.round(movePct * CAPITAL * 100.0) / 100.0;
+                this.grossPnl = Math.round(movePct * capital * 100.0) / 100.0;
+                this.pnl = this.grossPnl;
             }
         }
 
@@ -545,7 +592,11 @@ public class BacktestController {
             m.put("entryTime", entryTime != null ? entryTime.toString() : null);
             m.put("exitTime", exitTime != null ? exitTime.toString() : null);
             m.put("exitType", exitType);
+            m.put("grossPnl", grossPnl);
             m.put("pnl", pnl);
+            m.put("commission", commission);
+            m.put("slippageCost", slippageCost);
+            m.put("capital", capital);
             return m;
         }
     }
@@ -566,6 +617,15 @@ public class BacktestController {
         for (SimulatedTrade t : trades) {
             if (t.pnl > 0) grossProfit += t.pnl;
             else grossLoss += Math.abs(t.pnl);
+        }
+        return grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? 999 : 0);
+    }
+
+    private double calculateGrossProfitFactorFromTrades(List<SimulatedTrade> trades) {
+        double grossProfit = 0, grossLoss = 0;
+        for (SimulatedTrade t : trades) {
+            if (t.grossPnl > 0) grossProfit += t.grossPnl;
+            else grossLoss += Math.abs(t.grossPnl);
         }
         return grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? 999 : 0);
     }
