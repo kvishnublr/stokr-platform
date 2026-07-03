@@ -48,7 +48,7 @@ public class AIEnsembleIntradayStrategy implements StrategyPlugin {
     public Signal evaluate(MarketContext context, StrategyParams params) {
         List<Candle> candles = context.candles();
         int n = candles.size();
-        if (n < 25) return null;
+        if (n < 21) return null;
 
         Candle latest = context.getLatestCandle();
         Candle prev = context.getPreviousCandle();
@@ -63,7 +63,7 @@ public class AIEnsembleIntradayStrategy implements StrategyPlugin {
         Integer istMinute = context.extra("istMinute", Integer.class);
         if (istHour != null && istMinute != null) {
             int totalMin = istHour * 60 + istMinute;
-            if (totalMin < 9 * 60 + 25 || totalMin > 14 * 60 + 30) return null;
+            if (totalMin < 9 * 60 + 20 || totalMin > 14 * 60 + 45) return null;
         }
 
         // ---- Compute 12 factors ----
@@ -82,7 +82,7 @@ public class AIEnsembleIntradayStrategy implements StrategyPlugin {
         BigDecimal prevPrice = candles.get(n - rocLen).close();
         if (prevPrice.compareTo(BigDecimal.ZERO) > 0) {
             double roc = close.subtract(prevPrice).doubleValue() / prevPrice.doubleValue() * 100;
-            scores[1] = normalize(roc, -1.5, 1.5); // ±1.5% mapped to 0-1
+            scores[1] = normalize(roc, -1.0, 1.0); // ±1.5% mapped to 0-1
         }
 
         // F3: RSI proximity to 50
@@ -212,9 +212,28 @@ public class AIEnsembleIntradayStrategy implements StrategyPlugin {
         }
         compositeScore = totalWeight > 0 ? compositeScore / totalWeight : 0.5;
 
+        // Agreement boost: if majority of factors agree on direction, boost score
+        int bullishFactors = 0, bearishFactors = 0;
+        for (int i = 0; i < 12; i++) {
+            if (scores[i] > 0.6) bullishFactors++;
+            else if (scores[i] < 0.4) bearishFactors++;
+        }
+        int agreement = Math.max(bullishFactors, bearishFactors);
+        if (agreement >= 7) {
+            double boost = (agreement - 6) * 0.03; // 0.03-0.18 boost
+            if (bullishFactors > bearishFactors) compositeScore += boost;
+            else compositeScore -= boost;
+            // agreement logging removed for performance
+        }
+
         // ---- Decision ----
-        double threshold = regime.equals("HIGH_VOL") ? 0.65 : 0.62;
-        double shortThreshold = regime.equals("HIGH_VOL") ? 0.35 : 0.38;
+        double threshold = regime.equals("HIGH_VOL") ? 0.51 : 0.48;
+        double shortThreshold = regime.equals("HIGH_VOL") ? 0.47 : 0.50;
+
+        // Log score for debugging (every symbol, first signal attempt per day)
+        // log removed 
+            context.symbol(), String.format("%.4f", compositeScore), regime,
+            String.format("%.2f", threshold), String.format("%.2f", shortThreshold));
 
         Signal.Side side = null;
         if (compositeScore > threshold) {
@@ -232,9 +251,9 @@ public class AIEnsembleIntradayStrategy implements StrategyPlugin {
         confidence = Math.max(0.1, Math.min(0.85, confidence + 0.15));
 
         // Dynamic SL based on ATR
-        double slPct = Math.max(0.2, Math.min(1.0, atrPct * 1.5));
+        double slPct = Math.max(0.15, Math.min(0.8, atrPct * 1.2));
         // Dynamic target based on R:R (minimum 2:1, up to 3:1 for high confidence)
-        double rrRatio = 2.0 + confidence; // 2.15 to 2.85
+        double rrRatio = 2.2 + confidence; // 2.15 to 2.85
         double targetPct = slPct * rrRatio;
 
         BigDecimal sl, target;
@@ -257,7 +276,7 @@ public class AIEnsembleIntradayStrategy implements StrategyPlugin {
         String reason = String.format("AI_ENS %s sc=%.3f rg=%s atr=%.2f%% rr=%.1f%s",
                 side, compositeScore, regime, atrPct, rrRatio, factorLog);
 
-        log.debug("AI Ensemble: {} {} score={} regime={}", context.symbol(), side, compositeScore, regime);
+        log.info("AI Ens {} {} score={} regime={} conf={}", context.symbol(), side, String.format("%.4f", compositeScore), regime, String.format("%.2f", confidence));
         return new Signal(context.symbol(), side, close, sl, target, confidence, reason);
     }
 
@@ -286,9 +305,9 @@ public class AIEnsembleIntradayStrategy implements StrategyPlugin {
                 0.5, 1.0, 1.2               // Streak↓, Intraday↑
             };
             case "HIGH_VOL" -> new double[]{
-                1.0, 1.5, 0.8, 0.5, 1.0,
-                1.2, 2.0, 1.5, 0.8, 1.0,   // ATR↑, EMA↑
-                0.8, 0.5
+                0.8, 1.8, 1.0, 0.3, 0.8,
+                1.5, 2.5, 1.8, 0.5, 0.8,
+                1.0, 0.3
             };
             default -> new double[]{ // RANGING / default
                 1.0, 1.0, 1.0, 1.0, 1.0,
