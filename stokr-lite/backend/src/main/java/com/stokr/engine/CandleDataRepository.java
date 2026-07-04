@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -38,6 +39,22 @@ public interface CandleDataRepository extends JpaRepository<CandleData, Long> {
 
     @Modifying
     @Transactional
-    @Query("DELETE FROM CandleData c WHERE c.timestamp < :cutoff")
+    @Query("DELETE FROM CandleData c WHERE c.timestamp < :cutoff AND c.timeframe = '1min'")
     int deleteByTimestampBefore(LocalDateTime cutoff);
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM CandleData c WHERE c.timestamp < :cutoff AND c.timeframe = :timeframe")
+    int deleteByTimestampBeforeAndTimeframe(LocalDateTime cutoff, String timeframe);
+
+    @Query("SELECT DISTINCT CAST(c.timestamp AS java.time.LocalDate) FROM CandleData c " +
+           "WHERE c.symbol = :symbol AND c.timeframe = :timeframe " +
+           "AND c.timestamp BETWEEN :start AND :end ORDER BY CAST(c.timestamp AS java.time.LocalDate)")
+    List<LocalDate> findDistinctTradingDaysBetween(String symbol, String timeframe,
+                                                     LocalDateTime start, LocalDateTime end);
+
+    @Query("SELECT c FROM CandleData c WHERE c.symbol = :symbol AND c.timeframe = :timeframe " +
+           "AND c.timestamp BETWEEN :start AND :end ORDER BY c.timestamp ASC")
+    List<CandleData> findCandlesBetween(String symbol, String timeframe,
+                                          LocalDateTime start, LocalDateTime end);
 }

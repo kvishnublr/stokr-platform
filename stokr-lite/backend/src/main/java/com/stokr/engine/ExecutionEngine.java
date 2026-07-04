@@ -5,6 +5,8 @@ import com.stokr.marketdata.ZerodhaLiveDataScheduler;
 import com.stokr.oms.Position;
 import com.stokr.oms.PositionService;
 import com.stokr.risk.KillSwitchService;
+import com.stokr.risk.OvernightGapHandler;
+import com.stokr.strategy.StrategyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,8 @@ public class ExecutionEngine {
     private final KillSwitchService          killSwitchService;
     private final PositionService            positionService;
     private final ExitManager               exitManager;
+    private final OvernightGapHandler        overnightGapHandler;
+    private final StrategyService            strategyService;
     private final SignalRepository           signalRepository;
 
     private static final LocalTime EOD_SQUAREOFF = LocalTime.of(15, 15);
@@ -134,8 +138,22 @@ public class ExecutionEngine {
                     }
                 }
 
+                // ── Overnight gap-down check (BTST positions) ──
+                // If a BTST position gapped below SL overnight, use MARKET order.
+                // LIMIT orders won't fill after a gap — the price has already moved past.
+                boolean isBtst = isBtstStrategy(deployment);
+                boolean isGapDown = !isShort && ltp.compareTo(sl) < 0; // LONG position below SL
+
+                if (isBtst && isGapDown && isFirstScanAfterOpen()) {
+                    log.warn("BTST GAP-DOWN: {} entry={} sl={} ltp={}", pos.getSymbol(), entry, sl, ltp);
+                    if (overnightGapHandler.exitGappedPosition(deployment, pos, ltp)) {
+                        updateSignalStatus(signal, "BTST_GAP_EXIT");
+                        bestPriceMap.remove(pos.getId());
+                        continue;
+                    }
+                }
+
                 // Direction-aware SL and target checks
-                // IMPORTANT: update signal status ONLY after squareOff succeeds to avoid orphaned positions
                 if (isShort) {
                     if (ltp.compareTo(sl) >= 0) {
                         log.info("SL hit (SHORT): {} ltp={} sl={}", pos.getSymbol(), ltp, sl);
@@ -190,5 +208,26 @@ public class ExecutionEngine {
         } catch (Exception e) {
             log.warn("Failed to update signal {} status to {}: {}", signal.getId(), exitType, e.getMessage());
         }
+    }
+
+    /**
+     * Check if deployment uses BTST strategy (needs overnight gap handling).
+     */
+    private boolean isBtstStrategy(Deployment deployment) {
+        try {
+            var strategy = strategyService.getStrategy(deployment.getStrategyId());
+            return "BTST".equals(strategy.getStrategyType());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * First 2 minutes after market open (9:15–9:17) — gap-down exits trigger here.
+     * After this window, normal SL/target monitoring handles exits.
+     */
+    private boolean isFirstScanAfterOpen() {
+        LocalTime now = LocalTime.now(IST);
+        return !now.isBefore(LocalTime.of(9, 15)) && !now.isAfter(LocalTime.of(9, 17));
     }
 }

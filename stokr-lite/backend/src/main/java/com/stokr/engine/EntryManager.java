@@ -132,7 +132,8 @@ public class EntryManager {
                             ? BrokerOrderRequest.Side.BUY
                             : BrokerOrderRequest.Side.SELL)
                     .quantity(quantity)
-                    .orderType(BrokerOrderRequest.OrderType.MARKET)
+                    .price(signal.entryPrice().doubleValue())
+                    .orderType(BrokerOrderRequest.OrderType.LIMIT)
                     .productType("MIS")
                     .build();
 

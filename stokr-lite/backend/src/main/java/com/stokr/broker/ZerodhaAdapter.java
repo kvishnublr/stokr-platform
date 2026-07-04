@@ -132,16 +132,27 @@ public class ZerodhaAdapter implements BrokerAdapter {
 
     @Override
     public BrokerOrderResponse placeOrder(String accessToken, BrokerOrderRequest request) {
-        log.info("Placing Zerodha order: {} {} qty={}", request.side(), request.symbol(), request.quantity());
+        log.info("Placing Zerodha order: {} {} qty={} price={}", request.side(), request.symbol(), request.quantity(), request.price());
 
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("tradingsymbol", request.symbol());
         form.add("exchange",       request.exchange() != null ? request.exchange() : "NSE");
         form.add("transaction_type", request.side().name());
-        form.add("order_type",     "MARKET");
         form.add("product",        request.productType() != null ? request.productType() : "MIS");
         form.add("quantity",       String.valueOf(request.quantity()));
         form.add("validity",       "DAY");
+
+        if (request.price() != null && request.price() > 0) {
+            // Limit order: use provided price with a small slippage buffer (0.15%) for near-market fill
+            double bufferFactor = request.side() == BrokerOrderRequest.Side.BUY ? 1.0015 : 0.9985;
+            double limitPrice = Math.round(request.price() * bufferFactor * 100.0) / 100.0;
+            form.add("order_type", "LIMIT");
+            form.add("price", String.valueOf(limitPrice));
+        } else {
+            // No price provided — use MARKET with disclosed_quantity for market protection
+            form.add("order_type", "MARKET");
+            form.add("disclosed_quantity", "0");
+        }
 
         try {
             String body = http.post()
