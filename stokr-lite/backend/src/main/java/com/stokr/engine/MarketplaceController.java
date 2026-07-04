@@ -64,7 +64,7 @@ public class MarketplaceController {
         detail.put("description", s.getDescription());
         detail.put("paramsSchema", s.getParamsSchema());
         detail.put("performance", paperService.getStrategyPerformance(id));
-        detail.put("activeUsers", deploymentRepo.countByStrategyIdAndActive(id));
+        detail.put("activeUsers", deploymentRepo.countByStrategyIdAndActiveAndLive(id));
         return ResponseEntity.ok(detail);
     }
 
