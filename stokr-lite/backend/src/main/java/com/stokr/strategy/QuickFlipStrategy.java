@@ -50,11 +50,14 @@ public class QuickFlipStrategy implements StrategyPlugin {
     private static final double MAX_PRICE = 8000.0;
 
     // ──── Pattern thresholds ────
-    private static final double VWAP_BOUNCE_VOL = 3.0;   // volume ratio at VWAP bounce (tightened from 2.0)
+    private static final double VWAP_BOUNCE_VOL = 4.0;   // volume ratio at VWAP bounce (tightened from 3.0)
     private static final double RANGE_BREAK_VOL  = 1.8;  // volume ratio for range break
     private static final double VOL_EXPLOSION    = 3.0;  // 3x normal volume (loosened from 5.0)
     private static final double RANGE_TIGHTNESS  = 1.2;  // max % range for consolidation (loosened from 0.8)
     private static final int    CONSOLIDATION_MIN = 30;  // min candles for consolidation (loosened from 60)
+
+    // ──── Minimum score to generate signal ────
+    private static final int    MIN_SCORE = 70;  // filter out low-confidence signals
 
     // ──── Trade parameters ────
     private static final double TARGET_FAST  = 0.8;
@@ -292,7 +295,7 @@ public class QuickFlipStrategy implements StrategyPlugin {
     // PATTERN 4: Opening Drive
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     private Signal evaluateOpeningDrive(MarketContext ctx, List<Candle> candles, int n, LocalTime now) {
-        // Need at least 2 candles from market open (loosened from 3)
+        // Need at least 3 candles from market open (restored — 2 was too noisy)
         LocalDate today = ctx.getLatestCandle().timestamp().toLocalDate();
         int openIdx = -1;
         for (int i = 0; i < n; i++) {
@@ -302,31 +305,33 @@ public class QuickFlipStrategy implements StrategyPlugin {
                 break;
             }
         }
-        if (openIdx < 0 || n - openIdx < 2) return null;
+        if (openIdx < 0 || n - openIdx < 3) return null;
 
-        // Check first 2 candles: both must be green and making higher highs
+        // Check first 3 candles: all must be green and making higher highs
         Candle c1 = candles.get(openIdx);
         Candle c2 = candles.get(openIdx + 1);
+        Candle c3 = candles.get(openIdx + 2);
 
         double o1 = c1.open().doubleValue(), cl1 = c1.close().doubleValue();
         double o2 = c2.open().doubleValue(), cl2 = c2.close().doubleValue();
-        double h1 = c1.high().doubleValue(), h2 = c2.high().doubleValue();
+        double o3 = c3.open().doubleValue(), cl3 = c3.close().doubleValue();
+        double h1 = c1.high().doubleValue(), h2 = c2.high().doubleValue(), h3 = c3.high().doubleValue();
 
-        if (cl1 <= o1 || cl2 <= o2) return null; // not all green
-        if (h2 <= h1) return null; // not making higher highs
+        if (cl1 <= o1 || cl2 <= o2 || cl3 <= o3) return null; // not all green
+        if (h2 <= h1 || h3 <= h2) return null; // not making higher highs
 
         // Volume increasing
-        long v1 = c1.volume(), v2 = c2.volume();
-        if (v2 <= v1) return null;
+        long v1 = c1.volume(), v2 = c2.volume(), v3 = c3.volume();
+        if (v2 <= v1 || v3 <= v2) return null;
 
-        // Price already moved 0.3%+ from open — momentum confirmed (loosened from 0.5%)
-        double movePct = (cl2 - o1) / o1 * 100.0;
-        if (movePct < 0.3) return null;
+        // Price already moved 0.5%+ from open — momentum confirmed
+        double movePct = (cl3 - o1) / o1 * 100.0;
+        if (movePct < 0.5) return null;
         if (movePct > 3.0) return null; // already exhausted
 
         double entryPx = ctx.currentPrice() != null
             ? ctx.currentPrice().doubleValue()
-            : cl2;
+            : cl3;
 
         // SL: day open
         double sl = o1;
@@ -334,10 +339,10 @@ public class QuickFlipStrategy implements StrategyPlugin {
         double riskPct = (entryPx - sl) / entryPx * 100.0;
         if (riskPct > 1.0) return null;
 
-        int score = 55 + (int)(movePct * 10);
+        int score = 60 + (int)(movePct * 10);
 
         return buildSignal(ctx.symbol(), entryPx, sl, target, score,
-            "OPEN_DRIVE move=+%.2f%% candles=2 score=%d", movePct, score);
+            "OPEN_DRIVE move=+%.2f%% candles=3 score=%d", movePct, score);
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -357,6 +362,7 @@ public class QuickFlipStrategy implements StrategyPlugin {
 
     private Signal buildSignal(String symbol, double entry, double sl, double target,
                                 int score, String reasonFmt, Object... args) {
+        if (score < MIN_SCORE) return null; // filter low-confidence signals
         String reason = String.format(reasonFmt, args);
         return new Signal(
             symbol,
