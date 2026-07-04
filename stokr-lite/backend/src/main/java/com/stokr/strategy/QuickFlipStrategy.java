@@ -50,11 +50,11 @@ public class QuickFlipStrategy implements StrategyPlugin {
     private static final double MAX_PRICE = 8000.0;
 
     // ──── Pattern thresholds ────
-    private static final double VWAP_BOUNCE_VOL = 2.0;   // volume ratio at VWAP bounce
+    private static final double VWAP_BOUNCE_VOL = 3.0;   // volume ratio at VWAP bounce (tightened from 2.0)
     private static final double RANGE_BREAK_VOL  = 1.8;  // volume ratio for range break
-    private static final double VOL_EXPLOSION    = 5.0;  // 5x normal volume
-    private static final double RANGE_TIGHTNESS  = 0.8;  // max % range for consolidation
-    private static final int    CONSOLIDATION_MIN = 60;  // min candles for consolidation
+    private static final double VOL_EXPLOSION    = 3.0;  // 3x normal volume (loosened from 5.0)
+    private static final double RANGE_TIGHTNESS  = 1.2;  // max % range for consolidation (loosened from 0.8)
+    private static final int    CONSOLIDATION_MIN = 30;  // min candles for consolidation (loosened from 60)
 
     // ──── Trade parameters ────
     private static final double TARGET_FAST  = 0.8;
@@ -131,33 +131,36 @@ public class QuickFlipStrategy implements StrategyPlugin {
             ? ctx.currentPrice().doubleValue()
             : ctx.getLatestCandle().close().doubleValue();
 
-        // Stock must be above VWAP for the session (uptrend)
-        // Check last 20 candles: how many are above VWAP?
+        // Stock must be in an uptrend (above VWAP for 18/20 candles) — stronger trend
         int aboveCount = 0;
         for (int i = Math.max(0, n - 20); i < n; i++) {
             if (candles.get(i).close().doubleValue() > vwap) aboveCount++;
         }
-        if (aboveCount < 14) return null; // not a strong VWAP-supported trend
+        if (aboveCount < 18) return null; // not a strong VWAP-supported trend
 
-        // Find if price JUST tested VWAP (dipped to within 0.2% of VWAP)
-        // in the last 3 candles and bounced
-        boolean testedVwap = false;
-        int testIdx = -1;
-        for (int i = n - 3; i < n && !testedVwap; i++) {
+        // Find if price CROSSED BELOW VWAP in last 5 candles (real dip, not just nearby)
+        boolean crossedVwap = false;
+        for (int i = n - 5; i < n && !crossedVwap; i++) {
             double low = candles.get(i).low().doubleValue();
-            double distFromVwap = (vwap - low) / vwap * 100.0;
-            if (low <= vwap * 1.002 && distFromVwap < 0.3) {
-                testedVwap = true;
-                testIdx = i;
+            double prevClose = i > 0 ? candles.get(i - 1).close().doubleValue() : low;
+            // Price must have dipped at least 0.15% BELOW VWAP (real break, not just touch)
+            if (low < vwap && prevClose > vwap && (vwap - low) / vwap > 0.0015) {
+                crossedVwap = true;
             }
         }
-        if (!testedVwap) return null;
+        if (!crossedVwap) return null;
 
-        // Bounce confirmation: latest candle is green, volume > 2x avg
+        // Bounce confirmation: latest candle is green with strong body, volume > 3x avg
         Candle latest = ctx.getLatestCandle();
         double latestClose = latest.close().doubleValue();
         double latestOpen = latest.open().doubleValue();
+        double latestHigh = latest.high().doubleValue();
         if (latestClose <= latestOpen) return null; // must be green
+
+        // Strong bounce: body must be at least 40% of candle range (real conviction)
+        double body = latestClose - latestOpen;
+        double range = latestHigh - latest.low().doubleValue();
+        if (range <= 0 || body / range < 0.40) return null;
 
         long latestVol = latest.volume();
         double avgVol = getAverageVolume(candles, n, 30);
@@ -256,7 +259,7 @@ public class QuickFlipStrategy implements StrategyPlugin {
 
         double range = high - low;
         double body = close - open;
-        if (range <= 0 || body / range < 0.60) return null; // weak body = no conviction
+        if (range <= 0 || body / range < 0.40) return null; // convinction body (loosened from 60%)
 
         // Stock should be in an uptrend (above 10-candle EMA approximation)
         double avg10 = 0;
@@ -289,7 +292,7 @@ public class QuickFlipStrategy implements StrategyPlugin {
     // PATTERN 4: Opening Drive
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     private Signal evaluateOpeningDrive(MarketContext ctx, List<Candle> candles, int n, LocalTime now) {
-        // Need at least 3 candles from market open
+        // Need at least 2 candles from market open (loosened from 3)
         LocalDate today = ctx.getLatestCandle().timestamp().toLocalDate();
         int openIdx = -1;
         for (int i = 0; i < n; i++) {
@@ -299,33 +302,31 @@ public class QuickFlipStrategy implements StrategyPlugin {
                 break;
             }
         }
-        if (openIdx < 0 || n - openIdx < 3) return null;
+        if (openIdx < 0 || n - openIdx < 2) return null;
 
-        // Check first 3 candles: all must be green and making higher highs
+        // Check first 2 candles: both must be green and making higher highs
         Candle c1 = candles.get(openIdx);
         Candle c2 = candles.get(openIdx + 1);
-        Candle c3 = candles.get(openIdx + 2);
 
         double o1 = c1.open().doubleValue(), cl1 = c1.close().doubleValue();
         double o2 = c2.open().doubleValue(), cl2 = c2.close().doubleValue();
-        double o3 = c3.open().doubleValue(), cl3 = c3.close().doubleValue();
-        double h1 = c1.high().doubleValue(), h2 = c2.high().doubleValue(), h3 = c3.high().doubleValue();
+        double h1 = c1.high().doubleValue(), h2 = c2.high().doubleValue();
 
-        if (cl1 <= o1 || cl2 <= o2 || cl3 <= o3) return null; // not all green
-        if (h2 <= h1 || h3 <= h2) return null; // not making higher highs
+        if (cl1 <= o1 || cl2 <= o2) return null; // not all green
+        if (h2 <= h1) return null; // not making higher highs
 
         // Volume increasing
-        long v1 = c1.volume(), v2 = c2.volume(), v3 = c3.volume();
-        if (v2 <= v1 || v3 <= v2) return null;
+        long v1 = c1.volume(), v2 = c2.volume();
+        if (v2 <= v1) return null;
 
-        // Price already moved 0.5%+ from open — momentum confirmed
-        double movePct = (cl3 - o1) / o1 * 100.0;
-        if (movePct < 0.5) return null;
-        if (movePct > 2.0) return null; // already exhausted
+        // Price already moved 0.3%+ from open — momentum confirmed (loosened from 0.5%)
+        double movePct = (cl2 - o1) / o1 * 100.0;
+        if (movePct < 0.3) return null;
+        if (movePct > 3.0) return null; // already exhausted
 
         double entryPx = ctx.currentPrice() != null
             ? ctx.currentPrice().doubleValue()
-            : cl3;
+            : cl2;
 
         // SL: day open
         double sl = o1;
@@ -333,10 +334,10 @@ public class QuickFlipStrategy implements StrategyPlugin {
         double riskPct = (entryPx - sl) / entryPx * 100.0;
         if (riskPct > 1.0) return null;
 
-        int score = 60 + (int)(movePct * 10);
+        int score = 55 + (int)(movePct * 10);
 
         return buildSignal(ctx.symbol(), entryPx, sl, target, score,
-            "OPEN_DRIVE move=+%.2f%% candles=%d score=%d", movePct, 3, score);
+            "OPEN_DRIVE move=+%.2f%% candles=2 score=%d", movePct, score);
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
