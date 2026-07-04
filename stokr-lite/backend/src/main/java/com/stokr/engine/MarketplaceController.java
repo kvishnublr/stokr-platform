@@ -64,7 +64,7 @@ public class MarketplaceController {
         detail.put("description", s.getDescription());
         detail.put("paramsSchema", s.getParamsSchema());
         detail.put("performance", paperService.getStrategyPerformance(id));
-        detail.put("activeUsers", deploymentRepo.countByStrategyIdAndEnabledTrueAndIsLiveTrue(id));
+        detail.put("activeUsers", deploymentRepo.countByStrategyIdAndActive(id));
         return ResponseEntity.ok(detail);
     }
 
@@ -113,7 +113,7 @@ public class MarketplaceController {
         Map<String, Object> stats = paperService.getWalletStats(userId);
 
         // Add user's active deployments
-        List<Deployment> deployments = deploymentRepo.findByUserIdAndEnabledTrue(userId);
+        List<Deployment> deployments = deploymentRepo.findByUserIdAndStatus(userId, "ACTIVE");
         List<Map<String, Object>> activeDeployments = new ArrayList<>();
         for (Deployment d : deployments) {
             Map<String, Object> dd = new LinkedHashMap<>();
@@ -172,7 +172,7 @@ public class MarketplaceController {
         perf.put("wallet", paperService.getWalletStats(userId));
 
         // Strategy-wise breakdown
-        List<Deployment> deployments = deploymentRepo.findByUserIdAndEnabledTrue(userId);
+        List<Deployment> deployments = deploymentRepo.findByUserIdAndStatus(userId, "ACTIVE");
         List<Map<String, Object>> strategyBreakdown = new ArrayList<>();
         for (Deployment d : deployments) {
             Map<String, Object> sp = new LinkedHashMap<>();
