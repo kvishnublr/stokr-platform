@@ -38,7 +38,7 @@ public class PortfolioBacktestController {
                  String timeframe, int minCandles) {}
 
     private static final List<Alloc> ALLOCATIONS = List.of(
-        new Alloc("QuickFlip", "QUICK_FLIP", 3, 12000, "1min", 60),
+        new Alloc("Momentum Surge", "MOMENTUM_SURGE", 2, 12000, "1min", 60),
         new Alloc("BTST", "BTST", 1, 20000, "1min", 30),
         new Alloc("3-Day Swing", "3_DAY_MOMENTUM_SWING", 1, 25000, "day", 10),
         new Alloc("20D Breakout", "20_DAY_BREAKOUT", 1, 19000, "day", 10)
