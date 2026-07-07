@@ -38,10 +38,10 @@ public class PortfolioBacktestController {
                  String timeframe, int minCandles) {}
 
     private static final List<Alloc> ALLOCATIONS = List.of(
-        new Alloc("Momentum Surge", "MOMENTUM_SURGE", 2, 12000, "1min", 60),
-        new Alloc("BTST", "BTST", 1, 20000, "1min", 30),
+        new Alloc("Inst Footprint", "INSTITUTIONAL_FOOTPRINT", 2, 25000, "1min", 60),
+        new Alloc("BTST", "BTST", 1, 25000, "1min", 30),
         new Alloc("3-Day Swing", "3_DAY_MOMENTUM_SWING", 1, 25000, "day", 10),
-        new Alloc("20D Breakout", "20_DAY_BREAKOUT", 1, 19000, "day", 10)
+        new Alloc("20D Breakout", "20_DAY_BREAKOUT", 1, 25000, "day", 10)
     );
 
     @PostMapping("/run")
@@ -100,21 +100,21 @@ public class PortfolioBacktestController {
     @GetMapping("/model")
     public ResponseEntity<Map<String, Object>> theoreticalModel() {
         List<Map<String, Object>> strats = List.of(
-            Map.of("name", "QuickFlip", "capital", "₹36K (3×₹12K)", "signalsMonth", 250,
-                "wr", "60%", "avgWin", "₹150", "avgLoss", "₹50", "expectancyTrade", "₹35",
-                "monthly", "₹8,750"),
-            Map.of("name", "BTST", "capital", "₹20K (1×₹20K)", "signalsMonth", 34,
+            Map.of("name", "Inst Footprint", "capital", "2 x 25K", "signalsMonth", 80,
+                "wr", "55-60%", "avgWin", "375", "avgLoss", "212", "expectancyTrade", "83",
+                "monthly", "4,400 (conservative)"),
+            Map.of("name", "BTST", "capital", "1 x 25K", "signalsMonth", 34,
                 "wr", "58%", "avgWin", "₹400", "avgLoss", "₹220", "expectancyTrade", "₹65",
                 "monthly", "₹2,210"),
             Map.of("name", "3-Day Swing", "capital", "₹25K (1×₹25K)", "signalsMonth", 8,
                 "wr", "50%", "avgWin", "₹1,250", "avgLoss", "₹600", "expectancyTrade", "₹275",
                 "monthly", "₹2,200"),
-            Map.of("name", "20D Breakout", "capital", "₹19K (1×₹19K)", "signalsMonth", 6,
+            Map.of("name", "20D Breakout", "capital", "₹25K", "signalsMonth", 6,
                 "wr", "55%", "avgWin", "₹1,800", "avgLoss", "₹700", "expectancyTrade", "₹283",
                 "monthly", "₹1,700")
         );
 
-        double total = 8750 + 2210 + 2200 + 1700;
+        double total = 4400 + 2210 + 2200 + 1700;
         return ResponseEntity.ok(Map.of(
             "totalCapital", 100000,
             "userDeposit", 20000,
