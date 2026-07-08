@@ -60,8 +60,9 @@ public class BrokerMarketDataService implements MarketDataService {
     public List<Candle> getCandlesBetween(String symbol, String interval,
                                            LocalDateTime from, LocalDateTime to) {
         String sym = symbol.toUpperCase();
+        String tf = interval != null ? interval : "1min";
         List<CandleData> rows = candleRepo.findBySymbolAndTimeframeAndTimestampBetweenOrderByTimestampAsc(
-            sym, "1min", from, to);
+            sym, tf, from, to);
         return toCandles(sym, rows);
     }
 

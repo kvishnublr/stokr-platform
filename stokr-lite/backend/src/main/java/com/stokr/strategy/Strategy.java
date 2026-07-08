@@ -41,6 +41,10 @@ public class Strategy {
     @Builder.Default
     private boolean enabled = true;
 
+    @Column(name = "timeframe")
+    @Builder.Default
+    private String timeframe = "INTRADAY";
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

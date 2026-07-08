@@ -6,6 +6,7 @@ import com.stokr.oms.Position;
 import com.stokr.oms.PositionService;
 import com.stokr.risk.*;
 import com.stokr.strategy.Signal;
+import com.stokr.strategy.StrategyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ public class EntryManager {
     private final PaperBroker paperBroker;
     private final PositionService positionService;
     private final DailyPnlTracker dailyPnlTracker;
+    private final StrategyService strategyService;
 
     // Cooldown: tracks last successful signal time per deployment+symbol
     private final ConcurrentHashMap<String, Long> lastSignalTime = new ConcurrentHashMap<>();
@@ -125,6 +127,15 @@ public class EntryManager {
                             deployment.getUserId()).getAccessToken()
                     : "paper";
 
+            // Use NRML (positional) for daily strategies, MIS (intraday) for intraday
+            String productType = "MIS";
+            try {
+                var strategy = strategyService.getStrategy(deployment.getStrategyId());
+                if ("DAILY".equalsIgnoreCase(strategy.getTimeframe())) {
+                    productType = "NRML";
+                }
+            } catch (Exception ignored) {}
+
             BrokerOrderRequest request = BrokerOrderRequest.builder()
                     .symbol(signal.symbol())
                     .exchange("NSE")
@@ -134,7 +145,7 @@ public class EntryManager {
                     .quantity(quantity)
                     .price(signal.entryPrice().doubleValue())
                     .orderType(BrokerOrderRequest.OrderType.LIMIT)
-                    .productType("MIS")
+                    .productType(productType)
                     .build();
 
             BrokerOrderResponse response = adapter.placeOrder(accessToken, request);

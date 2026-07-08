@@ -162,9 +162,10 @@ public class CashLiquidityIgnitionStrategy implements StrategyPlugin {
         // ═══════════════════════════════════════════════════════════════════
         // STAGE 2: CONFIRMATION — score gate + structural checks
         // ═══════════════════════════════════════════════════════════════════
-        if (score < params.ignitionScoreThreshold()) return null;
+        // Stricter: require score >= 8 (was params threshold = 7)
+        if (score < 8) return null;
 
-        // Must be a bullish candle (close > open)
+        // Must be a bullish candle (close > open) with strong close
         if (close.compareTo(open) <= 0) return null;
 
         // Price must be above VWAP
@@ -172,6 +173,14 @@ public class CashLiquidityIgnitionStrategy implements StrategyPlugin {
 
         // Must have broken a level (not just random volume)
         if (!brokeLevel) return null;
+
+        // RSI must confirm — not overbought yet (room to run)
+        BigDecimal rsi = context.extra("rsi14", BigDecimal.class);
+        if (rsi != null && rsi.doubleValue() > 72) return null;
+
+        // Must close in top 30% of candle range (strong buying pressure)
+        double closePos = (close.doubleValue() - low.doubleValue()) / range.doubleValue();
+        if (closePos < 0.70) return null;
 
         // ═══════════════════════════════════════════════════════════════════
         // STAGE 3: EXECUTION — compute entry, SL, target
@@ -193,21 +202,24 @@ public class CashLiquidityIgnitionStrategy implements StrategyPlugin {
         // Also reject if SL distance is too tight (< 0.1%) — likely a Doji
         if (slDist < 0.1) return null;
 
-        // Target: 1R (risk-based)
+        // Target: 2R (wider target for higher R:R)
         double riskPerShare = entry.doubleValue() - sl.doubleValue();
-        BigDecimal target = entry.add(BigDecimal.valueOf(riskPerShare));
+        BigDecimal target = entry.add(BigDecimal.valueOf(riskPerShare * 2.0));
 
         // Trending regime bonus: widen trail slightly
         double trailTrigger = params.ignitionTrailTriggerPct();
         double trailDist = params.ignitionTrailDistancePct();
         if (isTrending) {
-            trailDist = Math.min(trailDist * 1.3, 0.5); // wider trail in trends, cap at 0.5%
+            trailDist = Math.min(trailDist * 1.3, 0.5);
         }
+        // Wider trail for 2R target
+        trailTrigger = Math.max(trailTrigger, 0.3);
+        trailDist = Math.max(trailDist, 0.2);
 
         // Build reason string
         String breakoutType = brokeOrbHigh ? "ORB_BREAK" :
                               brokePrevDayHigh ? "PDH_BREAK" : "VWAP_RECLAIM";
-        double riskReward = riskPerShare > 0 ? riskPerShare / riskPerShare : 1.0; // always 1R for target
+        double riskReward = riskPerShare > 0 ? (target.doubleValue() - entry.doubleValue()) / riskPerShare : 2.0;
 
         String reason = "CASH_IGNITION " + breakoutType
                 + " score=" + score + "/" + params.ignitionScoreThreshold()

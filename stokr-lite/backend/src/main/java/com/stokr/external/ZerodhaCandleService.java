@@ -506,7 +506,7 @@ public class ZerodhaCandleService {
             String from = startTime.format(fmt);
             String to = endTime.format(fmt);
 
-            String url = String.format("%s/instruments/historical/%s/%s?from=%s&to=%s",
+            String url = String.format("%s/instruments/historical/%s/%s?from=%s&to=%s&adjustment=full",
                 KITE_API_BASE, token, interval, from, to);
 
             HttpHeaders headers = new HttpHeaders();
@@ -535,7 +535,7 @@ public class ZerodhaCandleService {
 
             String interval = mapInterval(timeframe);
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-            String url = String.format("%s/instruments/historical/%s/%s?from=%s&to=%s",
+            String url = String.format("%s/instruments/historical/%s/%s?from=%s&to=%s&adjustment=full",
                 KITE_API_BASE, token, interval, startTime.format(fmt), endTime.format(fmt));
 
             HttpHeaders headers = new HttpHeaders();

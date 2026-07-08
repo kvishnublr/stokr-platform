@@ -92,8 +92,32 @@ public class BacktestController {
         Map.entry("THREE_DAY_EXHAUSTION",  "THREE_DAY_EXHAUSTION"),
         Map.entry("3DE",                   "THREE_DAY_EXHAUSTION"),
         Map.entry("CASH_IGNITION",         "CASH_IGNITION"),
-        Map.entry("CLI",                   "CASH_IGNITION")
+        Map.entry("CLI",                   "CASH_IGNITION"),
+        Map.entry("VWAP_GRID_SCALPER",     "VWAP_GRID_SCALPER"),
+        Map.entry("VGS",                   "VWAP_GRID_SCALPER"),
+        Map.entry("EMA_PULLBACK_SWING",    "EMA_PULLBACK_SWING"),
+        Map.entry("EPS",                   "EMA_PULLBACK_SWING"),
+        Map.entry("TREND_CONTINUATION_BREAKOUT", "TREND_CONTINUATION_BREAKOUT"),
+        Map.entry("TCB",                   "TREND_CONTINUATION_BREAKOUT"),
+        Map.entry("TWENTY_DAY_BREAKOUT",   "TWENTY_DAY_BREAKOUT"),
+        Map.entry("20DB",                  "TWENTY_DAY_BREAKOUT"),
+        Map.entry("EMA_CROSS_SWING",       "EMA_CROSS_SWING"),
+        Map.entry("ECS",                   "EMA_CROSS_SWING"),
+        Map.entry("OVERSOLD_BOUNCE",       "OVERSOLD_BOUNCE"),
+        Map.entry("OB",                    "OVERSOLD_BOUNCE"),
+        Map.entry("MICRO_V_REVERSAL",      "MICRO_V_REVERSAL"),
+        Map.entry("MVR",                   "MICRO_V_REVERSAL"),
+        Map.entry("EMA50_DISTANCE",        "EMA50_DISTANCE"),
+        Map.entry("EMA50D",                "EMA50_DISTANCE"),
+        Map.entry("RSI_OVERSOLD",          "RSI_OVERSOLD"),
+        Map.entry("RSIO",                  "RSI_OVERSOLD"),
+        Map.entry("THREE_RED_DAYS",        "THREE_RED_DAYS"),
+        Map.entry("3RD",                   "THREE_RED_DAYS")
     ));
+
+    private static final java.util.Set<String> DAILY_STRATEGIES = java.util.Set.of(
+        "OVERSOLD_BOUNCE", "THREE_DAY_MOMENTUM", "EMA50_DISTANCE", "RSI_OVERSOLD", "THREE_RED_DAYS"
+    );
 
     private static double CAPITAL = 25000;
 
@@ -223,6 +247,12 @@ public class BacktestController {
             @RequestParam(defaultValue = "25000") double capital) {
 
         int brokerage = 0; // always use Zerodha formula — no manual brokerage input
+        // Auto-detect daily strategies: override timeframe to "daily" if needed
+        String resolvedPluginType = resolvePluginType(strategy);
+        if (DAILY_STRATEGIES.contains(resolvedPluginType)) {
+            timeframe = "daily";
+            log.info("Auto-detected daily strategy {} → using daily candles", resolvedPluginType);
+        }
         log.info("Running advanced backtest: strategy={}, universe={}, dateStart={}, dateEnd={}, timeframe={}, capital={}",
                 strategy, universe, dateStart, dateEnd, timeframe, capital);
 
@@ -237,7 +267,7 @@ public class BacktestController {
                 : LocalDateTime.now(IST2);
 
             String pluginType = resolvePluginType(strategy);
-            String cacheKey = computeCacheKey(pluginType, universe, startTime, endTime, brokerage);
+            String cacheKey = computeCacheKey(pluginType, universe, startTime, endTime, brokerage, timeframe);
             boolean cached = false;
 
             // Check cache first (only for non-Chartink universes)
@@ -269,6 +299,7 @@ public class BacktestController {
 
             StrategyPlugin plugin = findPlugin(pluginType);
             StrategyParams params = StrategyParams.defaults();
+            final String finalTimeframe = timeframe;
 
             log.info("Backtesting plugin={} on {} symbols from {}", pluginType, symbolList.size(), universe);
             // Fetch candles in parallel — max 4 concurrent Zerodha API calls to stay within rate limits
@@ -278,7 +309,7 @@ public class BacktestController {
                 List<Future<?>> futures = new ArrayList<>();
                 for (String symbol : symbolList) {
                     futures.add(pool.submit(() -> {
-                        List<CandleData> candles = candleFetchService.fetchCandles(symbol, timeframe, startTime, endTime);
+                        List<CandleData> candles = candleFetchService.fetchCandles(symbol, finalTimeframe, startTime, endTime);
                         if (!candles.isEmpty()) candlesBySymbol.put(symbol, candles);
                     }));
                 }
@@ -307,8 +338,9 @@ public class BacktestController {
             }
             final Map<java.time.LocalDateTime, Double> finalConsensusByTs = consensusPctByTs;
             List<SimulatedTrade> allTrades = new ArrayList<>();
+            java.util.Set<String> sharedTradedDays = new java.util.HashSet<>();
             for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
-                allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params, perTradeCost, niftyPctByTs, finalConsensusByTs));
+                allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params, perTradeCost, niftyPctByTs, finalConsensusByTs, finalTimeframe, sharedTradedDays));
             }
             allTrades.sort(java.util.Comparator.comparing(t -> t.entryTime));
 
@@ -984,9 +1016,9 @@ public class BacktestController {
         return ResponseEntity.ok(Map.of("cleared", count));
     }
 
-    private String computeCacheKey(String pluginType, String universe, LocalDateTime startTime, LocalDateTime endTime, int brokerage) {
+    private String computeCacheKey(String pluginType, String universe, LocalDateTime startTime, LocalDateTime endTime, int brokerage, String timeframe) {
         try {
-            String raw = pluginType + "|" + universe + "|" + startTime.toString() + "|" + endTime.toString() + "|" + brokerage + "|" + (int) CAPITAL;
+            String raw = pluginType + "|" + universe + "|" + startTime.toString() + "|" + endTime.toString() + "|" + brokerage + "|" + (int) CAPITAL + "|" + timeframe;
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(raw.getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder(64);
@@ -1031,10 +1063,11 @@ public class BacktestController {
         for (StrategyPlugin p : strategyPlugins) {
             if (p.getStrategyType().equals(type)) return p;
         }
-        return strategyPlugins.isEmpty() ? null : strategyPlugins.get(0);
+        log.warn("No plugin found for type={}", type);
+        return null;
     }
 
-    private List<SimulatedTrade> simulateStrategy(String symbol, List<CandleData> candleData, StrategyPlugin plugin, StrategyParams params, double perTradeCost, Map<java.time.LocalDateTime, Double> niftyPctByTs, Map<java.time.LocalDateTime, Double> consensusPctByTs) {
+    private List<SimulatedTrade> simulateStrategy(String symbol, List<CandleData> candleData, StrategyPlugin plugin, StrategyParams params, double perTradeCost, Map<java.time.LocalDateTime, Double> niftyPctByTs, Map<java.time.LocalDateTime, Double> consensusPctByTs, String timeframe, java.util.Set<String> sharedTradedDays) {
         List<SimulatedTrade> trades = new ArrayList<>();
         int n = candleData.size();
         if (n < 20) return trades;
@@ -1102,8 +1135,10 @@ public class BacktestController {
             }
         }
 
-        java.util.Set<String> tradedDays = new java.util.HashSet<>();
+        java.util.Set<String> tradedDays = sharedTradedDays;
+        java.util.Map<String, Integer> dailyTradeCount = new java.util.HashMap<>();
         int openTradeExitIdx = -1;
+        int MAX_DAILY_TRADES = 1;
 
         // Start at i=1 so early-entry strategies (5-min ORB, gap fade, volume spike)
         // can evaluate pre-10am candles. MSR/NPA return null before 10:00 via their own checks.
@@ -1113,6 +1148,7 @@ public class BacktestController {
 
             String istDate = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
             if (tradedDays.contains(istDate)) continue;
+            if (dailyTradeCount.getOrDefault(istDate, 0) >= MAX_DAILY_TRADES) continue;
 
             java.time.LocalTime istTime = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalTime();
 
@@ -1175,6 +1211,7 @@ public class BacktestController {
 
             if (signal != null && signal.isValid()) {
                 tradedDays.add(istDate);
+                dailyTradeCount.merge(istDate, 1, Integer::sum);
                 SimulatedTrade trade = new SimulatedTrade(symbol, signal, i, candles.get(i).timestamp(), perTradeCost);
                 java.time.LocalDate entryDate = candleData.get(i).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate();
 
@@ -1191,11 +1228,18 @@ public class BacktestController {
                     java.time.LocalDate exitDate = candleData.get(j).getTimestamp().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate();
                     boolean exited = false;
 
-                    if (!exitDate.equals(entryDate)) {
+                    // For intraday (same-day candles), exit at EOD. For daily timeframe, hold multi-day.
+                    boolean isIntraday = timeframe != null && !"daily".equalsIgnoreCase(timeframe);
+                    if (isIntraday && !exitDate.equals(entryDate)) {
                         Candle eod = candles.get(j - 1);
                         trade.exitAtPrice(j - 1, eod.timestamp(), "EOD_EXIT", eod.close());
                         exited = true;
                     } else {
+                        // For daily timeframe: max hold 7 trading days (trades need room to recover)
+                        if (!isIntraday && j - i >= 7) {
+                            trade.exitAtPrice(j, c.timestamp(), "MAX_HOLD_EXIT", c.close());
+                            exited = true;
+                        } else
                         if (signal.side() == Signal.Side.BUY) {
                             if (c.high().compareTo(bestPrice) > 0) {
                                 bestPrice = c.high();

@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+echo "=== Daily symbols sample ==="
+PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT DISTINCT symbol FROM candle_data WHERE timeframe='daily' ORDER BY symbol LIMIT 15;"
+echo ""
+echo "=== Total daily candles per symbol ==="
+PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT symbol, COUNT(*) FROM candle_data WHERE timeframe='daily' GROUP BY symbol ORDER BY COUNT(*) DESC LIMIT 10;"
+echo ""
+echo "=== NIFTY_50 universe symbols in strategies table ==="
+PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT id, name, description FROM strategies WHERE id IN (15,16,17,21,23);"
+echo ""
+echo "=== Try EMA50D with explicit daily ==="
+curl -s -X POST 'http://localhost:8081/api/backtest/advanced?strategy=EMA50_DISTANCE&universe=NIFTY_50&capital=100000&dateStart=2023-07-10&dateEnd=2026-07-08&timeframe=daily' 2>&1 | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Trades={d.get(\"totalTrades\",0)} WR={d.get(\"winRate\",0)} PnL={d.get(\"netPnL\",0)} PF={d.get(\"profitFactor\",0)}')"
+echo ""
+echo "=== Try OB with explicit daily ==="
+curl -s -X POST 'http://localhost:8081/api/backtest/advanced?strategy=OVERSOLD_BOUNCE&universe=NIFTY_50&capital=100000&dateStart=2023-07-10&dateEnd=2026-07-08&timeframe=daily' 2>&1 | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Trades={d.get(\"totalTrades\",0)} WR={d.get(\"winRate\",0)} PnL={d.get(\"netPnL\",0)} PF={d.get(\"profitFactor\",0)}')"

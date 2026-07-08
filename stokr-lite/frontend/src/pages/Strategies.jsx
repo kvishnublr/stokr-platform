@@ -8,6 +8,15 @@ const STRATEGY_ICONS = {
   GAP_FILL: 'M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z',
 };
 
+const PROFITABLE_STRATEGIES = new Set([
+  'OVERSOLD_BOUNCE',
+  'MORNING_SURGE_REVERSAL',
+  'MICRO_V_REVERSAL',
+
+  'EMA50_DISTANCE',
+  'THREE_RED_DAYS',
+]);
+
 export default function Strategies() {
   const { data: strategies, isLoading } = useQuery({
     queryKey: ['strategies'],
@@ -27,7 +36,7 @@ export default function Strategies() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {strategies?.map((s, i) => {
+        {strategies?.filter(s => PROFITABLE_STRATEGIES.has(s.strategyType)).map((s, i) => {
           const icon = STRATEGY_ICONS[s.strategyType] || STRATEGY_ICONS.ORB;
           return (
             <div key={s.id} className="card-crystal hover-lift hover-glow overflow-hidden animate-fade-in-up" style={{ animationDelay: `${i * 100}ms` }}>

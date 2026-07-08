@@ -43,7 +43,9 @@ public class CandleDataAdminController {
 
         List<String> symbols = resolveSymbols(universe);
         long tradingDays = countWeekdays(start.toLocalDate(), end.toLocalDate());
-        long minComplete = tradingDays * 300L; // 300 1-min candles per trading day minimum
+        long minComplete = "daily".equalsIgnoreCase(timeframe) || "weekly".equalsIgnoreCase(timeframe)
+            ? tradingDays  // 1 candle per day for daily/weekly
+            : tradingDays * 300L; // 300 1-min candles per trading day minimum
 
         log.info("Backfill: universe={} symbols={} range={} to {} tradingDays={} minComplete={}",
             universe, symbols.size(), dateStart, dateEnd, tradingDays, minComplete);

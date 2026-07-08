@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -67,7 +68,7 @@ public class MomentumSurgeStrategy implements StrategyPlugin {
         if (n < FIVE_MIN_CANDLES_NEEDED) return null;
 
         Candle5m latest = candles5m.get(n - 1);
-        LocalTime now = latest.timestamp != null ? latest.timestamp : LocalTime.now();
+        LocalTime now = latest.timestamp != null ? latest.timestamp.toLocalTime() : LocalTime.now();
 
         // Time filter: 9:30 AM to 2:30 PM only (skip opening noise, closing volatility)
         int totalMin = now.getHour() * 60 + now.getMinute();
@@ -215,7 +216,7 @@ public class MomentumSurgeStrategy implements StrategyPlugin {
     }
 
     static class Candle5m {
-        LocalTime timestamp;
+        LocalDateTime timestamp;
         double open, high, low, close;
         long volume;
     }

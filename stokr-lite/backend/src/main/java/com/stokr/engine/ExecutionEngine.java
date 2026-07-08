@@ -64,7 +64,9 @@ public class ExecutionEngine {
 
         for (Deployment deployment : activeDeployments) {
             try {
-                if (isEod) {
+                boolean isDailyStrategy = isDailyStrategy(deployment);
+
+                if (isEod && !isDailyStrategy) {
                     squareOffAll(deployment);
                 } else {
                     processExits(deployment);
@@ -138,14 +140,13 @@ public class ExecutionEngine {
                     }
                 }
 
-                // ── Overnight gap-down check (BTST positions) ──
-                // If a BTST position gapped below SL overnight, use MARKET order.
-                // LIMIT orders won't fill after a gap — the price has already moved past.
+                // ── Overnight gap-down check (BTST and daily strategies) ──
                 boolean isBtst = isBtstStrategy(deployment);
-                boolean isGapDown = !isShort && ltp.compareTo(sl) < 0; // LONG position below SL
+                boolean isDaily = isDailyStrategy(deployment);
+                boolean isGapDown = !isShort && ltp.compareTo(sl) < 0;
 
-                if (isBtst && isGapDown && isFirstScanAfterOpen()) {
-                    log.warn("BTST GAP-DOWN: {} entry={} sl={} ltp={}", pos.getSymbol(), entry, sl, ltp);
+                if ((isBtst || isDaily) && isGapDown && isFirstScanAfterOpen()) {
+                    log.warn("GAP-DOWN: {} entry={} sl={} ltp={}", pos.getSymbol(), entry, sl, ltp);
                     if (overnightGapHandler.exitGappedPosition(deployment, pos, ltp)) {
                         updateSignalStatus(signal, "BTST_GAP_EXIT");
                         bestPriceMap.remove(pos.getId());
@@ -217,6 +218,18 @@ public class ExecutionEngine {
         try {
             var strategy = strategyService.getStrategy(deployment.getStrategyId());
             return "BTST".equals(strategy.getStrategyType());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Check if deployment uses a daily-timeframe strategy (holds overnight, no EOD square-off).
+     */
+    private boolean isDailyStrategy(Deployment deployment) {
+        try {
+            var strategy = strategyService.getStrategy(deployment.getStrategyId());
+            return "DAILY".equalsIgnoreCase(strategy.getTimeframe());
         } catch (Exception e) {
             return false;
         }

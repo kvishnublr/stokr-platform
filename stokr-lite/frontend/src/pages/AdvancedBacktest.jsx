@@ -18,11 +18,12 @@ async function ensureAuthenticated() {
 }
 
 const STRATEGIES = [
-  { value: 'CASH_IGNITION',     label: 'Cash Ignition',             desc: 'ADX-backed intraday breakout/mean-reversion strategy with scaled stop/target filters.' },
-  { value: 'SURGE_REV',         label: 'Morning Surge Reversal',    desc: 'ORB false breakout fade. SHORT only. 61% win rate, PF 2.0.' },
-  { value: 'NIFTY_PULSE',       label: 'NIFTY Pulse (NPA)',         desc: 'ORB SHORT only when NIFTY down >0.2%. 68.75% win rate, PF 2.66.' },
-  { value: 'NPA_V2',            label: 'NPA V2 (Volume Filter)',    desc: 'NPA with volume fade filter + NIFTY >0.15%. More signals, higher quality.' },
-  { value: 'EOD_MOMENTUM',      label: 'EOD Momentum Lock',         desc: 'End-of-day trend continuation at 14:30–15:10. BUY/SELL with institutional flow.' },
+  { value: 'OVERSOLD_BOUNCE',          label: 'Oversold Bounce',              desc: 'Daily. Buy >3% drops, hold 1-7d. 76.9% WR, PF 1.99, ₹40K/yr on ₹1L.' },
+  { value: 'EMA50_DISTANCE',           label: 'EMA50 Distance v2',            desc: 'Daily. Buy >3% below 50EMA, SL 3%, target = EMA50. ₹105K/yr, 189 trades, PF 1.90.' },
+  { value: 'THREE_RED_DAYS',           label: '3 Red Days',                   desc: 'Daily. Buy after 3 red days + vol surge, SL 3%, target +3%. 88.9% WR, PF 4.78.' },
+  { value: 'SURGE_REV',                label: 'Morning Surge Reversal',       desc: 'Intraday SHORT. ORB false breakout fade. 58.8% WR, PF 2.66, ₹3.8K/yr.' },
+  { value: 'MICRO_V_REVERSAL',         label: 'Micro V-Reversal',            desc: 'Intraday LONG. 3-bar V-bottom. 76.5% WR, PF 1.51.' },
+
 ];
 
 const ALL_PAIRS = [

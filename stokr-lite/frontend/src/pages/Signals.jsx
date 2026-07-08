@@ -5,23 +5,29 @@ import client from '../api/client';
 const RISK_PER_SIGNAL = 5000; // ₹5000 per signal
 
 function getExitStatus(signal) {
-  if (!signal.exitType) return { label: 'PENDING', color: '#9ca3af', bg: '#f3f4f6' };
+  if (signal.status === 'REJECTED') return { label: 'REJECTED', color: '#e11d48', bg: '#fee2e2' };
+  if (signal.status === 'EXPIRED') return { label: 'EXPIRED', color: '#64748b', bg: '#f1f5f9' };
+  if (!signal.exitType) {
+    if (signal.status === 'EXECUTED') return { label: '● OPEN', color: '#2563eb', bg: '#eff6ff' };
+    return { label: 'PENDING', color: '#9ca3af', bg: '#f3f4f6' };
+  }
   if (signal.exitType === 'TARGET_HIT') return { label: '✓ TARGET HIT', color: '#059669', bg: '#dcfce7' };
   if (signal.exitType === 'SL_HIT') return { label: '✗ SL HIT', color: '#dc2626', bg: '#fee2e2' };
   if (signal.exitType === 'IN_BETWEEN') return { label: '→ IN BETWEEN', color: '#ca8a04', bg: '#fef3c7' };
-  return { label: 'UNKNOWN', color: '#6b7280', bg: '#e5e7eb' };
+  if (signal.exitType === 'BTST_GAP_EXIT') return { label: '⚠ GAP EXIT', color: '#d97706', bg: '#fef3c7' };
+  if (signal.exitType === 'EOD_EXIT') return { label: 'EOD EXIT', color: '#6b7280', bg: '#f3f4f6' };
+  return { label: signal.exitType, color: '#6b7280', bg: '#e5e7eb' };
 }
 
-function calculatePnL(signal) {
-  if (!signal.entryPrice) return 0;
+function calculatePnL(signal, ltpMap) {
+  if (!signal.entryPrice) return null;
 
   const entry = Number(signal.entryPrice);
-  if (!entry || entry === 0) return 0;
+  if (!entry || entry === 0) return null;
 
   const isBuy = signal.side === 'BUY';
   let exitPrice = 0;
 
-  // Determine exit price based on exit type
   if (signal.exitType === 'TARGET_HIT' && signal.target) {
     exitPrice = Number(signal.target) || 0;
   } else if (signal.exitType === 'SL_HIT' && signal.stopLoss) {
@@ -30,12 +36,15 @@ function calculatePnL(signal) {
     const target = Number(signal.target) || entry;
     const sl = Number(signal.stopLoss) || entry;
     exitPrice = (target + sl) / 2;
-  } else if (!signal.exitType) {
-    // No exit yet — can't calculate P&L
+  } else if (!signal.exitType && signal.status === 'EXECUTED') {
+    const ltp = ltpMap?.[signal.symbol];
+    if (ltp && ltp > 0) exitPrice = ltp;
+    else return null;
+  } else {
     return null;
   }
 
-  if (!exitPrice || exitPrice === 0) return 0;
+  if (!exitPrice || exitPrice === 0) return null;
 
   let profit = 0;
   if (isBuy) {
@@ -44,7 +53,6 @@ function calculatePnL(signal) {
     profit = (entry - exitPrice) / entry * RISK_PER_SIGNAL;
   }
 
-  // Round to nearest rupee for display
   return Math.round(profit);
 }
 
@@ -53,19 +61,52 @@ function calculatePnL(signal) {
 // Extract just the leading strategy code so signals group correctly.
 function extractStrategyName(reason) {
   if (!reason) return 'Unknown';
-  const spaceIdx = reason.indexOf(' ');
-  return spaceIdx > 0 ? reason.substring(0, spaceIdx) : reason;
+  const text = reason.trim();
+  if (text.startsWith('CASH_IGNITION')) {
+    const variant = text.includes('PDH_BREAK') ? ' PDH BREAK' : text.includes('ORB_BREAK') ? ' ORB BREAK' : '';
+    return 'CASH IGNITION' + variant;
+  }
+  if (text.startsWith('VWAP Reversion') || text.startsWith('VWAP_REVERSION')) {
+    const side = text.includes('Short') || text.includes('SHORT') ? ' SHORT' : ' LONG';
+    return 'VWAP REVERSION' + side;
+  }
+  if (text.startsWith('OVERSOLD_BOUNCE') || text.startsWith('OVERSOLD BOUNCE')) return 'OVERSOLD BOUNCE';
+  if (text.startsWith('MICRO_V_REVERSAL') || text.startsWith('MICRO V REVERSAL')) return 'MICRO V REVERSAL';
+  if (text.startsWith('MORNING_SURGE') || text.startsWith('MORNING SURGE')) return 'MORNING SURGE';
+  if (text.startsWith('QUICK_FLIP') || text.startsWith('QUICK FLIP')) return 'QUICK FLIP';
+  if (text.startsWith('20_DAY_BREAKOUT') || text.startsWith('20 DAY BREAKOUT')) return '20 DAY BREAKOUT';
+  if (text.startsWith('MSR_SHORT_BREAKDOWN')) return 'MSR SHORT BREAKDOWN';
+  if (text.startsWith('SURGE_REV')) return 'SURGE REVERSAL';
+  if (text.startsWith('NIFTY_PULSE')) return 'NIFTY PULSE';
+  if (text.startsWith('NPA_V2')) return 'NPA V2';
+  if (text.startsWith('EOD_MOMENTUM')) return 'EOD MOMENTUM';
+  if (text.startsWith('OVERNIGHT_TRAP')) return 'OVERNIGHT TRAP';
+  if (text.startsWith('DEAD_CAT_BOUNCE')) return 'DEAD CAT BOUNCE';
+  if (text.startsWith('THREE_DAY_EXHAUSTION')) return 'THREE DAY EXHAUSTION';
+  const spaceIdx = text.indexOf(' ');
+  return spaceIdx > 0 ? text.substring(0, spaceIdx).replace(/_/g, ' ') : text.replace(/_/g, ' ');
 }
 
 const STRATEGY_ICONS = {
-  MSR_SHORT_BREAKDOWN: '📉',
-  SURGE_REV: '🔄',
-  NIFTY_PULSE: '💓',
-  NPA_V2: '📊',
-  EOD_MOMENTUM: '🌙',
-  OVERNIGHT_TRAP: '🪤',
-  DEAD_CAT_BOUNCE: '🐈',
-  THREE_DAY_EXHAUSTION: '⏳',
+  'CASH IGNITION PDH BREAK': '🔥',
+  'CASH IGNITION ORB BREAK': '🔥',
+  'CASH IGNITION': '🔥',
+  'VWAP REVERSION LONG': '📊',
+  'VWAP REVERSION SHORT': '📊',
+  'VWAP REVERSION': '📊',
+  'OVERSOLD BOUNCE': '📗',
+  'MICRO V REVERSAL': '⚡',
+  'MORNING SURGE': '🌅',
+  'QUICK FLIP': '⚡',
+  '20 DAY BREAKOUT': '📈',
+  'MSR SHORT BREAKDOWN': '📉',
+  'SURGE REVERSAL': '🔄',
+  'NIFTY PULSE': '💓',
+  'NPA V2': '📊',
+  'EOD MOMENTUM': '🌙',
+  'OVERNIGHT TRAP': '🪤',
+  'DEAD CAT BOUNCE': '🐈',
+  'THREE DAY EXHAUSTION': '⏳',
 };
 
 function AnimatedCounter({ value, duration = 1200 }) {
@@ -192,6 +233,20 @@ export default function Signals() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: ltpMap = {} } = useQuery({
+    queryKey: ['ltp-batch', signals.map(s => s.symbol).join(',')],
+    queryFn: async () => {
+      const symbols = [...new Set(signals.map(s => s.symbol).filter(Boolean))];
+      if (symbols.length === 0) return {};
+      const res = await client.get('/market/ltp/batch', { params: { symbols: symbols.join(',') } });
+      return res.data;
+    },
+    enabled: signals.length > 0,
+    staleTime: 30000,
+    gcTime: 60000,
+    refetchInterval: 30000,
+  });
+
   const { data: stats = { total: 0, today: 0, active: 0 } } = useQuery({
     queryKey: ['signal-stats'],
     queryFn: async () => {
@@ -262,7 +317,7 @@ export default function Signals() {
     if (s.status === 'GENERATED') strategyStats[strat].generated++;
     if (s.status === 'EXECUTED') strategyStats[strat].executed++;
     if (s.status === 'REJECTED') strategyStats[strat].rejected++;
-    const pnl = calculatePnL(s);
+    const pnl = calculatePnL(s, ltpMap);
     if (pnl !== null) {
       strategyStats[strat].pnlSum += pnl;
       strategyStats[strat].pnlCount++;
@@ -637,6 +692,7 @@ export default function Signals() {
               <colgroup>
                 <col style={{ width: '8%' }} />
                 <col style={{ width: '5%' }} />
+                <col style={{ width: '5%' }} />
                 <col style={{ width: '7%' }} />
                 <col style={{ width: '7%' }} />
                 <col style={{ width: '7%' }} />
@@ -644,15 +700,15 @@ export default function Signals() {
                 <col style={{ width: '10%' }} />
                 <col style={{ width: '8%' }} />
                 <col style={{ width: '7%' }} />
+                <col style={{ width: '8%' }} />
                 <col style={{ width: '9%' }} />
                 <col style={{ width: '9%' }} />
-                <col style={{ width: '11%' }} />
                 <col style={{ width: '8%' }} />
               </colgroup>
               <thead style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
-                  {['SYMBOL', 'SIDE', 'ENTRY', 'SL', 'TARGET', 'SCORE', 'STRATEGY', 'STATUS', 'SOURCE', 'SIGNAL TIME', 'ENTRY TIME', 'EXIT STATUS', 'P&L'].map((h) => (
-                    <th key={h} style={{ textAlign: h === 'SYMBOL' ? 'left' : 'center', padding: '12px', color: '#6b7280', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap', background: h === 'P&L' ? 'rgba(99,102,241,0.05)' : 'transparent' }}>{h}</th>
+                  {['SYMBOL', 'SIDE', 'TYPE', 'ENTRY', 'SL', 'TARGET', 'SCORE', 'STRATEGY', 'STATUS', 'SOURCE', 'LTP', 'SIGNAL TIME', 'ENTRY TIME', 'EXIT STATUS', 'P&L'].map((h) => (
+                    <th key={h} style={{ textAlign: h === 'SYMBOL' ? 'left' : 'center', padding: '12px', color: '#6b7280', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap', background: (h === 'P&L' || h === 'LTP') ? 'rgba(99,102,241,0.05)' : 'transparent' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -662,6 +718,14 @@ export default function Signals() {
                     <td style={{ padding: '12px', fontWeight: 700, color: '#1f2937', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.symbol}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.3px', background: sideColors[s.side]?.bg, color: sideColors[s.side]?.text, display: 'inline-block', whiteSpace: 'nowrap' }}>{s.side}</span>
+                    </td>
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                      <span style={{
+                        padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 800,
+                        textTransform: 'uppercase', letterSpacing: '0.3px', display: 'inline-block', whiteSpace: 'nowrap',
+                        background: s.timeframe === 'INTRA' ? 'rgba(245,158,11,0.12)' : 'rgba(99,102,241,0.12)',
+                        color: s.timeframe === 'INTRA' ? '#d97706' : '#4f46e5',
+                      }}>{s.timeframe === 'INTRA' ? 'INTRADAY' : 'POSITIONAL'}</span>
                     </td>
                     <td style={{ padding: '12px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: '#1f2937', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {s.entryPrice ? Number(s.entryPrice).toFixed(2) : '—'}
@@ -689,6 +753,9 @@ export default function Signals() {
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.3px', background: sourceColors[s.source]?.bg, color: sourceColors[s.source]?.text, display: 'inline-block', whiteSpace: 'nowrap' }}>{s.source || 'INTERNAL'}</span>
+                    </td>
+                    <td style={{ padding: '12px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, fontSize: '12px', color: '#1f2937', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {ltpMap[s.symbol] ? Number(ltpMap[s.symbol]).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : <span style={{ color: '#d1d5db', fontSize: '11px' }}>—</span>}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', color: '#6b7280', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {(() => {
@@ -748,7 +815,7 @@ export default function Signals() {
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '12px' }}>
                       {(() => {
-                        const pnl = calculatePnL(s);
+                        const pnl = calculatePnL(s, ltpMap);
                         if (pnl === null) return <span style={{ fontSize: '11px', color: '#d1d5db' }}>—</span>;
                         return (
                           <span style={{

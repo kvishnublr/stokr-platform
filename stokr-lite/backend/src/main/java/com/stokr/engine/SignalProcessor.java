@@ -1,6 +1,7 @@
 package com.stokr.engine;
 
 import com.stokr.marketdata.Candle;
+import com.stokr.marketdata.InsiderDataScheduler;
 import com.stokr.marketdata.MarketDataService;
 import com.stokr.marketdata.Universe;
 import com.stokr.marketdata.ZerodhaLiveDataScheduler;
@@ -34,6 +35,7 @@ public class SignalProcessor {
     private final StrategyService                    strategyService;
     private final MarketDataService                  marketDataService;
     private final ZerodhaLiveDataScheduler           liveData;
+    private final InsiderDataScheduler               insiderData;
     private final EntryManager                       entryManager;
     private final SignalRepository                   signalRepository;
     private final Universe                           universe;
@@ -44,10 +46,141 @@ public class SignalProcessor {
 
     public void processDeployment(Deployment deployment) {
         try {
-            // Fetch strategy once — used both for enabled check and universe resolution
             Strategy strategy = strategyService.getStrategy(deployment.getStrategyId());
             if (!strategy.isEnabled()) return;
 
+            // Daily strategies evaluate once at EOD (15:15) using daily candles
+            if ("DAILY".equalsIgnoreCase(strategy.getTimeframe())) {
+                processDailyDeployment(deployment, strategy);
+                return;
+            }
+
+            // Intraday strategies: existing flow
+            processIntradayDeployment(deployment, strategy);
+
+        } catch (Exception e) {
+            log.error("Error in processDeployment {}", deployment.getId(), e);
+        }
+    }
+
+    /**
+     * Evaluate a daily-candle strategy at EOD.
+     * Loads 100 daily candles from DB, builds MarketContext, evaluates strategy.
+     * Entry at today's close price (LIMIT order near close).
+     */
+    private void processDailyDeployment(Deployment deployment, Strategy strategy) {
+        LocalDateTime istNow    = LocalDateTime.now(IST);
+        // Only evaluate at EOD: between 15:10 and 15:20 IST
+        if (istNow.getHour() != 15 || istNow.getMinute() < 10 || istNow.getMinute() > 20) return;
+
+        List<String> symbols = strategy.getStrategyType() != null
+                ? universe.getSymbolsForGroup(resolveUniverseGroup(deployment.getStrategyId()))
+                : universe.getSymbols();
+        int signalCount = 0;
+
+        for (String symbol : symbols) {
+            try {
+                // Load last 100 daily candles from DB
+                LocalDateTime end = LocalDate.now(IST).atTime(15, 30);
+                LocalDateTime start = LocalDate.now(IST).minusYears(1).atStartOfDay();
+                List<Candle> dailyCandles = marketDataService.getCandlesBetween(
+                    symbol, "daily", start, end);
+
+                if (dailyCandles.size() < 25) continue; // Need enough history for EMA/RSI
+
+                // Use last candle's close as current price
+                BigDecimal ltp = dailyCandles.get(dailyCandles.size() - 1).close();
+                if (ltp.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+                // Compute indicators on daily data
+                Map<String, BigDecimal> indicators = new HashMap<>();
+                List<CandleData> cdList = toCandleDataList(dailyCandles);
+                IndicatorUtils.Indicators ind = IndicatorUtils.computeAll(cdList).get(cdList.size() - 1);
+                if (ind.rsi14() != null) indicators.put("RSI14", ind.rsi14());
+                if (ind.atr14() != null) indicators.put("ATR14", ind.atr14());
+                if (ind.volSma10() != null) indicators.put("VOL_SMA_10", ind.volSma10());
+                if (ind.adx14() != null) indicators.put("ADX14", ind.adx14());
+
+                // Previous day OHLC from daily data
+                BigDecimal prevDayClose = dailyCandles.size() >= 2
+                    ? dailyCandles.get(dailyCandles.size() - 2).close() : null;
+                BigDecimal prevDayHigh = dailyCandles.size() >= 2
+                    ? dailyCandles.get(dailyCandles.size() - 2).high() : null;
+                BigDecimal prevDayLow = dailyCandles.size() >= 2
+                    ? dailyCandles.get(dailyCandles.size() - 2).low() : null;
+
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("prevDayClose", prevDayClose);
+                extras.put("prevDayHigh",  prevDayHigh);
+                extras.put("prevDayLow",   prevDayLow);
+                if (indicators.containsKey("RSI14")) extras.put("rsi14", indicators.get("RSI14"));
+                if (indicators.containsKey("ATR14")) extras.put("atr14", indicators.get("ATR14"));
+                if (indicators.containsKey("ADX14")) extras.put("adx14", indicators.get("ADX14"));
+
+                // Insider data enrichment for INSIDER_MOMENTUM strategy
+                InsiderDataScheduler.InsiderBuySignal insiderSignal = insiderData.getSignal(symbol);
+                if (insiderSignal != null && insiderSignal.isRecent(3)) {
+                    extras.put("INSIDER_BUY_FLAG", Boolean.TRUE);
+                    extras.put("INSIDER_BUY_PRICE", insiderSignal.price());
+                    extras.put("INSIDER_BUY_AMOUNT", insiderSignal.amount());
+                    extras.put("INSIDER_BUY_VOLUME", BigDecimal.valueOf(insiderSignal.volume()));
+                }
+
+                MarketContext context = new MarketContext(
+                    symbol, dailyCandles, ltp, ltp, indicators, extras);
+
+                Signal signal = strategyService.evaluateSignal(deployment.getStrategyId(), context);
+                if (signal == null || !signal.isValid()) continue;
+
+                // Deduplicate: skip if we already have an EXECUTED or GENERATED signal for this symbol today
+                boolean alreadyOpen = signalRepository
+                    .findFirstByDeploymentIdAndSymbolAndStatusInOrderByCreatedAtDesc(
+                        deployment.getId(), symbol, List.of("EXECUTED", "GENERATED"))
+                    .isPresent();
+                if (alreadyOpen) continue;
+
+                log.info("DAILY Signal: {} {} entry={} sl={} tgt={} reason={}",
+                    deployment.getId(), symbol,
+                    signal.entryPrice(), signal.stopLoss(), signal.target(), signal.reason());
+
+                SignalEntity entity = SignalEntity.builder()
+                    .deploymentId(deployment.getId())
+                    .userId(deployment.getUserId())
+                    .strategyId(deployment.getStrategyId())
+                    .symbol(signal.symbol())
+                    .side(SignalEntity.Side.valueOf(signal.side().name()))
+                    .entryPrice(signal.entryPrice())
+                    .stopLoss(signal.stopLoss())
+                    .target(signal.target())
+                    .confidence(BigDecimal.valueOf(signal.confidence()))
+                    .reason(signal.reason())
+                    .status("GENERATED")
+                    .source(SignalEntity.SignalSource.INTERNAL)
+                    .trailTriggerPct(signal.trailTriggerPct())
+                    .trailDistancePct(signal.trailDistancePct())
+                    .build();
+                signalRepository.save(entity);
+
+                boolean entered = entryManager.processEntrySignal(deployment, signal);
+                entity.setStatus(entered ? "EXECUTED" : "REJECTED");
+                signalRepository.save(entity);
+                if (entered) signalCount++;
+
+            } catch (Exception e) {
+                log.error("Error processing daily symbol {} for deployment {}", symbol, deployment.getId(), e);
+            }
+        }
+
+        if (signalCount > 0) {
+            log.info("Daily scan complete for deployment {}: {} signals generated", deployment.getId(), signalCount);
+        }
+    }
+
+    /**
+     * Original intraday deployment processing — 1-minute candles, ORB, VWAP, etc.
+     */
+    private void processIntradayDeployment(Deployment deployment, Strategy strategy) {
+        try {
             LocalDateTime istNow    = LocalDateTime.now(IST);
             LocalDateTime todayOpen = LocalDate.now(IST).atTime(9, 15);
 
@@ -128,6 +261,15 @@ public class SignalProcessor {
                     if (indicators.containsKey("RSI14")) extras.put("rsi14", indicators.get("RSI14"));
                     if (indicators.containsKey("ATR14")) extras.put("atr14", indicators.get("ATR14"));
                     if (indicators.containsKey("ADX14")) extras.put("adx14", indicators.get("ADX14"));
+
+                    // Insider data enrichment
+                    InsiderDataScheduler.InsiderBuySignal insiderSig = insiderData.getSignal(symbol);
+                    if (insiderSig != null && insiderSig.isRecent(3)) {
+                        extras.put("INSIDER_BUY_FLAG", Boolean.TRUE);
+                        extras.put("INSIDER_BUY_PRICE", insiderSig.price());
+                        extras.put("INSIDER_BUY_AMOUNT", insiderSig.amount());
+                        extras.put("INSIDER_BUY_VOLUME", BigDecimal.valueOf(insiderSig.volume()));
+                    }
 
                     MarketContext context = new MarketContext(
                         symbol, candles, ltp, vwap, indicators, extras);

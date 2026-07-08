@@ -36,6 +36,9 @@ public interface SignalRepository extends JpaRepository<SignalEntity, Long> {
     java.util.Optional<SignalEntity> findFirstByDeploymentIdAndSymbolAndStatusOrderByCreatedAtDesc(
         Long deploymentId, String symbol, String status);
 
+    java.util.Optional<SignalEntity> findFirstByDeploymentIdAndSymbolAndStatusInOrderByCreatedAtDesc(
+        Long deploymentId, String symbol, List<String> statuses);
+
     java.util.List<SignalEntity> findByUserIdAndExitTimeAfter(Long userId, java.time.Instant since);
 
     long countByDeploymentIdAndCreatedAtAfter(Long deploymentId, java.time.Instant since);

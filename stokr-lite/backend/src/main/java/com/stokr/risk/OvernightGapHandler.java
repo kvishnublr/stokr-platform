@@ -6,6 +6,7 @@ import com.stokr.engine.PaperBroker;
 import com.stokr.oms.OrderService;
 import com.stokr.oms.Position;
 import com.stokr.oms.PositionService;
+import com.stokr.strategy.StrategyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ public class OvernightGapHandler {
     private final OrderService orderService;
     private final BrokerService brokerService;
     private final PaperBroker paperBroker;
+    private final StrategyService strategyService;
 
     public boolean exitGappedPosition(Deployment deployment, Position position, BigDecimal ltp) {
         if (position.getQuantity() == null || position.getQuantity() == 0) return false;
@@ -53,6 +55,15 @@ public class OvernightGapHandler {
                             deployment.getUserId()).getAccessToken()
                     : "paper";
 
+            // Use NRML for daily strategies (positional), CNC for BTST
+            String productType = "CNC";
+            try {
+                var strategy = strategyService.getStrategy(deployment.getStrategyId());
+                if ("DAILY".equalsIgnoreCase(strategy.getTimeframe())) {
+                    productType = "NRML";
+                }
+            } catch (Exception ignored) {}
+
             BrokerOrderRequest request = BrokerOrderRequest.builder()
                     .symbol(position.getSymbol())
                     .exchange("NSE")
@@ -60,7 +71,7 @@ public class OvernightGapHandler {
                     .quantity(qty)
                     .price(0.0)
                     .orderType(BrokerOrderRequest.OrderType.MARKET)
-                    .productType("CNC")
+                    .productType(productType)
                     .build();
 
             BrokerOrderResponse response = adapter.placeOrder(accessToken, request);

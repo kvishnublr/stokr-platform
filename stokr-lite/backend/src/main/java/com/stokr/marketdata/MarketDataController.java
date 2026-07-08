@@ -5,8 +5,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/market")
@@ -27,6 +27,15 @@ public class MarketDataController {
     @GetMapping("/ltp/{symbol}")
     public ResponseEntity<Map<String, BigDecimal>> getLtp(@PathVariable String symbol) {
         return ResponseEntity.ok(Map.of("ltp", marketDataService.getLtp(symbol)));
+    }
+
+    @GetMapping("/ltp/batch")
+    public ResponseEntity<Map<String, BigDecimal>> getLtpBatch(@RequestParam List<String> symbols) {
+        Map<String, BigDecimal> result = new LinkedHashMap<>();
+        for (String sym : symbols) {
+            result.put(sym.toUpperCase(), marketDataService.getLtp(sym));
+        }
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/universe")

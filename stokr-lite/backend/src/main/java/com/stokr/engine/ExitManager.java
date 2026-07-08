@@ -4,6 +4,7 @@ import com.stokr.broker.*;
 import com.stokr.oms.*;
 import com.stokr.risk.DailyPnlTracker;
 import com.stokr.risk.ErrorLogService;
+import com.stokr.strategy.StrategyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ public class ExitManager {
     private final ErrorLogService errorLogService;
     private final PaperBroker paperBroker;
     private final DailyPnlTracker dailyPnlTracker;
+    private final StrategyService strategyService;
 
     /**
      * Square off a position. Returns true if the exit order was placed successfully.
@@ -50,6 +52,15 @@ public class ExitManager {
                             deployment.getUserId()).getAccessToken()
                     : "paper";
 
+            // Use NRML (positional) for daily strategies, MIS (intraday) for intraday
+            String productType = "MIS";
+            try {
+                var strategy = strategyService.getStrategy(deployment.getStrategyId());
+                if ("DAILY".equalsIgnoreCase(strategy.getTimeframe())) {
+                    productType = "NRML";
+                }
+            } catch (Exception ignored) {}
+
             BrokerOrderRequest request = BrokerOrderRequest.builder()
                     .symbol(position.getSymbol())
                     .exchange("NSE")
@@ -57,7 +68,7 @@ public class ExitManager {
                     .quantity(qty)
                     .price(exitPrice.doubleValue())
                     .orderType(BrokerOrderRequest.OrderType.LIMIT)
-                    .productType("MIS")
+                    .productType(productType)
                     .build();
 
             BrokerOrderResponse response = adapter.placeOrder(accessToken, request);

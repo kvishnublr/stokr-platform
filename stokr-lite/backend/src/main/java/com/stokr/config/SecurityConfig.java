@@ -42,6 +42,7 @@ public class SecurityConfig {
                         AntPathRequestMatcher.antMatcher("/api/auth/register"),
                         AntPathRequestMatcher.antMatcher("/api/auth/refresh"),
                         AntPathRequestMatcher.antMatcher("/api/signals/**"),
+                        AntPathRequestMatcher.antMatcher("/api/market/**"),
                         AntPathRequestMatcher.antMatcher("/actuator/**"),
                         AntPathRequestMatcher.antMatcher("/api/brokers/*/callback"),
                         AntPathRequestMatcher.antMatcher("/api/broker/*/callback"),
