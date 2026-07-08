@@ -225,12 +225,12 @@ export default function Signals() {
   const { data: signals = [], isLoading: sigLoading } = useQuery({
     queryKey: ['signals'],
     queryFn: async () => {
-      const res = await client.get('/signals?t=' + Date.now());
+      const res = await client.get('/signals');
       return res.data;
     },
-    staleTime: 0,
-    gcTime: 0,
-    refetchOnWindowFocus: true,
+    staleTime: 30000,
+    gcTime: 300000,
+    refetchInterval: 30000,
   });
 
   const { data: ltpMap = {} } = useQuery({

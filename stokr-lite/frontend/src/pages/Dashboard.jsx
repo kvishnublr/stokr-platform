@@ -28,31 +28,43 @@ export default function Dashboard() {
   const { data: deployments } = useQuery({
     queryKey: ['deployments'],
     queryFn: () => client.get('/deployments').then((r) => r.data),
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 
   const { data: marketStatus } = useQuery({
     queryKey: ['market-status'],
     queryFn: () => client.get('/market/status').then((r) => r.data),
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 
   const { data: signalStats } = useQuery({
     queryKey: ['signal-stats'],
     queryFn: () => client.get('/signals/stats').then((r) => r.data),
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 
   const { data: recentOrders } = useQuery({
     queryKey: ['recent-orders'],
     queryFn: () => client.get('/orders', { params: { page: 0, size: 5 } }).then((r) => r.data?.content || r.data),
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 
   const { data: openPositions } = useQuery({
     queryKey: ['open-positions'],
     queryFn: () => client.get('/signals/positions').then((r) => r.data),
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 
   const { data: brokerHealth } = useQuery({
     queryKey: ['broker-health'],
     queryFn: () => client.get('/brokers/health').then((r) => r.data),
+    staleTime: 60000,
+    refetchInterval: 120000,
   });
 
   const active = deployments?.filter((d) => d.status === 'ACTIVE') || [];
@@ -394,6 +406,8 @@ function PnlChart() {
   const { data: history, isLoading } = useQuery({
     queryKey: ['pnl-history', days],
     queryFn: () => client.get('/signals/pnl-history', { params: { days } }).then(r => r.data),
+    staleTime: 60000,
+    refetchInterval: 120000,
   });
 
   const points = history || [];

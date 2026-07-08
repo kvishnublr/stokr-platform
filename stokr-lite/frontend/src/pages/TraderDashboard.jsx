@@ -48,18 +48,21 @@ export default function TraderDashboard() {
   const { data: deployments = [] } = useQuery({
     queryKey: ['deployments'],
     queryFn: () => client.get('/deployments').then(r => r.data),
-    refetchInterval: 10000,
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 
   const { data: strategies = [] } = useQuery({
     queryKey: ['strategies'],
     queryFn: () => client.get('/strategies').then(r => r.data),
+    staleTime: 300000,
   });
 
   const { data: signals = [] } = useQuery({
     queryKey: ['signals'],
-    queryFn: () => client.get('/signals?t=' + Date.now()).then(r => r.data),
-    refetchInterval: 15000,
+    queryFn: () => client.get('/signals').then(r => r.data),
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 
   const deployMut = useMutation({
