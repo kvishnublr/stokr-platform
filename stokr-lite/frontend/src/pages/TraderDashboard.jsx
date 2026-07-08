@@ -3,6 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import client from '../api/client';
 
 const RISK_PRESETS = [25000, 50000, 100000, 200000, 500000];
+const NIFTY50_SYMBOLS = [
+  'ADANIENT','ADANIPORTS','APOLLOHOSP','ASIANPAINT','AXISBANK','BAJAJ-AUTO','BAJFINFENCE','BAJAJFINSV',
+  'BPCL','BRITANNIA','CIPLA','COALINDIA','DRREDDY','EICHERMOT','GRASIM','HCLTECH','HDFCBANK','HDFCLIFE',
+  'HEROMOTOCO','HINDALCO','HINDUNILVR','ICICIBANK','INDUSINDBK','INFY','ITC','JSWSTEEL','KOTAKBANK',
+  'LT','M&M','MARUTI','NESTLEIND','NTPC','ONGC','POWERGRID','RELIANCE','SBILIFE','SBIN','SUNPHARMA',
+  'TATAMOTORS','TATASTEEL','TCS','TECHM','TITAN','TRENT','ULTRACEMCO','WIPRO'
+];
 
 const STRATEGY_INFO = {
   4:  { icon: '🌅', color: '#f59e0b', desc: 'Short-selling ORB breakdowns during first 45min. Intraday only, exit by 2:30 PM.' },
@@ -70,6 +77,17 @@ export default function TraderDashboard() {
     onSuccess: () => qc.invalidateQueries(['deployments']),
   });
 
+  const [orderForm, setOrderForm] = useState({ symbol: '', side: 'BUY', quantity: 1, price: '', orderType: 'MARKET', mode: 'PAPER', deploymentId: null });
+  const [orderResult, setOrderResult] = useState(null);
+
+  const placeOrderMut = useMutation({
+    mutationFn: (body) => client.post('/orders/manual', body).then(r => r.data),
+    onSuccess: (data) => {
+      setOrderResult(data);
+      qc.invalidateQueries(['deployments']);
+    },
+  });
+
   const activeDeployments = deployments.filter(d => d.status === 'ACTIVE');
   const totalCapital = activeDeployments.reduce((s, d) => s + (d.capital || 0), 0);
 
@@ -116,6 +134,109 @@ export default function TraderDashboard() {
         <div style={{ padding: '20px', background: 'linear-gradient(135deg, #ef4444, #dc2626)', borderRadius: '14px', color: 'white' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Open Positions</div>
           <div style={{ fontSize: '28px', fontWeight: 800 }}>{activeDeployments.reduce((s, d) => s + (d.openPositions || 0), 0)}</div>
+        </div>
+      </div>
+
+      {/* Place Order Terminal */}
+      <div style={{ marginBottom: '32px', animation: 'slideDown 0.5s ease 0.1s both' }}>
+        <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '14px' }}>
+          📋 Place Order
+        </h3>
+        <div style={{ background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: '1px solid #eef0f4' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '12px', alignItems: 'end' }}>
+            {/* Symbol */}
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>Symbol</label>
+              <input list="symbol-list" value={orderForm.symbol} onChange={e => setOrderForm({ ...orderForm, symbol: e.target.value.toUpperCase() })}
+                placeholder="e.g. RELIANCE"
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '2px solid #e5e7eb', fontSize: '14px', fontWeight: 600, outline: 'none', textTransform: 'uppercase' }} />
+              <datalist id="symbol-list">
+                {NIFTY50_SYMBOLS.map(s => <option key={s} value={s} />)}
+              </datalist>
+            </div>
+
+            {/* Side */}
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>Side</label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {['BUY', 'SELL'].map(s => (
+                  <button key={s} onClick={() => setOrderForm({ ...orderForm, side: s })}
+                    className="trader-btn"
+                    style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '2px solid', borderColor: orderForm.side === s ? (s === 'BUY' ? '#10b981' : '#ef4444') : '#e5e7eb', background: orderForm.side === s ? (s === 'BUY' ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)') : 'white', color: orderForm.side === s ? (s === 'BUY' ? '#059669' : '#dc2626') : '#6b7280', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Quantity */}
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>Qty</label>
+              <input type="number" min="1" value={orderForm.quantity} onChange={e => setOrderForm({ ...orderForm, quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '2px solid #e5e7eb', fontSize: '14px', fontWeight: 600, outline: 'none' }} />
+            </div>
+
+            {/* Order Type + Price */}
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>Type</label>
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+                {['MARKET', 'LIMIT'].map(t => (
+                  <button key={t} onClick={() => setOrderForm({ ...orderForm, orderType: t })}
+                    className="trader-btn"
+                    style={{ flex: 1, padding: '6px', borderRadius: '6px', border: '2px solid', borderColor: orderForm.orderType === t ? '#6366f1' : '#e5e7eb', background: orderForm.orderType === t ? 'rgba(99,102,241,0.08)' : 'white', color: orderForm.orderType === t ? '#4f46e5' : '#6b7280', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+              {orderForm.orderType === 'LIMIT' && (
+                <input type="number" step="0.05" value={orderForm.price} onChange={e => setOrderForm({ ...orderForm, price: e.target.value })}
+                  placeholder="Price" style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '2px solid #e5e7eb', fontSize: '13px', fontWeight: 600, outline: 'none' }} />
+              )}
+            </div>
+
+            {/* Mode + Place */}
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>Mode</label>
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                {['PAPER', 'LIVE'].map(m => (
+                  <button key={m} onClick={() => setOrderForm({ ...orderForm, mode: m })}
+                    className="trader-btn"
+                    style={{ flex: 1, padding: '6px', borderRadius: '6px', border: '2px solid', borderColor: orderForm.mode === m ? (m === 'LIVE' ? '#dc2626' : '#2563eb') : '#e5e7eb', background: orderForm.mode === m ? (m === 'LIVE' ? 'rgba(239,68,68,0.08)' : 'rgba(59,130,246,0.08)') : 'white', color: orderForm.mode === m ? (m === 'LIVE' ? '#dc2626' : '#2563eb') : '#6b7280', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>
+                    {m === 'LIVE' ? '🔴' : '🔵'} {m}
+                  </button>
+                ))}
+              </div>
+              <button className="trader-btn"
+                onClick={() => {
+                  if (!orderForm.symbol.trim()) { alert('Enter a symbol'); return; }
+                  const payload = { ...orderForm, price: orderForm.orderType === 'LIMIT' && orderForm.price ? parseFloat(orderForm.price) : null };
+                  placeOrderMut.mutate(payload);
+                }}
+                disabled={placeOrderMut.isPending}
+                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: 'none', background: orderForm.side === 'BUY' ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #ef4444, #dc2626)', color: 'white', fontSize: '13px', fontWeight: 700, cursor: placeOrderMut.isPending ? 'not-allowed' : 'pointer', opacity: placeOrderMut.isPending ? 0.6 : 1 }}>
+                {placeOrderMut.isPending ? '⏳ Placing...' : `🚀 ${orderForm.side}`}
+              </button>
+            </div>
+          </div>
+
+          {/* Order Result */}
+          {orderResult && (
+            <div style={{ marginTop: '16px', padding: '12px 16px', borderRadius: '10px', background: orderResult.success ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${orderResult.success ? '#86efac' : '#fca5a5'}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: orderResult.success ? '#059669' : '#dc2626' }}>
+                    {orderResult.success ? '✅ Order Placed' : '❌ Order Rejected'}
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '12px' }}>
+                    {orderResult.symbol} {orderResult.side} {orderResult.quantity} @ ₹{orderResult.price || 'MKT'} ({orderResult.mode})
+                  </span>
+                  {orderResult.brokerOrderId && <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '12px' }}>Broker ID: {orderResult.brokerOrderId}</span>}
+                </div>
+                <button onClick={() => setOrderResult(null)} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+              </div>
+              {orderResult.message && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{orderResult.message}</div>}
+            </div>
+          )}
         </div>
       </div>
 
