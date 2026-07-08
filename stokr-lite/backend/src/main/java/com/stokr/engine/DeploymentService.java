@@ -83,6 +83,14 @@ public class DeploymentService {
     }
 
     @Transactional
+    public Deployment updateStatus(Long id, Long userId, String newStatus) {
+        Deployment deployment = getDeployment(id, userId);
+        deployment.setStatus(newStatus);
+        log.info("Updated deployment {} status to {} for user {}", id, newStatus, userId);
+        return repository.save(deployment);
+    }
+
+    @Transactional
     public Deployment forceStopDeployment(Long id) {
         Deployment deployment = repository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Deployment not found"));

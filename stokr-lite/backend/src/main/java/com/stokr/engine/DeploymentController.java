@@ -58,6 +58,18 @@ public class DeploymentController {
                 request.capital()));
     }
 
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<Map<String, Object>> updateStatus(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        String newStatus = body.get("status");
+        if (newStatus == null || (!newStatus.equals("ACTIVE") && !newStatus.equals("PAUSED") && !newStatus.equals("STOPPED"))) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid status"));
+        }
+        Deployment d = deploymentService.updateStatus(id, SecurityUtils.currentUserId(), newStatus);
+        return ResponseEntity.ok(enrich(d));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Deployment> stopDeployment(@PathVariable Long id) {
         return ResponseEntity.ok(deploymentService.stopDeployment(id, SecurityUtils.currentUserId()));

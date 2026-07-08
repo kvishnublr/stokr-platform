@@ -7,6 +7,7 @@ const traderLinks = [
   { to: '/signals', label: 'Signals', icon: '📡' },
   { to: '/backtest', label: 'Backtest', icon: '📈' },
   { to: '/strategies', label: 'Strategies', icon: '🎯' },
+  { to: '/trader', label: 'Trader', icon: '🏪' },
   { to: '/deployments', label: 'Deployments', icon: '⚡' },
   { to: '/brokers', label: 'Brokers', icon: '🏦' },
   { to: '/orders', label: 'Orders', icon: '📋' },

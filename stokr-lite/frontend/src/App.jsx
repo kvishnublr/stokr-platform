@@ -19,6 +19,7 @@ const Brokers = lazy(() => import('./pages/Brokers'));
 const Orders = lazy(() => import('./pages/Orders'));
 const Positions = lazy(() => import('./pages/Positions'));
 const Settings = lazy(() => import('./pages/Settings'));
+const TraderDashboard = lazy(() => import('./pages/TraderDashboard'));
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
 const AdminDeployments = lazy(() => import('./pages/admin/AdminDeployments'));
@@ -54,6 +55,7 @@ export default function App() {
             <Route path="/backtest" element={<AdvancedBacktest />} />
             <Route path="/strategies" element={<Strategies />} />
             <Route path="/deployments" element={<Deployments />} />
+            <Route path="/trader" element={<TraderDashboard />} />
             <Route path="/brokers" element={<Brokers />} />
             <Route path="/orders" element={<Orders />} />
             <Route path="/positions" element={<Positions />} />
