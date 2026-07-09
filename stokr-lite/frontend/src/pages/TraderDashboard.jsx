@@ -82,6 +82,13 @@ export default function TraderDashboard() {
 
   const [orderForm, setOrderForm] = useState({ symbol: '', side: 'BUY', quantity: 1, price: '', orderType: 'MARKET', mode: 'PAPER', deploymentId: null });
   const [orderResult, setOrderResult] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+
+  const { data: brokers = [] } = useQuery({
+    queryKey: ['brokers'],
+    queryFn: () => client.get('/brokers').then(r => r.data),
+    staleTime: 300000,
+  });
 
   const placeOrderMut = useMutation({
     mutationFn: (body) => client.post('/orders/manual', body).then(r => r.data),
@@ -89,6 +96,11 @@ export default function TraderDashboard() {
       setOrderResult(data);
       qc.invalidateQueries(['deployments']);
     },
+  });
+
+  const editMut = useMutation({
+    mutationFn: ({ id, ...patch }) => client.patch(`/deployments/${id}`, patch).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries(['deployments']); setEditForm(null); },
   });
 
   const activeDeployments = deployments.filter(d => d.status === 'ACTIVE');
@@ -300,6 +312,10 @@ export default function TraderDashboard() {
                   )}
 
                   <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="trader-btn" onClick={() => setEditForm({ id: d.id, capital: d.capital || 100000, mode: d.mode || 'PAPER', brokerAccountId: d.brokerAccountId })}
+                      style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: 'rgba(99,102,241,0.12)', color: '#4f46e5', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                      ✏️ Edit
+                    </button>
                     {d.status === 'ACTIVE' && (
                       <button className="trader-btn" onClick={() => statusMut.mutate({ id: d.id, status: 'PAUSED' })}
                         style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: 'rgba(245,158,11,0.12)', color: '#d97706', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
@@ -412,6 +428,90 @@ export default function TraderDashboard() {
                 disabled={deployMut.isPending}
                 style={{ flex: 2, padding: '10px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', fontSize: '13px', fontWeight: 700, cursor: deployMut.isPending ? 'not-allowed' : 'pointer', opacity: deployMut.isPending ? 0.6 : 1 }}>
                 {deployMut.isPending ? '⏳ Deploying...' : '🚀 Deploy Now'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Deployment Modal */}
+      {editForm && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, animation: 'fadeIn 0.2s ease' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setEditForm(null); }}>
+          <div style={{ background: 'white', borderRadius: '20px', padding: '32px', maxWidth: '440px', width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', animation: 'slideDown 0.3s ease' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#1f2937', margin: '0 0 4px' }}>Edit Deployment</h2>
+            <p style={{ fontSize: '13px', color: '#9ca3af', margin: '0 0 20px' }}>Update capital, mode, or broker assignment</p>
+
+            {/* Capital */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>Capital (₹)</label>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                {RISK_PRESETS.map(cap => (
+                  <button key={cap} onClick={() => setEditForm({ ...editForm, capital: cap })}
+                    className="trader-btn"
+                    style={{ padding: '6px 12px', borderRadius: '8px', border: '2px solid', borderColor: editForm.capital === cap ? '#6366f1' : '#e5e7eb', background: editForm.capital === cap ? 'rgba(99,102,241,0.08)' : 'white', color: editForm.capital === cap ? '#4f46e5' : '#6b7280', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                    ₹{(cap / 1000).toFixed(0)}K
+                  </button>
+                ))}
+              </div>
+              <input type="number" value={editForm.capital} onChange={e => setEditForm({ ...editForm, capital: Number(e.target.value) })}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '2px solid #e5e7eb', fontSize: '14px', fontWeight: 600, outline: 'none' }} />
+            </div>
+
+            {/* Mode */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>Mode</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {['PAPER', 'LIVE'].map(m => (
+                  <button key={m} onClick={() => setEditForm({ ...editForm, mode: m })}
+                    className="trader-btn"
+                    style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '2px solid', borderColor: editForm.mode === m ? (m === 'LIVE' ? '#dc2626' : '#2563eb') : '#e5e7eb', background: editForm.mode === m ? (m === 'LIVE' ? 'rgba(239,68,68,0.08)' : 'rgba(59,130,246,0.08)') : 'white', color: editForm.mode === m ? (m === 'LIVE' ? '#dc2626' : '#2563eb') : '#6b7280', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+                    {m === 'LIVE' ? '🔴' : '🔵'} {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Broker Account (only shown for LIVE mode) */}
+            {editForm.mode === 'LIVE' && (
+              <div style={{ marginBottom: '20px', padding: '12px', borderRadius: '10px', background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.15)' }}>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>Broker Account</label>
+                {brokers.length > 0 ? (
+                  <select value={editForm.brokerAccountId || ''} onChange={e => setEditForm({ ...editForm, brokerAccountId: e.target.value ? Number(e.target.value) : null })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '2px solid #e5e7eb', fontSize: '13px', fontWeight: 600, outline: 'none', background: 'white' }}>
+                    <option value="">Select broker...</option>
+                    {brokers.map(b => <option key={b.id} value={b.id}>{b.brokerName} ({b.clientId || 'Active'})</option>)}
+                  </select>
+                ) : (
+                  <div style={{ fontSize: '12px', color: '#dc2626' }}>⚠️ No broker connected. Go to <a href="/brokers" style={{ color: '#4f46e5' }}>Brokers</a> to connect one first.</div>
+                )}
+              </div>
+            )}
+
+            {/* Warning when switching to LIVE */}
+            {editForm.mode === 'LIVE' && (
+              <div style={{ marginBottom: '16px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#d97706', marginBottom: '4px' }}>⚠️ Live Trading Warning</div>
+                <div style={{ fontSize: '11px', color: '#6b7280' }}>Real money will be used. Ensure IP <b>106.51.215.133</b> is whitelisted in Kite developer console.</div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setEditForm(null)} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '2px solid #e5e7eb', background: 'white', color: '#6b7280', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+              <button className="trader-btn"
+                onClick={() => {
+                  const patch = { capital: editForm.capital, mode: editForm.mode };
+                  if (editForm.mode === 'LIVE' && editForm.brokerAccountId) {
+                    patch.brokerAccountId = editForm.brokerAccountId;
+                  }
+                  editMut.mutate({ id: editForm.id, ...patch });
+                }}
+                disabled={editMut.isPending}
+                style={{ flex: 2, padding: '10px', borderRadius: '10px', border: 'none',
+                  background: editForm.mode === 'LIVE' ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  color: 'white', fontSize: '13px', fontWeight: 700,
+                  cursor: editMut.isPending ? 'not-allowed' : 'pointer', opacity: editMut.isPending ? 0.6 : 1 }}>
+                {editMut.isPending ? '⏳ Saving...' : editForm.mode === 'LIVE' ? '🔴 Go Live' : '✅ Save Changes'}
               </button>
             </div>
           </div>

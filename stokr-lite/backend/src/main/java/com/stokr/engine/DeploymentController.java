@@ -70,6 +70,37 @@ public class DeploymentController {
         return ResponseEntity.ok(enrich(d));
     }
 
+    @PatchMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> updateDeployment(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body) {
+        Long userId = SecurityUtils.currentUserId();
+        Deployment d = deploymentService.getDeployment(id, userId);
+
+        if (body.containsKey("capital")) {
+            d.setCapital(new BigDecimal(body.get("capital").toString()));
+        }
+        if (body.containsKey("mode")) {
+            String mode = body.get("mode").toString().toUpperCase();
+            if ("PAPER".equals(mode) || "LIVE".equals(mode)) {
+                d.setMode(mode);
+            }
+        }
+        if (body.containsKey("brokerAccountId")) {
+            Object val = body.get("brokerAccountId");
+            d.setBrokerAccountId(val != null ? Long.valueOf(val.toString()) : null);
+        }
+        if (body.containsKey("status")) {
+            String status = body.get("status").toString().toUpperCase();
+            if ("ACTIVE".equals(status) || "PAUSED".equals(status) || "STOPPED".equals(status)) {
+                d.setStatus(status);
+            }
+        }
+
+        d = deploymentService.save(d);
+        return ResponseEntity.ok(enrich(d));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Deployment> stopDeployment(@PathVariable Long id) {
         return ResponseEntity.ok(deploymentService.stopDeployment(id, SecurityUtils.currentUserId()));

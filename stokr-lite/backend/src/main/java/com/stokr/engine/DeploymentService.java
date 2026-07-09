@@ -98,4 +98,9 @@ public class DeploymentService {
         log.info("FORCE stopped deployment {} (admin)", id);
         return repository.save(deployment);
     }
+
+    @Transactional
+    public Deployment save(Deployment deployment) {
+        return repository.save(deployment);
+    }
 }
