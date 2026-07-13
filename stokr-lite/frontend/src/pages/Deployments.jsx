@@ -20,15 +20,20 @@ export default function Deployments() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [confirmStop, setConfirmStop] = useState(null);
+  const [editForm, setEditForm] = useState(null);
   const [form, setForm]   = useState({ strategyId: '', brokerAccountId: '', mode: 'PAPER', capital: 5000 });
 
-  const { data: deployments = [], isLoading, isError } = useQuery({ queryKey: ['deployments'], queryFn: fetchDeployments, refetchInterval: 15000, retry: 1 });
+  const { data: deployments = [], isLoading, isError } = useQuery({ queryKey: ['deployments'], queryFn: fetchDeployments, refetchInterval: 60000, retry: 1 });
   const { data: strategies  = [] }                    = useQuery({ queryKey: ['strategies'],  queryFn: fetchStrategies,  retry: 1 });
   const { data: brokers     = [] }                    = useQuery({ queryKey: ['brokers'],     queryFn: fetchBrokers,     retry: 1 });
 
   const createMut = useMutation({
     mutationFn: (body) => client.post('/deployments', body).then(r => r.data),
     onSuccess: () => { qc.invalidateQueries(['deployments']); setShowCreate(false); setForm({ strategyId: '', brokerAccountId: '', mode: 'PAPER', capital: 5000 }); },
+  });
+  const updateMut = useMutation({
+    mutationFn: ({ id, ...body }) => client.patch(`/deployments/${id}`, body).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries(['deployments']); setEditForm(null); },
   });
   const stopMut = useMutation({
     mutationFn: (id) => client.delete(`/deployments/${id}`).then(r => r.data),
@@ -166,6 +171,10 @@ export default function Deployments() {
 
               {/* Actions */}
               <div style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px solid #f3f4f6' }}>
+                <button className="btn btn-ghost" style={{ flex: 1, background: '#eef2ff', color: '#4338ca' }}
+                  onClick={() => setEditForm({ id: d.id, capital: d.capital || 100000, mode: d.mode || 'PAPER', brokerAccountId: d.brokerAccountId || '' })}>
+                  Edit
+                </button>
                 {isActive && (
                   <button className="btn btn-danger" style={{ flex: 1 }}
                     onClick={() => setConfirmStop(d)}>
@@ -257,6 +266,73 @@ export default function Deployments() {
                 disabled={stopMut.isPending}
                 onClick={() => stopMut.mutate(confirmStop.id)}>
                 {stopMut.isPending ? 'Stopping...' : 'Stop Deployment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editForm && (
+        <div className="overlay" onClick={() => setEditForm(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2 style={{ margin: '0 0 20px 0', fontSize: '18px', fontWeight: '700' }}>Edit Deployment #{editForm.id}</h2>
+
+            <div className="form-row">
+              <label>Capital (₹)</label>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                {[25000, 50000, 100000, 200000, 500000].map(v => (
+                  <button key={v} className="btn" type="button"
+                    style={{ background: editForm.capital === v ? '#4f46e5' : '#f3f4f6', color: editForm.capital === v ? 'white' : '#374151', border: '1px solid #d1d5db' }}
+                    onClick={() => setEditForm(f => ({ ...f, capital: v }))}>
+                    ₹{v >= 100000 ? `${v / 100000}L` : `${v / 1000}K`}
+                  </button>
+                ))}
+              </div>
+              <input type="number" min="1000" step="500" value={editForm.capital}
+                onChange={e => setEditForm(f => ({ ...f, capital: Number(e.target.value) }))} />
+            </div>
+
+            <div className="form-row">
+              <label>Mode</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {['PAPER', 'LIVE'].map(m => (
+                  <button key={m} className="btn" type="button" style={{ flex: 1, padding: '10px', background: editForm.mode === m ? (m === 'LIVE' ? '#fecaca' : '#dbeafe') : '#f3f4f6', color: editForm.mode === m ? (m === 'LIVE' ? '#991b1b' : '#1d4ed8') : '#6b7280', fontWeight: 700, border: '1px solid #d1d5db' }}
+                    onClick={() => setEditForm(f => ({ ...f, mode: m, brokerAccountId: m === 'PAPER' ? '' : f.brokerAccountId }))}>
+                    {m === 'LIVE' ? '🔴' : '📄'} {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {editForm.mode === 'LIVE' && (
+              <div className="form-row">
+                <label>Broker Account</label>
+                <select value={editForm.brokerAccountId} onChange={e => setEditForm(f => ({ ...f, brokerAccountId: e.target.value }))}>
+                  <option value="">Select broker...</option>
+                  {brokers.map(b => <option key={b.id} value={b.id}>{b.brokerName} — {b.clientId}</option>)}
+                </select>
+              </div>
+            )}
+
+            {editForm.mode === 'LIVE' && (
+              <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '8px', padding: '12px', fontSize: '13px', color: '#92400e', marginBottom: '16px' }}>
+                ⚠️ Switching to live mode will execute real trades with real money. Make sure you have tested this strategy thoroughly in paper mode first.
+              </div>
+            )}
+
+            {updateMut.isError && (
+              <div style={{ background: '#fef2f2', color: '#991b1b', padding: '10px 12px', borderRadius: '6px', fontSize: '13px', marginBottom: '14px' }}>
+                {updateMut.error?.response?.data?.error || 'Failed to update deployment'}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setEditForm(null)}>Cancel</button>
+              <button className="btn btn-primary"
+                disabled={editForm.mode === 'LIVE' && !editForm.brokerAccountId || updateMut.isPending}
+                onClick={() => updateMut.mutate({ id: editForm.id, capital: editForm.capital, mode: editForm.mode, brokerAccountId: editForm.brokerAccountId ? Number(editForm.brokerAccountId) : null })}>
+                {updateMut.isPending ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>

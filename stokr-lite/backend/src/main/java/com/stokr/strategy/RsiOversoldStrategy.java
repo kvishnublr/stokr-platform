@@ -8,23 +8,17 @@ import java.math.RoundingMode;
 import java.util.List;
 
 /**
- * RSI Oversold — buy when RSI(14) drops below 30, target mean reversion.
+ * RSI Oversold v3 — buy when RSI(14) drops below 35, with soft confirmations.
  *
- * Data-driven edge from 12 months of NSE daily data:
- *   - 59.8% win rate, PF 207 on 92 trades
- *   - Works because extreme RSI readings signal exhaustion
- *   - Mean reversion to fair value within days
+ * v1: 85.4% WR, PF 4.44, +₹12,180/3mo — 41 trades, no hard filters
+ * v2: 85.7% WR, +₹1,715/3mo — 7 trades, hard filters too strict (killed 83%)
+ * v3: Relaxed filters — volume > 1.2x (was 1.5x), support within 5% (was 3%)
  *
  * Entry  : Close of the oversold day (buy at 3:15 PM)
  * SL     : Entry - 3%
- * Target : Entry + 2% (conservative, quick exit)
+ * Target : EMA50 (mean reversion)
  * Hold   : 1-5 days max
- *
- * Filters:
- *   - RSI(14) < 30
- *   - Price must be > ₹50
- *   - Volume > 0
- *   - Must be a down day (confirming oversold, not a reversal candle)
+ * Trail  : 0.5% trigger, 0.25% trail
  */
 @Slf4j
 @Component
@@ -37,7 +31,7 @@ public class RsiOversoldStrategy implements StrategyPlugin {
     public Signal evaluate(MarketContext context, StrategyParams params) {
         List<com.stokr.marketdata.Candle> candles = context.candles();
         int n = candles.size();
-        if (n < 20) return null;
+        if (n < 50) return null;
 
         com.stokr.marketdata.Candle today = candles.get(n - 1);
         double close = today.close().doubleValue();
@@ -50,37 +44,59 @@ public class RsiOversoldStrategy implements StrategyPlugin {
         double rsiVal = rsi14.doubleValue();
         if (rsiVal >= 35) return null;
 
-        // ─── 2. COMPUTE EMA20 & EMA50 for context ──────────────────
+        // ─── 2. BEARISH CANDLE ─────────────────────────────────────
+        // Down day confirms selling — not a reversal candle
+        if (today.close().doubleValue() >= today.open().doubleValue()) return null;
+
+        // ─── 3. VOLUME FILTER (relaxed) ────────────────────────────
+        // Volume > 1.2x 10-period average — confirms above-average selling
+        // v2 used 1.5x which killed 83% of trades
+        long avgVol = computeAvgVolume(candles, n, 10);
+        if (avgVol == 0 || today.volume() < avgVol * 1.2) return null;
+
+        // ─── 4. SUPPORT LEVEL CHECK (relaxed) ──────────────────────
+        // Price within 5% of 20-day low — confirms floor exists
+        // v2 used 3% which was too restrictive
+        double low20 = Double.MAX_VALUE;
+        for (int i = Math.max(0, n - 20); i < n; i++) {
+            double low = candles.get(i).low().doubleValue();
+            if (low < low20) low20 = low;
+        }
+        double distFromLow = (close - low20) / low20 * 100;
+        if (distFromLow > 5.0) return null;
+
+        // ─── 5. COMPUTE EMA20 & EMA50 for context ──────────────────
         double ema20 = computeEma(candles, n - 1, 20);
         double ema50 = computeEma(candles, n - 1, 50);
 
-        // ─── 3. DISTANCE FROM EMA50 (deeper = more oversold) ───────
+        // ─── 6. DISTANCE FROM EMA50 (deeper = more oversold) ───────
         double distEma50 = (close - ema50) / ema50 * 100;
 
-        // ─── 4. RSI EXTREMITY (deeper = better) ────────────────────
+        // ─── 7. RSI EXTREMITY (deeper = better) ────────────────────
         boolean isExtreme = rsiVal < 25;
 
-        // ─── 5. COMPUTE ENTRY, SL, TARGET ──────────────────────────
+        // ─── 8. COMPUTE ENTRY, SL, TARGET ──────────────────────────
         double entry = close;
         double sl = entry * 0.97;       // 3% SL
         double target = ema50;           // target = EMA50 (mean reversion)
 
-        // ─── 6. RISK:REWARD CHECK ──────────────────────────────────
+        // ─── 9. RISK:REWARD CHECK ──────────────────────────────────
         double riskPct = (entry - sl) / entry;
         double rewardPct = (target - entry) / entry;
         if (rewardPct <= 0 || rewardPct / riskPct < 1.0) return null;
 
-        // ─── 7. CONFIDENCE SCORE ──────────────────────────────────
+        // ─── 10. CONFIDENCE SCORE ──────────────────────────────────
         int score = 40;
         if (rsiVal < 20)                score += 20;
         else if (rsiVal < 25)           score += 15;
         else if (rsiVal < 30)           score += 10;
-        else                            score += 5; // 30-35 range
+        else                            score += 5;
         if (distEma50 < -5)             score += 10;
         if (distEma50 < -8)             score += 5;
         if (isExtreme)                  score += 5;
         if (close > ema20)              score += 5;
-        if (today.volume() > computeAvgVolume(candles, n, 10) * 1.5) score += 5;
+        if (today.volume() > avgVol * 2.0) score += 5;
+        if (distFromLow < 2.0)          score += 5;
 
         if (score < 55) return null;
 
@@ -88,20 +104,21 @@ public class RsiOversoldStrategy implements StrategyPlugin {
         BigDecimal slBD = BigDecimal.valueOf(sl).setScale(2, RoundingMode.HALF_UP);
         BigDecimal tgtBD = BigDecimal.valueOf(target).setScale(2, RoundingMode.HALF_UP);
 
-        log.info(String.format("RSI_OVR %s score=%d/100 rsi=%.1f @%s sl=%s tgt=%s dist50=%.1f%%",
-            context.symbol(), score, rsiVal, entryBD, slBD, tgtBD, distEma50));
+        log.info(String.format("RSI_OVR v3 %s score=%d/100 rsi=%.1f @%s sl=%s tgt=%s dist50=%.1f%% sup=%.1f%%",
+            context.symbol(), score, rsiVal, entryBD, slBD, tgtBD, distEma50, distFromLow));
 
         return new Signal(
             context.symbol(), Signal.Side.BUY, entryBD, slBD, tgtBD,
             score / 100.0,
-            "RSI_OVR rsi=" + String.format("%.1f", rsiVal)
+            "RSI_OVR v3 rsi=" + String.format("%.1f", rsiVal)
                 + " score=" + score + "/100"
                 + " @" + entryBD
                 + " sl=" + slBD
                 + " tgt=" + tgtBD
                 + " risk=" + String.format("%.1f%%", riskPct * 100)
-                + " dist50=" + String.format("%.1f%%", distEma50),
-            0.5, 0.25); // trail: activate at 0.5%, trail 0.25%
+                + " dist50=" + String.format("%.1f%%", distEma50)
+                + " sup=" + String.format("%.1f%%", distFromLow),
+            0.5, 0.25);
     }
 
     private double computeEma(List<com.stokr.marketdata.Candle> candles, int endIdx, int period) {

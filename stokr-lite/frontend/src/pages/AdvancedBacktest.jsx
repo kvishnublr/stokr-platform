@@ -836,11 +836,12 @@ export default function AdvancedBacktest() {
                 </div>
                 <button
                   onClick={() => {
-                    const headers = ['#','Symbol','Entry Time','Side','Qty','Entry Price','Capital','Stop Loss','Target','Gross P&L','Brokerage','Net P&L','Exit Type'];
+                    const headers = ['#','Symbol','Entry Time','Exit Time','Side','Qty','Entry Price','Capital','Stop Loss','Target','Gross P&L','Brokerage','Net P&L','Exit Type','Max Unreal P&L','Max Unreal Loss'];
                     const rows = r.trades.map((t, i) => [
                       i + 1,
                       t.symbol,
                       t.entryTime ? new Date(t.entryTime).toLocaleString('en-IN') : '',
+                      t.exitTime ? new Date(t.exitTime).toLocaleString('en-IN') : '',
                       t.side || 'SELL',
                       t.qty || '',
                       Number(t.entryPrice).toFixed(2),
@@ -850,7 +851,9 @@ export default function AdvancedBacktest() {
                       Number(t.pnl).toFixed(2),
                       Number(t.brokerage || 0).toFixed(2),
                       Number(t.netPnl ?? t.pnl).toFixed(2),
-                      t.exitType || ''
+                      t.exitType || '',
+                      Number(t.maxUnrealizedProfit || 0).toFixed(2),
+                      Number(t.maxUnrealizedLoss || 0).toFixed(2)
                     ]);
                     const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
                     const blob = new Blob([csv], { type: 'text/csv' });
@@ -875,7 +878,7 @@ export default function AdvancedBacktest() {
                 <table>
                   <thead style={{ position: 'sticky', top: 0 }}>
                     <tr>
-                      <th>#</th><th>Symbol</th><th>Entry Time</th>
+                      <th>#</th><th>Symbol</th><th>Entry Time</th><th>Exit Time</th>
                       <th style={{textAlign:'right'}}>Qty</th>
                       <th style={{textAlign:'right'}}>Entry ₹</th>
                       <th style={{textAlign:'right'}}>Capital ₹</th>
@@ -885,6 +888,8 @@ export default function AdvancedBacktest() {
                       <th style={{textAlign:'right'}}>Brok ₹</th>
                       <th style={{textAlign:'right'}}>Net ₹</th>
                       <th style={{textAlign:'center'}}>Exit</th>
+                      <th style={{textAlign:'right'}}>↑ Max P&L</th>
+                      <th style={{textAlign:'right'}}>↓ Max Loss</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -893,8 +898,12 @@ export default function AdvancedBacktest() {
                         <td style={{ color: '#9ca3af' }}>{i + 1}</td>
                         <td style={{ fontWeight: 700 }}>{t.symbol}</td>
                         <td style={{ color: '#6b7280', fontSize: '11px' }}>
-                          {t.entryTime ? new Date(t.entryTime).toLocaleString('en-IN', {
-                            day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '-'}
+                          {t.entryTime ? new Date(t.entryTime).toLocaleDateString('en-IN', {
+                            day:'2-digit', month:'short', year:'numeric' }) : '-'}
+                        </td>
+                        <td style={{ color: '#6b7280', fontSize: '11px' }}>
+                          {t.exitTime ? new Date(t.exitTime).toLocaleDateString('en-IN', {
+                            day:'2-digit', month:'short', year:'numeric' }) : '-'}
                         </td>
                         <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{t.qty}</td>
                         <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{Number(t.entryPrice).toFixed(2)}</td>
@@ -932,6 +941,12 @@ export default function AdvancedBacktest() {
                               : t.exitType === 'EOD_EXIT' ? (t.pnl > 0 ? '⏱ EOD+' : '⏱ EOD-')
                               : t.exitType}
                           </span>
+                        </td>
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px', color: (t.maxUnrealizedProfit || 0) > 0 ? '#10b981' : '#9ca3af' }}>
+                          {t.maxUnrealizedProfit ? `${Number(t.maxUnrealizedProfit).toFixed(0)}` : '-'}
+                        </td>
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: '11px', color: (t.maxUnrealizedLoss || 0) < 0 ? '#ef4444' : '#9ca3af' }}>
+                          {t.maxUnrealizedLoss ? `${Number(t.maxUnrealizedLoss).toFixed(0)}` : '-'}
                         </td>
                       </tr>
                     ))}

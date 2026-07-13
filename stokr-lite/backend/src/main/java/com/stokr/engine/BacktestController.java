@@ -270,6 +270,14 @@ public class BacktestController {
             String cacheKey = computeCacheKey(pluginType, universe, startTime, endTime, brokerage, timeframe);
             boolean cached = false;
 
+            // For daily strategies, load extra warmup data before startTime
+            // EMA50D needs 50 candles, OB needs ~20 — load 100 extra days to be safe
+            LocalDateTime warmupStartTime = startTime;
+            if (DAILY_STRATEGIES.contains(resolvedPluginType)) {
+                warmupStartTime = startTime.minusDays(150);
+                log.info("Daily strategy warmup: loading from {} instead of {} (extra 150 days)", warmupStartTime, startTime);
+            }
+
             // Check cache first (only for non-Chartink universes)
             if (!"CHARTINK".equalsIgnoreCase(universe)) {
                 Optional<BacktestCache> cachedResult = backtestCacheRepository.findByCacheKey(cacheKey);
@@ -309,7 +317,7 @@ public class BacktestController {
                 List<Future<?>> futures = new ArrayList<>();
                 for (String symbol : symbolList) {
                     futures.add(pool.submit(() -> {
-                        List<CandleData> candles = candleFetchService.fetchCandles(symbol, finalTimeframe, startTime, endTime);
+                        List<CandleData> candles = candleFetchService.fetchCandles(symbol, finalTimeframe, warmupStartTime, endTime);
                         if (!candles.isEmpty()) candlesBySymbol.put(symbol, candles);
                     }));
                 }
@@ -342,6 +350,9 @@ public class BacktestController {
             for (Map.Entry<String, List<CandleData>> entry : candlesBySymbol.entrySet()) {
                 allTrades.addAll(simulateStrategy(entry.getKey(), entry.getValue(), plugin, params, perTradeCost, niftyPctByTs, finalConsensusByTs, finalTimeframe, sharedTradedDays));
             }
+            // Filter out warmup trades — only keep trades from user's actual start date
+            final LocalDateTime filterStart = startTime;
+            allTrades.removeIf(t -> t.entryTime != null && t.entryTime.isBefore(filterStart));
             allTrades.sort(java.util.Comparator.comparing(t -> t.entryTime));
 
             int totalTrades = allTrades.size();
@@ -1439,9 +1450,14 @@ public class BacktestController {
     }
 
     private Candle toCandle(CandleData cd) {
+        java.time.LocalDateTime ts = cd.getTimestamp();
+        // Daily candles from DB have midnight timestamps — set to 15:15 IST (market close)
+        if (ts != null && ts.getHour() == 0 && ts.getMinute() == 0) {
+            ts = ts.withHour(15).withMinute(15);
+        }
         return new Candle(
             cd.getSymbol(),
-            cd.getTimestamp(),  // already LocalDateTime (IST)
+            ts,
             cd.getOpen(), cd.getHigh(), cd.getLow(), cd.getClose(), cd.getVolume()
         );
     }

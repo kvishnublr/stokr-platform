@@ -1,8 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
-
-const RISK_PER_SIGNAL = 5000; // ₹5000 per signal
 
 function getExitStatus(signal) {
   if (signal.status === 'REJECTED') return { label: 'REJECTED', color: '#e11d48', bg: '#fee2e2' };
@@ -19,11 +17,13 @@ function getExitStatus(signal) {
   return { label: signal.exitType, color: '#6b7280', bg: '#e5e7eb' };
 }
 
-function calculatePnL(signal, ltpMap) {
+function calculatePnL(signal, ltpMap, investmentAmount = 10000) {
   if (!signal.entryPrice) return null;
 
   const entry = Number(signal.entryPrice);
   if (!entry || entry === 0) return null;
+
+  const qty = Math.max(1, Math.floor(investmentAmount / entry));
 
   const isBuy = signal.side === 'BUY';
   let exitPrice = 0;
@@ -39,21 +39,21 @@ function calculatePnL(signal, ltpMap) {
   } else if (!signal.exitType && signal.status === 'EXECUTED') {
     const ltp = ltpMap?.[signal.symbol];
     if (ltp && ltp > 0) exitPrice = ltp;
-    else return null;
+    else return { pnl: null, qty };
   } else {
-    return null;
+    return { pnl: null, qty };
   }
 
-  if (!exitPrice || exitPrice === 0) return null;
+  if (!exitPrice || exitPrice === 0) return { pnl: null, qty };
 
-  let profit = 0;
+  let pnl = 0;
   if (isBuy) {
-    profit = (exitPrice - entry) / entry * RISK_PER_SIGNAL;
+    pnl = (exitPrice - entry) * qty;
   } else {
-    profit = (entry - exitPrice) / entry * RISK_PER_SIGNAL;
+    pnl = (entry - exitPrice) * qty;
   }
 
-  return Math.round(profit);
+  return { pnl: Math.round(pnl), qty };
 }
 
 // Signal `reason` fields often embed live metadata, e.g.
@@ -221,6 +221,7 @@ export default function Signals() {
   const [backtestStrategy, setBacktestStrategy] = useState('ALL');
   const [backtestResults, setBacktestResults] = useState(null);
   const [backtestLoading, setBacktestLoading] = useState(false);
+  const [investmentAmount, setInvestmentAmount] = useState(10000);
 
   const { data: signals = [], isLoading: sigLoading } = useQuery({
     queryKey: ['signals'],
@@ -228,23 +229,24 @@ export default function Signals() {
       const res = await client.get('/signals');
       return res.data;
     },
-    staleTime: 30000,
+    staleTime: 60000,
     gcTime: 300000,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
+  const uniqueSymbols = useMemo(() => [...new Set(signals.map(s => s.symbol).filter(Boolean))], [signals]);
+
   const { data: ltpMap = {} } = useQuery({
-    queryKey: ['ltp-batch', signals.map(s => s.symbol).join(',')],
+    queryKey: ['ltp-batch', uniqueSymbols.join(',')],
     queryFn: async () => {
-      const symbols = [...new Set(signals.map(s => s.symbol).filter(Boolean))];
-      if (symbols.length === 0) return {};
-      const res = await client.get('/market/ltp/batch', { params: { symbols: symbols.join(',') } });
+      if (uniqueSymbols.length === 0) return {};
+      const res = await client.get('/market/ltp/batch', { params: { symbols: uniqueSymbols.join(',') } });
       return res.data;
     },
-    enabled: signals.length > 0,
-    staleTime: 30000,
-    gcTime: 60000,
-    refetchInterval: 30000,
+    enabled: uniqueSymbols.length > 0,
+    staleTime: 60000,
+    gcTime: 300000,
+    refetchInterval: 60000,
   });
 
   const { data: stats = { total: 0, today: 0, active: 0 } } = useQuery({
@@ -317,7 +319,8 @@ export default function Signals() {
     if (s.status === 'GENERATED') strategyStats[strat].generated++;
     if (s.status === 'EXECUTED') strategyStats[strat].executed++;
     if (s.status === 'REJECTED') strategyStats[strat].rejected++;
-    const pnl = calculatePnL(s, ltpMap);
+    const result = calculatePnL(s, ltpMap, investmentAmount);
+    const pnl = result ? result.pnl : null;
     if (pnl !== null) {
       strategyStats[strat].pnlSum += pnl;
       strategyStats[strat].pnlCount++;
@@ -375,16 +378,38 @@ export default function Signals() {
         <p style={{ color: '#6b7280', fontSize: '15px', margin: 0 }}>Real-time strategy signals with detailed performance analytics</p>
       </div>
 
-      {/* Risk Deployment Banner */}
+      {/* Investment Amount Banner */}
       <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px', animation: 'slideDown 0.6s ease 0.15s both', boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)' }}>
         <div style={{ fontSize: '24px' }}>💰</div>
         <div>
-          <div style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>Risk Deployment per Signal</div>
-          <div style={{ fontSize: '24px', fontWeight: 800, color: 'white' }}>₹{RISK_PER_SIGNAL.toLocaleString('en-IN')}</div>
+          <div style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>Investment Per Trade</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+            <span style={{ fontSize: '20px', fontWeight: 800, color: 'white' }}>₹</span>
+            <input
+              type="number"
+              value={investmentAmount}
+              onChange={(e) => {
+                const v = parseInt(e.target.value) || 0;
+                setInvestmentAmount(Math.max(0, v));
+              }}
+              style={{
+                width: '120px',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                border: '2px solid rgba(255,255,255,0.3)',
+                background: 'rgba(255,255,255,0.15)',
+                color: 'white',
+                fontSize: '20px',
+                fontWeight: 800,
+                outline: 'none',
+                backdropFilter: 'blur(10px)',
+              }}
+            />
+          </div>
         </div>
         <div style={{ marginLeft: 'auto', fontSize: '12px', color: 'rgba(255,255,255,0.8)', textAlign: 'right' }}>
           <div>Total Signals: {filtered.length}</div>
-          <div style={{ fontSize: '14px', fontWeight: 700, color: 'white' }}>Total Risk: ₹{(RISK_PER_SIGNAL * filtered.length).toLocaleString('en-IN')}</div>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: 'white' }}>Total Deployed: ₹{(investmentAmount * filtered.length).toLocaleString('en-IN')}</div>
         </div>
       </div>
 
@@ -692,11 +717,11 @@ export default function Signals() {
               <colgroup>
                 <col style={{ width: '8%' }} />
                 <col style={{ width: '5%' }} />
-                <col style={{ width: '5%' }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '7%' }} />
                 <col style={{ width: '6%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '5%' }} />
                 <col style={{ width: '10%' }} />
                 <col style={{ width: '8%' }} />
                 <col style={{ width: '7%' }} />
@@ -707,7 +732,7 @@ export default function Signals() {
               </colgroup>
               <thead style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
-                  {['SYMBOL', 'SIDE', 'TYPE', 'ENTRY', 'SL', 'TARGET', 'SCORE', 'STRATEGY', 'STATUS', 'SOURCE', 'LTP', 'SIGNAL TIME', 'ENTRY TIME', 'EXIT STATUS', 'P&L'].map((h) => (
+                  {['SYMBOL', 'SIDE', 'TYPE', 'ENTRY', 'SL', 'TARGET', 'QTY', 'STRATEGY', 'STATUS', 'SOURCE', 'LTP', 'SIGNAL TIME', 'EXIT STATUS', 'P&L'].map((h) => (
                     <th key={h} style={{ textAlign: h === 'SYMBOL' ? 'left' : 'center', padding: '12px', color: '#6b7280', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap', background: (h === 'P&L' || h === 'LTP') ? 'rgba(99,102,241,0.05)' : 'transparent' }}>{h}</th>
                   ))}
                 </tr>
@@ -737,13 +762,15 @@ export default function Signals() {
                       {s.target ? Number(s.target).toFixed(2) : '—'}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
-                      {s.confidence != null ? (
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '12px', color: Number(s.confidence) >= 80 ? '#10b981' : Number(s.confidence) >= 60 ? '#f59e0b' : '#ef4444' }}>
-                          {Number(s.confidence).toFixed(0)}%
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: '11px', color: '#d1d5db' }}>—</span>
-                      )}
+                      {(() => {
+                        const result = calculatePnL(s, ltpMap, investmentAmount);
+                        const qty = result ? result.qty : Math.max(1, Math.floor(investmentAmount / (Number(s.entryPrice) || 1)));
+                        return (
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '12px', color: '#1f2937' }}>
+                            {qty}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', color: '#6366f1', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600, cursor: 'pointer' }} onClick={() => setSelectedStrategy(extractStrategyName(s.reason || s.scannerName))} title={s.reason || s.scannerName}>
                       <span style={{ color: '#6366f1', textDecoration: 'underline', cursor: 'pointer' }}>{extractStrategyName(s.reason || s.scannerName) || '—'}</span>
@@ -769,19 +796,6 @@ export default function Signals() {
                           return s.createdAt ? new Date(s.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
                         }
                       })()}
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'center', color: '#6b7280', fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {s.entryTime ? (() => {
-                        try {
-                          const dt = new Date(s.entryTime);
-                          const d = String(dt.getDate()).padStart(2, '0');
-                          const m = String(dt.getMonth() + 1).padStart(2, '0');
-                          const t = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                          return `${d}/${m} ${t}`;
-                        } catch (e) {
-                          return new Date(s.entryTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-                        }
-                      })() : '—'}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', fontSize: '11px' }}>
                       {(() => {
@@ -815,7 +829,8 @@ export default function Signals() {
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '12px' }}>
                       {(() => {
-                        const pnl = calculatePnL(s, ltpMap);
+                        const result = calculatePnL(s, ltpMap, investmentAmount);
+                        const pnl = result ? result.pnl : null;
                         if (pnl === null) return <span style={{ fontSize: '11px', color: '#d1d5db' }}>—</span>;
                         return (
                           <span style={{
@@ -843,7 +858,7 @@ export default function Signals() {
               <div style={{ fontSize: '28px', fontWeight: 800 }}>
                 Total P&L: ₹{(() => {
                   let total = 0;
-                  filtered.forEach(s => { const p = calculatePnL(s); if (p !== null) total += p; });
+                  filtered.forEach(s => { const r = calculatePnL(s, ltpMap, investmentAmount); if (r) total += (r.pnl || 0); });
                   return total.toLocaleString('en-IN', { minimumFractionDigits: 0 });
                 })()}
               </div>
@@ -853,7 +868,7 @@ export default function Signals() {
               {/* Total Capital */}
               <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)' }}>
                 <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' }}>Total Capital</div>
-                <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>₹{(RISK_PER_SIGNAL * filtered.length).toLocaleString('en-IN')}</div>
+                <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>₹{(investmentAmount * filtered.length).toLocaleString('en-IN')}</div>
               </div>
 
               {/* ROI */}
@@ -862,8 +877,8 @@ export default function Signals() {
                 <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>
                   {(() => {
                     let total = 0;
-                    filtered.forEach(s => { const p = calculatePnL(s); if (p !== null) total += p; });
-                    const roi = ((total / (RISK_PER_SIGNAL * filtered.length)) * 100).toFixed(2);
+                    filtered.forEach(s => { const r = calculatePnL(s, ltpMap, investmentAmount); if (r && r.pnl !== null) total += r.pnl; });
+                    const roi = ((total / (investmentAmount * filtered.length)) * 100).toFixed(2);
                     return roi + '%';
                   })()}
                 </div>
@@ -875,7 +890,7 @@ export default function Signals() {
                 <div style={{ fontSize: '22px', fontWeight: 800, color: '#10b981' }}>
                   {(() => {
                     let count = 0;
-                    filtered.forEach(s => { if (calculatePnL(s) > 0) count++; });
+                    filtered.forEach(s => { const r = calculatePnL(s, ltpMap, investmentAmount); if (r && r.pnl > 0) count++; });
                     return count;
                   })()} / {filtered.length}
                 </div>
@@ -887,7 +902,7 @@ export default function Signals() {
                 <div style={{ fontSize: '22px', fontWeight: 800, color: '#fca5a5' }}>
                   {(() => {
                     let count = 0;
-                    filtered.forEach(s => { if (calculatePnL(s) < 0) count++; });
+                    filtered.forEach(s => { const r = calculatePnL(s, ltpMap, investmentAmount); if (r && r.pnl < 0) count++; });
                     return count;
                   })()} / {filtered.length}
                 </div>
@@ -899,7 +914,7 @@ export default function Signals() {
                 <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>
                   {(() => {
                     let profitable = 0;
-                    filtered.forEach(s => { if (calculatePnL(s) > 0) profitable++; });
+                    filtered.forEach(s => { const r = calculatePnL(s, ltpMap, investmentAmount); if (r && r.pnl > 0) profitable++; });
                     const rate = filtered.length > 0 ? ((profitable / filtered.length) * 100).toFixed(1) : 0;
                     return rate + '%';
                   })()}
@@ -912,7 +927,7 @@ export default function Signals() {
                 <div style={{ fontSize: '22px', fontWeight: 800, color: 'white' }}>
                   ₹{(() => {
                     let total = 0;
-                    filtered.forEach(s => { total += calculatePnL(s); });
+                    filtered.forEach(s => { const r = calculatePnL(s, ltpMap, investmentAmount); if (r) total += (r.pnl || 0); });
                     const avg = filtered.length > 0 ? (total / filtered.length).toFixed(0) : 0;
                     return parseInt(avg).toLocaleString('en-IN');
                   })()}

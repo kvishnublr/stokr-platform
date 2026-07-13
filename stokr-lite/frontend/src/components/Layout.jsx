@@ -210,19 +210,19 @@ export default function Layout() {
       {/* Sidebar - Aurora Pro */}
       <aside className="sidebar-aurora" style={{ padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: '8px', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto', zIndex: 10 }}>
         {/* Brand */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px 28px', marginBottom: '12px', background: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(167,139,250,0.05))', borderRadius: '16px' }}>
-          <div className="animate-brand-pop" style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #6366f1 0%, #a78bfa 50%, #60a5fa 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 900, color: 'white', boxShadow: '0 8px 32px rgba(99,102,241,0.4)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px 28px', marginBottom: '12px', background: isAdmin ? 'linear-gradient(135deg, rgba(239,68,68,0.08), rgba(220,38,38,0.05))' : 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(167,139,250,0.05))', borderRadius: '16px' }}>
+          <div className="animate-brand-pop" style={{ width: '48px', height: '48px', borderRadius: '14px', background: isAdmin ? 'linear-gradient(135deg, #dc2626 0%, #ef4444 50%, #f97316 100%)' : 'linear-gradient(135deg, #6366f1 0%, #a78bfa 50%, #60a5fa 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 900, color: 'white', boxShadow: isAdmin ? '0 8px 32px rgba(239,68,68,0.4)' : '0 8px 32px rgba(99,102,241,0.4)' }}>
             S
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '20px', fontWeight: 800, background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-0.5px' }}>Stokr</div>
-            <div style={{ fontSize: '8px', fontWeight: 800, letterSpacing: '1.2px', background: 'linear-gradient(135deg, #3b82f6, #0ea5e9)', color: 'white', padding: '3px 10px', borderRadius: '8px', textTransform: 'uppercase', display: 'inline-block', marginTop: '2px' }}>Aurora Pro</div>
+            <div style={{ fontSize: '20px', fontWeight: 800, background: isAdmin ? 'linear-gradient(135deg, #dc2626, #ef4444)' : 'linear-gradient(135deg, #4f46e5, #7c3aed)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-0.5px' }}>Stokr</div>
+            <div style={{ fontSize: '8px', fontWeight: 800, letterSpacing: '1.2px', background: isAdmin ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : 'linear-gradient(135deg, #3b82f6, #0ea5e9)', color: 'white', padding: '3px 10px', borderRadius: '8px', textTransform: 'uppercase', display: 'inline-block', marginTop: '2px' }}>{isAdmin ? '🔴 Admin' : '🟢 Trader'}</div>
           </div>
         </div>
 
         {/* Nav - Trading */}
         <div>
-          <div style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#94a3b8', padding: '16px 12px 8px' }}>Trading</div>
+          <div style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.5px', color: isAdmin ? '#fca5a5' : '#94a3b8', padding: '16px 12px 8px' }}>Trading</div>
           {traderLinks.map((link) => (
             <NavLink
               key={link.to}
@@ -240,7 +240,7 @@ export default function Layout() {
         {/* Nav - Admin */}
         {isAdmin && (
           <div>
-            <div style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#94a3b8', padding: '16px 12px 8px' }}>Administration</div>
+            <div style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#fca5a5', padding: '16px 12px 8px' }}>Administration</div>
             {adminLinks.map((link) => (
               <NavLink
                 key={link.to}
@@ -260,16 +260,16 @@ export default function Layout() {
         <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '2px solid rgba(148,163,184,0.15)' }}>
           <button
             onClick={handleLogout}
-            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '14px', background: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(167,139,250,0.05))', cursor: 'pointer', transition: 'all 0.3s', border: 'none', width: '100%', textAlign: 'left' }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(99,102,241,0.12), rgba(167,139,250,0.08))'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '14px', background: isAdmin ? 'linear-gradient(135deg, rgba(239,68,68,0.08), rgba(220,38,38,0.05))' : 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(167,139,250,0.05))', cursor: 'pointer', transition: 'all 0.3s', border: 'none', width: '100%', textAlign: 'left' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = isAdmin ? 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(220,38,38,0.08))' : 'linear-gradient(135deg, rgba(99,102,241,0.12), rgba(167,139,250,0.08))'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(167,139,250,0.05))'; e.currentTarget.style.transform = 'translateY(0)'; }}
           >
-            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #a78bfa, #60a5fa)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 700, color: 'white', boxShadow: '0 4px 16px rgba(99,102,241,0.3)' }}>
+            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: isAdmin ? 'linear-gradient(135deg, #ef4444, #f97316)' : 'linear-gradient(135deg, #a78bfa, #60a5fa)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 700, color: 'white', boxShadow: isAdmin ? '0 4px 16px rgba(239,68,68,0.3)' : '0 4px 16px rgba(99,102,241,0.3)' }}>
               {initials}
             </div>
             <div style={{ lineHeight: 1.4, flex: 1, overflow: 'hidden' }}>
               <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{email.split('@')[0]}</div>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{isAdmin ? 'Administrator' : 'Active Trading'}</div>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: isAdmin ? '#dc2626' : '#059669', letterSpacing: '0.5px' }}>{isAdmin ? '🔴 ADMINISTRATOR' : '🟢 ACTIVE TRADER'}</div>
             </div>
             <span style={{ fontSize: '16px', opacity: 0.5 }}>→</span>
           </button>

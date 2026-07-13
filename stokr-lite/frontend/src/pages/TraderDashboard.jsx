@@ -58,11 +58,10 @@ export default function TraderDashboard() {
     staleTime: 300000,
   });
 
-  const { data: signals = [] } = useQuery({
-    queryKey: ['signals'],
-    queryFn: () => client.get('/signals').then(r => r.data),
-    staleTime: 30000,
-    refetchInterval: 60000,
+  const { data: signalStats = { today: 0, total: 0, active: 0 } } = useQuery({
+    queryKey: ['signal-stats'],
+    queryFn: () => client.get('/signals/stats').then(r => r.data),
+    staleTime: 60000,
   });
 
   const deployMut = useMutation({
@@ -144,7 +143,7 @@ export default function TraderDashboard() {
         </div>
         <div style={{ padding: '20px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', borderRadius: '14px', color: 'white' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Signals Today</div>
-          <div style={{ fontSize: '28px', fontWeight: 800 }}>{signals.filter(s => { const d = new Date(s.createdAt); const now = new Date(); return d.toDateString() === now.toDateString(); }).length}</div>
+          <div style={{ fontSize: '28px', fontWeight: 800 }}>{signalStats.today}</div>
         </div>
         <div style={{ padding: '20px', background: 'linear-gradient(135deg, #ef4444, #dc2626)', borderRadius: '14px', color: 'white' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Open Positions</div>
