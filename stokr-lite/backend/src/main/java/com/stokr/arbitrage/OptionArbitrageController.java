@@ -92,6 +92,18 @@ public class OptionArbitrageController {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
 
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            resp.put("marketClosed", true);
+            resp.put("opportunities", Collections.emptyList());
+            resp.put("count", 0);
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("total", 0);
+            summary.put("parityBreaks", 0);
+            resp.put("summary", summary);
+            return ResponseEntity.ok(resp);
+        }
+
         List<ArbitrageOpportunity> allOpps = new ArrayList<>();
         Set<String> underlyings = "ALL".equals(underlying) ? ALL_UNDERLYINGS : Set.of(underlying);
 
