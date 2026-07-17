@@ -429,7 +429,9 @@ export default function OptionArbitrage() {
   const { data: scanData, isLoading: scanLoading, error, refetch } = useQuery({
     queryKey: ['option-arbitrage-scan', underlyingParam],
     queryFn: async () => fetchMulti('scan', `${API_BASE}/api/option-arbitrage/scan`),
-    enabled: false,
+    enabled: activeTab === 'live',
+    refetchInterval: activeTab === 'live' ? 7000 : false,
+    staleTime: 5000,
   });
 
   const scanOrToday = scanData || todayData;
@@ -609,8 +611,11 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
 
   // Compute running P&L for each opportunity
   const priceMap = livePrices?.prices || {};
+  function getLivePrice(opp) {
+    return priceMap[opp.id] || priceMap[opp.underlying + '_' + (opp.strike || opp.strikePrice || 0)];
+  }
   function computeRunningPnl(opp) {
-    const lp = priceMap[opp.id];
+    const lp = getLivePrice(opp);
     if (!lp || !lp.ceLive || !lp.peLive) return null;
 
     const entryCE = opp.ceEntryPrice || opp.cePrice || 0;
@@ -760,7 +765,7 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
                   const cePrice = opp.ceEntryPrice || opp.cePrice || 0;
                   const pePrice = opp.peEntryPrice || opp.pePrice || 0;
                   const runningPnl = computeRunningPnl(opp);
-                  const lp = priceMap[opp.id] || {};
+                  const lp = getLivePrice(opp) || {};
 
                   return (
                     <React.Fragment key={idx}>

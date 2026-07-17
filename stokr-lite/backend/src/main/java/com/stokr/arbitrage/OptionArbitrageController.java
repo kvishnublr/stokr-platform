@@ -340,6 +340,7 @@ public class OptionArbitrageController {
                 lp.put("peLive", peQ != null ? peQ.lastPrice : 0.0);
                 lp.put("futLive", futQ != null ? futQ.lastPrice : 0.0);
                 prices.put(idKey, lp);
+                prices.put(dbOpp.getUnderlying() + "_" + (int)dbOpp.getStrike().doubleValue(), lp);
             }
 
             resp.put("prices", prices);
