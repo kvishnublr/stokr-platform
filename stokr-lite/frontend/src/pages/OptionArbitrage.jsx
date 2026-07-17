@@ -615,15 +615,25 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
     return priceMap[opp.id] || priceMap[opp.underlying + '_' + (opp.strike || opp.strikePrice || 0)];
   }
   function computeRunningPnl(opp) {
-    const lp = getLivePrice(opp);
+    let lp = getLivePrice(opp);
+    let entryCE, entryPE, entryFUT, futLive, lotSize;
+
+    if (lp && lp.ceLive && lp.peLive) {
+      entryCE = opp.ceEntryPrice || opp.cePrice || 0;
+      entryPE = opp.peEntryPrice || opp.pePrice || 0;
+      entryFUT = opp.futuresPrice || 0;
+      futLive = lp.futLive || 0;
+      lotSize = opp.lotSize || opp.costBreakdown?.lotSize || 65;
+    } else {
+      entryCE = opp.cePrice || 0;
+      entryPE = opp.pePrice || 0;
+      entryFUT = opp.futuresPrice || 0;
+      futLive = opp.futuresPrice || 0;
+      lotSize = opp.costBreakdown?.lotSize || 65;
+      lp = { ceLive: opp.ceBid || opp.cePrice || 0, peLive: opp.peBid || opp.pePrice || 0 };
+    }
+
     if (!lp || !lp.ceLive || !lp.peLive) return null;
-
-    const entryCE = opp.ceEntryPrice || opp.cePrice || 0;
-    const entryPE = opp.peEntryPrice || opp.pePrice || 0;
-    const entryFUT = opp.futuresPrice || 0;
-    const futLive = lp.futLive || 0;
-    const lotSize = opp.lotSize || opp.costBreakdown?.lotSize || 65;
-
     if (entryCE === 0 || entryPE === 0 || entryFUT === 0) return null;
     if (futLive === 0) return null;
 
