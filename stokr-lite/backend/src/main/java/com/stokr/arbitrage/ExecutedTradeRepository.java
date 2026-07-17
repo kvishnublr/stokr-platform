@@ -26,4 +26,7 @@ public interface ExecutedTradeRepository extends JpaRepository<ExecutedTrade, Lo
 
     @Query("SELECT e FROM ExecutedTrade e WHERE e.status = 'OPEN' AND e.underlying = :underlying ORDER BY e.executedAt DESC")
     List<ExecutedTrade> findOpenByUnderlying(@Param("underlying") String underlying);
+
+    @Query("SELECT e FROM ExecutedTrade e WHERE e.status IN ('OPEN', 'ROLLED', 'PARTIALLY_CLOSED') ORDER BY e.executedAt DESC")
+    List<ExecutedTrade> findAllOpen();
 }

@@ -520,79 +520,7 @@ export default function OptionArbitrage() {
   );
 }
 
-const SAMPLE_NIFTY_TRADES = [
-  { id: 'sample-1', type: 'PARITY_BREAK', underlying: 'NIFTY', strike: 25100, action: 'CONVERSION', ceEntryPrice: 185.5, peEntryPrice: 162.3, spotPrice: 25080, futuresPrice: 25120, edgePoints: 38.2, edgeAfterCosts: 420, confidence: 92, daysToExpiry: 5, scanTime: new Date().toISOString().replace('T', ' ').slice(0, 19), lotSize: 65, status: 'OPEN', legs: 'BUY NIFTY26JUL25100CE + SELL NIFTY26JUL25100PE + SELL NIFTY26JULFUT', maxProfit: 420, maxLoss: 0, costBreakdown: { grossEdge: 2483, stt: 2.48, brokerage: 120, exchange: 8.57, sebi: 0.25, gst: 23.22, ipft: 0.1, totalCosts: 154.62, netEdge: 420, lotSize: 65 } },
-  { id: 'sample-2', type: 'PARITY_BREAK', underlying: 'NIFTY', strike: 25200, action: 'REVERSAL', ceEntryPrice: 142.8, peEntryPrice: 198.7, spotPrice: 25190, futuresPrice: 25230, edgePoints: 29.5, edgeAfterCosts: 310, confidence: 88, daysToExpiry: 5, scanTime: new Date().toISOString().replace('T', ' ').slice(0, 19), lotSize: 65, status: 'OPEN', legs: 'SELL NIFTY26JUL25200CE + BUY NIFTY26JUL25200PE + BUY NIFTY26JULFUT', maxProfit: 310, maxLoss: 0, costBreakdown: { grossEdge: 1917.5, stt: 1.92, brokerage: 120, exchange: 6.62, sebi: 0.19, gst: 22.65, ipft: 0.07, totalCosts: 151.45, netEdge: 310, lotSize: 65 } },
-  { id: 'sample-3', type: 'IV_SPIKE', underlying: 'NIFTY', strike: 25150, action: 'SELL_STRADDLE', ceEntryPrice: 168.2, peEntryPrice: 175.9, spotPrice: 25140, futuresPrice: 25180, edgePoints: 22.0, edgeAfterCosts: 180, confidence: 75, daysToExpiry: 5, scanTime: new Date().toISOString().replace('T', ' ').slice(0, 19), lotSize: 65, status: 'OPEN', legs: 'SELL NIFTY26JUL25150CE + SELL NIFTY26JUL25150PE', maxProfit: 180, maxLoss: 0, costBreakdown: { grossEdge: 1430, stt: 1.43, brokerage: 80, exchange: 4.93, sebi: 0.14, gst: 15.32, ipft: 0.05, totalCosts: 101.87, netEdge: 180, lotSize: 65 } },
-];
 
-function SampleTestTraces() {
-  const [expandedIdx, setExpandedIdx] = useState(null);
-  return (
-    <div>
-      <div className="px-6 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
-        <span className="text-xs font-semibold text-amber-700 bg-amber-200 px-2 py-0.5 rounded">SAMPLE</span>
-        <span className="text-xs text-amber-600">Test trades for demo (remove when market opens)</span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-xs text-slate-500 uppercase border-b border-slate-200 bg-slate-50">
-              <th className="px-3 py-3 text-left">Type</th>
-              <th className="px-3 py-3 text-left">Underlying</th>
-              <th className="px-3 py-3 text-left">Strike</th>
-              <th className="px-3 py-3 text-left">Action</th>
-              <th className="px-3 py-3 text-right">CE</th>
-              <th className="px-3 py-3 text-right">PE</th>
-              <th className="px-3 py-3 text-right">Edge (pts)</th>
-              <th className="px-3 py-3 text-right">Edge (₹)</th>
-              <th className="px-3 py-3 text-right">Conf</th>
-              <th className="px-3 py-3 text-right">DTE</th>
-              <th className="px-3 py-3 text-center">Execute</th>
-            </tr>
-          </thead>
-          <tbody>
-            {SAMPLE_NIFTY_TRADES.map((opp, idx) => (
-              <React.Fragment key={opp.id}>
-                <tr onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
-                  className={`border-b border-slate-100 cursor-pointer transition-colors ${expandedIdx === idx ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
-                  <td className="px-3 py-3">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${TYPE_COLORS[opp.type]?.bg || ''} ${TYPE_COLORS[opp.type]?.text || ''} ${TYPE_COLORS[opp.type]?.border || ''}`}>
-                      {TYPE_LABELS[opp.type] || opp.type}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3 text-sm font-medium text-slate-700">{opp.underlying}</td>
-                  <td className="px-3 py-3 text-sm font-mono font-medium text-slate-900">{opp.strike}</td>
-                  <td className="px-3 py-3 text-xs text-slate-500">{ACTION_LABELS[opp.action] || opp.action}</td>
-                  <td className="px-3 py-3 text-sm text-right font-mono text-slate-700">{fmtCurrency(opp.ceEntryPrice, 1)}</td>
-                  <td className="px-3 py-3 text-sm text-right font-mono text-slate-700">{fmtCurrency(opp.peEntryPrice, 1)}</td>
-                  <td className="px-3 py-3 text-sm text-right font-mono font-bold text-emerald-600">+{fmt(opp.edgePoints, 1)}</td>
-                  <td className="px-3 py-3 text-sm text-right font-mono font-bold text-emerald-600">{fmtCurrency(opp.edgeAfterCosts, 0)}</td>
-                  <td className="px-3 py-3 text-right"><span className="text-xs text-slate-500">{fmt(opp.confidence, 0)}%</span></td>
-                  <td className="px-3 py-3 text-sm text-right text-slate-500">{fmt(opp.daysToExpiry, 0)}d</td>
-                  <td className="px-3 py-3 text-center">
-                    {opp.type === 'PARITY_BREAK' ? (
-                      <KiteBasketButton opp={opp} label="Kite" className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition" />
-                    ) : (
-                      <span className="text-xs text-slate-400">Manual only</span>
-                    )}
-                  </td>
-                </tr>
-                {expandedIdx === idx && (
-                  <tr>
-                    <td colSpan={11} className="px-0 py-0">
-                      <ExpandedDetail opp={opp} livePriceMap={{}} />
-                    </td>
-                  </tr>
-                )}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlying, ALL_U, data, scanLoading, cachedLoading, error, refetch, health, opportunities, summary, totalEdge, isLoading, livePrices }) {
   const [expandedIdx, setExpandedIdx] = useState(null);
@@ -639,14 +567,15 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
       const newLegs = execState.legs.map((l, i) => {
         const sl = serverLegs[i];
         if (sl) {
-          const isFilled = sl.status === 'COMPLETE' || sl.status === 'OPEN' || sl.status === 'TRIGGER PENDING';
-          const isRejected = sl.status === 'REJECTED' || sl.status === 'CANCELLED';
+          const isFilled = sl.status === 'COMPLETE';
+          const isRejected = sl.status === 'REJECTED' || sl.status === 'CANCELLED' || sl.status === 'OPEN';
           return {
             ...l,
             name: sl.symbol || l.name,
             orderId: sl.orderId,
-            status: isFilled ? 'filled' : isRejected ? 'error' : sl.status === 'ERROR' ? 'error' : 'sending',
-            msg: sl.message || (isFilled ? 'Order placed' : isRejected ? 'Rejected by broker' : sl.status || ''),
+            fillPrice: sl.fillPrice || 0,
+            status: isFilled ? 'filled' : isRejected ? (sl.status === 'OPEN' ? 'pending' : 'error') : sl.status === 'ERROR' ? 'error' : 'sending',
+            msg: sl.message || (isFilled ? `Filled @ ₹${sl.fillPrice || sl.requestedPrice}` : isRejected ? `Status: ${sl.status}` : sl.status || ''),
           };
         }
         return { ...l, status: 'error', msg: 'No response from server' };
@@ -658,9 +587,12 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
         legs: newLegs,
         result: {
           ok: data.success,
+          partialFill: data.partialFill,
           tradeId: data.tradeId,
           tradeStatus: data.tradeStatus,
           error: data.error,
+          marginAvailable: data.marginAvailable,
+          marginRequired: data.marginRequired,
         }
       }));
 
@@ -799,7 +731,9 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
         </div>
 
         {opportunities.length === 0 ? (
-          <SampleTestTraces />
+          <div className="text-center py-12 text-slate-400">
+            <p className="text-sm">No opportunities found. Scanner runs during market hours (9:15 AM - 3:30 PM IST).</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -956,11 +890,16 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
                               </div>
 
                               {execState.result && (
-                                <div className={`rounded-lg p-3 mb-3 border ${execState.result.ok ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                                <div className={`rounded-lg p-3 mb-3 border ${execState.result.ok ? 'bg-emerald-50 border-emerald-200' : execState.result.partialFill ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
                                   {execState.result.ok ? (
-                                    <p className="text-sm font-semibold text-emerald-800">Trade #{execState.result.tradeId} placed successfully. Check Zerodha for fills.</p>
+                                    <p className="text-sm font-semibold text-emerald-800">Trade #{execState.result.tradeId} placed successfully. All 3 legs filled.</p>
+                                  ) : execState.result.partialFill ? (
+                                    <p className="text-sm font-semibold text-amber-800">Partial fill detected — filled legs have been automatically squared off to prevent naked positions. {execState.result.error || ''}</p>
                                   ) : (
-                                    <p className="text-sm font-semibold text-red-800">{execState.result.error || 'Execution failed'} — NFO segment may not be activated on Zerodha Console.</p>
+                                    <p className="text-sm font-semibold text-red-800">{execState.result.error || 'Execution failed'}</p>
+                                  )}
+                                  {execState.result.marginAvailable != null && (
+                                    <p className="text-xs mt-1 text-slate-600">Margin available: ₹{Number(execState.result.marginAvailable).toLocaleString()} | Required: ₹{Number(execState.result.marginRequired || 0).toLocaleString()}</p>
                                   )}
                                 </div>
                               )}
@@ -1691,9 +1630,20 @@ function AutoExecTab() {
               <div className="flex flex-wrap gap-1.5 mt-1.5">
                 {['ALL','NIFTY','BANKNIFTY','MIDCPNIFTY','FINNIFTY'].map(u => {
                   const currentVal = settings.target_underlying || 'ALL';
-                  const isActive = currentVal === u || (u !== 'ALL' && currentVal.split(',').map(s=>s.trim().toUpperCase()).includes(u));
+                  const parts = currentVal.split(',').map(s => s.trim().toUpperCase());
+                  const isActive = parts.includes(u);
                   return (
-                    <button key={u} onClick={() => updateSetting('target_underlying', u)}
+                    <button key={u} onClick={() => {
+                      let next;
+                      if (u === 'ALL') {
+                        next = 'ALL';
+                      } else {
+                        const withoutAll = parts.filter(x => x !== 'ALL');
+                        const toggled = withoutAll.includes(u) ? withoutAll.filter(x => x !== u) : [...withoutAll, u];
+                        next = toggled.length === 0 ? 'ALL' : toggled.join(',');
+                      }
+                      updateSetting('target_underlying', next);
+                    }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
                         isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
                       }`}>
@@ -1702,7 +1652,7 @@ function AutoExecTab() {
                   );
                 })}
               </div>
-              <p className="text-xs text-slate-400 mt-1">Select which underlyings to auto-execute for</p>
+              <p className="text-xs text-slate-400 mt-1">Click to toggle. Multiple underlyings = parallel scan.</p>
             </div>
           </div>
         </div>

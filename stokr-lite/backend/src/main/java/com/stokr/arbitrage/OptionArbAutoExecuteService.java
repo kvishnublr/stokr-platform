@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -21,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class OptionArbAutoExecuteService {
 
     private static final Logger log = LoggerFactory.getLogger(OptionArbAutoExecuteService.class);
+    private static final double MIN_MARGIN_BUFFER = 1.15;
 
     private final AutoExecSettingRepository settingsRepo;
     private final ExecutedTradeRepository tradeRepo;
@@ -198,7 +200,16 @@ public class OptionArbAutoExecuteService {
             return null;
         }
 
+        String token = auth.getAccessToken();
+        BigDecimal availableMargin = zerodhaAdapter.getAvailableMargin(token);
         int lotSize = OptionChainService.getLotSize(opp.underlying);
+        double estimatedRequired = (opp.cePrice + opp.pePrice + opp.futuresPrice) * lotSize * MIN_MARGIN_BUFFER;
+        if (availableMargin.doubleValue() < estimatedRequired) {
+            log.warn("Insufficient margin for {} {} {}: available=₹{},.0f required=₹{},.0f",
+                opp.underlying, (int) opp.strike, opp.action, availableMargin.doubleValue(), estimatedRequired);
+            return null;
+        }
+
         LocalDate expiry = getExpiryDate(opp.underlying);
         String ceSymbol = buildNfoSymbol(opp.underlying, expiry, (int) opp.strike, "CE");
         String peSymbol = buildNfoSymbol(opp.underlying, expiry, (int) opp.strike, "PE");
@@ -229,43 +240,125 @@ public class OptionArbAutoExecuteService {
         trade.setPeSymbol(peSymbol);
         trade.setFutSymbol(futSymbol);
         trade.setLotSize(lotSize);
-        trade.setStatus("OPEN");
+        trade.setStatus("PENDING");
 
-        boolean allFilled = true;
+        List<String> placedOrderIds = new ArrayList<>();
+        Map<String, String> orderSideMap = new LinkedHashMap<>();
+
         for (BrokerOrderRequest order : orders) {
             try {
-                BrokerOrderResponse resp = zerodhaAdapter.placeOrder(auth.getAccessToken(), order);
-                if (resp.isSuccess()) {
+                BrokerOrderResponse resp = zerodhaAdapter.placeOrder(token, order);
+                if (resp.orderId() != null) {
+                    placedOrderIds.add(resp.orderId());
+                    orderSideMap.put(resp.orderId(), order.side().name());
                     if (order.symbol().equals(ceSymbol)) { trade.setCeOrderId(resp.orderId()); trade.setCeEntryPrice(order.price()); }
                     else if (order.symbol().equals(peSymbol)) { trade.setPeOrderId(resp.orderId()); trade.setPeEntryPrice(order.price()); }
                     else if (order.symbol().equals(futSymbol)) { trade.setFutOrderId(resp.orderId()); trade.setFutEntryPrice(order.price()); }
                 } else {
-                    allFilled = false;
                     log.warn("Auto-exec order rejected: {} {} — {}", order.side(), order.symbol(), resp.message());
                 }
             } catch (Exception e) {
-                allFilled = false;
                 log.error("Auto-exec order failed: {} {} — {}", order.side(), order.symbol(), e.getMessage());
             }
-            try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(150); } catch (InterruptedException ignored) {}
         }
 
-        if (!allFilled) {
-            cancelFilledOrders(auth.getAccessToken(), trade);
+        if (placedOrderIds.isEmpty()) {
             trade.setStatus("FAILED");
-            trade.setNotes("Partial fill — cancelled");
+            trade.setNotes("All orders rejected");
+            return tradeRepo.save(trade);
         }
 
-        trade.setNotes(trade.getNotes() != null ? trade.getNotes() : "Auto-executed");
+        try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
+
+        Set<String> filledOrderIds = new HashSet<>();
+        Set<String> unfilledOrderIds = new HashSet<>();
+
+        for (String orderId : placedOrderIds) {
+            try {
+                Map<String, Object> details = zerodhaAdapter.getOrderDetails(token, orderId);
+                String status = (String) details.getOrDefault("status", "UNKNOWN");
+                double avgPrice = (double) details.getOrDefault("average_price", 0.0);
+                int filled = (int) details.getOrDefault("filled_quantity", 0);
+
+                if ("COMPLETE".equalsIgnoreCase(status)) {
+                    filledOrderIds.add(orderId);
+                    String symbol = (String) details.getOrDefault("tradingsymbol", "");
+                    if (symbol.endsWith("CE")) trade.setCeEntryPrice(avgPrice);
+                    else if (symbol.endsWith("PE")) trade.setPeEntryPrice(avgPrice);
+                    else if (symbol.endsWith("FUT")) trade.setFutEntryPrice(avgPrice);
+                } else {
+                    unfilledOrderIds.add(orderId);
+                }
+            } catch (Exception e) {
+                log.warn("Could not verify fill for {}: {}", orderId, e.getMessage());
+                unfilledOrderIds.add(orderId);
+            }
+        }
+
+        if (filledOrderIds.size() == 3) {
+            trade.setStatus("OPEN");
+            trade.setNotes("Auto-executed — all 3 legs filled");
+        } else if (filledOrderIds.isEmpty()) {
+            trade.setStatus("FAILED");
+            trade.setNotes("All orders rejected/failed");
+        } else {
+            log.warn("PARTIAL FILL: {}/3 for {} {} {}. Squaring off filled legs.",
+                filledOrderIds.size(), opp.action, opp.underlying, (int) opp.strike);
+            squareOffFilledLegs(token, trade, filledOrderIds, orderSideMap, lotSize);
+            trade.setStatus("FAILED");
+            trade.setNotes(String.format("Partial fill %d/3 — filled legs squared off immediately", filledOrderIds.size()));
+        }
+
         return tradeRepo.save(trade);
+    }
+
+    private void squareOffFilledLegs(String token, ExecutedTrade trade, Set<String> filledOrderIds,
+                                       Map<String, String> orderSideMap, int lotSize) {
+        if (filledOrderIds.isEmpty()) return;
+        log.warn("SQUARE-OFF: Closing {} filled legs for trade on {} strike={}",
+            filledOrderIds.size(), trade.getUnderlying(), trade.getStrike());
+
+        String[] orderIdArr = filledOrderIds.toArray(new String[0]);
+        for (String orderId : orderIdArr) {
+            String side = orderSideMap.getOrDefault(orderId, "");
+            String symbol = getSymbolForOrder(trade, orderId);
+            if (symbol == null || side.isEmpty()) continue;
+
+            BrokerOrderRequest.Side closeSide = "BUY".equals(side) ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
+
+            try {
+                BrokerOrderRequest closeOrder = new BrokerOrderRequest(symbol, "NFO", closeSide, lotSize, 0.0, null, "NRML");
+                BrokerOrderResponse resp = zerodhaAdapter.placeOrder(token, closeOrder);
+                log.info("SQUARE-OFF: {} {} {} status={}", closeSide, symbol, lotSize, resp.status());
+            } catch (Exception e) {
+                log.error("SQUARE-OFF exception for {}: {}", symbol, e.getMessage());
+            }
+            try { Thread.sleep(200); } catch (InterruptedException ignored) {}
+        }
+    }
+
+    private String getSymbolForOrder(ExecutedTrade trade, String orderId) {
+        if (orderId.equals(trade.getCeOrderId())) return trade.getCeSymbol();
+        if (orderId.equals(trade.getPeOrderId())) return trade.getPeSymbol();
+        if (orderId.equals(trade.getFutOrderId())) return trade.getFutSymbol();
+        return null;
     }
 
     public ExecutedTrade rollOptionsOnly(ExecutedTrade existing, ArbitrageOpportunity newOpp) {
         ZerodhaTokenManager.ZerodhaAuth auth = tokenManager.getCurrentAuth();
         if (auth == null || auth.getAccessToken() == null) return null;
 
-        int lotSize = existing.getLotSize();
         String token = auth.getAccessToken();
+        int lotSize = existing.getLotSize();
+
+        BigDecimal availableMargin = zerodhaAdapter.getAvailableMargin(token);
+        double estimatedRequired = (newOpp.cePrice + newOpp.pePrice) * lotSize * MIN_MARGIN_BUFFER;
+        if (availableMargin.doubleValue() < estimatedRequired) {
+            log.warn("Insufficient margin for rollover: available=₹{},.0f required=₹{},.0f",
+                availableMargin.doubleValue(), estimatedRequired);
+            return null;
+        }
 
         List<String> closeOrderIds = new ArrayList<>();
 
@@ -292,40 +385,90 @@ public class OptionArbAutoExecuteService {
         existing.setNotes("Rolled options — same futures direction maintained");
         tradeRepo.save(existing);
 
+        LocalDate expiry = getExpiryDate(existing.getUnderlying());
+        String newCeSymbol = buildNfoSymbol(existing.getUnderlying(), expiry, existing.getStrike(), "CE");
+        String newPeSymbol = buildNfoSymbol(existing.getUnderlying(), expiry, existing.getStrike(), "PE");
+        String newFutSymbol = buildNfoFutSymbol(existing.getUnderlying(), expiry);
+
         ExecutedTrade newTrade = new ExecutedTrade();
         newTrade.setUnderlying(existing.getUnderlying());
         newTrade.setStrike(existing.getStrike());
-        newTrade.setExpiryDate(existing.getExpiryDate());
+        newTrade.setExpiryDate(expiry);
         newTrade.setAction(existing.getAction());
-        newTrade.setCeSymbol(existing.getCeSymbol());
-        newTrade.setPeSymbol(existing.getPeSymbol());
-        newTrade.setFutSymbol(existing.getFutSymbol());
+        newTrade.setCeSymbol(newCeSymbol);
+        newTrade.setPeSymbol(newPeSymbol);
+        newTrade.setFutSymbol(newFutSymbol);
         newTrade.setCeEntryPrice(newOpp.cePrice);
         newTrade.setPeEntryPrice(newOpp.pePrice);
         newTrade.setFutEntryPrice(existing.getFutEntryPrice());
         newTrade.setLotSize(lotSize);
         newTrade.setRolloverFromId(existing.getId());
-        newTrade.setStatus("OPEN");
+        newTrade.setStatus("PENDING");
+
+        boolean allFilled = true;
 
         try {
-            BrokerOrderRequest openCE = new BrokerOrderRequest(existing.getCeSymbol(), "NFO",
+            BrokerOrderRequest openCE = new BrokerOrderRequest(newCeSymbol, "NFO",
                 "CONVERSION".equals(existing.getAction()) ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL,
                 lotSize, newOpp.cePrice, null, "NRML");
             BrokerOrderResponse resp = zerodhaAdapter.placeOrder(token, openCE);
             if (resp.isSuccess()) newTrade.setCeOrderId(resp.orderId());
-        } catch (Exception e) { log.error("Failed to open new CE: {}", e.getMessage()); }
+            else allFilled = false;
+        } catch (Exception e) { log.error("Failed to open new CE: {}", e.getMessage()); allFilled = false; }
 
         try {
-            BrokerOrderRequest openPE = new BrokerOrderRequest(existing.getPeSymbol(), "NFO",
+            BrokerOrderRequest openPE = new BrokerOrderRequest(newPeSymbol, "NFO",
                 "CONVERSION".equals(existing.getAction()) ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY,
                 lotSize, newOpp.pePrice, null, "NRML");
             BrokerOrderResponse resp = zerodhaAdapter.placeOrder(token, openPE);
             if (resp.isSuccess()) newTrade.setPeOrderId(resp.orderId());
-        } catch (Exception e) { log.error("Failed to open new PE: {}", e.getMessage()); }
+            else allFilled = false;
+        } catch (Exception e) { log.error("Failed to open new PE: {}", e.getMessage()); allFilled = false; }
 
-        newTrade.setNotes("Rolled from trade #" + existing.getId() + " — options only");
+        try { Thread.sleep(1500); } catch (InterruptedException ignored) {}
+
+        Set<String> filledIds = new HashSet<>();
+        Set<String> unfilledIds = new HashSet<>();
+        Map<String, String> sideMap = new LinkedHashMap<>();
+
+        if (newTrade.getCeOrderId() != null) sideMap.put(newTrade.getCeOrderId(), "CONVERSION".equals(existing.getAction()) ? "BUY" : "SELL");
+        if (newTrade.getPeOrderId() != null) sideMap.put(newTrade.getPeOrderId(), "CONVERSION".equals(existing.getAction()) ? "SELL" : "BUY");
+
+        for (String oid : sideMap.keySet()) {
+            try {
+                Map<String, Object> details = zerodhaAdapter.getOrderDetails(token, oid);
+                String status = (String) details.getOrDefault("status", "UNKNOWN");
+                if ("COMPLETE".equalsIgnoreCase(status)) filledIds.add(oid);
+                else unfilledIds.add(oid);
+            } catch (Exception e) { unfilledIds.add(oid); }
+        }
+
+        if (filledIds.size() == 2) {
+            newTrade.setStatus("OPEN");
+            newTrade.setNotes("Rolled from trade #" + existing.getId() + " — options only");
+        } else if (filledIds.isEmpty()) {
+            newTrade.setStatus("FAILED");
+            newTrade.setNotes("Rolled but new options failed to fill");
+        } else {
+            log.warn("PARTIAL ROLL FILL: closing filled new legs");
+            for (String oid : filledIds) {
+                String symbol = null;
+                String side = sideMap.get(oid);
+                if (oid.equals(newTrade.getCeOrderId())) symbol = newCeSymbol;
+                if (oid.equals(newTrade.getPeOrderId())) symbol = newPeSymbol;
+                if (symbol != null) {
+                    BrokerOrderRequest.Side closeSide = "BUY".equals(side) ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
+                    try {
+                        zerodhaAdapter.placeOrder(token, new BrokerOrderRequest(symbol, "NFO", closeSide, lotSize, 0.0, null, "NRML"));
+                    } catch (Exception e) { log.error("Roll square-off failed: {}", e.getMessage()); }
+                }
+            }
+            newTrade.setStatus("FAILED");
+            newTrade.setNotes("Partial roll — filled legs squared off");
+        }
+
         tradeRepo.save(newTrade);
-        log.info("Smart rollover complete: trade #{} → #{}", existing.getId(), newTrade.getId());
+        log.info("Smart rollover complete: trade #{} → #{} status={}", existing.getId(), newTrade.getId(), newTrade.getStatus());
         return newTrade;
     }
 
@@ -349,13 +492,14 @@ public class OptionArbAutoExecuteService {
 
         int lotSize = existing.getLotSize();
         String token = auth.getAccessToken();
+        List<String> closeOrderIds = new ArrayList<>();
 
         try {
             BrokerOrderRequest closeCE = new BrokerOrderRequest(existing.getCeSymbol(), "NFO",
                 "CONVERSION".equals(existing.getAction()) ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY,
                 lotSize, 0.0, null, "NRML");
             BrokerOrderResponse resp = zerodhaAdapter.placeOrder(token, closeCE);
-            if (resp.isSuccess()) existing.setCloseCeOrderId(resp.orderId());
+            if (resp.isSuccess()) { existing.setCloseCeOrderId(resp.orderId()); closeOrderIds.add(resp.orderId()); }
         } catch (Exception e) { log.error("Close CE failed: {}", e.getMessage()); }
 
         try {
@@ -363,7 +507,7 @@ public class OptionArbAutoExecuteService {
                 "CONVERSION".equals(existing.getAction()) ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL,
                 lotSize, 0.0, null, "NRML");
             BrokerOrderResponse resp = zerodhaAdapter.placeOrder(token, closePE);
-            if (resp.isSuccess()) existing.setClosePeOrderId(resp.orderId());
+            if (resp.isSuccess()) { existing.setClosePeOrderId(resp.orderId()); closeOrderIds.add(resp.orderId()); }
         } catch (Exception e) { log.error("Close PE failed: {}", e.getMessage()); }
 
         try {
@@ -371,12 +515,35 @@ public class OptionArbAutoExecuteService {
                 "CONVERSION".equals(existing.getAction()) ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL,
                 lotSize, 0.0, null, "NRML");
             BrokerOrderResponse resp = zerodhaAdapter.placeOrder(token, closeFut);
-            if (resp.isSuccess()) existing.setCloseFutOrderId(resp.orderId());
+            if (resp.isSuccess()) { existing.setCloseFutOrderId(resp.orderId()); closeOrderIds.add(resp.orderId()); }
         } catch (Exception e) { log.error("Close FUT failed: {}", e.getMessage()); }
 
-        existing.setStatus("CLOSED");
+        try { Thread.sleep(1500); } catch (InterruptedException ignored) {}
+
+        int closedCount = 0;
+        for (String oid : closeOrderIds) {
+            try {
+                Map<String, Object> details = zerodhaAdapter.getOrderDetails(token, oid);
+                String status = (String) details.getOrDefault("status", "UNKNOWN");
+                if ("COMPLETE".equalsIgnoreCase(status)) closedCount++;
+            } catch (Exception e) {
+                log.warn("Could not verify close order {}: {}", oid, e.getMessage());
+            }
+        }
+
+        if (closedCount == closeOrderIds.size() && !closeOrderIds.isEmpty()) {
+            existing.setStatus("CLOSED");
+            existing.setNotes(existing.getNotes() != null ? existing.getNotes() + " | All legs closed" : "All legs closed");
+        } else if (closedCount > 0) {
+            existing.setStatus("PARTIALLY_CLOSED");
+            existing.setNotes(existing.getNotes() != null
+                ? existing.getNotes() + " | Partial close: " + closedCount + "/" + closeOrderIds.size()
+                : "Partial close: " + closedCount + "/" + closeOrderIds.size());
+        } else {
+            existing.setStatus("CLOSE_FAILED");
+            existing.setNotes(existing.getNotes() != null ? existing.getNotes() + " | Close orders failed" : "Close orders failed");
+        }
         existing.setClosedAt(LocalDateTime.now());
-        existing.setNotes(existing.getNotes() != null ? existing.getNotes() + " | Manually closed" : "Manually closed");
         return tradeRepo.save(existing);
     }
 

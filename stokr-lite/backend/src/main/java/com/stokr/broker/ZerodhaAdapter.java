@@ -16,6 +16,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 
 @Slf4j
 @Component
@@ -100,7 +102,6 @@ public class ZerodhaAdapter implements BrokerAdapter {
             }
 
             log.info("zerodha.token_exchange.success userId={}", userId);
-            // Return [accessToken, refreshToken, userId] — BrokerService saves userId as clientId
             return new String[]{accessToken, refreshToken != null ? refreshToken : "", userId != null ? userId : ""};
         } catch (RuntimeException e) {
             throw e;
@@ -143,13 +144,11 @@ public class ZerodhaAdapter implements BrokerAdapter {
         form.add("validity",       "DAY");
 
         if (request.price() != null && request.price() > 0) {
-            // Limit order: use provided price with a small slippage buffer (0.15%) for near-market fill
             double bufferFactor = request.side() == BrokerOrderRequest.Side.BUY ? 1.0015 : 0.9985;
             double limitPrice = Math.round(request.price() * bufferFactor * 100.0) / 100.0;
             form.add("order_type", "LIMIT");
             form.add("price", String.valueOf(limitPrice));
         } else {
-            // No price provided — use MARKET with disclosed_quantity for market protection
             form.add("order_type", "MARKET");
             form.add("disclosed_quantity", "0");
         }
@@ -168,7 +167,7 @@ public class ZerodhaAdapter implements BrokerAdapter {
             if ("success".equalsIgnoreCase(root.path("status").asText())) {
                 String orderId = root.path("data").path("order_id").asText();
                 log.info("Zerodha order placed: {} {}", request.symbol(), orderId);
-                return new BrokerOrderResponse(orderId, "COMPLETE", "Order placed");
+                return new BrokerOrderResponse(orderId, "OPEN", "Order placed");
             }
             String msg = root.path("message").asText("Order rejected");
             log.warn("Zerodha order rejected: {}", msg);
@@ -272,5 +271,33 @@ public class ZerodhaAdapter implements BrokerAdapter {
             log.warn("getOrderStatus {} failed: {}", orderId, e.getMessage());
         }
         return "UNKNOWN";
+    }
+
+    public Map<String, Object> getOrderDetails(String accessToken, String orderId) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        try {
+            String body = http.get()
+                    .uri(KITE_API_BASE + "/orders/" + orderId)
+                    .header("X-Kite-Version", "3")
+                    .header("Authorization", "token " + apiKey + ":" + accessToken)
+                    .retrieve()
+                    .body(String.class);
+
+            JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            JsonNode data = root.path("data");
+            if (data.isArray() && data.size() > 0) {
+                JsonNode order = data.get(data.size() - 1);
+                details.put("status", order.path("status").asText("UNKNOWN"));
+                details.put("average_price", order.path("average_price").asDouble(0.0));
+                details.put("quantity", order.path("quantity").asInt(0));
+                details.put("filled_quantity", order.path("filled_quantity").asInt(0));
+                details.put("pending_quantity", order.path("pending_quantity").asInt(0));
+                details.put("tradingsymbol", order.path("tradingsymbol").asText());
+            }
+        } catch (Exception e) {
+            log.warn("getOrderDetails {} failed: {}", orderId, e.getMessage());
+            details.put("status", "UNKNOWN");
+        }
+        return details;
     }
 }

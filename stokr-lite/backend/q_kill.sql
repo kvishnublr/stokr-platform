@@ -1,0 +1,1 @@
+SELECT * FROM kill_switch ORDER BY id DESC LIMIT 5;

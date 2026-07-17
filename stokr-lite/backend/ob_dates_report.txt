@@ -1,0 +1,116 @@
+=========================================================================================================
+OVERSOLD BOUNCE — ENTRY/EXIT DATES (Daily Strategy)
+Entry: Signal evaluated ~15:15 IST, order next day open | Exit: SL/target during market hours
+=========================================================================================================
+  # Symbol           Entry Date    Exit Date  Hold        PnL Exit Type         
+---------------------------------------------------------------------------------------------------------
+  1 BHARTIARTL       2025-08-08   2025-08-11   3d +   161.65 TRAIL_SL          
+  2 TATASTEEL        2025-08-14   2025-08-18   4d +  2142.15 TARGET_HIT        
+  3 SUNPHARMA        2025-08-26   2025-09-05  10d   -497.80 MAX_HOLD_EXIT     
+  4 TATACONSUM       2025-09-04   2025-09-05   1d +   362.00 TRAIL_SL          
+  5 TECHM            2025-09-22   2025-09-23   1d +   181.92 TRAIL_SL          
+  6 POWERGRID        2025-09-25   2025-09-29   4d +   363.15 TRAIL_SL          
+  7 UPL              2025-09-26   2025-09-29   3d +   829.07 TRAIL_SL          
+  8 ICICIBANK        2025-10-20   2025-10-30  10d  -2063.12 MAX_HOLD_EXIT     
+  9 HINDUNILVR       2025-10-24   2025-10-27   3d +   105.57 TRAIL_SL          
+ 10 DRREDDY          2025-10-30   2025-11-06   7d +   737.44 TRAIL_SL          
+ 11 POWERGRID        2025-11-04   2025-11-06   2d  -3079.11 SL_HIT            
+ 12 ADANIENT         2025-11-06   2025-11-07   1d +  3526.21 TARGET_HIT        
+ 13 BHARTIARTL       2025-11-07   2025-11-10   3d +  1121.45 TRAIL_SL          
+ 14 TATAMOTORS       2025-11-17   2025-11-18   1d +   115.68 TRAIL_SL          
+ 15 JSWSTEEL         2025-11-24   2025-11-25   1d +  1410.58 TARGET_HIT        
+ 16 INDUSINDBK       2025-12-08   2025-12-09   1d +   629.11 TRAIL_SL          
+ 17 ASIANPAINT       2025-12-09   2025-12-10   1d +   749.68 TRAIL_SL          
+ 18 ITC              2026-01-02   2026-01-05   3d +   886.15 TRAIL_SL          
+ 19 RELIANCE         2026-01-06   2026-01-07   1d +   585.42 TRAIL_SL          
+ 20 CIPLA            2026-01-07   2026-01-16   9d  -3077.34 SL_HIT            
+ 21 WIPRO            2026-01-08   2026-01-09   1d +   429.55 TRAIL_SL          
+ 22 RELIANCE         2026-01-19   2026-01-22   3d +   181.59 TRAIL_SL          
+ 23 INDUSINDBK       2026-01-20   2026-01-21   1d +  1411.27 TARGET_HIT        
+ 24 UPL              2026-01-21   2026-01-22   1d +  2470.58 TARGET_HIT        
+ 25 CIPLA            2026-01-23   2026-01-27   4d +   412.10 TRAIL_SL          
+ 26 KOTAKBANK        2026-01-27   2026-01-28   1d +  1108.14 TRAIL_SL          
+ 27 TATACONSUM       2026-01-28   2026-01-30   2d +   391.78 TRAIL_SL          
+ 28 ASIANPAINT       2026-01-29   2026-01-30   1d +   956.18 TRAIL_SL          
+ 29 TATASTEEL        2026-01-30   2026-02-01   2d +    93.15 TRAIL_SL          
+ 30 TATACONSUM       2026-02-01   2026-02-02   1d +  3894.39 TARGET_HIT        
+ 31 WIPRO            2026-02-04   2026-02-05   1d +   722.01 TRAIL_SL          
+ 32 HINDALCO         2026-02-05   2026-02-06   1d +   673.40 TRAIL_SL          
+ 33 WIPRO            2026-02-12   2026-02-13   1d  -3078.57 SL_HIT            
+ 34 HINDUNILVR       2026-02-13   2026-02-16   3d +   704.96 TRAIL_SL          
+ 35 BPCL             2026-02-19   2026-02-23   4d +  2215.53 TARGET_HIT        
+ 36 TCS              2026-02-24   2026-02-25   1d +  2825.86 TARGET_HIT        
+ 37 TATAMOTORS       2026-03-02   2026-03-04   2d  -3073.85 SL_HIT            
+ 38 GRASIM           2026-03-04   2026-03-05   1d +  1567.77 TARGET_HIT        
+ 39 BAJAJFINSV       2026-03-06   2026-03-09   3d  -3078.55 SL_HIT            
+ 40 TATASTEEL        2026-03-09   2026-03-10   1d +  2710.17 TARGET_HIT        
+ 41 BAJAJFINSV       2026-03-11   2026-03-12   1d  -3079.79 SL_HIT            
+ 42 TATAMOTORS       2026-03-12   2026-03-13   1d  -3082.59 SL_HIT            
+ 43 GRASIM           2026-03-13   2026-03-16   3d +  3292.95 TARGET_HIT        
+ 44 BPCL             2026-03-16   2026-03-17   1d +    77.65 TRAIL_SL          
+ 45 GRASIM           2026-03-19   2026-03-20   1d +  1848.42 TARGET_HIT        
+ 46 TATASTEEL        2026-03-23   2026-03-24   1d +  2443.16 TARGET_HIT        
+ 47 TATAMOTORS       2026-03-27   2026-04-01   5d +  2003.27 TARGET_HIT        
+ 48 TATACONSUM       2026-03-30   2026-04-01   2d +  1843.21 TARGET_HIT        
+ 49 DRREDDY          2026-04-01   2026-04-02   1d +   833.55 TRAIL_SL          
+ 50 RELIANCE         2026-04-06   2026-04-08   2d +  3251.74 TARGET_HIT        
+ 51 SUNPHARMA        2026-04-10   2026-04-13   3d +   595.57 TRAIL_SL          
+ 52 BAJAJFINSV       2026-04-13   2026-04-15   2d +  3844.89 TARGET_HIT        
+ 53 SBILIFE          2026-04-21   2026-04-22   1d +   754.73 TRAIL_SL          
+ 54 INFY             2026-04-22   2026-04-23   1d  -3062.45 SL_HIT            
+ 55 BAJAJFINSV       2026-04-23   2026-04-24   1d +   684.98 TRAIL_SL          
+ 56 SUNPHARMA        2026-04-24   2026-04-27   3d +  8692.58 TARGET_HIT        
+ 57 AXISBANK         2026-04-27   2026-04-29   2d  -3062.19 SL_HIT            
+ 58 TATAMOTORS       2026-04-30   2026-05-04   4d +  1035.77 TRAIL_SL          
+ 59 BHARTIARTL       2026-05-04   2026-05-05   1d +   788.81 TRAIL_SL          
+ 60 ONGC             2026-05-06   2026-05-07   1d +  1416.09 TARGET_HIT        
+ 61 BHARTIARTL       2026-05-11   2026-05-12   1d +   704.07 TRAIL_SL          
+ 62 INDUSINDBK       2026-05-12   2026-05-13   1d +  1417.00 TARGET_HIT        
+ 63 BPCL             2026-05-15   2026-05-19   4d +  1644.29 TARGET_HIT        
+ 64 TATASTEEL        2026-05-18   2026-05-19   1d +  1012.18 TRAIL_SL          
+ 65 ONGC             2026-05-27   2026-05-29   2d +   496.17 TRAIL_SL          
+ 66 TATASTEEL        2026-05-29   2026-06-01   3d +  1414.97 TARGET_HIT        
+ 67 HINDUNILVR       2026-06-01   2026-06-02   1d +   366.89 TRAIL_SL          
+ 68 INFY             2026-06-03   2026-06-08   5d  -3062.14 SL_HIT            
+ 69 BPCL             2026-06-08   2026-06-09   1d +  1513.39 TARGET_HIT        
+ 70 INDUSINDBK       2026-06-10   2026-06-11   1d +  1415.74 TARGET_HIT        
+ 71 NESTLEIND        2026-06-12   2026-06-15   3d +  2371.42 TARGET_HIT        
+ 72 HINDALCO         2026-06-16   2026-06-17   1d +  2713.27 TARGET_HIT        
+ 73 BPCL             2026-06-19   2026-06-22   3d +  1459.32 TARGET_HIT        
+ 74 WIPRO            2026-06-23   2026-06-24   1d +   341.34 TRAIL_SL          
+ 75 UPL              2026-06-29   2026-06-30   1d +  1769.01 TARGET_HIT        
+ 76 TATACONSUM       2026-06-30   2026-07-01   1d +  1459.61 TARGET_HIT        
+ 77 HCLTECH          2026-07-01   2026-07-02   1d +  4437.25 TARGET_HIT        
+ 78 KOTAKBANK        2026-07-06   2026-07-06   0d    -82.55 EOD_EXIT          
+---------------------------------------------------------------------------------------------------------
+
+TIMING DETAILS:
+  Entry signal: Evaluated at 15:15 IST (EOD)
+  Entry order:  Next day market open ~09:15 IST
+  Exit order:   SL/target checked every minute 09:15-15:30 IST
+  Max hold:     3 days (MAX_HOLD_EXIT)
+  EOD exit:     15:15 IST forced exit (EOD_EXIT)
+
+============================================================
+HOLD DURATION DISTRIBUTION
+============================================================
+  Days   Trades    Total PnL    Avg PnL
+--------------------------------------
+   0d        1       -82.55     -82.55
+   1d       42    +40023.66    +952.94
+   2d        9      +705.79     +78.42
+   3d       14    +18738.70   +1338.48
+   4d        6     +7812.99   +1302.17
+   5d        2     -1058.87    -529.43
+   7d        1      +737.44    +737.44
+   9d        1     -3077.34   -3077.34
+  10d        2     -2560.92   -1280.46
+
+============================================================
+DAY-OF-WEEK ENTRY DISTRIBUTION
+============================================================
+Traceback (most recent call last):
+  File "/tmp/parse_ob_dates.py", line 64, in <module>
+    day_name = days[e.weekday()]
+               ~~~~^^^^^^^^^^^^^
+IndexError: list index out of range

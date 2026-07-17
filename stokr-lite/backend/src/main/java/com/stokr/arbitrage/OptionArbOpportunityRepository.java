@@ -39,4 +39,6 @@ public interface OptionArbOpportunityRepository extends JpaRepository<OptionArbO
     Page<OptionArbOpportunity> findByScanTimeBeforeOrderByScanTimeDesc(LocalDateTime before, Pageable pageable);
 
     Page<OptionArbOpportunity> findByScanTimeBetweenOrderByScanTimeDesc(LocalDateTime start, LocalDateTime end, Pageable pageable);
+
+    List<OptionArbOpportunity> findByScanTimeBetweenAndUnderlyingOrderByScanTimeDesc(LocalDateTime start, LocalDateTime end, String underlying);
 }

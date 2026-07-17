@@ -68,11 +68,8 @@ public class OptionArbitrageController {
             int yy = expiry.getYear() % 100;
             String mon = expiry.getMonth().name().substring(0, 3);
             String futKey = cfg.futuresPrefix() + String.format("%02d%sFUT", yy, mon);
-            var quote = spotFetcher.fetchSingleQuote(futKey);
-            if (quote != null && quote.get("last_price") != null) {
-                double futLtp = ((Number) quote.get("last_price")).doubleValue();
-                if (futLtp > 0) return futLtp;
-            }
+            double futLtp = spotFetcher.getSpotPrice(futKey);
+            if (futLtp > 0) return futLtp;
         } catch (Exception e) {
             log.debug("Futures fetch failed for {}: {}", underlying, e.getMessage());
         }
@@ -89,7 +86,10 @@ public class OptionArbitrageController {
 
         for (String u : underlyings) {
             try {
-                List<ArbitrageOpportunity> opps = optionChainService.scanParityBreaks(u);
+                UnderlyingConfig cfg = CONFIGS.get(u);
+                double spot = cfg != null ? spotFetcher.getSpotPrice(cfg.spotKey()) : 0;
+                double fut = getValidatedFutures(u, spot);
+                List<ArbitrageOpportunity> opps = optionChainService.scanOptionChain(u, spot, fut);
                 allOpps.addAll(opps);
             } catch (Exception e) {
                 log.error("Scan failed for {}: {}", u, e.getMessage());
@@ -127,16 +127,16 @@ public class OptionArbitrageController {
             for (OptionArbOpportunity dbOpp : dbOpps) {
                 Map<String, Object> m = dbOpp.toMap();
 
-                if ("PARITY_BREAK".equals(dbOpp.getOpportunityType())) {
-                    double spot = dbOpp.getSpotPrice();
-                    double futPrice = dbOpp.getFuturesPrice();
-                    double ceEntry = dbOpp.getCeEntryPrice();
-                    double peEntry = dbOpp.getPeEntryPrice();
+                if ("PARITY_BREAK".equals(dbOpp.getType())) {
+                    double spot = dbOpp.getSpotPrice() != null ? dbOpp.getSpotPrice().doubleValue() : 0;
+                    double futPrice = dbOpp.getFuturesPrice() != null ? dbOpp.getFuturesPrice().doubleValue() : 0;
+                    double ceEntry = dbOpp.getCeEntryPrice() != null ? dbOpp.getCeEntryPrice().doubleValue() : 0;
+                    double peEntry = dbOpp.getPeEntryPrice() != null ? dbOpp.getPeEntryPrice().doubleValue() : 0;
                     int lotSize = OptionChainService.getLotSize(dbOpp.getUnderlying());
 
-                    double grossEdge = (dbOpp.getEdgePoints() != null ? dbOpp.getEdgePoints() : 0) * lotSize;
+                    double grossEdge = (dbOpp.getEdgePoints() != null ? dbOpp.getEdgePoints().doubleValue() : 0) * lotSize;
                     Map<String, Double> costs = optionChainService.calculateCostBreakdown(
-                        dbOpp.getEdgePoints() != null ? dbOpp.getEdgePoints() : 0, lotSize, "CONVERSION".equals(dbOpp.getAction()));
+                        dbOpp.getEdgePoints() != null ? dbOpp.getEdgePoints().doubleValue() : 0, dbOpp.getUnderlying());
                     m.put("costBreakdown", costs);
                     m.put("edgeAfterCosts", costs.get("netEdge"));
 
@@ -178,7 +178,10 @@ public class OptionArbitrageController {
             @RequestParam(defaultValue = "0") int strike) {
         Map<String, Object> resp = new LinkedHashMap<>();
         try {
-            var result = calendarSpreadService.findSpread(underlying, strike);
+            UnderlyingConfig cfg = CONFIGS.get(underlying);
+            double spot = cfg != null ? spotFetcher.getSpotPrice(cfg.spotKey()) : 0;
+            double fut = getValidatedFutures(underlying, spot);
+            var result = calendarSpreadService.scanCalendarSpreads(underlying, spot, fut);
             resp.put("opportunities", result);
             resp.put("count", result.size());
         } catch (Exception e) {
@@ -192,7 +195,10 @@ public class OptionArbitrageController {
     public ResponseEntity<Map<String, Object>> volSurface(@RequestParam String underlying) {
         Map<String, Object> resp = new LinkedHashMap<>();
         try {
-            var result = volSurfaceService.getSurface(underlying);
+            UnderlyingConfig cfg = CONFIGS.get(underlying);
+            double spot = cfg != null ? spotFetcher.getSpotPrice(cfg.spotKey()) : 0;
+            double fut = getValidatedFutures(underlying, spot);
+            var result = volSurfaceService.getVolSurface(underlying, spot, fut);
             resp.put("surface", result);
         } catch (Exception e) {
             log.error("Vol surface failed: {}", e.getMessage());
@@ -229,11 +235,10 @@ public class OptionArbitrageController {
             String peKey = String.format("NFO:%s%02d%s%dPE", prefix, yy, mon, strike);
             String futKey = cfg.futuresPrefix() + String.format("%02d%sFUT", yy, mon);
 
-            var quotes = spotFetcher.fetchQuotes(List.of(cfg.spotKey(), ceKey, peKey, futKey));
-            resp.put("spotLive", getLtp(quotes, cfg.spotKey()));
-            resp.put("ceLive", getLtp(quotes, ceKey));
-            resp.put("peLive", getLtp(quotes, peKey));
-            resp.put("futLive", getLtp(quotes, futKey));
+            resp.put("spotLive", spotFetcher.getSpotPrice(cfg.spotKey()));
+            resp.put("ceLive", spotFetcher.getSpotPrice(ceKey));
+            resp.put("peLive", spotFetcher.getSpotPrice(peKey));
+            resp.put("futLive", spotFetcher.getSpotPrice(futKey));
         } catch (Exception e) {
             log.debug("Live prices failed: {}", e.getMessage());
         }
@@ -260,41 +265,14 @@ public class OptionArbitrageController {
                 dbOpps = historyService.getTodayOpportunities(today, underlying);
             }
 
-            Set<String> instrumentKeys = new LinkedHashSet<>();
-            Map<String, Long> oppToId = new HashMap<>();
-
-            for (OptionArbOpportunity dbOpp : dbOpps) {
-                if (!"PARITY_BREAK".equals(dbOpp.getOpportunityType())) continue;
-                UnderlyingConfig cfg = CONFIGS.get(dbOpp.getUnderlying());
-                if (cfg == null) continue;
-
-                LocalDate expiry = optionChainService.getMonthlyExpiry();
-                int yy = expiry.getYear() % 100;
-                String monStr = expiry.getMonth().name().substring(0, 3);
-                String prefix = cfg.futuresPrefix().replace("NFO:", "");
-
-                int strike = (int) dbOpp.getStrike().doubleValue();
-                String ceKey = String.format("NFO:%s%02d%s%dCE", prefix, yy, monStr, strike);
-                String peKey = String.format("NFO:%s%02d%s%dPE", prefix, yy, monStr, strike);
-                String futKey = cfg.futuresPrefix() + String.format("%02d%sFUT", yy, monStr);
-
-                instrumentKeys.add(cfg.spotKey());
-                instrumentKeys.add(ceKey);
-                instrumentKeys.add(peKey);
-                instrumentKeys.add(futKey);
-                oppToId.put(dbOpp.getId() + "", dbOpp.getId());
-            }
-
-            if (instrumentKeys.isEmpty()) {
+            if (dbOpps.isEmpty()) {
                 resp.put("prices", Collections.emptyMap());
                 return ResponseEntity.ok(resp);
             }
 
-            var quotes = spotFetcher.fetchQuotes(new ArrayList<>(instrumentKeys));
-
             Map<String, Object> prices = new HashMap<>();
             for (OptionArbOpportunity dbOpp : dbOpps) {
-                if (!"PARITY_BREAK".equals(dbOpp.getOpportunityType())) continue;
+                if (!"PARITY_BREAK".equals(dbOpp.getType())) continue;
                 UnderlyingConfig cfg = CONFIGS.get(dbOpp.getUnderlying());
                 if (cfg == null) continue;
 
@@ -309,11 +287,11 @@ public class OptionArbitrageController {
                 String futKey = cfg.futuresPrefix() + String.format("%02d%sFUT", yy, monStr);
 
                 Map<String, Object> lp = new HashMap<>();
-                lp.put("spotLive", getLtp(quotes, cfg.spotKey()));
-                lp.put("ceLive", getLtp(quotes, ceKey));
-                lp.put("peLive", getLtp(quotes, peKey));
-                lp.put("futLive", getLtp(quotes, futKey));
-                prices.put(dbOpp.getId(), lp);
+                lp.put("spotLive", spotFetcher.getSpotPrice(cfg.spotKey()));
+                lp.put("ceLive", spotFetcher.getSpotPrice(ceKey));
+                lp.put("peLive", spotFetcher.getSpotPrice(peKey));
+                lp.put("futLive", spotFetcher.getSpotPrice(futKey));
+                prices.put(dbOpp.getId() + "", lp);
             }
 
             resp.put("prices", prices);
@@ -322,20 +300,6 @@ public class OptionArbitrageController {
         }
 
         return ResponseEntity.ok(resp);
-    }
-
-    private double getLtp(Map<String, Object> quotes, String key) {
-        if (quotes == null) return 0;
-        Object q = quotes.get(key);
-        if (q == null) return 0;
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> qMap = (Map<String, Object>) q;
-            Object ltp = qMap.get("last_price");
-            return ltp != null ? ((Number) ltp).doubleValue() : 0;
-        } catch (Exception e) {
-            return 0;
-        }
     }
 
     @GetMapping("/history")
@@ -347,7 +311,7 @@ public class OptionArbitrageController {
         try {
             if (date != null && !date.isEmpty()) {
                 LocalDate d = LocalDate.parse(date);
-                var result = historyService.getHistoryByDate(d, PageRequest.of(page, size));
+                var result = historyService.getHistoryByDatePage(d, PageRequest.of(page, size));
                 resp.put("opportunities", result.getContent().stream().map(OptionArbOpportunity::toMap).toList());
                 resp.put("totalElements", result.getTotalElements());
                 resp.put("totalPages", result.getTotalPages());
@@ -549,8 +513,7 @@ public class OptionArbitrageController {
     @PostMapping("/auto-execute/close-all")
     public ResponseEntity<Map<String, Object>> closeAllTrades() {
         Map<String, Object> resp = new LinkedHashMap<>();
-        List<ExecutedTrade> open = tradeRepo.countOpen() > 0 ?
-            tradeRepo.findOpenByUnderlying("ALL") : Collections.emptyList();
+        List<ExecutedTrade> open = tradeRepo.findAllOpen();
         int closed = 0;
         for (ExecutedTrade t : open) {
             try {
@@ -561,6 +524,7 @@ public class OptionArbitrageController {
             }
         }
         resp.put("closed", closed);
+        resp.put("total", open.size());
         return ResponseEntity.ok(resp);
     }
 
@@ -640,10 +604,17 @@ public class OptionArbitrageController {
             underlying, strike, action, cePrice, pePrice, futPrice, spotPrice, lotSize);
 
         resp.put("success", execResult.isSuccess());
+        resp.put("partialFill", execResult.isPartialFill());
         resp.put("action", execResult.getAction());
         resp.put("underlying", execResult.getUnderlying());
         resp.put("strike", execResult.getStrike());
         resp.put("error", execResult.getError());
+        if (execResult.getMarginAvailable() != null) {
+            resp.put("marginAvailable", execResult.getMarginAvailable().doubleValue());
+        }
+        if (execResult.getMarginRequired() != null) {
+            resp.put("marginRequired", execResult.getMarginRequired().doubleValue());
+        }
 
         List<Map<String, Object>> legs = new ArrayList<>();
         for (OptionArbExecutionService.LegResult leg : execResult.getLegs()) {
@@ -653,7 +624,8 @@ public class OptionArbitrageController {
             lm.put("orderId", leg.getOrderId());
             lm.put("status", leg.getStatus());
             lm.put("message", leg.getMessage());
-            lm.put("price", leg.getPrice());
+            lm.put("requestedPrice", leg.getRequestedPrice());
+            lm.put("fillPrice", leg.getFillPrice());
             lm.put("quantity", leg.getQuantity());
             legs.add(lm);
         }
@@ -668,22 +640,23 @@ public class OptionArbitrageController {
         trade.setStatus(execResult.isSuccess() ? "OPEN" : "FAILED");
 
         for (OptionArbExecutionService.LegResult leg : execResult.getLegs()) {
+            double fillPrice = leg.getFillPrice() > 0 ? leg.getFillPrice() : leg.getRequestedPrice();
             if ("BUY".equals(leg.getSide()) && leg.getSymbol() != null && leg.getSymbol().endsWith("CE")) {
                 trade.setCeSymbol(leg.getSymbol());
                 trade.setCeOrderId(leg.getOrderId());
-                trade.setCeEntryPrice(leg.getPrice());
+                trade.setCeEntryPrice(fillPrice);
             } else if ("SELL".equals(leg.getSide()) && leg.getSymbol() != null && leg.getSymbol().endsWith("CE")) {
                 trade.setCeSymbol(leg.getSymbol());
                 trade.setCeOrderId(leg.getOrderId());
-                trade.setCeEntryPrice(leg.getPrice());
+                trade.setCeEntryPrice(fillPrice);
             } else if (leg.getSymbol() != null && leg.getSymbol().endsWith("PE")) {
                 trade.setPeSymbol(leg.getSymbol());
                 trade.setPeOrderId(leg.getOrderId());
-                trade.setPeEntryPrice(leg.getPrice());
+                trade.setPeEntryPrice(fillPrice);
             } else if (leg.getSymbol() != null && leg.getSymbol().endsWith("FUT")) {
                 trade.setFutSymbol(leg.getSymbol());
                 trade.setFutOrderId(leg.getOrderId());
-                trade.setFutEntryPrice(leg.getPrice());
+                trade.setFutEntryPrice(fillPrice);
             }
         }
 

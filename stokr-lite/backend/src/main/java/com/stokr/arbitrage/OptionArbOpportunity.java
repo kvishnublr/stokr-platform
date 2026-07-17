@@ -110,4 +110,35 @@ public class OptionArbOpportunity {
             this.costBreakdownJson = null;
         }
     }
+
+    public java.util.Map<String, Object> toMap() {
+        java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
+        map.put("id", id);
+        map.put("scanTime", scanTime != null ? scanTime.toString() : null);
+        map.put("underlying", underlying);
+        map.put("type", type);
+        map.put("strike", strike);
+        map.put("action", action);
+        map.put("legs", legs);
+        map.put("description", description);
+        map.put("spotPrice", spotPrice != null ? spotPrice.doubleValue() : 0);
+        map.put("futuresPrice", futuresPrice != null ? futuresPrice.doubleValue() : 0);
+        map.put("ceEntryPrice", ceEntryPrice != null ? ceEntryPrice.doubleValue() : 0);
+        map.put("peEntryPrice", peEntryPrice != null ? peEntryPrice.doubleValue() : 0);
+        map.put("ceBid", ceBid != null ? ceBid.doubleValue() : 0);
+        map.put("ceAsk", ceAsk != null ? ceAsk.doubleValue() : 0);
+        map.put("peBid", peBid != null ? peBid.doubleValue() : 0);
+        map.put("peAsk", peAsk != null ? peAsk.doubleValue() : 0);
+        map.put("edgePoints", edgePoints != null ? edgePoints.doubleValue() : 0);
+        map.put("edgeAfterCosts", edgeAfterCosts != null ? edgeAfterCosts.doubleValue() : 0);
+        map.put("confidence", confidence != null ? confidence.doubleValue() : 0);
+        map.put("daysToExpiry", daysToExpiry != null ? daysToExpiry.doubleValue() : 0);
+        map.put("expiryDate", expiryDate != null ? expiryDate.toString() : null);
+        map.put("status", status);
+        map.put("notes", notes);
+        map.put("createdAt", createdAt != null ? createdAt.toString() : null);
+        var costs = getCostBreakdown();
+        if (costs != null) map.put("costBreakdown", costs);
+        return map;
+    }
 }

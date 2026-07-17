@@ -1,0 +1,7 @@
+import paramiko;s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy());s.connect('173.249.55.84',username='root',password='***',timeout=10)
+i,o,e=s.exec_command('docker ps --format "{{.Names}} {{.Status}}" 2>&1; echo ---; docker images stokr-lite-backend --format "{{.Repository}} {{.CreatedAt}}" 2>&1 | head -3')
+print(o.read().decode(errors='replace'))
+print('---')
+i,o,e=s.exec_command('ps aux | grep "docker compose\|docker-compose\|mvn" | grep -v grep | head -3')
+print(o.read().decode(errors='replace'))
+s.close()

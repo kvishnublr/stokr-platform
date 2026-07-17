@@ -21,11 +21,13 @@ import java.util.List;
  * Hold   : 1-7 days max (time-stop at day 7 close)
  *
  * Filters:
- *   - Price must be >3% below 50 EMA (was 5%, loosened for more trades)
+ *   - Price must be >5% below 50 EMA (was 3%, generated 111 signals/day)
  *   - Price must not be >15% below 50 EMA (structural breakdown)
  *   - Price must be > ₹50 (no penny stocks)
  *   - Volume must be > 0
+ *   - Score >= 70 (was 60, too loose)
  *   - ANY day (red or green — more signal count)
+ *   - Daily signal cap: max 5 per deployment (in SignalProcessor)
  */
 @Slf4j
 @Component
@@ -50,7 +52,7 @@ public class Ema50DistanceStrategy implements StrategyPlugin {
 
         // ─── 2. DISTANCE FILTER ────────────────────────────────────
         double distPct = (close - ema50) / ema50 * 100;
-        if (distPct > -3.0) return null;  // not stretched enough (loosened from -5%)
+        if (distPct > -5.0) return null;  // not stretched enough (was -3%, too loose — generated 111 signals/day)
         if (distPct < -15.0) return null; // too far = structural breakdown
 
         // ─── 3. VOLUME VALIDATION ──────────────────────────────────
@@ -64,8 +66,8 @@ public class Ema50DistanceStrategy implements StrategyPlugin {
         // ─── 6. COMPUTE 20-EMA for trend context ───────────────────
         double ema20 = computeEma(candles, n - 1, 20);
 
-        // ─── 7. SWEET SPOT: -3% to -6% ────────────────────────────
-        boolean isSweetSpot = distPct >= -6.0;
+        // ─── 7. SWEET SPOT: -5% to -8% ────────────────────────────
+        boolean isSweetSpot = distPct >= -8.0;
 
         // ─── 8. COMPUTE ENTRY, SL, TARGET ──────────────────────────
         double entry = close;
@@ -83,14 +85,14 @@ public class Ema50DistanceStrategy implements StrategyPlugin {
 
         // ─── 10. CONFIDENCE SCORE ──────────────────────────────────
         int score = 50;
-        if (isSweetSpot)                    score += 15; // -3% to -6% sweet spot
+        if (isSweetSpot)                    score += 15; // -5% to -8% sweet spot
         if (distPct < -6.0)                score += 10; // deeper = more oversold
         if (rsi14 != null && rsi14.doubleValue() < 30) score += 15;
         else if (rsi14 != null && rsi14.doubleValue() < 40) score += 10;
         if (close > ema20)                 score += 10; // above 20 EMA = stronger support
         if (today.volume() > computeAvgVolume(candles, n, 10) * 1.5) score += 5;
 
-        if (score < 60) return null;
+        if (score < 70) return null;  // was 60, too loose — need stronger confirmation
 
         BigDecimal entryBD = BigDecimal.valueOf(entry).setScale(2, RoundingMode.HALF_UP);
         BigDecimal slBD = BigDecimal.valueOf(sl).setScale(2, RoundingMode.HALF_UP);

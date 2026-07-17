@@ -1,0 +1,42 @@
+Loaded 30 symbols with sufficient 1-min data
+Loading 1-min candles...
+Loaded 225826 candles across 30 symbols
+
+==========================================================================================
+INTRADAY PATTERN SCAN — Looking for statistical edge after brokerage
+==========================================================================================
+
+1. VWAP MEAN REVERSION (buy 1% below VWAP, target VWAP)
+----------------------------------------------------------------------
+  Trades: 64 | Wins: 24 | Losses: 40 | WR: 37.5%
+  Net PnL: ₹1,113.23 | Avg: ₹17.39/trade
+  Avg Win: ₹1,013.05 | Avg Loss: ₹-580.00
+  PF: 1.05
+
+2. ORB BREAKOUT FADE (fade first 15-min breakout)
+----------------------------------------------------------------------
+  Trades: 119 | Wins: 15 | Losses: 104 | WR: 12.6%
+  Net PnL: ₹-50,922.31 | Avg: ₹-427.92/trade
+  Avg Win: ₹626.51 | Avg Loss: ₹-580.00
+  PF: 0.16
+
+3. RSI EXTREME FADE (5-min RSI<20 buy, RSI>80 sell)
+----------------------------------------------------------------------
+  Trades: 1770 | Wins: 841 | Losses: 929 | WR: 47.5%
+  Net PnL: ₹-185,600.00 | Avg: ₹-104.86/trade
+  Avg Win: ₹420.00
+  Avg Loss: ₹-580.00
+  PF: 0.66
+
+4. OPENING GAP FADE (gap >0.5%, fade back to previous close)
+----------------------------------------------------------------------
+  Trades: 0 | Wins: 0 | Losses: 0 | WR: 0.0%
+  Net PnL: ₹0.00 | Avg: ₹0.00/trade
+
+5. VWAP CROSS BOUNCE (price crosses above VWAP, buy)
+----------------------------------------------------------------------
+  Trades: 380 | Wins: 206 | Losses: 174 | WR: 54.2%
+  Net PnL: ₹-14,400.00 | Avg: ₹-37.89/trade
+  Avg Win: ₹420.00
+  Avg Loss: ₹-580.00
+  PF: 0.86

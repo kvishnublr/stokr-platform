@@ -1,0 +1,116 @@
+====================================================================================================
+DEEP ANALYSIS: What if we tweaked SL, Target, and Max Hold?
+====================================================================================================
+
+1. ALL LOSING TRADES — Can tighter SL have saved them?
+----------------------------------------------------------------------------------------------------
+  # Symbol              Entry       Exit         SL  Hold       Loss ExitType       
+----------------------------------------------------------------------------------------------------
+  3 SUNPHARMA         1600.30    1593.60    1552.29  10d    -497.80 MAX_HOLD_EXIT  
+  8 ICICIBANK         1390.30    1362.40    1348.59  10d   -2063.12 MAX_HOLD_EXIT  
+ 11 POWERGRID          279.05     270.68     270.68   2d   -3079.11 SL_HIT         
+ 20 CIPLA             1467.90    1423.86    1423.86   9d   -3077.34 SL_HIT         
+ 33 WIPRO              219.08     212.51     212.51   1d   -3078.57 SL_HIT         
+ 37 TATAMOTORS         370.60     359.48     359.48   2d   -3073.85 SL_HIT         
+ 39 BAJAJFINSV         194.67     188.83     188.83   3d   -3078.55 SL_HIT         
+ 41 BAJAJFINSV         184.66     179.12     179.12   1d   -3079.79 SL_HIT         
+ 42 TATAMOTORS         324.55     314.81     314.81   1d   -3082.59 SL_HIT         
+ 54 INFY              1241.70    1204.45    1204.45   1d   -3062.45 SL_HIT         
+ 57 AXISBANK          1324.20    1284.47    1284.47   2d   -3062.19 SL_HIT         
+ 68 INFY              1196.70    1160.80    1160.80   5d   -3062.14 SL_HIT         
+ 78 KOTAKBANK          381.75     381.75     370.30   0d     -82.55 EOD_EXIT       
+
+2. SL HIT ANALYSIS — All hit exactly at SL?
+----------------------------------------------------------------------------------------------------
+  POWERGRID      entry=  279.05 sl=  270.68 (-3.00%) exit=270.68 (-3.00%) hold=2025-11-06
+  CIPLA          entry= 1467.90 sl= 1423.86 (-3.00%) exit=1423.86 (-3.00%) hold=2026-01-16
+  WIPRO          entry=  219.08 sl=  212.51 (-3.00%) exit=212.51 (-3.00%) hold=2026-02-13
+  TATAMOTORS     entry=  370.60 sl=  359.48 (-3.00%) exit=359.48 (-3.00%) hold=2026-03-04
+  BAJAJFINSV     entry=  194.67 sl=  188.83 (-3.00%) exit=188.83 (-3.00%) hold=2026-03-09
+  BAJAJFINSV     entry=  184.66 sl=  179.12 (-3.00%) exit=179.12 (-3.00%) hold=2026-03-12
+  TATAMOTORS     entry=  324.55 sl=  314.81 (-3.00%) exit=314.81 (-3.00%) hold=2026-03-13
+  INFY           entry= 1241.70 sl= 1204.45 (-3.00%) exit=1204.45 (-3.00%) hold=2026-04-23
+  AXISBANK       entry= 1324.20 sl= 1284.47 (-3.00%) exit=1284.47 (-3.00%) hold=2026-04-29
+  INFY           entry= 1196.70 sl= 1160.80 (-3.00%) exit=1160.80 (-3.00%) hold=2026-06-08
+
+3. TRAIL_SL ANALYSIS — How much did they give back?
+----------------------------------------------------------------------------------------------------
+Symbol              Entry  Peak Exit   Trail%        PnL
+----------------------------------------------------------------------------------------------------
+BHARTIARTL        1858.60    1863.20   +0.25%    +161.65
+TATACONSUM        1071.10    1075.88   +0.45%    +362.00
+TECHM             1467.30    1471.19   +0.27%    +181.92
+POWERGRID          284.40     285.67   +0.45%    +363.15
+UPL                648.00     653.92   +0.91%    +829.07
+HINDUNILVR        2516.40    2521.21   +0.19%    +105.57
+DRREDDY           1202.20    1212.08   +0.82%    +737.44
+BHARTIARTL        2001.20    2025.76   +1.23%   +1121.45
+TATAMOTORS         372.70     373.44   +0.20%    +115.68
+INDUSINDBK         841.40     847.43   +0.72%    +629.11
+ASIANPAINT        2796.00    2819.76   +0.85%    +749.68
+ITC                333.75     336.99   +0.97%    +886.15
+RELIANCE          1507.60    1517.72   +0.67%    +585.42
+WIPRO              255.60     256.91   +0.51%    +429.55
+RELIANCE          1413.60    1417.37   +0.27%    +181.59
+CIPLA             1315.00    1321.51   +0.50%    +412.10
+KOTAKBANK          408.70     413.58   +1.19%   +1108.14
+TATACONSUM        1131.80    1137.19   +0.48%    +391.78
+ASIANPAINT        2416.00    2441.33   +1.05%    +956.18
+TATASTEEL          193.13     193.47   +0.18%     +93.15
+WIPRO              233.34     235.22   +0.81%    +722.01
+HINDALCO           935.45     942.58   +0.76%    +673.40
+HINDUNILVR        2305.20    2323.51   +0.79%    +704.96
+BPCL               304.95     305.44   +0.16%     +77.65
+DRREDDY           1209.60    1220.77   +0.92%    +833.55
+SUNPHARMA         1654.90    1666.20   +0.68%    +595.57
+SBILIFE           1911.60    1927.70   +0.84%    +754.73
+BAJAJFINSV         170.63     171.94   +0.77%    +684.98
+TATAMOTORS         341.55     345.38   +1.12%   +1035.77
+BHARTIARTL        1827.10    1843.23   +0.88%    +788.81
+BHARTIARTL        1759.80    1773.84   +0.80%    +704.07
+TATASTEEL          209.71     212.01   +1.10%   +1012.18
+ONGC               274.05     275.64   +0.58%    +496.17
+HINDUNILVR        2084.30    2093.85   +0.46%    +366.89
+WIPRO              174.49     175.23   +0.42%    +341.34
+
+4. EXIT TYPE STATISTICS
+--------------------------------------------------------------------------------
+Type                Count    Avg PnL    Total PnL   Avg Hold
+--------------------------------------------------------------------------------
+TARGET_HIT             30   +2480.87    +74426.09       1.9d
+TRAIL_SL               35    +576.94    +20192.86       2.0d
+SL_HIT                 10   -3073.66    -30736.58       2.7d
+MAX_HOLD                2   -1280.46     -2560.92      10.0d
+EOD_EXIT                1     -82.55       -82.55       0.0d
+
+5. RECOMMENDATIONS
+================================================================================
+
+DATA-DRIVEN TWEAKS:
+───────────────────
+1. TIGHTEN SL: 3% → 2.5%
+   - 10 SL hits lose avg ₹3,074 each
+   - At 2.5% SL, each loss = ~₹2,562 (saves ₹512/trade = ₹5,120 total)
+   - Risk: some TRAIL_SL trades might get stopped out earlier
+   - Net effect: likely +₹3-5k improvement
+
+2. WIDEN TARGET: 1.5% → 2%
+   - 30 TARGET hits avg ₹2,481
+   - At 2% target, some TRAIL_SL trades might reach target instead
+   - More room = bigger wins on momentum trades
+   - Net effect: likely +₹5-8k improvement
+
+3. TIGHTEN MAX HOLD: 3 → 2 days
+   - Trades >2 days: 14 trades, but includes 2 MAX_HOLD losses (-₹2,561)
+   - Faster capital recycling
+   - Net effect: marginal (most exits already <3 days)
+
+4. TIGHTER TRAIL: 0.3%/0.15% → 0.5%/0.25%
+   - TRAIL_SL trades avg only +₹577 (small wins)
+   - Need more room to run before trailing kicks in
+   - Net effect: likely +₹2-3k improvement
+
+COMBINED ESTIMATE:
+  Current net PnL: ₹61,239
+  With tweaks:      ₹68-75k (improvement ~₹7-14k)
+

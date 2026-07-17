@@ -1,0 +1,31 @@
+==========================================================================================
+INTRADAY PATTERN SCAN v2 — Wider targets, more patterns
+==========================================================================================
+
+6. VWAP EXTREME REVERSION (1.5% below VWAP, target VWAP, 0.75% SL)
+----------------------------------------------------------------------
+  Trades: 15 | Wins: 3 | WR: 20.0% | Net: ₹-5,258 | Avg: ₹-351 | PF: 0.47
+  Avg Win: ₹1,567 | Avg Loss: ₹-830
+
+7. VWAP EXTREME SHORT (1.5% above VWAP, target VWAP, 0.75% SL)
+----------------------------------------------------------------------
+  Trades: 23 | Wins: 4 | WR: 17.4% | Net: ₹-10,057 | Avg: ₹-437 | PF: 0.36
+  Avg Win: ₹1,428 | Avg Loss: ₹-830
+
+8. VOLUME SPIKE FADE (3x avg vol candle, fade direction)
+----------------------------------------------------------------------
+  Trades: 1618 | Wins: 806 | WR: 49.8% | Net: ₹-133,940 | Avg: ₹-83 | PF: 0.80
+  Avg Win: ₹670 | Avg Loss: ₹-830
+
+9. VWAP BOUNCE + VOLUME (cross VWAP with volume spike, target 0.5%)
+----------------------------------------------------------------------
+  Trades: 132 | Wins: 73 | WR: 55.3% | Net: ₹-3,560 | Avg: ₹-27 | PF: 0.90
+  Avg Win: ₹420 | Avg Loss: ₹-580
+
+10. MORNING REVERSAL (fade first 15-min move after 10:00)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/pattern_scan_v2.py", line 227, in <module>
+    first15_move = (first15[-1]['close'] - first15[0]['open']) / first15[0]['open'] * 100
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~
+ZeroDivisionError: float division by zero

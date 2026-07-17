@@ -1,0 +1,17 @@
+import paramiko,time
+s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+s.connect('173.249.55.84',username='root',password='19119e3a6793dde1',timeout=30)
+time.sleep(5)
+def c(cmd):
+    i,o,e = s.exec_command(cmd)
+    return o.read().decode(errors='replace').strip()
+print('Health:',c('curl -s http://localhost:8080/actuator/health'))
+print()
+print('Portfolio Model:',c('curl -s http://localhost:8080/api/backtest/portfolio/model'))
+print()
+print('QuickFlip Model:',c('curl -s http://localhost:8080/api/backtest/quickflip/model'))
+print()
+print('Docker:',c('docker ps --format "{{.Names}} {{.Status}}" | grep stokr'))
+print()
+print('Flyway:',c('docker logs stokr-lite-backend 2>&1 | grep -i flyway | tail -5'))
+s.close()

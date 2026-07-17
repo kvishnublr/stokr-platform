@@ -157,11 +157,60 @@ public class OptionArbHistoryService {
     }
 
     /**
+     * Get summary — alias for getDailySummary, supports null date (today)
+     */
+    public SummaryResult getSummary(LocalDate date) {
+        LocalDate d = date != null ? date : LocalDate.now();
+        Map<String, Object> summary = getDailySummary(d);
+        SummaryResult result = new SummaryResult();
+        result.totalOpportunities = ((Number) summary.get("totalOpportunities")).longValue();
+        result.totalEdgeDetected = (BigDecimal) summary.get("totalEdgeDetected");
+        result.totalPnlAfterCosts = (BigDecimal) summary.get("totalPnlAfterCosts");
+        result.winRate = (BigDecimal) summary.get("winRate");
+        result.wins = ((Number) summary.get("wins")).longValue();
+        result.losses = ((Number) summary.get("losses")).longValue();
+        return result;
+    }
+
+    @lombok.Data
+    public static class SummaryResult {
+        private long totalOpportunities;
+        private BigDecimal totalEdgeDetected;
+        private BigDecimal totalPnlAfterCosts;
+        private BigDecimal winRate;
+        private long wins;
+        private long losses;
+    }
+
+    /**
      * Get date list for pagination headers
      */
     public List<LocalDate> getAvailableDates(int days) {
         LocalDateTime since = LocalDateTime.now().minusDays(days);
         return repository.findDistinctDatesSince(since);
+    }
+
+    public List<OptionArbOpportunity> getTodayOpportunities(LocalDate today) {
+        LocalDateTime start = today.atStartOfDay();
+        LocalDateTime end = today.plusDays(1).atStartOfDay();
+        return repository.findByScanTimeBetween(start, end);
+    }
+
+    public List<OptionArbOpportunity> getTodayOpportunities(LocalDate today, String underlying) {
+        LocalDateTime start = today.atStartOfDay();
+        LocalDateTime end = today.plusDays(1).atStartOfDay();
+        return repository.findByScanTimeBetween(start, end).stream()
+            .filter(o -> underlying.equals(o.getUnderlying()))
+            .toList();
+    }
+
+    public Page<OptionArbOpportunity> getAllHistory(PageRequest pageRequest) {
+        return repository.findAllByOrderByScanTimeDesc(pageRequest);
+    }
+
+    public Page<OptionArbOpportunity> getHistoryExcludingToday(PageRequest pageRequest) {
+        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+        return repository.findByScanTimeBeforeOrderByScanTimeDesc(todayStart, pageRequest);
     }
 
     /**
