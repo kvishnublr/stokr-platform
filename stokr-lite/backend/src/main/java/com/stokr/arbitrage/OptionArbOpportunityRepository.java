@@ -1,0 +1,42 @@
+package com.stokr.arbitrage;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+public interface OptionArbOpportunityRepository extends JpaRepository<OptionArbOpportunity, Long> {
+
+    Page<OptionArbOpportunity> findAllByOrderByScanTimeDesc(Pageable pageable);
+
+    List<OptionArbOpportunity> findByStatusOrderByScanTimeDesc(String status);
+
+    @Query("SELECT o FROM OptionArbOpportunity o WHERE o.status = :status AND o.scanTime >= :start AND o.scanTime < :end ORDER BY o.scanTime DESC")
+    List<OptionArbOpportunity> findByStatusOrderByScanTimeBetween(@Param("status") String status, @Param("start") java.time.LocalDateTime start, @Param("end") java.time.LocalDateTime end);
+
+    @Query("SELECT o FROM OptionArbOpportunity o WHERE o.scanTime >= :start AND o.scanTime < :end ORDER BY o.scanTime DESC")
+    List<OptionArbOpportunity> findByScanTimeBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    @Query("SELECT COUNT(o) FROM OptionArbOpportunity o WHERE o.scanTime >= :start AND o.scanTime < :end")
+    long countByScanTimeBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    @Query("SELECT COUNT(o) FROM OptionArbOpportunity o WHERE o.scanTime >= :start AND o.scanTime < :end AND o.status = :status")
+    long countByScanTimeBetweenAndStatus(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end, @Param("status") String status);
+
+    @Query("SELECT COALESCE(SUM(o.pnlAfterCosts), 0) FROM OptionArbOpportunity o WHERE o.scanTime >= :start AND o.scanTime < :end AND o.status = 'CLOSED'")
+    java.math.BigDecimal sumPnlByScanTimeBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    @Query("SELECT COALESCE(SUM(o.edgeAfterCosts), 0) FROM OptionArbOpportunity o WHERE o.scanTime >= :start AND o.scanTime < :end")
+    java.math.BigDecimal sumEdgeByScanTimeBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    @Query("SELECT DISTINCT FUNCTION('date', o.scanTime) FROM OptionArbOpportunity o WHERE o.scanTime >= :since ORDER BY FUNCTION('date', o.scanTime) DESC")
+    List<java.time.LocalDate> findDistinctDatesSince(@Param("since") LocalDateTime since);
+
+    Page<OptionArbOpportunity> findByScanTimeBeforeOrderByScanTimeDesc(LocalDateTime before, Pageable pageable);
+
+    Page<OptionArbOpportunity> findByScanTimeBetweenOrderByScanTimeDesc(LocalDateTime start, LocalDateTime end, Pageable pageable);
+}

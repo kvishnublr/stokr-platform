@@ -1,0 +1,697 @@
+package com.stokr.arbitrage;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.ResponseEntity;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+@RestController
+@RequestMapping("/api/option-arbitrage")
+public class OptionArbitrageController {
+
+    private static final Logger log = LoggerFactory.getLogger(OptionArbitrageController.class);
+
+    private final OptionChainService optionChainService;
+    private final ZerodhaSpotPriceFetcher spotFetcher;
+    private final OptionArbHistoryService historyService;
+    private final CalendarSpreadService calendarSpreadService;
+    private final VolSurfaceService volSurfaceService;
+    private final OptionArbAutoExecuteService autoExecService;
+    private final OptionArbExecutionService executionService;
+    private final ExecutedTradeRepository tradeRepo;
+
+    private final ConcurrentHashMap<String, List<ArbitrageOpportunity>> scanCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> scanTimestamp = new ConcurrentHashMap<>();
+
+    private static final double RISK_FREE_RATE = 0.065;
+    private static final Set<String> ALL_UNDERLYINGS = Set.of("NIFTY", "BANKNIFTY", "MIDCPNIFTY", "FINNIFTY");
+
+    public OptionArbitrageController(OptionChainService optionChainService,
+                                      ZerodhaSpotPriceFetcher spotFetcher,
+                                      OptionArbHistoryService historyService,
+                                      CalendarSpreadService calendarSpreadService,
+                                      VolSurfaceService volSurfaceService,
+                                      OptionArbAutoExecuteService autoExecService,
+                                      OptionArbExecutionService executionService,
+                                      ExecutedTradeRepository tradeRepo) {
+        this.optionChainService = optionChainService;
+        this.spotFetcher = spotFetcher;
+        this.historyService = historyService;
+        this.calendarSpreadService = calendarSpreadService;
+        this.volSurfaceService = volSurfaceService;
+        this.autoExecService = autoExecService;
+        this.executionService = executionService;
+        this.tradeRepo = tradeRepo;
+    }
+
+    private record UnderlyingConfig(String name, String spotKey, String futuresPrefix) {}
+
+    private static final Map<String, UnderlyingConfig> CONFIGS = Map.of(
+        "NIFTY", new UnderlyingConfig("NIFTY", "NSE:NIFTY 50", "NFO:NIFTY"),
+        "BANKNIFTY", new UnderlyingConfig("BANKNIFTY", "NSE:NIFTY BANK", "NFO:BANKNIFTY"),
+        "MIDCPNIFTY", new UnderlyingConfig("MIDCPNIFTY", "NSE:NIFTY MID SELECT", "NFO:MIDCPNIFTY"),
+        "FINNIFTY", new UnderlyingConfig("FINNIFTY", "NSE:NIFTY FIN SERVICE", "NFO:FINNIFTY")
+    );
+
+    private double getValidatedFutures(String underlying, double spot) {
+        try {
+            UnderlyingConfig cfg = CONFIGS.get(underlying);
+            if (cfg == null) return spot;
+            LocalDate expiry = optionChainService.getMonthlyExpiry();
+            int yy = expiry.getYear() % 100;
+            String mon = expiry.getMonth().name().substring(0, 3);
+            String futKey = cfg.futuresPrefix() + String.format("%02d%sFUT", yy, mon);
+            var quote = spotFetcher.fetchSingleQuote(futKey);
+            if (quote != null && quote.get("last_price") != null) {
+                double futLtp = ((Number) quote.get("last_price")).doubleValue();
+                if (futLtp > 0) return futLtp;
+            }
+        } catch (Exception e) {
+            log.debug("Futures fetch failed for {}: {}", underlying, e.getMessage());
+        }
+        return spot;
+    }
+
+    @GetMapping("/scan")
+    public ResponseEntity<Map<String, Object>> scan(@RequestParam(defaultValue = "ALL") String underlying) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+
+        List<ArbitrageOpportunity> allOpps = new ArrayList<>();
+        Set<String> underlyings = "ALL".equals(underlying) ? ALL_UNDERLYINGS : Set.of(underlying);
+
+        for (String u : underlyings) {
+            try {
+                List<ArbitrageOpportunity> opps = optionChainService.scanParityBreaks(u);
+                allOpps.addAll(opps);
+            } catch (Exception e) {
+                log.error("Scan failed for {}: {}", u, e.getMessage());
+            }
+        }
+
+        allOpps.sort((a, b) -> Double.compare(b.edgeAfterCosts, a.edgeAfterCosts));
+        resp.put("opportunities", allOpps);
+        resp.put("count", allOpps.size());
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("total", allOpps.size());
+        long parityBreaks = allOpps.stream().filter(o -> "PARITY_BREAK".equals(o.type)).count();
+        summary.put("parityBreaks", parityBreaks);
+        resp.put("summary", summary);
+
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/today")
+    public ResponseEntity<Map<String, Object>> today(@RequestParam(defaultValue = "ALL") String underlying) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+
+        try {
+            LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+            List<OptionArbOpportunity> dbOpps;
+            if ("ALL".equals(underlying)) {
+                dbOpps = historyService.getTodayOpportunities(today);
+            } else {
+                dbOpps = historyService.getTodayOpportunities(today, underlying);
+            }
+
+            List<Map<String, Object>> opps = new ArrayList<>();
+            for (OptionArbOpportunity dbOpp : dbOpps) {
+                Map<String, Object> m = dbOpp.toMap();
+
+                if ("PARITY_BREAK".equals(dbOpp.getOpportunityType())) {
+                    double spot = dbOpp.getSpotPrice();
+                    double futPrice = dbOpp.getFuturesPrice();
+                    double ceEntry = dbOpp.getCeEntryPrice();
+                    double peEntry = dbOpp.getPeEntryPrice();
+                    int lotSize = OptionChainService.getLotSize(dbOpp.getUnderlying());
+
+                    double grossEdge = (dbOpp.getEdgePoints() != null ? dbOpp.getEdgePoints() : 0) * lotSize;
+                    Map<String, Double> costs = optionChainService.calculateCostBreakdown(
+                        dbOpp.getEdgePoints() != null ? dbOpp.getEdgePoints() : 0, lotSize, "CONVERSION".equals(dbOpp.getAction()));
+                    m.put("costBreakdown", costs);
+                    m.put("edgeAfterCosts", costs.get("netEdge"));
+
+                    if ("CONVERSION".equals(dbOpp.getAction())) {
+                        m.put("maxProfit", costs.get("netEdge"));
+                        m.put("maxLoss", 0.0);
+                    } else {
+                        m.put("maxProfit", 0.0);
+                        m.put("maxLoss", costs.get("netEdge") != null ? -costs.get("netEdge") : 0.0);
+                    }
+                }
+
+                opps.add(m);
+            }
+
+            resp.put("opportunities", opps);
+            resp.put("count", opps.size());
+        } catch (Exception e) {
+            log.error("Failed to fetch today's opportunities: {}", e.getMessage());
+            resp.put("opportunities", Collections.emptyList());
+            resp.put("count", 0);
+        }
+
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/opportunities")
+    public ResponseEntity<Map<String, Object>> cachedOpportunities(@RequestParam(defaultValue = "ALL") String underlying) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        List<ArbitrageOpportunity> opps = scanCache.getOrDefault(underlying, Collections.emptyList());
+        resp.put("opportunities", opps);
+        resp.put("count", opps.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/calendar-spread")
+    public ResponseEntity<Map<String, Object>> calendarSpread(
+            @RequestParam String underlying,
+            @RequestParam(defaultValue = "0") int strike) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            var result = calendarSpreadService.findSpread(underlying, strike);
+            resp.put("opportunities", result);
+            resp.put("count", result.size());
+        } catch (Exception e) {
+            log.error("Calendar spread failed: {}", e.getMessage());
+            resp.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/vol-surface")
+    public ResponseEntity<Map<String, Object>> volSurface(@RequestParam String underlying) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            var result = volSurfaceService.getSurface(underlying);
+            resp.put("surface", result);
+        } catch (Exception e) {
+            log.error("Vol surface failed: {}", e.getMessage());
+            resp.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/live-prices")
+    public ResponseEntity<Map<String, Object>> livePrices(
+            @RequestParam String underlying,
+            @RequestParam int strike) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            resp.put("marketClosed", true);
+            return ResponseEntity.ok(resp);
+        }
+
+        try {
+            UnderlyingConfig cfg = CONFIGS.get(underlying);
+            if (cfg == null) {
+                resp.put("error", "Unknown underlying: " + underlying);
+                return ResponseEntity.ok(resp);
+            }
+
+            LocalDate expiry = optionChainService.getMonthlyExpiry();
+            int yy = expiry.getYear() % 100;
+            String mon = expiry.getMonth().name().substring(0, 3);
+            String prefix = cfg.futuresPrefix().replace("NFO:", "");
+
+            String ceKey = String.format("NFO:%s%02d%s%dCE", prefix, yy, mon, strike);
+            String peKey = String.format("NFO:%s%02d%s%dPE", prefix, yy, mon, strike);
+            String futKey = cfg.futuresPrefix() + String.format("%02d%sFUT", yy, mon);
+
+            var quotes = spotFetcher.fetchQuotes(List.of(cfg.spotKey(), ceKey, peKey, futKey));
+            resp.put("spotLive", getLtp(quotes, cfg.spotKey()));
+            resp.put("ceLive", getLtp(quotes, ceKey));
+            resp.put("peLive", getLtp(quotes, peKey));
+            resp.put("futLive", getLtp(quotes, futKey));
+        } catch (Exception e) {
+            log.debug("Live prices failed: {}", e.getMessage());
+        }
+
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/live-prices-batch")
+    public ResponseEntity<Map<String, Object>> livePricesBatch(@RequestParam(defaultValue = "ALL") String underlying) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            resp.put("marketClosed", true);
+            return ResponseEntity.ok(resp);
+        }
+
+        try {
+            LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+            List<OptionArbOpportunity> dbOpps;
+            if ("ALL".equals(underlying)) {
+                dbOpps = historyService.getTodayOpportunities(today);
+            } else {
+                dbOpps = historyService.getTodayOpportunities(today, underlying);
+            }
+
+            Set<String> instrumentKeys = new LinkedHashSet<>();
+            Map<String, Long> oppToId = new HashMap<>();
+
+            for (OptionArbOpportunity dbOpp : dbOpps) {
+                if (!"PARITY_BREAK".equals(dbOpp.getOpportunityType())) continue;
+                UnderlyingConfig cfg = CONFIGS.get(dbOpp.getUnderlying());
+                if (cfg == null) continue;
+
+                LocalDate expiry = optionChainService.getMonthlyExpiry();
+                int yy = expiry.getYear() % 100;
+                String monStr = expiry.getMonth().name().substring(0, 3);
+                String prefix = cfg.futuresPrefix().replace("NFO:", "");
+
+                int strike = (int) dbOpp.getStrike().doubleValue();
+                String ceKey = String.format("NFO:%s%02d%s%dCE", prefix, yy, monStr, strike);
+                String peKey = String.format("NFO:%s%02d%s%dPE", prefix, yy, monStr, strike);
+                String futKey = cfg.futuresPrefix() + String.format("%02d%sFUT", yy, monStr);
+
+                instrumentKeys.add(cfg.spotKey());
+                instrumentKeys.add(ceKey);
+                instrumentKeys.add(peKey);
+                instrumentKeys.add(futKey);
+                oppToId.put(dbOpp.getId() + "", dbOpp.getId());
+            }
+
+            if (instrumentKeys.isEmpty()) {
+                resp.put("prices", Collections.emptyMap());
+                return ResponseEntity.ok(resp);
+            }
+
+            var quotes = spotFetcher.fetchQuotes(new ArrayList<>(instrumentKeys));
+
+            Map<String, Object> prices = new HashMap<>();
+            for (OptionArbOpportunity dbOpp : dbOpps) {
+                if (!"PARITY_BREAK".equals(dbOpp.getOpportunityType())) continue;
+                UnderlyingConfig cfg = CONFIGS.get(dbOpp.getUnderlying());
+                if (cfg == null) continue;
+
+                LocalDate expiry = optionChainService.getMonthlyExpiry();
+                int yy = expiry.getYear() % 100;
+                String monStr = expiry.getMonth().name().substring(0, 3);
+                String prefix = cfg.futuresPrefix().replace("NFO:", "");
+
+                int strike = (int) dbOpp.getStrike().doubleValue();
+                String ceKey = String.format("NFO:%s%02d%s%dCE", prefix, yy, monStr, strike);
+                String peKey = String.format("NFO:%s%02d%s%dPE", prefix, yy, monStr, strike);
+                String futKey = cfg.futuresPrefix() + String.format("%02d%sFUT", yy, monStr);
+
+                Map<String, Object> lp = new HashMap<>();
+                lp.put("spotLive", getLtp(quotes, cfg.spotKey()));
+                lp.put("ceLive", getLtp(quotes, ceKey));
+                lp.put("peLive", getLtp(quotes, peKey));
+                lp.put("futLive", getLtp(quotes, futKey));
+                prices.put(dbOpp.getId(), lp);
+            }
+
+            resp.put("prices", prices);
+        } catch (Exception e) {
+            log.error("Batch live prices failed: {}", e.getMessage());
+        }
+
+        return ResponseEntity.ok(resp);
+    }
+
+    private double getLtp(Map<String, Object> quotes, String key) {
+        if (quotes == null) return 0;
+        Object q = quotes.get(key);
+        if (q == null) return 0;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> qMap = (Map<String, Object>) q;
+            Object ltp = qMap.get("last_price");
+            return ltp != null ? ((Number) ltp).doubleValue() : 0;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    @GetMapping("/history")
+    public ResponseEntity<Map<String, Object>> history(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String date) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            if (date != null && !date.isEmpty()) {
+                LocalDate d = LocalDate.parse(date);
+                var result = historyService.getHistoryByDate(d, PageRequest.of(page, size));
+                resp.put("opportunities", result.getContent().stream().map(OptionArbOpportunity::toMap).toList());
+                resp.put("totalElements", result.getTotalElements());
+                resp.put("totalPages", result.getTotalPages());
+                resp.put("currentPage", page);
+            } else {
+                var result = historyService.getAllHistory(PageRequest.of(page, size));
+                resp.put("opportunities", result.getContent().stream().map(OptionArbOpportunity::toMap).toList());
+                resp.put("totalElements", result.getTotalElements());
+                resp.put("totalPages", result.getTotalPages());
+                resp.put("currentPage", page);
+            }
+        } catch (Exception e) {
+            log.error("History query failed: {}", e.getMessage());
+            resp.put("opportunities", Collections.emptyList());
+            resp.put("totalElements", 0);
+            resp.put("totalPages", 0);
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/history/past")
+    public ResponseEntity<Map<String, Object>> historyPast(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            var result = historyService.getHistoryExcludingToday(PageRequest.of(page, size));
+            resp.put("opportunities", result.getContent().stream().map(OptionArbOpportunity::toMap).toList());
+            resp.put("totalElements", result.getTotalElements());
+            resp.put("totalPages", result.getTotalPages());
+            resp.put("currentPage", page);
+        } catch (Exception e) {
+            log.error("Past history query failed: {}", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/history/summary")
+    public ResponseEntity<Map<String, Object>> historySummary(
+            @RequestParam(required = false) String date) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            LocalDate d = (date != null && !date.isEmpty()) ? LocalDate.parse(date) : null;
+            var summary = historyService.getSummary(d);
+            resp.put("totalOpportunities", summary.getTotalOpportunities());
+            resp.put("totalEdgeDetected", summary.getTotalEdgeDetected());
+            resp.put("totalPnlAfterCosts", summary.getTotalPnlAfterCosts());
+            resp.put("winRate", summary.getWinRate());
+            resp.put("wins", summary.getWins());
+            resp.put("losses", summary.getLosses());
+        } catch (Exception e) {
+            log.error("Summary query failed: {}", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/history/dates")
+    public ResponseEntity<Map<String, Object>> historyDates(
+            @RequestParam(defaultValue = "30") int days) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            var dates = historyService.getAvailableDates(days);
+            resp.put("dates", dates);
+        } catch (Exception e) {
+            log.error("Dates query failed: {}", e.getMessage());
+            resp.put("dates", Collections.emptyList());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/health")
+    public ResponseEntity<Map<String, Object>> health() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("scannerReady", true);
+        resp.put("underlyings", List.of("NIFTY", "BANKNIFTY", "MIDCPNIFTY", "FINNIFTY"));
+        resp.put("dteRanges", Map.of(
+            "NIFTY", List.of(3, 7),
+            "BANKNIFTY", List.of(3, 21),
+            "MIDCPNIFTY", List.of(3, 21),
+            "FINNIFTY", List.of(3, 21)
+        ));
+        resp.put("settings", Map.of(
+            "minParityDeviation", 15,
+            "minEdgeAfterCosts", 200,
+            "maxSpreadPct", 2.0,
+            "riskFreeRate", 6.5
+        ));
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/auto-execute/settings")
+    public ResponseEntity<Map<String, Object>> getAutoExecSettings() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("enabled", autoExecService.isAutoExecEnabled());
+        resp.put("settings", autoExecService.getAllSettings());
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/auto-execute/settings")
+    public ResponseEntity<Map<String, Object>> updateAutoExecSetting(
+            @RequestParam String key,
+            @RequestParam String value) {
+        autoExecService.setSetting(key, value);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("status", "ok");
+        resp.put("settings", autoExecService.getAllSettings());
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/auto-execute/toggle")
+    public ResponseEntity<Map<String, Object>> toggleAutoExec() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        boolean current = autoExecService.isAutoExecEnabled();
+        autoExecService.setSetting("auto_execute_enabled", String.valueOf(!current));
+        resp.put("enabled", !current);
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/auto-execute/run")
+    public ResponseEntity<Map<String, Object>> runAutoExecCycle() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        autoExecService.autoExecCycle();
+        resp.put("message", "Auto-execute cycle triggered");
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/auto-execute/trades")
+    public ResponseEntity<Map<String, Object>> getAutoExecTrades(
+            @RequestParam(defaultValue = "ALL") String status) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        List<ExecutedTrade> trades;
+        if ("ALL".equals(status)) {
+            trades = tradeRepo.findAll();
+        } else {
+            trades = tradeRepo.findByStatusOrderByExecutedAtDesc(status);
+        }
+        List<Map<String, Object>> tradeMaps = new ArrayList<>();
+        for (ExecutedTrade t : trades) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", t.getId());
+            m.put("underlying", t.getUnderlying());
+            m.put("strike", t.getStrike());
+            m.put("action", t.getAction());
+            m.put("ceSymbol", t.getCeSymbol());
+            m.put("peSymbol", t.getPeSymbol());
+            m.put("futSymbol", t.getFutSymbol());
+            m.put("ceEntryPrice", t.getCeEntryPrice());
+            m.put("peEntryPrice", t.getPeEntryPrice());
+            m.put("futEntryPrice", t.getFutEntryPrice());
+            m.put("ceOrderId", t.getCeOrderId());
+            m.put("peOrderId", t.getPeOrderId());
+            m.put("futOrderId", t.getFutOrderId());
+            m.put("lotSize", t.getLotSize());
+            m.put("status", t.getStatus());
+            m.put("notes", t.getNotes());
+            m.put("executedAt", t.getExecutedAt() != null ? t.getExecutedAt().toString() : null);
+            m.put("closedAt", t.getClosedAt() != null ? t.getClosedAt().toString() : null);
+            m.put("closeCeOrderId", t.getCloseCeOrderId());
+            m.put("closePeOrderId", t.getClosePeOrderId());
+            m.put("closeFutOrderId", t.getCloseFutOrderId());
+            m.put("closeCePrice", t.getCloseCePrice());
+            m.put("closePePrice", t.getClosePePrice());
+            m.put("closeFutPrice", t.getCloseFutPrice());
+            m.put("pnlPoints", t.getPnlPoints());
+            m.put("pnlAmount", t.getPnlAmount());
+            m.put("expiryDate", t.getExpiryDate() != null ? t.getExpiryDate().toString() : null);
+            tradeMaps.add(m);
+        }
+        resp.put("trades", tradeMaps);
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/auto-execute/close/{tradeId}")
+    public ResponseEntity<Map<String, Object>> closeTrade(
+            @PathVariable Long tradeId,
+            @RequestParam(defaultValue = "all") String what) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        Optional<ExecutedTrade> opt = tradeRepo.findById(tradeId);
+        if (opt.isEmpty()) {
+            resp.put("error", "Trade not found");
+            return ResponseEntity.ok(resp);
+        }
+        ExecutedTrade trade = opt.get();
+        try {
+            ExecutedTrade closed;
+            if ("options".equals(what)) {
+                closed = autoExecService.closeOptionsOnly(trade);
+            } else {
+                closed = autoExecService.closePosition(trade);
+            }
+            resp.put("status", "ok");
+            resp.put("trade", closed);
+        } catch (Exception e) {
+            resp.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/auto-execute/close-all")
+    public ResponseEntity<Map<String, Object>> closeAllTrades() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        List<ExecutedTrade> open = tradeRepo.countOpen() > 0 ?
+            tradeRepo.findOpenByUnderlying("ALL") : Collections.emptyList();
+        int closed = 0;
+        for (ExecutedTrade t : open) {
+            try {
+                autoExecService.closePosition(t);
+                closed++;
+            } catch (Exception e) {
+                log.error("Failed to close trade {}: {}", t.getId(), e.getMessage());
+            }
+        }
+        resp.put("closed", closed);
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/auto-execute/replace")
+    public ResponseEntity<Map<String, Object>> replaceTrade(
+            @RequestParam Long tradeId,
+            @RequestParam String newAction,
+            @RequestParam double newCePrice,
+            @RequestParam double newPePrice,
+            @RequestParam double newFutPrice,
+            @RequestParam double newSpotPrice) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        Optional<ExecutedTrade> opt = tradeRepo.findById(tradeId);
+        if (opt.isEmpty()) {
+            resp.put("error", "Trade not found");
+            return ResponseEntity.ok(resp);
+        }
+        ExecutedTrade existing = opt.get();
+        try {
+            ArbitrageOpportunity newOpp = new ArbitrageOpportunity();
+            newOpp.underlying = existing.getUnderlying();
+            newOpp.strike = existing.getStrike();
+            newOpp.action = newAction;
+            newOpp.type = "PARITY_BREAK";
+            newOpp.cePrice = newCePrice;
+            newOpp.pePrice = newPePrice;
+            newOpp.futuresPrice = newFutPrice;
+            newOpp.spotPrice = newSpotPrice;
+
+            ExecutedTrade closed = autoExecService.closePosition(existing);
+            ExecutedTrade entered = autoExecService.executeNew(newOpp);
+            resp.put("status", "ok");
+            resp.put("closedTradeId", closed.getId());
+            resp.put("newTradeId", entered != null ? entered.getId() : null);
+        } catch (Exception e) {
+            resp.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/auto-execute/replace-options")
+    public ResponseEntity<Map<String, Object>> replaceOptionsOnly(
+            @RequestParam Long tradeId,
+            @RequestParam String newAction,
+            @RequestParam double newCePrice,
+            @RequestParam double newPePrice) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        Optional<ExecutedTrade> opt = tradeRepo.findById(tradeId);
+        if (opt.isEmpty()) {
+            resp.put("error", "Trade not found");
+            return ResponseEntity.ok(resp);
+        }
+        ExecutedTrade existing = opt.get();
+        try {
+            ExecutedTrade rolled = autoExecService.closeOptionsOnly(existing);
+            resp.put("status", "ok");
+            resp.put("rolledTradeId", rolled.getId());
+        } catch (Exception e) {
+            resp.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/auto-execute/execute")
+    public ResponseEntity<Map<String, Object>> executeOpportunity(
+            @RequestParam String underlying,
+            @RequestParam int strike,
+            @RequestParam String action,
+            @RequestParam double cePrice,
+            @RequestParam double pePrice,
+            @RequestParam double futPrice,
+            @RequestParam double spotPrice) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        int lotSize = OptionChainService.getLotSize(underlying);
+
+        OptionArbExecutionService.ExecutionResult execResult = executionService.execute(
+            underlying, strike, action, cePrice, pePrice, futPrice, spotPrice, lotSize);
+
+        resp.put("success", execResult.isSuccess());
+        resp.put("action", execResult.getAction());
+        resp.put("underlying", execResult.getUnderlying());
+        resp.put("strike", execResult.getStrike());
+        resp.put("error", execResult.getError());
+
+        List<Map<String, Object>> legs = new ArrayList<>();
+        for (OptionArbExecutionService.LegResult leg : execResult.getLegs()) {
+            Map<String, Object> lm = new LinkedHashMap<>();
+            lm.put("symbol", leg.getSymbol());
+            lm.put("side", leg.getSide());
+            lm.put("orderId", leg.getOrderId());
+            lm.put("status", leg.getStatus());
+            lm.put("message", leg.getMessage());
+            lm.put("price", leg.getPrice());
+            lm.put("quantity", leg.getQuantity());
+            legs.add(lm);
+        }
+        resp.put("legs", legs);
+
+        ExecutedTrade trade = new ExecutedTrade();
+        trade.setUnderlying(underlying);
+        trade.setStrike(strike);
+        trade.setAction(action);
+        trade.setExpiryDate(optionChainService.getMonthlyExpiry());
+        trade.setLotSize(lotSize);
+        trade.setStatus(execResult.isSuccess() ? "OPEN" : "FAILED");
+
+        for (OptionArbExecutionService.LegResult leg : execResult.getLegs()) {
+            if ("BUY".equals(leg.getSide()) && leg.getSymbol() != null && leg.getSymbol().endsWith("CE")) {
+                trade.setCeSymbol(leg.getSymbol());
+                trade.setCeOrderId(leg.getOrderId());
+                trade.setCeEntryPrice(leg.getPrice());
+            } else if ("SELL".equals(leg.getSide()) && leg.getSymbol() != null && leg.getSymbol().endsWith("CE")) {
+                trade.setCeSymbol(leg.getSymbol());
+                trade.setCeOrderId(leg.getOrderId());
+                trade.setCeEntryPrice(leg.getPrice());
+            } else if (leg.getSymbol() != null && leg.getSymbol().endsWith("PE")) {
+                trade.setPeSymbol(leg.getSymbol());
+                trade.setPeOrderId(leg.getOrderId());
+                trade.setPeEntryPrice(leg.getPrice());
+            } else if (leg.getSymbol() != null && leg.getSymbol().endsWith("FUT")) {
+                trade.setFutSymbol(leg.getSymbol());
+                trade.setFutOrderId(leg.getOrderId());
+                trade.setFutEntryPrice(leg.getPrice());
+            }
+        }
+
+        trade.setNotes(execResult.isSuccess() ? "Manually executed" : execResult.getError());
+        ExecutedTrade saved = tradeRepo.save(trade);
+        resp.put("tradeId", saved.getId());
+        resp.put("tradeStatus", saved.getStatus());
+
+        return ResponseEntity.ok(resp);
+    }
+}

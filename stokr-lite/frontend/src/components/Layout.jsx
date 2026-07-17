@@ -13,6 +13,7 @@ const traderLinks = [
   { to: '/orders', label: 'Orders', icon: '📋' },
   { to: '/positions', label: 'Positions', icon: '📈' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
+  { to: '/option-arbitrage', label: 'Option Arb', icon: '🔀' },
 ];
 
 const adminLinks = [

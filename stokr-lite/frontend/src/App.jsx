@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -31,6 +31,38 @@ const AdminStrategyMappings = lazy(() => import('./pages/admin/AdminStrategyMapp
 const AdminStrategyConfigs = lazy(() => import('./pages/admin/AdminStrategyConfigs'));
 const AdminOrders = lazy(() => import('./pages/admin/AdminOrders'));
 const AdminAuditLog = lazy(() => import('./pages/admin/AdminAuditLog'));
+const OptionArbitrage = lazy(() => import('./pages/OptionArbitrage'));
+
+const routeImports = [
+  () => import('./pages/Dashboard'),
+  () => import('./pages/Signals'),
+  () => import('./pages/AdvancedBacktest'),
+  () => import('./pages/Strategies'),
+  () => import('./pages/Deployments'),
+  () => import('./pages/Brokers'),
+  () => import('./pages/Orders'),
+  () => import('./pages/Positions'),
+  () => import('./pages/Settings'),
+  () => import('./pages/TraderDashboard'),
+  () => import('./pages/admin/AdminDashboard'),
+  () => import('./pages/admin/AdminUsers'),
+  () => import('./pages/admin/AdminDeployments'),
+  () => import('./pages/admin/AdminBrokerHealth'),
+  () => import('./pages/admin/AdminKillSwitch'),
+  () => import('./pages/admin/AdminErrorLogs'),
+  () => import('./pages/admin/AdminUniverseGroups'),
+  () => import('./pages/admin/AdminStrategyMappings'),
+  () => import('./pages/admin/AdminStrategyConfigs'),
+  () => import('./pages/admin/AdminOrders'),
+  () => import('./pages/admin/AdminAuditLog'),
+  () => import('./pages/OptionArbitrage'),
+];
+
+function preloadRoutes() {
+  for (const imp of routeImports) {
+    imp();
+  }
+}
 
 function PageLoader() {
   return (
@@ -42,6 +74,10 @@ function PageLoader() {
 }
 
 export default function App() {
+  useEffect(() => {
+    requestIdleCallback(preloadRoutes);
+  }, []);
+
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
@@ -59,6 +95,7 @@ export default function App() {
             <Route path="/brokers" element={<Brokers />} />
             <Route path="/orders" element={<Orders />} />
             <Route path="/positions" element={<Positions />} />
+            <Route path="/option-arbitrage" element={<OptionArbitrage />} />
             <Route path="/settings" element={<Settings />} />
             <Route element={<AdminRoute />}>
               <Route path="/admin" element={<AdminDashboard />} />
