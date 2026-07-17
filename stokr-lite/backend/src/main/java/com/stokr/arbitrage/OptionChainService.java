@@ -28,6 +28,7 @@ public class OptionChainService {
     private static final double MIN_PARITY_DEVIATION = 15.0;
     private static final double MIN_EDGE_AFTER_COSTS = 300.0;
     private static final double MAX_SPREAD_PCT = 2.0;
+    private static final double MAX_SPREAD_POINTS = 15.0;
     private static final int COOLDOWN_SECONDS = 60;
     private static final int MIN_VOLUME = 100;
     private static final int MIN_OI = 100;
@@ -106,8 +107,12 @@ public class OptionChainService {
                 validStrikes++;
 
                 // 1. Put-Call Parity
+                // Use bid/ask instead of lastPrice to reflect actual execution prices
+                // CONVERSION: BUY CE (pay ask) + SELL PE (receive bid)
+                double ceExec = ceQuote.ask > 0 ? ceQuote.ask : ceQuote.lastPrice;
+                double peExec = peQuote.bid > 0 ? peQuote.bid : peQuote.lastPrice;
                 double parityDev = BlackScholesCalculator.parityDeviation(
-                    ceQuote.lastPrice, peQuote.lastPrice, strike, RISK_FREE_RATE, yearsToExpiry, futuresPrice);
+                    ceExec, peExec, strike, RISK_FREE_RATE, yearsToExpiry, futuresPrice);
 
                 if (Math.abs(parityDev) >= MIN_PARITY_DEVIATION) {
                     String cooldownKey = underlying + "_" + strike + "_PARITY";
@@ -212,8 +217,8 @@ public class OptionChainService {
                         quote.lastPrice = getDouble(quoteData, "last_price");
                         quote.openInterest = getLong(quoteData, "oi");
                         quote.volume = getLong(quoteData, "volume");
-                        quote.bid = getNestedDouble(quoteData, "depth", "buy", "price");
-                        quote.ask = getNestedDouble(quoteData, "depth", "sell", "price");
+                        quote.bid = getDepthPrice(quoteData, "buy");
+                        quote.ask = getDepthPrice(quoteData, "sell");
 
                         String lookupKey = instrument.startsWith("NFO:") ? instrument.substring(4) : instrument;
                         result.put(lookupKey, quote);
@@ -342,9 +347,10 @@ public class OptionChainService {
     }
 
     private boolean isSpreadTooWide(OptionQuote quote) {
-        if (quote.bid <= 0 || quote.ask <= 0) return false;
-        double spreadPct = (quote.ask - quote.bid) / quote.ask * 100;
-        return spreadPct > MAX_SPREAD_PCT;
+        if (quote.bid <= 0 || quote.ask <= 0) return true;
+        double spreadPoints = quote.ask - quote.bid;
+        double spreadPct = spreadPoints / quote.ask * 100;
+        return spreadPct > MAX_SPREAD_PCT || spreadPoints > MAX_SPREAD_POINTS;
     }
 
     private boolean isOnCooldown(String key) {
@@ -554,6 +560,25 @@ public class OptionChainService {
     private double getDouble(Map<String, Object> map, String key) {
         Object val = map.get(key);
         if (val instanceof Number) return ((Number) val).doubleValue();
+        return 0;
+    }
+
+    @SuppressWarnings("unchecked")
+    private double getDepthPrice(Map<String, Object> quoteData, String side) {
+        try {
+            Object depthObj = quoteData.get("depth");
+            if (!(depthObj instanceof Map)) return 0;
+            Object sideObj = ((Map<String, Object>) depthObj).get(side);
+            if (!(sideObj instanceof List)) return 0;
+            List<Object> levels = (List<Object>) sideObj;
+            if (levels.isEmpty()) return 0;
+            Object first = levels.get(0);
+            if (!(first instanceof Map)) return 0;
+            Object price = ((Map<String, Object>) first).get("price");
+            if (price instanceof Number) return ((Number) price).doubleValue();
+        } catch (Exception e) {
+            return 0;
+        }
         return 0;
     }
 

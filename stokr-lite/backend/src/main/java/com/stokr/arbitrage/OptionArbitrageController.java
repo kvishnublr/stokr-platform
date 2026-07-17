@@ -97,7 +97,7 @@ public class OptionArbitrageController {
         }
 
         allOpps.sort((a, b) -> Double.compare(b.edgeAfterCosts, a.edgeAfterCosts));
-        resp.put("opportunities", allOpps);
+        resp.put("opportunities", allOpps.stream().map(ArbitrageOpportunity::toMap).toList());
         resp.put("count", allOpps.size());
 
         Map<String, Object> summary = new LinkedHashMap<>();
