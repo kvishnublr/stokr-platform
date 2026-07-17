@@ -47,6 +47,10 @@ public class OptionChainService {
     }
 
     public List<ArbitrageOpportunity> scanOptionChain(String underlying, double spotPrice, double futuresPrice) {
+        return scanOptionChain(underlying, spotPrice, futuresPrice, false);
+    }
+
+    public List<ArbitrageOpportunity> scanOptionChain(String underlying, double spotPrice, double futuresPrice, boolean bypassCooldown) {
         List<ArbitrageOpportunity> opportunities = new ArrayList<>();
 
         try {
@@ -116,7 +120,7 @@ public class OptionChainService {
 
                 if (Math.abs(parityDev) >= MIN_PARITY_DEVIATION) {
                     String cooldownKey = underlying + "_" + strike + "_PARITY";
-                    if (!isOnCooldown(cooldownKey)) {
+                    if (bypassCooldown || !isOnCooldown(cooldownKey)) {
                         double edgeAfterCosts = calculateParityEdge(parityDev, underlying);
                         if (edgeAfterCosts >= MIN_EDGE_AFTER_COSTS) {
                             opportunities.add(buildParityOpportunity(
@@ -139,7 +143,7 @@ public class OptionChainService {
 
                 if (ivPremium > 30) {
                     String cooldownKey = underlying + "_" + strike + "_IV";
-                    if (!isOnCooldown(cooldownKey)) {
+                    if (bypassCooldown || !isOnCooldown(cooldownKey)) {
                         opportunities.add(buildIvSpikeOpportunity(
                             underlying, strike, ceQuote, peQuote, avgIV, estimatedRV,
                             ivPremium, daysToExpiry, spotPrice));
@@ -154,7 +158,7 @@ public class OptionChainService {
                         double marketPremium = peQuote.lastPrice - intrinsicValue;
                         if (marketPremium < -50) {
                             String cooldownKey = underlying + "_" + strike + "_DEEP";
-                            if (!isOnCooldown(cooldownKey)) {
+                            if (bypassCooldown || !isOnCooldown(cooldownKey)) {
                                 opportunities.add(buildDeepItmOpportunity(
                                     underlying, strike, peQuote, intrinsicValue, daysToExpiry, spotPrice));
                                 cooldownMap.put(cooldownKey, System.currentTimeMillis());
@@ -166,7 +170,7 @@ public class OptionChainService {
                 // 4. Skew Anomaly
                 if (peIV > ceIV * 1.15 && peIV > 0.20) {
                     String cooldownKey = underlying + "_" + strike + "_SKEW";
-                    if (!isOnCooldown(cooldownKey)) {
+                    if (bypassCooldown || !isOnCooldown(cooldownKey)) {
                         opportunities.add(buildSkewOpportunity(
                             underlying, strike, ceQuote, peQuote, ceIV, peIV, daysToExpiry, spotPrice));
                         cooldownMap.put(cooldownKey, System.currentTimeMillis());
