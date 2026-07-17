@@ -685,7 +685,7 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
       }
       case 'confidence': va = a.confidence || 0; vb = b.confidence || 0; break;
       case 'dte': va = a.daysToExpiry || 0; vb = b.daysToExpiry || 0; break;
-      case 'signalTime': va = a.scanTime || ''; vb = b.scanTime || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+      case 'signalTime': va = a.detectedAt || a.scanTime || ''; vb = b.detectedAt || b.scanTime || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
       default: return 0;
     }
     return sortDir === 'asc' ? va - vb : vb - va;
@@ -821,7 +821,7 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
                           </div>
                         </td>
                         <td className="px-3 py-3 text-sm text-right text-slate-500">{fmt(opp.daysToExpiry, 0)}d</td>
-                        <td className="px-3 py-3 text-xs text-right text-slate-400 font-mono">{formatIstTime(opp.scanTime)}</td>
+                        <td className="px-3 py-3 text-xs text-right text-slate-400 font-mono">{formatIstTime(opp.detectedAt || opp.scanTime)}</td>
                         <td className="px-3 py-3 text-center">
                           {opp.type === 'PARITY_BREAK' ? (
                             <div className="flex items-center justify-center gap-1.5">
