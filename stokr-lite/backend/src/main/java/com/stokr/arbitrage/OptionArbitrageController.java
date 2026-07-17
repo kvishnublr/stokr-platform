@@ -1,11 +1,16 @@
 package com.stokr.arbitrage;
 
+import com.stokr.broker.BrokerOrderRequest;
+import com.stokr.broker.BrokerPosition;
+import com.stokr.broker.ZerodhaAdapter;
+import com.stokr.external.ZerodhaTokenManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -26,6 +31,8 @@ public class OptionArbitrageController {
     private final OptionArbAutoExecuteService autoExecService;
     private final OptionArbExecutionService executionService;
     private final ExecutedTradeRepository tradeRepo;
+    private final ZerodhaAdapter zerodhaAdapter;
+    private final ZerodhaTokenManager tokenManager;
 
     private final ConcurrentHashMap<String, List<ArbitrageOpportunity>> scanCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> scanTimestamp = new ConcurrentHashMap<>();
@@ -40,7 +47,9 @@ public class OptionArbitrageController {
                                       VolSurfaceService volSurfaceService,
                                       OptionArbAutoExecuteService autoExecService,
                                       OptionArbExecutionService executionService,
-                                      ExecutedTradeRepository tradeRepo) {
+                                      ExecutedTradeRepository tradeRepo,
+                                      ZerodhaAdapter zerodhaAdapter,
+                                      ZerodhaTokenManager tokenManager) {
         this.optionChainService = optionChainService;
         this.spotFetcher = spotFetcher;
         this.historyService = historyService;
@@ -49,6 +58,8 @@ public class OptionArbitrageController {
         this.autoExecService = autoExecService;
         this.executionService = executionService;
         this.tradeRepo = tradeRepo;
+        this.zerodhaAdapter = zerodhaAdapter;
+        this.tokenManager = tokenManager;
     }
 
     private record UnderlyingConfig(String name, String spotKey, String futuresPrefix) {}
@@ -665,6 +676,89 @@ public class OptionArbitrageController {
         resp.put("tradeId", saved.getId());
         resp.put("tradeStatus", saved.getStatus());
 
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/positions")
+    public ResponseEntity<Map<String, Object>> getPositions() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            ZerodhaTokenManager.ZerodhaAuth auth = tokenManager.getCurrentAuth();
+            if (auth == null || auth.getAccessToken() == null) {
+                resp.put("positions", List.of());
+                resp.put("count", 0);
+                resp.put("totalPnl", 0);
+                resp.put("error", "No auth token");
+                return ResponseEntity.ok(resp);
+            }
+            List<BrokerPosition> all = zerodhaAdapter.getPositions(auth.getAccessToken());
+            List<Map<String, Object>> nfoPositions = new ArrayList<>();
+            BigDecimal totalPnl = BigDecimal.ZERO;
+            for (BrokerPosition pos : all) {
+                if (!"NFO".equals(pos.exchange())) continue;
+                if (pos.quantity() == 0) continue;
+                String symbol = pos.symbol();
+                String instrumentType = "FUT";
+                if (symbol.contains("CE")) instrumentType = "CE";
+                else if (symbol.contains("PE")) instrumentType = "PE";
+
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("tradingsymbol", symbol);
+                m.put("exchange", pos.exchange());
+                m.put("product", pos.productType());
+                m.put("quantity", pos.quantity());
+                m.put("avgPrice", pos.avgPrice().doubleValue());
+                m.put("ltp", pos.lastPrice().doubleValue());
+                m.put("pnl", pos.unrealizedPnl().doubleValue());
+                m.put("mtm", pos.lastPrice().subtract(pos.avgPrice()).multiply(BigDecimal.valueOf(pos.quantity())).doubleValue());
+                m.put("instrumentType", instrumentType);
+                nfoPositions.add(m);
+                totalPnl = totalPnl.add(pos.unrealizedPnl());
+            }
+            resp.put("positions", nfoPositions);
+            resp.put("count", nfoPositions.size());
+            resp.put("totalPnl", totalPnl.doubleValue());
+        } catch (Exception e) {
+            log.error("Failed to fetch positions: {}", e.getMessage());
+            resp.put("positions", List.of());
+            resp.put("count", 0);
+            resp.put("totalPnl", 0);
+            resp.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/exit-position")
+    public ResponseEntity<Map<String, Object>> exitPosition(
+            @RequestParam String symbol,
+            @RequestParam(defaultValue = "NFO") String exchange,
+            @RequestParam(defaultValue = "MIS") String product,
+            @RequestParam int quantity,
+            @RequestParam String transactionType) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            ZerodhaTokenManager.ZerodhaAuth auth = tokenManager.getCurrentAuth();
+            if (auth == null || auth.getAccessToken() == null) {
+                resp.put("error", "No auth token");
+                return ResponseEntity.ok(resp);
+            }
+            BrokerOrderRequest request = BrokerOrderRequest.builder()
+                .symbol(symbol)
+                .exchange(exchange)
+                .side("SELL".equalsIgnoreCase(transactionType) ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY)
+                .orderType(BrokerOrderRequest.OrderType.MARKET)
+                .quantity(quantity)
+                .productType(product)
+                .build();
+
+            com.stokr.broker.BrokerOrderResponse result = zerodhaAdapter.placeOrder(auth.getAccessToken(), request);
+            resp.put("status", "ok");
+            resp.put("orderId", result.orderId());
+            resp.put("statusText", result.status());
+        } catch (Exception e) {
+            log.error("Failed to exit position {}: {}", symbol, e.getMessage());
+            resp.put("error", e.getMessage());
+        }
         return ResponseEntity.ok(resp);
     }
 }
