@@ -281,28 +281,65 @@ public class OptionArbitrageController {
                 return ResponseEntity.ok(resp);
             }
 
+            LocalDate expiry = optionChainService.getMonthlyExpiry();
+            int yy = expiry.getYear() % 100;
+            String monStr = expiry.getMonth().name().substring(0, 3);
+
+            Set<String> instrumentSet = new LinkedHashSet<>();
+            Map<String, List<OptionArbOpportunity>> spotKeyToOpps = new LinkedHashMap<>();
+            Map<String, String> oppKeyToInstrument = new HashMap<>();
+
+            for (OptionArbOpportunity dbOpp : dbOpps) {
+                if (!"PARITY_BREAK".equals(dbOpp.getType())) continue;
+                UnderlyingConfig cfg = CONFIGS.get(dbOpp.getUnderlying());
+                if (cfg == null) continue;
+
+                String prefix = cfg.futuresPrefix().replace("NFO:", "");
+                int strike = (int) dbOpp.getStrike().doubleValue();
+                String ceSymbol = String.format("%s%02d%s%dCE", prefix, yy, monStr, strike);
+                String peSymbol = String.format("%s%02d%s%dPE", prefix, yy, monStr, strike);
+                String futSymbol = String.format("%s%02d%sFUT", prefix, yy, monStr);
+
+                instrumentSet.add(ceSymbol);
+                instrumentSet.add(peSymbol);
+                instrumentSet.add(futSymbol);
+
+                String spotKey = cfg.spotKey();
+                spotKeyToOpps.computeIfAbsent(spotKey, k -> new ArrayList<>()).add(dbOpp);
+
+                oppKeyToInstrument.put(dbOpp.getId() + "_ce", ceSymbol);
+                oppKeyToInstrument.put(dbOpp.getId() + "_pe", peSymbol);
+                oppKeyToInstrument.put(dbOpp.getId() + "_fut", futSymbol);
+            }
+
+            Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(new ArrayList<>(instrumentSet));
+
+            Map<String, Double> spotCache = new HashMap<>();
+            for (String spotKey : spotKeyToOpps.keySet()) {
+                spotCache.put(spotKey, spotFetcher.getSpotPrice(spotKey));
+            }
+
             Map<String, Object> prices = new HashMap<>();
             for (OptionArbOpportunity dbOpp : dbOpps) {
                 if (!"PARITY_BREAK".equals(dbOpp.getType())) continue;
                 UnderlyingConfig cfg = CONFIGS.get(dbOpp.getUnderlying());
                 if (cfg == null) continue;
 
-                LocalDate expiry = optionChainService.getMonthlyExpiry();
-                int yy = expiry.getYear() % 100;
-                String monStr = expiry.getMonth().name().substring(0, 3);
-                String prefix = cfg.futuresPrefix().replace("NFO:", "");
+                String idKey = dbOpp.getId() + "";
+                String ceSymbol = oppKeyToInstrument.get(idKey + "_ce");
+                String peSymbol = oppKeyToInstrument.get(idKey + "_pe");
+                String futSymbol = oppKeyToInstrument.get(idKey + "_fut");
 
-                int strike = (int) dbOpp.getStrike().doubleValue();
-                String ceKey = String.format("NFO:%s%02d%s%dCE", prefix, yy, monStr, strike);
-                String peKey = String.format("NFO:%s%02d%s%dPE", prefix, yy, monStr, strike);
-                String futKey = cfg.futuresPrefix() + String.format("%02d%sFUT", yy, monStr);
+                OptionChainService.OptionQuote ceQ = quotes.get(ceSymbol);
+                OptionChainService.OptionQuote peQ = quotes.get(peSymbol);
+                OptionChainService.OptionQuote futQ = quotes.get(futSymbol);
 
                 Map<String, Object> lp = new HashMap<>();
-                lp.put("spotLive", spotFetcher.getSpotPrice(cfg.spotKey()));
-                lp.put("ceLive", spotFetcher.getSpotPrice(ceKey));
-                lp.put("peLive", spotFetcher.getSpotPrice(peKey));
-                lp.put("futLive", spotFetcher.getSpotPrice(futKey));
-                prices.put(dbOpp.getId() + "", lp);
+                lp.put("spotLive", spotCache.getOrDefault(cfg.spotKey(), 0.0));
+                lp.put("ceLive", ceQ != null ? ceQ.lastPrice : 0.0);
+                lp.put("peLive", peQ != null ? peQ.lastPrice : 0.0);
+                lp.put("futLive", futQ != null ? futQ.lastPrice : 0.0);
+                prices.put(idKey, lp);
             }
 
             resp.put("prices", prices);
