@@ -88,12 +88,14 @@ public class OptionArbitrageController {
     }
 
     @GetMapping("/scan")
-    public ResponseEntity<Map<String, Object>> scan(@RequestParam(defaultValue = "ALL") String underlying) {
+    public ResponseEntity<Map<String, Object>> scan(
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(defaultValue = "false") boolean force) {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
 
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
             resp.put("marketClosed", true);
             resp.put("opportunities", Collections.emptyList());
             resp.put("count", 0);

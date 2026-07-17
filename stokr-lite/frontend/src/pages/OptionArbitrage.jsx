@@ -428,7 +428,7 @@ export default function OptionArbitrage() {
 
   const { data: scanData, isLoading: scanLoading, error, refetch } = useQuery({
     queryKey: ['option-arbitrage-scan', underlyingParam],
-    queryFn: async () => fetchMulti('scan', `${API_BASE}/api/option-arbitrage/scan`),
+    queryFn: async () => fetchMulti('scan', `${API_BASE}/api/option-arbitrage/scan`, { force: 'true' }),
     enabled: activeTab === 'live',
     refetchInterval: activeTab === 'live' ? 7000 : false,
     staleTime: 5000,

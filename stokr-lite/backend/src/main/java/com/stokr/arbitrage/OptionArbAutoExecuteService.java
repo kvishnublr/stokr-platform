@@ -78,6 +78,12 @@ public class OptionArbAutoExecuteService {
             .orElse(true);
     }
 
+    public double getRollThresholdPct() {
+        return settingsRepo.findBySettingKey("roll_threshold_pct")
+            .map(s -> { try { return Double.parseDouble(s.getSettingValue()); } catch (Exception e) { return 5.0; } })
+            .orElse(5.0);
+    }
+
     public List<String> getTargetUnderlyings() {
         String val = settingsRepo.findBySettingKey("target_underlying")
             .map(AutoExecSetting::getSettingValue)
@@ -176,6 +182,60 @@ public class OptionArbAutoExecuteService {
             log.info("Auto-execute cycle complete");
         } catch (Exception e) {
             log.error("Auto-execute cycle failed: {}", e.getMessage(), e);
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${option-arb.roll-interval:300000}", initialDelay = 60000)
+    public void monitorAndRollPositions() {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(LocalTime.of(9, 16)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+
+        List<ExecutedTrade> openTrades = tradeRepo.findAllOpen();
+        if (openTrades.isEmpty()) return;
+
+        double rollThresholdPct = getRollThresholdPct();
+
+        for (ExecutedTrade trade : openTrades) {
+            try {
+                String underlying = trade.getUnderlying();
+                int tradeStrike = trade.getStrike();
+
+                double[] spotFut = getSpotAndFutures(underlying);
+                double currentSpot = spotFut[0];
+                if (currentSpot <= 0) continue;
+
+                double deviationPct = Math.abs(currentSpot - tradeStrike) / tradeStrike * 100.0;
+
+                if (deviationPct >= rollThresholdPct) {
+                    log.info("ROLL TRIGGERED: {} strike={} spot={} deviation={}% (threshold={}%)",
+                        underlying, tradeStrike, (int) currentSpot, String.format("%.1f", deviationPct), (int) rollThresholdPct);
+
+                    closePositionInternal(trade);
+                    trade.setStatus("ROLLED_MOVE");
+                    trade.setClosedAt(LocalDateTime.now());
+                    trade.setNotes(String.format("Auto-rolled: spot %.0f moved %.1f%% from strike %d",
+                        currentSpot, deviationPct, tradeStrike));
+                    tradeRepo.save(trade);
+
+                    double[] newSpotFut = getSpotAndFutures(underlying);
+                    double newSpot = newSpotFut[0];
+                    double newFut = newSpotFut[1];
+                    if (newSpot <= 0) continue;
+
+                    List<ArbitrageOpportunity> opps = optionChainService.scanOptionChain(underlying, newSpot, newFut);
+                    opps.stream()
+                        .filter(o -> "PARITY_BREAK".equals(o.type))
+                        .filter(o -> o.edgeAfterCosts >= getMinEdge())
+                        .sorted((a, b) -> Double.compare(b.edgeAfterCosts, a.edgeAfterCosts))
+                        .findFirst()
+                        .ifPresent(opp -> {
+                            log.info("ROLL: entering new {} {} {} edge={}", underlying, (int) opp.strike, opp.action, (int) opp.edgeAfterCosts);
+                            executeNew(opp);
+                        });
+                }
+            } catch (Exception e) {
+                log.error("Roll monitor error for {}: {}", trade.getUnderlying(), e.getMessage());
+            }
         }
     }
 

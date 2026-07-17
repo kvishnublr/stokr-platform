@@ -25,10 +25,10 @@ public class OptionChainService {
     private String apiKey;
 
     private static final double RISK_FREE_RATE = 0.065;
-    private static final double MIN_PARITY_DEVIATION = 15.0;
+    private static final double MIN_PARITY_DEVIATION = 8.0;
     private static final double MIN_EDGE_AFTER_COSTS = 300.0;
     private static final double MAX_SPREAD_PCT = 2.0;
-    private static final double MAX_SPREAD_POINTS = 15.0;
+    private static final double MAX_SPREAD_POINTS = 8.0;
     private static final int COOLDOWN_SECONDS = 60;
     private static final int MIN_VOLUME = 100;
     private static final int MIN_OI = 100;
@@ -272,13 +272,14 @@ public class OptionChainService {
     private List<Integer> generateStrikes(int atmStrike, String underlying) {
         List<Integer> strikes = new ArrayList<>();
         int step;
+        int range;
         switch (underlying) {
-            case "BANKNIFTY": step = 100; break;
-            case "MIDCPNIFTY": step = 50; break;
-            case "FINNIFTY": step = 50; break;
-            default: step = 50; break;  // NIFTY
+            case "BANKNIFTY": step = 100; range = 3; break;
+            case "MIDCPNIFTY": step = 50; range = 3; break;
+            case "FINNIFTY": step = 50; range = 3; break;
+            default: step = 50; range = 3; break;  // NIFTY
         }
-        for (int i = -10; i <= 10; i++) {
+        for (int i = -range; i <= range; i++) {
             strikes.add(atmStrike + i * step);
         }
         return strikes;
