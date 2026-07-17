@@ -96,6 +96,9 @@ public class ExecutedTrade {
     @Column(name = "executed_at")
     private LocalDateTime executedAt;
 
+    @Column(name = "edge_at_entry")
+    private Double edgeAtEntry;
+
     @PrePersist
     public void prePersist() {
         if (this.executedAt == null) this.executedAt = LocalDateTime.now();
@@ -159,4 +162,6 @@ public class ExecutedTrade {
     public void setNotes(String notes) { this.notes = notes; }
     public LocalDateTime getExecutedAt() { return executedAt; }
     public void setExecutedAt(LocalDateTime executedAt) { this.executedAt = executedAt; }
+    public Double getEdgeAtEntry() { return edgeAtEntry; }
+    public void setEdgeAtEntry(Double edgeAtEntry) { this.edgeAtEntry = edgeAtEntry; }
 }

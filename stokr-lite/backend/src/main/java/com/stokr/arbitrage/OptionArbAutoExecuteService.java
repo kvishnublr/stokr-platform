@@ -193,49 +193,98 @@ public class OptionArbAutoExecuteService {
         List<ExecutedTrade> openTrades = tradeRepo.findAllOpen();
         if (openTrades.isEmpty()) return;
 
-        double rollThresholdPct = getRollThresholdPct();
-
         for (ExecutedTrade trade : openTrades) {
             try {
                 String underlying = trade.getUnderlying();
-                int tradeStrike = trade.getStrike();
-
                 double[] spotFut = getSpotAndFutures(underlying);
                 double currentSpot = spotFut[0];
+                double currentFut = spotFut[1];
                 if (currentSpot <= 0) continue;
 
-                double deviationPct = Math.abs(currentSpot - tradeStrike) / tradeStrike * 100.0;
+                double runningPnl = computeRunningPnl(trade, currentSpot, currentFut);
+                Double edgeAtEntry = trade.getEdgeAtEntry();
+                if (edgeAtEntry == null) edgeAtEntry = 0.0;
 
-                if (deviationPct >= rollThresholdPct) {
-                    log.info("ROLL TRIGGERED: {} strike={} spot={} deviation={}% (threshold={}%)",
-                        underlying, tradeStrike, (int) currentSpot, String.format("%.1f", deviationPct), (int) rollThresholdPct);
+                log.info("ROLL MONITOR: {} strike={} runningPnl={} edgeAtEntry={}",
+                    underlying, trade.getStrike(), String.format("%.0f", runningPnl), String.format("%.0f", edgeAtEntry));
 
-                    closePositionInternal(trade);
-                    trade.setStatus("ROLLED_MOVE");
-                    trade.setClosedAt(LocalDateTime.now());
-                    trade.setNotes(String.format("Auto-rolled: spot %.0f moved %.1f%% from strike %d",
-                        currentSpot, deviationPct, tradeStrike));
-                    tradeRepo.save(trade);
+                if (runningPnl >= edgeAtEntry && edgeAtEntry > 0) {
+                    log.info("EDGE CAPTURED: {} {} runningPnl={} >= edgeAtEntry={} — scanning for better opps",
+                        underlying, trade.getStrike(), String.format("%.0f", runningPnl), String.format("%.0f", edgeAtEntry));
 
-                    double[] newSpotFut = getSpotAndFutures(underlying);
-                    double newSpot = newSpotFut[0];
-                    double newFut = newSpotFut[1];
-                    if (newSpot <= 0) continue;
-
-                    List<ArbitrageOpportunity> opps = optionChainService.scanOptionChain(underlying, newSpot, newFut);
-                    opps.stream()
+                    List<ArbitrageOpportunity> opps = optionChainService.scanOptionChain(underlying, currentSpot, currentFut);
+                    Optional<ArbitrageOpportunity> betterOpp = opps.stream()
                         .filter(o -> "PARITY_BREAK".equals(o.type))
                         .filter(o -> o.edgeAfterCosts >= getMinEdge())
-                        .sorted((a, b) -> Double.compare(b.edgeAfterCosts, a.edgeAfterCosts))
-                        .findFirst()
-                        .ifPresent(opp -> {
-                            log.info("ROLL: entering new {} {} {} edge={}", underlying, (int) opp.strike, opp.action, (int) opp.edgeAfterCosts);
-                            executeNew(opp);
-                        });
+                        .filter(o -> (int) o.strike != trade.getStrike())
+                        .max(Comparator.comparingDouble(o -> o.edgeAfterCosts));
+
+                    if (betterOpp.isPresent()) {
+                        ArbitrageOpportunity newOpp = betterOpp.get();
+                        log.info("SMART ROLL: {} {} edge={} → {} edge={} (same future, options only)",
+                            underlying, trade.getStrike(), String.format("%.0f", edgeAtEntry), (int) newOpp.strike, String.format("%.0f", newOpp.edgeAfterCosts));
+                        rollOptionsOnly(trade, newOpp);
+                    } else {
+                        log.info("No better opp found for {} — holding position", underlying);
+                    }
+                } else {
+                    double deviationPct = Math.abs(currentSpot - trade.getStrike()) / trade.getStrike() * 100.0;
+                    if (deviationPct >= getRollThresholdPct()) {
+                        log.info("SPOT MOVED: {} strike={} spot={} deviation={}% — closing all and re-entering",
+                            underlying, trade.getStrike(), String.format("%.0f", currentSpot), String.format("%.1f", deviationPct));
+                        closePositionInternal(trade);
+                        trade.setStatus("ROLLED_MOVE");
+                        trade.setClosedAt(LocalDateTime.now());
+                        trade.setNotes(String.format("Auto-rolled: spot %.0f moved %.1f%% from strike %d",
+                            currentSpot, deviationPct, trade.getStrike()));
+                        tradeRepo.save(trade);
+
+                        List<ArbitrageOpportunity> opps = optionChainService.scanOptionChain(underlying, currentSpot, currentFut);
+                        opps.stream()
+                            .filter(o -> "PARITY_BREAK".equals(o.type))
+                            .filter(o -> o.edgeAfterCosts >= getMinEdge())
+                            .max(Comparator.comparingDouble(o -> o.edgeAfterCosts))
+                            .ifPresent(opp -> {
+                                log.info("RE-ENTER: {} {} {} edge={}", underlying, (int) opp.strike, opp.action, String.format("%.0f", opp.edgeAfterCosts));
+                                executeNew(opp);
+                            });
+                    }
                 }
             } catch (Exception e) {
                 log.error("Roll monitor error for {}: {}", trade.getUnderlying(), e.getMessage());
             }
+        }
+    }
+
+    private double computeRunningPnl(ExecutedTrade trade, double currentSpot, double currentFut) {
+        int lotSize = trade.getLotSize();
+        String action = trade.getAction();
+
+        double currentCe = 0;
+        double currentPe = 0;
+
+        try {
+            String ceKey = trade.getCeSymbol();
+            String peKey = trade.getPeSymbol();
+            Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceKey, peKey));
+            OptionChainService.OptionQuote ceQ = quotes.get(ceKey);
+            OptionChainService.OptionQuote peQ = quotes.get(peKey);
+            if (ceQ != null && ceQ.lastPrice > 0) currentCe = ceQ.lastPrice;
+            if (peQ != null && peQ.lastPrice > 0) currentPe = peQ.lastPrice;
+        } catch (Exception e) {
+            log.debug("Could not fetch live option prices for {}: {}", trade.getUnderlying(), e.getMessage());
+        }
+
+        if (currentCe <= 0 || currentPe <= 0) return 0;
+
+        double cePnl = currentCe - trade.getCeEntryPrice();
+        double pePnl = trade.getPeEntryPrice() - currentPe;
+        double futPnl = trade.getFutEntryPrice() - currentFut;
+
+        if ("CONVERSION".equals(action)) {
+            return (cePnl + pePnl + futPnl) * lotSize;
+        } else {
+            return (-cePnl - pePnl - futPnl) * lotSize;
         }
     }
 
@@ -300,6 +349,7 @@ public class OptionArbAutoExecuteService {
         trade.setPeSymbol(peSymbol);
         trade.setFutSymbol(futSymbol);
         trade.setLotSize(lotSize);
+        trade.setEdgeAtEntry(opp.edgeAfterCosts);
         trade.setStatus("PENDING");
 
         List<String> placedOrderIds = new ArrayList<>();
@@ -446,13 +496,13 @@ public class OptionArbAutoExecuteService {
         tradeRepo.save(existing);
 
         LocalDate expiry = getExpiryDate(existing.getUnderlying());
-        String newCeSymbol = buildNfoSymbol(existing.getUnderlying(), expiry, existing.getStrike(), "CE");
-        String newPeSymbol = buildNfoSymbol(existing.getUnderlying(), expiry, existing.getStrike(), "PE");
+        String newCeSymbol = buildNfoSymbol(existing.getUnderlying(), expiry, (int) newOpp.strike, "CE");
+        String newPeSymbol = buildNfoSymbol(existing.getUnderlying(), expiry, (int) newOpp.strike, "PE");
         String newFutSymbol = buildNfoFutSymbol(existing.getUnderlying(), expiry);
 
         ExecutedTrade newTrade = new ExecutedTrade();
         newTrade.setUnderlying(existing.getUnderlying());
-        newTrade.setStrike(existing.getStrike());
+        newTrade.setStrike((int) newOpp.strike);
         newTrade.setExpiryDate(expiry);
         newTrade.setAction(existing.getAction());
         newTrade.setCeSymbol(newCeSymbol);
@@ -462,6 +512,7 @@ public class OptionArbAutoExecuteService {
         newTrade.setPeEntryPrice(newOpp.pePrice);
         newTrade.setFutEntryPrice(existing.getFutEntryPrice());
         newTrade.setLotSize(lotSize);
+        newTrade.setEdgeAtEntry(newOpp.edgeAfterCosts);
         newTrade.setRolloverFromId(existing.getId());
         newTrade.setStatus("PENDING");
 
