@@ -635,35 +635,30 @@ public class OptionArbAutoExecuteService {
 
     @Scheduled(cron = "0 20 15 * * 1-5", zone = "Asia/Kolkata")
     public void autoExitNearExpiry() {
-        java.time.LocalTime nowIST = java.time.LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(15, 18)) || nowIST.isAfter(LocalTime.of(15, 23))) return;
-
         List<ExecutedTrade> openTrades = tradeRepo.findAllOpen();
         if (openTrades.isEmpty()) return;
 
-        log.info("Auto-exit near-expiry check: {} open positions", openTrades.size());
-        ZerodhaTokenManager.ZerodhaAuth auth = tokenManager.getCurrentAuth();
-        if (auth == null || auth.getAccessToken() == null) return;
+        log.info("Near-expiry check: {} open positions", openTrades.size());
 
         for (ExecutedTrade trade : openTrades) {
             LocalDate expiry = trade.getExpiryDate();
             long dte = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), expiry);
 
-            if (dte <= 1) {
-                double[] spotFut = getSpotAndFutures(trade.getUnderlying());
-                double spot = spotFut[0];
-                boolean atm = isAtmPosition(trade.getStrike(), spot);
+            if (dte > 1) continue;
 
-                if (atm) {
-                    log.info("HOLD-TO-EXPIRY: {} {} strike={} DTE={} ATM — holding to 15:30",
-                        trade.getUnderlying(), trade.getAction(), trade.getStrike(), dte);
-                    continue;
-                }
+            double[] spotFut = getSpotAndFutures(trade.getUnderlying());
+            double spot = spotFut[0];
+            boolean atm = isAtmPosition(trade.getStrike(), spot);
 
-                log.info("EXIT NEAR-EXPIRY: {} {} strike={} DTE={} NOT ATM — closing",
+            if (atm && dte == 1) {
+                log.info("HOLD-TO-EXPIRY: {} {} strike={} DTE={} ATM — holding to expiry day",
                     trade.getUnderlying(), trade.getAction(), trade.getStrike(), dte);
-                closePositionInternal(trade);
+                continue;
             }
+
+            log.info("EXIT EXPIRY: {} {} strike={} DTE={} ATM={} — closing",
+                trade.getUnderlying(), trade.getAction(), trade.getStrike(), dte, atm);
+            closePositionInternal(trade);
         }
     }
 
@@ -672,10 +667,21 @@ public class OptionArbAutoExecuteService {
         List<ExecutedTrade> openTrades = tradeRepo.findAllOpen();
         if (openTrades.isEmpty()) return;
 
-        log.info("End-of-day auto-exit at 15:28: {} open positions — closing ALL", openTrades.size());
+        int expiryDayCount = 0;
         for (ExecutedTrade trade : openTrades) {
-            log.info("EOD EXIT: {} {} strike={}", trade.getUnderlying(), trade.getAction(), trade.getStrike());
-            closePositionInternal(trade);
+            long dte = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), trade.getExpiryDate());
+            if (dte <= 0) expiryDayCount++;
+        }
+
+        if (expiryDayCount == 0) return;
+
+        log.info("End-of-day expiry cleanup: {} positions expiring today — closing ALL", expiryDayCount);
+        for (ExecutedTrade trade : openTrades) {
+            long dte = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), trade.getExpiryDate());
+            if (dte <= 0) {
+                log.info("EOD EXIT: {} {} strike={} — expiry day", trade.getUnderlying(), trade.getAction(), trade.getStrike());
+                closePositionInternal(trade);
+            }
         }
     }
 
