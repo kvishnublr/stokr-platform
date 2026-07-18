@@ -1624,13 +1624,13 @@ function AutoExecTab() {
             </div>
             <div>
               <label className="text-xs text-slate-500">Max Positions / Underlying</label>
-              <input type="number" value={settings.max_positions_per_underlying || 2}
+              <input type="number" value={settings.max_positions_per_underlying || 3}
                 onChange={(e) => updateSetting('max_positions_per_underlying', e.target.value)}
                 className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
             </div>
             <div>
               <label className="text-xs text-slate-500">Max Total Positions</label>
-              <input type="number" value={settings.max_total_positions || 8}
+              <input type="number" value={settings.max_total_positions || 12}
                 onChange={(e) => updateSetting('max_total_positions', e.target.value)}
                 className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
             </div>
@@ -1639,6 +1639,12 @@ function AutoExecTab() {
                 onChange={(e) => updateSetting('smart_rollover', String(e.target.checked))}
                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
               <label className="text-xs text-slate-600">Smart rollover (same fut direction = options only)</label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={settings.time_filter_enabled === 'true'}
+                onChange={(e) => updateSetting('time_filter_enabled', String(e.target.checked))}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label className="text-xs text-slate-600">Peak-window filter (enter 09:15-09:45, 14:00-15:00 only)</label>
             </div>
             <div>
               <label className="text-xs text-slate-500">Target Underlyings</label>
@@ -1704,7 +1710,7 @@ function AutoExecTab() {
           <div className="space-y-2 text-xs text-slate-600">
             <p><span className="font-semibold text-blue-600">1.</span> Scanner runs every {settings.scan_interval_seconds || 300}s, finds PARITY_BREAK opportunities</p>
             <p><span className="font-semibold text-blue-600">2.</span> Filters by edge ≥ ₹{settings.min_edge_after_costs || 500} after costs</p>
-            <p><span className="font-semibold text-blue-600">3.</span> Checks position limits ({settings.max_positions_per_underlying || 2} per underlying, {settings.max_total_positions || 8} total)</p>
+            <p><span className="font-semibold text-blue-600">3.</span> Checks position limits ({settings.max_positions_per_underlying || 3} per underlying, {settings.max_total_positions || 12} total)</p>
             <p><span className="font-semibold text-blue-600">4.</span> <span className="font-semibold">Smart rollover:</span> Same futures direction → only roll options legs (save brokerage). Different → close all + re-enter</p>
             <p><span className="font-semibold text-blue-600">5.</span> Only executes during market hours (9:15 AM - 3:30 PM IST)</p>
           </div>
