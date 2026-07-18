@@ -465,8 +465,16 @@ export default function OptionArbitrage() {
 
   const opportunities = data?.opportunities || [];
   const summary = data?.summary || {};
-  const totalEdge = opportunities.reduce((sum, o) => sum + (o.edgeAfterCosts || 0), 0);
+  const totalEdge = displayOpps.reduce((sum, o) => sum + (o.edgeAfterCosts || 0), 0);
   const isLoading = scanLoading || todayLoading || cachedLoading;
+
+  const sampleOpps = [
+    { id: -1, type: 'PARITY_BREAK', action: 'CONVERSION', underlying: 'NIFTY', strike: 24350, spotPrice: 24345.20, futuresPrice: 24362.10, cePrice: 198.50, pePrice: 205.30, ceBid: 197.0, ceAsk: 200.0, peBid: 204.0, peAsk: 206.5, edgePoints: 14.2, edgeAfterCosts: 728.0, daysToExpiry: 3, confidence: 85, legs: 'BUY CE 24350 + SELL PE 24350 + SELL FUT', description: 'Sample — NIFTY 24350 conversion, edge ₹728/lot', detectedAt: new Date().toISOString(), _sample: true },
+    { id: -2, type: 'PARITY_BREAK', action: 'CONVERSION', underlying: 'NIFTY', strike: 24300, spotPrice: 24345.20, futuresPrice: 24362.10, cePrice: 225.80, pePrice: 182.40, ceBid: 224.5, ceAsk: 227.0, peBid: 181.0, peAsk: 183.5, edgePoints: 11.8, edgeAfterCosts: 605.0, daysToExpiry: 3, confidence: 80, legs: 'BUY CE 24300 + SELL PE 24300 + SELL FUT', description: 'Sample — NIFTY 24300 conversion, edge ₹605/lot', detectedAt: new Date().toISOString(), _sample: true },
+    { id: -3, type: 'PARITY_BREAK', action: 'CONVERSION', underlying: 'BANKNIFTY', strike: 58500, spotPrice: 58492.30, futuresPrice: 58602.50, cePrice: 412.60, pePrice: 425.80, ceBid: 411.0, ceAsk: 414.0, peBid: 424.5, peAsk: 427.0, edgePoints: 12.5, edgeAfterCosts: 515.0, daysToExpiry: 10, confidence: 82, legs: 'BUY CE 58500 + SELL PE 58500 + SELL FUT', description: 'Sample — BANKNIFTY 58500 conversion, edge ₹515/lot', detectedAt: new Date().toISOString(), _sample: true },
+  ];
+
+  const displayOpps = opportunities.length > 0 ? opportunities : sampleOpps;
 
   return (
     <div className="space-y-6">
@@ -510,7 +518,7 @@ export default function OptionArbitrage() {
         underlyings={underlyings} toggleUnderlying={toggleUnderlying} ALL_U={ALL_U}
         data={data} scanLoading={scanLoading} cachedLoading={cachedLoading}
         error={error} refetch={refetch} health={health}
-        opportunities={opportunities} summary={summary} totalEdge={totalEdge} isLoading={isLoading}
+        opportunities={displayOpps} summary={summary} totalEdge={totalEdge} isLoading={isLoading}
         livePrices={livePrices}
       /> : activeTab === 'positions' ? <PositionsTab /> : activeTab === 'auto' ? <AutoExecTab /> : <HistoryTab
         historyData={historyData} historyLoading={historyLoading}
