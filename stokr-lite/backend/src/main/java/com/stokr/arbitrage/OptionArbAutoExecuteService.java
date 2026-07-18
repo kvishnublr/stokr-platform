@@ -62,14 +62,38 @@ public class OptionArbAutoExecuteService {
 
     public int getMaxPositionsPerUnderlying() {
         return settingsRepo.findBySettingKey("max_positions_per_underlying")
-            .map(s -> { try { return Integer.parseInt(s.getSettingValue()); } catch (Exception e) { return 2; } })
-            .orElse(2);
+            .map(s -> { try { return Integer.parseInt(s.getSettingValue()); } catch (Exception e) { return 3; } })
+            .orElse(3);
     }
 
     public int getMaxTotalPositions() {
         return settingsRepo.findBySettingKey("max_total_positions")
-            .map(s -> { try { return Integer.parseInt(s.getSettingValue()); } catch (Exception e) { return 8; } })
-            .orElse(8);
+            .map(s -> { try { return Integer.parseInt(s.getSettingValue()); } catch (Exception e) { return 12; } })
+            .orElse(12);
+    }
+
+    public boolean isTimeFilterEnabled() {
+        return settingsRepo.findBySettingKey("time_filter_enabled")
+            .map(s -> "true".equalsIgnoreCase(s.getSettingValue()))
+            .orElse(true);
+    }
+
+    private boolean isPeakWindow() {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        boolean morning = nowIST.isAfter(LocalTime.of(9, 15)) && nowIST.isBefore(LocalTime.of(9, 45));
+        boolean afternoon = nowIST.isAfter(LocalTime.of(14, 0)) && nowIST.isBefore(LocalTime.of(15, 0));
+        return morning || afternoon;
+    }
+
+    private double computeMidPrice(double bid, double ask) {
+        if (bid <= 0 || ask <= 0) return (bid + ask) / 2;
+        return (bid + ask) / 2.0;
+    }
+
+    private boolean isAtmPosition(int strike, double spotPrice) {
+        if (spotPrice <= 0) return false;
+        double diffPct = Math.abs(strike - spotPrice) / spotPrice * 100.0;
+        return diffPct < 2.0;
     }
 
     public boolean isSmartRollover() {
@@ -117,6 +141,11 @@ public class OptionArbAutoExecuteService {
 
         java.time.LocalTime nowIST = java.time.LocalTime.now(ZoneId.of("Asia/Kolkata"));
         if (nowIST.isBefore(LocalTime.of(9, 16)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+
+        if (isTimeFilterEnabled() && !isPeakWindow()) {
+            log.info("Outside peak window — skipping auto-exec (scanner still runs for live scan)");
+            return;
+        }
 
         log.info("Auto-execute cycle starting...");
         try {
@@ -312,12 +341,20 @@ public class OptionArbAutoExecuteService {
         String token = auth.getAccessToken();
         BigDecimal availableMargin = zerodhaAdapter.getAvailableMargin(token);
         int lotSize = OptionChainService.getLotSize(opp.underlying);
-        double estimatedRequired = (opp.cePrice + opp.pePrice + opp.futuresPrice) * lotSize * MIN_MARGIN_BUFFER;
+        double ceMid = computeMidPrice(opp.ceBid, opp.ceAsk);
+        double peMid = computeMidPrice(opp.peBid, opp.peAsk);
+        double estimatedRequired = (ceMid + peMid + opp.futuresPrice) * lotSize * MIN_MARGIN_BUFFER;
         if (availableMargin.doubleValue() < estimatedRequired) {
-            log.warn("Insufficient margin for {} {} {}: available=₹{},.0f required=₹{},.0f",
+            log.warn("Insufficient margin for {} {} {}: available=₹{} required=₹{}",
                 opp.underlying, (int) opp.strike, opp.action, availableMargin.doubleValue(), estimatedRequired);
             return null;
         }
+
+        log.info("EXECUTING: {} {} {} edge=₹{} mid CE={} PE={} (bid/ask CE={}/{} PE={}/{})",
+            opp.underlying, (int) opp.strike, opp.action, opp.edgeAfterCosts,
+            String.format("%.1f", ceMid), String.format("%.1f", peMid),
+            String.format("%.1f", opp.ceBid), String.format("%.1f", opp.ceAsk),
+            String.format("%.1f", opp.peBid), String.format("%.1f", opp.peAsk));
 
         LocalDate expiry = getExpiryDate(opp.underlying);
         String ceSymbol = buildNfoSymbol(opp.underlying, expiry, (int) opp.strike, "CE");
@@ -327,14 +364,14 @@ public class OptionArbAutoExecuteService {
         List<BrokerOrderRequest> orders;
         if ("CONVERSION".equals(opp.action)) {
             orders = List.of(
-                new BrokerOrderRequest(ceSymbol, "NFO", BrokerOrderRequest.Side.BUY, lotSize, opp.cePrice, null, "NRML"),
-                new BrokerOrderRequest(peSymbol, "NFO", BrokerOrderRequest.Side.SELL, lotSize, opp.pePrice, null, "NRML"),
+                new BrokerOrderRequest(ceSymbol, "NFO", BrokerOrderRequest.Side.BUY, lotSize, ceMid, null, "NRML"),
+                new BrokerOrderRequest(peSymbol, "NFO", BrokerOrderRequest.Side.SELL, lotSize, peMid, null, "NRML"),
                 new BrokerOrderRequest(futSymbol, "NFO", BrokerOrderRequest.Side.SELL, lotSize, opp.futuresPrice, null, "NRML")
             );
         } else {
             orders = List.of(
-                new BrokerOrderRequest(ceSymbol, "NFO", BrokerOrderRequest.Side.SELL, lotSize, opp.cePrice, null, "NRML"),
-                new BrokerOrderRequest(peSymbol, "NFO", BrokerOrderRequest.Side.BUY, lotSize, opp.pePrice, null, "NRML"),
+                new BrokerOrderRequest(ceSymbol, "NFO", BrokerOrderRequest.Side.SELL, lotSize, ceMid, null, "NRML"),
+                new BrokerOrderRequest(peSymbol, "NFO", BrokerOrderRequest.Side.BUY, lotSize, peMid, null, "NRML"),
                 new BrokerOrderRequest(futSymbol, "NFO", BrokerOrderRequest.Side.BUY, lotSize, opp.futuresPrice, null, "NRML")
             );
         }
@@ -508,8 +545,10 @@ public class OptionArbAutoExecuteService {
         newTrade.setCeSymbol(newCeSymbol);
         newTrade.setPeSymbol(newPeSymbol);
         newTrade.setFutSymbol(newFutSymbol);
-        newTrade.setCeEntryPrice(newOpp.cePrice);
-        newTrade.setPeEntryPrice(newOpp.pePrice);
+        double newCeMid = computeMidPrice(newOpp.ceBid, newOpp.ceAsk);
+        double newPeMid = computeMidPrice(newOpp.peBid, newOpp.peAsk);
+        newTrade.setCeEntryPrice(newCeMid);
+        newTrade.setPeEntryPrice(newPeMid);
         newTrade.setFutEntryPrice(existing.getFutEntryPrice());
         newTrade.setLotSize(lotSize);
         newTrade.setEdgeAtEntry(newOpp.edgeAfterCosts);
@@ -521,7 +560,7 @@ public class OptionArbAutoExecuteService {
         try {
             BrokerOrderRequest openCE = new BrokerOrderRequest(newCeSymbol, "NFO",
                 "CONVERSION".equals(existing.getAction()) ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL,
-                lotSize, newOpp.cePrice, null, "NRML");
+                lotSize, newCeMid, null, "NRML");
             BrokerOrderResponse resp = zerodhaAdapter.placeOrder(token, openCE);
             if (resp.isSuccess()) newTrade.setCeOrderId(resp.orderId());
             else allFilled = false;
@@ -530,7 +569,7 @@ public class OptionArbAutoExecuteService {
         try {
             BrokerOrderRequest openPE = new BrokerOrderRequest(newPeSymbol, "NFO",
                 "CONVERSION".equals(existing.getAction()) ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY,
-                lotSize, newOpp.pePrice, null, "NRML");
+                lotSize, newPeMid, null, "NRML");
             BrokerOrderResponse resp = zerodhaAdapter.placeOrder(token, openPE);
             if (resp.isSuccess()) newTrade.setPeOrderId(resp.orderId());
             else allFilled = false;
@@ -592,6 +631,52 @@ public class OptionArbAutoExecuteService {
 
     public ExecutedTrade closePosition(ExecutedTrade existing) {
         return closePositionInternal(existing);
+    }
+
+    @Scheduled(cron = "0 20 15 * * 1-5", zone = "Asia/Kolkata")
+    public void autoExitNearExpiry() {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(LocalTime.of(15, 18)) || nowIST.isAfter(LocalTime.of(15, 23))) return;
+
+        List<ExecutedTrade> openTrades = tradeRepo.findAllOpen();
+        if (openTrades.isEmpty()) return;
+
+        log.info("Auto-exit near-expiry check: {} open positions", openTrades.size());
+        ZerodhaTokenManager.ZerodhaAuth auth = tokenManager.getCurrentAuth();
+        if (auth == null || auth.getAccessToken() == null) return;
+
+        for (ExecutedTrade trade : openTrades) {
+            LocalDate expiry = trade.getExpiryDate();
+            long dte = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), expiry);
+
+            if (dte <= 1) {
+                double[] spotFut = getSpotAndFutures(trade.getUnderlying());
+                double spot = spotFut[0];
+                boolean atm = isAtmPosition(trade.getStrike(), spot);
+
+                if (atm) {
+                    log.info("HOLD-TO-EXPIRY: {} {} strike={} DTE={} ATM — holding to 15:30",
+                        trade.getUnderlying(), trade.getAction(), trade.getStrike(), dte);
+                    continue;
+                }
+
+                log.info("EXIT NEAR-EXPIRY: {} {} strike={} DTE={} NOT ATM — closing",
+                    trade.getUnderlying(), trade.getAction(), trade.getStrike(), dte);
+                closePositionInternal(trade);
+            }
+        }
+    }
+
+    @Scheduled(cron = "0 28 15 * * 1-5", zone = "Asia/Kolkata")
+    public void autoExitEndOfDay() {
+        List<ExecutedTrade> openTrades = tradeRepo.findAllOpen();
+        if (openTrades.isEmpty()) return;
+
+        log.info("End-of-day auto-exit at 15:28: {} open positions — closing ALL", openTrades.size());
+        for (ExecutedTrade trade : openTrades) {
+            log.info("EOD EXIT: {} {} strike={}", trade.getUnderlying(), trade.getAction(), trade.getStrike());
+            closePositionInternal(trade);
+        }
     }
 
     private ExecutedTrade closePositionInternal(ExecutedTrade existing) {
