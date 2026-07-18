@@ -51,10 +51,6 @@ public class OptionChainService {
     }
 
     public List<ArbitrageOpportunity> scanOptionChain(String underlying, double spotPrice, double futuresPrice, boolean bypassCooldown) {
-        return scanOptionChain(underlying, spotPrice, futuresPrice, bypassCooldown, false);
-    }
-
-    public List<ArbitrageOpportunity> scanOptionChain(String underlying, double spotPrice, double futuresPrice, boolean bypassCooldown, boolean debugMode) {
         List<ArbitrageOpportunity> opportunities = new ArrayList<>();
 
         try {
@@ -99,7 +95,6 @@ public class OptionChainService {
             log.info("Got {}/{} quotes for {}", quotes.size(), instruments.size(), underlying);
 
             int validStrikes = 0;
-            int debugStrikes = 0;
             for (int strike : strikes) {
                 String ceKey = buildNfoSymbol(underlying, expiryDate, strike, "CE");
                 String peKey = buildNfoSymbol(underlying, expiryDate, strike, "PE");
@@ -109,32 +104,6 @@ public class OptionChainService {
 
                 if (ceQuote == null || peQuote == null) continue;
                 if (ceQuote.lastPrice <= 0 || peQuote.lastPrice <= 0) continue;
-
-                if (debugMode) {
-                    ArbitrageOpportunity debugOpp = new ArbitrageOpportunity();
-                    debugOpp.type = "DEBUG";
-                    debugOpp.action = "INFO";
-                    debugOpp.underlying = underlying;
-                    debugOpp.strike = strike;
-                    debugOpp.spotPrice = spotPrice;
-                    debugOpp.futuresPrice = futuresPrice;
-                    debugOpp.cePrice = ceQuote.lastPrice;
-                    debugOpp.pePrice = peQuote.lastPrice;
-                    debugOpp.ceBid = ceQuote.bid;
-                    debugOpp.ceAsk = ceQuote.ask;
-                    debugOpp.peBid = peQuote.bid;
-                    debugOpp.peAsk = peQuote.ask;
-                    debugOpp.daysToExpiry = daysToExpiry;
-                    debugOpp.description = String.format("CE: last=%.1f bid=%.1f ask=%.1f vol=%d oi=%d | PE: last=%.1f bid=%.1f ask=%.1f vol=%d oi=%d",
-                        ceQuote.lastPrice, ceQuote.bid, ceQuote.ask, ceQuote.volume, ceQuote.openInterest,
-                        peQuote.lastPrice, peQuote.bid, peQuote.ask, peQuote.volume, peQuote.openInterest);
-                    debugOpp.legs = isSpreadTooWide(ceQuote) || isSpreadTooWide(peQuote) ? "SPREAD_WIDE" : "OK";
-                    debugOpp.confidence = (ceQuote.volume >= MIN_VOLUME && peQuote.volume >= MIN_VOLUME) ? 80.0 : 30.0;
-                    debugOpp.edgePoints = 0;
-                    debugOpp.edgeAfterCosts = 0;
-                    opportunities.add(debugOpp);
-                    debugStrikes++;
-                }
                 if (isSpreadTooWide(ceQuote) || isSpreadTooWide(peQuote)) continue;
                 if (ceQuote.volume < MIN_VOLUME || peQuote.volume < MIN_VOLUME) continue;
                 if (ceQuote.openInterest < MIN_OI || peQuote.openInterest < MIN_OI) continue;
@@ -209,7 +178,7 @@ public class OptionChainService {
                 }
             }
 
-            log.info("Analyzed {} valid strikes for {}{} found {} opportunities", validStrikes, underlying, debugMode ? " (debug " + debugStrikes + " strikes)" : "", opportunities.size());
+            log.info("Analyzed {} valid strikes for {}, found {} opportunities", validStrikes, underlying, opportunities.size());
 
         } catch (Exception e) {
             log.error("Error scanning option chain for {}: {}", underlying, e.getMessage(), e);
