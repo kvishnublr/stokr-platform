@@ -90,7 +90,8 @@ public class OptionArbitrageController {
     @GetMapping("/scan")
     public ResponseEntity<Map<String, Object>> scan(
             @RequestParam(defaultValue = "ALL") String underlying,
-            @RequestParam(defaultValue = "false") boolean force) {
+            @RequestParam(defaultValue = "false") boolean force,
+            @RequestParam(defaultValue = "false") boolean debug) {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
 
@@ -114,7 +115,7 @@ public class OptionArbitrageController {
                 UnderlyingConfig cfg = CONFIGS.get(u);
                 double spot = cfg != null ? spotFetcher.getSpotPrice(cfg.spotKey()) : 0;
                 double fut = getValidatedFutures(u, spot);
-                List<ArbitrageOpportunity> opps = optionChainService.scanOptionChain(u, spot, fut, true);
+                List<ArbitrageOpportunity> opps = optionChainService.scanOptionChain(u, spot, fut, true, debug);
                 allOpps.addAll(opps);
             } catch (Exception e) {
                 log.error("Scan failed for {}: {}", u, e.getMessage());
