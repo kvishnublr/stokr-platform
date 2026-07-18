@@ -108,7 +108,7 @@ public class OptionChainService {
                 OptionQuote peQuote = quotes.get(peKey);
 
                 if (ceQuote == null || peQuote == null) continue;
-                if (ceQuote.lastPrice <= 0 && peQuote.lastPrice <= 0) continue;
+                if (ceQuote.lastPrice <= 0 || peQuote.lastPrice <= 0) continue;
 
                 if (debugMode) {
                     ArbitrageOpportunity debugOpp = new ArbitrageOpportunity();
