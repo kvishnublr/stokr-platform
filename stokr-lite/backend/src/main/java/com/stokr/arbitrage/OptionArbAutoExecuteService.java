@@ -142,7 +142,13 @@ public class OptionArbAutoExecuteService {
         return map;
     }
 
-    @Scheduled(fixedDelayString = "${option-arb.auto-exec-interval:300000}", initialDelay = 30000)
+    public boolean isAutoRolloverEnabled() {
+        return settingsRepo.findBySettingKey("auto_rollover_enabled")
+            .map(s -> "true".equalsIgnoreCase(s.getSettingValue()))
+            .orElse(true);
+    }
+
+    @Scheduled(fixedDelayString = "${option-arb.auto-exec-interval:30000}", initialDelay = 10000)
     public void autoExecCycle() {
         if (!isAutoExecEnabled()) return;
 
@@ -150,15 +156,15 @@ public class OptionArbAutoExecuteService {
         if (nowIST.isBefore(LocalTime.of(9, 16)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
         if (isTimeFilterEnabled() && !isPeakWindow()) {
-            log.info("Outside peak window — skipping auto-exec");
+            log.debug("Outside peak window — skipping auto-exec");
             return;
         }
 
-        log.info("Auto-execute cycle starting...");
         try {
             List<String> underlyings = getTargetUnderlyings();
             double minEdge = getMinEdge();
             int maxTotal = getMaxTotalPositions();
+            boolean rolloverEnabled = isAutoRolloverEnabled();
 
             List<ArbitrageOpportunity> allParityOpps = new ArrayList<>();
 
@@ -181,14 +187,16 @@ public class OptionArbAutoExecuteService {
             }
 
             allParityOpps.sort((a, b) -> Double.compare(b.edgeAfterCosts, a.edgeAfterCosts));
-            List<ArbitrageOpportunity> topOpps = allParityOpps.stream().limit(10).toList();
 
             int totalOpen = tradeRepo.countOpen();
 
-            for (ArbitrageOpportunity opp : topOpps) {
+            for (ArbitrageOpportunity opp : allParityOpps) {
                 totalOpen = tradeRepo.countOpen();
+
                 if (totalOpen >= maxTotal) {
-                    tryRotateWeakest(opp, minEdge);
+                    if (rolloverEnabled) {
+                        tryRotateWeakest(opp);
+                    }
                     break;
                 }
 
@@ -198,34 +206,32 @@ public class OptionArbAutoExecuteService {
 
                 ExecutedTrade existing = findExistingPosition(opp.underlying, (int) opp.strike, opp.action);
                 if (existing != null) {
-                    if (isSmartRollover() && existing.getAction().equals(opp.action)) {
-                        log.info("Smart rollover: {} {} {}", opp.underlying, (int) opp.strike, opp.action);
-                        rollOptionsOnly(existing, opp);
-                    } else {
-                        log.info("Close and replace: {} {} {}", opp.underlying, (int) opp.strike, existing.getAction());
-                        closeAndReplace(existing, opp);
-                    }
-                } else {
-                    log.info("NEW POSITION: {} {} {} edge=₹{}", opp.underlying, (int) opp.strike, opp.action, String.format("%.0f", opp.edgeAfterCosts));
-                    ExecutedTrade trade = executeNew(opp);
-                    if (trade != null && "OPEN".equals(trade.getStatus())) {
-                        log.info("POSITION OPENED #{}: {} {} {} edge=₹{}", trade.getId(), opp.underlying, (int) opp.strike, opp.action, String.format("%.0f", opp.edgeAfterCosts));
-                    }
+                    log.debug("Already have position at {} {} {}, skipping", opp.underlying, (int) opp.strike, opp.action);
+                    continue;
+                }
+
+                String note = String.format("Auto-entered: %s %d %s edge=₹%.0f", opp.underlying, (int) opp.strike, opp.action, opp.edgeAfterCosts);
+                ExecutedTrade trade = executeNew(opp, note);
+                if (trade != null && "OPEN".equals(trade.getStatus())) {
+                    log.info("NEW #{}: {} {} {} edge=₹{}", trade.getId(), opp.underlying, (int) opp.strike, opp.action, String.format("%.0f", opp.edgeAfterCosts));
                 }
                 lastExecTime.put(cooldownKey, System.currentTimeMillis());
+                break;
             }
-            log.info("Auto-execute cycle complete — {} positions open", tradeRepo.countOpen());
         } catch (Exception e) {
             log.error("Auto-execute cycle failed: {}", e.getMessage(), e);
         }
     }
 
-    private void tryRotateWeakest(ArbitrageOpportunity newOpp, double minEdge) {
+    private void tryRotateWeakest(ArbitrageOpportunity newOpp) {
         List<ExecutedTrade> openTrades = tradeRepo.findAllOpen();
         if (openTrades.isEmpty()) return;
 
-        ExecutedTrade weakest = null;
-        double weakestPnl = Double.MAX_VALUE;
+        ExecutedTrade maxProfitTrade = null;
+        double maxPnl = Double.NEGATIVE_INFINITY;
+
+        ExecutedTrade lowestEdgeTrade = null;
+        double lowestEdge = Double.MAX_VALUE;
 
         for (ExecutedTrade trade : openTrades) {
             double[] spotFut = getSpotAndFutures(trade.getUnderlying());
@@ -234,31 +240,60 @@ public class OptionArbAutoExecuteService {
             if (spot <= 0) continue;
 
             double runningPnl = computeRunningPnl(trade, spot, fut);
+            double entryEdge = trade.getEdgeAtEntry() != null ? trade.getEdgeAtEntry() : 0;
 
-            log.info("ROTATION CHECK: {} strike={} runningPnl=₹{} newEdge=₹{}",
-                trade.getUnderlying(), trade.getStrike(), String.format("%.0f", runningPnl), String.format("%.0f", newOpp.edgeAfterCosts));
+            log.debug("ROTATION: {} strike={} pnl=₹{} entryEdge=₹{}", trade.getUnderlying(), trade.getStrike(),
+                String.format("%.0f", runningPnl), String.format("%.0f", entryEdge));
 
-            if (runningPnl < weakestPnl) {
-                weakestPnl = runningPnl;
-                weakest = trade;
+            if (runningPnl > maxPnl) {
+                maxPnl = runningPnl;
+                maxProfitTrade = trade;
+            }
+            if (entryEdge < lowestEdge) {
+                lowestEdge = entryEdge;
+                lowestEdgeTrade = trade;
             }
         }
 
-        if (weakest == null) return;
+        ExecutedTrade target = null;
+        String reason = "";
 
-        double bestOpenEdge = weakest.getEdgeAtEntry() != null ? weakest.getEdgeAtEntry() : 0;
-        for (ExecutedTrade t : openTrades) {
-            if (t.getEdgeAtEntry() != null && t.getEdgeAtEntry() > bestOpenEdge) {
-                bestOpenEdge = t.getEdgeAtEntry();
-            }
+        if (maxProfitTrade != null && maxPnl > 0) {
+            target = maxProfitTrade;
+            reason = String.format("max-profit ₹%.0f", maxPnl);
+        } else if (lowestEdgeTrade != null && lowestEdge < newOpp.edgeAfterCosts) {
+            target = lowestEdgeTrade;
+            reason = String.format("lowest-edge ₹%.0f < new ₹%.0f", lowestEdge, newOpp.edgeAfterCosts);
         }
 
-        if (newOpp.edgeAfterCosts > bestOpenEdge) {
-            log.info("ROTATION: New opp edge ₹{} > best open edge ₹{} — closing weakest {} {} (pnl=₹{}) and entering new",
-                String.format("%.0f", newOpp.edgeAfterCosts), String.format("%.0f", bestOpenEdge),
-                weakest.getUnderlying(), weakest.getStrike(), String.format("%.0f", weakestPnl));
-            closePositionInternal(weakest);
-            executeNew(newOpp);
+        if (target == null) return;
+
+        boolean sameUnderlying = target.getUnderlying().equals(newOpp.underlying);
+
+        if (sameUnderlying && isSmartRollover()) {
+            String rollNote = String.format("ROLLOVER: closed %s %d (pnl=₹%.0f, %s) → new %s %d edge=₹%.0f [options-only, same future]",
+                target.getUnderlying(), target.getStrike(), maxPnl, reason,
+                newOpp.underlying, (int) newOpp.strike, newOpp.edgeAfterCosts);
+            log.info("ROTATE (options-only): {}", rollNote);
+            rollOptionsOnly(target, newOpp);
+            ExecutedTrade newTrade = tradeRepo.findAllOpen().stream()
+                .filter(t -> t.getUnderlying().equals(newOpp.underlying) && t.getStrike() == (int) newOpp.strike)
+                .max(Comparator.comparing(ExecutedTrade::getId))
+                .orElse(null);
+            if (newTrade != null) {
+                newTrade.setNotes(rollNote);
+                tradeRepo.save(newTrade);
+            }
+        } else {
+            String rollNote = String.format("ROLLOVER: closed %s %d (pnl=₹%.0f, %s) → new %s %d edge=₹%.0f [full close+re-enter]",
+                target.getUnderlying(), target.getStrike(), maxPnl, reason,
+                newOpp.underlying, (int) newOpp.strike, newOpp.edgeAfterCosts);
+            log.info("ROTATE (full): {}", rollNote);
+            closePositionInternal(target);
+            ExecutedTrade newTrade = executeNew(newOpp, rollNote);
+            if (newTrade != null && "OPEN".equals(newTrade.getStatus())) {
+                log.info("ROTATED #{}→#{}: {}", target.getId(), newTrade.getId(), rollNote);
+            }
         }
     }
 
@@ -374,6 +409,10 @@ public class OptionArbAutoExecuteService {
     }
 
     public ExecutedTrade executeNew(ArbitrageOpportunity opp) {
+        return executeNew(opp, null);
+    }
+
+    public ExecutedTrade executeNew(ArbitrageOpportunity opp, String note) {
         ZerodhaTokenManager.ZerodhaAuth auth = tokenManager.getCurrentAuth();
         if (auth == null || auth.getAccessToken() == null) {
             log.warn("No auth token, cannot execute");
@@ -437,6 +476,7 @@ public class OptionArbAutoExecuteService {
         trade.setLotSize(lotSize);
         trade.setEdgeAtEntry(opp.edgeAfterCosts);
         trade.setStatus("PENDING");
+        if (note != null) trade.setNotes(note);
 
         List<String> placedOrderIds = new ArrayList<>();
         Map<String, String> orderSideMap = new LinkedHashMap<>();

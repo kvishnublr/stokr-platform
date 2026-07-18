@@ -1641,6 +1641,12 @@ function AutoExecTab() {
               <label className="text-xs text-slate-600">Smart rollover (same fut direction = options only)</label>
             </div>
             <div className="flex items-center gap-2">
+              <input type="checkbox" checked={settings.auto_rollover_enabled !== 'false'}
+                onChange={(e) => updateSetting('auto_rollover_enabled', String(e.target.checked))}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label className="text-xs text-slate-600">Auto-rollover (exit max-profit, enter better opp)</label>
+            </div>
+            <div className="flex items-center gap-2">
               <input type="checkbox" checked={settings.time_filter_enabled === 'true'}
                 onChange={(e) => updateSetting('time_filter_enabled', String(e.target.checked))}
                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
