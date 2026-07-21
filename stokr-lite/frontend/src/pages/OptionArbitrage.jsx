@@ -535,6 +535,23 @@ export default function OptionArbitrage() {
     staleTime: 60000,
   });
 
+  const { data: sharedSettings } = useQuery({
+    queryKey: ['auto-exec-settings'],
+    queryFn: async () => {
+      const res = await axios.get(`${API_BASE}/api/option-arbitrage/auto-execute/settings`);
+      return res.data;
+    },
+    staleTime: 10000,
+  });
+
+  useEffect(() => {
+    const target = sharedSettings?.settings?.target_underlying;
+    if (target && target !== 'ALL') {
+      const parts = target.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+      if (parts.length > 0) setUnderlyings(parts);
+    }
+  }, [sharedSettings?.settings?.target_underlying]);
+
   const { data: sessionData, refetch: refetchSession } = useQuery({
     queryKey: ['option-arb-session'],
     queryFn: async () => {
@@ -1586,6 +1603,14 @@ function BidParityTab() {
   const rawOpps = bidData?.opportunities || [];
   const wsTicks = tickData?.wsTicks || {};
   const bpSettings = bpSettingsData?.settings || {};
+
+  useEffect(() => {
+    const target = bpSettings.target_underlying;
+    if (target && target !== 'ALL') {
+      const parts = target.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+      if (parts.length > 0) setUnderlyings(parts);
+    }
+  }, [bpSettings.target_underlying]);
   const isAutoOn = autoStatus?.autoEnabled || false;
   const isAutoExitOn = autoStatus?.autoExitEnabled !== false;
   const wsTickCount = tickData?.wsCount || 0;
