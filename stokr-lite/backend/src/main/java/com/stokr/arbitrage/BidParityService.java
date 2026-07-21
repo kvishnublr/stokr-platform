@@ -23,7 +23,7 @@ public class BidParityService {
     private static final int MIN_OI = 100;
 
     private static final Map<String, double[]> DTE_RANGES = Map.of(
-        "NIFTY",     new double[]{1, 21},
+        "NIFTY",     new double[]{0, 21},
         "BANKNIFTY", new double[]{3, 21},
         "MIDCPNIFTY", new double[]{3, 21},
         "FINNIFTY",  new double[]{3, 21}
@@ -97,13 +97,16 @@ public class BidParityService {
             return opportunities;
         }
 
-        double futuresPrice = spotFetcher.getSpotPrice(futPrefix);
+        LocalDate expiryDate = optionChainService.getWeeklyExpiryDate(underlying);
+        int yy = expiryDate.getYear() % 100;
+        String mon = expiryDate.getMonth().name().substring(0, 3);
+        String futKey = String.format("%s%02d%sFUT", futPrefix, yy, mon);
+        double futuresPrice = spotFetcher.getSpotPrice(futKey);
         if (futuresPrice <= 0) futuresPrice = spot;
 
         int atmStrike = optionChainService.getATMStrike(underlying, spot);
         List<Integer> strikes = generateWideStrikes(atmStrike, underlying, 5);
 
-        LocalDate expiryDate = optionChainService.getWeeklyExpiryDate(underlying);
         double daysToExpiry = Duration.between(LocalDate.now().atStartOfDay(), expiryDate.atStartOfDay()).toDays();
         double yearsToExpiry = daysToExpiry / 365.0;
 

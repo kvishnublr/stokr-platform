@@ -27,6 +27,13 @@ public class OptionArbExecutionService {
 
     private static final double MIN_MARGIN_BUFFER = 1.15;
 
+    private static final Map<String, Double> HEDGED_MARGIN = Map.of(
+        "NIFTY", 150000.0,
+        "BANKNIFTY", 250000.0,
+        "MIDCPNIFTY", 180000.0,
+        "FINNIFTY", 200000.0
+    );
+
     @Data
     public static class LegResult {
         private String symbol;
@@ -77,13 +84,13 @@ public class OptionArbExecutionService {
 
         BigDecimal availableMargin = zerodhaAdapter.getAvailableMargin(auth.getAccessToken());
         result.marginAvailable = availableMargin;
-        double estimatedRequired = (cePrice + pePrice + futPrice) * lotSize * MIN_MARGIN_BUFFER;
-        result.marginRequired = BigDecimal.valueOf(estimatedRequired);
-        if (availableMargin.doubleValue() < estimatedRequired) {
+        double hedgedMargin = HEDGED_MARGIN.getOrDefault(underlying, 200000.0) * MIN_MARGIN_BUFFER;
+        result.marginRequired = BigDecimal.valueOf(hedgedMargin);
+        if (availableMargin.doubleValue() < hedgedMargin) {
             result.success = false;
-            result.error = String.format("Insufficient margin. Available: ₹%,.0f, Required: ₹%,.0f (with 15%% buffer)",
-                availableMargin.doubleValue(), estimatedRequired);
-            log.warn("Margin check failed: available={} required={}", availableMargin, estimatedRequired);
+            result.error = String.format("Insufficient margin. Available: ₹%,.0f, Required: ₹%,.0f (hedged + 15%% buffer)",
+                availableMargin.doubleValue(), hedgedMargin);
+            log.warn("Margin check failed: available={} required={}", availableMargin, hedgedMargin);
             return result;
         }
 

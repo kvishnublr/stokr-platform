@@ -300,7 +300,12 @@ public class BidParityAutoTrader {
 
         double spot = spotFetcher.getSpotPrice(spotKey);
         if (spot <= 0) return opportunities;
-        double futuresPrice = spotFetcher.getSpotPrice(futPrefix);
+
+        LocalDate expiryDate = optionChainService.getWeeklyExpiryDate(underlying);
+        int yy = expiryDate.getYear() % 100;
+        String mon = expiryDate.getMonth().name().substring(0, 3);
+        String futKey = String.format("%s%02d%sFUT", futPrefix, yy, mon);
+        double futuresPrice = spotFetcher.getSpotPrice(futKey);
         if (futuresPrice <= 0) futuresPrice = spot;
 
         int atmStrike = optionChainService.getATMStrike(underlying, spot);
@@ -313,7 +318,6 @@ public class BidParityAutoTrader {
         List<Integer> strikes = new ArrayList<>();
         for (int i = -STRIKE_RANGE; i <= STRIKE_RANGE; i++) strikes.add(atmStrike + i * step);
 
-        LocalDate expiryDate = optionChainService.getWeeklyExpiryDate(underlying);
         double daysToExpiry = Duration.between(LocalDate.now().atStartOfDay(), expiryDate.atStartOfDay()).toDays();
         double yearsToExpiry = daysToExpiry / 365.0;
         if (daysToExpiry < 0) return opportunities;
