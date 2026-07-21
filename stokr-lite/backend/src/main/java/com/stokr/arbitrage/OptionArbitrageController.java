@@ -1021,7 +1021,7 @@ public class OptionArbitrageController {
         trade.setPeBidPriceEntry(pePrice);
         trade.setCeBidQtyEntry(ceBidQty);
         trade.setPeBidQtyEntry(peBidQty);
-        trade.setNotes("Bid parity executed");
+        trade.setNotes(execResult.isSuccess() ? "Bid parity executed" : "FAILED: " + (execResult.getError() != null ? execResult.getError() : "unknown error"));
 
         for (OptionArbExecutionService.LegResult leg : execResult.getLegs()) {
             double fillPrice = leg.getFillPrice() > 0 ? leg.getFillPrice() : leg.getRequestedPrice();

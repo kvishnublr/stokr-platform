@@ -2106,6 +2106,7 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
   const [expandedIdx, setExpandedIdx] = useState(null);
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
+  const [minEdgeFilter, setMinEdgeFilter] = useState(0);
 
   const STRATEGY_TABS = [
     { key: 'ALL', label: 'All', color: 'bg-slate-100 text-slate-700 border-slate-300' },
@@ -2146,7 +2147,11 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
     return sortDir === 'asc' ? ' ↑' : ' ↓';
   }
 
-  const sortedOpps = [...opportunities].sort((a, b) => {
+  const filteredOpps = minEdgeFilter > 0
+    ? opportunities.filter(o => (o.edgeAfterCosts || 0) >= minEdgeFilter)
+    : opportunities;
+
+  const sortedOpps = [...filteredOpps].sort((a, b) => {
     if (!sortKey) return 0;
     let va, vb;
     switch (sortKey) {
@@ -2155,7 +2160,7 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
       case 'underlying': va = a.underlying || ''; vb = b.underlying || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
       case 'strike': va = a.strike || 0; vb = b.strike || 0; break;
       case 'edge': va = a.edgeAfterCosts || 0; vb = b.edgeAfterCosts || 0; break;
-      case 'pnl': va = a.pnlAfterCosts ?? a.edgeAfterCosts ?? 0; vb = b.pnlAfterCosts ?? b.edgeAfterCosts ?? 0; break;
+        case 'pnl': va = a.pnlAfterCosts ?? 0; vb = b.pnlAfterCosts ?? 0; break;
       case 'status': va = a.status || ''; vb = b.status || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
       default: return 0;
     }
@@ -2173,7 +2178,7 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
         </select>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
         {STRATEGY_TABS.map(tab => (
           <button key={tab.key} onClick={() => { setStrategyFilter(tab.key); setHistoryPage(0); }}
             className={`px-4 py-2 text-sm font-medium rounded-lg border transition-all ${
@@ -2184,6 +2189,12 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
             {tab.label}
           </button>
         ))}
+        <div className="flex items-center gap-2 ml-4 border-l border-slate-200 pl-4">
+          <label className="text-xs font-medium text-slate-500">Min Edge</label>
+          <input type="number" value={minEdgeFilter} onChange={(e) => setMinEdgeFilter(Number(e.target.value) || 0)}
+            placeholder="0" className="w-24 px-2 py-1.5 border border-slate-200 rounded-md text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+          <span className="text-xs text-slate-400">₹</span>
+        </div>
       </div>
 
       {summaryData && (
@@ -2197,7 +2208,7 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-800">History ({totalElements} total)</h2>
+          <h2 className="text-lg font-semibold text-slate-800">History {minEdgeFilter > 0 ? `(${filteredOpps.length} of ${totalElements})` : `(${totalElements} total)`}</h2>
           <span className="text-xs text-slate-400">Edge = at detection | P&L = current</span>
         </div>
 
@@ -2227,7 +2238,7 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
                   const isExpanded = expandedIdx === idx;
                   const costs = opp.costBreakdown || {};
                   const lotSize = opp.lotSize || costs.lotSize || 65;
-                  const livePnl = opp.pnlAfterCosts != null ? opp.pnlAfterCosts : opp.edgeAfterCosts;
+                  const livePnl = opp.pnlAfterCosts != null ? opp.pnlAfterCosts : null;
                   const st = STATUS_STYLE[opp.status] || STATUS_STYLE.EXPIRED;
                   const sc = STRATEGY_COLORS[opp.strategyType] || STRATEGY_COLORS.NORMAL_PARITY;
                   return (
@@ -2298,14 +2309,24 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
                                   <p className="text-sm font-mono font-bold text-slate-800">{fmtCurrency(opp.futuresPrice, 2)}</p>
                                 </div>
                                 <div className="bg-white rounded-lg p-3 border border-slate-200">
-                                  <p className="text-xs text-slate-500">CE Entry</p>
+                                  <p className="text-xs text-slate-500">CE Entry / Bid / Ask</p>
                                   <p className="text-sm font-mono font-bold text-slate-800">{fmtCurrency(opp.ceEntryPrice, 2)}</p>
+                                  <p className="text-[10px] text-slate-400 font-mono">BID {fmt(opp.ceBid, 2)} / ASK {fmt(opp.ceAsk, 2)}</p>
                                 </div>
                                 <div className="bg-white rounded-lg p-3 border border-slate-200">
-                                  <p className="text-xs text-slate-500">PE Entry</p>
+                                  <p className="text-xs text-slate-500">PE Entry / Bid / Ask</p>
                                   <p className="text-sm font-mono font-bold text-slate-800">{fmtCurrency(opp.peEntryPrice, 2)}</p>
+                                  <p className="text-[10px] text-slate-400 font-mono">BID {fmt(opp.peBid, 2)} / ASK {fmt(opp.peAsk, 2)}</p>
                                 </div>
                               </div>
+
+                              {(opp.ceSymbol || opp.peSymbol || opp.futSymbol) && (
+                                <div className="mb-4 flex gap-4 text-xs text-slate-500 font-mono">
+                                  {opp.ceSymbol && <span>CE: <span className="text-slate-700 font-medium">{opp.ceSymbol}</span></span>}
+                                  {opp.peSymbol && <span>PE: <span className="text-slate-700 font-medium">{opp.peSymbol}</span></span>}
+                                  {opp.futSymbol && <span>FUT: <span className="text-slate-700 font-medium">{opp.futSymbol}</span></span>}
+                                </div>
+                              )}
 
                               <div className="grid grid-cols-2 gap-4">
                                 <div className="bg-white rounded-lg p-4 border border-slate-200">
@@ -2313,10 +2334,22 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
                                   <div className="space-y-1.5 text-sm">
                                     <div className="flex justify-between"><span className="text-slate-600">Edge at Detection</span><span className="font-mono font-bold text-emerald-600">{fmtCurrency(opp.edgeAfterCosts, 0)}</span></div>
                                     <div className="flex justify-between"><span className="text-slate-600">Edge (pts)</span><span className="font-mono font-bold text-emerald-600">{fmt(opp.edgePoints, 1)}</span></div>
-                                    <div className="flex justify-between border-t border-slate-200 pt-1.5">
-                                      <span className="text-slate-800 font-semibold">Current P&L</span>
-                                      <span className={`font-mono font-bold ${(livePnl || 0) > 0 ? 'text-emerald-600' : (livePnl || 0) < 0 ? 'text-red-500' : 'text-slate-400'}`}>{fmtCurrency(livePnl, 0)}</span>
-                                    </div>
+                                    {opp.pnlAmount != null ? (
+                                      <>
+                                        <div className="flex justify-between"><span className="text-slate-600">CE Exit</span><span className="font-mono text-slate-700">{fmtCurrency(opp.ceExitPrice, 2)}</span></div>
+                                        <div className="flex justify-between"><span className="text-slate-600">PE Exit</span><span className="font-mono text-slate-700">{fmtCurrency(opp.peExitPrice, 2)}</span></div>
+                                        {opp.exitTime && <div className="flex justify-between"><span className="text-slate-600">Exit Time</span><span className="font-mono text-slate-700">{formatIstTime(opp.exitTime)}</span></div>}
+                                        <div className="flex justify-between border-t border-slate-200 pt-1.5">
+                                          <span className="text-slate-800 font-semibold">Realized P&L</span>
+                                          <span className={`font-mono font-bold ${(opp.pnlAmount || 0) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmtCurrency(opp.pnlAmount, 0)}</span>
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <div className="flex justify-between border-t border-slate-200 pt-1.5">
+                                        <span className="text-slate-800 font-semibold">Current P&L</span>
+                                        <span className="text-slate-400 font-mono">Not yet resolved</span>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                                 {costs.totalCosts != null && (

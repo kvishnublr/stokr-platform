@@ -83,6 +83,10 @@ public class OptionArbOpportunity {
     @Column(name = "pnl_after_costs")
     private BigDecimal pnlAfterCosts;
 
+    @Column(name = "strategy_type")
+    @Builder.Default
+    private String strategyType = "NORMAL_PARITY";
+
     @Column(columnDefinition = "jsonb")
     private String costBreakdownJson;
 
@@ -135,7 +139,19 @@ public class OptionArbOpportunity {
         map.put("daysToExpiry", daysToExpiry != null ? daysToExpiry.doubleValue() : 0);
         map.put("expiryDate", expiryDate != null ? expiryDate.toString() : null);
         map.put("status", status);
+        map.put("strategyType", strategyType);
+        map.put("pnlAfterCosts", pnlAfterCosts != null ? pnlAfterCosts.doubleValue() : null);
+        map.put("pnlPoints", pnlPoints != null ? pnlPoints.doubleValue() : null);
+        map.put("pnlAmount", pnlAmount != null ? pnlAmount.doubleValue() : null);
+        map.put("ceExitPrice", ceExitPrice != null ? ceExitPrice.doubleValue() : null);
+        map.put("peExitPrice", peExitPrice != null ? peExitPrice.doubleValue() : null);
+        map.put("exitTime", exitTime != null ? exitTime.toString() : null);
+        int lotSize = "BANKNIFTY".equals(underlying) ? 15 : "MIDCPNIFTY".equals(underlying) ? 120 : "FINNIFTY".equals(underlying) ? 60 : 50;
+        map.put("lotSize", lotSize);
         map.put("notes", notes);
+        map.put("ceSymbol", ceSymbol);
+        map.put("peSymbol", peSymbol);
+        map.put("futSymbol", futSymbol);
         map.put("createdAt", createdAt != null ? createdAt.toString() : null);
         var costs = getCostBreakdown();
         if (costs != null) map.put("costBreakdown", costs);
