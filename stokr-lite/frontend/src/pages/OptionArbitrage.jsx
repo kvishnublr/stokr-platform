@@ -1,8 +1,83 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
+
+let _toastListeners = [];
+let _toastId = 0;
+function _notifyToast(toast) { _toastListeners.forEach(fn => fn(toast)); }
+export function showToast(message, type = 'info', duration = 4000) {
+  const id = ++_toastId;
+  _notifyToast({ id, message, type, duration });
+}
+function useToastState() {
+  const [toasts, setToasts] = useState([]);
+  useEffect(() => {
+    const handler = (t) => {
+      setToasts(prev => [...prev, t]);
+      setTimeout(() => setToasts(prev => prev.filter(x => x.id !== t.id)), t.duration);
+    };
+    _toastListeners.push(handler);
+    return () => { _toastListeners = _toastListeners.filter(f => f !== handler); };
+  }, []);
+  const dismiss = (id) => setToasts(prev => prev.filter(t => t.id !== id));
+  return { toasts, dismiss };
+}
+
+const TOAST_STYLES = {
+  success: 'bg-emerald-600 text-white',
+  error: 'bg-red-600 text-white',
+  warning: 'bg-amber-500 text-white',
+  info: 'bg-blue-600 text-white',
+};
+const TOAST_ICONS = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+
+function ToastContainer({ toasts, dismiss }) {
+  return (
+    <div className="fixed top-4 right-4 z-[9999] space-y-2 pointer-events-none">
+      {toasts.map(t => (
+        <div key={t.id}
+          onClick={() => dismiss(t.id)}
+          className={`pointer-events-auto px-4 py-3 rounded-xl shadow-lg text-sm font-medium flex items-center gap-2 cursor-pointer animate-toast-in ${TOAST_STYLES[t.type] || TOAST_STYLES.info}`}>
+          <span className="text-lg font-bold">{TOAST_ICONS[t.type] || 'ℹ'}</span>
+          <span className="flex-1">{t.message}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const _confirmStateRef = { resolve: null };
+export function showConfirm(message, title = 'Confirm') {
+  return new Promise((resolve) => {
+    _confirmStateRef.resolve = resolve;
+    window.dispatchEvent(new CustomEvent('app-confirm', { detail: { message, title } }));
+  });
+}
+
+function ConfirmDialog() {
+  const [show, setShow] = useState(null);
+  useEffect(() => {
+    const handler = (e) => setShow(e.detail);
+    window.addEventListener('app-confirm', handler);
+    return () => window.removeEventListener('app-confirm', handler);
+  }, []);
+  if (!show) return null;
+  const resolve = (val) => { setShow(null); _confirmStateRef.resolve?.(val); _confirmStateRef.resolve = null; };
+  return (
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => resolve(false)}>
+      <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 animate-confirm-in" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-bold text-slate-800 mb-2">{show.title}</h3>
+        <p className="text-sm text-slate-600 mb-6 whitespace-pre-line">{show.message}</p>
+        <div className="flex gap-3 justify-end">
+          <button onClick={() => resolve(false)} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition">Cancel</button>
+          <button onClick={() => resolve(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition">Confirm</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function KiteBasketButton({ opp, label, className, livePriceMap }) {
   const [loading, setLoading] = useState(false);
@@ -38,7 +113,7 @@ function KiteBasketButton({ opp, label, className, livePriceMap }) {
       await axios.post(`${API_BASE}/api/option-arbitrage/cancel-order`, null, { params: { orderId } });
       setTimeout(pollOrders, 1000);
     } catch (e) {
-      alert('Cancel failed: ' + (e.response?.data?.error || e.message));
+      showToast('Cancel failed: ' + (e.response?.data?.error || e.message), 'error');
     }
   };
 
@@ -59,13 +134,13 @@ function KiteBasketButton({ opp, label, className, livePriceMap }) {
       });
       const data = res.data;
       if (!data.orders || !data.apiKey) {
-        alert('Failed to build basket: ' + (data.error || 'Unknown error'));
+        showToast('Failed to build basket: ' + (data.error || 'Unknown error'), 'error');
         return;
       }
       setBasketData(data);
       setShowPreview(true);
     } catch (err) {
-      alert('Basket error: ' + (err.response?.data?.error || err.message));
+      showToast('Basket error: ' + (err.response?.data?.error || err.message), 'error');
     } finally {
       setLoading(false);
     }
@@ -352,6 +427,7 @@ export default function OptionArbitrage() {
   const [historyPage, setHistoryPage] = useState(0);
   const [selectedDate, setSelectedDate] = useState('');
   const [strategyFilter, setStrategyFilter] = useState('ALL');
+  const { toasts, dismiss: dismissToast } = useToastState();
   const HISTORY_SIZE = 20;
   const ALL_U = ['ALL', 'NIFTY', 'BANKNIFTY', 'MIDCPNIFTY', 'FINNIFTY'];
 
@@ -476,10 +552,10 @@ export default function OptionArbitrage() {
       const res = await axios.post(`${API_BASE}/api/option-arbitrage/auto-reconnect`);
       refetchSession();
       if (!res.data.valid) {
-        alert('Still expired. Run: python3 /usr/local/bin/zerodha_token_refresh.py');
+        showToast('Still expired. Run: python3 /usr/local/bin/zerodha_token_refresh.py', 'warning', 6000);
       }
     } catch (e) {
-      alert('Reconnect failed: ' + (e.response?.data?.message || e.message));
+      showToast('Reconnect failed: ' + (e.response?.data?.message || e.message), 'error');
     }
   };
 
@@ -492,6 +568,8 @@ export default function OptionArbitrage() {
 
   return (
     <div className="space-y-6">
+      <ToastContainer toasts={toasts} dismiss={dismissToast} />
+      <ConfirmDialog />
       {!sessionValid && (
         <div className="bg-amber-50 border border-amber-300 rounded-xl px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -593,7 +671,7 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
       const openTrades = (tradesRes.data?.trades || []).filter(t => t.status === 'OPEN' && t.underlying === opp.underlying);
 
       if (openTrades.length === 0) {
-        alert('No open position for ' + opp.underlying + ' to roll over. Using NEW entry instead.');
+        showToast('No open position for ' + opp.underlying + ' to roll over. Using NEW entry.', 'warning');
         startExecute({ stopPropagation: () => {} }, opp, idx);
         return;
       }
@@ -603,7 +681,7 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
         return pnl > (best.pnlPoints || 0) ? t : best;
       }, openTrades[0]);
 
-      if (!confirm(`ROLL OVER: Close ${maxProfitTrade.underlying} ${maxProfitTrade.strike} (pnl=${maxProfitTrade.pnlPoints || 0}) and enter ${opp.underlying} ${opp.strike}?`)) {
+      if (!await showConfirm(`ROLL OVER: Close ${maxProfitTrade.underlying} ${maxProfitTrade.strike} (pnl=${maxProfitTrade.pnlPoints || 0}) and enter ${opp.underlying} ${opp.strike}?`, 'Roll Over')) {
         return;
       }
 
@@ -1382,7 +1460,7 @@ function BidParityPositions() {
   if (positions.length === 0) return null;
 
   const exitPosition = async (pos, exitOpp) => {
-    if (!confirm(`EXIT ${pos.action} at ${pos.strike}?\nEntry: CE@${pos.ceEntryPrice} PE@${pos.peEntryPrice}\nExit: CE@${exitOpp.ceBid} PE@${exitOpp.peBid}`)) return;
+    if (!await showConfirm(`EXIT ${pos.action} at ${pos.strike}?\nEntry: CE@${pos.ceEntryPrice} PE@${pos.peEntryPrice}\nExit: CE@${exitOpp.ceBid} PE@${exitOpp.peBid}`, 'Exit Position')) return;
 
     setExitLoading(pos.id);
     try {
@@ -1396,13 +1474,13 @@ function BidParityPositions() {
         }
       });
       if (res.data.status === 'ok') {
-        alert(`Closed! P&L: ₹${res.data.pnlAmount?.toFixed(0)} (${res.data.pnlPoints?.toFixed(1)} pts)`);
+        showToast(`Closed! P&L: ₹${res.data.pnlAmount?.toFixed(0)} (${res.data.pnlPoints?.toFixed(1)} pts)`, 'success');
         refetch();
       } else {
-        alert('Exit failed: ' + (res.data.error || 'unknown'));
+        showToast('Exit failed: ' + (res.data.error || 'unknown'), 'error');
       }
     } catch (err) {
-      alert('Error: ' + (err.response?.data?.error || err.message));
+      showToast('Error: ' + (err.response?.data?.error || err.message), 'error');
     }
     setExitLoading(null);
   };
@@ -1495,14 +1573,14 @@ function BidParityTab() {
     try {
       await axios.post(`${API_BASE}/api/option-arbitrage/bid-parity/auto-toggle`);
       refetchStatus();
-    } catch (e) { alert('Toggle failed: ' + e.message); }
+    } catch (e) { showToast('Toggle failed: ' + e.message, 'error'); }
   };
 
   const toggleAutoExit = async () => {
     try {
       await axios.post(`${API_BASE}/api/option-arbitrage/bid-parity/auto-exit-toggle`);
       refetchStatus();
-    } catch (e) { alert('Toggle failed: ' + e.message); }
+    } catch (e) { showToast('Toggle failed: ' + e.message, 'error'); }
   };
 
   const rawOpps = bidData?.opportunities || [];
@@ -1611,12 +1689,14 @@ function BidParityTab() {
       });
 
       if (res.data.success) {
-        alert(`Trade executed! ID: ${res.data.tradeId}\nStatus: ${res.data.tradeStatus}`);
+        showToast(`Trade executed! ID: ${res.data.tradeId} — ${res.data.tradeStatus}`, 'success');
+        refetch();
+        refetchStatus();
       } else {
-        alert(`Execution failed: ${res.data.error || 'unknown error'}`);
+        showToast(`Execution failed: ${res.data.error || 'unknown error'}`, 'error');
       }
     } catch (err) {
-      alert('Execution error: ' + (err.response?.data?.error || err.message));
+      showToast('Execution error: ' + (err.response?.data?.error || err.message), 'error');
     }
     setExecuting(null);
   };
@@ -2306,7 +2386,7 @@ function PositionsTab() {
       setSelectedPositions(new Set());
       setTimeout(refetch, 2000);
     } catch (e) {
-      alert('Exit failed: ' + (e.response?.data?.error || e.message));
+      showToast('Exit failed: ' + (e.response?.data?.error || e.message), 'error');
     } finally {
       setExiting(false);
     }
@@ -2425,6 +2505,11 @@ function AutoExecTab() {
   const [replacingTradeId, setReplacingTradeId] = useState(null);
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
+  const [busyRun, setBusyRun] = useState(false);
+  const [busyCloseAll, setBusyCloseAll] = useState(false);
+  const [busyCloseBidAll, setBusyCloseBidAll] = useState(false);
+  const [busyClose, setBusyClose] = useState(null);
+  const [busyExitBid, setBusyExitBid] = useState(null);
 
   const { data: settingsData, refetch: refetchSettings } = useQuery({
     queryKey: ['auto-exec-settings'],
@@ -2465,23 +2550,47 @@ function AutoExecTab() {
   };
 
   const runCycle = async () => {
-    await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/run`);
-    setTimeout(() => { refetchTrades(); refetchToday(); }, 3000);
+    setBusyRun(true);
+    try {
+      await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/run`);
+      showToast('Scan & execute cycle triggered', 'success');
+      setTimeout(() => { refetchTrades(); refetchToday(); }, 3000);
+    } catch (e) {
+      showToast('Run cycle failed: ' + (e.response?.data?.error || e.message), 'error');
+    } finally {
+      setBusyRun(false);
+    }
   };
 
   const closeTrade = async (tradeId, what = 'all') => {
-    await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/close/${tradeId}`, null, { params: { what } });
-    refetchTrades();
+    setBusyClose(tradeId);
+    try {
+      await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/close/${tradeId}`, null, { params: { what } });
+      showToast('Position closed', 'success');
+      refetchTrades();
+    } catch (e) {
+      showToast('Close failed: ' + (e.response?.data?.error || e.message), 'error');
+    } finally {
+      setBusyClose(null);
+    }
   };
 
   const closeAll = async () => {
-    if (!confirm('Close ALL open positions?')) return;
-    await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/close-all`);
-    refetchTrades();
+    if (!await showConfirm('Close ALL open positions?', 'Close All')) return;
+    setBusyCloseAll(true);
+    try {
+      await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/close-all`);
+      showToast('All positions closed', 'success');
+      refetchTrades();
+    } catch (e) {
+      showToast('Close all failed: ' + (e.response?.data?.error || e.message), 'error');
+    } finally {
+      setBusyCloseAll(false);
+    }
   };
 
   const replaceTrade = async (tradeId, opp) => {
-    if (!confirm(`Replace trade #${tradeId} with ${opp.underlying} ${opp.strike} ${opp.action}?`)) return;
+    if (!await showConfirm(`Replace trade #${tradeId} with ${opp.underlying} ${opp.strike} ${opp.action}?`, 'Replace Trade')) return;
     await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/replace`, null, {
       params: { tradeId, newAction: opp.action, newCePrice: opp.cePrice || opp.ceEntryPrice || 0, newPePrice: opp.pePrice || opp.peEntryPrice || 0, newFutPrice: opp.futuresPrice || 0, newSpotPrice: opp.spotPrice || 0 }
     });
@@ -2490,7 +2599,7 @@ function AutoExecTab() {
   };
 
   const replaceOptionsOnly = async (tradeId, opp) => {
-    if (!confirm(`Replace options only for trade #${tradeId}? Futures leg stays.`)) return;
+    if (!await showConfirm(`Replace options only for trade #${tradeId}? Futures leg stays.`, 'Replace Options Only')) return;
     await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/replace-options`, null, {
       params: { tradeId, newAction: opp.action, newCePrice: opp.cePrice || opp.ceEntryPrice || 0, newPePrice: opp.pePrice || opp.peEntryPrice || 0 }
     });
@@ -2723,25 +2832,32 @@ function AutoExecTab() {
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Quick Actions</h3>
             <div className="space-y-2">
-              <button onClick={runCycle}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition">
-                Run Scan & Execute Now
+              <button onClick={runCycle} disabled={busyRun}
+                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                {busyRun ? '⏳ Running...' : '▶ Run Scan & Execute Now'}
               </button>
               {openTrades.length > 0 && (
-                <button onClick={closeAll}
-                  className="w-full px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition">
-                  Close All ({openTrades.length})
+                <button onClick={closeAll} disabled={busyCloseAll}
+                  className="w-full px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  {busyCloseAll ? '⏳ Closing...' : `✕ Close All (${openTrades.length})`}
                 </button>
               )}
               {openBidTrades.length > 0 && (
                 <button onClick={async () => {
-                  if (!confirm(`Close all ${openBidTrades.length} bid parity positions?`)) return;
-                  const res = await axios.post(`${API_BASE}/api/option-arbitrage/bid-parity/close-all`);
-                  alert(`Closed ${res.data.closed} of ${res.data.total} positions`);
-                  refetchTrades();
-                }}
-                  className="w-full px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition">
-                  Close All Bid Parity ({openBidTrades.length})
+                  if (!await showConfirm(`Close all ${openBidTrades.length} bid parity positions?`, 'Close All Bid Parity')) return;
+                  setBusyCloseBidAll(true);
+                  try {
+                    const res = await axios.post(`${API_BASE}/api/option-arbitrage/bid-parity/close-all`);
+                    showToast(`Closed ${res.data.closed} of ${res.data.total} positions`, 'success');
+                    refetchTrades();
+                  } catch (e) {
+                    showToast('Close bid parity failed: ' + (e.response?.data?.error || e.message), 'error');
+                  } finally {
+                    setBusyCloseBidAll(false);
+                  }
+                }} disabled={busyCloseBidAll}
+                  className="w-full px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  {busyCloseBidAll ? '⏳ Closing...' : `✕ Close All Bid Parity (${openBidTrades.length})`}
                 </button>
               )}
             </div>
@@ -2912,8 +3028,9 @@ function AutoExecTab() {
                         className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs font-medium hover:bg-blue-100">
                         Replace
                       </button>
-                      <button onClick={() => closeTrade(t.id, 'all')}
-                        className="px-2 py-1 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100">
+                      <button onClick={() => closeTrade(t.id, 'all')} disabled={busyClose === t.id}
+                        className="px-2 py-1 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100 disabled:opacity-50">
+                        {busyClose === t.id ? '...' : 'Close'}
                         Close
                       </button>
                     </td>
@@ -2959,7 +3076,7 @@ function AutoExecTab() {
                     <td className="px-4 py-3 text-xs text-slate-500">{t.executedAt ? new Date(t.executedAt).toLocaleTimeString() : '--'}</td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={async () => {
-                        if (!confirm(`Close bid parity position: ${t.underlying} ${t.strike} ${t.action}?`)) return;
+                        if (!await showConfirm(`Close bid parity position: ${t.underlying} ${t.strike} ${t.action}?`, 'Close Position')) return;
                         try {
                           const depthTick = (await axios.get(`${API_BASE}/api/option-arbitrage/bid-parity/live-ticks`)).data;
                           await axios.post(`${API_BASE}/api/option-arbitrage/bid-parity/exit`, null, {
@@ -2973,7 +3090,7 @@ function AutoExecTab() {
                           });
                           refetchTrades();
                         } catch (err) {
-                          alert('Exit failed: ' + (err.response?.data?.error || err.message));
+                          showToast('Exit failed: ' + (err.response?.data?.error || err.message), 'error');
                         }
                       }}
                         className="px-2 py-1 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100">
@@ -2995,32 +3112,68 @@ function AutoExecTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
-                  <th onClick={() => toggleSort('underlying')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Underlying{sortIndicator('underlying')}</th>
-                  <th onClick={() => toggleSort('strike')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Strike{sortIndicator('strike')}</th>
-                  <th onClick={() => toggleSort('action')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Action{sortIndicator('action')}</th>
-                  <th onClick={() => toggleSort('status')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Status{sortIndicator('status')}</th>
-                  <th onClick={() => toggleSort('notes')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Notes{sortIndicator('notes')}</th>
-                  <th onClick={() => toggleSort('time')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Time{sortIndicator('time')}</th>
+                  <th onClick={() => toggleSort('underlying')} className="px-3 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Underlying{sortIndicator('underlying')}</th>
+                  <th onClick={() => toggleSort('strike')} className="px-3 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Strike{sortIndicator('strike')}</th>
+                  <th onClick={() => toggleSort('action')} className="px-3 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Action{sortIndicator('action')}</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600">Strategy</th>
+                  <th onClick={() => toggleSort('status')} className="px-3 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Status{sortIndicator('status')}</th>
+                  <th className="px-3 py-3 text-right text-xs font-semibold text-slate-600">Edge</th>
+                  <th onClick={() => toggleSort('pnl')} className="px-3 py-3 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">P&L{sortIndicator('pnl')}</th>
+                  <th className="px-3 py-3 text-center text-xs font-semibold text-slate-600">Hold</th>
+                  <th onClick={() => toggleSort('time')} className="px-3 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Time{sortIndicator('time')}</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600">Notes</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedClosed.map(t => (
-                  <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-800">{t.underlying}</td>
-                    <td className="px-4 py-3 text-slate-700">{t.strike}</td>
-                    <td className="px-4 py-3 text-slate-700">{t.action}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                        t.status === 'CLOSED' ? 'bg-slate-100 text-slate-600' :
-                        t.status === 'ROLLED' ? 'bg-blue-100 text-blue-600' :
-                        t.status === 'CLOSED_OPTIONS' ? 'bg-amber-100 text-amber-600' :
-                        'bg-red-100 text-red-600'
-                      }`}>{t.status}</span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{t.notes || '--'}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{t.closedAt ? new Date(t.closedAt).toLocaleTimeString() : '--'}</td>
-                  </tr>
-                ))}
+                {sortedClosed.map(t => {
+                  const holdMinutes = t.executedAt && t.closedAt
+                    ? Math.round((new Date(t.closedAt) - new Date(t.executedAt)) / 60000) : null;
+                  const holdStr = holdMinutes != null
+                    ? holdMinutes < 60 ? `${holdMinutes}m` : `${Math.floor(holdMinutes/60)}h ${holdMinutes%60}m`
+                    : '--';
+                  const isFailed = t.status === 'FAILED';
+                  return (
+                    <tr key={t.id} className={`border-b border-slate-100 hover:bg-slate-50 ${isFailed ? 'bg-red-50/50' : ''}`}>
+                      <td className="px-3 py-3 font-medium text-slate-800">{t.underlying}</td>
+                      <td className="px-3 py-3 text-slate-700">{t.strike}</td>
+                      <td className="px-3 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.action === 'CONVERSION' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                          {t.action === 'CONVERSION' ? 'CONV' : 'REV'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${t.bidType === 'BID_PARITY' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {t.bidType === 'BID_PARITY' ? 'BID' : 'NORM'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          t.status === 'CLOSED' ? 'bg-emerald-100 text-emerald-700' :
+                          t.status === 'ROLLED' ? 'bg-blue-100 text-blue-600' :
+                          t.status === 'CLOSED_OPTIONS' ? 'bg-amber-100 text-amber-600' :
+                          t.status === 'FAILED' ? 'bg-red-100 text-red-700' :
+                          'bg-slate-100 text-slate-600'
+                        }`}>
+                          {t.status === 'CLOSED' ? '● Closed' : t.status === 'ROLLED' ? '↻ Rolled' : t.status === 'FAILED' ? '✕ Failed' : t.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono text-xs">
+                        {t.edgeAtEntry != null ? <span className="text-emerald-600 font-semibold">₹{Number(t.edgeAtEntry).toFixed(0)}</span> : '--'}
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono text-xs font-semibold">
+                        {t.pnlAmount != null
+                          ? <span className={t.pnlAmount >= 0 ? 'text-emerald-600' : 'text-red-500'}>
+                              {t.pnlAmount >= 0 ? '+' : ''}₹{Number(t.pnlAmount).toFixed(0)}
+                              {t.pnlPoints != null && <span className="text-[10px] font-normal text-slate-400 ml-0.5">({Number(t.pnlPoints).toFixed(1)}pt)</span>}
+                            </span>
+                          : isFailed ? <span className="text-red-400">--</span> : '--'}
+                      </td>
+                      <td className="px-3 py-3 text-center text-xs text-slate-500">{holdStr}</td>
+                      <td className="px-3 py-3 text-xs text-slate-500">{t.closedAt ? formatIstDateTime(t.closedAt) : t.executedAt ? formatIstDateTime(t.executedAt) : '--'}</td>
+                      <td className="px-3 py-3 text-xs text-slate-500 max-w-[180px] truncate" title={t.notes || ''}>{t.notes || '--'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
