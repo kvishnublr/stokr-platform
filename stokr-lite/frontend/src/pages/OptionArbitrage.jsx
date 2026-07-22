@@ -622,6 +622,7 @@ export default function OptionArbitrage() {
           { key: 'live', label: 'Live Scan' },
           { key: 'bidParity', label: 'Bid Parity' },
           { key: 'box', label: 'Box Spread' },
+          { key: 'signals', label: 'Signals' },
           { key: 'positions', label: 'Positions' },
           { key: 'auto', label: 'Auto-Execute' },
           { key: 'history', label: 'History' },
@@ -647,7 +648,7 @@ export default function OptionArbitrage() {
         error={error} refetch={refetch} health={health}
         opportunities={displayOpps} summary={summary} totalEdge={totalEdge} isLoading={isLoading}
         livePrices={livePrices}
-      /> : activeTab === 'bidParity' ? <BidParityTab /> : activeTab === 'box' ? <BoxSpreadTab /> : activeTab === 'positions' ? <PositionsTab /> : activeTab === 'auto' ? <AutoExecTab /> : <HistoryTab
+      /> : activeTab === 'bidParity' ? <BidParityTab /> : activeTab === 'box' ? <BoxSpreadTab /> : activeTab === 'signals' ? <SignalsTab /> : activeTab === 'positions' ? <PositionsTab /> : activeTab === 'auto' ? <AutoExecTab /> : <HistoryTab
         historyData={historyData} historyLoading={historyLoading}
         summaryData={summaryData} datesData={datesData}
         historyPage={historyPage} setHistoryPage={setHistoryPage}
@@ -3246,6 +3247,196 @@ function StatCard({ label, value, color = 'text-slate-800' }) {
     <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
       <p className="text-xs text-slate-500 uppercase">{label}</p>
       <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
+    </div>
+  );
+}
+
+
+
+function SignalsTab() {
+  const [underlying, setUnderlying] = useState('ALL');
+  const [minEdge, setMinEdge] = useState(0);
+  const [period, setPeriod] = useState('1'); // 1 = today, 7 = week, 30 = month
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['option-arb-signals', underlying, minEdge, period],
+    queryFn: async () => {
+      const res = await axios.get(`${API_BASE}/api/option-arbitrage/signals`, {
+        params: { underlying, minEdge, days: period }
+      });
+      return res.data;
+    },
+    refetchInterval: 5000
+  });
+
+  const signals = data?.signals || [];
+  const summary = data?.summary || {};
+  const totalCount = data?.totalCount || signals.length;
+  const todayCount = summary?.todayCount || 0;
+
+  const highestEdge = useMemo(() => {
+    if (!signals.length) return 0;
+    return Math.max(...signals.map(s => Number(s.edgeAfterCosts || 0)));
+  }, [signals]);
+
+  return (
+    <div className="space-y-6 mt-4">
+      {/* Filters Header */}
+      <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">Arbitrage Signals Scanner</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Real-time stored put-call parity breaks & anomaly signals</p>
+          </div>
+          <button
+            onClick={() => refetch()}
+            className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-100 transition flex items-center gap-1.5"
+          >
+            🔄 Refresh Signals
+          </button>
+        </div>
+
+        {/* Configurations Bar */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-slate-100">
+          {/* 1. Underlying Filter */}
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase block mb-1.5">Underlying Symbol</label>
+            <div className="flex flex-wrap gap-1.5">
+              {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map((u) => (
+                <button
+                  key={u}
+                  onClick={() => setUnderlying(u)}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-lg transition ${
+                    underlying === u
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 2. Minimum Signal Edge Config */}
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase block mb-1.5">Min Net Edge (Profit)</label>
+            <div className="flex items-center gap-1.5">
+              {[0, 300, 500, 1000].map((val) => (
+                <button
+                  key={val}
+                  onClick={() => setMinEdge(val)}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-lg transition ${
+                    minEdge === val
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {val === 0 ? 'All (>₹0)' : `>₹${val}`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. Time Period */}
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase block mb-1.5">Time Period</label>
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+            >
+              <option value="1">Today</option>
+              <option value="7">Last 7 Days</option>
+              <option value="30">Last 30 Days</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-xs text-slate-500 uppercase font-semibold">Total Signals</p>
+          <p className="text-2xl font-bold text-slate-800 mt-1">{totalCount}</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-xs text-slate-500 uppercase font-semibold">Today's Signals</p>
+          <p className="text-2xl font-bold text-blue-600 mt-1">{todayCount}</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-xs text-slate-500 uppercase font-semibold">Highest Edge Detected</p>
+          <p className="text-2xl font-bold text-emerald-600 mt-1">₹{highestEdge.toLocaleString('en-IN')}</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-xs text-slate-500 uppercase font-semibold">Filter Active</p>
+          <p className="text-sm font-bold text-purple-600 mt-2">{underlying} (Edge &gt; ₹{minEdge})</p>
+        </div>
+      </div>
+
+      {/* Signals Table */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-800">
+            Detected Signals List ({signals.length})
+          </h3>
+        </div>
+
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm">Loading signals database...</div>
+        ) : signals.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm">
+            No signals match the current filters ({underlying}, Edge &gt; ₹{minEdge}).
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
+                <tr>
+                  <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">Underlying</th>
+                  <th className="px-4 py-3">Action</th>
+                  <th className="px-4 py-3">Strike</th>
+                  <th className="px-4 py-3 text-right">Spot</th>
+                  <th className="px-4 py-3 text-right">Futures</th>
+                  <th className="px-4 py-3 text-right">CE / PE Price</th>
+                  <th className="px-4 py-3 text-right">Net Edge Profit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {signals.map((sig, idx) => (
+                  <tr key={sig.id || idx} className="hover:bg-slate-50 transition">
+                    <td className="px-4 py-3 text-xs text-slate-500 font-mono">
+                      {sig.scanTime ? new Date(sig.scanTime).toLocaleTimeString('en-IN') : '--'}
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-slate-800">
+                      <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs font-bold">
+                        {sig.underlying}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                        sig.action === 'REVERSAL' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {sig.action || 'PARITY_BREAK'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-slate-700">{sig.strike}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-600">{Number(sig.spotPrice || 0).toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-600">{Number(sig.futuresPrice || 0).toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs text-slate-600">
+                      {Number(sig.cePrice || 0).toFixed(1)} / {Number(sig.pePrice || 0).toFixed(1)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">
+                      +₹{Number(sig.edgeAfterCosts || 0).toLocaleString('en-IN')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
