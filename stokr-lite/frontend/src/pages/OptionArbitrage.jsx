@@ -3406,7 +3406,7 @@ function SignalsTab() {
                 {signals.map((sig, idx) => (
                   <tr key={sig.id || idx} className="hover:bg-slate-50 transition">
                     <td className="px-4 py-3 text-xs text-slate-500 font-mono">
-                      {sig.scanTime ? new Date(sig.scanTime).toLocaleTimeString('en-IN') : '--'}
+                      {sig.scanTime ? new Date(sig.scanTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--'}
                     </td>
                     <td className="px-4 py-3 font-semibold text-slate-800">
                       <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs font-bold">
