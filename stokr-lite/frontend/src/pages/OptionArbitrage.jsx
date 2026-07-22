@@ -1048,25 +1048,45 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
+              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">
                 <tr>
-                  <th className="px-4 py-3">Scan Time</th>
-                  <th className="px-4 py-3">Underlying</th>
-                  <th className="px-4 py-3">Strike</th>
-                  <th className="px-4 py-3">Action</th>
-                  <th className="px-4 py-3 text-right">Edge (₹)</th>
+                  <th className="px-3 py-3">Scan Time</th>
+                  <th className="px-3 py-3">Strategy</th>
+                  <th className="px-3 py-3">Underlying</th>
+                  <th className="px-3 py-3">Strike</th>
+                  <th className="px-3 py-3">Action</th>
+                  <th className="px-3 py-3 text-right">CE Price</th>
+                  <th className="px-3 py-3 text-right">PE Price</th>
+                  <th className="px-3 py-3 text-right">Spot / Fut</th>
+                  <th className="px-3 py-3 text-right">Edge (pts)</th>
+                  <th className="px-3 py-3 text-right text-emerald-600 font-bold">Edge (₹)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredItems.map((item, idx) => (
                   <tr key={item.id || idx} className="hover:bg-slate-50 transition">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                    <td className="px-3 py-3 font-mono text-xs text-slate-600">
                       {item.scanTime ? new Date(item.scanTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--'}
                     </td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{item.underlying}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-700">{item.strike}</td>
-                    <td className="px-4 py-3 font-bold text-purple-700">{item.action}</td>
-                    <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                        String(item.strategyType || item.type || '').includes('BID')
+                          ? 'bg-amber-100 text-amber-800'
+                          : String(item.strategyType || item.type || '').includes('BOX')
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {item.strategyType || item.type || 'NORMAL_PARITY'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 font-bold text-slate-800">{item.underlying}</td>
+                    <td className="px-3 py-3 font-bold text-slate-700">{item.strike}</td>
+                    <td className="px-3 py-3 font-bold text-purple-700">{item.action}</td>
+                    <td className="px-3 py-3 text-right font-mono text-slate-600">{Number(item.ceEntryPrice || item.cePrice || 0).toFixed(1)}</td>
+                    <td className="px-3 py-3 text-right font-mono text-slate-600">{Number(item.peEntryPrice || item.pePrice || 0).toFixed(1)}</td>
+                    <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{Number(item.spotPrice || 0).toFixed(1)} / {Number(item.futuresPrice || 0).toFixed(1)}</td>
+                    <td className="px-3 py-3 text-right font-mono text-blue-600">+{Number(item.edgePoints || 0).toFixed(1)}</td>
+                    <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
                   </tr>
                 ))}
               </tbody>
