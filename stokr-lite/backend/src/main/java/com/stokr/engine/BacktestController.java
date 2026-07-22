@@ -308,24 +308,18 @@ public class BacktestController {
             StrategyPlugin plugin = findPlugin(pluginType);
             StrategyParams params = StrategyParams.defaults();
             final String finalTimeframe = timeframe;
+            final LocalDateTime finalEndTime = endTime;
 
             log.info("Backtesting plugin={} on {} symbols from {}", pluginType, symbolList.size(), universe);
-            // Fetch candles in parallel — max 4 concurrent Zerodha API calls to stay within rate limits
+            // Fetch candles serially during recovery to avoid lambda capture/build issues
             Map<String, List<CandleData>> candlesBySymbol = new ConcurrentHashMap<>();
-            ExecutorService pool = Executors.newFixedThreadPool(4);
-            try {
-                List<Future<?>> futures = new ArrayList<>();
-                for (String symbol : symbolList) {
-                    futures.add(pool.submit(() -> {
-                        List<CandleData> candles = candleFetchService.fetchCandles(symbol, finalTimeframe, warmupStartTime, endTime);
-                        if (!candles.isEmpty()) candlesBySymbol.put(symbol, candles);
-                    }));
-                }
-                for (Future<?> f : futures) {
-                    try { f.get(240, TimeUnit.SECONDS); } catch (Exception ignored) {}
-                }
-            } finally {
-                pool.shutdown();
+            for (String symbol : symbolList) {
+                try {
+                    List<CandleData> candles = candleFetchService.fetchCandles(symbol, finalTimeframe, warmupStartTime, endTime);
+                    if (!candles.isEmpty()) {
+                        candlesBySymbol.put(symbol, candles);
+                    }
+                } catch (Exception ignored) {}
             }
 
             double perTradeCost = brokerage;

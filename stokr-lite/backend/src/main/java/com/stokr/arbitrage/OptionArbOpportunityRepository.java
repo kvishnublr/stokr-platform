@@ -33,12 +33,38 @@ public interface OptionArbOpportunityRepository extends JpaRepository<OptionArbO
     @Query("SELECT COALESCE(SUM(o.edgeAfterCosts), 0) FROM OptionArbOpportunity o WHERE o.scanTime >= :start AND o.scanTime < :end")
     java.math.BigDecimal sumEdgeByScanTimeBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
-    @Query("SELECT DISTINCT FUNCTION('date', o.scanTime) FROM OptionArbOpportunity o WHERE o.scanTime >= :since ORDER BY FUNCTION('date', o.scanTime) DESC")
-    List<java.time.LocalDate> findDistinctDatesSince(@Param("since") LocalDateTime since);
+    @Query("SELECT DISTINCT o.scanTime FROM OptionArbOpportunity o WHERE o.scanTime >= :since ORDER BY o.scanTime DESC")
+    List<LocalDateTime> findDistinctScanTimesSince(@Param("since") LocalDateTime since);
 
     Page<OptionArbOpportunity> findByScanTimeBeforeOrderByScanTimeDesc(LocalDateTime before, Pageable pageable);
 
     Page<OptionArbOpportunity> findByScanTimeBetweenOrderByScanTimeDesc(LocalDateTime start, LocalDateTime end, Pageable pageable);
 
     List<OptionArbOpportunity> findByScanTimeBetweenAndUnderlyingOrderByScanTimeDesc(LocalDateTime start, LocalDateTime end, String underlying);
+
+    @Query("SELECT COUNT(o) FROM OptionArbOpportunity o")
+    long countAll();
+
+    @Query("SELECT COUNT(o) FROM OptionArbOpportunity o WHERE o.status = :status")
+    long countAllByStatus(@Param("status") String status);
+
+    @Query("SELECT COALESCE(SUM(o.edgeAfterCosts), 0) FROM OptionArbOpportunity o")
+    java.math.BigDecimal sumEdgeAll();
+
+    @Query("SELECT COALESCE(SUM(o.pnlAfterCosts), 0) FROM OptionArbOpportunity o WHERE o.pnlAfterCosts IS NOT NULL")
+    java.math.BigDecimal sumPnlAll();
+
+    @Query("SELECT COUNT(o) FROM OptionArbOpportunity o WHERE o.pnlAfterCosts IS NOT NULL AND o.pnlAfterCosts > 0")
+    long countWinsAll();
+
+    @Query("SELECT COUNT(o) FROM OptionArbOpportunity o WHERE o.pnlAfterCosts IS NOT NULL")
+    long countWithPnlAll();
+
+    List<OptionArbOpportunity> findByStrategyTypeOrderByScanTimeDesc(String strategyType);
+
+    @Query("SELECT COALESCE(SUM(o.edgeAfterCosts), 0) FROM OptionArbOpportunity o WHERE o.strategyType = :strategyType")
+    java.math.BigDecimal sumEdgeByStrategy(@Param("strategyType") String strategyType);
+
+    @Query("SELECT COUNT(o) FROM OptionArbOpportunity o WHERE o.strategyType = :strategyType")
+    long countByStrategy(@Param("strategyType") String strategyType);
 }

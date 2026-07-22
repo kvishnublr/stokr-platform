@@ -34,17 +34,22 @@ public class OptionArbHistoryService {
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
+    public OptionArbOpportunityRepository getRepository() { return repository; }
+
     /**
      * Save detected opportunities from a scan result
      */
-    public void saveOpportunities(List<ArbitrageOpportunity> opportunities, String underlying) {
+    public void saveOpportunities(List<ArbitrageOpportunity> opportunities, String underlying, String strategyType) {
         if (opportunities == null || opportunities.isEmpty()) return;
 
         for (ArbitrageOpportunity opp : opportunities) {
             try {
+                LocalDate expiry = LocalDate.now().plusDays((long) opp.daysToExpiry);
+                String underlyingCode = opp.underlying != null ? opp.underlying : underlying;
+
                 OptionArbOpportunity entity = OptionArbOpportunity.builder()
                     .scanTime(LocalDateTime.now())
-                    .underlying(opp.underlying != null ? opp.underlying : underlying)
+                    .underlying(underlyingCode)
                     .type(opp.type)
                     .strike(opp.strike)
                     .action(opp.action)
@@ -62,8 +67,9 @@ public class OptionArbHistoryService {
                     .edgeAfterCosts(BigDecimal.valueOf(opp.edgeAfterCosts))
                     .confidence(BigDecimal.valueOf(opp.confidence))
                     .daysToExpiry(BigDecimal.valueOf(opp.daysToExpiry))
-                    .expiryDate(LocalDate.now().plusDays((long) opp.daysToExpiry))
-                    .status("OPEN")
+                    .expiryDate(expiry)
+                    .status(determineStatus(expiry))
+                    .strategyType(strategyType != null ? strategyType : "NORMAL_PARITY")
                     .createdAt(LocalDateTime.now())
                     .build();
 
@@ -82,6 +88,39 @@ public class OptionArbHistoryService {
             }
         }
         log.info("Saved {} opportunities for {}", opportunities.size(), underlying);
+    }
+
+    public String determineStatus(LocalDate expiryDate) {
+        if (expiryDate == null) return "EXPIRED";
+        LocalDate today = LocalDate.now();
+        if (today.isAfter(expiryDate)) return "EXPIRED";
+        return "RUNNING";
+    }
+
+    /**
+     * Refresh all statuses based on current date vs expiry
+     */
+    @org.springframework.scheduling.annotation.Scheduled(cron = "0 0 9 * * 1-5", zone = "Asia/Kolkata")
+    public void refreshStatuses() {
+        java.time.LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+        var all = repository.findAll();
+        int updated = 0;
+        for (OptionArbOpportunity opp : all) {
+            String newStatus = determineStatus(opp.getExpiryDate());
+            if (!newStatus.equals(opp.getStatus())) {
+                opp.setStatus(newStatus);
+                repository.save(opp);
+                updated++;
+            }
+        }
+        if (updated > 0) log.info("Refreshed {} opportunity statuses", updated);
+    }
+
+    /**
+     * Get opportunities for strategy filter
+     */
+    public List<OptionArbOpportunity> getHistoryByStrategy(String strategyType) {
+        return repository.findByStrategyTypeOrderByScanTimeDesc(strategyType);
     }
 
     /**
@@ -157,18 +196,32 @@ public class OptionArbHistoryService {
     }
 
     /**
-     * Get summary — alias for getDailySummary, supports null date (today)
+     * Get summary — if date is null, aggregates ALL opportunities
      */
     public SummaryResult getSummary(LocalDate date) {
-        LocalDate d = date != null ? date : LocalDate.now();
-        Map<String, Object> summary = getDailySummary(d);
+        if (date != null) {
+            Map<String, Object> summary = getDailySummary(date);
+            SummaryResult result = new SummaryResult();
+            result.totalOpportunities = ((Number) summary.get("totalOpportunities")).longValue();
+            result.totalEdgeDetected = (BigDecimal) summary.get("totalEdgeDetected");
+            result.totalPnlAfterCosts = (BigDecimal) summary.get("totalPnlAfterCosts");
+            result.winRate = (BigDecimal) summary.get("winRate");
+            result.wins = ((Number) summary.get("wins")).longValue();
+            result.losses = ((Number) summary.get("losses")).longValue();
+            return result;
+        }
         SummaryResult result = new SummaryResult();
-        result.totalOpportunities = ((Number) summary.get("totalOpportunities")).longValue();
-        result.totalEdgeDetected = (BigDecimal) summary.get("totalEdgeDetected");
-        result.totalPnlAfterCosts = (BigDecimal) summary.get("totalPnlAfterCosts");
-        result.winRate = (BigDecimal) summary.get("winRate");
-        result.wins = ((Number) summary.get("wins")).longValue();
-        result.losses = ((Number) summary.get("losses")).longValue();
+        result.totalOpportunities = repository.countAll();
+        result.totalEdgeDetected = repository.sumEdgeAll();
+        BigDecimal totalPnl = repository.sumPnlAll();
+        result.totalPnlAfterCosts = totalPnl != null ? totalPnl : BigDecimal.ZERO;
+        long withPnl = repository.countWithPnlAll();
+        long wins = repository.countWinsAll();
+        result.wins = wins;
+        result.losses = withPnl - wins;
+        result.winRate = withPnl > 0
+            ? BigDecimal.valueOf(wins * 100.0 / withPnl).setScale(1, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO;
         return result;
     }
 
@@ -187,7 +240,11 @@ public class OptionArbHistoryService {
      */
     public List<LocalDate> getAvailableDates(int days) {
         LocalDateTime since = LocalDateTime.now().minusDays(days);
-        return repository.findDistinctDatesSince(since);
+        return repository.findDistinctScanTimesSince(since).stream()
+            .map(LocalDateTime::toLocalDate)
+            .distinct()
+            .sorted(java.util.Comparator.reverseOrder())
+            .toList();
     }
 
     public List<OptionArbOpportunity> getTodayOpportunities(LocalDate today) {
@@ -224,6 +281,9 @@ public class OptionArbHistoryService {
         LocalDate today = LocalDate.now();
         List<OptionArbOpportunity> openOpps = repository.findByStatusOrderByScanTimeBetween(
             "OPEN", today.atStartOfDay(), today.plusDays(1).atStartOfDay());
+        List<OptionArbOpportunity> detectedOpps = repository.findByStatusOrderByScanTimeBetween(
+            "DETECTED", today.atStartOfDay(), today.plusDays(1).atStartOfDay());
+        openOpps.addAll(detectedOpps);
 
         if (openOpps.isEmpty()) {
             log.info("No OPEN opportunities to resolve for {}", today);
@@ -288,7 +348,12 @@ public class OptionArbHistoryService {
                 }
 
                 // Lot size for margin calculation
-                int lotSize = "BANKNIFTY".equals(opp.getUnderlying()) ? 15 : 50;
+                int lotSize = switch (opp.getUnderlying()) {
+                    case "BANKNIFTY" -> 15;
+                    case "MIDCPNIFTY" -> 120;
+                    case "FINNIFTY" -> 60;
+                    default -> 50;
+                };
                 BigDecimal pnlAmount = pnl.multiply(BigDecimal.valueOf(lotSize));
                 BigDecimal costs = pnlAmount.abs().multiply(BigDecimal.valueOf(0.0005)).add(BigDecimal.valueOf(50));
                 BigDecimal pnlAfterCosts = pnlAmount.subtract(costs);
@@ -391,8 +456,19 @@ public class OptionArbHistoryService {
     private String buildNfoSymbol(String underlying, LocalDate expiryDate, int strike, String type) {
         String cleanUnderlying = underlying.replace(" ", "");
         int yy = expiryDate.getYear() % 100;
-        int month = expiryDate.getMonthValue();
-        int day = expiryDate.getDayOfMonth();
-        return String.format("%s%02d%d%02d%d%s", cleanUnderlying, yy, month, day, strike, type);
+        String mon = expiryDate.getMonth().name().substring(0, 3);
+        if ("NIFTY".equals(cleanUnderlying)) {
+            int month = expiryDate.getMonthValue();
+            int day = expiryDate.getDayOfMonth();
+            return String.format("%s%02d%d%02d%d%s", cleanUnderlying, yy, month, day, strike, type);
+        }
+        return String.format("%s%02d%s%d%s", cleanUnderlying, yy, mon, strike, type);
+    }
+
+    private String buildNfoFutSymbol(String underlying, LocalDate expiryDate) {
+        String cleanUnderlying = underlying.replace(" ", "");
+        int yy = expiryDate.getYear() % 100;
+        String mon = expiryDate.getMonth().name().substring(0, 3);
+        return String.format("%s%02d%sFUT", cleanUnderlying, yy, mon);
     }
 }

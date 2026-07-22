@@ -149,9 +149,6 @@ public class OptionArbOpportunity {
         int lotSize = "BANKNIFTY".equals(underlying) ? 15 : "MIDCPNIFTY".equals(underlying) ? 120 : "FINNIFTY".equals(underlying) ? 60 : 50;
         map.put("lotSize", lotSize);
         map.put("notes", notes);
-        map.put("ceSymbol", ceSymbol);
-        map.put("peSymbol", peSymbol);
-        map.put("futSymbol", futSymbol);
         map.put("createdAt", createdAt != null ? createdAt.toString() : null);
         var costs = getCostBreakdown();
         if (costs != null) map.put("costBreakdown", costs);

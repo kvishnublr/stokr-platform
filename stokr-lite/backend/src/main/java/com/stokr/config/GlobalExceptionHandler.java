@@ -3,6 +3,7 @@ package com.stokr.config;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
@@ -50,6 +51,15 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingRequestParameter(MissingServletRequestParameterException ex) {
+        return ResponseEntity.badRequest().body(Map.of(
+                "error", "Missing required parameter: " + ex.getParameterName(),
+                "status", 400,
+                "timestamp", Instant.now()
+        ));
+    }
+
     // favicon.ico and other missing static resources — 404, no stack trace
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Void> handleNoResource(NoResourceFoundException ex) {
@@ -57,10 +67,18 @@ public class GlobalExceptionHandler {
     }
 
     // Client disconnected before response finished (e.g. browser timeout during long backtest)
-    @ExceptionHandler(AsyncRequestNotUsableException.class)
-    public void handleClientDisconnect(AsyncRequestNotUsableException ex) {
-        log.debug("Client disconnected before response completed: {}", ex.getMessage());
-        // no response to write — client is gone
+    @ExceptionHandler({AsyncRequestNotUsableException.class, java.io.IOException.class})
+    public void handleClientDisconnect(Exception ex) {
+        String message = ex.getMessage();
+        if (message != null && message.toLowerCase().contains("broken pipe")) {
+            log.debug("Client disconnected during response write: {}", message);
+            return;
+        }
+        if (ex instanceof AsyncRequestNotUsableException) {
+            log.debug("Client disconnected before response completed: {}", ex.getMessage());
+            return;
+        }
+        throw new RuntimeException(ex);
     }
 
     @ExceptionHandler(Exception.class)
