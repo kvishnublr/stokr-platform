@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 
@@ -3274,10 +3274,9 @@ function SignalsTab() {
   const totalCount = data?.totalCount || signals.length;
   const todayCount = summary?.todayCount || 0;
 
-  const highestEdge = useMemo(() => {
-    if (!signals.length) return 0;
-    return Math.max(...signals.map(s => Number(s.edgeAfterCosts || 0)));
-  }, [signals]);
+  const highestEdge = signals && signals.length > 0
+    ? Math.max(...signals.map(s => Number(s.edgeAfterCosts || 0)))
+    : 0;
 
   return (
     <div className="space-y-6 mt-4">
