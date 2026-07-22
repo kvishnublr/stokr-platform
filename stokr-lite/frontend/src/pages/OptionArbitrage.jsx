@@ -919,11 +919,22 @@ function AutoExecTab() {
 
 // 7. HistoryTab
 function HistoryTab({ historyData, historyLoading, summaryData, datesData, historyPage, setHistoryPage, selectedDate, setSelectedDate, strategyFilter, setStrategyFilter }) {
-  const items = historyData?.items || [];
+  const rawItems = historyData?.items || [];
   const totalPages = historyData?.totalPages || 1;
 
-  const totalOpps = strategyFilter === 'BOX_SPREAD' ? 0 : (summaryData?.totalOpportunities || 0);
-  const totalEdge = strategyFilter === 'BOX_SPREAD' ? 0 : (summaryData?.totalEdgeAfterCosts || 0);
+  const filteredItems = useMemo(() => {
+    if (strategyFilter === 'ALL') return rawItems;
+    return rawItems.filter(item => {
+      const typeStr = String(item.strategyType || item.type || '').toUpperCase();
+      if (strategyFilter === 'BID_PARITY') return typeStr.includes('BID');
+      if (strategyFilter === 'NORMAL_PARITY') return !typeStr.includes('BID') && !typeStr.includes('BOX');
+      if (strategyFilter === 'BOX_SPREAD') return typeStr.includes('BOX');
+      return true;
+    });
+  }, [rawItems, strategyFilter]);
+
+  const totalOpps = filteredItems.length;
+  const totalEdge = filteredItems.reduce((sum, i) => sum + (Number(i.edgeAfterCosts) || 0), 0);
 
   return (
     <div className="space-y-6 mt-4">
@@ -935,7 +946,13 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
 
         <div className="flex items-center gap-2">
           {['ALL', 'NORMAL_PARITY', 'BID_PARITY', 'BOX_SPREAD'].map((s) => (
-            <button key={s} onClick={() => setStrategyFilter(s)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${strategyFilter === s ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+            <button
+              key={s}
+              onClick={() => setStrategyFilter(s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                strategyFilter === s ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
               {s}
             </button>
           ))}
@@ -959,9 +976,11 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-800">Historical Records ({items.length})</h3>
+          <h3 className="text-sm font-bold text-slate-800">Historical Records ({filteredItems.length})</h3>
+          {historyLoading && <span className="text-xs text-blue-600">Loading history...</span>}
         </div>
-        {items.length === 0 ? (
+
+        {filteredItems.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm">
             <p className="font-semibold text-slate-600">No historical records match current filter ({strategyFilter})</p>
           </div>
@@ -978,9 +997,11 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {items.map((item, idx) => (
+                {filteredItems.map((item, idx) => (
                   <tr key={item.id || idx} className="hover:bg-slate-50 transition">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">{item.scanTime ? new Date(item.scanTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                      {item.scanTime ? new Date(item.scanTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--'}
+                    </td>
                     <td className="px-4 py-3 font-semibold text-slate-800">{item.underlying}</td>
                     <td className="px-4 py-3 font-semibold text-slate-700">{item.strike}</td>
                     <td className="px-4 py-3 font-bold text-purple-700">{item.action}</td>
