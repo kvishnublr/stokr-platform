@@ -2560,698 +2560,291 @@ function PositionsTab() {
 
 function AutoExecTab() {
   const queryClient = useQueryClient();
-  const [expandedTradeId, setExpandedTradeId] = useState(null);
-  const [replacingTradeId, setReplacingTradeId] = useState(null);
-  const [sortKey, setSortKey] = useState(null);
-  const [sortDir, setSortDir] = useState('desc');
   const [busyRun, setBusyRun] = useState(false);
-  const [busyCloseAll, setBusyCloseAll] = useState(false);
-  const [busyCloseBidAll, setBusyCloseBidAll] = useState(false);
-  const [busyClose, setBusyClose] = useState(null);
-  const [busyExitBid, setBusyExitBid] = useState(null);
+  const [lastResult, setLastResult] = useState(null);
+  const [scanInterval, setScanInterval] = useState('1');
 
-  const { data: settingsData, refetch: refetchSettings } = useQuery({
+  const { data: health } = useQuery({
+    queryKey: ['option-arb-health'],
+    queryFn: async () => {
+      const res = await axios.get(`${API_BASE}/api/option-arbitrage/health`);
+      return res.data;
+    },
+    refetchInterval: 5000
+  });
+
+  const { data: settings, refetch: refetchSettings } = useQuery({
     queryKey: ['auto-exec-settings'],
-    queryFn: async () => { const r = await axios.get(`${API_BASE}/api/option-arbitrage/auto-execute/settings`); return r.data; },
-    staleTime: 10000,
+    queryFn: async () => {
+      const res = await axios.get(`${API_BASE}/api/option-arbitrage/auto-execute/settings`);
+      return res.data;
+    },
+    staleTime: 5000
   });
 
-  const { data: tradesData, refetch: refetchTrades } = useQuery({
-    queryKey: ['auto-exec-trades'],
-    queryFn: async () => { const r = await axios.get(`${API_BASE}/api/option-arbitrage/auto-execute/trades`, { params: { status: 'ALL' } }); return r.data; },
-    refetchInterval: 15000,
-    staleTime: 10000,
-  });
-
-  const { data: dailyPnl } = useQuery({
-    queryKey: ['daily-pnl'],
-    queryFn: async () => { const r = await axios.get(`${API_BASE}/api/option-arbitrage/daily-pnl`); return r.data; },
-    refetchInterval: 15000,
-    staleTime: 10000,
-  });
-
-  const { data: todayData, refetch: refetchToday } = useQuery({
-    queryKey: ['option-arb-today-for-replace'],
-    queryFn: async () => { const r = await axios.get(`${API_BASE}/api/option-arbitrage/today`, { params: { underlying: 'ALL' } }); return r.data; },
-    refetchInterval: 30000,
-    staleTime: 15000,
-  });
-
-  const toggleAutoExec = useQuery({
-    queryKey: ['toggle-auto-exec'],
-    queryFn: async () => { const r = await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/toggle`); return r.data; },
-    enabled: false,
+  const { data: auditLogs, refetch: refetchLogs } = useQuery({
+    queryKey: ['auto-exec-logs'],
+    queryFn: async () => {
+      const res = await axios.get(`${API_BASE}/api/option-arbitrage/auto-execute/logs`);
+      return res.data;
+    },
+    refetchInterval: 3000
   });
 
   const updateSetting = async (key, value) => {
-    await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/settings`, null, { params: { key, value } });
-    refetchSettings();
+    try {
+      await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/settings`, null, { params: { key, value } });
+      showToast(`Setting '${key}' updated`, 'success');
+      refetchSettings();
+      refetchLogs();
+    } catch (e) {
+      showToast('Failed to update setting: ' + e.message, 'error');
+    }
   };
 
   const runCycle = async () => {
     setBusyRun(true);
+    setLastResult(null);
     try {
-      await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/run`);
-      showToast('Scan & execute cycle triggered', 'success');
-      setTimeout(() => { refetchTrades(); refetchToday(); }, 3000);
+      const res = await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/run`);
+      setLastResult(res.data);
+      if (res.data.status === 'COMPLETED') {
+        showToast('Scan & Execute completed successfully!', 'success');
+      } else if (res.data.status === 'SKIPPED') {
+        showToast('Execution Skipped: ' + res.data.reason, 'info');
+      }
+      refetchLogs();
     } catch (e) {
-      showToast('Run cycle failed: ' + (e.response?.data?.error || e.message), 'error');
+      const errMsg = e.response?.data?.error || e.message;
+      setLastResult({ status: 'FAILED', reason: 'Error: ' + errMsg });
+      showToast('Run cycle failed: ' + errMsg, 'error');
     } finally {
       setBusyRun(false);
     }
   };
 
-  const closeTrade = async (tradeId, what = 'all') => {
-    setBusyClose(tradeId);
-    try {
-      await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/close/${tradeId}`, null, { params: { what } });
-      showToast('Position closed', 'success');
-      refetchTrades();
-    } catch (e) {
-      showToast('Close failed: ' + (e.response?.data?.error || e.message), 'error');
-    } finally {
-      setBusyClose(null);
-    }
-  };
-
-  const closeAll = async () => {
-    if (!await showConfirm('Close ALL open positions?', 'Close All')) return;
-    setBusyCloseAll(true);
-    try {
-      await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/close-all`);
-      showToast('All positions closed', 'success');
-      refetchTrades();
-    } catch (e) {
-      showToast('Close all failed: ' + (e.response?.data?.error || e.message), 'error');
-    } finally {
-      setBusyCloseAll(false);
-    }
-  };
-
-  const replaceTrade = async (tradeId, opp) => {
-    if (!await showConfirm(`Replace trade #${tradeId} with ${opp.underlying} ${opp.strike} ${opp.action}?`, 'Replace Trade')) return;
-    await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/replace`, null, {
-      params: { tradeId, newAction: opp.action, newCePrice: opp.cePrice || opp.ceEntryPrice || 0, newPePrice: opp.pePrice || opp.peEntryPrice || 0, newFutPrice: opp.futuresPrice || 0, newSpotPrice: opp.spotPrice || 0 }
-    });
-    refetchTrades();
-    setReplacingTradeId(null);
-  };
-
-  const replaceOptionsOnly = async (tradeId, opp) => {
-    if (!await showConfirm(`Replace options only for trade #${tradeId}? Futures leg stays.`, 'Replace Options Only')) return;
-    await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/replace-options`, null, {
-      params: { tradeId, newAction: opp.action, newCePrice: opp.cePrice || opp.ceEntryPrice || 0, newPePrice: opp.pePrice || opp.peEntryPrice || 0 }
-    });
-    refetchTrades();
-    setReplacingTradeId(null);
-  };
-
-  const settings = settingsData?.settings || {};
-  const trades = tradesData?.trades || [];
-  const todayOpps = todayData?.opportunities || [];
-  const openTrades = trades.filter(t => t.status === 'OPEN');
-  const openBidTrades = openTrades.filter(t => t.bidType === 'BID_PARITY');
-  const closedTrades = trades.filter(t => t.status !== 'OPEN');
-  const openNormalTrades = openTrades.filter(t => !t.bidType || t.bidType !== 'BID_PARITY');
-  const replacingTrade = replacingTradeId ? openTrades.find(t => t.id === replacingTradeId) : null;
-  const matchingOpps = replacingTrade ? todayOpps.filter(o => o.underlying === replacingTrade.underlying) : [];
-
-  function toggleSort(key) {
-    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir('desc'); }
-  }
-  function sortIndicator(key) {
-    if (sortKey !== key) return ' ↕';
-    return sortDir === 'asc' ? ' ↑' : ' ↓';
-  }
-  function sortTrades(list) {
-    return [...list].sort((a, b) => {
-      if (!sortKey) return 0;
-      let va, vb;
-      switch (sortKey) {
-        case 'underlying': va = a.underlying || ''; vb = b.underlying || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-        case 'strike': va = a.strike || 0; vb = b.strike || 0; break;
-        case 'action': va = a.action || ''; vb = b.action || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-        case 'ceEntry': va = a.ceEntryPrice || 0; vb = b.ceEntryPrice || 0; break;
-        case 'peEntry': va = a.peEntryPrice || 0; vb = b.peEntryPrice || 0; break;
-        case 'futEntry': va = a.futEntryPrice || 0; vb = b.futEntryPrice || 0; break;
-        case 'lotSize': va = a.lotSize || 0; vb = b.lotSize || 0; break;
-        case 'time': va = a.createdAt || ''; vb = b.createdAt || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-        case 'pnl': va = a.pnlPoints || 0; vb = b.pnlPoints || 0; break;
-        case 'status': va = a.status || ''; vb = b.status || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-        case 'notes': va = a.notes || ''; vb = b.notes || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-        default: return 0;
-      }
-      return sortDir === 'asc' ? va - vb : vb - va;
-    });
-  }
-  const sortedOpenNormal = sortTrades(openNormalTrades);
-  const sortedOpenBid = sortTrades(openBidTrades);
-  const sortedClosed = sortTrades(closedTrades);
+  const isNormalEnabled = settings?.normalParityEnabled ?? true;
+  const isBidEnabled = settings?.bidParityEnabled ?? true;
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Normal Parity Card */}
-        <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
-          <div className="bg-blue-600 px-5 py-3 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-bold text-white">Normal Parity</h3>
-              <p className="text-xs text-blue-100">Regular scanner • CONVERSION / REVERSAL</p>
-            </div>
-            <button onClick={async () => { await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/toggle`); refetchSettings(); }}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.auto_execute_enabled === 'true' ? 'bg-white' : 'bg-blue-400'}`}>
-              <span className={`inline-block h-4 w-4 transform rounded-full shadow transition-transform ${settings.auto_execute_enabled === 'true' ? 'translate-x-6 bg-blue-600' : 'translate-x-1 bg-white'}`} />
-            </button>
+    <div className="space-y-6 mt-4">
+      {/* Header Diagnostic Banner */}
+      <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-bold text-slate-800">Automated Arbitrage Execution Engine</h2>
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+              health?.marketOpen ? 'bg-emerald-100 text-emerald-700 animate-pulse' : 'bg-amber-100 text-amber-700'
+            }`}>
+              {health?.marketOpen ? '🟢 LIVE MARKET OPEN' : '🟡 OFF-MARKET HOURS'}
+            </span>
           </div>
-          <div className="p-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-500">Entry Edge (₹)</label>
-                <input type="number" value={settings.min_edge_after_costs || 1500}
-                  onChange={(e) => updateSetting('min_edge_after_costs', e.target.value)}
-                  className="w-full mt-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                <p className="text-[10px] text-slate-400 mt-0.5">Min edge to enter</p>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-500">Exit Edge (₹)</label>
-                <input type="number" value={settings.normal_exit_edge || 800}
-                  onChange={(e) => updateSetting('normal_exit_edge', e.target.value)}
-                  className="w-full mt-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                <p className="text-[10px] text-slate-400 mt-0.5">Roll when edge drops below</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-500">Max Sets</label>
-                <input type="number" value={settings.normal_max_sets || 3}
-                  onChange={(e) => updateSetting('normal_max_sets', e.target.value)}
-                  className="w-full mt-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                <p className="text-[10px] text-slate-400 mt-0.5">Concurrent positions</p>
-              </div>
-              <div className="flex flex-col justify-end">
-                <div className="flex items-center justify-between px-2 py-1.5 bg-slate-50 rounded-lg">
-                  <span className="text-xs text-slate-600">Auto Exit</span>
-                  <button onClick={() => updateSetting('parity_auto_exit', settings.parity_auto_exit === 'false' ? 'true' : 'false')}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${settings.parity_auto_exit !== 'false' ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${settings.parity_auto_exit !== 'false' ? 'translate-x-4.5' : 'translate-x-1'}`} />
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center justify-between px-2 py-1.5 bg-slate-50 rounded-lg">
-              <span className="text-xs text-slate-600">Smart rollover</span>
-              <button onClick={() => updateSetting('smart_rollover', settings.smart_rollover === 'true' ? 'false' : 'true')}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${settings.smart_rollover === 'true' ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${settings.smart_rollover === 'true' ? 'translate-x-4.5' : 'translate-x-1'}`} />
-              </button>
-            </div>
-            <div className="flex items-center justify-between px-2 py-1.5 bg-slate-50 rounded-lg">
-              <span className="text-xs text-slate-600">Auto-rollover</span>
-              <button onClick={() => updateSetting('auto_rollover_enabled', settings.auto_rollover_enabled === 'false' ? 'true' : 'false')}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${settings.auto_rollover_enabled !== 'false' ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${settings.auto_rollover_enabled !== 'false' ? 'translate-x-4.5' : 'translate-x-1'}`} />
-              </button>
-            </div>
-          </div>
+          <p className="text-xs text-slate-500 mt-1">High-frequency sub-second scanning & immediate fill order placement</p>
         </div>
 
-        {/* Bid Parity Card */}
-        <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
-          <div className="bg-amber-500 px-5 py-3 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-bold text-white">Bid Parity</h3>
-              <p className="text-xs text-amber-100">Bid-price scanner • Guaranteed fills</p>
-            </div>
-            <button onClick={async () => {
-                await axios.post(`${API_BASE}/api/option-arbitrage/bid-parity/auto-toggle`);
-                refetchSettings();
-              }}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.bid_parity_auto_enabled === '1' ? 'bg-white' : 'bg-amber-400'}`}>
-              <span className={`inline-block h-4 w-4 transform rounded-full shadow transition-transform ${settings.bid_parity_auto_enabled === '1' ? 'translate-x-6 bg-amber-600' : 'translate-x-1 bg-white'}`} />
-            </button>
-          </div>
-          <div className="p-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-500">Entry Edge (₹)</label>
-                <input type="number" value={settings.scanner_minEdgeAfterCosts || 300}
-                  onChange={(e) => updateSetting('scanner_minEdgeAfterCosts', e.target.value)}
-                  className="w-full mt-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
-                <p className="text-[10px] text-slate-400 mt-0.5">Min edge to enter</p>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-500">Exit Edge (₹)</label>
-                <input type="number" value={settings.bid_parity_exit_edge || 100}
-                  onChange={(e) => updateSetting('bid_parity_exit_edge', e.target.value)}
-                  className="w-full mt-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
-                <p className="text-[10px] text-slate-400 mt-0.5">Exit when edge drops below</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-500">Max Sets</label>
-                <input type="number" value={settings.bid_parity_max_sets || 3}
-                  onChange={(e) => updateSetting('bid_parity_max_sets', e.target.value)}
-                  className="w-full mt-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
-                <p className="text-[10px] text-slate-400 mt-0.5">Concurrent positions</p>
-              </div>
-              <div className="flex flex-col justify-end">
-                <div className="flex items-center justify-between px-2 py-1.5 bg-slate-50 rounded-lg">
-                  <span className="text-xs text-slate-600">Auto Exit</span>
-                  <button onClick={async () => { await axios.post(`${API_BASE}/api/option-arbitrage/bid-parity/auto-exit-toggle`); refetchSettings(); }}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${settings.bid_parity_auto_exit !== 'false' ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${settings.bid_parity_auto_exit !== 'false' ? 'translate-x-4.5' : 'translate-x-1'}`} />
-                  </button>
-                </div>
-              </div>
-            </div>
-            {[
-              { key: 'bid_parity_auto_rollover', label: 'Auto-rollover', desc: 'Exit max-profit, enter better bid opp' },
-              { key: 'time_filter_enabled', label: 'Peak-window filter', desc: 'Enter 09:15-09:45, 14:00-15:00 only' },
-            ].map(({ key, label, desc }) => {
-              const isOn = settings[key] !== 'false' && settings[key] !== '0';
-              return (
-                <div key={key} className="flex items-center justify-between px-2 py-1.5 bg-slate-50 rounded-lg">
-                  <div>
-                    <span className="text-xs font-medium text-slate-600">{label}</span>
-                    <p className="text-[10px] text-slate-400">{desc}</p>
-                  </div>
-                  <button onClick={() => updateSetting(key, isOn ? 'false' : 'true')}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${isOn ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${isOn ? 'translate-x-4.5' : 'translate-x-1'}`} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Shared Settings + Quick Actions */}
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Shared Settings</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-slate-500">Scan Interval (s)</label>
-                <input type="number" value={settings.scan_interval_seconds || 300}
-                  onChange={(e) => updateSetting('scan_interval_seconds', e.target.value)}
-                  className="w-full mt-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-500">Target Underlyings</label>
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  {['ALL','NIFTY','BANKNIFTY','MIDCPNIFTY','FINNIFTY'].map(u => {
-                    const currentVal = settings.target_underlying || 'ALL';
-                    const parts = currentVal.split(',').map(s => s.trim().toUpperCase());
-                    const isActive = parts.includes(u);
-                    return (
-                      <button key={u} onClick={() => {
-                        let next;
-                        if (u === 'ALL') { next = 'ALL'; }
-                        else {
-                          const withoutAll = parts.filter(x => x !== 'ALL');
-                          const toggled = withoutAll.includes(u) ? withoutAll.filter(x => x !== u) : [...withoutAll, u];
-                          next = toggled.length === 0 ? 'ALL' : toggled.join(',');
-                        }
-                        updateSetting('target_underlying', next);
-                      }}
-                        className={`px-2.5 py-1 rounded-md text-xs font-semibold border transition ${
-                          isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-400'
-                        }`}>
-                        {u}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-            <h3 className="text-sm font-semibold text-slate-700 mb-3">Quick Actions</h3>
-            <div className="space-y-2">
-              <button onClick={runCycle} disabled={busyRun}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                {busyRun ? '⏳ Running...' : '▶ Run Scan & Execute Now'}
-              </button>
-              {openTrades.length > 0 && (
-                <button onClick={closeAll} disabled={busyCloseAll}
-                  className="w-full px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                  {busyCloseAll ? '⏳ Closing...' : `✕ Close All (${openTrades.length})`}
-                </button>
-              )}
-              {openBidTrades.length > 0 && (
-                <button onClick={async () => {
-                  if (!await showConfirm(`Close all ${openBidTrades.length} bid parity positions?`, 'Close All Bid Parity')) return;
-                  setBusyCloseBidAll(true);
-                  try {
-                    const res = await axios.post(`${API_BASE}/api/option-arbitrage/bid-parity/close-all`);
-                    showToast(`Closed ${res.data.closed} of ${res.data.total} positions`, 'success');
-                    refetchTrades();
-                  } catch (e) {
-                    showToast('Close bid parity failed: ' + (e.response?.data?.error || e.message), 'error');
-                  } finally {
-                    setBusyCloseBidAll(false);
-                  }
-                }} disabled={busyCloseBidAll}
-                  className="w-full px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                  {busyCloseBidAll ? '⏳ Closing...' : `✕ Close All Bid Parity (${openBidTrades.length})`}
-                </button>
-              )}
-            </div>
-            <div className="mt-3 space-y-1.5">
-              <div className="flex justify-between text-xs text-slate-500">
-                <span>Open positions</span><span className="font-semibold text-slate-700">{openTrades.length}</span>
-              </div>
-              <div className="flex justify-between text-xs text-slate-500">
-                <span>Normal parity</span><span className="font-semibold text-blue-600">{openTrades.filter(t => !t.bidType || t.bidType !== 'BID_PARITY').length}</span>
-              </div>
-              <div className="flex justify-between text-xs text-slate-500">
-                <span>Bid parity</span><span className="font-semibold text-amber-600">{openBidTrades.length}</span>
-              </div>
-              <div className="flex justify-between text-xs text-slate-500">
-                <span>Total scanned today</span><span className="font-semibold text-slate-700">{trades.length}</span>
-              </div>
-            </div>
-          </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={runCycle}
+            disabled={busyRun}
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-md transition flex items-center gap-2 disabled:opacity-50"
+          >
+            {busyRun ? '⚡ Scanning & Executing...' : '▶ Run Scan & Execute Now'}
+          </button>
         </div>
       </div>
 
-      {/* Daily P&L Summary */}
-      {dailyPnl && dailyPnl.totalTrades > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <p className="text-xs text-slate-500 uppercase">Total P&L Today</p>
-            <p className={`text-xl font-bold mt-1 ${(dailyPnl.totalPnl || 0) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-              {(dailyPnl.totalPnl || 0) >= 0 ? '+' : ''}₹{(dailyPnl.totalPnl || 0).toLocaleString()}
-            </p>
+      {/* Instant Result / Reason Feedback Banner */}
+      {lastResult && (
+        <div className={`p-4 rounded-xl border shadow-sm transition ${
+          lastResult.status === 'COMPLETED' ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+          : lastResult.status === 'SKIPPED' ? 'bg-amber-50 border-amber-200 text-amber-900'
+          : 'bg-red-50 border-red-200 text-red-900'
+        }`}>
+          <div className="flex items-center justify-between font-bold text-sm">
+            <span>Execution Status: {lastResult.status}</span>
+            <span className="font-mono text-xs">{lastResult.timeIST || ''}</span>
           </div>
-          <div className="bg-white rounded-xl border border-blue-200 p-4 shadow-sm">
-            <p className="text-xs text-slate-500 uppercase">Normal Parity P&L</p>
-            <p className={`text-xl font-bold mt-1 ${(dailyPnl.normalPnl || 0) >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
-              {(dailyPnl.normalPnl || 0) >= 0 ? '+' : ''}₹{(dailyPnl.normalPnl || 0).toLocaleString()}
-            </p>
-          </div>
-          <div className="bg-white rounded-xl border border-amber-200 p-4 shadow-sm">
-            <p className="text-xs text-slate-500 uppercase">Bid Parity P&L</p>
-            <p className={`text-xl font-bold mt-1 ${(dailyPnl.bidParityPnl || 0) >= 0 ? 'text-amber-600' : 'text-red-500'}`}>
-              {(dailyPnl.bidParityPnl || 0) >= 0 ? '+' : ''}₹{(dailyPnl.bidParityPnl || 0).toLocaleString()}
-            </p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <p className="text-xs text-slate-500 uppercase">Trades Closed</p>
-            <p className="text-xl font-bold mt-1 text-slate-800">{dailyPnl.totalTrades || 0}</p>
-            <p className="text-xs text-slate-400">Win rate: {dailyPnl.winRate || 0}%</p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <p className="text-xs text-slate-500 uppercase">Open Positions</p>
-            <p className="text-xl font-bold mt-1 text-slate-800">{dailyPnl.openPositions || 0}</p>
-            <p className="text-xs text-slate-400">Normal: {dailyPnl.openNormal || 0} | Bid: {dailyPnl.openBidParity || 0}</p>
-          </div>
+          <p className="text-xs mt-1 font-medium">{lastResult.reason}</p>
         </div>
       )}
 
-      {openTrades.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-slate-700 mb-3">Open Positions ({openTrades.length})</h3>
-          {replacingTrade ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                <div className="bg-red-50 border-b border-red-200 px-4 py-3 flex items-center justify-between">
-                  <h4 className="text-sm font-semibold text-red-700">Closing: {replacingTrade.underlying} {replacingTrade.strike} {replacingTrade.action}</h4>
-                  <button onClick={() => setReplacingTradeId(null)} className="text-xs text-red-500 hover:text-red-700 font-medium">Cancel</button>
-                </div>
-                <table className="w-full text-sm">
-                  <thead><tr className="bg-slate-50 border-b border-slate-200">
-                    <th className="px-4 py-2 text-left text-xs text-slate-600">Underlying</th>
-                    <th className="px-4 py-2 text-left text-xs text-slate-600">Strike</th>
-                    <th className="px-4 py-2 text-left text-xs text-slate-600">Action</th>
-                    <th className="px-4 py-2 text-right text-xs text-slate-600">CE</th>
-                    <th className="px-4 py-2 text-right text-xs text-slate-600">PE</th>
-                    <th className="px-4 py-2 text-right text-xs text-slate-600">FUT</th>
-                    <th className="px-4 py-2 text-right text-xs text-slate-600">Lot</th>
-                  </tr></thead>
-                  <tbody><tr className="border-b border-slate-100">
-                    <td className="px-4 py-3 font-medium text-slate-800">{replacingTrade.underlying}</td>
-                    <td className="px-4 py-3 text-slate-700">{replacingTrade.strike}</td>
-                    <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${replacingTrade.action === 'CONVERSION' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{replacingTrade.action}</span></td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-700">{replacingTrade.ceEntryPrice?.toFixed(2) || '--'}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-700">{replacingTrade.peEntryPrice?.toFixed(2) || '--'}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-700">{replacingTrade.futEntryPrice?.toFixed(2) || '--'}</td>
-                    <td className="px-4 py-3 text-right text-slate-700">{replacingTrade.lotSize}</td>
-                  </tr></tbody>
-                </table>
-              </div>
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-3">
-                  <h4 className="text-sm font-semibold text-emerald-700">Enter New Position — {replacingTrade.underlying}</h4>
-                  <p className="text-xs text-emerald-600 mt-1">Choose opportunity to replace with:</p>
-                </div>
-                <div className="max-h-96 overflow-y-auto">
-                  {matchingOpps.length === 0 ? (
-                    <p className="p-4 text-sm text-slate-500 text-center">No opportunities available for {replacingTrade.underlying}</p>
-                  ) : (
-                    <table className="w-full text-sm">
-                      <thead><tr className="bg-slate-50 border-b border-slate-200 sticky top-0">
-                        <th className="px-3 py-2 text-left text-xs text-slate-600">Strike</th>
-                        <th className="px-3 py-2 text-left text-xs text-slate-600">Action</th>
-                        <th className="px-3 py-2 text-right text-xs text-slate-600">Edge</th>
-                        <th className="px-3 py-2 text-right text-xs text-slate-600">CE</th>
-                        <th className="px-3 py-2 text-right text-xs text-slate-600">PE</th>
-                        <th className="px-3 py-2 text-right text-xs text-slate-600">FUT</th>
-                        <th className="px-3 py-2 text-right text-xs text-slate-600"></th>
-                      </tr></thead>
-                      <tbody>
-                        {matchingOpps.map((opp, i) => (
-                          <tr key={i} className="border-b border-slate-100 hover:bg-blue-50 cursor-pointer">
-                            <td className="px-3 py-2 font-medium text-slate-800">{opp.strike}</td>
-                            <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${opp.action === 'CONVERSION' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{opp.action}</span></td>
-                            <td className="px-3 py-2 text-right font-mono text-emerald-600 font-semibold">₹{opp.edgeAfterCosts?.toFixed(0) || '--'}</td>
-                            <td className="px-3 py-2 text-right font-mono text-slate-600">{opp.cePrice?.toFixed(2) || opp.ceEntryPrice?.toFixed(2) || '--'}</td>
-                            <td className="px-3 py-2 text-right font-mono text-slate-600">{opp.pePrice?.toFixed(2) || opp.peEntryPrice?.toFixed(2) || '--'}</td>
-                            <td className="px-3 py-2 text-right font-mono text-slate-600">{opp.futuresPrice?.toFixed(2) || '--'}</td>
-                            <td className="px-3 py-2 text-right space-x-1">
-                              <button onClick={() => replaceTrade(replacingTradeId, opp)}
-                                className="px-2 py-1 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700">
-                                Replace All
-                              </button>
-                              {replacingTrade.action === opp.action && (
-                                <button onClick={() => replaceOptionsOnly(replacingTradeId, opp)}
-                                  className="px-2 py-1 bg-amber-500 text-white rounded text-xs font-medium hover:bg-amber-600">
-                                  Options Only
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
+      {/* Main Grid: Controls + Logs */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Card 1: Normal Parity Config */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h3 className="font-bold text-slate-800 text-base">Normal Parity</h3>
+              <p className="text-xs text-slate-400">Regular Scanner &bull; Conversion / Reversal</p>
             </div>
-          ) : (
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th onClick={() => toggleSort('underlying')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Underlying{sortIndicator('underlying')}</th>
-                  <th onClick={() => toggleSort('strike')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Strike{sortIndicator('strike')}</th>
-                  <th onClick={() => toggleSort('action')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Action{sortIndicator('action')}</th>
-                  <th onClick={() => toggleSort('ceEntry')} className="px-4 py-3 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">CE Entry{sortIndicator('ceEntry')}</th>
-                  <th onClick={() => toggleSort('peEntry')} className="px-4 py-3 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">PE Entry{sortIndicator('peEntry')}</th>
-                  <th onClick={() => toggleSort('futEntry')} className="px-4 py-3 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">FUT Entry{sortIndicator('futEntry')}</th>
-                  <th onClick={() => toggleSort('lotSize')} className="px-4 py-3 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Lot{sortIndicator('lotSize')}</th>
-                  <th onClick={() => toggleSort('time')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Time{sortIndicator('time')}</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedOpenNormal.map(t => (
-                  <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-800">{t.underlying}</td>
-                    <td className="px-4 py-3 text-slate-700">{t.strike}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.action === 'CONVERSION' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                        {t.action}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-700 font-mono">{t.ceEntryPrice?.toFixed(2) || '--'}</td>
-                    <td className="px-4 py-3 text-right text-slate-700 font-mono">{t.peEntryPrice?.toFixed(2) || '--'}</td>
-                    <td className="px-4 py-3 text-right text-slate-700 font-mono">{t.futEntryPrice?.toFixed(2) || '--'}</td>
-                    <td className="px-4 py-3 text-right text-slate-700">{t.lotSize}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{t.executedAt ? new Date(t.executedAt).toLocaleTimeString() : '--'}</td>
-                    <td className="px-4 py-3 text-right space-x-1">
-                      <button onClick={() => setReplacingTradeId(t.id)}
-                        className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs font-medium hover:bg-blue-100">
-                        Replace
-                      </button>
-                      <button onClick={() => closeTrade(t.id, 'all')} disabled={busyClose === t.id}
-                        className="px-2 py-1 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100 disabled:opacity-50">
-                        {busyClose === t.id ? '...' : 'Close'}
-                        Close
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <button
+              onClick={() => updateSetting('normalParityEnabled', !isNormalEnabled)}
+              className={`w-12 h-6 rounded-full transition p-1 ${isNormalEnabled ? 'bg-blue-600' : 'bg-slate-300'}`}
+            >
+              <div className={`w-4 h-4 rounded-full bg-white transition transform ${isNormalEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+            </button>
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Entry Edge (₹)</label>
+              <input
+                type="number"
+                defaultValue={settings?.normalEntryEdge || 1500}
+                onBlur={(e) => updateSetting('normalEntryEdge', e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm font-mono text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Exit Edge (₹)</label>
+              <input
+                type="number"
+                defaultValue={settings?.normalExitEdge || 800}
+                onBlur={(e) => updateSetting('normalExitEdge', e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm font-mono text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Max Concurrent Sets</label>
+            <input
+              type="number"
+              defaultValue={settings?.normalMaxSets || 3}
+              onBlur={(e) => updateSetting('normalMaxSets', e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm font-mono text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        {/* Card 2: Bid Parity Config (Highlighted Amber) */}
+        <div className="bg-amber-50/50 rounded-xl p-5 border border-amber-200 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-amber-200/60 pb-3">
+            <div>
+              <h3 className="font-bold text-amber-900 text-base">Bid Parity (Guaranteed Fills)</h3>
+              <p className="text-xs text-amber-700">Bid-price depth scanner &bull; Immediate Execution</p>
+            </div>
+            <button
+              onClick={() => updateSetting('bidParityEnabled', !isBidEnabled)}
+              className={`w-12 h-6 rounded-full transition p-1 ${isBidEnabled ? 'bg-amber-600' : 'bg-slate-300'}`}
+            >
+              <div className={`w-4 h-4 rounded-full bg-white transition transform ${isBidEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-amber-800 uppercase block mb-1">Min Entry Edge (₹)</label>
+              <input
+                type="number"
+                defaultValue={settings?.bidEntryEdge || 300}
+                onBlur={(e) => updateSetting('bidEntryEdge', e.target.value)}
+                className="w-full bg-white border border-amber-200 rounded-lg p-2 text-sm font-mono text-slate-700 outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-amber-800 uppercase block mb-1">Exit Edge (₹)</label>
+              <input
+                type="number"
+                defaultValue={settings?.bidExitEdge || 100}
+                onBlur={(e) => updateSetting('bidExitEdge', e.target.value)}
+                className="w-full bg-white border border-amber-200 rounded-lg p-2 text-sm font-mono text-slate-700 outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-amber-800 uppercase block mb-1">Max Concurrent Sets</label>
+            <input
+              type="number"
+              defaultValue={settings?.bidMaxSets || 3}
+              onBlur={(e) => updateSetting('bidMaxSets', e.target.value)}
+              className="w-full bg-white border border-amber-200 rounded-lg p-2 text-sm font-mono text-slate-700 outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+        </div>
+
+        {/* Card 3: Execution Controls & Fast Scan Interval */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
+          <h3 className="font-bold text-slate-800 text-base border-b border-slate-100 pb-3">Execution Speed & Interval</h3>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Scan Interval Frequency</label>
+            <select
+              value={scanInterval}
+              onChange={(e) => {
+                setScanInterval(e.target.value);
+                updateSetting('scanInterval', e.target.value);
+              }}
+              className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
+            >
+              <option value="1">⚡ 1 Second (High Frequency Arbitrage)</option>
+              <option value="2">🚀 2 Seconds</option>
+              <option value="5">⏱️ 5 Seconds</option>
+              <option value="10">10 Seconds</option>
+              <option value="30">30 Seconds</option>
+              <option value="300">300 Seconds (5 Min)</option>
+            </select>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100">
+            <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Target Underlyings</p>
+            <div className="flex flex-wrap gap-1.5">
+              {['ALL', 'NIFTY', 'BANKNIFTY', 'MIDCPNIFTY', 'FINNIFTY'].map((u) => (
+                <button
+                  key={u}
+                  onClick={() => updateSetting('targetUnderlyings', u)}
+                  className="px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition"
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Real-time Execution Audit Log Feed */}
+      <div className="bg-slate-900 rounded-xl p-5 text-white shadow-md space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <h3 className="text-sm font-bold tracking-wide uppercase text-slate-200">Real-Time Execution Audit Feed</h3>
+          </div>
+          <button
+            onClick={() => refetchLogs()}
+            className="text-xs text-blue-400 hover:text-blue-300 font-semibold"
+          >
+            🔄 Refresh Feed
+          </button>
+        </div>
+
+        <div className="font-mono text-xs space-y-2 max-h-60 overflow-y-auto pr-2">
+          {!auditLogs || auditLogs.length === 0 ? (
+            <p className="text-slate-500 italic py-4 text-center">No execution events logged yet.</p>
+          ) : (
+            auditLogs.map((log, idx) => (
+              <div key={idx} className="flex items-start gap-3 py-1 border-b border-slate-800/50">
+                <span className="text-slate-500 shrink-0">{log.timeFormatted}</span>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                  log.level === 'SUCCESS' ? 'bg-emerald-900 text-emerald-300'
+                  : log.level === 'WARN' ? 'bg-amber-900 text-amber-300'
+                  : log.level === 'ERROR' ? 'bg-red-900 text-red-300'
+                  : 'bg-blue-900 text-blue-300'
+                }`}>
+                  {log.category}
+                </span>
+                <span className="text-slate-300">{log.message}</span>
+              </div>
+            ))
           )}
         </div>
-      )}
-
-      {openBidTrades.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-slate-700 mb-3">Open Bid Parity Positions ({openBidTrades.length})</h3>
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th onClick={() => toggleSort('underlying')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Underlying{sortIndicator('underlying')}</th>
-                  <th onClick={() => toggleSort('strike')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Strike{sortIndicator('strike')}</th>
-                  <th onClick={() => toggleSort('action')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Action{sortIndicator('action')}</th>
-                  <th onClick={() => toggleSort('ceEntry')} className="px-4 py-3 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">CE Bid Entry{sortIndicator('ceEntry')}</th>
-                  <th onClick={() => toggleSort('peEntry')} className="px-4 py-3 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">PE Bid Entry{sortIndicator('peEntry')}</th>
-                  <th onClick={() => toggleSort('lotSize')} className="px-4 py-3 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Lot{sortIndicator('lotSize')}</th>
-                  <th onClick={() => toggleSort('time')} className="px-4 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Time{sortIndicator('time')}</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedOpenBid.map(t => (
-                  <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-800">{t.underlying}</td>
-                    <td className="px-4 py-3 text-slate-700">{t.strike}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.action === 'CONVERSION' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                        {t.action}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-700 font-mono">{t.ceBidPriceEntry?.toFixed(2) || t.ceEntryPrice?.toFixed(2) || '--'}</td>
-                    <td className="px-4 py-3 text-right text-slate-700 font-mono">{t.peBidPriceEntry?.toFixed(2) || t.peEntryPrice?.toFixed(2) || '--'}</td>
-                    <td className="px-4 py-3 text-right text-slate-700">{t.lotSize}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{t.executedAt ? new Date(t.executedAt).toLocaleTimeString() : '--'}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={async () => {
-                        if (!await showConfirm(`Close bid parity position: ${t.underlying} ${t.strike} ${t.action}?`, 'Close Position')) return;
-                        try {
-                          const depthTick = (await axios.get(`${API_BASE}/api/option-arbitrage/bid-parity/live-ticks`)).data;
-                          await axios.post(`${API_BASE}/api/option-arbitrage/bid-parity/exit`, null, {
-                            params: {
-                              tradeId: t.id,
-                              ceBidExit: t.ceBidPriceEntry || 0,
-                              peBidExit: t.peBidPriceEntry || 0,
-                              ceBidQtyExit: t.ceBidQtyEntry || 0,
-                              peBidQtyExit: t.peBidQtyEntry || 0,
-                            }
-                          });
-                          refetchTrades();
-                        } catch (err) {
-                          showToast('Exit failed: ' + (err.response?.data?.error || err.message), 'error');
-                        }
-                      }}
-                        className="px-2 py-1 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100">
-                        Exit
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {closedTrades.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-slate-700 mb-3">Recent Closed Trades ({closedTrades.length})</h3>
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th onClick={() => toggleSort('underlying')} className="px-3 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Underlying{sortIndicator('underlying')}</th>
-                  <th onClick={() => toggleSort('strike')} className="px-3 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Strike{sortIndicator('strike')}</th>
-                  <th onClick={() => toggleSort('action')} className="px-3 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Action{sortIndicator('action')}</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600">Strategy</th>
-                  <th onClick={() => toggleSort('status')} className="px-3 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Status{sortIndicator('status')}</th>
-                  <th className="px-3 py-3 text-right text-xs font-semibold text-slate-600">Edge</th>
-                  <th onClick={() => toggleSort('pnl')} className="px-3 py-3 text-right text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">P&L{sortIndicator('pnl')}</th>
-                  <th className="px-3 py-3 text-center text-xs font-semibold text-slate-600">Hold</th>
-                  <th onClick={() => toggleSort('time')} className="px-3 py-3 text-left text-xs font-semibold text-slate-600 cursor-pointer hover:text-blue-600 select-none">Time{sortIndicator('time')}</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600">Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedClosed.map(t => {
-                  const holdMinutes = t.executedAt && t.closedAt
-                    ? Math.round((new Date(t.closedAt) - new Date(t.executedAt)) / 60000) : null;
-                  const holdStr = holdMinutes != null
-                    ? holdMinutes < 60 ? `${holdMinutes}m` : `${Math.floor(holdMinutes/60)}h ${holdMinutes%60}m`
-                    : '--';
-                  const isFailed = t.status === 'FAILED';
-                  return (
-                    <tr key={t.id} className={`border-b border-slate-100 hover:bg-slate-50 ${isFailed ? 'bg-red-50/50' : ''}`}>
-                      <td className="px-3 py-3 font-medium text-slate-800">{t.underlying}</td>
-                      <td className="px-3 py-3 text-slate-700">{t.strike}</td>
-                      <td className="px-3 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${t.action === 'CONVERSION' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                          {t.action === 'CONVERSION' ? 'CONV' : 'REV'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${t.bidType === 'BID_PARITY' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {t.bidType === 'BID_PARITY' ? 'BID' : 'NORM'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                          t.status === 'CLOSED' ? 'bg-emerald-100 text-emerald-700' :
-                          t.status === 'ROLLED' ? 'bg-blue-100 text-blue-600' :
-                          t.status === 'CLOSED_OPTIONS' ? 'bg-amber-100 text-amber-600' :
-                          t.status === 'FAILED' ? 'bg-red-100 text-red-700' :
-                          'bg-slate-100 text-slate-600'
-                        }`}>
-                          {t.status === 'CLOSED' ? '● Closed' : t.status === 'ROLLED' ? '↻ Rolled' : t.status === 'FAILED' ? '✕ Failed' : t.status}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-right font-mono text-xs">
-                        {t.edgeAtEntry != null ? <span className="text-emerald-600 font-semibold">₹{Number(t.edgeAtEntry).toFixed(0)}</span> : '--'}
-                      </td>
-                      <td className="px-3 py-3 text-right font-mono text-xs font-semibold">
-                        {t.pnlAmount != null
-                          ? <span className={t.pnlAmount >= 0 ? 'text-emerald-600' : 'text-red-500'}>
-                              {t.pnlAmount >= 0 ? '+' : ''}₹{Number(t.pnlAmount).toFixed(0)}
-                              {t.pnlPoints != null && <span className="text-[10px] font-normal text-slate-400 ml-0.5">({Number(t.pnlPoints).toFixed(1)}pt)</span>}
-                            </span>
-                          : isFailed ? <span className="text-red-400">--</span> : '--'}
-                      </td>
-                      <td className="px-3 py-3 text-center text-xs text-slate-500">{holdStr}</td>
-                      <td className="px-3 py-3 text-xs text-slate-500">{t.closedAt ? formatIstDateTime(t.closedAt) : t.executedAt ? formatIstDateTime(t.executedAt) : '--'}</td>
-                      <td className="px-3 py-3 text-xs text-slate-500 max-w-[180px] truncate" title={t.notes || ''}>{t.notes || '--'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
-
-function StatCard({ label, value, color = 'text-slate-800' }) {
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-      <p className="text-xs text-slate-500 uppercase">{label}</p>
-      <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
-    </div>
-  );
-}
-
-
 
 function SignalsTab() {
   const [underlying, setUnderlying] = useState('ALL');
