@@ -2,6 +2,7 @@ package com.stokr.marketdata.tick;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stokr.broker.BrokerAccountRepository;
+import com.stokr.engine.BrokerTokenRefresher;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -29,11 +30,12 @@ public class KiteTickWebSocketClient {
     private static final String WS_URL = "wss://ws.kite.trade/";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
-    @Value("${zerodha.api-key:}")
+    @Value("${broker.zerodha.api-key:}")
     private String apiKey;
 
     private final BrokerAccountRepository brokerAccountRepo;
     private final TickAggregatorService aggregator;
+    private final BrokerTokenRefresher tokenRefresher;
 
     private WebSocket webSocket;
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -42,6 +44,7 @@ public class KiteTickWebSocketClient {
     private final AtomicLong tickCounter = new AtomicLong(0);
 
     private volatile boolean connected = false;
+    private volatile long lastAutoReconnectAttemptMs = 0L;
     private final Set<Integer> subscribedTokens = ConcurrentHashMap.newKeySet();
     private final Set<String> subscribedSymbols = ConcurrentHashMap.newKeySet();
 
@@ -151,9 +154,13 @@ public class KiteTickWebSocketClient {
             Throwable cause = e.getCause();
             if (cause instanceof java.net.http.WebSocketHandshakeException hse) {
                 var resp = hse.getResponse();
+                int status = resp != null ? resp.statusCode() : -1;
                 log.warn("WebSocket handshake failed: status={}, body={}",
-                    resp != null ? resp.statusCode() : "null",
+                    status >= 0 ? status : "null",
                     resp != null ? resp.body() : "null");
+                if (status == 403) {
+                    maybeTriggerAutoReconnect("ws-handshake-403");
+                }
             } else {
                 log.warn("WebSocket connect failed: {}", cause != null ? cause.getMessage() : e.getMessage());
             }
@@ -222,6 +229,29 @@ public class KiteTickWebSocketClient {
             .stream().filter(a -> a.getAccessToken() != null)
             .findFirst().map(a -> a.getAccessToken())
             .orElse(null);
+    }
+
+    private void maybeTriggerAutoReconnect(String reason) {
+        long now = System.currentTimeMillis();
+        if (now - lastAutoReconnectAttemptMs < 10 * 60 * 1000L) {
+            return;
+        }
+        lastAutoReconnectAttemptMs = now;
+        try {
+            var accounts = brokerAccountRepo.findByBrokerNameAndStatus("ZERODHA", "ACTIVE");
+            for (var acc : accounts) {
+                if (Boolean.TRUE.equals(acc.getAutoReconnect())
+                        && acc.getZerodhaPassword() != null
+                        && acc.getZerodhaTotpSecret() != null) {
+                    log.warn("Attempting automatic Zerodha reconnect due to {} for account {}", reason, acc.getId());
+                    String result = tokenRefresher.triggerManualReconnect(acc.getId());
+                    log.warn("Automatic Zerodha reconnect result for account {}: {}", acc.getId(), result);
+                    break;
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Automatic Zerodha reconnect attempt failed: {}", ex.getMessage());
+        }
     }
 
     public boolean isConnected() { return connected; }

@@ -43,20 +43,16 @@ import java.util.List;
 public class BrokerTokenRefresher {
 
     private final BrokerAccountRepository brokerAccountRepository;
-    private final BrokerService           brokerService;
-    private final ErrorLogService         errorLogService;
-    private final ObjectMapper            objectMapper;
+    private final BrokerService brokerService;
+    private final ErrorLogService errorLogService;
+    private final ObjectMapper objectMapper;
 
     @Value("${broker.zerodha.api-key:}")
     private String zerodhaApiKey;
 
-    private static final String KITE_LOGIN_URL  = "https://kite.zerodha.com/api/login";
-    private static final String KITE_TWOFA_URL  = "https://kite.zerodha.com/api/twofa";
+    private static final String KITE_LOGIN_URL = "https://kite.zerodha.com/api/login";
+    private static final String KITE_TWOFA_URL = "https://kite.zerodha.com/api/twofa";
 
-    /**
-     * Runs at 8:30 AM IST every weekday — 45 min before market opens.
-     * All accounts with auto_reconnect=true will have a fresh token by 9:15.
-     */
     @Scheduled(cron = "0 30 8 * * MON-FRI", zone = "Asia/Kolkata")
     public void refreshExpiringTokens() {
         log.info("=== ZERODHA AUTO-RECONNECT STARTING ===");
@@ -78,13 +74,7 @@ public class BrokerTokenRefresher {
                 if (requestToken == null || requestToken.isBlank()) {
                     throw new RuntimeException("Failed to obtain request_token from Zerodha");
                 }
-                // Exchange request_token → access_token (same as manual OAuth flow).
-                // completeOAuth persists the fresh access_token on this account row.
                 brokerService.completeOAuth(account.getUserId(), "ZERODHA", requestToken);
-                // Re-fetch before touching the row: our in-memory `account` still holds
-                // the OLD access_token, so saving it here would clobber the fresh token
-                // completeOAuth just wrote (lost-update). Update only lastAutoReconnect
-                // on the freshly-loaded entity.
                 BrokerAccount fresh = brokerAccountRepository.findById(account.getId()).orElse(account);
                 fresh.setLastAutoReconnect(Instant.now());
                 brokerAccountRepository.save(fresh);
@@ -98,10 +88,6 @@ public class BrokerTokenRefresher {
         log.info("=== ZERODHA AUTO-RECONNECT DONE ===");
     }
 
-    /**
-     * Performs the full Zerodha internal API login flow:
-     * POST /api/login → POST /api/twofa → follow redirects → extract request_token
-     */
     private String performZerodhaLogin(String userId, String password, String totpSecret)
             throws IOException, InterruptedException {
 
@@ -110,7 +96,6 @@ public class BrokerTokenRefresher {
             .followRedirects(HttpClient.Redirect.NEVER)
             .build();
 
-        // ── Step 1: Login ──────────────────────────────────────────────────────
         String loginBody = "user_id=" + urlEncode(userId) + "&password=" + urlEncode(password);
         HttpResponse<String> loginResp = http.send(
             HttpRequest.newBuilder()
@@ -128,7 +113,6 @@ public class BrokerTokenRefresher {
         String requestId = loginJson.path("data").path("request_id").asText();
         log.debug("Zerodha login step 1 OK, request_id={}", requestId);
 
-        // ── Step 2: TOTP ───────────────────────────────────────────────────────
         String totp = TotpUtils.generate(totpSecret);
         String twoFaBody = "request_id=" + urlEncode(requestId)
             + "&twofa_value=" + totp
@@ -149,11 +133,6 @@ public class BrokerTokenRefresher {
         }
         log.debug("Zerodha login step 2 (TOTP) OK");
 
-        // ── Step 3: Trigger request_token via the OAuth connect endpoint ────────
-        // The /api/twofa response only authenticates the session cookies — it does
-        // NOT contain a request_token. We must now hit the OAuth login endpoint
-        // WITH those cookies and api_key; Zerodha then 302-redirects through
-        // connect/finish to our registered redirect_uri carrying request_token.
         if (zerodhaApiKey == null || zerodhaApiKey.isBlank()) {
             throw new RuntimeException("ZERODHA_API_KEY not configured on server");
         }
@@ -164,11 +143,6 @@ public class BrokerTokenRefresher {
         return requestToken;
     }
 
-    /**
-     * Follows 302 redirects (redirects disabled on the client) starting from the
-     * OAuth connect URL, extracting request_token from the first Location/URL that
-     * carries it — without needing to actually fetch our own redirect_uri.
-     */
     private String followUntilRequestToken(String startUrl, HttpClient http)
             throws IOException, InterruptedException {
         String cur = startUrl;
@@ -188,7 +162,6 @@ public class BrokerTokenRefresher {
             String location = resp.headers().firstValue("location").orElse(null);
             if (location == null || location.isBlank()) break;
 
-            // Resolve relative redirects (e.g. "/connect/finish?...")
             if (location.startsWith("/")) {
                 URI base = URI.create(cur);
                 location = base.getScheme() + "://" + base.getHost() + location;
@@ -205,12 +178,19 @@ public class BrokerTokenRefresher {
         int idx = url.indexOf(param + "=");
         if (idx < 0) return null;
         int start = idx + param.length() + 1;
-        int end   = url.indexOf('&', start);
+        int end = url.indexOf('&', start);
         return end < 0 ? url.substring(start) : url.substring(start, end);
     }
 
     private static String urlEncode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8);
+    }
+
+    public String triggerManualReconnectForUser(Long userId) {
+        List<BrokerAccount> accounts =
+            brokerAccountRepository.findByUserIdAndBrokerNameAndStatus(userId, "ZERODHA", "ACTIVE");
+        if (accounts.isEmpty()) return "FAILED: no active Zerodha account";
+        return triggerManualReconnect(accounts.get(0).getId());
     }
 
     /** Called from admin UI to test / trigger reconnect on demand. */
@@ -222,9 +202,6 @@ public class BrokerTokenRefresher {
                 account.getClientId(), account.getZerodhaPassword(), account.getZerodhaTotpSecret());
             if (requestToken == null) return "FAILED: could not get request_token";
             brokerService.completeOAuth(account.getUserId(), "ZERODHA", requestToken);
-            // Re-fetch: `account` holds the pre-exchange (stale) access_token; saving it
-            // would overwrite the fresh token completeOAuth just persisted. Only bump
-            // lastAutoReconnect on the reloaded entity.
             BrokerAccount fresh = brokerAccountRepository.findById(account.getId()).orElse(account);
             fresh.setLastAutoReconnect(Instant.now());
             brokerAccountRepository.save(fresh);
