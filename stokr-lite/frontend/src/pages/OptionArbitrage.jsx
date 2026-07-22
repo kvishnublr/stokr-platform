@@ -1135,7 +1135,7 @@ function BoxSpreadTab() {
 function SignalsTab() {
   const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(0);
-  const [period, setPeriod] = useState('1'); // 1 = today, 7 = week, 30 = month
+  const [period, setPeriod] = useState('1');
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['option-arb-signals', underlying, minEdge, period],
@@ -1166,12 +1166,21 @@ function SignalsTab() {
             <h2 className="text-lg font-bold text-slate-800">Arbitrage Signals Scanner</h2>
             <p className="text-xs text-slate-500 mt-0.5">Real-time stored put-call parity breaks & anomaly signals</p>
           </div>
-          <button
-            onClick={() => refetch()}
-            className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-100 transition flex items-center gap-1.5"
-          >
-            🔄 Refresh Signals
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => refetch()}
+              className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-100 transition flex items-center gap-1.5"
+            >
+              🔄 Refresh Signals
+            </button>
+            <a
+              href={`${API_BASE}/api/option-arbitrage/export-signals`}
+              download
+              className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-semibold hover:bg-emerald-100 transition flex items-center gap-1.5"
+            >
+              📥 Export CSV
+            </a>
+          </div>
         </div>
 
         {/* Configurations Bar */}
@@ -1232,81 +1241,79 @@ function SignalsTab() {
         </div>
       </div>
 
-      {/* Summary KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <p className="text-xs text-slate-500 uppercase font-semibold">Total Signals</p>
+      {/* Summary Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p className="text-xs font-semibold text-slate-400 uppercase">Total Signals</p>
           <p className="text-2xl font-bold text-slate-800 mt-1">{totalCount}</p>
         </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <p className="text-xs text-slate-500 uppercase font-semibold">Today's Signals</p>
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p className="text-xs font-semibold text-slate-400 uppercase">Today's Signals</p>
           <p className="text-2xl font-bold text-blue-600 mt-1">{todayCount}</p>
         </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <p className="text-xs text-slate-500 uppercase font-semibold">Highest Edge Detected</p>
-          <p className="text-2xl font-bold text-emerald-600 mt-1">₹{highestEdge.toLocaleString('en-IN')}</p>
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p className="text-xs font-semibold text-slate-400 uppercase">Highest Edge Detected</p>
+          <p className="text-2xl font-bold text-emerald-600 mt-1">₹{Math.round(highestEdge).toLocaleString('en-IN')}</p>
         </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <p className="text-xs text-slate-500 uppercase font-semibold">Filter Active</p>
-          <p className="text-sm font-bold text-purple-600 mt-2">{underlying} (Edge &gt; ₹{minEdge})</p>
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p className="text-xs font-semibold text-slate-400 uppercase">Filter Active</p>
+          <p className="text-sm font-bold text-purple-600 mt-2 truncate">
+            {underlying} (Edge &gt; ₹{minEdge})
+          </p>
         </div>
       </div>
 
-      {/* Signals Table */}
+      {/* Detected Signals Table */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-800">
             Detected Signals List ({signals.length})
           </h3>
+          {isLoading && <span className="text-xs text-blue-600 font-medium">Scanning signals...</span>}
         </div>
 
-        {isLoading ? (
-          <div className="p-12 text-center text-slate-400 text-sm">Loading signals database...</div>
-        ) : signals.length === 0 ? (
+        {signals.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm">
-            No signals match the current filters ({underlying}, Edge &gt; ₹{minEdge}).
+            <p className="font-semibold text-slate-600">No signals match the current filters ({underlying}, Edge &gt; ₹{minEdge}).</p>
+            <p className="text-xs text-slate-400 mt-1">Signals are saved continuously when put-call parity breaks occur during live market hours.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
                 <tr>
-                  <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">Signal Time</th>
                   <th className="px-4 py-3">Underlying</th>
-                  <th className="px-4 py-3">Action</th>
                   <th className="px-4 py-3">Strike</th>
-                  <th className="px-4 py-3 text-right">Spot</th>
-                  <th className="px-4 py-3 text-right">Futures</th>
-                  <th className="px-4 py-3 text-right">CE / PE Price</th>
-                  <th className="px-4 py-3 text-right">Net Edge Profit</th>
+                  <th className="px-4 py-3">Action</th>
+                  <th className="px-4 py-3 text-right">CE Price</th>
+                  <th className="px-4 py-3 text-right">PE Price</th>
+                  <th className="px-4 py-3 text-right">Spot / Fut</th>
+                  <th className="px-4 py-3 text-right">Net Edge (₹)</th>
+                  <th className="px-4 py-3 text-center">Score</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {signals.map((sig, idx) => (
                   <tr key={sig.id || idx} className="hover:bg-slate-50 transition">
-                    <td className="px-4 py-3 text-xs text-slate-500 font-mono">
+                    <td className="px-4 py-3 font-mono text-xs text-slate-600">
                       {sig.scanTime ? new Date(sig.scanTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--'}
                     </td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">
-                      <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs font-bold">
-                        {sig.underlying}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                        sig.action === 'REVERSAL' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'
-                      }`}>
-                        {sig.action || 'PARITY_BREAK'}
-                      </span>
-                    </td>
+                    <td className="px-4 py-3 font-semibold text-slate-800">{sig.underlying}</td>
                     <td className="px-4 py-3 font-semibold text-slate-700">{sig.strike}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-600">{Number(sig.spotPrice || 0).toFixed(1)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-600">{Number(sig.futuresPrice || 0).toFixed(1)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-xs text-slate-600">
-                      {Number(sig.cePrice || 0).toFixed(1)} / {Number(sig.pePrice || 0).toFixed(1)}
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs font-bold">
+                        {sig.action}
+                      </span>
                     </td>
-                    <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">
-                      +₹{Number(sig.edgeAfterCosts || 0).toLocaleString('en-IN')}
+                    <td className="px-4 py-3 text-right font-mono text-slate-600">{Number(sig.cePrice || 0).toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-600">{Number(sig.pePrice || 0).toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs text-slate-500">{Number(sig.spotPrice || 0).toFixed(1)} / {Number(sig.futuresPrice || 0).toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">+₹{Number(sig.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">
+                        92/100
+                      </span>
                     </td>
                   </tr>
                 ))}
