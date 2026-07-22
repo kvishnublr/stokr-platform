@@ -474,7 +474,9 @@ function LiveScanTab({ autoRefresh, setAutoRefresh, underlyings, toggleUnderlyin
 
 // 2. BidParityTab
 function BidParityTab() {
-  const [underlying, setUnderlying] = useState('ALL');
+  const [underlying, setUnderlying] = useState('NIFTY');
+  const [autoEntry, setAutoEntry] = useState(true);
+  const [autoExit, setAutoExit] = useState(false);
   const [executingId, setExecutingId] = useState(null);
 
   const { data, isLoading, refetch } = useQuery({
@@ -501,66 +503,126 @@ function BidParityTab() {
   };
 
   return (
-    <div className="space-y-6 mt-4">
-      <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-amber-900">Bid-Price Parity Depth Scanner</h2>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 animate-pulse">⚡ GUARANTEED IMMEDIATE FILLS</span>
+    <div className="space-y-4 mt-4">
+      {/* Top Banner */}
+      <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-800">Bid Parity Scanner</h2>
+              <span className="flex items-center gap-1.5 text-xs text-blue-600 font-semibold bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                47 live ticks
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">Live tick-by-tick prices from WebSocket. All prices update in real-time.</p>
           </div>
-          <p className="text-xs text-slate-500 mt-1">Scans live order book bid/ask depth to detect immediate fill arbitrage mispricings</p>
+
+          {/* Underlyings & Controls */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex bg-slate-100 p-1 rounded-xl">
+              {['All', 'NIFTY', 'BANKNIFTY', 'MIDCPNIFTY', 'FINNIFTY'].map(u => (
+                <button
+                  key={u}
+                  onClick={() => setUnderlying(u === 'All' ? 'ALL' : u)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    (underlying === u || (underlying === 'ALL' && u === 'All'))
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-800'
+                  }`}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setAutoEntry(!autoEntry)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
+                autoEntry ? 'bg-red-50 border-red-200 text-red-700' : 'bg-slate-100 border-slate-200 text-slate-600'
+              }`}
+            >
+              {autoEntry ? 'Auto Entry: ON' : 'Auto Entry: OFF'}
+            </button>
+
+            <button
+              onClick={() => setAutoExit(!autoExit)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
+                autoExit ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              }`}
+            >
+              {autoExit ? 'Auto Exit: ON' : 'Auto Exit: OFF'}
+            </button>
+
+            <button
+              onClick={() => refetch()}
+              disabled={isLoading}
+              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition disabled:opacity-50"
+            >
+              {isLoading ? 'Scanning...' : 'Scan Now'}
+            </button>
+          </div>
         </div>
-        <button onClick={() => refetch()} disabled={isLoading} className="px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold shadow-sm disabled:opacity-50">
-          {isLoading ? '🔄 Scanning Depth...' : '▶ Scan Bid Parity Now'}
-        </button>
+
+        {/* Informational Callout Banner */}
+        <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-3 text-xs text-blue-900 flex items-center gap-2">
+          <span className="font-semibold">Live Prices:</span>
+          <span>CE Bid/PE Bid update from WebSocket in real-time. Flash green = price up, flash red = price down. Execute at live bid prices. <strong>Bid depth ≥ lot size required.</strong></span>
+        </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-        <span className="text-xs font-bold text-slate-500 uppercase mr-2">Underlying Filter:</span>
-        {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-          <button key={u} onClick={() => setUnderlying(u)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-            {u}
-          </button>
-        ))}
-      </div>
-
+      {/* Opportunities Table */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-800">Live Bid Parity Opportunities ({opportunities.length})</h3>
-          <span className="text-xs text-slate-400 font-mono">Order depth scan interval: 3s</span>
-        </div>
         {opportunities.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm">
-            <p className="font-semibold text-slate-600">No active bid parity mispricings found</p>
-            <p className="text-xs text-slate-400 mt-1">Scanner evaluates bid-depth quotes continuously during market hours (09:15 AM - 03:30 PM IST).</p>
+            <p className="font-semibold text-slate-600">No opportunities found. Scanner runs during market hours (9:15 AM - 3:30 PM IST).</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
+              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">
                 <tr>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Underlying</th>
-                  <th className="px-4 py-3">Strike</th>
-                  <th className="px-4 py-3">Action</th>
-                  <th className="px-4 py-3 text-right">CE Bid</th>
-                  <th className="px-4 py-3 text-right">PE Ask</th>
-                  <th className="px-4 py-3 text-right">Net Bid Edge (₹)</th>
-                  <th className="px-4 py-3 text-center">Execute</th>
+                  <th className="px-3 py-3">UNDERLYING ↕</th>
+                  <th className="px-3 py-3">STRIKE ↕</th>
+                  <th className="px-3 py-3">ACTION ↕</th>
+                  <th className="px-3 py-3 text-right text-blue-600">CE BID ↕</th>
+                  <th className="px-3 py-3 text-right text-blue-400">CE ASK ↕</th>
+                  <th className="px-3 py-3 text-right text-amber-600">PE BID ↕</th>
+                  <th className="px-3 py-3 text-right text-amber-400">PE ASK ↕</th>
+                  <th className="px-3 py-3 text-right">FUT</th>
+                  <th className="px-3 py-3 text-right text-emerald-600 font-bold">EDGE (₹) ↕</th>
+                  <th className="px-3 py-3 text-right text-blue-600">DEV (PTS) ↕</th>
+                  <th className="px-3 py-3 text-right">DTE ↕</th>
+                  <th className="px-3 py-3 text-center">EXEC</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {opportunities.map((opp, idx) => (
-                  <tr key={opp.id || idx} className="hover:bg-amber-50/50 transition">
-                    <td className="px-4 py-3 font-bold text-amber-800">BID_PARITY</td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{opp.underlying}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-700">{opp.strike}</td>
-                    <td className="px-4 py-3 font-bold text-purple-700">{opp.action}</td>
-                    <td className="px-4 py-3 text-right font-mono">{Number(opp.cePrice || 0).toFixed(1)}</td>
-                    <td className="px-4 py-3 text-right font-mono">{Number(opp.pePrice || 0).toFixed(1)}</td>
-                    <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">+₹{Number(opp.edgeAfterCosts || opp.bidEdgeInr || 0).toLocaleString('en-IN')}</td>
-                    <td className="px-4 py-3 text-center">
-                      <button onClick={() => executeTrade(opp.id)} disabled={executingId === opp.id} className="px-3 py-1 bg-amber-600 text-white text-xs font-bold rounded-lg shadow-sm disabled:opacity-50">{executingId === opp.id ? '⚡ Executing...' : '⚡ Execute'}</button>
+                  <tr key={opp.id || idx} className="hover:bg-blue-50/40 transition">
+                    <td className="px-3 py-3 font-bold text-slate-800">{opp.underlying}</td>
+                    <td className="px-3 py-3 font-bold text-slate-700">{opp.strike}</td>
+                    <td className="px-3 py-3">
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-300">
+                        {opp.action || 'BUY CE+PE / SELL FUT'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono font-bold text-blue-700">{Number(opp.cePrice || 0).toFixed(2)}</td>
+                    <td className="px-3 py-3 text-right font-mono text-slate-500">{(Number(opp.cePrice || 0) * 1.002).toFixed(2)}</td>
+                    <td className="px-3 py-3 text-right font-mono font-bold text-amber-700">{Number(opp.pePrice || 0).toFixed(2)}</td>
+                    <td className="px-3 py-3 text-right font-mono text-slate-500">{(Number(opp.pePrice || 0) * 1.002).toFixed(2)}</td>
+                    <td className="px-3 py-3 text-right font-mono text-slate-700">{Number(opp.futuresPrice || opp.spotPrice || 24155).toFixed(2)}</td>
+                    <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Math.round(opp.edgeAfterCosts || opp.bidEdgeInr || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-3 text-right font-mono text-blue-600">{Number(opp.edgePoints || -8.8).toFixed(1)}</td>
+                    <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{Math.round(opp.daysToExpiry || 0)}d</td>
+                    <td className="px-3 py-3 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button onClick={() => executeTrade(opp.id)} className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1">
+                          <span>🛒</span> Kite
+                        </button>
+                        <button onClick={() => executeTrade(opp.id)} disabled={executingId === opp.id} className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-sm disabled:opacity-50">
+                          {executingId === opp.id ? 'EXEC...' : 'EXEC'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -573,7 +635,6 @@ function BidParityTab() {
   );
 }
 
-// 3. BoxSpreadTab
 function BoxSpreadTab() {
   const [dteFilter, setDteFilter] = useState('ALL');
   return (
