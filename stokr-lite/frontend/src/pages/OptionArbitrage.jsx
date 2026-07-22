@@ -2200,8 +2200,8 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
 
       {summaryData && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard label="Total Opportunities" value={summaryData.totalOpportunities || 0} color="text-blue-600" />
-          <StatCard label="Edge Detected" value={`₹${(summaryData.totalEdgeDetected || 0).toLocaleString()}`} color="text-emerald-600" />
+          <StatCard label="Total Opportunities" value={strategyFilter === 'ALL' ? (summaryData.totalOpportunities || totalElements) : totalElements} color="text-blue-600" />
+          <StatCard label="Edge Detected" value={`₹${(strategyFilter === 'ALL' ? (summaryData.totalEdgeDetected || 0) : opportunities.reduce((s, o) => s + (o.edgeAfterCosts || 0), 0)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`} color="text-emerald-600" />
           <StatCard label="Total P&L" value={`₹${(summaryData.totalPnlAfterCosts || 0).toLocaleString()}`} color={(summaryData.totalPnlAfterCosts || 0) >= 0 ? 'text-emerald-600' : 'text-red-500'} />
           <StatCard label="Win Rate" value={`${summaryData.winRate || 0}%`} color="text-blue-600" />
         </div>
