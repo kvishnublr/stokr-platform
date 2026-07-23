@@ -1,0 +1,1 @@
+SELECT id, ce_symbol, pe_symbol, underlying, strike, action, scan_time, status FROM option_arb_opportunities WHERE status='RUNNING' AND scan_time > now() - interval '24 hours' LIMIT 5;

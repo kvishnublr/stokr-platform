@@ -1,0 +1,1 @@
+SELECT id, ce_symbol, pe_symbol, ce_entry_price, pe_entry_price, underlying, strike, action FROM option_arb_opportunities WHERE status='RUNNING' AND ce_symbol IS NOT NULL LIMIT 5;

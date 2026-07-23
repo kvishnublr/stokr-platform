@@ -1,0 +1,1 @@
+INSERT INTO option_arb_auto_exec_settings (setting_key, setting_value) VALUES ('bid_parity_auto_rollover', 'true'), ('bid_parity_exit_edge', '100'), ('bid_parity_max_sets', '3'), ('normal_exit_edge', '800'), ('normal_max_sets', '3') ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value;

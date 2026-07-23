@@ -1,0 +1,85 @@
+INSERT INTO option_arb_opportunities (scan_time, underlying, opportunity_type, strike, action, legs, description, spot_price, futures_price, ce_entry_price, pe_entry_price, ce_bid, ce_ask, pe_bid, pe_ask, edge_points, edge_after_costs, confidence, days_to_expiry, expiry_date, status, cost_breakdown_json) VALUES
+
+('2026-07-20 09:16:22', 'NIFTY', 'PARITY_BREAK', 25350, 'CONVERSION',
+ 'BUY 25350 CE | SELL 25350 PE | SELL NIFTY FUT',
+ 'NIFTY 25350: Synthetic 25348.2 < Futures 25362.0 by 13.8 pts. Buy synthetic, sell future.',
+ 25325.50, 25362.00, 145.50, 133.30, 143.80, 147.20, 131.50, 135.10, 12.5, 487.0, 82, 5, '2026-07-25', 'DETECTED',
+ '{"grossEdge":812.5,"stt":0.81,"brokerage":120,"exchange":0.28,"sebi":0.0008,"gst":21.60,"ipft":0.0001,"totalCosts":142.7,"netEdge":487.0,"lotSize":65}'),
+
+('2026-07-20 09:22:15', 'NIFTY', 'PARITY_BREAK', 25400, 'REVERSAL',
+ 'SELL 25400 CE | BUY 25400 PE | BUY NIFTY FUT',
+ 'NIFTY 25400: Synthetic 25418.5 > Futures 25365.0 by 53.5 pts. Sell synthetic, buy future.',
+ 25328.00, 25365.00, 168.20, 112.70, 170.50, 172.00, 111.00, 114.50, 47.8, 3012.0, 95, 5, '2026-07-25', 'DETECTED',
+ '{"grossEdge":3107.0,"stt":3.11,"brokerage":120,"exchange":1.07,"sebi":0.003,"gst":21.79,"ipft":0.0003,"totalCosts":146.0,"netEdge":3012.0,"lotSize":65}'),
+
+('2026-07-20 09:35:41', 'NIFTY', 'PARITY_BREAK', 25300, 'CONVERSION',
+ 'BUY 25300 CE | SELL 25300 PE | SELL NIFTY FUT',
+ 'NIFTY 25300: Synthetic 25295.1 < Futures 25360.0 by 64.9 pts. Buy synthetic, sell future.',
+ 25325.00, 25360.00, 128.30, 156.20, 126.50, 130.10, 154.00, 158.50, 58.2, 3588.0, 94, 5, '2026-07-25', 'DETECTED',
+ '{"grossEdge":3783.0,"stt":3.78,"brokerage":120,"exchange":1.31,"sebi":0.004,"gst":21.84,"ipft":0.0004,"totalCosts":147.0,"netEdge":3588.0,"lotSize":65}'),
+
+('2026-07-20 10:05:33', 'NIFTY', 'PARITY_BREAK', 25350, 'CONVERSION',
+ 'BUY 25350 CE | SELL 25350 PE | SELL NIFTY FUT',
+ 'NIFTY 25350 mid-price parity break. Synthetic 25341.0 vs Futures 25358.5.',
+ 25330.00, 25358.50, 142.00, 135.80, 140.50, 143.50, 134.00, 137.60, 15.2, 838.0, 79, 5, '2026-07-25', 'DETECTED',
+ '{"grossEdge":988.0,"stt":0.99,"brokerage":120,"exchange":0.34,"sebi":0.001,"gst":21.66,"ipft":0.0001,"totalCosts":143.0,"netEdge":838.0,"lotSize":65}'),
+
+('2026-07-20 14:05:12', 'NIFTY', 'PARITY_BREAK', 25400, 'REVERSAL',
+ 'SELL 25400 CE | BUY 25400 PE | BUY NIFTY FUT',
+ 'NIFTY 25400 afternoon scan: Synthetic 25415.3 > Futures 25370.0 by 45.3 pts.',
+ 25335.00, 25370.00, 155.00, 118.70, 157.20, 159.80, 116.50, 120.30, 38.5, 2368.0, 88, 5, '2026-07-25', 'DETECTED',
+ '{"grossEdge":2502.5,"stt":2.50,"brokerage":120,"exchange":0.86,"sebi":0.003,"gst":21.76,"ipft":0.0003,"totalCosts":145.1,"netEdge":2368.0,"lotSize":65}'),
+
+('2026-07-20 09:18:45', 'BANKNIFTY', 'PARITY_BREAK', 57200, 'CONVERSION',
+ 'BUY 57200 CE | SELL 57200 PE | SELL BANKNIFTY FUT',
+ 'BANKNIFTY 57200: Synthetic 57188.0 < Futures 57235.0 by 47.0 pts. Buy synthetic, sell future.',
+ 57195.00, 57235.00, 312.50, 263.50, 310.00, 315.00, 261.00, 266.00, 41.5, 1245.0, 88, 11, '2026-07-31', 'DETECTED',
+ '{"grossEdge":1245.0,"stt":1.25,"brokerage":120,"exchange":0.43,"sebi":0.001,"gst":21.68,"ipft":0.0001,"totalCosts":143.4,"netEdge":1245.0,"lotSize":30}'),
+
+('2026-07-20 09:42:18', 'BANKNIFTY', 'PARITY_BREAK', 57300, 'REVERSAL',
+ 'SELL 57300 CE | BUY 57300 PE | BUY BANKNIFTY FUT',
+ 'BANKNIFTY 57300: Synthetic 57342.0 > Futures 57240.0 by 102.0 pts. Sell synthetic, buy future.',
+ 57200.00, 57240.00, 385.00, 240.00, 388.00, 392.00, 237.00, 243.00, 93.5, 2805.0, 91, 11, '2026-07-31', 'DETECTED',
+ '{"grossEdge":2805.0,"stt":2.81,"brokerage":120,"exchange":0.97,"sebi":0.003,"gst":21.77,"ipft":0.0003,"totalCosts":145.6,"netEdge":2805.0,"lotSize":30}'),
+
+('2026-07-20 10:15:22', 'BANKNIFTY', 'PARITY_BREAK', 57100, 'CONVERSION',
+ 'BUY 57100 CE | SELL 57100 PE | SELL BANKNIFTY FUT',
+ 'BANKNIFTY 57100: Synthetic 57085.0 < Futures 57230.0 by 145.0 pts.',
+ 57198.00, 57230.00, 265.00, 322.00, 262.50, 267.50, 319.00, 325.00, 137.0, 4110.0, 93, 11, '2026-07-31', 'DETECTED',
+ '{"grossEdge":4110.0,"stt":4.11,"brokerage":120,"exchange":1.42,"sebi":0.004,"gst":21.86,"ipft":0.0004,"totalCosts":147.4,"netEdge":4110.0,"lotSize":30}'),
+
+('2026-07-20 11:30:05', 'BANKNIFTY', 'PARITY_BREAK', 57150, 'CONVERSION',
+ 'BUY 57150 CE | SELL 57150 PE | SELL BANKNIFTY FUT',
+ 'BANKNIFTY 57150 mid-price parity break. Edge after costs Rs.920.',
+ 57202.00, 57228.00, 288.50, 296.00, 286.00, 291.00, 293.50, 298.50, 31.2, 920.0, 81, 11, '2026-07-31', 'DETECTED',
+ '{"grossEdge":936.0,"stt":0.94,"brokerage":120,"exchange":0.32,"sebi":0.001,"gst":21.66,"ipft":0.0001,"totalCosts":143.0,"netEdge":920.0,"lotSize":30}'),
+
+('2026-07-20 14:30:45', 'BANKNIFTY', 'PARITY_BREAK', 57250, 'REVERSAL',
+ 'SELL 57250 CE | BUY 57250 PE | BUY BANKNIFTY FUT',
+ 'BANKNIFTY 57250 afternoon scan. Synthetic 57305 > Futures 57232 by 73 pts.',
+ 57205.00, 57232.00, 355.00, 258.00, 358.00, 362.00, 255.00, 261.00, 65.0, 1950.0, 85, 11, '2026-07-31', 'DETECTED',
+ '{"grossEdge":1950.0,"stt":1.95,"brokerage":120,"exchange":0.67,"sebi":0.002,"gst":21.72,"ipft":0.0002,"totalCosts":144.4,"netEdge":1950.0,"lotSize":30}'),
+
+('2026-07-20 09:25:10', 'MIDCPNIFTY', 'PARITY_BREAK', 13200, 'CONVERSION',
+ 'BUY 13200 CE | SELL 13200 PE | SELL MIDCPNIFTY FUT',
+ 'MIDCPNIFTY 13200: Synthetic 13192 < Futures 13225 by 33 pts.',
+ 13195.00, 13225.00, 98.50, 104.80, 97.00, 100.00, 103.00, 106.50, 28.0, 3360.0, 86, 11, '2026-07-31', 'DETECTED',
+ '{"grossEdge":3360.0,"stt":3.36,"brokerage":120,"exchange":1.16,"sebi":0.003,"gst":21.81,"ipft":0.0003,"totalCosts":146.3,"netEdge":3360.0,"lotSize":120}'),
+
+('2026-07-20 10:45:30', 'MIDCPNIFTY', 'PARITY_BREAK', 13150, 'CONVERSION',
+ 'BUY 13150 CE | SELL 13150 PE | SELL MIDCPNIFTY FUT',
+ 'MIDCPNIFTY 13150: Deep parity break. Synthetic 13138 < Futures 13220 by 82 pts.',
+ 13198.00, 13220.00, 85.00, 118.50, 83.00, 87.00, 116.00, 121.00, 72.0, 8640.0, 92, 11, '2026-07-31', 'DETECTED',
+ '{"grossEdge":8640.0,"stt":8.64,"brokerage":120,"exchange":2.98,"sebi":0.009,"gst":21.94,"ipft":0.0009,"totalCosts":153.6,"netEdge":8640.0,"lotSize":120}'),
+
+('2026-07-20 09:30:55', 'FINNIFTY', 'PARITY_BREAK', 24800, 'REVERSAL',
+ 'SELL 24800 CE | BUY 24800 PE | BUY FINNIFTY FUT',
+ 'FINNIFTY 24800: Synthetic 24842 > Futures 24795 by 47 pts.',
+ 24780.00, 24795.00, 175.50, 128.80, 178.00, 181.00, 126.50, 131.00, 42.0, 2520.0, 87, 11, '2026-07-31', 'DETECTED',
+ '{"grossEdge":2520.0,"stt":2.52,"brokerage":120,"exchange":0.87,"sebi":0.003,"gst":21.76,"ipft":0.0003,"totalCosts":145.2,"netEdge":2520.0,"lotSize":60}'),
+
+('2026-07-20 11:15:20', 'FINNIFTY', 'PARITY_BREAK', 24750, 'CONVERSION',
+ 'BUY 24750 CE | SELL 24750 PE | SELL FINNIFTY FUT',
+ 'FINNIFTY 24750: Synthetic 24738 < Futures 24798 by 60 pts.',
+ 24782.00, 24798.00, 112.00, 142.50, 110.00, 114.00, 140.00, 145.00, 52.0, 3120.0, 89, 11, '2026-07-31', 'DETECTED',
+ '{"grossEdge":3120.0,"stt":3.12,"brokerage":120,"exchange":1.08,"sebi":0.003,"gst":21.79,"ipft":0.0003,"totalCosts":146.0,"netEdge":3120.0,"lotSize":60}');

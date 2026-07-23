@@ -1,0 +1,1 @@
+SELECT id, underlying, strike, status, edge_after_costs, pnl_after_costs, ce_entry_price, pe_entry_price, futures_price, action FROM option_arb_opportunities WHERE status='RUNNING' LIMIT 5;
