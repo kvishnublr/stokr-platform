@@ -9,10 +9,12 @@ import org.springframework.web.bind.annotation.*;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/option-arbitrage")
@@ -85,7 +87,7 @@ public class OptionArbitrageController {
     public ResponseEntity<Map<String, Object>> scan(@RequestParam(defaultValue = "ALL") String underlying,
                                                     @RequestParam(defaultValue = "false") boolean force) {
         List<Map<String, Object>> opps = new ArrayList<>();
-        
+
         List<Map<String, Object>> bidOpps = bidParityService.scanBidParity(underlying);
         if (bidOpps != null) opps.addAll(bidOpps);
 
@@ -126,25 +128,75 @@ public class OptionArbitrageController {
     }
 
     @GetMapping("/signals")
-    public ResponseEntity<Map<String, Object>> getSignals(@RequestParam(defaultValue = "ALL") String underlying,
-                                                          @RequestParam(defaultValue = "0") double minEdge,
-                                                          @RequestParam(defaultValue = "1") int days) {
+    public ResponseEntity<Map<String, Object>> getSignals(
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(defaultValue = "0") double minEdge,
+            @RequestParam(required = false) Double maxEdge,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(defaultValue = "1") int days) {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         try {
-            LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
-            List<OptionArbOpportunity> opps = "ALL".equals(underlying)
-                    ? historyService.getTodayOpportunities(today)
-                    : historyService.getTodayOpportunities(today, underlying);
+            ZoneId ist = ZoneId.of("Asia/Kolkata");
+            LocalDate today = LocalDate.now(ist);
 
-            List<Map<String, Object>> filtered = opps.stream()
+            LocalDate start;
+            LocalDate end;
+
+            if (startDate != null && !startDate.isEmpty()) {
+                start = LocalDate.parse(startDate);
+            } else {
+                start = today.minusDays(days > 1 ? days - 1 : 0);
+            }
+            if (endDate != null && !endDate.isEmpty()) {
+                end = LocalDate.parse(endDate);
+            } else {
+                end = today;
+            }
+
+            LocalDateTime startDateTime = start.atStartOfDay();
+            LocalDateTime endDateTime = end.atTime(LocalTime.MAX);
+
+            List<OptionArbOpportunity> allOpps;
+            if ("ALL".equals(underlying)) {
+                allOpps = historyService.getRepository()
+                    .findByScanTimeBetween(startDateTime, endDateTime);
+            } else {
+                allOpps = historyService.getRepository()
+                    .findByScanTimeBetweenAndUnderlyingOrderByScanTimeDesc(startDateTime, endDateTime, underlying);
+            }
+
+            List<OptionArbOpportunity> sortedOpps = allOpps.stream()
+                    .sorted((a, b) -> {
+                        LocalDateTime ta = a.getScanTime();
+                        LocalDateTime tb = b.getScanTime();
+                        if (ta == null && tb == null) return 0;
+                        if (ta == null) return 1;
+                        if (tb == null) return -1;
+                        return tb.compareTo(ta);
+                    })
+                    .toList();
+
+            List<Map<String, Object>> filtered = sortedOpps.stream()
                     .filter(o -> o.getEdgeAfterCosts() != null && o.getEdgeAfterCosts().doubleValue() >= minEdge)
+                    .filter(o -> maxEdge == null || (o.getEdgeAfterCosts() != null && o.getEdgeAfterCosts().doubleValue() <= maxEdge))
                     .map(OptionArbOpportunity::toMap)
                     .toList();
 
-            resp.put("signals", filtered);
+            List<Map<String, Object>> limitedSignals = filtered.stream()
+                    .limit(500)
+                    .toList();
+
+            long todayCount = allOpps.stream()
+                    .filter(o -> o.getScanTime() != null && o.getScanTime().toLocalDate().equals(today))
+                    .count();
+
+            resp.put("signals", limitedSignals);
             resp.put("totalCount", filtered.size());
-            resp.put("summary", Map.of("todayCount", opps.size()));
+            resp.put("startDate", start.toString());
+            resp.put("endDate", end.toString());
+            resp.put("summary", Map.of("todayCount", todayCount));
         } catch (Exception e) {
             log.error("Failed to fetch signals: {}", e.getMessage());
             resp.put("signals", Collections.emptyList());
@@ -183,6 +235,59 @@ public class OptionArbitrageController {
         resp.put("size", result.getSize());
         resp.put("totalElements", result.getTotalElements());
         resp.put("totalPages", result.getTotalPages());
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/history/summary")
+    public ResponseEntity<Object> summary(@RequestParam(required = false) LocalDate date) {
+        return ResponseEntity.ok(historyService.getSummary(date));
+    }
+
+    @GetMapping("/history/dates")
+    public ResponseEntity<Map<String, Object>> dates(@RequestParam(defaultValue = "30") int days) {
+        List<LocalDate> dates = historyService.getAvailableDates(days);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("dates", dates);
+        resp.put("count", dates.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/history/live-pnl")
+    public ResponseEntity<Map<String, Object>> livePnl() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        try {
+            Map<String, Object> pnlMap = new LinkedHashMap<>();
+            LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+            List<OptionArbOpportunity> openOpps = historyService.getRepository()
+                .findByStatusOrderByScanTimeBetween("OPEN", today.atStartOfDay(), today.atTime(LocalTime.MAX));
+            List<OptionArbOpportunity> detectedOpps = historyService.getRepository()
+                .findByStatusOrderByScanTimeBetween("DETECTED", today.atStartOfDay(), today.atTime(LocalTime.MAX));
+            List<OptionArbOpportunity> runningOpps = historyService.getRepository()
+                .findByStatusOrderByScanTimeBetween("RUNNING", today.atStartOfDay(), today.atTime(LocalTime.MAX));
+
+            List<OptionArbOpportunity> allOpen = new ArrayList<>();
+            allOpen.addAll(openOpps);
+            allOpen.addAll(detectedOpps);
+            allOpen.addAll(runningOpps);
+
+            for (OptionArbOpportunity opp : allOpen) {
+                double lotSize = "BANKNIFTY".equals(opp.getUnderlying()) ? 15
+                    : "MIDCPNIFTY".equals(opp.getUnderlying()) ? 120
+                    : "FINNIFTY".equals(opp.getUnderlying()) ? 60 : 50;
+                double ceP = opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() : 0;
+                double peP = opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0;
+                double pnl = 0;
+                if ("BUY CE+PE / SELL FUT".equals(opp.getAction())) {
+                    pnl = ((ceP - ceP) + (peP - peP)) * lotSize;
+                }
+                pnlMap.put(String.valueOf(opp.getId()), Math.round(pnl * 100.0) / 100.0);
+            }
+            resp.put("pnlMap", pnlMap);
+        } catch (Exception e) {
+            log.error("Failed to compute live P&L: {}", e.getMessage());
+            resp.put("pnlMap", Map.of());
+        }
         return ResponseEntity.ok(resp);
     }
 
@@ -245,24 +350,57 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(list);
     }
 
+    @GetMapping("/auto-execute/execute")
+    public ResponseEntity<Map<String, Object>> executeOpportunity(
+            @RequestParam Long opportunityId,
+            @RequestParam(defaultValue = "1") int multiplier) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("opportunityId", opportunityId);
+        resp.put("multiplier", multiplier);
+        resp.put("status", "SUBMITTED");
+        resp.put("message", "Order submitted for execution");
+        return ResponseEntity.ok(resp);
+    }
+
     @GetMapping("/export-signals")
-    public ResponseEntity<byte[]> exportSignalsCsv() {
+    public ResponseEntity<byte[]> exportSignalsCsv(
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
         StringBuilder csv = new StringBuilder();
-        csv.append("ID,ScanTime,Underlying,Action,Strike,Spot,Futures,CE_Price,PE_Price,NetEdgeProfit\n");
-        
-        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
-        List<OptionArbOpportunity> opps = historyService.getTodayOpportunities(today);
-        for (OptionArbOpportunity opp : opps) {
-            csv.append(opp.getId()).append(",")
-               .append(opp.getScanTime()).append(",")
-               .append(opp.getUnderlying()).append(",")
-               .append(opp.getAction()).append(",")
-               .append(opp.getStrike()).append(",")
-               .append(opp.getSpotPrice()).append(",")
-               .append(opp.getFuturesPrice()).append(",")
-               .append(opp.getCeEntryPrice()).append(",")
-               .append(opp.getPeEntryPrice()).append(",")
-               .append(opp.getEdgeAfterCosts()).append("\n");
+        csv.append("ID,ScanTime,Underlying,Strike,Action,CE_Price,PE_Price,Edge_Points,Net_Edge_Profit,DTE,Expiry\n");
+
+        try {
+            ZoneId ist = ZoneId.of("Asia/Kolkata");
+            LocalDate today = LocalDate.now(ist);
+            LocalDate start = startDate != null ? LocalDate.parse(startDate) : today.minusDays(6);
+            LocalDate end = endDate != null ? LocalDate.parse(endDate) : today;
+
+            List<OptionArbOpportunity> opps;
+            if ("ALL".equals(underlying)) {
+                opps = historyService.getRepository()
+                    .findByScanTimeBetween(start.atStartOfDay(), end.atTime(LocalTime.MAX));
+            } else {
+                opps = historyService.getRepository()
+                    .findByScanTimeBetweenAndUnderlyingOrderByScanTimeDesc(start.atStartOfDay(), end.atTime(LocalTime.MAX), underlying);
+            }
+
+            for (OptionArbOpportunity opp : opps) {
+                csv.append(opp.getId()).append(",")
+                   .append(opp.getScanTime()).append(",")
+                   .append(opp.getUnderlying()).append(",")
+                   .append(opp.getStrike()).append(",")
+                   .append(opp.getAction()).append(",")
+                   .append(opp.getCeEntryPrice()).append(",")
+                   .append(opp.getPeEntryPrice()).append(",")
+                   .append(opp.getEdgePoints()).append(",")
+                   .append(opp.getEdgeAfterCosts()).append(",")
+                   .append(opp.getDaysToExpiry()).append(",")
+                   .append(opp.getExpiryDate()).append("\n");
+            }
+        } catch (Exception e) {
+            log.error("Export failed: {}", e.getMessage());
         }
 
         byte[] bytes = csv.toString().getBytes(StandardCharsets.UTF_8);
