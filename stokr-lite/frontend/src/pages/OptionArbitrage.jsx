@@ -133,7 +133,7 @@ export default function OptionArbitrage() {
       const res = await axios.get(`${API_BASE}/api/option-arbitrage/health`);
       return res.data;
     },
-    refetchInterval: 5000,
+    refetchInterval: 1000,
   });
 
   const { data: cachedData, isLoading: cachedLoading } = useQuery({
@@ -737,7 +737,7 @@ function SignalsTab() {
       });
       return res.data;
     },
-    refetchInterval: 5000
+    refetchInterval: 1000
   });
 
   const signals = data?.signals || [];
@@ -873,7 +873,7 @@ function AutoExecTab() {
       const res = await axios.get(`${API_BASE}/api/option-arbitrage/health`);
       return res.data;
     },
-    refetchInterval: 5000
+    refetchInterval: 1000
   });
 
   const { data: settings, refetch: refetchSettings } = useQuery({

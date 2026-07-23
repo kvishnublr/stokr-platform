@@ -4,153 +4,186 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.time.DayOfWeek;
-import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneId;
+import java.time.LocalDateTime;
 import java.util.*;
 
 @Service
 public class BoxSpreadService {
 
     private static final Logger log = LoggerFactory.getLogger(BoxSpreadService.class);
-    private static final double RISK_FREE_RATE = 0.065;
-    private static final double MIN_BOX_PROFIT = 50.0;
-    private static final double MAX_ENTRY_COST_PCT = 0.95;
 
     private final OptionChainService optionChainService;
-    private final ZerodhaSpotPriceFetcher spotFetcher;
+    private final OptionArbHistoryService historyService;
+    private final ZerodhaSpotPriceFetcher spotPriceFetcher;
 
-    private static final Map<String, String> SPOT_KEYS = Map.of(
-        "NIFTY", "NSE:NIFTY 50",
-        "BANKNIFTY", "NSE:NIFTY BANK",
-        "MIDCPNIFTY", "NSE:NIFTY MID SELECT",
-        "FINNIFTY", "NSE:NIFTY FIN SERVICE"
-    );
+    private static final double MIN_BOX_EDGE_AFTER_COSTS = -1000.0;
 
-    public BoxSpreadService(OptionChainService optionChainService, ZerodhaSpotPriceFetcher spotFetcher) {
+    public BoxSpreadService(OptionChainService optionChainService,
+                            OptionArbHistoryService historyService,
+                            ZerodhaSpotPriceFetcher spotPriceFetcher) {
         this.optionChainService = optionChainService;
-        this.spotFetcher = spotFetcher;
+        this.historyService = historyService;
+        this.spotPriceFetcher = spotPriceFetcher;
     }
 
     public List<Map<String, Object>> scanBoxSpread(String underlying) {
+        List<String> targets = "ALL".equalsIgnoreCase(underlying) 
+            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            : List.of(underlying);
+
         List<Map<String, Object>> results = new ArrayList<>();
 
-        try {
-            String spotKey = SPOT_KEYS.get(underlying);
-            if (spotKey == null) return results;
-            double spot = spotFetcher.getSpotPrice(spotKey);
-            if (spot <= 0) return results;
+        Map<String, String> spotKeys = Map.of(
+            "NIFTY", "NSE:NIFTY 50",
+            "BANKNIFTY", "NSE:NIFTY BANK",
+            "MIDCPNIFTY", "NSE:NIFTY MID SELECT",
+            "FINNIFTY", "NSE:NIFTY FIN SERVICE"
+        );
 
-            int lotSize = OptionChainService.getLotSize(underlying);
-            int atmStrike = optionChainService.getATMStrike(underlying, spot);
-            List<Integer> strikes = optionChainService.generateStrikes(atmStrike, underlying);
+        String yy = String.format("%02d", LocalDate.now().getYear() % 100);
+        String mon = LocalDate.now().getMonth().name().substring(0, 3);
 
-            LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
-            if (expiry == null) return results;
-            double daysToExpiry = Duration.between(LocalDate.now().atStartOfDay(), expiry.atStartOfDay()).toDays();
-            if (daysToExpiry < 1) return results;
+        Map<String, String> futKeys = Map.of(
+            "NIFTY", "NFO:NIFTY" + yy + mon + "FUT",
+            "BANKNIFTY", "NFO:BANKNIFTY" + yy + mon + "FUT",
+            "MIDCPNIFTY", "NFO:MIDCPNIFTY" + yy + mon + "FUT",
+            "FINNIFTY", "NFO:FINNIFTY" + yy + mon + "FUT"
+        );
 
-            List<String> instruments = new ArrayList<>();
-            for (int strike : strikes) {
-                instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, strike, "CE"));
-                instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, strike, "PE"));
-            }
+        for (String u : targets) {
+            try {
+                String spotKey = spotKeys.getOrDefault(u, "NSE:NIFTY 50");
+                String futKey = futKeys.getOrDefault(u, "NFO:" + u + yy + mon + "FUT");
 
-            Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
-            if (quotes.isEmpty()) return results;
+                double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
+                double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
+                double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : spot;
+                if (spot <= 0 && fut > 0) spot = fut;
 
-            for (int i = 0; i < strikes.size(); i++) {
-                for (int j = i + 1; j < strikes.size(); j++) {
-                    int k1 = strikes.get(i);
-                    int k2 = strikes.get(j);
-                    int width = k2 - k1;
+                if (spot <= 0) continue;
 
-                    String ceK1Key = optionChainService.buildNfoSymbol(underlying, expiry, k1, "CE");
-                    String peK1Key = optionChainService.buildNfoSymbol(underlying, expiry, k1, "PE");
-                    String ceK2Key = optionChainService.buildNfoSymbol(underlying, expiry, k2, "CE");
-                    String peK2Key = optionChainService.buildNfoSymbol(underlying, expiry, k2, "PE");
+                List<ArbitrageOpportunity> opps = scanBoxSpreadForUnderlying(u, spot, fut);
+                if (opps != null && !opps.isEmpty()) {
+                    historyService.saveOpportunities(opps, u, "BOX_SPREAD");
 
-                    OptionChainService.OptionQuote ceK1 = quotes.get(ceK1Key);
-                    OptionChainService.OptionQuote peK1 = quotes.get(peK1Key);
-                    OptionChainService.OptionQuote ceK2 = quotes.get(ceK2Key);
-                    OptionChainService.OptionQuote peK2 = quotes.get(peK2Key);
-
-                    if (ceK1 == null || peK1 == null || ceK2 == null || peK2 == null) continue;
-                    if (ceK1.lastPrice <= 0 || peK1.lastPrice <= 0 || ceK2.lastPrice <= 0 || peK2.lastPrice <= 0) continue;
-
-                    double synthK1 = ceK1.ask > 0 ? ceK1.ask : ceK1.lastPrice;
-                    double synthK1_credit = peK1.bid > 0 ? peK1.bid : peK1.lastPrice;
-                    double synthK2_credit = ceK2.bid > 0 ? ceK2.bid : ceK2.lastPrice;
-                    double synthK2_debit = peK2.ask > 0 ? peK2.ask : peK2.lastPrice;
-
-                    double entryCost = (synthK1 - synthK1_credit) + (synthK2_debit - synthK2_credit);
-
-                    double guaranteedPayoff = width;
-                    double grossProfit = guaranteedPayoff - entryCost;
-
-                    double sellPremium = synthK1_credit + synthK2_credit;
-                    double stt = sellPremium * lotSize * 0.001;
-                    double brokerage = 120.0;
-                    double exchange = sellPremium * lotSize * 0.0000345;
-                    double sebi = sellPremium * lotSize * 0.000001;
-                    double gst = (brokerage + sebi) * 0.18;
-                    double ipft = sellPremium * lotSize * 0.0000001;
-                    double totalCosts = stt + brokerage + exchange + sebi + gst + ipft;
-
-                    double netProfitPerLot = (grossProfit * lotSize) - totalCosts;
-                    double returnOnMargin = entryCost * lotSize > 0 ? netProfitPerLot / (entryCost * lotSize) * 100 : 0;
-
-                    if (netProfitPerLot >= MIN_BOX_PROFIT && entryCost < guaranteedPayoff * MAX_ENTRY_COST_PCT) {
-                        Map<String, Object> opp = new LinkedHashMap<>();
-                        opp.put("underlying", underlying);
-                        opp.put("type", "BOX_SPREAD");
-                        opp.put("lowerStrike", k1);
-                        opp.put("upperStrike", k2);
-                        opp.put("width", width);
-                        opp.put("lotSize", lotSize);
-                        opp.put("expiry", expiry.toString());
-                        opp.put("daysToExpiry", (int) daysToExpiry);
-
-                        opp.put("ceK1Ask", ceK1.ask > 0 ? ceK1.ask : ceK1.lastPrice);
-                        opp.put("peK1Bid", peK1.bid > 0 ? peK1.bid : peK1.lastPrice);
-                        opp.put("ceK2Bid", ceK2.bid > 0 ? ceK2.bid : ceK2.lastPrice);
-                        opp.put("peK2Ask", peK2.ask > 0 ? peK2.ask : peK2.lastPrice);
-
-                        opp.put("entryCost", Math.round(entryCost * 100.0) / 100.0);
-                        opp.put("guaranteedPayoff", guaranteedPayoff);
-                        opp.put("grossProfitPts", Math.round(grossProfit * 100.0) / 100.0);
-                        opp.put("totalCosts", Math.round(totalCosts));
-                        opp.put("netProfitPerLot", Math.round(netProfitPerLot));
-                        opp.put("returnOnMargin", Math.round(returnOnMargin * 100.0) / 100.0);
-
-                        opp.put("legs", String.format(
-                            "BUY CE %d + SELL PE %d + SELL CE %d + BUY PE %d", k1, k1, k2, k2));
-                        opp.put("description", String.format(
-                            "Box %d-%d: cost=%.1f payoff=%d net=Rs.%d (%.2f%% on margin)",
-                            k1, k2, entryCost, guaranteedPayoff, Math.round(netProfitPerLot), returnOnMargin));
-
-                        results.add(opp);
+                    for (ArbitrageOpportunity opp : opps) {
+                        Map<String, Object> map = opp.toMap();
+                        map.put("strategyType", "BOX_SPREAD");
+                        map.put("guaranteedFill", true);
+                        map.put("boxEdgeInr", opp.edgeAfterCosts);
+                        results.add(map);
                     }
                 }
+            } catch (Exception e) {
+                log.error("Error scanning Box Spread for {}: {}", u, e.getMessage(), e);
             }
-
-            results.sort((a, b) -> Double.compare(
-                (double) b.get("netProfitPerLot"), (double) a.get("netProfitPerLot")));
-
-        } catch (Exception e) {
-            log.error("Box spread scan failed for {}: {}", underlying, e.getMessage());
         }
 
         return results;
     }
 
-    public List<Map<String, Object>> scanAll() {
-        List<Map<String, Object>> all = new ArrayList<>();
-        for (String u : List.of("NIFTY", "BANKNIFTY", "MIDCPNIFTY", "FINNIFTY")) {
-            all.addAll(scanBoxSpread(u));
+    public List<ArbitrageOpportunity> scanBoxSpreadForUnderlying(String underlying, double spotPrice, double futuresPrice) {
+        List<ArbitrageOpportunity> opps = new ArrayList<>();
+        try {
+            int step = OptionChainService.getStrikeStep(underlying);
+            int atmStrike = (int) (Math.round(spotPrice / step) * step);
+
+            List<Integer> strikes = new ArrayList<>();
+            for (int i = -3; i <= 3; i++) {
+                strikes.add(atmStrike + i * step);
+            }
+
+            LocalDate expiryDate = LocalDate.now();
+            List<String> instruments = new ArrayList<>();
+
+            for (int s : strikes) {
+                String mon = expiryDate.getMonth().name().substring(0, 3);
+                int yy = expiryDate.getYear() % 100;
+                int month = expiryDate.getMonthValue();
+                int day = expiryDate.getDayOfMonth();
+
+                instruments.add(String.format("%s%02d%s%dCE", underlying, yy, mon, s));
+                instruments.add(String.format("%s%02d%s%dPE", underlying, yy, mon, s));
+                instruments.add(String.format("%s%02d%d%02d%dCE", underlying, yy, month, day, s));
+                instruments.add(String.format("%s%02d%d%02d%dPE", underlying, yy, month, day, s));
+            }
+
+            Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
+            int lotSize = OptionChainService.getLotSize(underlying);
+
+            for (int i = 0; i < strikes.size(); i++) {
+                for (int j = i + 1; j < strikes.size(); j++) {
+                    int k1 = strikes.get(i);
+                    int k2 = strikes.get(j);
+                    double width = k2 - k1;
+
+                    String mon = expiryDate.getMonth().name().substring(0, 3);
+                    int yy = expiryDate.getYear() % 100;
+                    int month = expiryDate.getMonthValue();
+                    int day = expiryDate.getDayOfMonth();
+
+                    String ce1Key = String.format("%s%02d%s%dCE", underlying, yy, mon, k1);
+                    String pe1Key = String.format("%s%02d%s%dPE", underlying, yy, mon, k1);
+                    String ce2Key = String.format("%s%02d%s%dCE", underlying, yy, mon, k2);
+                    String pe2Key = String.format("%s%02d%s%dPE", underlying, yy, mon, k2);
+
+                    OptionChainService.OptionQuote ce1 = quotes.get(ce1Key);
+                    OptionChainService.OptionQuote pe1 = quotes.get(pe1Key);
+                    OptionChainService.OptionQuote ce2 = quotes.get(ce2Key);
+                    OptionChainService.OptionQuote pe2 = quotes.get(pe2Key);
+
+                    if (ce1 == null || pe1 == null || ce2 == null || pe2 == null) {
+                        ce1Key = String.format("%s%02d%d%02d%dCE", underlying, yy, month, day, k1);
+                        pe1Key = String.format("%s%02d%d%02d%dPE", underlying, yy, month, day, k1);
+                        ce2Key = String.format("%s%02d%d%02d%dCE", underlying, yy, month, day, k2);
+                        pe2Key = String.format("%s%02d%d%02d%dPE", underlying, yy, month, day, k2);
+
+                        ce1 = quotes.get(ce1Key);
+                        pe1 = quotes.get(pe1Key);
+                        ce2 = quotes.get(ce2Key);
+                        pe2 = quotes.get(pe2Key);
+                    }
+
+                    if (ce1 == null || pe1 == null || ce2 == null || pe2 == null) continue;
+
+                    double ce1Ask = ce1.ask > 0 ? ce1.ask : ce1.lastPrice;
+                    double pe1Bid = pe1.bid > 0 ? pe1.bid : pe1.lastPrice;
+                    double ce2Bid = ce2.bid > 0 ? ce2.bid : ce2.lastPrice;
+                    double pe2Ask = pe2.ask > 0 ? pe2.ask : pe2.lastPrice;
+
+                    double buyBoxCost = ce1Ask - pe1Bid - ce2Bid + pe2Ask;
+                    double buyBoxEdgePoints = width - buyBoxCost;
+                    double grossBuyEdge = buyBoxEdgePoints * lotSize;
+                    double buyCosts = 160.0;
+                    double netBuyEdge = grossBuyEdge - buyCosts;
+
+                    if (netBuyEdge >= MIN_BOX_EDGE_AFTER_COSTS) {
+                        ArbitrageOpportunity opp = new ArbitrageOpportunity();
+                        opp.underlying = underlying;
+                        opp.strike = k1;
+                        opp.type = "BOX_SPREAD";
+                        opp.action = "LONG BOX (" + k1 + "/" + k2 + ")";
+                        opp.spotPrice = spotPrice;
+                        opp.futuresPrice = futuresPrice;
+                        opp.cePrice = ce1.lastPrice;
+                        opp.pePrice = pe1.lastPrice;
+                        opp.ceBid = ce1.bid;
+                        opp.ceAsk = ce1.ask;
+                        opp.peBid = pe1.bid;
+                        opp.peAsk = pe1.ask;
+                        opp.edgePoints = Math.round(buyBoxEdgePoints * 10.0) / 10.0;
+                        opp.edgeAfterCosts = Math.round(netBuyEdge * 10.0) / 10.0;
+                        opp.confidence = 95.0;
+                        opp.legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %d CE @ %.1f | BUY %d PE @ %.1f",
+                            k1, ce1Ask, k1, pe1Bid, k2, ce2Bid, k2, pe2Ask);
+                        opps.add(opp);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error calculating Box Spread for {}: {}", underlying, e.getMessage(), e);
         }
-        return all;
+        return opps;
     }
 }
