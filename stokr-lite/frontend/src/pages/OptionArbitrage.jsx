@@ -93,7 +93,7 @@ export default function OptionArbitrage() {
   const { toasts, dismiss: dismissToast } = useToastState();
   const [activeTab, setActiveTab] = useState('live');
   const [underlyings, setUnderlyings] = useState(['ALL']);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [historyPage, setHistoryPage] = useState(0);
   const [selectedDate, setSelectedDate] = useState('');
   const [strategyFilter, setStrategyFilter] = useState('ALL');
@@ -136,27 +136,18 @@ export default function OptionArbitrage() {
     refetchInterval: 1000,
   });
 
-  const { data: cachedData, isLoading: cachedLoading } = useQuery({
-    queryKey: ['option-arb-cached', underlyings],
+  const { data: liveData, isLoading: scanLoading, error, refetch } = useQuery({
+    queryKey: ['option-arb-live', underlyings],
     queryFn: async () => {
-      const uParam = underlyings.join(',');
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/cached`, { params: { underlyings: uParam } });
+      const uParam = underlyings.includes('ALL') ? 'ALL' : underlyings.join(',');
+      const res = await axios.get(`${API_BASE}/api/option-arbitrage/scan`, { params: { underlying: uParam } });
       return res.data;
     },
-    refetchInterval: autoRefresh ? 2000 : false,
+    refetchInterval: autoRefresh ? 3000 : false,
+    staleTime: 0,
   });
 
-  const { data: scanData, isLoading: scanLoading, error, refetch } = useQuery({
-    queryKey: ['option-arb-scan', underlyings],
-    queryFn: async () => {
-      const uParam = underlyings.join(',');
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/scan`, { params: { underlying: uParam, force: true } });
-      return res.data;
-    },
-    enabled: false,
-  });
-
-  const data = scanData || cachedData;
+  const data = liveData;
   const opportunities = data?.opportunities || [];
   const summary = data?.summary || {};
 
