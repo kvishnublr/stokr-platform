@@ -35,14 +35,15 @@ public class OptionArbitrageController {
     @GetMapping("/scan")
     public ResponseEntity<Map<String, Object>> scan(@RequestParam(defaultValue = "ALL") String underlying,
                                                     @RequestParam(defaultValue = "false") boolean force) {
+        List<Map<String, Object>> opps = bidParityService.scanBidParity(underlying);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
-        resp.put("marketClosed", true);
-        resp.put("opportunities", Collections.emptyList());
-        resp.put("count", 0);
-        resp.put("summary", Map.of("total", 0));
-        resp.put("disabled", true);
+        resp.put("marketClosed", false);
+        resp.put("opportunities", opps);
+        resp.put("count", opps.size());
+        resp.put("summary", Map.of("total", opps.size()));
+        resp.put("disabled", false);
         return ResponseEntity.ok(resp);
     }
 
