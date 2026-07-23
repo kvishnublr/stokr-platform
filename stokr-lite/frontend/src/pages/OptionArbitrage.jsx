@@ -1132,13 +1132,20 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
                   <th className="px-3 py-3 text-right">CE Price</th>
                   <th className="px-3 py-3 text-right">PE Price</th>
                   <th className="px-3 py-3 text-right">Spot / Fut</th>
-                  <th className="px-3 py-3 text-right">Edge (pts)</th>
                   <th className="px-3 py-3 text-right text-emerald-600 font-bold">Edge (₹)</th>
+                  <th className="px-3 py-3 text-center">Status</th>
+                  <th className="px-3 py-3 text-right text-blue-600 font-bold">P&amp;L (₹)</th>
+                  <th className="px-3 py-3 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredItems.map((item, idx) => {
                   const isExpanded = expandedIdx === idx;
+                  const statusStr = String(item.status || 'DETECTED').toUpperCase();
+                  const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN';
+                  const isExited = statusStr === 'EXITED' || statusStr === 'CLOSED' || statusStr === 'EXECUTED';
+                  const pnlVal = item.pnlAfterCosts != null ? Number(item.pnlAfterCosts) : (isExited ? Number(item.edgeAfterCosts || 0) : null);
+
                   return (
                     <React.Fragment key={item.id || idx}>
                       <tr
@@ -1167,14 +1174,46 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
                         <td className="px-3 py-3 text-right font-mono text-slate-600">{Number(item.ceEntryPrice || item.cePrice || 0).toFixed(1)}</td>
                         <td className="px-3 py-3 text-right font-mono text-slate-600">{Number(item.peEntryPrice || item.pePrice || 0).toFixed(1)}</td>
                         <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{Number(item.spotPrice || 0).toFixed(1)} / {Number(item.futuresPrice || 0).toFixed(1)}</td>
-                        <td className="px-3 py-3 text-right font-mono text-blue-600">+{Number(item.edgePoints || 0).toFixed(1)}</td>
                         <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
+                        
+                        {/* Status Column */}
+                        <td className="px-3 py-3 text-center">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+                            isRunning
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 animate-pulse'
+                              : isExited
+                              ? 'bg-blue-100 text-blue-800 border-blue-300'
+                              : 'bg-slate-100 text-slate-600 border-slate-300'
+                          }`}>
+                            {isRunning ? '🟢 RUNNING' : isExited ? '🔵 EXITED' : '⚪ DETECTED'}
+                          </span>
+                        </td>
+
+                        {/* P&L (₹) Column */}
+                        <td className="px-3 py-3 text-right font-mono font-bold">
+                          {pnlVal !== null ? (
+                            <span className={pnlVal >= 0 ? 'text-emerald-600' : 'text-red-500'}>
+                              {pnlVal >= 0 ? '+' : ''}₹{Math.round(pnlVal).toLocaleString('en-IN')}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs font-normal">--</span>
+                          )}
+                        </td>
+
+                        <td className="px-3 py-3 text-center">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); reExecuteTrade(item); }}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm"
+                          >
+                            ⚡ Execute
+                          </button>
+                        </td>
                       </tr>
 
                       {/* Inline Expanded Detail Row */}
                       {isExpanded && (
                         <tr className="bg-slate-50/90 border-b border-slate-200">
-                          <td colSpan={10} className="px-6 py-4">
+                          <td colSpan={12} className="px-6 py-4">
                             <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-4">
                               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
