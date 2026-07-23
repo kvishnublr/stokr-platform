@@ -1134,17 +1134,21 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
                   <th className="px-3 py-3 text-right">Spot / Fut</th>
                   <th className="px-3 py-3 text-right text-emerald-600 font-bold">Edge (₹)</th>
                   <th className="px-3 py-3 text-center">Status</th>
-                  <th className="px-3 py-3 text-right text-blue-600 font-bold">P&amp;L (₹)</th>
+                  <th className="px-3 py-3 text-right text-emerald-600 font-bold">P&amp;L (₹)</th>
                   <th className="px-3 py-3 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredItems.map((item, idx) => {
                   const isExpanded = expandedIdx === idx;
-                  const statusStr = String(item.status || 'DETECTED').toUpperCase();
+                  const statusStr = String(item.status || 'RUNNING').toUpperCase();
                   const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN';
                   const isExited = statusStr === 'EXITED' || statusStr === 'CLOSED' || statusStr === 'EXECUTED';
-                  const pnlVal = item.pnlAfterCosts != null ? Number(item.pnlAfterCosts) : (isExited ? Number(item.edgeAfterCosts || 0) : null);
+                  
+                  // P&L calculation: Always display edgeAfterCosts / pnlAfterCosts if position running or exited
+                  const pnlVal = item.pnlAfterCosts != null 
+                    ? Number(item.pnlAfterCosts) 
+                    : (item.edgeAfterCosts != null ? Number(item.edgeAfterCosts) : (item.grossEdge != null ? Number(item.grossEdge) : 0));
 
                   return (
                     <React.Fragment key={item.id || idx}>
@@ -1191,13 +1195,9 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
 
                         {/* P&L (₹) Column */}
                         <td className="px-3 py-3 text-right font-mono font-bold">
-                          {pnlVal !== null ? (
-                            <span className={pnlVal >= 0 ? 'text-emerald-600' : 'text-red-500'}>
-                              {pnlVal >= 0 ? '+' : ''}₹{Math.round(pnlVal).toLocaleString('en-IN')}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-xs font-normal">--</span>
-                          )}
+                          <span className={pnlVal >= 0 ? 'text-emerald-600' : 'text-red-500'}>
+                            {pnlVal >= 0 ? '+' : ''}₹{Math.round(pnlVal).toLocaleString('en-IN')}
+                          </span>
                         </td>
 
                         <td className="px-3 py-3 text-center">
