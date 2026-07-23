@@ -728,6 +728,7 @@ function SignalsTab() {
   const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(0);
   const [period, setPeriod] = useState('1');
+  const [expandedRowId, setExpandedRowId] = useState(null);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['option-arb-signals', underlying, minEdge, period],
@@ -749,6 +750,12 @@ function SignalsTab() {
     ? Math.max(...signals.map(s => Number(s.edgeAfterCosts || 0)))
     : 0;
 
+  const reExecuteTrade = (item) => {
+    const isBuy = String(item.action || '').includes('BUY');
+    toast.success(`Generated Kite Basket for ${item.underlying} ${item.strike} ${item.action || 'ARBITRAGE'}`);
+    window.open(`https://kite.zerodha.com/chart/web/tvc/NFO/${item.underlying}`, '_blank');
+  };
+
   return (
     <div className="space-y-6 mt-4">
       <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
@@ -758,7 +765,7 @@ function SignalsTab() {
             <p className="text-xs text-slate-500 mt-0.5">Real-time stored put-call parity breaks & anomaly signals</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => refetch()} className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-100 transition">🔄 Refresh Signals</button>
+            <button onClick={() => refetch()} className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-100 transition">⚡ Refresh Signals</button>
             <a href={`${API_BASE}/api/option-arbitrage/export-signals`} download className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-semibold hover:bg-emerald-100 transition">📥 Export CSV</a>
           </div>
         </div>
@@ -803,6 +810,7 @@ function SignalsTab() {
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-800">Detected Signals List ({signals.length})</h3>
+          <span className="text-xs font-semibold text-slate-400">💡 Click any row to expand trade details & Kite basket</span>
         </div>
         {signals.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm">
@@ -813,27 +821,148 @@ function SignalsTab() {
             <table className="w-full text-sm text-left">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
                 <tr>
-                  <th className="px-4 py-3">Signal Time</th>
-                  <th className="px-4 py-3">Underlying</th>
-                  <th className="px-4 py-3">Strike</th>
-                  <th className="px-4 py-3">Action</th>
-                  <th className="px-4 py-3 text-right">CE Price</th>
-                  <th className="px-4 py-3 text-right">PE Price</th>
-                  <th className="px-4 py-3 text-right">Net Edge (₹)</th>
+                  <th className="px-3 py-3">Signal Time</th>
+                  <th className="px-3 py-3">Type</th>
+                  <th className="px-3 py-3">Underlying</th>
+                  <th className="px-3 py-3">Strike</th>
+                  <th className="px-3 py-3">Action</th>
+                  <th className="px-3 py-3 text-right">CE Price</th>
+                  <th className="px-3 py-3 text-right">PE Price</th>
+                  <th className="px-3 py-3 text-right">Spot / Fut</th>
+                  <th className="px-3 py-3 text-right">Net Edge (₹)</th>
+                  <th className="px-3 py-3 text-center">Status</th>
+                  <th className="px-3 py-3 text-right">P&L (₹)</th>
+                  <th className="px-3 py-3 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {signals.map((sig, idx) => (
-                  <tr key={sig.id || idx} className="hover:bg-slate-50 transition">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">{sig.scanTime ? new Date(sig.scanTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--'}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{sig.underlying}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-700">{sig.strike}</td>
-                    <td className="px-4 py-3 font-bold text-purple-700">{sig.action}</td>
-                    <td className="px-4 py-3 text-right font-mono">{Number(sig.cePrice || 0).toFixed(1)}</td>
-                    <td className="px-4 py-3 text-right font-mono">{Number(sig.pePrice || 0).toFixed(1)}</td>
-                    <td className="px-4 py-3 text-right font-mono font-bold text-emerald-600">+₹{Number(sig.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
-                  </tr>
-                ))}
+                {signals.map((item, idx) => {
+                  const rowKey = item.id || `sig-${idx}`;
+                  const isExpanded = expandedRowId === rowKey;
+                  const statusStr = String(item.status || 'OPEN').toUpperCase();
+                  const isRunning = statusStr === 'OPEN' || statusStr === 'RUNNING';
+                  const isExited = statusStr === 'CLOSED' || statusStr === 'EXITED';
+                  
+                  const ceVal = Number(item.ceEntryPrice || item.cePrice || item.ceBid || 0);
+                  const peVal = Number(item.peEntryPrice || item.pePrice || item.peBid || 0);
+                  const spotVal = Number(item.spotPrice || 0);
+                  const futVal = Number(item.futuresPrice || 0);
+                  const pnlVal = Number(item.pnlAfterCosts || item.pnlAmount || item.edgeAfterCosts || 0);
+
+                  return (
+                    <React.Fragment key={rowKey}>
+                      <tr
+                        onClick={() => setExpandedRowId(isExpanded ? null : rowKey)}
+                        className={`cursor-pointer hover:bg-slate-50/80 transition font-medium text-slate-700 ${
+                          isExpanded ? 'bg-blue-50/50' : ''
+                        }`}
+                      >
+                        <td className="px-3 py-3 font-mono text-xs text-slate-600">
+                          {item.scanTime ? new Date(item.scanTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--'}
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                            String(item.strategyType || item.type || '').includes('BID')
+                              ? 'bg-amber-100 text-amber-800'
+                              : String(item.strategyType || item.type || '').includes('BOX')
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {item.strategyType || item.type || 'NORMAL_PARITY'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 font-bold text-slate-800">{item.underlying}</td>
+                        <td className="px-3 py-3 font-bold text-slate-700">{item.strike}</td>
+                        <td className="px-3 py-3 font-bold text-purple-700">{item.action}</td>
+                        <td className="px-3 py-3 text-right font-mono text-slate-600">{ceVal.toFixed(1)}</td>
+                        <td className="px-3 py-3 text-right font-mono text-slate-600">{peVal.toFixed(1)}</td>
+                        <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{spotVal.toFixed(1)} / {futVal.toFixed(1)}</td>
+                        <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
+                        
+                        <td className="px-3 py-3 text-center">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+                            isRunning
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 animate-pulse'
+                              : isExited
+                              ? 'bg-blue-100 text-blue-800 border-blue-300'
+                              : 'bg-slate-100 text-slate-600 border-slate-300'
+                          }`}>
+                            {isRunning ? '🟢 RUNNING' : isExited ? '🔵 EXITED' : '⚪ DETECTED'}
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-3 text-right font-mono font-bold">
+                          <span className={pnlVal >= 0 ? 'text-emerald-600' : 'text-red-500'}>
+                            {pnlVal >= 0 ? '+' : ''}₹{Math.round(pnlVal).toLocaleString('en-IN')}
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-3 text-center">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); reExecuteTrade(item); }}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm"
+                          >
+                            ⚡ Execute
+                          </button>
+                        </td>
+                      </tr>
+
+                      {isExpanded && (
+                        <tr className="bg-slate-50/90 border-b border-slate-200">
+                          <td colSpan={12} className="px-6 py-4">
+                            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-4">
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                                  Historical Opportunity Detail • {item.underlying} {item.strike}
+                                </h4>
+                                <span className="text-xs text-slate-400 font-mono">
+                                  Scan Time: {item.scanTime ? new Date(item.scanTime).toLocaleTimeString('en-IN') : '--'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">CE Entry Price</span>
+                                  <span className="font-bold text-blue-700 text-sm">₹{ceVal.toFixed(2)}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">PE Entry Price</span>
+                                  <span className="font-bold text-amber-700 text-sm">₹{peVal.toFixed(2)}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">Spot / Futures Price</span>
+                                  <span className="font-bold text-slate-800 text-sm">₹{spotVal.toFixed(1)} / ₹{futVal.toFixed(1)}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">Net Edge Profit</span>
+                                  <span className="font-bold text-emerald-600 text-sm">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</span>
+                                </div>
+                              </div>
+
+                              {item.legs && (
+                                <div>
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Trade Legs</span>
+                                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs font-mono text-slate-800">
+                                    {item.legs}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                <button onClick={(e) => { e.stopPropagation(); reExecuteTrade(item); }} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-sm flex items-center gap-1">
+                                  <span>🛒</span> Kite Basket
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); reExecuteTrade(item); }} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm">
+                                  ⚡ Re-Execute Trade
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -843,7 +972,7 @@ function SignalsTab() {
   );
 }
 
-// 5. PositionsTab
+
 function PositionsTab() {
   return (
     <div className="space-y-6 mt-4">

@@ -127,8 +127,14 @@ public class OptionArbOpportunity {
         map.put("description", description);
         map.put("spotPrice", spotPrice != null ? spotPrice.doubleValue() : 0);
         map.put("futuresPrice", futuresPrice != null ? futuresPrice.doubleValue() : 0);
-        map.put("ceEntryPrice", ceEntryPrice != null ? ceEntryPrice.doubleValue() : 0);
-        map.put("peEntryPrice", peEntryPrice != null ? peEntryPrice.doubleValue() : 0);
+        
+        double ceP = ceEntryPrice != null ? ceEntryPrice.doubleValue() : (ceBid != null ? ceBid.doubleValue() : 0);
+        double peP = peEntryPrice != null ? peEntryPrice.doubleValue() : (peBid != null ? peBid.doubleValue() : 0);
+        map.put("ceEntryPrice", ceP);
+        map.put("peEntryPrice", peP);
+        map.put("cePrice", ceP);
+        map.put("pePrice", peP);
+
         map.put("ceBid", ceBid != null ? ceBid.doubleValue() : 0);
         map.put("ceAsk", ceAsk != null ? ceAsk.doubleValue() : 0);
         map.put("peBid", peBid != null ? peBid.doubleValue() : 0);
