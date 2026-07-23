@@ -750,7 +750,7 @@ function SignalsTab() {
   const todayCount = summary?.todayCount || 0;
 
   const highestEdge = signals && signals.length > 0
-    ? Math.max(...signals.map(s => Number(s.edgeAfterCosts || 0)))
+    ? Math.max(...signals.map(s => Number(s.grossEdge) || (Number(s.edgePoints||0)*Number(s.lotSize||(s.underlying==="BANKNIFTY"?30:s.underlying==="MIDCPNIFTY"?120:s.underlying==="FINNIFTY"?65:50)))))
     : 0;
 
   const reExecuteTrade = (item) => {
@@ -861,7 +861,9 @@ function SignalsTab() {
                   const peVal = Number(item.peEntryPrice || item.pePrice || item.peBid || 0);
                   const spotVal = Number(item.spotPrice || 0);
                   const futVal = Number(item.futuresPrice || 0);
-                  const pnlVal = Number(item.pnlAfterCosts || item.pnlAmount || item.edgeAfterCosts || 0);
+                  const lotSz = Number(item.lotSize || (item.underlying === 'BANKNIFTY' ? 30 : item.underlying === 'MIDCPNIFTY' ? 120 : item.underlying === 'FINNIFTY' ? 65 : 50));
+                  const grossEdge = Number(item.grossEdge || (Number(item.edgePoints || 0) * lotSz));
+                  const pnlVal = Number(item.pnlAfterCosts || item.pnlAmount || grossEdge || 0);
 
                 
   const SORT_MAP = {
@@ -872,7 +874,7 @@ function SignalsTab() {
     cePrice: s => Number(s.ceEntryPrice || s.cePrice || 0),
     pePrice: s => Number(s.peEntryPrice || s.pePrice || 0),
     spotPrice: s => Number(s.spotPrice || 0),
-    edgeAfterCosts: s => Number(s.grossEdge || s.edgeAfterCosts || 0),
+    edgeAfterCosts: s => (Number(s.grossEdge) || (Number(s.edgePoints||0)*Number(s.lotSize||50))),
     status: s => String(s.status || ''),
     pnl: s => Number(s.pnlAfterCosts || s.pnlAmount || s.edgeAfterCosts || 0),
     exitTime: s => new Date(s.exitTime || 0).getTime(),
@@ -912,7 +914,7 @@ function SignalsTab() {
                         <td className="px-3 py-3 text-right font-mono text-slate-600">{ceVal.toFixed(1)}</td>
                         <td className="px-3 py-3 text-right font-mono text-slate-600">{peVal.toFixed(1)}</td>
                         <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{spotVal.toFixed(1)} / {futVal.toFixed(1)}</td>
-                        <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Math.round((Number(item.grossEdge) || (Number(item.edgePoints||0) * Number(item.lotSize||(item.underlying==='BANKNIFTY'?30:item.underlying==='MIDCPNIFTY'?120:item.underlying==='FINNIFTY'?65:50))))).toLocaleString('en-IN')}</td>
                         
                         <td className="px-3 py-3 text-center">
                           <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
@@ -975,7 +977,7 @@ function SignalsTab() {
                                 </div>
                                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                                   <span className="text-slate-500 uppercase block text-[10px]">Net Edge Profit</span>
-                                  <span className="font-bold text-emerald-600 text-sm">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</span>
+                                  <span className="font-bold text-emerald-600 text-sm">+₹{Math.round((Number(item.grossEdge) || (Number(item.edgePoints||0) * Number(item.lotSize||(item.underlying==='BANKNIFTY'?30:item.underlying==='MIDCPNIFTY'?120:item.underlying==='FINNIFTY'?65:50))))).toLocaleString('en-IN')}</span>
                                 </div>
                               </div>
 
