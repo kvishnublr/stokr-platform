@@ -729,6 +729,18 @@ function SignalsTab() {
   const [minEdge, setMinEdge] = useState(0);
   const [period, setPeriod] = useState('1');
   const [expandedRowId, setExpandedRowId] = useState(null);
+  const [sortKey, setSortKey] = useState('scanTime');
+  const [sortDir, setSortDir] = useState('desc');
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('desc'); }
+  };
+  const sortIcon = (key) => {
+    if (sortKey !== key) return React.createElement('span', {className:'ml-0.5 text-slate-300'}, '⇅');
+    return sortDir === 'asc'
+      ? React.createElement('span', {className:'ml-0.5 text-blue-500'}, '↑')
+      : React.createElement('span', {className:'ml-0.5 text-blue-500'}, '↓');
+  };
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['option-arb-signals', underlying, minEdge, period],
@@ -820,23 +832,34 @@ function SignalsTab() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
-                <tr>
-                  <th className="px-3 py-3">Signal Time</th>
-                  <th className="px-3 py-3">Type</th>
-                  <th className="px-3 py-3">Underlying</th>
-                  <th className="px-3 py-3">Strike</th>
-                  <th className="px-3 py-3">Action</th>
-                  <th className="px-3 py-3 text-right">CE Price</th>
-                  <th className="px-3 py-3 text-right">PE Price</th>
-                  <th className="px-3 py-3 text-right">Spot / Fut</th>
-                  <th className="px-3 py-3 text-right">Net Edge (₹)</th>
-                  <th className="px-3 py-3 text-center">Status</th>
-                  <th className="px-3 py-3 text-right">P&L (₹)</th>
-                  <th className="px-3 py-3 text-center">Action</th>
-                </tr>
+                  {[
+                    { key: 'scanTime',       label: 'Signal Time',   cls: 'text-left' },
+                    { key: 'strategyType',   label: 'Type',          cls: 'text-left' },
+                    { key: 'underlying',     label: 'Underlying',    cls: 'text-left' },
+                    { key: 'strike',         label: 'Strike',        cls: 'text-left' },
+                    { key: null,             label: 'Action',         cls: 'text-left' },
+                    { key: 'cePrice',        label: 'CE Price',      cls: 'text-right' },
+                    { key: 'pePrice',        label: 'PE Price',      cls: 'text-right' },
+                    { key: 'spotPrice',      label: 'Spot / Fut',    cls: 'text-right' },
+                    { key: 'edgeAfterCosts', label: 'Net Edge (₹)', cls: 'text-right' },
+                    { key: 'status',         label: 'Status',        cls: 'text-center' },
+                    { key: 'pnl',            label: 'P&L (₹)',     cls: 'text-right' },
+                    { key: 'exitTime',       label: 'Exit Time',     cls: 'text-left' },
+                    { key: null,             label: 'Action',         cls: 'text-center' },
+                  ].map(({ key, label, cls }) => (
+                    <th
+                      key={label + (key || '')}
+                      className={`px-3 py-3 ${cls} ${key ? 'cursor-pointer hover:bg-slate-100 hover:text-blue-600 transition-colors' : ''}`}
+                      onClick={() => key && toggleSort(key)}
+                    >
+                      <span className="inline-flex items-center gap-0.5 whitespace-nowrap">
+                        {label}{key && sortIcon(key)}
+                      </span>
+                    </th>
+                  ))}
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {signals.map((item, idx) => {
+                {sortedSignals.map((item, idx) => {
                   const rowKey = item.id || `sig-${idx}`;
                   const isExpanded = expandedRowId === rowKey;
                   const statusStr = String(item.status || 'OPEN').toUpperCase();
@@ -849,7 +872,28 @@ function SignalsTab() {
                   const futVal = Number(item.futuresPrice || 0);
                   const pnlVal = Number(item.pnlAfterCosts || item.pnlAmount || item.edgeAfterCosts || 0);
 
-                  return (
+                
+  const SORT_MAP = {
+    scanTime: s => new Date(s.scanTime || 0).getTime(),
+    strategyType: s => String(s.strategyType || ''),
+    underlying: s => String(s.underlying || ''),
+    strike: s => Number(s.strike || 0),
+    cePrice: s => Number(s.ceEntryPrice || s.cePrice || 0),
+    pePrice: s => Number(s.peEntryPrice || s.pePrice || 0),
+    spotPrice: s => Number(s.spotPrice || 0),
+    edgeAfterCosts: s => Number(s.grossEdge || s.edgeAfterCosts || 0),
+    status: s => String(s.status || ''),
+    pnl: s => Number(s.pnlAfterCosts || s.pnlAmount || s.edgeAfterCosts || 0),
+    exitTime: s => new Date(s.exitTime || 0).getTime(),
+  };
+  const sortedSignals = [...signals].sort((a, b) => {
+    const fn = SORT_MAP[sortKey];
+    if (!fn) return 0;
+    const va = fn(a), vb = fn(b);
+    if (typeof va === 'string') return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortDir === 'asc' ? va - vb : vb - va;
+  });
+  return (
                     <React.Fragment key={rowKey}>
                       <tr
                         onClick={() => setExpandedRowId(isExpanded ? null : rowKey)}
@@ -895,6 +939,11 @@ function SignalsTab() {
                           <span className={pnlVal >= 0 ? 'text-emerald-600' : 'text-red-500'}>
                             {pnlVal >= 0 ? '+' : ''}₹{Math.round(pnlVal).toLocaleString('en-IN')}
                           </span>
+                        </td>
+                        <td className="px-3 py-3 font-mono text-xs whitespace-nowrap">
+                          {item.exitTime
+                            ? <span className="text-slate-600">{new Date(item.exitTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span>
+                            : <span className="text-slate-300">—</span>}
                         </td>
 
                         <td className="px-3 py-3 text-center">
