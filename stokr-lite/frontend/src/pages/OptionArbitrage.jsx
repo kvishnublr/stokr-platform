@@ -1349,7 +1349,7 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
                         <td className="px-3 py-3 text-right font-mono text-slate-600">{Number(item.ceEntryPrice || item.cePrice || 0).toFixed(1)}</td>
                         <td className="px-3 py-3 text-right font-mono text-slate-600">{Number(item.peEntryPrice || item.pePrice || 0).toFixed(1)}</td>
                         <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{Number(item.spotPrice || 0).toFixed(1)} / {Number(item.futuresPrice || 0).toFixed(1)}</td>
-                        <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Math.round(Number(item.grossEdge) || (Number(item.edgePoints || 0) * Number(item.lotSize || (item.underlying === 'BANKNIFTY' ? 30 : item.underlying === 'MIDCPNIFTY' ? 120 : item.underlying === 'FINNIFTY' ? 65 : 50)))).toLocaleString('en-IN')}</td>
                         
                         {/* Status Column */}
                         <td className="px-3 py-3 text-center">
@@ -1410,7 +1410,7 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
                                 </div>
                                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                                   <span className="text-slate-500 uppercase block text-[10px]">Net Edge Profit</span>
-                                  <span className="font-bold text-emerald-600 text-sm">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</span>
+                                  <span className="font-bold text-emerald-600 text-sm">+₹{Math.round(Number(item.grossEdge) || (Number(item.edgePoints || 0) * Number(item.lotSize || (item.underlying === 'BANKNIFTY' ? 30 : item.underlying === 'MIDCPNIFTY' ? 120 : item.underlying === 'FINNIFTY' ? 65 : 50)))).toLocaleString('en-IN')}</span>
                                 </div>
                               </div>
 
