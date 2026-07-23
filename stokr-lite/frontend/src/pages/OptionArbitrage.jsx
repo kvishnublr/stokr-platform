@@ -618,7 +618,7 @@ function BidParityTab() {
                         <td className="px-3 py-3 text-right font-mono font-bold text-amber-700">{Number(opp.pePrice || 0).toFixed(2)}</td>
                         <td className="px-3 py-3 text-right font-mono text-slate-500">{(Number(opp.pePrice || 0) * 1.002).toFixed(2)}</td>
                         <td className="px-3 py-3 text-right font-mono text-slate-700">{Number(opp.futuresPrice || opp.spotPrice || 24155).toFixed(2)}</td>
-                        <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Math.round(opp.edgeAfterCosts || opp.bidEdgeInr || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Math.round(opp.grossEdge || opp.edgeAfterCosts || (opp.edgePoints * ({NIFTY:50,BANKNIFTY:30,MIDCPNIFTY:120,FINNIFTY:65}[opp.underlying] || 50))).toLocaleString('en-IN')}</td>
                         <td className="px-3 py-3 text-right font-mono text-blue-600">{Number(opp.edgePoints || -8.8).toFixed(1)}</td>
                         <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{Math.round(opp.daysToExpiry || 0)}d</td>
                         <td className="px-3 py-3 text-center">
@@ -662,7 +662,7 @@ function BidParityTab() {
                                 </div>
                                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                                   <span className="text-slate-500 uppercase block text-[10px]">Net Edge Profit</span>
-                                  <span className="font-bold text-emerald-600 text-sm">+₹{Math.round(opp.edgeAfterCosts || opp.bidEdgeInr || 0).toLocaleString('en-IN')}</span>
+                                  <span className="font-bold text-emerald-600 text-sm">+₹{Math.round(opp.grossEdge || opp.edgeAfterCosts || (opp.edgePoints * ({NIFTY:50,BANKNIFTY:30,MIDCPNIFTY:120,FINNIFTY:65}[opp.underlying] || 50))).toLocaleString('en-IN')}</span>
                                 </div>
                               </div>
 
