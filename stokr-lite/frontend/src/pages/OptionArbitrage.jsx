@@ -478,6 +478,7 @@ function BidParityTab() {
   const [autoEntry, setAutoEntry] = useState(true);
   const [autoExit, setAutoExit] = useState(false);
   const [executingId, setExecutingId] = useState(null);
+  const [expandedIdx, setExpandedIdx] = useState(null);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['bid-parity-scan', underlying],
@@ -515,10 +516,9 @@ function BidParityTab() {
                 47 live ticks
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">Live tick-by-tick prices from WebSocket. All prices update in real-time.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Live tick-by-tick prices from WebSocket. Click any row for inline leg breakdown.</p>
           </div>
 
-          {/* Underlyings & Controls */}
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex bg-slate-100 p-1 rounded-xl">
               {['All', 'NIFTY', 'BANKNIFTY', 'MIDCPNIFTY', 'FINNIFTY'].map(u => (
@@ -564,10 +564,9 @@ function BidParityTab() {
           </div>
         </div>
 
-        {/* Informational Callout Banner */}
         <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-3 text-xs text-blue-900 flex items-center gap-2">
           <span className="font-semibold">Live Prices:</span>
-          <span>CE Bid/PE Bid update from WebSocket in real-time. Flash green = price up, flash red = price down. Execute at live bid prices. <strong>Bid depth ≥ lot size required.</strong></span>
+          <span>CE Bid/PE Bid update from WebSocket in real-time. Flash green = price up, flash red = price down. Execute at live bid prices. <strong>Bid depth ≥ lot size required.</strong> Click any row to expand inline details.</span>
         </div>
       </div>
 
@@ -597,35 +596,98 @@ function BidParityTab() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {opportunities.map((opp, idx) => (
-                  <tr key={opp.id || idx} className="hover:bg-blue-50/40 transition">
-                    <td className="px-3 py-3 font-bold text-slate-800">{opp.underlying}</td>
-                    <td className="px-3 py-3 font-bold text-slate-700">{opp.strike}</td>
-                    <td className="px-3 py-3">
-                      <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-300">
-                        {opp.action || 'BUY CE+PE / SELL FUT'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-right font-mono font-bold text-blue-700">{Number(opp.cePrice || 0).toFixed(2)}</td>
-                    <td className="px-3 py-3 text-right font-mono text-slate-500">{(Number(opp.cePrice || 0) * 1.002).toFixed(2)}</td>
-                    <td className="px-3 py-3 text-right font-mono font-bold text-amber-700">{Number(opp.pePrice || 0).toFixed(2)}</td>
-                    <td className="px-3 py-3 text-right font-mono text-slate-500">{(Number(opp.pePrice || 0) * 1.002).toFixed(2)}</td>
-                    <td className="px-3 py-3 text-right font-mono text-slate-700">{Number(opp.futuresPrice || opp.spotPrice || 24155).toFixed(2)}</td>
-                    <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Math.round(opp.edgeAfterCosts || opp.bidEdgeInr || 0).toLocaleString('en-IN')}</td>
-                    <td className="px-3 py-3 text-right font-mono text-blue-600">{Number(opp.edgePoints || -8.8).toFixed(1)}</td>
-                    <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{Math.round(opp.daysToExpiry || 0)}d</td>
-                    <td className="px-3 py-3 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button onClick={() => executeTrade(opp.id)} className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1">
-                          <span>🛒</span> Kite
-                        </button>
-                        <button onClick={() => executeTrade(opp.id)} disabled={executingId === opp.id} className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-sm disabled:opacity-50">
-                          {executingId === opp.id ? 'EXEC...' : 'EXEC'}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {opportunities.map((opp, idx) => {
+                  const isExpanded = expandedIdx === idx;
+                  return (
+                    <React.Fragment key={opp.id || idx}>
+                      <tr
+                        onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+                        className={`cursor-pointer transition-colors ${
+                          isExpanded ? 'bg-blue-50/70 font-semibold' : 'hover:bg-blue-50/40'
+                        }`}
+                      >
+                        <td className="px-3 py-3 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-3 py-3 font-bold text-slate-700">{opp.strike}</td>
+                        <td className="px-3 py-3">
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-300">
+                            {opp.action || 'BUY CE+PE / SELL FUT'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-right font-mono font-bold text-blue-700">{Number(opp.cePrice || 0).toFixed(2)}</td>
+                        <td className="px-3 py-3 text-right font-mono text-slate-500">{(Number(opp.cePrice || 0) * 1.002).toFixed(2)}</td>
+                        <td className="px-3 py-3 text-right font-mono font-bold text-amber-700">{Number(opp.pePrice || 0).toFixed(2)}</td>
+                        <td className="px-3 py-3 text-right font-mono text-slate-500">{(Number(opp.pePrice || 0) * 1.002).toFixed(2)}</td>
+                        <td className="px-3 py-3 text-right font-mono text-slate-700">{Number(opp.futuresPrice || opp.spotPrice || 24155).toFixed(2)}</td>
+                        <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Math.round(opp.edgeAfterCosts || opp.bidEdgeInr || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-3 py-3 text-right font-mono text-blue-600">{Number(opp.edgePoints || -8.8).toFixed(1)}</td>
+                        <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{Math.round(opp.daysToExpiry || 0)}d</td>
+                        <td className="px-3 py-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button onClick={(e) => { e.stopPropagation(); executeTrade(opp.id); }} className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1">
+                              <span>🛒</span> Kite
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); executeTrade(opp.id); }} disabled={executingId === opp.id} className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-sm disabled:opacity-50">
+                              {executingId === opp.id ? 'EXEC...' : 'EXEC'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Inline Expanded Detail Row */}
+                      {isExpanded && (
+                        <tr className="bg-slate-50/90 border-b border-slate-200">
+                          <td colSpan={12} className="px-6 py-4">
+                            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-4">
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                                  Inline Opportunity Detail — {opp.underlying} {opp.strike}
+                                </h4>
+                                <span className="text-xs text-slate-400 font-mono">
+                                  Signal Time: {opp.scanTime ? new Date(opp.scanTime).toLocaleTimeString('en-IN') : '--'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">CE Price / Bid / Ask</span>
+                                  <span className="font-bold text-blue-700 text-sm">₹{Number(opp.cePrice || 0).toFixed(2)}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">PE Price / Bid / Ask</span>
+                                  <span className="font-bold text-amber-700 text-sm">₹{Number(opp.pePrice || 0).toFixed(2)}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">Spot / Futures Price</span>
+                                  <span className="font-bold text-slate-800 text-sm">₹{Number(opp.spotPrice || 0).toFixed(1)} / ₹{Number(opp.futuresPrice || 24155).toFixed(1)}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">Net Edge Profit</span>
+                                  <span className="font-bold text-emerald-600 text-sm">+₹{Math.round(opp.edgeAfterCosts || opp.bidEdgeInr || 0).toLocaleString('en-IN')}</span>
+                                </div>
+                              </div>
+
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Execution Legs</span>
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs font-mono text-slate-800">
+                                  {opp.legs || `BUY ${opp.underlying} ${opp.strike} CE + BUY ${opp.underlying} ${opp.strike} PE / SELL ${opp.underlying} FUT`}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                <button onClick={(e) => { e.stopPropagation(); executeTrade(opp.id); }} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-sm flex items-center gap-1">
+                                  <span>🛒</span> Kite Basket
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); executeTrade(opp.id); }} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm">
+                                  ⚡ Execute Trade
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
