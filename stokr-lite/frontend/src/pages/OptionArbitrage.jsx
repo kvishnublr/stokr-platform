@@ -755,9 +755,31 @@ function SignalsTab() {
 
   const reExecuteTrade = (item) => {
     const isBuy = String(item.action || '').includes('BUY');
-    toast.success(`Generated Kite Basket for ${item.underlying} ${item.strike} ${item.action || 'ARBITRAGE'}`);
+    showToast(`Generated Kite Basket for ${item.underlying} ${item.strike} ${item.action || 'ARBITRAGE'}`, 'success');
     window.open(`https://kite.zerodha.com/chart/web/tvc/NFO/${item.underlying}`, '_blank');
   };
+
+  const SORT_MAP = {
+    scanTime: s => new Date(s.scanTime || 0).getTime(),
+    strategyType: s => String(s.strategyType || ''),
+    underlying: s => String(s.underlying || ''),
+    strike: s => Number(s.strike || 0),
+    cePrice: s => Number(s.ceEntryPrice || s.cePrice || 0),
+    pePrice: s => Number(s.peEntryPrice || s.pePrice || 0),
+    spotPrice: s => Number(s.spotPrice || 0),
+    edgeAfterCosts: s => (Number(s.grossEdge) || (Number(s.edgePoints||0)*Number(s.lotSize||50))),
+    status: s => String(s.status || ''),
+    pnl: s => Number(s.pnlAfterCosts || s.pnlAmount || s.edgeAfterCosts || 0),
+    exitTime: s => new Date(s.exitTime || 0).getTime(),
+  };
+
+  const sortedSignals = [...signals].sort((a, b) => {
+    const fn = SORT_MAP[sortKey];
+    if (!fn) return 0;
+    const va = fn(a), vb = fn(b);
+    if (typeof va === 'string') return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortDir === 'asc' ? va - vb : vb - va;
+  });
 
   return (
     <div className="space-y-6 mt-4">
@@ -865,28 +887,7 @@ function SignalsTab() {
                   const grossEdge = Number(item.grossEdge || (Number(item.edgePoints || 0) * lotSz));
                   const pnlVal = Number(item.pnlAfterCosts || item.pnlAmount || grossEdge || 0);
 
-                
-  const SORT_MAP = {
-    scanTime: s => new Date(s.scanTime || 0).getTime(),
-    strategyType: s => String(s.strategyType || ''),
-    underlying: s => String(s.underlying || ''),
-    strike: s => Number(s.strike || 0),
-    cePrice: s => Number(s.ceEntryPrice || s.cePrice || 0),
-    pePrice: s => Number(s.peEntryPrice || s.pePrice || 0),
-    spotPrice: s => Number(s.spotPrice || 0),
-    edgeAfterCosts: s => (Number(s.grossEdge) || (Number(s.edgePoints||0)*Number(s.lotSize||50))),
-    status: s => String(s.status || ''),
-    pnl: s => Number(s.pnlAfterCosts || s.pnlAmount || s.edgeAfterCosts || 0),
-    exitTime: s => new Date(s.exitTime || 0).getTime(),
-  };
-  const sortedSignals = [...signals].sort((a, b) => {
-    const fn = SORT_MAP[sortKey];
-    if (!fn) return 0;
-    const va = fn(a), vb = fn(b);
-    if (typeof va === 'string') return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-    return sortDir === 'asc' ? va - vb : vb - va;
-  });
-  return (
+                  return (
                     <React.Fragment key={rowKey}>
                       <tr
                         onClick={() => setExpandedRowId(isExpanded ? null : rowKey)}
