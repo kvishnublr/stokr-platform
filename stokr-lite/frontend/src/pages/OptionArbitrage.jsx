@@ -1044,6 +1044,7 @@ function AutoExecTab() {
 function HistoryTab({ historyData, historyLoading, summaryData, datesData, historyPage, setHistoryPage, selectedDate, setSelectedDate, strategyFilter, setStrategyFilter }) {
   const rawItems = historyData?.items || [];
   const totalPages = historyData?.totalPages || 1;
+  const [expandedIdx, setExpandedIdx] = useState(null);
 
   const filteredItems = useMemo(() => {
     if (strategyFilter === 'ALL') return rawItems;
@@ -1059,12 +1060,23 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
   const totalOpps = filteredItems.length;
   const totalEdge = filteredItems.reduce((sum, i) => sum + (Number(i.edgeAfterCosts) || 0), 0);
 
+  const reExecuteTrade = async (item) => {
+    try {
+      await axios.post(`${API_BASE}/api/option-arbitrage/auto-execute/execute`, null, {
+        params: { opportunityId: item.id, multiplier: 1 }
+      });
+      showToast(`Re-execution orders submitted for ${item.underlying} ${item.strike}!`, 'success');
+    } catch (e) {
+      showToast('Re-execution failed: ' + (e.response?.data?.error || e.message), 'error');
+    }
+  };
+
   return (
     <div className="space-y-6 mt-4">
       <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-800">Historical Arbitrage Analytics</h2>
-          <p className="text-xs text-slate-500 mt-1">Audit past opportunity scans, detected edges & strategy performance</p>
+          <p className="text-xs text-slate-500 mt-1">Audit past opportunity scans & click any row to expand inline details</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -1125,32 +1137,97 @@ function HistoryTab({ historyData, historyLoading, summaryData, datesData, histo
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredItems.map((item, idx) => (
-                  <tr key={item.id || idx} className="hover:bg-slate-50 transition">
-                    <td className="px-3 py-3 font-mono text-xs text-slate-600">
-                      {item.scanTime ? new Date(item.scanTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--'}
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                        String(item.strategyType || item.type || '').includes('BID')
-                          ? 'bg-amber-100 text-amber-800'
-                          : String(item.strategyType || item.type || '').includes('BOX')
-                          ? 'bg-purple-100 text-purple-800'
-                          : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {item.strategyType || item.type || 'NORMAL_PARITY'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 font-bold text-slate-800">{item.underlying}</td>
-                    <td className="px-3 py-3 font-bold text-slate-700">{item.strike}</td>
-                    <td className="px-3 py-3 font-bold text-purple-700">{item.action}</td>
-                    <td className="px-3 py-3 text-right font-mono text-slate-600">{Number(item.ceEntryPrice || item.cePrice || 0).toFixed(1)}</td>
-                    <td className="px-3 py-3 text-right font-mono text-slate-600">{Number(item.peEntryPrice || item.pePrice || 0).toFixed(1)}</td>
-                    <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{Number(item.spotPrice || 0).toFixed(1)} / {Number(item.futuresPrice || 0).toFixed(1)}</td>
-                    <td className="px-3 py-3 text-right font-mono text-blue-600">+{Number(item.edgePoints || 0).toFixed(1)}</td>
-                    <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
-                  </tr>
-                ))}
+                {filteredItems.map((item, idx) => {
+                  const isExpanded = expandedIdx === idx;
+                  return (
+                    <React.Fragment key={item.id || idx}>
+                      <tr
+                        onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+                        className={`cursor-pointer transition-colors ${
+                          isExpanded ? 'bg-blue-50/70 font-semibold' : 'hover:bg-blue-50/40'
+                        }`}
+                      >
+                        <td className="px-3 py-3 font-mono text-xs text-slate-600">
+                          {item.scanTime ? new Date(item.scanTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--'}
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                            String(item.strategyType || item.type || '').includes('BID')
+                              ? 'bg-amber-100 text-amber-800'
+                              : String(item.strategyType || item.type || '').includes('BOX')
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {item.strategyType || item.type || 'NORMAL_PARITY'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 font-bold text-slate-800">{item.underlying}</td>
+                        <td className="px-3 py-3 font-bold text-slate-700">{item.strike}</td>
+                        <td className="px-3 py-3 font-bold text-purple-700">{item.action}</td>
+                        <td className="px-3 py-3 text-right font-mono text-slate-600">{Number(item.ceEntryPrice || item.cePrice || 0).toFixed(1)}</td>
+                        <td className="px-3 py-3 text-right font-mono text-slate-600">{Number(item.peEntryPrice || item.pePrice || 0).toFixed(1)}</td>
+                        <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{Number(item.spotPrice || 0).toFixed(1)} / {Number(item.futuresPrice || 0).toFixed(1)}</td>
+                        <td className="px-3 py-3 text-right font-mono text-blue-600">+{Number(item.edgePoints || 0).toFixed(1)}</td>
+                        <td className="px-3 py-3 text-right font-mono font-bold text-emerald-600">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
+                      </tr>
+
+                      {/* Inline Expanded Detail Row */}
+                      {isExpanded && (
+                        <tr className="bg-slate-50/90 border-b border-slate-200">
+                          <td colSpan={10} className="px-6 py-4">
+                            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-4">
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                                  Historical Opportunity Detail — {item.underlying} {item.strike}
+                                </h4>
+                                <span className="text-xs text-slate-400 font-mono">
+                                  Scan Time: {item.scanTime ? new Date(item.scanTime).toLocaleTimeString('en-IN') : '--'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">CE Entry Price</span>
+                                  <span className="font-bold text-blue-700 text-sm">₹{Number(item.ceEntryPrice || item.cePrice || 0).toFixed(2)}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">PE Entry Price</span>
+                                  <span className="font-bold text-amber-700 text-sm">₹{Number(item.peEntryPrice || item.pePrice || 0).toFixed(2)}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">Spot / Futures Price</span>
+                                  <span className="font-bold text-slate-800 text-sm">₹{Number(item.spotPrice || 0).toFixed(1)} / ₹{Number(item.futuresPrice || 0).toFixed(1)}</span>
+                                </div>
+                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                  <span className="text-slate-500 uppercase block text-[10px]">Net Edge Profit</span>
+                                  <span className="font-bold text-emerald-600 text-sm">+₹{Number(item.edgeAfterCosts || 0).toLocaleString('en-IN')}</span>
+                                </div>
+                              </div>
+
+                              {item.legs && (
+                                <div>
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Trade Legs</span>
+                                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs font-mono text-slate-800">
+                                    {item.legs}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                                <button onClick={(e) => { e.stopPropagation(); reExecuteTrade(item); }} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-sm flex items-center gap-1">
+                                  <span>🛒</span> Kite Basket
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); reExecuteTrade(item); }} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm">
+                                  ⚡ Re-Execute Trade
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
