@@ -161,7 +161,7 @@ export default function OptionArbitrage() {
   }, [displayOpps]);
 
   const livePrices = useMemo(() => data?.livePrices || {}, [data]);
-  const isLoading = cachedLoading || scanLoading;
+  const isLoading = scanLoading;
 
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['option-arb-history', historyPage, strategyFilter],
@@ -243,7 +243,7 @@ export default function OptionArbitrage() {
         <LiveScanTab
           autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
           underlyings={underlyings} toggleUnderlying={toggleUnderlying} ALL_U={ALL_U}
-          data={data} scanLoading={scanLoading} cachedLoading={cachedLoading}
+          data={data} scanLoading={scanLoading}
           error={error} refetch={refetch} health={health}
           opportunities={displayOpps} summary={summary} totalEdge={totalEdge} isLoading={isLoading}
           livePrices={livePrices}
