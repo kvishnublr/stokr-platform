@@ -70,6 +70,10 @@ else:
     time.sleep(5)
     run_ssh(ssh, "ps aux | grep 'stokr-lite' | grep -v grep", "Check process")
 
+# 4b. Also deploy to systemd production path if it exists
+run_ssh(ssh, f"cp {REPO_PATH}/stokr-lite/backend/target/stokr-lite-1.0.0-SNAPSHOT.jar /opt/stokr/stokr-lite.jar", "Copy to prod JAR")
+run_ssh(ssh, "systemctl restart stokr-lite.service && sleep 3 && systemctl is-active stokr-lite.service", "Restart prod systemd")
+
 # 5. Verify health
 print("\n=== Health Check ===")
 import time
