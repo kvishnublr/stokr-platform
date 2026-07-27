@@ -1,4 +1,4 @@
-﻿package com.stokr.arbitrage;
+package com.stokr.arbitrage;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,7 +29,7 @@ public class OptionArbHistoryService {
     private final OptionArbOpportunityRepository repository;
     private final ZerodhaSpotPriceFetcher spotFetcher;
 
-    @Value("${zerodha.api-key:`$ZERODHA_API_KEY}")
+    @Value("${zerodha.api-key:$ZERODHA_API_KEY}")
     private String apiKey;
 
     private static final ObjectMapper mapper = new ObjectMapper();
@@ -472,4 +472,5 @@ public class OptionArbHistoryService {
         return String.format("%s%02d%sFUT", cleanUnderlying, yy, mon);
     }
 }
+
 

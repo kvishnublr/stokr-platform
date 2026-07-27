@@ -17,8 +17,8 @@ REPO_PATH = "/root/stokr-platform"
 def run_ssh(ssh, cmd, desc=""):
     print(f"  [{desc}] {cmd}")
     stdin, stdout, stderr = ssh.exec_command(cmd)
-    out = stdout.read().decode().strip()
-    err = stderr.read().decode().strip()
+    out = stdout.read().decode(errors='replace').strip()
+    err = stderr.read().decode(errors='replace').strip()
     if out:
         print(out)
     if err:
@@ -40,7 +40,7 @@ run_ssh(ssh, "ls -la /root/stokr-lite.jar 2>/dev/null || echo 'no existing jar'"
 
 # 2. Pull latest code & build on server
 print("\n=== Git Pull ===")
-run_ssh(ssh, f"[ -d {REPO_PATH} ] && (cd {REPO_PATH} && git fetch && git checkout Release_v8 && git pull origin Release_v8) || git clone https://github.com/kvishnublr/stokr-platform.git {REPO_PATH}", "Clone/Pull")
+run_ssh(ssh, f"[ -d {REPO_PATH} ] && (cd {REPO_PATH} && git fetch && git checkout Release_v8 && git reset --hard && git pull origin Release_v8) || git clone https://github.com/kvishnublr/stokr-platform.git {REPO_PATH}", "Clone/Pull")
 
 # 3. Build
 print("\n=== Maven Build ===")

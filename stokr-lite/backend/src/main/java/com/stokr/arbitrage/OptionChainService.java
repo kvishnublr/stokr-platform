@@ -1,4 +1,4 @@
-﻿package com.stokr.arbitrage;
+package com.stokr.arbitrage;
 
 import com.stokr.external.ZerodhaTokenManager;
 import org.slf4j.Logger;
@@ -21,7 +21,7 @@ public class OptionChainService {
     private final ZerodhaTokenManager tokenManager;
     private final RestTemplate restTemplate = new RestTemplate();
 
-    @Value("${zerodha.api-key:`$ZERODHA_API_KEY}")
+    @Value("${zerodha.api-key:$ZERODHA_API_KEY}")
     private String apiKey;
 
     private static final double RISK_FREE_RATE = 0.065;
@@ -179,7 +179,7 @@ public class OptionChainService {
         return quotes;
     }
 
-    private int getATMStrike(String underlying, double spotPrice) {
+    public int getATMStrike(String underlying, double spotPrice) {
         int step = getStrikeStep(underlying);
         return (int) (Math.round(spotPrice / step) * step);
     }
@@ -202,7 +202,7 @@ public class OptionChainService {
         };
     }
 
-    private List<Integer> generateStrikes(int atmStrike, String underlying) {
+    public List<Integer> generateStrikes(int atmStrike, String underlying) {
         int step = getStrikeStep(underlying);
         List<Integer> strikes = new ArrayList<>();
         for (int i = -10; i <= 10; i++) {
@@ -220,7 +220,7 @@ public class OptionChainService {
         };
     }
 
-    private LocalDate getWeeklyExpiryDate(String underlying) {
+    public LocalDate getWeeklyExpiryDate(String underlying) {
         LocalDate today = LocalDate.now();
         LocalDate nextExpiry = today;
         DayOfWeek targetDay = getExpiryDayForUnderlying(underlying);
@@ -239,6 +239,27 @@ public class OptionChainService {
         return nextExpiry;
     }
 
+    public LocalDate getMonthlyExpiry() {
+        LocalDate today = LocalDate.now();
+        LocalDate lastDayOfMonth = today.withDayOfMonth(today.lengthOfMonth());
+        LocalDate lastThursday = lastDayOfMonth;
+        while (lastThursday.getDayOfWeek() != DayOfWeek.THURSDAY) {
+            lastThursday = lastThursday.minusDays(1);
+        }
+        if (lastThursday.equals(today)) {
+            LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+            if (nowIST.isAfter(LocalTime.of(15, 30))) {
+                lastThursday = lastThursday.plusMonths(1);
+                lastDayOfMonth = lastThursday.withDayOfMonth(lastThursday.lengthOfMonth());
+                lastThursday = lastDayOfMonth;
+                while (lastThursday.getDayOfWeek() != DayOfWeek.THURSDAY) {
+                    lastThursday = lastThursday.minusDays(1);
+                }
+            }
+        }
+        return lastThursday;
+    }
+
     private List<String> buildNfoSymbolCandidates(String underlying, LocalDate expiryDate, int strike, String type) {
         String cleanUnderlying = underlying.replace(" ", "");
         int yy = expiryDate.getYear() % 100;
@@ -252,6 +273,11 @@ public class OptionChainService {
         // 2. Weekly format: NIFTY2672323950CE
         list.add(String.format("%s%02d%d%02d%d%s", cleanUnderlying, yy, month, day, strike, type));
         return list;
+    }
+
+    public String buildNfoSymbol(String underlying, LocalDate expiryDate, int strike, String type) {
+        List<String> candidates = buildNfoSymbolCandidates(underlying, expiryDate, strike, type);
+        return candidates.isEmpty() ? null : candidates.get(0);
     }
 
     private double calculateParityEdge(double parityDev, String underlying) {
@@ -325,4 +351,5 @@ public class OptionChainService {
         public int openInterest;
     }
 }
+
 

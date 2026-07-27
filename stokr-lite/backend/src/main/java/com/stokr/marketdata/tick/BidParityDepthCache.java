@@ -12,14 +12,13 @@ public class BidParityDepthCache {
     private final ConcurrentHashMap<String, DepthTick> cache = new ConcurrentHashMap<>();
 
     public void onTick(TickData tick) {
-        if (tick.getBidPrice() <= 0 && tick.getAskPrice() <= 0) return;
         DepthTick dt = new DepthTick();
         dt.symbol = tick.getSymbol();
         dt.ltp = tick.getLtp().doubleValue();
-        dt.bidPrice = tick.getBidPrice();
-        dt.bidQty = tick.getBidQty();
-        dt.askPrice = tick.getAskPrice();
-        dt.askQty = tick.getAskQty();
+        dt.bidPrice = 0;
+        dt.bidQty = 0;
+        dt.askPrice = 0;
+        dt.askQty = 0;
         dt.timestamp = tick.getReceivedTs();
         cache.put(tick.getSymbol(), dt);
     }
