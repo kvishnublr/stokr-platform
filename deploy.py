@@ -74,7 +74,7 @@ else:
 print("\n=== Health Check ===")
 import time
 time.sleep(3)
-run_ssh(ssh, "curl -s http://localhost:8080/actuator/health 2>/dev/null || echo 'not responding yet'", "Health")
+run_ssh(ssh, "curl -s http://localhost:8081/actuator/health 2>/dev/null || echo 'not responding yet'", "Health")
 
 ssh.close()
 print("\nDeploy complete!")
