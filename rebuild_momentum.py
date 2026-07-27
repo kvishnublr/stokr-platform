@@ -1,6 +1,6 @@
-import paramiko,time,json
+﻿import paramiko,time,json
 s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect('173.249.55.84',username='root',password='19119e3a6793dde1',timeout=30)
+s.connect('173.249.55.84',username='root',password='`$SSH_PASSWORD',timeout=30)
 def c(cmd):
     i,o,e = s.exec_command(cmd)
     return o.read().decode('utf-8',errors='replace').strip()
@@ -43,3 +43,4 @@ else:
     print("No backtest response. Logs:")
     print(c("docker logs stokr-lite-backend 2>&1 | tail -10"))
 s.close()
+

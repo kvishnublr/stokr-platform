@@ -1,4 +1,4 @@
-import subprocess, json, time
+﻿import subprocess, json, time
 
 def remote(cmd):
     r = subprocess.run([
@@ -9,7 +9,8 @@ def remote(cmd):
 
 # Check admin user
 print("=== Admin user in DB ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, email, role FROM users WHERE role='ADMIN';\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, email, role FROM users WHERE role='ADMIN';\""))
 
 # Use trader token but write a Python script that uses Zerodha API directly
 print("\n=== Writing standalone backfill script ===")
+

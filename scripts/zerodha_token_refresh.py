@@ -11,11 +11,12 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-API_KEY = "zazlrld244cc6jf0"
-API_SECRET = "iyc7m8166tb6i95gt829q6mzbzvmfq6k"
-CLIENT_ID = "DS8838"
-PASSWORD = "Temp1234"
-TOTP_SECRET = "BQW7QISFB4PFA7SV3VSZAQ4B5I4WJUKC"
+API_KEY = os.environ.get("ZERODHA_API_KEY", "")
+API_SECRET = os.environ.get("ZERODHA_API_SECRET", "")
+CLIENT_ID = os.environ.get("ZERODHA_CLIENT_ID", "")
+PASSWORD = os.environ.get("ZERODHA_CLIENT_PASSWORD", "")
+TOTP_SECRET = os.environ.get("ZERODHA_TOTP_SECRET", "")
+PGPASSWORD = os.environ.get("POSTGRES_PASSWORD", "")
 LOG_FILE = "/var/log/stokr-token-refresh.log"
 
 def log(msg):
@@ -116,7 +117,7 @@ try:
     result = subprocess.run(
         ['psql', '-h', 'localhost', '-U', 'postgres', '-d', 'stokr_lite', '-c', sql],
         capture_output=True, text=True, timeout=30,
-        env={"PGPASSWORD": "stokr2026"}
+        env={"PGPASSWORD": PGPASSWORD}
     )
     if result.returncode != 0:
         log(f"DB UPDATE FAILED: {result.stderr}")

@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 
 def remote(cmd):
     r = subprocess.run([
@@ -21,8 +21,9 @@ print(remote("grep -n -A5 'isDailyStrategy' /opt/stokr/stokr-platform/stokr-lite
 
 # 4. Were there signals Jul 8-11?
 print("\n=== Signals from Jul 8-11 ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, symbol, strategy_id, status, created_at FROM strategy_signals WHERE created_at >= '2026-07-08' ORDER BY created_at;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, symbol, strategy_id, status, created_at FROM strategy_signals WHERE created_at >= '2026-07-08' ORDER BY created_at;\""))
 
 # 5. Check strategies timeframe in DB
 print("\n=== Strategy timeframes ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, name, timeframe, enabled FROM strategies WHERE enabled=true;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, name, timeframe, enabled FROM strategies WHERE enabled=true;\""))
+

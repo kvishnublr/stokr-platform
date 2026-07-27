@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Fetch 3 years of daily data using yfinance, save as CSV, then COPY to DB"""
 import subprocess
 import time
@@ -67,7 +67,7 @@ with open("/tmp/load_candles.sql", "w") as f:
     f.write(load_sql + "\n")
 
 result = subprocess.run(
-    ['bash', '-c', 'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -f /tmp/load_candles.sql'],
+    ['bash', '-c', 'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -f /tmp/load_candles.sql'],
     capture_output=True, text=True
 )
 print(result.stdout[-500:] if result.stdout else "")
@@ -76,7 +76,8 @@ if result.stderr:
 
 # Verify
 result = subprocess.run(
-    ['bash', '-c', 'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT MIN(timestamp)::date, MAX(timestamp)::date, COUNT(DISTINCT symbol), COUNT(*) FROM candle_data WHERE timeframe=\'daily\' LIMIT 1;"'],
+    ['bash', '-c', 'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT MIN(timestamp)::date, MAX(timestamp)::date, COUNT(DISTINCT symbol), COUNT(*) FROM candle_data WHERE timeframe=\'daily\' LIMIT 1;"'],
     capture_output=True, text=True
 )
 print(f"\nDatabase: {result.stdout.strip()}")
+

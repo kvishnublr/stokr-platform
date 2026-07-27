@@ -1,4 +1,4 @@
-import paramiko; s=paramiko.SSHClient(); s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+﻿import paramiko; s=paramiko.SSHClient(); s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 s.connect('173.249.55.84',username='root',password='***',timeout=15)
 def c(cmd):
     i,o,e = s.exec_command(cmd)
@@ -12,7 +12,7 @@ print("\n=== pg_hba.conf ===")
 print(c("grep -v '^#' /etc/postgresql/*/main/pg_hba.conf | grep -v '^$' | head -15"))
 
 print("\n=== Try socket ===")
-for pwd in ['root123', 'wfKh8p8ISQ63VF40', 'postgres']:
+for pwd in ['root123', '`$POSTGRES_PASSWORD', 'postgres']:
     r = c(f"python3 -c \"import psycopg2; psycopg2.connect('dbname=stokr_lite user=postgres password={pwd} host=localhost'); print('OK with {pwd}')\" 2>&1")
     print(f"  {pwd}: {r[:50]}")
 
@@ -24,3 +24,4 @@ print("\n=== Try with .pgpass ===")
 r = c("ls -la /root/.pgpass 2>/dev/null; cat /root/.pgpass 2>/dev/null | head -3")
 print(f"  pgpass: {r}")
 s.close()
+

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Comprehensive daily strategy backtester matching Java BacktestController logic.
 Tests EMA50D variants + Gap+Volume strategy.
@@ -16,7 +16,7 @@ def get_daily_candles():
          """SELECT symbol, timestamp, open, high, low, close, volume
             FROM candle_data WHERE timeframe='daily'
             ORDER BY symbol, timestamp"""],
-        capture_output=True, text=True, env={**os.environ, 'PGPASSWORD': 'stokr2026'}
+        capture_output=True, text=True, env={**os.environ, 'PGPASSWORD': '`$POSTGRES_PASSWORD'}
     )
     candles = {}
     for line in result.stdout.strip().split('\n'):
@@ -235,21 +235,21 @@ def print_report(name, trades):
     
     print(f"  {name}")
     print(f"    Trades: {len(trades)} ({len(buy_t)} LONG, {len(sell_t)} SHORT)")
-    print(f"    Win Rate: {wr:.1f}% | PF: {pf:.2f} | Net: ₹{net:,.0f}")
-    print(f"    Max Drawdown: ₹{max_dd:,.0f}")
+    print(f"    Win Rate: {wr:.1f}% | PF: {pf:.2f} | Net: â‚¹{net:,.0f}")
+    print(f"    Max Drawdown: â‚¹{max_dd:,.0f}")
     print(f"    Exits: {dict(exits)}")
     for m in sorted(monthly.keys()):
         d = monthly[m]
         mw = d['wins'] / d['trades'] * 100 if d['trades'] > 0 else 0
-        print(f"      {m}: {d['trades']:3d} trades, {mw:5.1f}% WR, ₹{d['pnl']:>8,.0f}")
+        print(f"      {m}: {d['trades']:3d} trades, {mw:5.1f}% WR, â‚¹{d['pnl']:>8,.0f}")
     
     # Top/Bottom 3
     top3 = sorted(wins, key=lambda x: x['pnl'], reverse=True)[:3]
     bot3 = sorted(losses, key=lambda x: x['pnl'])[:3]
     if top3:
-        print(f"    Top: {', '.join(f'{t['symbol']} ₹{t['pnl']:,.0f} ({t['exit_type']})' for t in top3)}")
+        print(f"    Top: {', '.join(f'{t['symbol']} â‚¹{t['pnl']:,.0f} ({t['exit_type']})' for t in top3)}")
     if bot3:
-        print(f"    Bot: {', '.join(f'{t['symbol']} ₹{t['pnl']:,.0f} ({t['exit_type']})' for t in bot3)}")
+        print(f"    Bot: {', '.join(f'{t['symbol']} â‚¹{t['pnl']:,.0f} ({t['exit_type']})' for t in bot3)}")
     print()
 
 
@@ -274,10 +274,10 @@ if __name__ == '__main__':
     FILTER_12M = ('2025-07-07', '2026-07-07')
 
     print("=" * 70)
-    print("  EMA50D VARIANTS — 3-Month Backtest (Apr 7 - Jul 7, 2026)")
+    print("  EMA50D VARIANTS â€” 3-Month Backtest (Apr 7 - Jul 7, 2026)")
     print("=" * 70)
 
-    # ─── VARIANT 1: EMA50D Original (dist < -5%, SL 4%, Tgt=EMA50) ──
+    # â”€â”€â”€ VARIANT 1: EMA50D Original (dist < -5%, SL 4%, Tgt=EMA50) â”€â”€
     def ema50d_v1(cndls, i, ind, sym):
         c = cndls[i]
         if c['volume'] <= 0 or c['close'] < 50: return None
@@ -288,7 +288,7 @@ if __name__ == '__main__':
     t = backtest_daily(data50, ema50d_v1, max_hold=7, date_filter=FILTER_3M)
     print_report("EMA50D v1: dist<-5%, RED only, SL 4%, Tgt=EMA50, Hold 7d", t)
 
-    # ─── VARIANT 2: EMA50D Relaxed (dist < -3%, any day) ──
+    # â”€â”€â”€ VARIANT 2: EMA50D Relaxed (dist < -3%, any day) â”€â”€
     def ema50d_v2(cndls, i, ind, sym):
         c = cndls[i]
         if c['volume'] <= 0 or c['close'] < 50: return None
@@ -298,7 +298,7 @@ if __name__ == '__main__':
     t = backtest_daily(data50, ema50d_v2, max_hold=7, date_filter=FILTER_3M)
     print_report("EMA50D v2: dist<-3%, ANY day, SL 3%, Tgt=EMA50, Hold 7d", t)
 
-    # ─── VARIANT 3: EMA50D + RSI combo (dist < -4%, RSI < 40) ──
+    # â”€â”€â”€ VARIANT 3: EMA50D + RSI combo (dist < -4%, RSI < 40) â”€â”€
     def ema50d_v3(cndls, i, ind, sym):
         c = cndls[i]
         if c['volume'] <= 0 or c['close'] < 50: return None
@@ -309,7 +309,7 @@ if __name__ == '__main__':
     t = backtest_daily(data50, ema50d_v3, max_hold=7, date_filter=FILTER_3M)
     print_report("EMA50D v3: dist<-4%, RSI<40, SL 4%, Tgt=EMA50, Hold 7d", t)
 
-    # ─── VARIANT 4: EMA50D Wide Target (dist < -4%, Tgt = +2% from entry) ──
+    # â”€â”€â”€ VARIANT 4: EMA50D Wide Target (dist < -4%, Tgt = +2% from entry) â”€â”€
     def ema50d_v4(cndls, i, ind, sym):
         c = cndls[i]
         if c['volume'] <= 0 or c['close'] < 50: return None
@@ -319,7 +319,7 @@ if __name__ == '__main__':
     t = backtest_daily(data50, ema50d_v4, max_hold=5, date_filter=FILTER_3M)
     print_report("EMA50D v4: dist<-4%, SL 3%, Tgt=+2%, Hold 5d", t)
 
-    # ─── VARIANT 5: EMA50D + Volume surge (dist < -4%, vol > 1.5x avg) ──
+    # â”€â”€â”€ VARIANT 5: EMA50D + Volume surge (dist < -4%, vol > 1.5x avg) â”€â”€
     def ema50d_v5(cndls, i, ind, sym):
         c = cndls[i]
         if c['volume'] <= 0 or c['close'] < 50: return None
@@ -331,7 +331,7 @@ if __name__ == '__main__':
     t = backtest_daily(data50, ema50d_v5, max_hold=7, date_filter=FILTER_3M)
     print_report("EMA50D v5: dist<-4%, Vol>1.5x, SL 4%, Tgt=EMA50, Hold 7d", t)
 
-    # ─── VARIANT 6: EMA50D Deep (dist < -6%, any day) ──
+    # â”€â”€â”€ VARIANT 6: EMA50D Deep (dist < -6%, any day) â”€â”€
     def ema50d_v6(cndls, i, ind, sym):
         c = cndls[i]
         if c['volume'] <= 0 or c['close'] < 50: return None
@@ -342,10 +342,10 @@ if __name__ == '__main__':
     print_report("EMA50D v6: dist<-6%, SL 5%, Tgt=EMA50, Hold 10d", t)
 
     print("=" * 70)
-    print("  GAP+VOLUME STRATEGY — 3-Month Backtest")
+    print("  GAP+VOLUME STRATEGY â€” 3-Month Backtest")
     print("=" * 70)
 
-    # ─── GAP+VOL 1: Buy gap-down on high volume ──
+    # â”€â”€â”€ GAP+VOL 1: Buy gap-down on high volume â”€â”€
     def gap_vol_1(cndls, i, ind, sym):
         if i < 2: return None
         c = cndls[i]
@@ -360,7 +360,7 @@ if __name__ == '__main__':
     t = backtest_daily(data50, gap_vol_1, max_hold=5, date_filter=FILTER_3M)
     print_report("Gap+Vol v1: Gap<-1.5% + Vol>2x, SL 3%, Tgt=prev close, Hold 5d", t)
 
-    # ─── GAP+VOL 2: Buy gap-down > 1% with RSI < 35 ──
+    # â”€â”€â”€ GAP+VOL 2: Buy gap-down > 1% with RSI < 35 â”€â”€
     def gap_vol_2(cndls, i, ind, sym):
         if i < 2: return None
         c = cndls[i]
@@ -374,7 +374,7 @@ if __name__ == '__main__':
     t = backtest_daily(data50, gap_vol_2, max_hold=5, date_filter=FILTER_3M)
     print_report("Gap+Vol v2: Gap<-1% + RSI<35, SL 3%, Tgt=prev close, Hold 5d", t)
 
-    # ─── GAP+VOL 3: Buy 2-day cumulative drop > 4% with vol surge ──
+    # â”€â”€â”€ GAP+VOL 3: Buy 2-day cumulative drop > 4% with vol surge â”€â”€
     def gap_vol_3(cndls, i, ind, sym):
         if i < 2: return None
         c = cndls[i]
@@ -388,7 +388,7 @@ if __name__ == '__main__':
     t = backtest_daily(data50, gap_vol_3, max_hold=5, date_filter=FILTER_3M)
     print_report("Gap+Vol v3: 2-day drop>4% + Vol>1.5x, SL 3%, Tgt=+3%, Hold 5d", t)
 
-    # ─── GAP+VOL 4: Buy red candle > 2% on volume > 2x, target prev close ──
+    # â”€â”€â”€ GAP+VOL 4: Buy red candle > 2% on volume > 2x, target prev close â”€â”€
     def gap_vol_4(cndls, i, ind, sym):
         c = cndls[i]
         if c['volume'] <= 0 or c['close'] < 50: return None
@@ -400,7 +400,7 @@ if __name__ == '__main__':
     t = backtest_daily(data50, gap_vol_4, max_hold=5, date_filter=FILTER_3M)
     print_report("Gap+Vol v4: Red >2% + Vol>2x, SL 3%, Tgt=open, Hold 5d", t)
 
-    # ─── GAP+VOL 5: Buy after 3 consecutive red days with vol ──
+    # â”€â”€â”€ GAP+VOL 5: Buy after 3 consecutive red days with vol â”€â”€
     def gap_vol_5(cndls, i, ind, sym):
         if i < 3: return None
         c = cndls[i]
@@ -419,7 +419,7 @@ if __name__ == '__main__':
     t = backtest_daily(data50, gap_vol_5, max_hold=5, date_filter=FILTER_3M)
     print_report("Gap+Vol v5: 3-red-days + drop>3% + Vol>1.2x, SL 3%, Tgt=+3%, Hold 5d", t)
 
-    # ─── GAP+VOL 6: Buy when close < lower Bollinger(20,2) + vol surge ──
+    # â”€â”€â”€ GAP+VOL 6: Buy when close < lower Bollinger(20,2) + vol surge â”€â”€
     def gap_vol_6(cndls, i, ind, sym):
         if i < 20: return None
         c = cndls[i]
@@ -437,7 +437,7 @@ if __name__ == '__main__':
 
     # Also run the best candidates on 12-month for validation
     print("=" * 70)
-    print("  BEST CANDIDATES — 12-Month Validation (Jul 2025 - Jul 2026)")
+    print("  BEST CANDIDATES â€” 12-Month Validation (Jul 2025 - Jul 2026)")
     print("=" * 70)
 
     # v2 (loosest EMA50D)
@@ -470,3 +470,4 @@ if __name__ == '__main__':
     print_report("OVERSOLD_BOUNCE baseline: drop>3%, SL 3%, Tgt=+1.5%, Hold 7d", t)
     t = backtest_daily(data50, ob_baseline, max_hold=7, date_filter=FILTER_12M)
     print_report("OVERSOLD_BOUNCE baseline (12M): drop>3%, SL 3%, Tgt=+1.5%, Hold 7d", t)
+

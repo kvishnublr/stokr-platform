@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Full Zerodha token refresh - runs directly on server"""
 import requests
 import pyotp
@@ -7,11 +7,11 @@ import hashlib
 import subprocess
 from datetime import datetime, timezone
 
-API_KEY = "zazlrld244cc6jf0"
-API_SECRET = "iyc7m8166tb6i95gt829q6mzbzvmfq6k"
+API_KEY = "`$ZERODHA_API_KEY"
+API_SECRET = "`$ZERODHA_API_SECRET"
 CLIENT_ID = "DS8838"
-PASSWORD = "Temp1234"
-TOTP_SECRET = "BQW7QISFB4PFA7SV3VSZAQ4B5I4WJUKC"
+PASSWORD = "`$ZERODHA_CLIENT_PASSWORD"
+TOTP_SECRET = "`$ZERODHA_TOTP_SECRET"
 
 # Step 1: Generate TOTP
 totp = pyotp.TOTP(TOTP_SECRET)
@@ -130,7 +130,7 @@ WHERE id = 1;"""
 result = subprocess.run(
     ['psql', '-h', 'localhost', '-U', 'postgres', '-d', 'stokr_lite', '-c', sql],
     capture_output=True, text=True, timeout=30,
-    env={"PGPASSWORD": "stokr2026"}
+    env={"PGPASSWORD": "`$POSTGRES_PASSWORD"}
 )
 print(result.stdout)
 
@@ -147,3 +147,4 @@ else:
     print(f"    Quote failed: {json.dumps(qd, indent=2)}")
 
 print(f"\n[DONE] Token refreshed successfully!")
+

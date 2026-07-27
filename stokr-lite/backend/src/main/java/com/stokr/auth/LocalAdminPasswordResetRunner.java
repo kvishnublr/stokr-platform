@@ -1,4 +1,4 @@
-package com.stokr.auth;
+﻿package com.stokr.auth;
 
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -16,7 +16,7 @@ import java.util.List;
 public class LocalAdminPasswordResetRunner implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(LocalAdminPasswordResetRunner.class);
-    private static final String TEMP_ADMIN_PASSWORD = "Temp@12345678";
+    private static final String TEMP_ADMIN_PASSWORD = "`$ADMIN_PASSWORD";
     private static final List<String> OWNER_EMAILS = List.of(
             "kvishnu.blr@gmail.com",
             "admin@stokr.in"
@@ -45,3 +45,4 @@ public class LocalAdminPasswordResetRunner implements ApplicationRunner {
         });
     }
 }
+

@@ -1,14 +1,14 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 import requests, json, psycopg2
 
-conn = psycopg2.connect("host=localhost dbname=stokr_lite user=postgres password=stokr2026")
+conn = psycopg2.connect("host=localhost dbname=stokr_lite user=postgres password=`$POSTGRES_PASSWORD")
 cur = conn.cursor()
 cur.execute("SELECT access_token FROM broker_accounts WHERE id = 4")
 TOKEN = cur.fetchone()[0]
 cur.close()
 conn.close()
 
-HEADERS = {"Authorization": "token zazlrld244cc6jf0:" + TOKEN, "X-Kite-Version": "3"}
+HEADERS = {"Authorization": "token `$ZERODHA_API_KEY:" + TOKEN, "X-Kite-Version": "3"}
 
 # Download instruments CSV to find correct NIFTY option symbols
 resp = requests.get("https://api.kite.trade/instruments", headers=HEADERS, timeout=30)
@@ -50,3 +50,4 @@ print(f"\nFound {len(nifty_futs)} NIFTY futures")
 for line in nifty_futs[:5]:
     parts = line.split(",")
     print(f"  token={parts[0]} exchange={parts[1]} symbol={parts[2]} expiry={parts[3]}")
+

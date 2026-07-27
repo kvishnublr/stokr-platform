@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Detailed trade report with max unrealized profit for EMA50_DISTANCE"""
 import json
 import subprocess
@@ -6,7 +6,7 @@ import sys
 
 def run_sql(query):
     """Run SQL query on the database"""
-    cmd = f'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "{query}"'
+    cmd = f'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "{query}"'
     result = subprocess.run(['bash', '-c', cmd], capture_output=True, text=True)
     return result.stdout.strip()
 
@@ -71,12 +71,12 @@ data = json.loads(result.stdout)
 trades = data.get('trades', [])
 
 print(f"\n{'='*180}")
-print(f"  EMA50_DISTANCE v2 — DETAILED TRADE REPORT WITH MAX UNREALIZED PROFIT")
-print(f"  Universe: NIFTY_100 | Period: Jul 2025 – Jul 2026 | Capital: ₹1,00,000")
+print(f"  EMA50_DISTANCE v2 â€” DETAILED TRADE REPORT WITH MAX UNREALIZED PROFIT")
+print(f"  Universe: NIFTY_100 | Period: Jul 2025 â€“ Jul 2026 | Capital: â‚¹1,00,000")
 print(f"{'='*180}\n")
 
 # Header
-print(f"{'#':<4} {'Entry Date':<12} {'Symbol':<14} {'Entry ₹':<10} {'Exit Date':<12} {'Exit ₹':<10} {'Qty':<6} {'Gross P&L':<12} {'Net P&L':<12} {'Exit Type':<14} {'Max High ₹':<12} {'Max Unreal%':<12} {'Max Date':<12}")
+print(f"{'#':<4} {'Entry Date':<12} {'Symbol':<14} {'Entry â‚¹':<10} {'Exit Date':<12} {'Exit â‚¹':<10} {'Qty':<6} {'Gross P&L':<12} {'Net P&L':<12} {'Exit Type':<14} {'Max High â‚¹':<12} {'Max Unreal%':<12} {'Max Date':<12}")
 print("-"*180)
 
 total_pnl = 0
@@ -109,8 +109,8 @@ for i, t in enumerate(trades):
     if net_pnl > 0: wins += 1
     else: losses += 1
     
-    gross_str = f"+₹{pnl:.0f}" if pnl > 0 else f"-₹{abs(pnl):.0f}"
-    net_str = f"+₹{net_pnl:.0f}" if net_pnl > 0 else f"-₹{abs(net_pnl):.0f}"
+    gross_str = f"+â‚¹{pnl:.0f}" if pnl > 0 else f"-â‚¹{abs(pnl):.0f}"
+    net_str = f"+â‚¹{net_pnl:.0f}" if net_pnl > 0 else f"-â‚¹{abs(net_pnl):.0f}"
     
     print(f"{i+1:<4} {entry_date:<12} {symbol:<14} {entry_price:<10.2f} {exit_date:<12} {exit_price:<10.2f} {qty:<6} {gross_str:<12} {net_str:<12} {exit_type:<14} {max_high:<12.2f} {max_unreal_pct:<12.2f} {max_date:<12}")
 
@@ -124,11 +124,11 @@ print("="*100)
 print(f"  Total Trades:           {len(trades)}")
 print(f"  Wins:                   {wins} ({wins/len(trades)*100:.1f}%)")
 print(f"  Losses:                 {losses} ({losses/len(trades)*100:.1f}%)")
-print(f"  Gross P&L:              ₹{total_pnl:,.0f}")
-print(f"  Total Brokerage:        ₹{total_brokerage:,.0f}")
-print(f"  Net P&L:                ₹{data.get('netPnL', 0):,.0f}")
+print(f"  Gross P&L:              â‚¹{total_pnl:,.0f}")
+print(f"  Total Brokerage:        â‚¹{total_brokerage:,.0f}")
+print(f"  Net P&L:                â‚¹{data.get('netPnL', 0):,.0f}")
 print(f"  Profit Factor:          {data.get('profitFactor', 0):.2f}")
-print(f"  Max Drawdown:           ₹{data.get('maxDrawdown', 0):,.0f}")
+print(f"  Max Drawdown:           â‚¹{data.get('maxDrawdown', 0):,.0f}")
 print()
 
 # Max unrealized profit stats
@@ -151,7 +151,7 @@ if all_max_unrealized:
     for low, high in ranges:
         count = sum(1 for x in all_max_unrealized if low <= x < high)
         pct = count / len(all_max_unrealized) * 100
-        bar = '█' * int(pct / 2)
+        bar = 'â–ˆ' * int(pct / 2)
         print(f"    {low:>2}-{high:>2}%: {count:>3} trades ({pct:>5.1f}%) {bar}")
 
 # Monthly breakdown
@@ -172,7 +172,7 @@ for t in trades:
 for m in sorted(monthly.keys()):
     data_m = monthly[m]
     wr = data_m['wins']/data_m['trades']*100 if data_m['trades'] > 0 else 0
-    pnl_str = f"+₹{data_m['pnl']:,.0f}" if data_m['pnl'] > 0 else f"-₹{abs(data_m['pnl']):,.0f}"
+    pnl_str = f"+â‚¹{data_m['pnl']:,.0f}" if data_m['pnl'] > 0 else f"-â‚¹{abs(data_m['pnl']):,.0f}"
     print(f"  {m}: {data_m['trades']:>3} trades, {wr:>5.1f}% WR, {pnl_str}")
 
 print()
@@ -206,10 +206,10 @@ for i, t in enumerate(trades):
 # Sort by max unrealized profit
 trades_with_max.sort(key=lambda x: x['max_unreal_pct'], reverse=True)
 
-print(f"\n{'Symbol':<14} {'Entry Date':<12} {'Entry ₹':<10} {'Max High ₹':<12} {'Max Unreal%':<12} {'Max Date':<12} {'Net P&L':<12}")
+print(f"\n{'Symbol':<14} {'Entry Date':<12} {'Entry â‚¹':<10} {'Max High â‚¹':<12} {'Max Unreal%':<12} {'Max Date':<12} {'Net P&L':<12}")
 print("-"*80)
 for t in trades_with_max[:10]:
-    net_str = f"+₹{t['net_pnl']:.0f}" if t['net_pnl'] > 0 else f"-₹{abs(t['net_pnl']):.0f}"
+    net_str = f"+â‚¹{t['net_pnl']:.0f}" if t['net_pnl'] > 0 else f"-â‚¹{abs(t['net_pnl']):.0f}"
     print(f"{t['symbol']:<14} {t['entry_date']:<12} {t['entry_price']:<10.2f} {t['max_high']:<12.2f} {t['max_unreal_pct']:<12.2f} {t['max_date']:<12} {net_str}")
 
 print()
@@ -220,8 +220,9 @@ print("="*100)
 # Sort by actual net P&L
 trades_by_pnl = sorted(trades_with_max, key=lambda x: x['net_pnl'], reverse=True)
 
-print(f"\n{'Symbol':<14} {'Entry Date':<12} {'Entry ₹':<10} {'Max High ₹':<12} {'Max Unreal%':<12} {'Net P&L':<12}")
+print(f"\n{'Symbol':<14} {'Entry Date':<12} {'Entry â‚¹':<10} {'Max High â‚¹':<12} {'Max Unreal%':<12} {'Net P&L':<12}")
 print("-"*70)
 for t in trades_by_pnl[:10]:
-    net_str = f"+₹{t['net_pnl']:.0f}" if t['net_pnl'] > 0 else f"-₹{abs(t['net_pnl']):.0f}"
+    net_str = f"+â‚¹{t['net_pnl']:.0f}" if t['net_pnl'] > 0 else f"-â‚¹{abs(t['net_pnl']):.0f}"
     print(f"{t['symbol']:<14} {t['entry_date']:<12} {t['entry_price']:<10.2f} {t['max_high']:<12.2f} {t['max_unreal_pct']:<12.2f} {net_str}")
+

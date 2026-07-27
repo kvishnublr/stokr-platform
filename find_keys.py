@@ -1,6 +1,6 @@
-import paramiko
+﻿import paramiko
 s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect('173.249.55.84',username='root',password='19119e3a6793dde1',timeout=30)
+s.connect('173.249.55.84',username='root',password='`$SSH_PASSWORD',timeout=30)
 def c(cmd):
     i,o,e = s.exec_command(cmd)
     return o.read().decode('utf-8',errors='replace').strip()
@@ -20,3 +20,4 @@ print("\n=== Container config check ===")
 print(c("docker exec stokr-lite-backend ls /app/BOOT-INF/classes/ 2>/dev/null | head -20"))
 print(c("docker exec stokr-lite-backend cat /app/BOOT-INF/classes/application.properties 2>/dev/null | head -30"))
 s.close()
+

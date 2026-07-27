@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 
 def remote(cmd):
     r = subprocess.run([
@@ -8,13 +8,13 @@ def remote(cmd):
     return r.stdout
 
 print("=== DEPLOYMENTS ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, strategy_id, status, capital FROM deployments WHERE status='LIVE';\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, strategy_id, status, capital FROM deployments WHERE status='LIVE';\""))
 
 print("=== STRATEGY UNIVERSE ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, name, universe_group FROM strategies WHERE id IN (15,21,23,31);\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, name, universe_group FROM strategies WHERE id IN (15,21,23,31);\""))
 
 print("=== LAST SIGNAL EVER ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, symbol, strategy_id, status, created_at FROM strategy_signals ORDER BY created_at DESC LIMIT 5;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, symbol, strategy_id, status, created_at FROM strategy_signals ORDER BY created_at DESC LIMIT 5;\""))
 
 print("=== ENGINE LOGS (any errors or warnings today) ===")
 r = subprocess.run([
@@ -25,4 +25,5 @@ r = subprocess.run([
 print(r.stdout if r.stdout else "none")
 
 print("=== LATEST 1MIN CANDLES FOR A NIFTY_50 STOCK ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT symbol, timestamp, close, volume FROM candle_data WHERE symbol='RELIANCE' AND timeframe='1min' ORDER BY timestamp DESC LIMIT 5;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT symbol, timestamp, close, volume FROM candle_data WHERE symbol='RELIANCE' AND timeframe='1min' ORDER BY timestamp DESC LIMIT 5;\""))
+

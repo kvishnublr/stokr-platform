@@ -1,4 +1,4 @@
-import subprocess, json
+﻿import subprocess, json
 
 def remote(cmd):
     r = subprocess.run([
@@ -9,11 +9,11 @@ def remote(cmd):
 
 # Check if Jul 13 daily candles exist
 print("=== Jul 13 daily candle check ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT symbol, timestamp, close FROM candle_data WHERE timeframe='daily' AND timestamp >= '2026-07-13' LIMIT 10;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT symbol, timestamp, close FROM candle_data WHERE timeframe='daily' AND timestamp >= '2026-07-13' LIMIT 10;\""))
 
 # Check all dates
 print("\n=== All daily candle dates ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT timestamp::date as day, count(*) FROM candle_data WHERE timeframe='daily' AND timestamp >= '2026-07-01' GROUP BY day ORDER BY day;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT timestamp::date as day, count(*) FROM candle_data WHERE timeframe='daily' AND timestamp >= '2026-07-01' GROUP BY day ORDER BY day;\""))
 
 # Run EMA50D backtest with verbose output - check raw response
 print("\n=== EMA50D raw backtest response ===")
@@ -34,3 +34,4 @@ try:
 except Exception as e:
     print(f"Error: {e}")
     print(result[:500])
+

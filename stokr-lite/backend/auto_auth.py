@@ -1,6 +1,6 @@
-import psycopg2, hashlib, json, urllib.request, urllib.parse, http.cookiejar
+﻿import psycopg2, hashlib, json, urllib.request, urllib.parse, http.cookiejar
 
-conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='stokr2026')
+conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='`$POSTGRES_PASSWORD')
 cur = conn.cursor()
 
 # Get account 1 credentials
@@ -144,3 +144,4 @@ else:
     print(f"Exchange failed: {exchange_result}")
 
 conn.close()
+

@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 
 def remote(cmd):
     r = subprocess.run([
@@ -9,16 +9,17 @@ def remote(cmd):
 
 # 1. Check signals around 15:10
 print("=== Signals generated around 15:10 ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, deployment_id, strategy_id, symbol, side, status, entry_price, created_at FROM strategy_signals WHERE created_at >= '2026-07-13 15:05:00' ORDER BY created_at DESC;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, deployment_id, strategy_id, symbol, side, status, entry_price, created_at FROM strategy_signals WHERE created_at >= '2026-07-13 15:05:00' ORDER BY created_at DESC;\""))
 
 # 2. Check ALL signals today
 print("\n=== ALL signals today by strategy ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT strategy_id, status, count(*) FROM strategy_signals WHERE created_at >= '2026-07-13' GROUP BY strategy_id, status;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT strategy_id, status, count(*) FROM strategy_signals WHERE created_at >= '2026-07-13' GROUP BY strategy_id, status;\""))
 
 # 3. Check broker accounts
 print("\n=== Broker accounts ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, broker_name, client_id, status, auto_reconnect FROM broker_accounts;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, broker_name, client_id, status, auto_reconnect FROM broker_accounts;\""))
 
 # 4. Check deployments and which broker user_id they link to
 print("\n=== Deployments ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, strategy_id, user_id, status, capital FROM deployments WHERE status='ACTIVE';\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, strategy_id, user_id, status, capital FROM deployments WHERE status='ACTIVE';\""))
+

@@ -1,5 +1,5 @@
-#!/bin/bash
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite << 'EOF'
+﻿#!/bin/bash
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite << 'EOF'
 -- Deployment tables
 SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%deploy%' ORDER BY table_name;
 
@@ -12,3 +12,4 @@ SELECT column_name FROM information_schema.columns WHERE table_name='strategy_si
 -- How many signals per status
 SELECT status, count(*) FROM strategy_signals GROUP BY status;
 EOF
+

@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 
 queries = [
     ("SCHEMA", "\d strategy_signals"),
@@ -10,8 +10,9 @@ for label, q in queries:
     r = subprocess.run([
         "ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
         "root@173.249.55.84",
-        "PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c " + repr(q)
+        "PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c " + repr(q)
     ], capture_output=True, text=True, timeout=20)
     print(f"=== {label} ===")
     print(r.stdout if r.stdout else r.stderr)
     print()
+

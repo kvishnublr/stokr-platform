@@ -4,8 +4,8 @@ spring:
 
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://173.249.55.84:5432/stokr_lite}
-    username: ${SPRING_DATASOURCE_USERNAME:stokr}
-    password: ${SPRING_DATASOURCE_PASSWORD:stokr_pass}
+    username: ${SPRING_DATASOURCE_USERNAME:}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 20
@@ -44,7 +44,7 @@ spring:
 
 # JWT Configuration
 jwt:
-  secret: ${JWT_SECRET:4uJj9/XZRn3bB7mTGI9uJVC3p8XLDwKgbA/RG7Osz90=}
+  secret: ${JWT_SECRET:}
   expiration: 86400000        # 24 hours in ms
   refresh-expiration: 604800000  # 7 days in ms
 
@@ -53,7 +53,7 @@ broker:
   zerodha:
     api-key: ${ZERODHA_API_KEY:}
     api-secret: ${ZERODHA_API_SECRET:}
-    redirect-uri: ${ZERODHA_REDIRECT_URI:http://localhost:8080/api/brokers/zerodha/callback}
+    redirect-uri: ${ZERODHA_REDIRECT_URI:}
   dhan:
     api-key: ${DHAN_API_KEY:}
     redirect-uri: ${DHAN_REDIRECT_URI:http://localhost:8080/api/brokers/dhan/callback}

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Fetch 3yr daily data using Zerodha API - skip profile, go straight to data"""
 import subprocess
 import urllib.request
@@ -8,11 +8,11 @@ from datetime import datetime, timedelta
 
 # Get token from DB
 result = subprocess.run(
-    ['bash', '-c', 'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT access_token FROM broker_accounts WHERE id=1;"'],
+    ['bash', '-c', 'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT access_token FROM broker_accounts WHERE id=1;"'],
     capture_output=True, text=True
 )
 ACCESS_TOKEN = result.stdout.strip()
-API_KEY = "zazlrld244cc6jf0"
+API_KEY = "`$ZERODHA_API_KEY"
 print(f"Token: {ACCESS_TOKEN[:12]}...")
 
 # Quick test: fetch 1 candle for RELIANCE
@@ -79,7 +79,7 @@ print(f"Matched: {len(matched)}, Not found: {not_found}")
 
 # Delete existing daily data
 subprocess.run(
-    ['bash', '-c', "PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"DELETE FROM candle_data WHERE timeframe = 'daily';\""],
+    ['bash', '-c', "PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"DELETE FROM candle_data WHERE timeframe = 'daily';\""],
     capture_output=True, text=True
 )
 print("Existing daily data cleared")
@@ -127,7 +127,7 @@ if csv_lines:
     with open("/tmp/load_zerodha.sql", "w") as f:
         f.write(f"COPY candle_data(symbol, timeframe, timestamp, open, high, low, close, volume) FROM '{csv_file}' WITH DELIMITER '|';\n")
     result = subprocess.run(
-        ['bash', '-c', 'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -f /tmp/load_zerodha.sql'],
+        ['bash', '-c', 'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -f /tmp/load_zerodha.sql'],
         capture_output=True, text=True
     )
     print(f"Load: {result.stdout.strip()}")
@@ -136,7 +136,8 @@ if csv_lines:
 
 # Verify
 result = subprocess.run(
-    ['bash', '-c', "PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c \"SELECT MIN(timestamp)::date, MAX(timestamp)::date, COUNT(DISTINCT symbol), COUNT(*) FROM candle_data WHERE timeframe='daily';\""],
+    ['bash', '-c', "PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c \"SELECT MIN(timestamp)::date, MAX(timestamp)::date, COUNT(DISTINCT symbol), COUNT(*) FROM candle_data WHERE timeframe='daily';\""],
     capture_output=True, text=True
 )
 print(f"\nDB: {result.stdout.strip()}")
+

@@ -1,14 +1,14 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 import requests, json, psycopg2
 
-conn = psycopg2.connect("host=localhost dbname=stokr_lite user=postgres password=stokr2026")
+conn = psycopg2.connect("host=localhost dbname=stokr_lite user=postgres password=`$POSTGRES_PASSWORD")
 cur = conn.cursor()
 cur.execute("SELECT access_token FROM broker_accounts WHERE id = 4")
 TOKEN = cur.fetchone()[0]
 cur.close()
 conn.close()
 
-HEADERS = {"Authorization": "token zazlrld244cc6jf0:" + TOKEN, "X-Kite-Version": "3"}
+HEADERS = {"Authorization": "token `$ZERODHA_API_KEY:" + TOKEN, "X-Kite-Version": "3"}
 
 # Test different NIFTY option symbol formats
 test_symbols = [
@@ -40,3 +40,4 @@ d2 = resp2.json().get("data", {})
 for k, v in d2.items():
     lp = v.get("last_price", 0) if isinstance(v, dict) else 0
     print(f"  {k}: last_price={lp}")
+

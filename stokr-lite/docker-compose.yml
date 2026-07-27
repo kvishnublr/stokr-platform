@@ -20,8 +20,8 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://173.249.55.84:5432/stokr_lite}
-      SPRING_DATASOURCE_USERNAME: stokr
-      SPRING_DATASOURCE_PASSWORD: root123
+       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-}
       JWT_SECRET: change-this-to-a-very-long-random-secret-key-at-least-256-bits
       ZERODHA_API_KEY: ${ZERODHA_API_KEY:-}
       ZERODHA_API_SECRET: ${ZERODHA_API_SECRET:-}

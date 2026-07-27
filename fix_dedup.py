@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 
 def remote(cmd):
     r = subprocess.run([
@@ -9,7 +9,7 @@ def remote(cmd):
 
 # 1. Clean up the 154 spam signals
 print("=== Cleaning 154 spam signals ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"DELETE FROM strategy_signals WHERE created_at >= '2026-07-13' AND strategy_id = 21 AND status = 'REJECTED';\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"DELETE FROM strategy_signals WHERE created_at >= '2026-07-13' AND strategy_id = 21 AND status = 'REJECTED';\""))
 
 # 2. Fix the dedup in intraday path via Python patch
 print("\n=== Fixing intraday dedup in SignalProcessor.java ===")
@@ -50,3 +50,4 @@ else:
                 print(f"{j+1}: {lines[j]}")
 """
 exec(script)
+

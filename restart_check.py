@@ -1,6 +1,6 @@
-import paramiko,time
+﻿import paramiko,time
 s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect('173.249.55.84',username='root',password='19119e3a6793dde1',timeout=30)
+s.connect('173.249.55.84',username='root',password='`$SSH_PASSWORD',timeout=30)
 def c(cmd):
     i,o,e = s.exec_command(cmd)
     return o.read().decode(errors='replace').strip()
@@ -33,3 +33,4 @@ try:
     print(f"Trades: {d.get('totalTrades')} | WR: {d.get('winRate')} | Net: Rs.{d.get('totalNetPnl')}")
 except: print(f"Raw: {r[:300]}")
 s.close()
+

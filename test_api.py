@@ -1,7 +1,7 @@
-import json, subprocess, os, urllib.request
+﻿import json, subprocess, os, urllib.request
 
 env = os.environ.copy()
-env["PGPASSWORD"] = "stokr2026"
+env["PGPASSWORD"] = "`$POSTGRES_PASSWORD"
 
 def psql(sql):
     r = subprocess.run(["psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c", sql],
@@ -19,3 +19,4 @@ try:
     print(resp.read().decode()[:500])
 except urllib.error.HTTPError as e:
     print(f"HTTP {e.code}: {e.read().decode()[:500]}")
+

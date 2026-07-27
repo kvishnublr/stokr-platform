@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Fix and restart backend deployment."""
 import paramiko, time, sys
 
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect("173.249.55.84", username="root", password="19119e3a6793dde1", timeout=30)
+ssh.connect("173.249.55.84", username="root", password="`$SSH_PASSWORD", timeout=30)
 
 def cmd(c, show=True):
     stdin, stdout, stderr = ssh.exec_command(c)
@@ -48,3 +48,4 @@ if not out2.strip():
     out, _ = cmd("cd /root/stokr-platform/stokr-lite/backend && mvn package -DskipTests 2>&1 | tail -20", show=True)
 
 ssh.close()
+

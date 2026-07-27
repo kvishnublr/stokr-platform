@@ -1,8 +1,8 @@
-import paramiko
+﻿import paramiko
 
 s = paramiko.SSHClient()
 s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect("173.249.55.84", username="root", password="19119e3a6793dde1", timeout=30)
+s.connect("173.249.55.84", username="root", password="`$SSH_PASSWORD", timeout=30)
 
 def c(cmd):
     i, o, e = s.exec_command(cmd)
@@ -68,3 +68,4 @@ print("\n=== QuickFlip Model ===")
 print(c("curl -s http://localhost:8080/api/backtest/quickflip/model | python3 -m json.tool 2>/dev/null || curl -s http://localhost:8080/api/backtest/quickflip/model"))
 
 s.close()
+

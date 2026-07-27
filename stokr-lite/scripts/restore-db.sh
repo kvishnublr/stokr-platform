@@ -1,5 +1,5 @@
-#!/bin/bash
-# Stokr Lite — Database Restore
+﻿#!/bin/bash
+# Stokr Lite â€” Database Restore
 # Usage: ./restore-db.sh [backup-file]
 # If no file specified, uses the latest backup.
 
@@ -11,7 +11,7 @@ DB_HOST="localhost"
 DB_PORT="5432"
 BACKUP_DIR="/opt/stokr/backups"
 
-export PGPASSWORD="stokr2026"
+export PGPASSWORD="`$POSTGRES_PASSWORD"
 
 if [ -n "${1:-}" ]; then
   BACKUP_FILE="$1"
@@ -52,3 +52,4 @@ echo "[$(date)] Starting stokr-lite service..."
 systemctl start stokr-lite
 
 echo "[$(date)] Restore complete."
+

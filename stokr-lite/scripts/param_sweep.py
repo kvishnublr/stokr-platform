@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Parametric sweep for EMA50_DISTANCE and RSI_OVERSOLD strategies."""
 import subprocess, os, sys
 
@@ -7,7 +7,7 @@ def get_candles():
         ['psql', '-h', 'localhost', '-p', '5432', '-U', 'postgres', '-d', 'stokr_lite',
          '-t', '-A', '-F', '|', '-c',
          "SELECT symbol, timestamp, open, high, low, close, volume FROM candle_data WHERE timeframe='daily' ORDER BY symbol, timestamp"],
-        capture_output=True, text=True, env={**os.environ, 'PGPASSWORD': 'stokr2026'}
+        capture_output=True, text=True, env={**os.environ, 'PGPASSWORD': '`$POSTGRES_PASSWORD'}
     )
     candles = {}
     for line in result.stdout.strip().split('\n'):
@@ -119,7 +119,7 @@ def summarize(name, trades):
     gross_loss = abs(sum(t['pnl'] for t in trades if t['pnl'] <= 0))
     pf = gross_win / gross_loss if gross_loss > 0 else 999
     wr = wins / len(trades) * 100
-    return f"{name}: {len(trades)} trades, {wr:.1f}% WR, net=₹{net:,.0f}, PF={pf:.2f}"
+    return f"{name}: {len(trades)} trades, {wr:.1f}% WR, net=â‚¹{net:,.0f}, PF={pf:.2f}"
 
 if __name__ == '__main__':
     data = get_candles()
@@ -143,7 +143,7 @@ if __name__ == '__main__':
                     pf = gw / gl if gl > 0 else 999
                     wr = wins / len(trades) * 100
                     marker = " ***" if net > 100000 else ""
-                    print(f"{dist:>6} {sl:>5.2f} {hold:>5} {len(trades):>7} {wr:>6.1f} ₹{net:>9,.0f} {pf:>6.2f}{marker}")
+                    print(f"{dist:>6} {sl:>5.2f} {hold:>5} {len(trades):>7} {wr:>6.1f} â‚¹{net:>9,.0f} {pf:>6.2f}{marker}")
 
     # RSI_OVERSOLD sweep
     print("\n" + "=" * 80)
@@ -164,4 +164,5 @@ if __name__ == '__main__':
                         pf = gw / gl if gl > 0 else 999
                         wr = wins / len(trades) * 100
                         marker = " ***" if net > 100000 else ""
-                        print(f"{rsi_thresh:>5} {sl:>5.2f} {tgt:>5.2f} {hold:>5} {len(trades):>7} {wr:>6.1f} ₹{net:>9,.0f} {pf:>6.2f}{marker}")
+                        print(f"{rsi_thresh:>5} {sl:>5.2f} {tgt:>5.2f} {hold:>5} {len(trades):>7} {wr:>6.1f} â‚¹{net:>9,.0f} {pf:>6.2f}{marker}")
+

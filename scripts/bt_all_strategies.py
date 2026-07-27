@@ -1,12 +1,12 @@
-#!/usr/bin/env python3
-"""Comprehensive 3-month backtest for ALL strategies — classify intra vs positional and rank"""
+﻿#!/usr/bin/env python3
+"""Comprehensive 3-month backtest for ALL strategies â€” classify intra vs positional and rank"""
 import requests
 import json
 import sys
 import time
 
 BASE = "http://localhost:8081"
-r = requests.post(f"{BASE}/api/auth/login", json={"email": "vishnualgo@gmail.com", "password": "Temp@12345678"})
+r = requests.post(f"{BASE}/api/auth/login", json={"email": "vishnualgo@gmail.com", "password": "`$ADMIN_PASSWORD"})
 jwt = r.json()["accessToken"]
 headers = {"Authorization": f"Bearer {jwt}"}
 
@@ -180,4 +180,5 @@ for r in sorted_results:
 
 print("="*120)
 print(f"\nResults saved to /tmp/all_strategies_3month.json")
-print(f"Period: {DATE_START} to {DATE_END}, Capital per trade: ₹{CAPITAL}, Universe: NIFTY_100")
+print(f"Period: {DATE_START} to {DATE_END}, Capital per trade: â‚¹{CAPITAL}, Universe: NIFTY_100")
+

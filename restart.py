@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Force restart both containers."""
 import paramiko, time
 
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect("173.249.55.84", username="root", password="19119e3a6793dde1", timeout=30)
+ssh.connect("173.249.55.84", username="root", password="`$SSH_PASSWORD", timeout=30)
 
 def cmd(c):
     stdin, stdout, stderr = ssh.exec_command(c)
@@ -44,3 +44,4 @@ out, _ = cmd("curl -s http://localhost:8081/actuator/health 2>/dev/null || echo 
 print(f"Backend (8081): {out[:200]}")
 
 ssh.close()
+

@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 
 echo "=== LAST 1000 LINES OF BACKEND LOGS (grep for key activity) ==="
 docker logs stokr-lite-backend --tail 1000 2>&1 | grep -iE 'ExecutionEngine|SignalProcessor|SchedulerService|marketScan|processDaily|processIntraday|scan.*cycle|LIVE|deployment|entry|exit|reconcil' | tail -30
@@ -21,17 +21,18 @@ docker logs stokr-lite-backend --tail 3000 2>&1 | grep -iE 'Started|Initializing
 
 echo ""
 echo "=== ALL DEPLOYMENTS STATUS ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "SELECT d.id, s.name, d.status, d.mode, d.broker_account_id, d.last_scan_at::text, d.next_scan_at::text FROM deployments d JOIN strategies s ON d.strategy_id=s.id ORDER BY d.id;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "SELECT d.id, s.name, d.status, d.mode, d.broker_account_id, d.last_scan_at::text, d.next_scan_at::text FROM deployments d JOIN strategies s ON d.strategy_id=s.id ORDER BY d.id;"
 
 echo ""
 echo "=== SIGNALS TODAY ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "SELECT id, symbol, side, status, deployment_id, created_at::text FROM strategy_signals WHERE created_at >= '2026-07-13' ORDER BY created_at DESC;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "SELECT id, symbol, side, status, deployment_id, created_at::text FROM strategy_signals WHERE created_at >= '2026-07-13' ORDER BY created_at DESC;"
 
 echo ""
 echo "=== ORDERS TODAY ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "SELECT id, symbol, side, status, broker_order_id, created_at::text FROM orders WHERE created_at >= '2026-07-13' ORDER BY created_at DESC;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "SELECT id, symbol, side, status, broker_order_id, created_at::text FROM orders WHERE created_at >= '2026-07-13' ORDER BY created_at DESC;"
 
 echo ""
 echo "=== TRADES TABLE ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "\d trades;" 2>/dev/null || echo "No trades table"
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "SELECT * FROM trades ORDER BY created_at DESC LIMIT 5;" 2>/dev/null || echo "No trades or error"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "\d trades;" 2>/dev/null || echo "No trades table"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "SELECT * FROM trades ORDER BY created_at DESC LIMIT 5;" 2>/dev/null || echo "No trades or error"
+

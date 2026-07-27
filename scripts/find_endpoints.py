@@ -1,9 +1,9 @@
-import requests
+﻿import requests
 
 BASE = "http://localhost:8081"
 
 # Login
-r = requests.post(f"{BASE}/api/auth/login", json={"email": "vishnualgo@gmail.com", "password": "Temp@12345678"})
+r = requests.post(f"{BASE}/api/auth/login", json={"email": "vishnualgo@gmail.com", "password": "`$ADMIN_PASSWORD"})
 jwt = r.json().get("accessToken")
 headers = {"Authorization": f"Bearer {jwt}"}
 
@@ -24,3 +24,4 @@ for p in paths:
 for p in ["/api/brokers/health", "/api/zerodha/status"]:
     r = requests.get(f"{BASE}{p}", headers=headers)
     print(f"GET {p}: {r.status_code} {r.text[:200]}")
+

@@ -1,5 +1,5 @@
-#!/bin/bash
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite << 'EOF'
+﻿#!/bin/bash
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite << 'EOF'
 -- Deployment columns
 SELECT column_name, data_type FROM information_schema.columns WHERE table_name='deployments' ORDER BY ordinal_position;
 
@@ -12,3 +12,4 @@ FROM strategy_signals ss
 LEFT JOIN strategies s ON ss.strategy_id = s.id
 ORDER BY ss.id DESC LIMIT 10;
 EOF
+

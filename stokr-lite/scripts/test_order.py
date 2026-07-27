@@ -1,4 +1,4 @@
-import urllib.request, json, sys
+﻿import urllib.request, json, sys
 
 def api(method, path, data=None, token=None):
     headers = {"Content-Type": "application/json"}
@@ -19,7 +19,7 @@ def api(method, path, data=None, token=None):
 
 # Login
 print("Logging in as vishnualgo@gmail.com...")
-result = api("POST", "/api/auth/login", {"email": "vishnualgo@gmail.com", "password": "Temp@12345678"})
+result = api("POST", "/api/auth/login", {"email": "vishnualgo@gmail.com", "password": "`$ADMIN_PASSWORD"})
 if not result or not result.get("accessToken"):
     print("Login failed!")
     sys.exit(1)
@@ -41,3 +41,4 @@ if r: print(f"  {json.dumps(r, indent=2)}")
 print("\n3. PAPER SELL INFY qty=1:")
 r = api("POST", "/api/orders/manual", {"symbol": "INFY", "side": "SELL", "quantity": 1, "orderType": "MARKET", "mode": "PAPER"}, token)
 if r: print(f"  {json.dumps(r, indent=2)}")
+

@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 
 def remote(cmd):
     r = subprocess.run([
@@ -16,8 +16,9 @@ print(remote("grep -n 'timeframe\\|Timeframe' /opt/stokr/stokr-platform/stokr-li
 
 # Check if there's daily candle data for today's symbols
 print("\n=== Daily candle data freshness ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT symbol, MAX(timestamp) as latest FROM candle_data WHERE timeframe='daily' GROUP BY symbol ORDER BY latest DESC LIMIT 5;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT symbol, MAX(timestamp) as latest FROM candle_data WHERE timeframe='daily' GROUP BY symbol ORDER BY latest DESC LIMIT 5;\""))
 
 # Check what symbols are in NIFTY_100 universe
 print("\n=== Strategy universe mappings ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT sum.* FROM strategy_universe_mapping sum JOIN universe_groups ug ON sum.universe_group_id = ug.id WHERE sum.strategy_id IN (15,21,23,31);\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT sum.* FROM strategy_universe_mapping sum JOIN universe_groups ug ON sum.universe_group_id = ug.id WHERE sum.strategy_id IN (15,21,23,31);\""))
+

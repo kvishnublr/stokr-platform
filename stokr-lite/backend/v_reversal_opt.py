@@ -1,7 +1,7 @@
-import psycopg2
+﻿import psycopg2
 from collections import defaultdict
 
-conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='stokr2026')
+conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='`$POSTGRES_PASSWORD')
 cur = conn.cursor()
 
 cur.execute("""
@@ -103,15 +103,16 @@ for drop_pct, sl_pct, tgt_pct, max_hold, label in configs:
     al = sum(t['pnl'] for t in losses)/len(losses) if losses else 0
     monthly = total / 1  # ~1 month of data
     
-    marker = " ★" if (best is None or total > best['total']) and len(trades) >= 10 else ""
+    marker = " â˜…" if (best is None or total > best['total']) and len(trades) >= 10 else ""
     if total > (best['total'] if best else 0) and len(trades) >= 10:
         best = {'total': total, 'wr': wr, 'pf': pf, 'label': label, 'trades': len(trades)}
     
     print(f"  {label:<36} {len(trades):>5} {len(wins):>5} {wr:>5.1f}% {total:>+9,.0f} {pf:>5.2f} {aw:>7,.0f} {al:>7,.0f} {monthly:>+7,.0f}{marker}")
 
 if best:
-    print(f"\n★ BEST: {best['label']}")
-    print(f"  Trades: {best['trades']} | WR: {best['wr']:.1f}% | PF: {best['pf']:.2f} | Net: ₹{best['total']:,.0f}")
-    print(f"  Monthly (1 month data): ₹{best['total']:,.0f}")
+    print(f"\nâ˜… BEST: {best['label']}")
+    print(f"  Trades: {best['trades']} | WR: {best['wr']:.1f}% | PF: {best['pf']:.2f} | Net: â‚¹{best['total']:,.0f}")
+    print(f"  Monthly (1 month data): â‚¹{best['total']:,.0f}")
 
 conn.close()
+

@@ -1,4 +1,4 @@
-import subprocess, json
+﻿import subprocess, json
 
 def remote(cmd):
     r = subprocess.run([
@@ -9,7 +9,7 @@ def remote(cmd):
 
 # 1. Get JWT token
 print("=== Getting auth token ===")
-login_result = remote("""curl -s -X POST 'http://localhost:8081/api/auth/login' -H 'Content-Type: application/json' -d '{"email":"vishnualgo@gmail.com","password":"Temp@12345678"}' """)
+login_result = remote("""curl -s -X POST 'http://localhost:8081/api/auth/login' -H 'Content-Type: application/json' -d '{"email":"vishnualgo@gmail.com","password":"`$ADMIN_PASSWORD"}' """)
 print(login_result[:200])
 try:
     token = json.loads(login_result)['token']
@@ -22,3 +22,4 @@ except:
 print("\n=== Triggering backfill (1 month) ===")
 result = remote(f"curl -s -X POST 'http://localhost:8081/api/admin/backfill/historical?months=1' -H 'Authorization: Bearer {token}'")
 print(result[:500] if result else "no output")
+

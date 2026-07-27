@@ -2,12 +2,12 @@
 """Fresh token test - get a new token and test immediately"""
 import requests, subprocess, os, hashlib, time
 
-API_KEY = "zazlrld244cc6jf0"
-API_SECRET = "iyc7m8166tb6i95gt829q6mzbzvmfq6k"
+API_KEY = os.environ.get("ZERODHA_API_KEY", "")
+API_SECRET = os.environ.get("ZERODHA_API_SECRET", "")
 CLIENT_ID = "DS8838"
 
 env = os.environ.copy()
-env['PGPASSWORD'] = 'stokr2026'
+env['PGPASSWORD'] = os.environ.get("POSTGRES_PASSWORD", "")
 
 # Get token from DB
 result = subprocess.run(

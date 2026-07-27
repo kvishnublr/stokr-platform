@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Fetch 3 years of daily data using yfinance (free, no auth)"""
 import subprocess
 import time
@@ -52,7 +52,7 @@ def save_to_db(symbol, rows):
     COPY candle_data(symbol, timeframe, timestamp, open, high, low, close, volume) 
     FROM stdin WITH DELIMITER '|';
     """
-    cmd = f"PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"{sql}\" < /tmp/candles_{symbol}.csv"
+    cmd = f"PGPASSWORD={os.environ.get('PGPASSWORD','')} psql -h localhost -U postgres -d stokr_lite -c \"{sql}\" < /tmp/candles_{symbol}.csv"
     result = subprocess.run(['bash', '-c', cmd], capture_output=True, text=True)
     
     return len(csv_lines)
@@ -81,7 +81,7 @@ def save_to_db_batch(symbol, rows):
         
         # Escape for shell
         sql_escaped = sql.replace("'", "\\'")
-        cmd = f"PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"{sql_escaped}\""
+        cmd = f"PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"{sql_escaped}\""
         result = subprocess.run(['bash', '-c', cmd], capture_output=True, text=True)
         if result.returncode != 0:
             print(f"  DB error: {result.stderr[:200]}")
@@ -122,6 +122,7 @@ print(f"\nDone! Total candles saved: {total_saved}")
 
 # Verify
 result = subprocess.run(['bash', '-c', 
-    'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT MIN(timestamp)::date, MAX(timestamp)::date, COUNT(*) FROM candle_data WHERE timeframe=\'daily\' LIMIT 1;"'],
+    'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT MIN(timestamp)::date, MAX(timestamp)::date, COUNT(*) FROM candle_data WHERE timeframe=\'daily\' LIMIT 1;"'],
     capture_output=True, text=True)
 print(f"Database: {result.stdout.strip()}")
+

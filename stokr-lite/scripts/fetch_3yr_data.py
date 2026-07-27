@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Fetch 3 years of daily candle data from Zerodha API"""
 import requests
 import json
@@ -13,7 +13,7 @@ API_KEY = result.stdout.strip()
 
 # Get access token from database
 result = subprocess.run(['bash', '-c', 
-    'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT access_token FROM brokers WHERE broker_type = \'ZERODHA\' LIMIT 1;"'],
+    'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT access_token FROM brokers WHERE broker_type = \'ZERODHA\' LIMIT 1;"'],
     capture_output=True, text=True)
 ACCESS_TOKEN = result.stdout.strip()
 
@@ -78,7 +78,7 @@ def save_candles_to_db(symbol, candles):
             volume = EXCLUDED.volume;
         """
         
-        subprocess.run(['bash', '-c', f'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "{query}"'],
+        subprocess.run(['bash', '-c', f'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "{query}"'],
                       capture_output=True, text=True)
 
 # Date range: 3 years back from today
@@ -107,6 +107,7 @@ print(f"\nDone! Total candles saved: {total_candles}")
 
 # Verify data
 result = subprocess.run(['bash', '-c', 
-    'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "SELECT MIN(timestamp), MAX(timestamp), COUNT(*) FROM candle_data WHERE timeframe = \'daily\';"'],
+    'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "SELECT MIN(timestamp), MAX(timestamp), COUNT(*) FROM candle_data WHERE timeframe = \'daily\';"'],
     capture_output=True, text=True)
 print(f"\nDatabase verification:\n{result.stdout}")
+

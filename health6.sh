@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 
 echo "=== WHEN DID BACKEND START TODAY? ==="
 docker logs stokr-lite-backend 2>&1 | grep -iE 'Started|Tomcat started|Application started|Initializing|SpringBoot|reconcileOnStartup|PositionReconciler|ExecutionEngine.*init' | tail -10
@@ -17,8 +17,9 @@ docker inspect stokr-lite-backend --format='{{.State.StartedAt}} RestartCount={{
 
 echo ""
 echo "=== DEPLOYMENTS (simple query) ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "SELECT id, status, mode, broker_account_id FROM deployments;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "SELECT id, status, mode, broker_account_id FROM deployments;"
 
 echo ""
 echo "=== STRATEGY SIGNALS COUNT TODAY ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "SELECT COUNT(*) as today_signals FROM strategy_signals WHERE created_at::date = '2026-07-13';"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "SELECT COUNT(*) as today_signals FROM strategy_signals WHERE created_at::date = '2026-07-13';"
+

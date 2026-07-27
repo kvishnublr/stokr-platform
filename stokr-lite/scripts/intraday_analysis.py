@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Deep intraday strategy analysis.
 Tests multiple candidate strategies on 1-minute NIFTY_50 data.
@@ -14,7 +14,7 @@ def get_1min_candles():
             FROM candle_data WHERE timeframe='1min'
             AND timestamp >= '2026-04-07'
             ORDER BY symbol, timestamp"""],
-        capture_output=True, text=True, env={**os.environ, 'PGPASSWORD': 'stokr2026'}
+        capture_output=True, text=True, env={**os.environ, 'PGPASSWORD': '`$POSTGRES_PASSWORD'}
     )
     candles = {}
     for line in result.stdout.strip().split('\n'):
@@ -34,7 +34,7 @@ def get_daily_candles():
          """SELECT symbol, timestamp, open, high, low, close, volume
             FROM candle_data WHERE timeframe='daily'
             ORDER BY symbol, timestamp"""],
-        capture_output=True, text=True, env={**os.environ, 'PGPASSWORD': 'stokr2026'}
+        capture_output=True, text=True, env={**os.environ, 'PGPASSWORD': '`$POSTGRES_PASSWORD'}
     )
     candles = {}
     for line in result.stdout.strip().split('\n'):
@@ -178,18 +178,18 @@ def print_stats(name, trades):
     
     print(f"  {name}")
     print(f"    Trades: {len(trades)} ({len(buy_trades)} LONG, {len(sell_trades)} SHORT)")
-    print(f"    Win Rate: {wr:.1f}% | PF: {pf:.2f} | Net: ₹{net:,.0f}")
-    print(f"    Long PnL: ₹{buy_pnl:,.0f} | Short PnL: ₹{sell_pnl:,.0f}")
+    print(f"    Win Rate: {wr:.1f}% | PF: {pf:.2f} | Net: â‚¹{net:,.0f}")
+    print(f"    Long PnL: â‚¹{buy_pnl:,.0f} | Short PnL: â‚¹{sell_pnl:,.0f}")
     print(f"    Exits: {dict(exits)}")
     print(f"    Monthly:")
     for m in sorted(monthly.keys()):
         d = monthly[m]
         mw = d['wins'] / d['trades'] * 100 if d['trades'] > 0 else 0
-        print(f"      {m}: {d['trades']:3d} trades, {mw:5.1f}% WR, ₹{d['pnl']:>8,.0f}")
+        print(f"      {m}: {d['trades']:3d} trades, {mw:5.1f}% WR, â‚¹{d['pnl']:>8,.0f}")
     # Top 3 winners
     top_w = sorted(wins, key=lambda x: x['pnl'], reverse=True)[:3]
     if top_w:
-        print(f"    Top winners: {', '.join(f'{t['symbol']} ₹{t['pnl']:,.0f}' for t in top_w)}")
+        print(f"    Top winners: {', '.join(f'{t['symbol']} â‚¹{t['pnl']:,.0f}' for t in top_w)}")
 
 
 if __name__ == '__main__':
@@ -214,7 +214,7 @@ if __name__ == '__main__':
     print("INTRADAY STRATEGY SCREENING")
     print("=" * 70)
 
-    # ─── STRATEGY 1: VWAP BOUNCE (BUY) ─────────────────────────
+    # â”€â”€â”€ STRATEGY 1: VWAP BOUNCE (BUY) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def vwap_bounce(cndls, i):
         if i < 60: return None
         c = cndls[i]
@@ -231,7 +231,7 @@ if __name__ == '__main__':
     trades = backtest_intraday(data_filtered, vwap_bounce)
     print_stats("VWAP Bounce (cross above 20-period VWAP)", trades)
 
-    # ─── STRATEGY 2: OPENING RANGE BREAKOUT (LONG) ─────────────
+    # â”€â”€â”€ STRATEGY 2: OPENING RANGE BREAKOUT (LONG) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def orb_breakout(cndls, i):
         if i < 60: return None
         c = cndls[i]
@@ -253,7 +253,7 @@ if __name__ == '__main__':
     trades = backtest_intraday(data_filtered, orb_breakout)
     print_stats("ORB Breakout (15-min range breakout LONG)", trades)
 
-    # ─── STRATEGY 3: VOLUME SPIKE + PRICE BREAKOUT ─────────────
+    # â”€â”€â”€ STRATEGY 3: VOLUME SPIKE + PRICE BREAKOUT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def vol_spike_breakout(cndls, i):
         if i < 60: return None
         c = cndls[i]
@@ -271,7 +271,7 @@ if __name__ == '__main__':
     trades = backtest_intraday(data_filtered, vol_spike_breakout)
     print_stats("Volume Spike Breakout (2x vol + 10-bar high)", trades)
 
-    # ─── STRATEGY 4: GAP FADE (SHORT oversized gaps) ───────────
+    # â”€â”€â”€ STRATEGY 4: GAP FADE (SHORT oversized gaps) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def gap_fade(cndls, i):
         if i < 30: return None
         c = cndls[i]
@@ -292,7 +292,7 @@ if __name__ == '__main__':
     trades = backtest_intraday(data_filtered, gap_fade)
     print_stats("Gap Fade (>1% gap reversal)", trades)
 
-    # ─── STRATEGY 5: VWAP MEAN REVERSION (BUY oversold from VWAP)
+    # â”€â”€â”€ STRATEGY 5: VWAP MEAN REVERSION (BUY oversold from VWAP)
     def vwap_mean_reversion(cndls, i):
         if i < 60: return None
         c = cndls[i]
@@ -317,7 +317,7 @@ if __name__ == '__main__':
     trades = backtest_intraday(data_filtered, vwap_mean_reversion)
     print_stats("VWAP Mean Reversion (0.3% below intraday VWAP)", trades)
 
-    # ─── STRATEGY 6: EMA CROSS + VOLUME (9 EMA crosses 20 EMA)
+    # â”€â”€â”€ STRATEGY 6: EMA CROSS + VOLUME (9 EMA crosses 20 EMA)
     def ema_cross(cndls, i):
         if i < 30: return None
         c = cndls[i]
@@ -348,7 +348,7 @@ if __name__ == '__main__':
     trades = backtest_intraday(data_filtered, ema_cross)
     print_stats("EMA 9/20 Crossover", trades)
 
-    # ─── STRATEGY 7: MOMENTUM PULLBACK (BUY pullback to 9-EMA in uptrend)
+    # â”€â”€â”€ STRATEGY 7: MOMENTUM PULLBACK (BUY pullback to 9-EMA in uptrend)
     def momentum_pullback(cndls, i):
         if i < 30: return None
         c = cndls[i]
@@ -373,7 +373,7 @@ if __name__ == '__main__':
     trades = backtest_intraday(data_filtered, momentum_pullback)
     print_stats("Momentum Pullback (pullback to 9-EMA in uptrend)", trades)
 
-    # ─── STRATEGY 8: RSI OVERSOLD INTRADAY (RSI < 20 on 5-min) ─
+    # â”€â”€â”€ STRATEGY 8: RSI OVERSOLD INTRADAY (RSI < 20 on 5-min) â”€
     def rsi_oversold_intraday(cndls, i):
         if i < 30: return None
         c = cndls[i]
@@ -398,7 +398,7 @@ if __name__ == '__main__':
     trades = backtest_intraday(data_filtered, rsi_oversold_intraday)
     print_stats("RSI Extremes (RSI14 <20 buy, >80 sell)", trades)
 
-    # ─── STRATEGY 9: PREVIOUS DAY HIGH/LOW BREAK ───────────────
+    # â”€â”€â”€ STRATEGY 9: PREVIOUS DAY HIGH/LOW BREAK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def pd_hilo_break(cndls, i):
         if i < 400: return None  # need at least 1 full day
         c = cndls[i]
@@ -431,7 +431,7 @@ if __name__ == '__main__':
     trades = backtest_intraday(data_filtered, pd_hilo_break)
     print_stats("Previous Day High/Low Break", trades)
 
-    # ─── STRATEGY 10: VWAP + RSI COMBO ─────────────────────────
+    # â”€â”€â”€ STRATEGY 10: VWAP + RSI COMBO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def vwap_rsi_combo(cndls, i):
         if i < 60: return None
         c = cndls[i]
@@ -469,3 +469,4 @@ if __name__ == '__main__':
     
     trades = backtest_intraday(data_filtered, vwap_rsi_combo)
     print_stats("VWAP + RSI Combo (VWAP dist + RSI extremes)", trades)
+

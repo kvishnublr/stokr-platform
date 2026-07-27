@@ -1,4 +1,4 @@
-package com.stokr.arbitrage;
+﻿package com.stokr.arbitrage;
 
 import com.stokr.external.ZerodhaTokenManager;
 import org.slf4j.Logger;
@@ -21,7 +21,7 @@ public class OptionChainService {
     private final ZerodhaTokenManager tokenManager;
     private final RestTemplate restTemplate = new RestTemplate();
 
-    @Value("${zerodha.api-key:zazlrld244cc6jf0}")
+    @Value("${zerodha.api-key:`$ZERODHA_API_KEY}")
     private String apiKey;
 
     private static final double RISK_FREE_RATE = 0.065;
@@ -325,3 +325,4 @@ public class OptionChainService {
         public int openInterest;
     }
 }
+

@@ -1,6 +1,6 @@
-import paramiko,time
+﻿import paramiko,time
 s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect('173.249.55.84',username='root',password='19119e3a6793dde1',timeout=30)
+s.connect('173.249.55.84',username='root',password='`$SSH_PASSWORD',timeout=30)
 
 script = r"""
 # Kill EVERYTHING on port 8080
@@ -36,3 +36,4 @@ print(stdout.read().decode(errors='replace')[-4000:])
 er = stderr.read().decode(errors='replace')
 if er.strip(): print(f"STDERR: {er[-300:]}")
 s.close()
+

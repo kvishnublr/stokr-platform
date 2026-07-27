@@ -1,4 +1,4 @@
-import subprocess, os
+﻿import subprocess, os
 
 def remote(cmd):
     r = subprocess.run([
@@ -12,7 +12,7 @@ script_content = '''import json, subprocess, time, os
 import urllib.request
 
 env = os.environ.copy()
-env["PGPASSWORD"] = "stokr2026"
+env["PGPASSWORD"] = "`$POSTGRES_PASSWORD"
 
 def psql(sql):
     r = subprocess.run(["psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c", sql],
@@ -81,3 +81,4 @@ os.system('scp -o StrictHostKeyChecking=no "' + local_path + '" root@173.249.55.
 print("Uploaded. Running...")
 result = remote("python3 /tmp/backfill_final.py 2>&1")
 print(result[-3000:])
+

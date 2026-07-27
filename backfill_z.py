@@ -1,12 +1,12 @@
-import json, subprocess, time
+﻿import json, subprocess, time
 import urllib.request
 
-r = subprocess.run(["PGPASSWORD=stokr2026", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
+r = subprocess.run(["PGPASSWORD=`$POSTGRES_PASSWORD", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
     "SELECT access_token FROM broker_accounts WHERE id=4"], capture_output=True, text=True)
 token = r.stdout.strip()
 print(f"Token: {token[:15]}...")
 
-r2 = subprocess.run(["PGPASSWORD=stokr2026", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
+r2 = subprocess.run(["PGPASSWORD=`$POSTGRES_PASSWORD", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
     "SELECT tradingsymbol, instrument_token FROM zerodha_instruments WHERE exchange='NSE'"], capture_output=True, text=True)
 instruments = {}
 for line in r2.stdout.strip().split("\n"):
@@ -15,7 +15,7 @@ for line in r2.stdout.strip().split("\n"):
         instruments[sym.strip()] = tok.strip()
 print(f"Instruments: {len(instruments)}")
 
-r3 = subprocess.run(["PGPASSWORD=stokr2026", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
+r3 = subprocess.run(["PGPASSWORD=`$POSTGRES_PASSWORD", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
     "SELECT symbol FROM universe_group_members WHERE universe_group_id = (SELECT id FROM universe_groups WHERE group_key='NIFTY_100')"], capture_output=True, text=True)
 symbols = [s.strip() for s in r3.stdout.strip().split("\n") if s.strip()]
 print(f"NIFTY_100: {len(symbols)}")
@@ -41,7 +41,7 @@ for i, symbol in enumerate(symbols):
             ts = c[0]
             o, h, l, close, vol = c[1], c[2], c[3], c[4], c[5]
             sql = f"INSERT INTO candle_data (symbol, timeframe, timestamp, open, high, low, close, volume) VALUES ('{symbol}', 'daily', '{ts}', {o}, {h}, {l}, {close}, {vol}) ON CONFLICT DO NOTHING;"
-            subprocess.run(["PGPASSWORD=stokr2026", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-c", sql],
+            subprocess.run(["PGPASSWORD=`$POSTGRES_PASSWORD", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-c", sql],
                 capture_output=True, text=True, timeout=5)
             total += 1
         time.sleep(0.05)

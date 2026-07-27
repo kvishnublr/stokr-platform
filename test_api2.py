@@ -1,7 +1,7 @@
-import json, subprocess, os, urllib.request
+﻿import json, subprocess, os, urllib.request
 
 env = os.environ.copy()
-env["PGPASSWORD"] = "stokr2026"
+env["PGPASSWORD"] = "`$POSTGRES_PASSWORD"
 
 def psql(sql):
     r = subprocess.run(["psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c", sql],
@@ -9,7 +9,7 @@ def psql(sql):
     return r.stdout.strip()
 
 access_token = psql("SELECT access_token FROM broker_accounts WHERE id=4")
-api_key = "zazlrld244cc6jf0"
+api_key = "`$ZERODHA_API_KEY"
 
 # Zerodha format: token api_key:access_token
 auth = f"token {api_key}:{access_token}"
@@ -28,3 +28,4 @@ try:
         print(f"  {c[0]}: O={c[1]} H={c[2]} L={c[3]} C={c[4]} V={c[5]}")
 except urllib.error.HTTPError as e:
     print(f"HTTP {e.code}: {e.read().decode()[:500]}")
+

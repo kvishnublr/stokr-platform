@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Run backtest for today (Jul 10) for all 3 live strategies"""
 import requests
 import json
@@ -6,7 +6,7 @@ import json
 BASE = "http://localhost:8081"
 
 # Login first
-r = requests.post(f"{BASE}/api/auth/login", json={"email": "vishnualgo@gmail.com", "password": "Temp@12345678"})
+r = requests.post(f"{BASE}/api/auth/login", json={"email": "vishnualgo@gmail.com", "password": "`$ADMIN_PASSWORD"})
 jwt = r.json()["accessToken"]
 headers = {"Authorization": f"Bearer {jwt}"}
 
@@ -57,3 +57,4 @@ for strat_type, label in strategies:
             print(f"ERROR {r.status_code}: {r.text[:200]}")
     except Exception as e:
         print(f"EXCEPTION: {e}")
+

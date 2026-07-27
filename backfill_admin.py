@@ -1,4 +1,4 @@
-import subprocess, json, time
+﻿import subprocess, json, time
 
 def remote(cmd):
     r = subprocess.run([
@@ -8,7 +8,7 @@ def remote(cmd):
     return r.stdout + r.stderr
 
 # 1. Get ADMIN JWT token
-login_result = remote("""curl -s -X POST 'http://localhost:8081/api/auth/login' -H 'Content-Type: application/json' -d '{"email":"admin@stokr.in","password":"Temp@12345678"}' """)
+login_result = remote("""curl -s -X POST 'http://localhost:8081/api/auth/login' -H 'Content-Type: application/json' -d '{"email":"admin@stokr.in","password":"`$ADMIN_PASSWORD"}' """)
 print(f"Login: {login_result[:200]}")
 token = json.loads(login_result)['accessToken']
 
@@ -24,3 +24,4 @@ for i in range(12):
     print(f"\n[{i*30}s] {status[:300]}")
     if "completed" in status.lower() or "DONE" in status or '"progress":100' in status:
         break
+

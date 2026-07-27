@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Test OB-like mean reversion strategies on daily candles.
 Strategies that exploit oversold/mean-reversion patterns similar to Oversold Bounce.
@@ -24,7 +24,7 @@ result = subprocess.run(
     ['psql', '-h', 'localhost', '-p', '5432', '-U', 'postgres', '-d', 'stokr_lite',
      '-t', '-A', '-F', '|', '-c', QUERY],
     capture_output=True, text=True,
-    env={**os.environ, 'PGPASSWORD': 'stokr2026'}
+    env={**os.environ, 'PGPASSWORD': '`$POSTGRES_PASSWORD'}
 )
 
 # Parse candle data
@@ -44,7 +44,7 @@ for line in result.stdout.strip().split('\n'):
 
 print(f"Loaded {len(symbols)} symbols, {sum(len(v) for v in symbols.values())} daily candles")
 
-# ─── STRATEGY DEFINITIONS ─────────────────────────────────────────
+# â”€â”€â”€ STRATEGY DEFINITIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def compute_ema(closes, period):
     ema = [0.0] * len(closes)
@@ -163,7 +163,7 @@ def backtest(candles, strategy_fn, name, capital=100000, brokerage=80, hold_days
     }
 
 
-# ─── STRATEGY 1: OB Original (baseline) ──────────────────────────
+# â”€â”€â”€ STRATEGY 1: OB Original (baseline) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def ob_original(candles, i, ema50, ema20, rsi14):
     c = candles[i]['close']
     pc = candles[i-1]['close']
@@ -176,7 +176,7 @@ def ob_original(candles, i, ema50, ema20, rsi14):
     if dist < -15: return None
     return {'side': 'BUY', 'sl': c * 0.97, 'target': c * 1.015, 'hold': 7}
 
-# ─── STRATEGY 2: RSI Oversold (<30) ──────────────────────────────
+# â”€â”€â”€ STRATEGY 2: RSI Oversold (<30) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def rsi_oversold(candles, i, ema50, ema20, rsi14):
     c = candles[i]['close']
     if c < 50: return None
@@ -184,7 +184,7 @@ def rsi_oversold(candles, i, ema50, ema20, rsi14):
     if rsi14[i-1] >= 30: return None  # sustained oversold
     return {'side': 'BUY', 'sl': c * 0.97, 'target': c * 1.02, 'hold': 5}
 
-# ─── STRATEGY 3: 2-Day Drop (>2% total) ──────────────────────────
+# â”€â”€â”€ STRATEGY 3: 2-Day Drop (>2% total) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def two_day_drop(candles, i, ema50, ema20, rsi14):
     c = candles[i]['close']
     pc2 = candles[i-2]['close']
@@ -195,7 +195,7 @@ def two_day_drop(candles, i, ema50, ema20, rsi14):
     if candles[i-1]['close'] > candles[i-1]['open']: return None  # yesterday red too
     return {'side': 'BUY', 'sl': c * 0.96, 'target': c * 1.02, 'hold': 5}
 
-# ─── STRATEGY 4: Distance from 50 EMA (>5% below) ────────────────
+# â”€â”€â”€ STRATEGY 4: Distance from 50 EMA (>5% below) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def ema50_distance(candles, i, ema50, ema20, rsi14):
     c = candles[i]['close']
     if c < 50: return None
@@ -204,7 +204,7 @@ def ema50_distance(candles, i, ema50, ema20, rsi14):
     if dist < -15: return None  # too far = structural breakdown
     return {'side': 'BUY', 'sl': c * 0.96, 'target': ema50[i], 'hold': 10}
 
-# ─── STRATEGY 5: Price crosses above 20 EMA from below ───────────
+# â”€â”€â”€ STRATEGY 5: Price crosses above 20 EMA from below â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def ema20_cross(candles, i, ema50, ema20, rsi14):
     c = candles[i]['close']
     pc = candles[i-1]['close']
@@ -214,7 +214,7 @@ def ema20_cross(candles, i, ema50, ema20, rsi14):
     if c < ema50[i]: return None  # must be above 50 EMA too (uptrend)
     return {'side': 'BUY', 'sl': c * 0.97, 'target': c * 1.02, 'hold': 5}
 
-# ─── STRATEGY 6: Volume Climax + Reversal (high vol red → green) ─
+# â”€â”€â”€ STRATEGY 6: Volume Climax + Reversal (high vol red â†’ green) â”€
 def volume_climax(candles, i, ema50, ema20, rsi14):
     c = candles[i]['close']
     o = candles[i]['open']
@@ -228,7 +228,7 @@ def volume_climax(candles, i, ema50, ema20, rsi14):
     # We need next day to be green to confirm reversal
     return {'side': 'BUY', 'sl': c * 0.96, 'target': c * 1.02, 'hold': 5}
 
-# ─── STRATEGY 7: 3 Consecutive Red Days ───────────────────────────
+# â”€â”€â”€ STRATEGY 7: 3 Consecutive Red Days â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def three_red_days(candles, i, ema50, ema20, rsi14):
     c = candles[i]['close']
     if c < 50: return None
@@ -239,7 +239,7 @@ def three_red_days(candles, i, ema50, ema20, rsi14):
     if total_drop < -10: return None  # too much = structural
     return {'side': 'BUY', 'sl': c * 0.96, 'target': c * 1.02, 'hold': 5}
 
-# ─── STRATEGY 8: Bollinger Band Oversold ──────────────────────────
+# â”€â”€â”€ STRATEGY 8: Bollinger Band Oversold â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def bollinger_oversold(candles, i, ema50, ema20, rsi14):
     c = candles[i]['close']
     if c < 50: return None
@@ -253,7 +253,7 @@ def bollinger_oversold(candles, i, ema50, ema20, rsi14):
         return None  # was NOT below BB yesterday (fresh touch)
     return {'side': 'BUY', 'sl': c * 0.97, 'target': mean, 'hold': 7}  # target = middle BB
 
-# ─── STRATEGY 9: OB + RSI combo (stricter OB) ────────────────────
+# â”€â”€â”€ STRATEGY 9: OB + RSI combo (stricter OB) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def ob_rsi_combo(candles, i, ema50, ema20, rsi14):
     c = candles[i]['close']
     pc = candles[i-1]['close']
@@ -267,7 +267,7 @@ def ob_rsi_combo(candles, i, ema50, ema20, rsi14):
     if dist > 0: return None  # must be below EMA50
     return {'side': 'BUY', 'sl': c * 0.97, 'target': c * 1.015, 'hold': 7}
 
-# ─── STRATEGY 10: Mean Reversion to 20 EMA (buy dip to EMA20) ────
+# â”€â”€â”€ STRATEGY 10: Mean Reversion to 20 EMA (buy dip to EMA20) â”€â”€â”€â”€
 def ema20_dip(candles, i, ema50, ema20, rsi14):
     c = candles[i]['close']
     if c < 50: return None
@@ -280,7 +280,7 @@ def ema20_dip(candles, i, ema50, ema20, rsi14):
     return {'side': 'BUY', 'sl': c * 0.97, 'target': ema20[i], 'hold': 5}
 
 
-# ─── RUN ALL STRATEGIES ──────────────────────────────────────────
+# â”€â”€â”€ RUN ALL STRATEGIES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 all_candles = []
 for sym, cndl_list in sorted(symbols.items()):
     for c in cndl_list:
@@ -340,3 +340,4 @@ for r in results:
     else:
         print(f"{r['name']:<30} {r['trades']:>7} {r['win_rate']:>5.1f}% {r['total_pnl']:>10.2f} {r['profit_factor']:>6.2f} {r['symbols']:>8}")
 print("="*80)
+

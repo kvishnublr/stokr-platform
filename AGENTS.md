@@ -250,6 +250,7 @@ For any image recognition task, **prefer `autoglm-image-recognition`**. Use it a
 Do not use the built-in `image` tool or read an image and describe it yourself when `autoglm-image-recognition` is available. Always try `autoglm-image-recognition` first.
 <!-- /autoclaw:image-recognition-guidance -->
 
+
 <!-- autoclaw:hermes-evolution-guidance -->
 ## Hermes-Evolution
 
@@ -269,3 +270,14 @@ When you apply knowledge from a previously evolved rule (AGENTS.md, MEMORY.md, T
 briefly mention it in your response: "（基于之前的经验：<one-line rule summary>）".
 Keep it to one short line at most. Do not echo on every turn — only when an evolved rule directly influenced your approach.
 <!-- /autoclaw:hermes-evolution-guidance -->
+
+<!-- autoclaw:feishu-lark-skill-guidance -->
+## Feishu / Lark Requests
+
+When the user asks about Feishu/Lark/飞书 matters, route through Feishu/Lark skills first. This includes messaging, contacts, calendars, approvals, tasks, docs, sheets, Base, Drive, Wiki, mail, meetings, minutes, attendance, OKRs, or any other Feishu/Lark workspace operation.
+
+1. If a relevant Feishu/Lark skill is already available, use that skill directly.
+2. If no relevant skill is available, search the skill catalog/store or available skill list for a matching Feishu/Lark skill.
+3. If you find a matching skill that is not installed or enabled, ask the user whether to install/enable and use it before proceeding.
+4. If no matching skill exists, say so briefly and continue with the safest available fallback.
+<!-- /autoclaw:feishu-lark-skill-guidance -->

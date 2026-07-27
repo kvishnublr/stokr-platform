@@ -4,7 +4,11 @@ import paramiko, time
 
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect("173.249.55.84", username="root", password="19119e3a6793dde1", timeout=30)
+ssh_password = os.environ.get("SSH_PASSWORD", "")
+if not ssh_password:
+    print("ERROR: Set SSH_PASSWORD env var")
+    sys.exit(1)
+ssh.connect("173.249.55.84", username="root", password=ssh_password, timeout=30)
 
 def cmd(c):
     stdin, stdout, stderr = ssh.exec_command(c)
@@ -33,7 +37,7 @@ compose = """services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/stokr_lite
       SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: wfKh8p8ISQ63VF40
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-}
       JWT_SECRET: change-this-to-a-very-long-random-secret-key-at-least-256-bits
       STOKR_UI_BASE_URL: https://stokr.in
     restart: unless-stopped

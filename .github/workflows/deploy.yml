@@ -32,7 +32,7 @@ jobs:
           export DEPLOY_SSH_PUB="$(tr -d '\r' < deploy/contabo_github_deploy.pub)"
           pip install psycopg2-binary -q
           export DEPLOY_PG_HOST="${DEPLOY_HOST}"
-          export DEPLOY_PG_PASSWORD="${DEPLOY_PG_PASSWORD:-root123}"
+          export DEPLOY_PG_PASSWORD="${DEPLOY_PG_PASSWORD:-}"
           python3 scripts/emergency_install_deploy_ssh_key.py
 
       - name: Deploy on Contabo

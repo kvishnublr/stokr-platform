@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 
 def remote(cmd):
     r = subprocess.run([
@@ -8,7 +8,8 @@ def remote(cmd):
     return r.stdout + r.stderr
 
 print("=== ALL SIGNALS TODAY ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, deployment_id, strategy_id, symbol, side, status, entry_price, confidence, created_at FROM strategy_signals WHERE created_at >= '2026-07-13' ORDER BY strategy_id, created_at DESC;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, deployment_id, strategy_id, symbol, side, status, entry_price, confidence, created_at FROM strategy_signals WHERE created_at >= '2026-07-13' ORDER BY strategy_id, created_at DESC;\""))
 
 print("\n=== COUNT BY STRATEGY ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT strategy_id, status, count(*) FROM strategy_signals WHERE created_at >= '2026-07-13' GROUP BY strategy_id, status;\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT strategy_id, status, count(*) FROM strategy_signals WHERE created_at >= '2026-07-13' GROUP BY strategy_id, status;\""))
+

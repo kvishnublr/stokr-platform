@@ -1,24 +1,25 @@
-#!/bin/bash
+﻿#!/bin/bash
 set -e
 echo "=== Check if access token is in DB ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT column_name FROM information_schema.columns WHERE table_name='broker_connections';"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT column_name FROM information_schema.columns WHERE table_name='broker_connections';"
 echo ""
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT * FROM broker_connections;" 2>/dev/null || echo "No broker_connections table"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT * FROM broker_connections;" 2>/dev/null || echo "No broker_connections table"
 echo ""
 echo "=== Full env file ==="
 cat /opt/stokr/stokr-lite.env
 echo ""
 echo "=== Check for access_token in all tables ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT table_name FROM information_schema.tables WHERE table_schema='public';"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT table_name FROM information_schema.tables WHERE table_schema='public';"
 echo ""
 echo "=== Drop tmp_candle tables ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT 'DROP TABLE ' || relname || ';' FROM pg_catalog.pg_statio_user_tables WHERE relname LIKE 'tmp_candle%';"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT 'DROP TABLE ' || relname || ';' FROM pg_catalog.pg_statio_user_tables WHERE relname LIKE 'tmp_candle%';"
 echo ""
 echo "=== Actually drop them ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "DO \$$ DECLARE r RECORD; BEGIN FOR r IN SELECT relname FROM pg_catalog.pg_statio_user_tables WHERE relname LIKE 'tmp_candle%' LOOP EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.relname); END LOOP; END \$$;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "DO \$$ DECLARE r RECORD; BEGIN FOR r IN SELECT relname FROM pg_catalog.pg_statio_user_tables WHERE relname LIKE 'tmp_candle%' LOOP EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.relname); END LOOP; END \$$;"
 echo ""
 echo "=== DB size after cleanup ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT pg_size_pretty(pg_database_size('stokr_lite'));"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT pg_size_pretty(pg_database_size('stokr_lite'));"
 echo ""
 echo "=== Check if Zerodha stores token in config or DB ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT table_name FROM information_schema.columns WHERE column_name LIKE '%token%' OR column_name LIKE '%access%';"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT table_name FROM information_schema.columns WHERE column_name LIKE '%token%' OR column_name LIKE '%access%';"
+

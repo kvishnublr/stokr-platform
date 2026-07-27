@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Fetch 3yr daily data using Zerodha API with token from DB"""
 import subprocess
 import urllib.request
@@ -7,13 +7,13 @@ import time
 
 # Get token from DB
 result = subprocess.run(
-    ['bash', '-c', 'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT access_token FROM broker_accounts WHERE id=1;"'],
+    ['bash', '-c', 'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "SELECT access_token FROM broker_accounts WHERE id=1;"'],
     capture_output=True, text=True
 )
 ACCESS_TOKEN = result.stdout.strip()
 print(f"Token from DB: {ACCESS_TOKEN[:12]}..." if ACCESS_TOKEN else "NO TOKEN FOUND")
 
-API_KEY = "zazlrld244cc6jf0"
+API_KEY = "`$ZERODHA_API_KEY"
 
 # Test: profile
 print("\n=== Testing Zerodha API ===")
@@ -31,7 +31,7 @@ except urllib.error.HTTPError as e:
 
 # Get NIFTY_50 symbols from DB
 result = subprocess.run(
-    ['bash', '-c', "PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c \"SELECT symbol FROM universe_symbols WHERE group_id IN (SELECT id FROM universe_groups WHERE name = 'NIFTY_50') ORDER BY symbol;\""],
+    ['bash', '-c', "PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c \"SELECT symbol FROM universe_symbols WHERE group_id IN (SELECT id FROM universe_groups WHERE name = 'NIFTY_50') ORDER BY symbol;\""],
     capture_output=True, text=True
 )
 symbols_from_db = [s.strip() for s in result.stdout.strip().split('\n') if s.strip()]
@@ -40,7 +40,7 @@ print(f"First 5: {symbols_from_db[:5]}")
 
 # Get instrument tokens for these symbols
 result = subprocess.run(
-    ['bash', '-c', "PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c \"SELECT DISTINCT symbol FROM candle_data WHERE timeframe='daily' ORDER BY symbol;\""],
+    ['bash', '-c', "PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c \"SELECT DISTINCT symbol FROM candle_data WHERE timeframe='daily' ORDER BY symbol;\""],
     capture_output=True, text=True
 )
 symbols_in_daily = [s.strip() for s in result.stdout.strip().split('\n') if s.strip()]
@@ -91,7 +91,7 @@ items = list(matched.items())
 
 # First delete existing daily data
 subprocess.run(
-    ['bash', '-c', "PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"DELETE FROM candle_data WHERE timeframe = 'daily';\""],
+    ['bash', '-c', "PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"DELETE FROM candle_data WHERE timeframe = 'daily';\""],
     capture_output=True, text=True
 )
 print("Existing daily data deleted")
@@ -127,7 +127,7 @@ print(f"CSV: {len(csv_lines)} lines written")
 if csv_lines:
     load_sql = f"""COPY candle_data(symbol, timeframe, timestamp, open, high, low, close, volume) FROM '{csv_file}' WITH DELIMITER '|';"""
     result = subprocess.run(
-        ['bash', '-c', f'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "{load_sql}"'],
+        ['bash', '-c', f'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "{load_sql}"'],
         capture_output=True, text=True
     )
     print(f"Load: {result.stdout.strip()}")
@@ -136,7 +136,8 @@ if csv_lines:
 
 # Verify
 result = subprocess.run(
-    ['bash', '-c', "PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c \"SELECT MIN(timestamp)::date, MAX(timestamp)::date, COUNT(DISTINCT symbol), COUNT(*) FROM candle_data WHERE timeframe='daily';\""],
+    ['bash', '-c', "PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c \"SELECT MIN(timestamp)::date, MAX(timestamp)::date, COUNT(DISTINCT symbol), COUNT(*) FROM candle_data WHERE timeframe='daily';\""],
     capture_output=True, text=True
 )
 print(f"\nFinal DB state: {result.stdout.strip()}")
+

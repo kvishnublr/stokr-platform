@@ -1,6 +1,6 @@
-import paramiko,time
+﻿import paramiko,time
 s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect('173.249.55.84',username='root',password='19119e3a6793dde1',timeout=30)
+s.connect('173.249.55.84',username='root',password='`$SSH_PASSWORD',timeout=30)
 
 script = r"""
 # Kill container
@@ -52,3 +52,4 @@ print(stdout.read().decode(errors='replace')[-3000:])
 err = stderr.read().decode(errors='replace')
 if err.strip(): print(f"ERR: {err[-500:]}")
 s.close()
+

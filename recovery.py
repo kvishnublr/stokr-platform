@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Recovery: Fetch Zerodha closing prices for Jul 15 and reconstruct option arb opportunities.
 Uses MONTHLY format (NIFTY26JUL{strike}CE) which Zerodha returns after hours.
@@ -7,8 +7,8 @@ import json, time, requests, math
 from datetime import datetime, date
 import psycopg2
 
-API_KEY = "zazlrld244cc6jf0"
-DB_CONN = "host=localhost dbname=stokr_lite user=postgres password=stokr2026"
+API_KEY = "`$ZERODHA_API_KEY"
+DB_CONN = "host=localhost dbname=stokr_lite user=postgres password=`$POSTGRES_PASSWORD"
 RISK_FREE_RATE = 0.065
 MIN_EDGE = 300
 LOT_SIZE = 65
@@ -29,7 +29,7 @@ expiry_str = "26JUL"
 strikes = list(range(23600, 24750, 50))
 print(f"Scanning {len(strikes)} strikes...")
 
-# Build instrument list — monthly format
+# Build instrument list â€” monthly format
 instruments = ["NSE:NIFTY 50", "NFO:NIFTY26JULFUT"]
 ce_pe = []
 for strike in strikes:
@@ -63,7 +63,7 @@ if spot <= 0 or fut <= 0:
     print("ERROR: No spot/futures")
     exit(1)
 
-# Calculate DTE — monthly expiry Jul 28 = 13 days from Jul 15
+# Calculate DTE â€” monthly expiry Jul 28 = 13 days from Jul 15
 dte = 13
 T = dte / 365.0
 
@@ -199,3 +199,4 @@ if opportunities:
 
     cur2.close()
     conn2.close()
+

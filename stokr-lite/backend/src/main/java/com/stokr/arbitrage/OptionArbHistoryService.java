@@ -1,4 +1,4 @@
-package com.stokr.arbitrage;
+﻿package com.stokr.arbitrage;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,7 +29,7 @@ public class OptionArbHistoryService {
     private final OptionArbOpportunityRepository repository;
     private final ZerodhaSpotPriceFetcher spotFetcher;
 
-    @Value("${zerodha.api-key:zazlrld244cc6jf0}")
+    @Value("${zerodha.api-key:`$ZERODHA_API_KEY}")
     private String apiKey;
 
     private static final ObjectMapper mapper = new ObjectMapper();
@@ -196,7 +196,7 @@ public class OptionArbHistoryService {
     }
 
     /**
-     * Get summary — if date is null, aggregates ALL opportunities
+     * Get summary â€” if date is null, aggregates ALL opportunities
      */
     public SummaryResult getSummary(LocalDate date) {
         if (date != null) {
@@ -365,7 +365,7 @@ public class OptionArbHistoryService {
                 opp.setPnlAfterCosts(pnlAfterCosts);
                 opp.setExitTime(LocalDateTime.now());
                 opp.setStatus("CLOSED");
-                opp.setNotes(String.format("Resolved: CE=%.1f PE=%.1f P&L=%.1f pts (₹%.0f after costs)",
+                opp.setNotes(String.format("Resolved: CE=%.1f PE=%.1f P&L=%.1f pts (â‚¹%.0f after costs)",
                     ceClose != null ? ceClose : 0, peClose != null ? peClose : 0,
                     pnl.doubleValue(), pnlAfterCosts.doubleValue()));
                 repository.save(opp);
@@ -437,7 +437,7 @@ public class OptionArbHistoryService {
                                 String instrument = entry.getKey();
                                 double price = quoteNode.get("last_price").asDouble();
                                 // Reverse-map NFO symbol back to our key
-                                // This is approximate — better to store NFO symbol in the entity
+                                // This is approximate â€” better to store NFO symbol in the entity
                                 prices.put(instrument, price);
                             }
                         }
@@ -472,3 +472,4 @@ public class OptionArbHistoryService {
         return String.format("%s%02d%sFUT", cleanUnderlying, yy, mon);
     }
 }
+

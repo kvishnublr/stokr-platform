@@ -1,4 +1,4 @@
-package com.stokr.arbitrage;
+﻿package com.stokr.arbitrage;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,7 +21,7 @@ public class ZerodhaSpotPriceFetcher {
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper mapper = new ObjectMapper();
 
-    @Value("${zerodha.api-key:zazlrld244cc6jf0}")
+    @Value("${zerodha.api-key:`$ZERODHA_API_KEY}")
     private String apiKey;
 
     private final ConcurrentHashMap<String, Double> cache = new ConcurrentHashMap<>();
@@ -120,3 +120,4 @@ public class ZerodhaSpotPriceFetcher {
         return new double[]{0, 0};
     }
 }
+

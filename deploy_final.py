@@ -1,6 +1,6 @@
-import paramiko,time
+﻿import paramiko,time
 s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect('173.249.55.84',username='root',password='19119e3a6793dde1',timeout=30)
+s.connect('173.249.55.84',username='root',password='`$SSH_PASSWORD',timeout=30)
 script = r"""
 cd /root/stokr-platform && git pull origin Release_v8
 docker rm -f stokr-lite-backend stokr-lite-frontend 2>/dev/null
@@ -22,3 +22,4 @@ curl -s http://localhost:8080/api/backtest/quickflip/model | head -c 300
 stdin,stdout,stderr = s.exec_command(script)
 print(stdout.read().decode(errors='replace')[-4000:])
 s.close()
+

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Get trade details for top strategies"""
 import json
 
@@ -13,7 +13,7 @@ top.sort(key=lambda x: x.get("net_pnl", 0), reverse=True)
 import requests
 
 BASE = "http://localhost:8081"
-r = requests.post(f"{BASE}/api/auth/login", json={"email": "vishnualgo@gmail.com", "password": "Temp@12345678"})
+r = requests.post(f"{BASE}/api/auth/login", json={"email": "vishnualgo@gmail.com", "password": "`$ADMIN_PASSWORD"})
 jwt = r.json()["accessToken"]
 headers = {"Authorization": f"Bearer {jwt}"}
 
@@ -44,7 +44,7 @@ for strat_type, short, cat in strategies:
     trades = data.get("trades", [])
     
     print(f"\n{'='*100}")
-    print(f"{short} ({cat}) — {len(trades)} trades, WR={data.get('winRate',0):.1f}%, Net P&L=₹{data.get('netPnL',0):.0f}, PF={data.get('profitFactor',0):.2f}, MaxDD=₹{data.get('maxDrawdown',0):.0f}")
+    print(f"{short} ({cat}) â€” {len(trades)} trades, WR={data.get('winRate',0):.1f}%, Net P&L=â‚¹{data.get('netPnL',0):.0f}, PF={data.get('profitFactor',0):.2f}, MaxDD=â‚¹{data.get('maxDrawdown',0):.0f}")
     print(f"{'='*100}")
     print(f"{'#':>3s} {'SYMBOL':12s} {'SIDE':5s} {'ENTRY':>9s} {'EXIT':>9s} {'P&L':>8s} {'EXIT_TYPE':14s} {'ENTRY_DATE':20s}")
     print(f"{'-'*100}")
@@ -58,7 +58,8 @@ for strat_type, short, cat in strategies:
         exit_type = t.get("exitType", "?")
         entry_date = t.get("entryDate") or t.get("entry_time") or t.get("entryDateStr") or "?"
         
-        pnl_str = f"+₹{pnl:.0f}" if pnl > 0 else f"₹{pnl:.0f}"
-        marker = "✓" if pnl > 0 else "✗" if pnl < 0 else "="
+        pnl_str = f"+â‚¹{pnl:.0f}" if pnl > 0 else f"â‚¹{pnl:.0f}"
+        marker = "âœ“" if pnl > 0 else "âœ—" if pnl < 0 else "="
         
         print(f"{i+1:3d} {symbol:12s} {side:5s} {entry:>9.2f} {exit_p:>9.2f} {pnl_str:>8s} {exit_type:14s} {str(entry_date):20s}")
+

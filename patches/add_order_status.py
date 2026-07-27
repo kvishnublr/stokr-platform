@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 
 filepath = '/opt/stokr/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/arbitrage/OptionArbitrageController.java'
 with open(filepath, 'r') as f:
@@ -15,7 +15,7 @@ new_endpoint = """
                 resp.put("error", "No auth token");
                 return ResponseEntity.ok(resp);
             }
-            String apiKey = "zazlrld244cc6jf0";
+            String apiKey = "`$ZERODHA_API_KEY";
             org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
             headers.set("X-Kite-Version", "3");
             headers.set("Authorization", "token " + apiKey + ":" + token);
@@ -76,7 +76,7 @@ new_endpoint = """
                 resp.put("error", "No auth token");
                 return ResponseEntity.ok(resp);
             }
-            String apiKey = "zazlrld244cc6jf0";
+            String apiKey = "`$ZERODHA_API_KEY";
             org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
             headers.set("X-Kite-Version", "3");
             headers.set("Authorization", "token " + apiKey + ":" + token);
@@ -109,3 +109,4 @@ if marker in content:
 else:
     print('ERROR: marker not found')
     sys.exit(1)
+

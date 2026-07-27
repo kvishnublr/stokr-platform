@@ -1,19 +1,19 @@
-#!/bin/bash
+﻿#!/bin/bash
 
 echo "=== POSITIONS TABLE SCHEMA ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "\d positions;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "\d positions;"
 
 echo ""
 echo "=== ORDERS TABLE SCHEMA ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "\d orders;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "\d orders;"
 
 echo ""
 echo "=== ALL POSITIONS ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "SELECT * FROM positions;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "SELECT * FROM positions;"
 
 echo ""
 echo "=== ALL ORDERS ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "SELECT * FROM orders ORDER BY created_at DESC;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "SELECT * FROM orders ORDER BY created_at DESC;"
 
 echo ""
 echo "=== LTP BATCH ERROR DETAILS ==="
@@ -29,12 +29,13 @@ docker logs stokr-lite-backend --tail 500 2>&1 | grep -i "position" | grep -i "e
 
 echo ""
 echo "=== JWT TOKENS TABLE CHECK ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name;"
 
 echo ""
 echo "=== strategy_universe_mappings CHECK ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "\dt *universe*;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "\dt *universe*;"
 
 echo ""
 echo "=== ZERODHA_INSTRUMENTS TABLE CHECK ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "\dt *instrument*;"
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "\dt *instrument*;"
+

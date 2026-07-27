@@ -1,5 +1,5 @@
-#!/bin/bash
-# Stokr Lite — Automated Database Backup
+﻿#!/bin/bash
+# Stokr Lite â€” Automated Database Backup
 # Runs daily via cron. Keeps 7 rolling backups.
 
 set -euo pipefail
@@ -14,7 +14,7 @@ DATE=$(date +%Y-%m-%d_%H%M)
 BACKUP_FILE="${BACKUP_DIR}/stokr_lite_${DATE}.sql.gz"
 LOG_FILE="${BACKUP_DIR}/backup.log"
 
-export PGPASSWORD="stokr2026"
+export PGPASSWORD="`$POSTGRES_PASSWORD"
 
 mkdir -p "$BACKUP_DIR"
 
@@ -38,3 +38,4 @@ fi
 TOTAL=$(find "$BACKUP_DIR" -name "stokr_lite_*.sql.gz" | wc -l)
 TOTAL_SIZE=$(du -sh "$BACKUP_DIR" | cut -f1)
 echo "[$(date)] Backups on disk: $TOTAL ($TOTAL_SIZE)" >> "$LOG_FILE"
+

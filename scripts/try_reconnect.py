@@ -1,11 +1,11 @@
-import requests, json
+﻿import requests, json
 
 BASE = "http://localhost:8081"
 users = [
-    ("admin@stokr.in", "Temp@12345678"),
-    ("vishnualgo@gmail.com", "Temp@12345678"),
-    ("test@test.com", "Temp@12345678"),
-    ("kvishnu.blr@gmail.com", "Temp@12345678"),
+    ("admin@stokr.in", "`$ADMIN_PASSWORD"),
+    ("vishnualgo@gmail.com", "`$ADMIN_PASSWORD"),
+    ("test@test.com", "`$ADMIN_PASSWORD"),
+    ("kvishnu.blr@gmail.com", "`$ADMIN_PASSWORD"),
 ]
 
 for email, pw in users:
@@ -22,3 +22,4 @@ for email, pw in users:
         break
     else:
         print(f"  {r.text[:200]}")
+

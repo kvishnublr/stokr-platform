@@ -1,8 +1,8 @@
-import json, subprocess, time, os
+﻿import json, subprocess, time, os
 import urllib.request
 
 env = os.environ.copy()
-env["PGPASSWORD"] = "stokr2026"
+env["PGPASSWORD"] = "`$POSTGRES_PASSWORD"
 
 def psql(sql):
     r = subprocess.run(["psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c", sql],
@@ -59,3 +59,4 @@ for i, symbol in enumerate(symbols):
             print(f"  Error {symbol}: {e}")
 
 print(f"Done: {total} candles, {errs} errors")
+

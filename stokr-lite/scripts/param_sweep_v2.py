@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Parametric sweep with trailing stops (matching Java backtest logic)."""
 import subprocess, os, sys
 
@@ -7,7 +7,7 @@ def get_candles():
         ['psql', '-h', 'localhost', '-p', '5432', '-U', 'postgres', '-d', 'stokr_lite',
          '-t', '-A', '-F', '|', '-c',
          "SELECT symbol, timestamp, open, high, low, close, volume FROM candle_data WHERE timeframe='daily' ORDER BY symbol, timestamp"],
-        capture_output=True, text=True, env={**os.environ, 'PGPASSWORD': 'stokr2026'}
+        capture_output=True, text=True, env={**os.environ, 'PGPASSWORD': '`$POSTGRES_PASSWORD'}
     )
     candles = {}
     for line in result.stdout.strip().split('\n'):
@@ -145,7 +145,7 @@ if __name__ == '__main__':
                         for t in trades:
                             exits[t['exit']] = exits.get(t['exit'], 0) + 1
                         exit_str = ' '.join(f"{k}:{v}" for k, v in sorted(exits.items()))
-                        print(f"{dist:>6} {sl:>5.2f} {hold:>5} {tt:>6.1f} {td:>6.2f} {len(trades):>7} {wr:>6.1f} ₹{net:>9,.0f} {pf:>6.2f}{marker}")
+                        print(f"{dist:>6} {sl:>5.2f} {hold:>5} {tt:>6.1f} {td:>6.2f} {len(trades):>7} {wr:>6.1f} â‚¹{net:>9,.0f} {pf:>6.2f}{marker}")
 
     # RSI_OVERSOLD sweep with trailing stops
     print("\n" + "=" * 85)
@@ -173,4 +173,5 @@ if __name__ == '__main__':
                             pf = gw / gl if gl > 0 else 999
                             wr = wins / len(trades) * 100
                             marker = " ***" if net > 100000 else ""
-                            print(f"{rsi_thresh:>5} {sl:>5.2f} {tgt_pct:>5.2f} {hold:>5} {tt:>6.1f} {td:>6.2f} {len(trades):>7} {wr:>6.1f} ₹{net:>9,.0f} {pf:>6.2f}{marker}")
+                            print(f"{rsi_thresh:>5} {sl:>5.2f} {tgt_pct:>5.2f} {hold:>5} {tt:>6.1f} {td:>6.2f} {len(trades):>7} {wr:>6.1f} â‚¹{net:>9,.0f} {pf:>6.2f}{marker}")
+

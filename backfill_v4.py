@@ -1,9 +1,9 @@
-import json, subprocess, time, os, csv, io
+﻿import json, subprocess, time, os, csv, io
 import urllib.request
 import gzip
 
 env = os.environ.copy()
-env["PGPASSWORD"] = "stokr2026"
+env["PGPASSWORD"] = "`$POSTGRES_PASSWORD"
 
 def psql(sql):
     r = subprocess.run(["psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c", sql],
@@ -11,7 +11,7 @@ def psql(sql):
     return r.stdout.strip()
 
 access_token = psql("SELECT access_token FROM broker_accounts WHERE id=4")
-api_key = "zazlrld244cc6jf0"
+api_key = "`$ZERODHA_API_KEY"
 auth = f"token {api_key}:{access_token}"
 print(f"Token OK")
 
@@ -87,3 +87,4 @@ print(f"\nDone: {total} candles inserted, {errs} errors, days: {sorted(days_foun
 # Verify
 count = psql("SELECT count(*) FROM candle_data WHERE timeframe='daily' AND timestamp >= '2026-07-09'")
 print(f"Daily candles Jul 9+: {count}")
+

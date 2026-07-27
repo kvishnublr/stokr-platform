@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 
 def remote(cmd):
     r = subprocess.run([
@@ -13,4 +13,5 @@ print(remote("grep -rn 'Broker account not found' /opt/stokr/stokr-platform/stok
 
 # Check if deployments have broker_account_id set
 print("\n=== Deployments broker_account_id ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, strategy_id, user_id, broker_account_id FROM deployments WHERE status='ACTIVE';\""))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"SELECT id, strategy_id, user_id, broker_account_id FROM deployments WHERE status='ACTIVE';\""))
+

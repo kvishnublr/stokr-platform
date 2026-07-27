@@ -1,6 +1,6 @@
-import paramiko
+﻿import paramiko
 s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect('173.249.55.84',username='root',password='19119e3a6793dde1',timeout=30)
+s.connect('173.249.55.84',username='root',password='`$SSH_PASSWORD',timeout=30)
 def c(cmd):
     i,o,e = s.exec_command(cmd)
     return o.read().decode('utf-8',errors='replace').strip()
@@ -17,3 +17,4 @@ print(c("su - postgres -c \"psql -d stokr_platform -c \\\"\\\d auth_users\\\"\" 
 print("\n=== Auth columns ===")
 print(c("su - postgres -c \"psql -d stokr_platform -c \\\"SELECT column_name FROM information_schema.columns WHERE table_name='auth_users'\\\"\" 2>&1"))
 s.close()
+

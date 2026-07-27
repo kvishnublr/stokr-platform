@@ -1,6 +1,6 @@
-import paramiko
+﻿import paramiko
 s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect('173.249.55.84',username='root',password='19119e3a6793dde1',timeout=30)
+s.connect('173.249.55.84',username='root',password='`$SSH_PASSWORD',timeout=30)
 def c(cmd):
     i,o,e = s.exec_command(cmd)
     return o.read().decode(errors='replace').strip()
@@ -28,3 +28,4 @@ print("\n=== Check if QuickFlip is in DB ===")
 print(c("su - postgres -c \"psql -d stokr_platform -c \\\"SELECT id, name, strategy_type FROM strategies WHERE strategy_type = 'QUICK_FLIP'\\\"\" 2>&1"))
 
 s.close()
+

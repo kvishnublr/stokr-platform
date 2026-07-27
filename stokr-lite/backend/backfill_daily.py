@@ -1,11 +1,11 @@
-import json, sys, time, requests, psycopg2
+import json, sys, time, requests, psycopg2, os
 
-API_KEY = "zazlrld244cc6jf0"
-API_SECRET = "iyc7m8166tb6i95gt829q6mzbzvmfq6k"
+API_KEY = os.environ.get("ZERODHA_API_KEY", "")
+API_SECRET = os.environ.get("ZERODHA_API_SECRET", "")
 DB_HOST = "localhost"
 DB_NAME = "stokr_lite"
 DB_USER = "postgres"
-DB_PASS = "stokr2026"
+DB_PASS = os.environ.get("POSTGRES_PASSWORD", "")
 
 NIFTY50 = [
     "RELIANCE","TCS","HDFCBANK","ICICIBANK","INFY","HINDUNILVR","ITC","KOTAKBANK",

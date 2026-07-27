@@ -6,7 +6,10 @@ import sys
 
 HOST = "173.249.55.84"
 USER = "root"
-PASS = "19119e3a6793dde1"
+PASS = os.environ.get("SSH_PASSWORD", "")
+if not PASS:
+    print("ERROR: Set SSH_PASSWORD env var")
+    sys.exit(1)
 JAR_LOCAL = r"C:\Users\itsvi\Desktop\work_new\stokr-platform\stokr-lite\backend\target\stokr-lite-1.0.0-SNAPSHOT.jar"
 JAR_REMOTE = "/root/stokr-lite.jar"
 REPO_PATH = "/root/stokr-platform"

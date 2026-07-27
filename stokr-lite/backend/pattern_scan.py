@@ -1,9 +1,9 @@
-import psycopg2
+﻿import psycopg2
 import json
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='stokr2026')
+conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='`$POSTGRES_PASSWORD')
 cur = conn.cursor()
 
 # Load NIFTY_50 symbols that have 1-min data
@@ -44,16 +44,16 @@ def get_day_candles(candles):
         days[d].append(c)
     return days
 
-BROKERAGE = 80  # ₹80 per round trip
+BROKERAGE = 80  # â‚¹80 per round trip
 CAPITAL = 100000
 
 print("\n" + "=" * 90)
-print("INTRADAY PATTERN SCAN — Looking for statistical edge after brokerage")
+print("INTRADAY PATTERN SCAN â€” Looking for statistical edge after brokerage")
 print("=" * 90)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PATTERN 1: VWAP Mean Reversion — Buy when price >1% below VWAP, sell at VWAP
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# PATTERN 1: VWAP Mean Reversion â€” Buy when price >1% below VWAP, sell at VWAP
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 print("\n1. VWAP MEAN REVERSION (buy 1% below VWAP, target VWAP)")
 print("-" * 70)
 
@@ -100,13 +100,13 @@ wins = [t for t in trades if t['pnl'] > 0]
 losses = [t for t in trades if t['pnl'] <= 0]
 total_pnl = sum(t['pnl'] for t in trades)
 print(f"  Trades: {len(trades)} | Wins: {len(wins)} | Losses: {len(losses)} | WR: {len(wins)/len(trades)*100 if trades else 0:.1f}%")
-print(f"  Net PnL: ₹{total_pnl:,.2f} | Avg: ₹{total_pnl/len(trades) if trades else 0:,.2f}/trade")
-print(f"  Avg Win: ₹{sum(t['pnl'] for t in wins)/len(wins) if wins else 0:,.2f} | Avg Loss: ₹{sum(t['pnl'] for t in losses)/len(losses) if losses else 0:,.2f}")
+print(f"  Net PnL: â‚¹{total_pnl:,.2f} | Avg: â‚¹{total_pnl/len(trades) if trades else 0:,.2f}/trade")
+print(f"  Avg Win: â‚¹{sum(t['pnl'] for t in wins)/len(wins) if wins else 0:,.2f} | Avg Loss: â‚¹{sum(t['pnl'] for t in losses)/len(losses) if losses else 0:,.2f}")
 print(f"  PF: {sum(t['pnl'] for t in wins)/abs(sum(t['pnl'] for t in losses)) if losses else 999:.2f}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PATTERN 2: Opening Range Breakout Reversal — First 15-min high/low breakout fails
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# PATTERN 2: Opening Range Breakout Reversal â€” First 15-min high/low breakout fails
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 print("\n2. ORB BREAKOUT FADE (fade first 15-min breakout)")
 print("-" * 70)
 
@@ -129,7 +129,7 @@ for sym, candles in data.items():
         for i in range(15, min(45, len(day_candles))):
             c = day_candles[i]
             
-            # Breakout above OR high → fade (SHORT)
+            # Breakout above OR high â†’ fade (SHORT)
             if c['close'] > or_high and not entered:
                 entry = c['close']
                 sl = entry * 1.005  # 0.5% above entry
@@ -149,7 +149,7 @@ for sym, candles in data.items():
                         entered = True
                         break
                 break
-            # Breakdown below OR low → fade (LONG)
+            # Breakdown below OR low â†’ fade (LONG)
             elif c['close'] < or_low and not entered:
                 entry = c['close']
                 sl = entry * 0.995
@@ -174,13 +174,13 @@ wins = [t for t in trades if t['pnl'] > 0]
 losses = [t for t in trades if t['pnl'] <= 0]
 total_pnl = sum(t['pnl'] for t in trades)
 print(f"  Trades: {len(trades)} | Wins: {len(wins)} | Losses: {len(losses)} | WR: {len(wins)/len(trades)*100 if trades else 0:.1f}%")
-print(f"  Net PnL: ₹{total_pnl:,.2f} | Avg: ₹{total_pnl/len(trades) if trades else 0:,.2f}/trade")
-print(f"  Avg Win: ₹{sum(t['pnl'] for t in wins)/len(wins) if wins else 0:,.2f} | Avg Loss: ₹{sum(t['pnl'] for t in losses)/len(losses) if losses else 0:,.2f}")
+print(f"  Net PnL: â‚¹{total_pnl:,.2f} | Avg: â‚¹{total_pnl/len(trades) if trades else 0:,.2f}/trade")
+print(f"  Avg Win: â‚¹{sum(t['pnl'] for t in wins)/len(wins) if wins else 0:,.2f} | Avg Loss: â‚¹{sum(t['pnl'] for t in losses)/len(losses) if losses else 0:,.2f}")
 print(f"  PF: {sum(t['pnl'] for t in wins)/abs(sum(t['pnl'] for t in losses)) if losses else 999:.2f}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PATTERN 3: RSI Extreme Fade — RSI(14) on 5-min <20 buy, >80 sell
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# PATTERN 3: RSI Extreme Fade â€” RSI(14) on 5-min <20 buy, >80 sell
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 print("\n3. RSI EXTREME FADE (5-min RSI<20 buy, RSI>80 sell)")
 print("-" * 70)
 
@@ -225,7 +225,7 @@ for sym, candles in data.items():
             rsi = compute_rsi(closes[:i+1], 14)
             if rsi is None: continue
             
-            if rsi < 25 and not entered:  # oversold → BUY
+            if rsi < 25 and not entered:  # oversold â†’ BUY
                 entry = five_min[i]['close']
                 sl = entry * 0.995  # 0.5% SL
                 target = entry * 1.005  # 0.5% target (quick reversion)
@@ -241,7 +241,7 @@ for sym, candles in data.items():
                         trades.append({'pnl': (target - entry) / entry * CAPITAL - BROKERAGE, 'type': 'WIN'})
                         entered = True
                         break
-            elif rsi > 75 and not entered:  # overbought → SELL
+            elif rsi > 75 and not entered:  # overbought â†’ SELL
                 entry = five_min[i]['close']
                 sl = entry * 1.005
                 target = entry * 0.995
@@ -263,14 +263,14 @@ wins = [t for t in trades if t['pnl'] > 0]
 losses = [t for t in trades if t['pnl'] <= 0]
 total_pnl = sum(t['pnl'] for t in trades)
 print(f"  Trades: {len(trades)} | Wins: {len(wins)} | Losses: {len(losses)} | WR: {len(wins)/len(trades)*100 if trades else 0:.1f}%")
-print(f"  Net PnL: ₹{total_pnl:,.2f} | Avg: ₹{total_pnl/len(trades) if trades else 0:,.2f}/trade")
-if wins: print(f"  Avg Win: ₹{sum(t['pnl'] for t in wins)/len(wins):,.2f}")
-if losses: print(f"  Avg Loss: ₹{sum(t['pnl'] for t in losses)/len(losses):,.2f}")
+print(f"  Net PnL: â‚¹{total_pnl:,.2f} | Avg: â‚¹{total_pnl/len(trades) if trades else 0:,.2f}/trade")
+if wins: print(f"  Avg Win: â‚¹{sum(t['pnl'] for t in wins)/len(wins):,.2f}")
+if losses: print(f"  Avg Loss: â‚¹{sum(t['pnl'] for t in losses)/len(losses):,.2f}")
 if losses: print(f"  PF: {sum(t['pnl'] for t in wins)/abs(sum(t['pnl'] for t in losses)):.2f}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PATTERN 4: Opening Gap Fade — Stock gaps up/down at open, fades intraday
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# PATTERN 4: Opening Gap Fade â€” Stock gaps up/down at open, fades intraday
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 print("\n4. OPENING GAP FADE (gap >0.5%, fade back to previous close)")
 print("-" * 70)
 
@@ -297,7 +297,7 @@ for sym, candles in data.items():
         open_price = day_candles[0]['open']
         gap_pct = (open_price - pc) / pc * 100
         
-        # Fade gap up (gap > 0.5% → SHORT at open)
+        # Fade gap up (gap > 0.5% â†’ SHORT at open)
         if gap_pct > 0.5:
             entry = open_price
             sl = entry * 1.005  # 0.5% SL
@@ -313,7 +313,7 @@ for sym, candles in data.items():
                     trades.append({'pnl': (entry - target) / entry * CAPITAL - BROKERAGE, 'type': 'WIN', 'gap': gap_pct})
                     break
         
-        # Fade gap down (gap <-0.5% → BUY at open)
+        # Fade gap down (gap <-0.5% â†’ BUY at open)
         elif gap_pct < -0.5:
             entry = open_price
             sl = entry * 0.995
@@ -333,14 +333,14 @@ wins = [t for t in trades if t['pnl'] > 0]
 losses = [t for t in trades if t['pnl'] <= 0]
 total_pnl = sum(t['pnl'] for t in trades)
 print(f"  Trades: {len(trades)} | Wins: {len(wins)} | Losses: {len(losses)} | WR: {len(wins)/len(trades)*100 if trades else 0:.1f}%")
-print(f"  Net PnL: ₹{total_pnl:,.2f} | Avg: ₹{total_pnl/len(trades) if trades else 0:,.2f}/trade")
-if wins: print(f"  Avg Win: ₹{sum(t['pnl'] for t in wins)/len(wins):,.2f}")
-if losses: print(f"  Avg Loss: ₹{sum(t['pnl'] for t in losses)/len(losses):,.2f}")
+print(f"  Net PnL: â‚¹{total_pnl:,.2f} | Avg: â‚¹{total_pnl/len(trades) if trades else 0:,.2f}/trade")
+if wins: print(f"  Avg Win: â‚¹{sum(t['pnl'] for t in wins)/len(wins):,.2f}")
+if losses: print(f"  Avg Loss: â‚¹{sum(t['pnl'] for t in losses)/len(losses):,.2f}")
 if losses: print(f"  PF: {sum(t['pnl'] for t in wins)/abs(sum(t['pnl'] for t in losses)):.2f}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PATTERN 5: VWAP Bounce — Price crosses VWAP from below, buy
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# PATTERN 5: VWAP Bounce â€” Price crosses VWAP from below, buy
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 print("\n5. VWAP CROSS BOUNCE (price crosses above VWAP, buy)")
 print("-" * 70)
 
@@ -391,9 +391,10 @@ wins = [t for t in trades if t['pnl'] > 0]
 losses = [t for t in trades if t['pnl'] <= 0]
 total_pnl = sum(t['pnl'] for t in trades)
 print(f"  Trades: {len(trades)} | Wins: {len(wins)} | Losses: {len(losses)} | WR: {len(wins)/len(trades)*100 if trades else 0:.1f}%")
-print(f"  Net PnL: ₹{total_pnl:,.2f} | Avg: ₹{total_pnl/len(trades) if trades else 0:,.2f}/trade")
-if wins: print(f"  Avg Win: ₹{sum(t['pnl'] for t in wins)/len(wins):,.2f}")
-if losses: print(f"  Avg Loss: ₹{sum(t['pnl'] for t in losses)/len(losses):,.2f}")
+print(f"  Net PnL: â‚¹{total_pnl:,.2f} | Avg: â‚¹{total_pnl/len(trades) if trades else 0:,.2f}/trade")
+if wins: print(f"  Avg Win: â‚¹{sum(t['pnl'] for t in wins)/len(wins):,.2f}")
+if losses: print(f"  Avg Loss: â‚¹{sum(t['pnl'] for t in losses)/len(losses):,.2f}")
 if losses and wins: print(f"  PF: {sum(t['pnl'] for t in wins)/abs(sum(t['pnl'] for t in losses)):.2f}")
 
 conn.close()
+

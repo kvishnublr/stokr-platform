@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 
 def remote(cmd):
     r = subprocess.run([
@@ -9,7 +9,7 @@ def remote(cmd):
 
 # Check broker account structure
 print("=== broker_accounts full schema ===")
-print(remote("PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c '\\d broker_accounts'"))
+print(remote("PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c '\\d broker_accounts'"))
 
 # Check how EntryManager finds broker account
 print("\n=== EntryManager broker lookup ===")
@@ -18,3 +18,4 @@ print(remote("grep -n 'Broker account\\|findByUserId\\|findByBroker\\|brokerAcco
 # Check EntryManager source for the error
 print("\n=== EntryManager error context ===")
 print(remote("grep -n -B3 -A3 'Broker account not found' /opt/stokr/stokr-platform/stokr-lite/backend/src/main/java/com/stokr/engine/EntryManager.java"))
+

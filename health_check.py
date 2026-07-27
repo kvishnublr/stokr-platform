@@ -1,10 +1,10 @@
-import subprocess
+﻿import subprocess
 
 def db(sql):
     r = subprocess.run([
         "ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
         "root@173.249.55.84",
-        f'PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -t -A -c "{sql}"'
+        f'PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -t -A -c "{sql}"'
     ], capture_output=True, text=True, timeout=30)
     return r.stdout.strip()
 
@@ -209,3 +209,4 @@ except:
 print("\n" + "=" * 60)
 print("CHECK COMPLETE")
 print("=" * 60)
+

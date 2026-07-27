@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 import requests
 
 token = "WrWJGeh3JwVuNvT7lUXuZZLpVCcug1q9"
-API_KEY = "zazlrld244cc6jf0"
+API_KEY = "`$ZERODHA_API_KEY"
 headers = {"Authorization": f"token {API_KEY}:{token}", "X-Kite-Version": "3"}
 
 # NFO Futures
@@ -29,3 +29,4 @@ if "data" in data2:
         sell = depth.get("sell", [])
         print(f"  depth.buy: {buy[:2]}")
         print(f"  depth.sell: {sell[:2]}")
+

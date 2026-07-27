@@ -1,4 +1,4 @@
-import subprocess, json, time
+﻿import subprocess, json, time
 
 def remote(cmd):
     r = subprocess.run([
@@ -12,13 +12,13 @@ script = r"""import json, subprocess, time
 import urllib.request
 
 # Get access token
-r = subprocess.run(["PGPASSWORD=stokr2026", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
+r = subprocess.run(["PGPASSWORD=`$POSTGRES_PASSWORD", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
     "SELECT access_token FROM broker_accounts WHERE id=4"], capture_output=True, text=True)
 token = r.stdout.strip()
 print(f"Token: {token[:15]}...")
 
 # Get instrument tokens from DB
-r2 = subprocess.run(["PGPASSWORD=stokr2026", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
+r2 = subprocess.run(["PGPASSWORD=`$POSTGRES_PASSWORD", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
     "SELECT tradingsymbol, instrument_token FROM zerodha_instruments WHERE exchange='NSE'"], capture_output=True, text=True)
 instruments = {}
 for line in r2.stdout.strip().split('\n'):
@@ -28,7 +28,7 @@ for line in r2.stdout.strip().split('\n'):
 print(f"Instruments: {len(instruments)}")
 
 # Get NIFTY_100 symbols
-r3 = subprocess.run(["PGPASSWORD=stokr2026", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
+r3 = subprocess.run(["PGPASSWORD=`$POSTGRES_PASSWORD", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-t", "-A", "-c",
     """SELECT symbol FROM universe_group_members WHERE universe_group_id = (SELECT id FROM universe_groups WHERE group_key='NIFTY_100')"""], capture_output=True, text=True)
 symbols = [s.strip() for s in r3.stdout.strip().split('\n') if s.strip()]
 print(f"NIFTY_100 symbols: {len(symbols)}")
@@ -59,7 +59,7 @@ for i, symbol in enumerate(symbols):
             sql = f"""INSERT INTO candle_data (symbol, timeframe, timestamp, open, high, low, close, volume)
                 VALUES ('{symbol}', 'daily', '{ts}', {o}, {h}, {l}, {close}, {vol})
                 ON CONFLICT DO NOTHING;"""
-            r4 = subprocess.run(["PGPASSWORD=stokr2026", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-c", sql],
+            r4 = subprocess.run(["PGPASSWORD=`$POSTGRES_PASSWORD", "psql", "-h", "localhost", "-U", "postgres", "-d", "stokr_lite", "-c", sql],
                 capture_output=True, text=True, timeout=5)
             total += 1
         
@@ -82,3 +82,4 @@ os.system('scp -o StrictHostKeyChecking=no "C:\\Users\\itsvi\\Desktop\\work_new\
 print("Running backfill...")
 result = remote("python3 /tmp/backfill_zerodha.py 2>&1")
 print(result[-1000:])
+

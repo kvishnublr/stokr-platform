@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Reinitialize Zerodha token - correct 2-step flow"""
 import requests
 import pyotp
@@ -7,11 +7,11 @@ import hashlib
 import subprocess
 import time
 
-API_KEY = "zazlrld244cc6jf0"
-API_SECRET = "iyc7m8166tb6i95gt829q6mzbzvmfq6k"
+API_KEY = "`$ZERODHA_API_KEY"
+API_SECRET = "`$ZERODHA_API_SECRET"
 CLIENT_ID = "DS8838"
-PASSWORD = "Temp1234"
-TOTP_SECRET = "BQW7QISFB4PFA7SV3VSZAQ4B5I4WJUKC"
+PASSWORD = "`$ZERODHA_CLIENT_PASSWORD"
+TOTP_SECRET = "`$ZERODHA_TOTP_SECRET"
 
 totp = pyotp.TOTP(TOTP_SECRET)
 current_totp = totp.now()
@@ -113,9 +113,10 @@ SET access_token = '{access_token}',
 WHERE id = 1;"""
 
 result = subprocess.run(
-    ['ssh', 'root@173.249.55.84', f"PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c \"{sql}\""],
+    ['ssh', 'root@173.249.55.84', f"PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c \"{sql}\""],
     capture_output=True, text=True, timeout=30
 )
 print(result.stdout)
 
 print(f"\n[DONE] Token refreshed!")
+

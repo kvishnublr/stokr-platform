@@ -1,7 +1,7 @@
-#!/bin/bash
+﻿#!/bin/bash
 # Check actual data coverage in DB
 echo "=== 1-MIN CANDLE DATA ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "
 SELECT 
   timeframe,
   MIN(timestamp) as earliest,
@@ -15,7 +15,7 @@ ORDER BY timeframe;
 
 echo ""
 echo "=== DAILY CANDLES PER SYMBOL (sample) ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "
 SELECT 
   symbol,
   MIN(timestamp) as earliest,
@@ -30,7 +30,7 @@ LIMIT 10;
 
 echo ""
 echo "=== DAILY CANDLE DATE RANGE ==="
-PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c "
+PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c "
 SELECT 
   MIN(timestamp) as earliest_daily,
   MAX(timestamp) as latest_daily,
@@ -39,3 +39,4 @@ SELECT
 FROM candle_data 
 WHERE timeframe = 'daily';
 "
+

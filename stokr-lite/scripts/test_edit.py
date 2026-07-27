@@ -1,4 +1,4 @@
-import urllib.request, json, sys
+﻿import urllib.request, json, sys
 
 def api(method, path, data=None, token=None):
     headers = {"Content-Type": "application/json"}
@@ -18,7 +18,7 @@ def api(method, path, data=None, token=None):
         return None
 
 print("Logging in...")
-result = api("POST", "/api/auth/login", {"email": "vishnualgo@gmail.com", "password": "Temp@12345678"})
+result = api("POST", "/api/auth/login", {"email": "vishnualgo@gmail.com", "password": "`$ADMIN_PASSWORD"})
 if not result or not result.get("accessToken"):
     print("Login failed!")
     sys.exit(1)
@@ -32,7 +32,7 @@ if deps:
 
 if deps:
     dep_id = deps[0]['id']
-    print(f"\n2. Edit deployment #{dep_id} - change capital to ₹50,000:")
+    print(f"\n2. Edit deployment #{dep_id} - change capital to â‚¹50,000:")
     r = api("PATCH", f"/api/deployments/{dep_id}", {"capital": 50000}, token=token)
     if r: print(f"  Result: capital={r.get('capital')} mode={r.get('mode')}")
 
@@ -43,3 +43,4 @@ if deps:
     print(f"\n4. Edit deployment #{dep_id} - switch back to PAPER:")
     r = api("PATCH", f"/api/deployments/{dep_id}", {"mode": "PAPER"}, token=token)
     if r: print(f"  Result: capital={r.get('capital')} mode={r.get('mode')}")
+

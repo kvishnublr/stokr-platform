@@ -1,6 +1,6 @@
-import paramiko,time,json,sys
+﻿import paramiko,time,json,sys
 s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect('173.249.55.84',username='root',password='19119e3a6793dde1',timeout=30)
+s.connect('173.249.55.84',username='root',password='`$SSH_PASSWORD',timeout=30)
 c=lambda cmd: s.exec_command(cmd)[1].read().decode('utf-8',errors='replace').strip()
 
 print("=== Portfolio Backtest ===")
@@ -27,3 +27,4 @@ print("\n=== Portfolio Model ===")
 r = c("curl -s http://localhost:8080/api/backtest/portfolio/model")
 print(r[:800])
 s.close()
+

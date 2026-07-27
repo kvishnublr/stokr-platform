@@ -1,7 +1,7 @@
-import psycopg2
+﻿import psycopg2
 from collections import defaultdict
 
-conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='stokr2026')
+conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='`$POSTGRES_PASSWORD')
 cur = conn.cursor()
 
 cur.execute("""
@@ -46,7 +46,7 @@ BROKERAGE = 80
 CAPITAL = 100000
 
 print("=" * 90)
-print("INTRADAY PATTERN SCAN v2 — Wider targets, more patterns")
+print("INTRADAY PATTERN SCAN v2 â€” Wider targets, more patterns")
 print("=" * 90)
 
 def evaluate(name, trades):
@@ -60,12 +60,12 @@ def evaluate(name, trades):
     avg_win = sum(t['pnl'] for t in wins)/len(wins) if wins else 0
     avg_loss = sum(t['pnl'] for t in losses)/len(losses) if losses else 0
     pf = sum(t['pnl'] for t in wins)/abs(sum(t['pnl'] for t in losses)) if losses else 999
-    print(f"  Trades: {len(trades)} | Wins: {len(wins)} | WR: {wr:.1f}% | Net: ₹{total_pnl:,.0f} | Avg: ₹{total_pnl/len(trades):,.0f} | PF: {pf:.2f}")
-    print(f"  Avg Win: ₹{avg_win:,.0f} | Avg Loss: ₹{avg_loss:,.0f}")
+    print(f"  Trades: {len(trades)} | Wins: {len(wins)} | WR: {wr:.1f}% | Net: â‚¹{total_pnl:,.0f} | Avg: â‚¹{total_pnl/len(trades):,.0f} | PF: {pf:.2f}")
+    print(f"  Avg Win: â‚¹{avg_win:,.0f} | Avg Loss: â‚¹{avg_loss:,.0f}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PATTERN 6: VWAP Extreme Reversion (wider — 1.5% deviation, target VWAP)
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# PATTERN 6: VWAP Extreme Reversion (wider â€” 1.5% deviation, target VWAP)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 print("\n6. VWAP EXTREME REVERSION (1.5% below VWAP, target VWAP, 0.75% SL)")
 print("-" * 70)
 
@@ -95,9 +95,9 @@ for sym, candles in data.items():
                 break
 evaluate("VWAP Extreme", trades)
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # PATTERN 7: VWAP Extreme SHORT (1.5% above VWAP, target VWAP)
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 print("\n7. VWAP EXTREME SHORT (1.5% above VWAP, target VWAP, 0.75% SL)")
 print("-" * 70)
 
@@ -127,9 +127,9 @@ for sym, candles in data.items():
                 break
 evaluate("VWAP Extreme SHORT", trades)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PATTERN 8: Volume Spike Reversal — 3x avg volume candle, fade direction
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# PATTERN 8: Volume Spike Reversal â€” 3x avg volume candle, fade direction
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 print("\n8. VOLUME SPIKE FADE (3x avg vol candle, fade direction)")
 print("-" * 70)
 
@@ -149,7 +149,7 @@ for sym, candles in data.items():
             c = day_candles[i]
             is_bullish = c['close'] > c['open']
             
-            if is_bullish and not entered:  # Big green candle → fade SHORT
+            if is_bullish and not entered:  # Big green candle â†’ fade SHORT
                 entry = c['close']
                 sl = entry * 1.0075  # 0.75%
                 target = entry * 0.9925  # 0.75%
@@ -160,7 +160,7 @@ for sym, candles in data.items():
                     elif day_candles[j]['low'] <= target:
                         trades.append({'pnl': (entry - target) / entry * CAPITAL - BROKERAGE})
                         entered = True; break
-            elif not is_bullish and not entered:  # Big red candle → fade LONG
+            elif not is_bullish and not entered:  # Big red candle â†’ fade LONG
                 entry = c['close']
                 sl = entry * 0.9925
                 target = entry * 1.0075
@@ -174,9 +174,9 @@ for sym, candles in data.items():
             entered = False
 evaluate("Volume Spike Fade", trades)
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # PATTERN 9: VWAP Bounce with Volume Confirmation
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 print("\n9. VWAP BOUNCE + VOLUME (cross VWAP with volume spike, target 0.5%)")
 print("-" * 70)
 
@@ -212,9 +212,9 @@ for sym, candles in data.items():
             prev_above = above
 evaluate("VWAP Cross + Volume", trades)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PATTERN 10: Morning Reversal (first 15 min direction → fade after 10:00)
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# PATTERN 10: Morning Reversal (first 15 min direction â†’ fade after 10:00)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 print("\n10. MORNING REVERSAL (fade first 15-min move after 10:00)")
 print("-" * 70)
 
@@ -234,7 +234,7 @@ for sym, candles in data.items():
             if entered: break
             c = day_candles[i]
             
-            if first15_move > 0.3:  # Morning was UP → SHORT after 10:00
+            if first15_move > 0.3:  # Morning was UP â†’ SHORT after 10:00
                 entry = c['close']
                 sl = entry * 1.0075
                 target = entry * 0.9925  # 0.75% target
@@ -243,7 +243,7 @@ for sym, candles in data.items():
                         trades.append({'pnl': (entry - sl) / entry * CAPITAL - BROKERAGE}); entered = True; break
                     elif day_candles[j]['low'] <= target:
                         trades.append({'pnl': (entry - target) / entry * CAPITAL - BROKERAGE}); entered = True; break
-            elif first15_move < -0.3:  # Morning was DOWN → LONG after 10:00
+            elif first15_move < -0.3:  # Morning was DOWN â†’ LONG after 10:00
                 entry = c['close']
                 sl = entry * 0.9925
                 target = entry * 1.0075
@@ -254,10 +254,10 @@ for sym, candles in data.items():
                         trades.append({'pnl': (target - entry) / entry * CAPITAL - BROKERAGE}); entered = True; break
 evaluate("Morning Reversal", trades)
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # PATTERN 11: RSI(5) Extreme + VWAP Confluence
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n11. RSI(5) EXTREME + VWAP CONFLUENCE (RSI<10 + below VWAP → buy)")
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+print("\n11. RSI(5) EXTREME + VWAP CONFLUENCE (RSI<10 + below VWAP â†’ buy)")
 print("-" * 70)
 
 trades = []
@@ -278,7 +278,7 @@ for sym, candles in data.items():
             rsi5 = compute_rsi(closes[:i+1], 5)
             if rsi5 is None: continue
             
-            # RSI(5) < 15 AND below VWAP → BUY
+            # RSI(5) < 15 AND below VWAP â†’ BUY
             if rsi5 < 15 and c['close'] < vwap * 0.995 and not entered:
                 entry = c['close']
                 sl = entry * 0.9925  # 0.75% SL
@@ -288,7 +288,7 @@ for sym, candles in data.items():
                         trades.append({'pnl': (sl - entry) / entry * CAPITAL - BROKERAGE}); entered = True; break
                     elif day_candles[j]['high'] >= target:
                         trades.append({'pnl': (target - entry) / entry * CAPITAL - BROKERAGE}); entered = True; break
-            # RSI(5) > 85 AND above VWAP → SHORT
+            # RSI(5) > 85 AND above VWAP â†’ SHORT
             elif rsi5 > 85 and c['close'] > vwap * 1.005 and not entered:
                 entry = c['close']
                 sl = entry * 1.0075
@@ -301,10 +301,10 @@ for sym, candles in data.items():
             entered = False
 evaluate("RSI(5)+VWAP", trades)
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # PATTERN 12: 3-Candle Reversal (3 consecutive red after green run)
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n12. 3-BAR REVERSAL (3 red candles → BUY at 4th, target 0.5%)")
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+print("\n12. 3-BAR REVERSAL (3 red candles â†’ BUY at 4th, target 0.5%)")
 print("-" * 70)
 
 trades = []
@@ -329,7 +329,7 @@ for sym, candles in data.items():
                         trades.append({'pnl': (sl - entry) / entry * CAPITAL - BROKERAGE}); entered = True; break
                     elif day_candles[j]['high'] >= target:
                         trades.append({'pnl': (target - entry) / entry * CAPITAL - BROKERAGE}); entered = True; break
-            # 3 consecutive green candles → SHORT
+            # 3 consecutive green candles â†’ SHORT
             elif (day_candles[i-2]['close'] > day_candles[i-2]['open'] and
                   day_candles[i-1]['close'] > day_candles[i-1]['open'] and
                   day_candles[i]['close'] > day_candles[i]['open']):
@@ -347,3 +347,4 @@ for sym, candles in data.items():
 evaluate("3-Bar Reversal", trades)
 
 conn.close()
+

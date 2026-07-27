@@ -1,10 +1,10 @@
-import subprocess
+﻿import subprocess
 
 def query(q):
     r = subprocess.run([
         "ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
         "root@173.249.55.84",
-        "PGPASSWORD=stokr2026 psql -h localhost -U postgres -d stokr_lite -c " + repr(q)
+        "PGPASSWORD=`$POSTGRES_PASSWORD psql -h localhost -U postgres -d stokr_lite -c " + repr(q)
     ], capture_output=True, text=True, timeout=20)
     print(r.stdout if r.stdout else r.stderr)
 
@@ -21,3 +21,4 @@ r = subprocess.run([
     "docker logs stokr-lite-backend --since 1h 2>&1 | grep -v 'tick\\|WebSocket\\|Connecting\\|handshake' | tail -30"
 ], capture_output=True, text=True, timeout=20)
 print(r.stdout if r.stdout else r.stderr)
+

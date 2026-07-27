@@ -1,7 +1,7 @@
-import psycopg2
+﻿import psycopg2
 from collections import defaultdict
 
-conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='stokr2026')
+conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='`$POSTGRES_PASSWORD')
 cur = conn.cursor()
 
 cur.execute("""
@@ -48,17 +48,17 @@ def eval(name, trades):
     pf = sum(t['pnl'] for t in wins)/abs(sum(t['pnl'] for t in losses)) if losses else 999
     aw = sum(t['pnl'] for t in wins)/len(wins) if wins else 0
     al = sum(t['pnl'] for t in losses)/len(losses) if losses else 0
-    print(f"  {name:<35} T:{len(trades):>4} W:{len(wins):>3} WR:{wr:>5.1f}% Net:₹{total:>+8,.0f} PF:{pf:>5.2f} AvgW:₹{aw:>6,.0f} AvgL:₹{al:>6,.0f}")
+    print(f"  {name:<35} T:{len(trades):>4} W:{len(wins):>3} WR:{wr:>5.1f}% Net:â‚¹{total:>+8,.0f} PF:{pf:>5.2f} AvgW:â‚¹{aw:>6,.0f} AvgL:â‚¹{al:>6,.0f}")
 
 print("=" * 95)
-print("INTRADAY PATTERN SCAN v3 — Momentum, bigger targets, time-filtered")
+print("INTRADAY PATTERN SCAN v3 â€” Momentum, bigger targets, time-filtered")
 print("=" * 95)
 
-# ═══ PATTERN 13: VWAP Extreme + RSI + Wait for Confirmation ═══
+# â•â•â• PATTERN 13: VWAP Extreme + RSI + Wait for Confirmation â•â•â•
 print("\n--- VWAP + RSI CONFLUENCE PATTERNS ---")
 print("-" * 95)
 
-# 13a: RSI<15 + 2% below VWAP + next candle green → BUY
+# 13a: RSI<15 + 2% below VWAP + next candle green â†’ BUY
 trades = []
 for sym, candles in data.items():
     days = get_day_candles(candles)
@@ -93,11 +93,11 @@ for sym, candles in data.items():
                 break
 eval("RSI5<15 + 2% below VWAP + green confirm", trades)
 
-# ═══ PATTERN 14: Strong Momentum (3 consecutive big candles, ride momentum) ═══
+# â•â•â• PATTERN 14: Strong Momentum (3 consecutive big candles, ride momentum) â•â•â•
 print("\n--- MOMENTUM PATTERNS (ride, don't fade) ---")
 print("-" * 95)
 
-# 14a: 3 consecutive green candles each >0.2% → BUY next, trail
+# 14a: 3 consecutive green candles each >0.2% â†’ BUY next, trail
 trades = []
 for sym, candles in data.items():
     days = get_day_candles(candles)
@@ -123,7 +123,7 @@ for sym, candles in data.items():
                             trades.append({'pnl': (target-entry)/entry*CAPITAL-BROKERAGE}); entered=True; break
 eval("3-bar momentum LONG (>0.15% each)", trades)
 
-# 14b: 3 consecutive red → SHORT
+# 14b: 3 consecutive red â†’ SHORT
 trades = []
 for sym, candles in data.items():
     days = get_day_candles(candles)
@@ -148,7 +148,7 @@ for sym, candles in data.items():
                             trades.append({'pnl': (entry-target)/entry*CAPITAL-BROKERAGE}); entered=True; break
 eval("3-bar momentum SHORT (>0.15% each)", trades)
 
-# ═══ PATTERN 15: VWAP + EMA crossover ═══
+# â•â•â• PATTERN 15: VWAP + EMA crossover â•â•â•
 print("\n--- EMA + VWAP PATTERNS ---")
 print("-" * 95)
 
@@ -189,8 +189,8 @@ for sym, candles in data.items():
             entered = False
 eval("VWAP + EMA9 cross above", trades)
 
-# ═══ PATTERN 16: Price reclaim after sharp drop (micro V-reversal) ═══
-print("\n--- MICRO V-REVERSAL (sharp drop → immediate reclaim) ---")
+# â•â•â• PATTERN 16: Price reclaim after sharp drop (micro V-reversal) â•â•â•
+print("\n--- MICRO V-REVERSAL (sharp drop â†’ immediate reclaim) ---")
 print("-" * 95)
 
 # Price drops >0.5% in 3 candles, then next candle closes above entry
@@ -209,7 +209,7 @@ for sym, candles in data.items():
             drop_pct = (drop_end - drop_start) / drop_start * 100
             
             if drop_pct < -0.5 and dc[i+1]['close'] > dc[i]['close']:
-                # Reclaim — buy
+                # Reclaim â€” buy
                 entry = dc[i+1]['close']
                 sl = entry * 0.995
                 target = entry * 1.005
@@ -221,7 +221,7 @@ for sym, candles in data.items():
             entered = False
 eval("Micro V-reversal (3-bar drop + reclaim)", trades)
 
-# ═══ PATTERN 17: Time-filtered — Only trade 9:30-11:00 (high vol hours) ═══
+# â•â•â• PATTERN 17: Time-filtered â€” Only trade 9:30-11:00 (high vol hours) â•â•â•
 print("\n--- TIME-FILTERED: VWAP reversion 9:30-11:00 only ---")
 print("-" * 95)
 
@@ -256,7 +256,7 @@ for sym, candles in data.items():
                 break
 eval("VWAP reversion 1% (9:30-11:00 only)", trades)
 
-# ═══ PATTERN 18: EMA(20) bounce in uptrend ═══
+# â•â•â• PATTERN 18: EMA(20) bounce in uptrend â•â•â•
 print("\n--- EMA(20) BOUNCE ---")
 print("-" * 95)
 
@@ -291,7 +291,7 @@ for sym, candles in data.items():
             entered = False
 eval("EMA20 bounce in uptrend", trades)
 
-# ═══ PATTERN 19: VWAP reclaim from below with volume ═══
+# â•â•â• PATTERN 19: VWAP reclaim from below with volume â•â•â•
 print("\n--- VWAP RECLAIM + VOLUME SURGE ---")
 print("-" * 95)
 
@@ -329,3 +329,4 @@ for sym, candles in data.items():
 eval("VWAP reclaim + 1.5x volume", trades)
 
 conn.close()
+

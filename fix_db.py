@@ -1,6 +1,6 @@
-import paramiko,time
+﻿import paramiko,time
 s=paramiko.SSHClient();s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect('173.249.55.84',username='root',password='19119e3a6793dde1',timeout=30)
+s.connect('173.249.55.84',username='root',password='`$SSH_PASSWORD',timeout=30)
 def c(cmd):
     i,o,e = s.exec_command(cmd)
     return o.read().decode(errors='replace').strip()
@@ -34,3 +34,4 @@ print(c("su - postgres -c \"psql -d stokr_lite -c \\\"DELETE FROM flyway_schema_
 print(c("ls -la /root/stokr-platform/stokr-lite/backend/src/main/resources/db/migration/V33* 2>/dev/null || echo 'V33 NOT FOUND'"))
 
 s.close()
+

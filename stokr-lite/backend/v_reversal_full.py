@@ -1,7 +1,7 @@
-import psycopg2
+﻿import psycopg2
 from collections import defaultdict
 
-conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='stokr2026')
+conn = psycopg2.connect(host='localhost', dbname='stokr_lite', user='postgres', password='`$POSTGRES_PASSWORD')
 cur = conn.cursor()
 
 cur.execute("""
@@ -76,12 +76,12 @@ for drop_pct, sl_pct, tgt_pct, max_hold, label in configs:
     wr = len(wins)/len(trades)*100
     pf = sum(t['pnl'] for t in wins)/abs(sum(t['pnl'] for t in losses)) if losses else 999
     print(f"\n{label}")
-    print(f"  Trades: {len(trades)} | Wins: {len(wins)} | WR: {wr:.1f}% | Net: ₹{total:,.0f} | PF: {pf:.2f}")
+    print(f"  Trades: {len(trades)} | Wins: {len(wins)} | WR: {wr:.1f}% | Net: â‚¹{total:,.0f} | PF: {pf:.2f}")
     print(f"  Win exits: {sum(1 for t in trades if t['type']=='WIN')} | SL exits: {sum(1 for t in trades if t['type']=='SL')}")
 
-# Now test SHORT side: 3-bar rally → SHORT
+# Now test SHORT side: 3-bar rally â†’ SHORT
 print(f"\n{'=' * 95}")
-print("SHORT SIDE: 3-bar rally → fade")
+print("SHORT SIDE: 3-bar rally â†’ fade")
 print("=" * 95)
 
 for rise_pct, sl_pct, tgt_pct, max_hold, label in [
@@ -121,7 +121,7 @@ for rise_pct, sl_pct, tgt_pct, max_hold, label in [
     wr = len(wins)/len(trades)*100
     pf = sum(t['pnl'] for t in wins)/abs(sum(t['pnl'] for t in losses)) if losses else 999
     print(f"\n{label}")
-    print(f"  Trades: {len(trades)} | Wins: {len(wins)} | WR: {wr:.1f}% | Net: ₹{total:,.0f} | PF: {pf:.2f}")
+    print(f"  Trades: {len(trades)} | Wins: {len(wins)} | WR: {wr:.1f}% | Net: â‚¹{total:,.0f} | PF: {pf:.2f}")
 
 # Combined LONG + SHORT
 print(f"\n{'=' * 95}")
@@ -173,8 +173,9 @@ if trades:
     longs = [t for t in trades if t['dir'] == 'L']
     shorts = [t for t in trades if t['dir'] == 'S']
     print(f"\nCOMBINED (LONG + SHORT)")
-    print(f"  Total: {len(trades)} | L:{len(longs)} S:{len(shorts)} | WR: {wr:.1f}% | Net: ₹{total:,.0f} | PF: {pf:.2f}")
-    print(f"  LONG: {len([t for t in longs if t['pnl']>0])}/{len(longs)} wins, ₹{sum(t['pnl'] for t in longs):,.0f}")
-    print(f"  SHORT: {len([t for t in shorts if t['pnl']>0])}/{len(shorts)} wins, ₹{sum(t['pnl'] for t in shorts):,.0f}")
+    print(f"  Total: {len(trades)} | L:{len(longs)} S:{len(shorts)} | WR: {wr:.1f}% | Net: â‚¹{total:,.0f} | PF: {pf:.2f}")
+    print(f"  LONG: {len([t for t in longs if t['pnl']>0])}/{len(longs)} wins, â‚¹{sum(t['pnl'] for t in longs):,.0f}")
+    print(f"  SHORT: {len([t for t in shorts if t['pnl']>0])}/{len(shorts)} wins, â‚¹{sum(t['pnl'] for t in shorts):,.0f}")
 
 conn.close()
+
