@@ -293,6 +293,66 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
+    @GetMapping("/live-prices-batch")
+    public ResponseEntity<Map<String, Object>> livePricesBatch(
+            @RequestParam(defaultValue = "ALL") String underlying) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        try {
+            LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+            List<OptionArbOpportunity> runningOpps = historyService.getRepository()
+                .findByStatusOrderByScanTimeBetween("RUNNING", today.atStartOfDay(), today.atTime(LocalTime.MAX));
+            List<OptionArbOpportunity> openOpps = historyService.getRepository()
+                .findByStatusOrderByScanTimeBetween("OPEN", today.atStartOfDay(), today.atTime(LocalTime.MAX));
+            List<OptionArbOpportunity> detectedOpps = historyService.getRepository()
+                .findByStatusOrderByScanTimeBetween("DETECTED", today.atStartOfDay(), today.atTime(LocalTime.MAX));
+
+            List<OptionArbOpportunity> all = new ArrayList<>();
+            all.addAll(runningOpps);
+            all.addAll(openOpps);
+            all.addAll(detectedOpps);
+
+            if (!"ALL".equals(underlying)) {
+                all = all.stream()
+                    .filter(o -> underlying.equals(o.getUnderlying()))
+                    .collect(java.util.stream.Collectors.toList());
+            }
+
+            List<Map<String, Object>> prices = new ArrayList<>();
+            for (OptionArbOpportunity opp : all) {
+                try {
+                    if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
+                    String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
+                    String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
+                    Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
+
+                    double ceLive = 0, peLive = 0;
+                    if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
+                    if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
+
+                    double[] spotFut = spotFetcher.getSpotAndFutures(opp.getUnderlying());
+                    double futLive = spotFut[1];
+
+                    Map<String, Object> lp = new LinkedHashMap<>();
+                    lp.put("underlying", opp.getUnderlying());
+                    lp.put("strike", opp.getStrike());
+                    lp.put("ceLive", ceLive);
+                    lp.put("peLive", peLive);
+                    lp.put("futLive", futLive);
+                    lp.put("spotLive", spotFut[0]);
+                    prices.add(lp);
+                } catch (Exception e) {
+                    log.debug("Live price fetch failed for {} {}: {}", opp.getUnderlying(), opp.getStrike(), e.getMessage());
+                }
+            }
+            resp.put("prices", prices);
+        } catch (Exception e) {
+            log.error("Live prices batch failed: {}", e.getMessage());
+            resp.put("prices", Collections.emptyList());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
     @GetMapping("/history/live-pnl")
     public ResponseEntity<Map<String, Object>> livePnl() {
         Map<String, Object> resp = new LinkedHashMap<>();

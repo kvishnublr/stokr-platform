@@ -1254,12 +1254,59 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
 function HistoryView({ historyItems, calendarOpportunities, historyLoading, handleExecuteInline, executionBroker }) {
   const [strategyFilter, setStrategyFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [minEdgeFilter, setMinEdgeFilter] = useState(300); // Default ₹300 minimum
+  const [minEdgeFilter, setMinEdgeFilter] = useState(300);
   const [customMinEdge, setCustomMinEdge] = useState('300');
+  const [dateRange, setDateRange] = useState('TODAY');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [sortColumn, setSortColumn] = useState('scanTime');
   const [sortDirection, setSortDirection] = useState('desc');
   const [expandedId, setExpandedId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25;
+
+  const { data: livePnlData } = useQuery({
+    queryKey: ['live-pnl'],
+    queryFn: async () => {
+      const res = await axios.get(`${API_BASE}/api/option-arbitrage/history/live-pnl`);
+      return res.data?.pnlMap || {};
+    },
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+
+  const livePnlMap = livePnlData || {};
+
+  const getDateFilter = () => {
+    const now = new Date();
+    const istOffset = now.getTimezoneOffset();
+    const istNow = new Date(now.getTime() + (istOffset + 330) * 60000);
+    const istDate = istNow.toISOString().split('T')[0];
+    const istTime = istNow.toISOString().split('T')[1].split(':')[0];
+    switch (dateRange) {
+      case 'TODAY': return { start: istDate, end: istDate };
+      case 'YESTERDAY': {
+        const y = new Date(istNow); y.setDate(y.getDate() - 1);
+        const yDate = y.toISOString().split('T')[0];
+        return { start: yDate, end: yDate };
+      }
+      case 'WEEK': {
+        const d = new Date(istNow); d.setDate(d.getDate() - d.getDay());
+        const e = new Date(istNow); e.setDate(e.getDate() + (6 - e.getDay()));
+        return { start: d.toISOString().split('T')[0], end: e.toISOString().split('T')[0] };
+      }
+      case 'MONTH': {
+        const s = new Date(istNow.getFullYear(), istNow.getMonth(), 1);
+        const en = new Date(istNow.getFullYear(), istNow.getMonth() + 1, 0);
+        return { start: s.toISOString().split('T')[0], end: en.toISOString().split('T')[0] };
+      }
+      case 'CUSTOM': {
+        if (customStartDate && customEndDate) return { start: customStartDate, end: customEndDate };
+        return { start: istDate, end: istDate };
+      }
+      default: return { start: istDate, end: istDate };
+    }
+  };
   const pageSize = 25;
 
   const handleSort = (col) => {
@@ -1272,24 +1319,35 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
   };
 
   const filteredItems = useMemo(() => {
+    const { start, end } = getDateFilter();
     let items = historyItems.filter(item => {
       const edge = Number(item.edgeAfterCosts) || Number(item.grossEdge) || 0;
       const typeStr = String(item.strategyType || item.type || '').toUpperCase();
       const statusStr = String(item.status || 'RUNNING').toUpperCase();
+      const itemDate = item.scanTime ? item.scanTime.split('T')[0] : (item.createdAt ? item.createdAt.split('T')[0] : '');
 
       if (edge < minEdgeFilter) return false;
+      if (itemDate < start || itemDate > end) return false;
 
-      // Robust Multi-Strategy Filter Matching
       if (strategyFilter === 'PARITY' && !typeStr.includes('PARITY') && !typeStr.includes('BID')) return false;
       if (strategyFilter === 'BOX' && !typeStr.includes('BOX')) return false;
       if (strategyFilter === 'CALENDAR' && !typeStr.includes('CALENDAR') && !typeStr.includes('TIME')) return false;
       if (strategyFilter === 'CONDOR' && !typeStr.includes('CONDOR') && !typeStr.includes('IRON')) return false;
 
-      // Status Filter
       if (statusFilter === 'RUNNING' && statusStr !== 'RUNNING' && statusStr !== 'OPEN') return false;
       if (statusFilter === 'EXITED' && statusStr !== 'EXITED' && statusStr !== 'CLOSED' && statusStr !== 'EXECUTED') return false;
 
       return true;
+    });
+
+    // Merge live P&L for running/open items
+    items = items.map(item => {
+      const statusStr = String(item.status || 'RUNNING').toUpperCase();
+      const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN';
+      if (isRunning && livePnlMap[String(item.id)] != null) {
+        return { ...item, pnlAfterCosts: livePnlMap[String(item.id)] };
+      }
+      return item;
     });
 
     // Fallback: If filtering by Calendar returns 0 db items, merge live scanned calendar opportunities
@@ -1342,15 +1400,19 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [historyItems, calendarOpportunities, strategyFilter, statusFilter, minEdgeFilter, sortColumn, sortDirection]);
+  }, [historyItems, calendarOpportunities, strategyFilter, statusFilter, minEdgeFilter, dateRange, customStartDate, customEndDate, livePnlMap, sortColumn, sortDirection]);
 
-  const countByEdge = (min) => {
-    let count = historyItems.filter(item => (Number(item.edgeAfterCosts) || 0) >= min).length;
-    if (count === 0 && calendarOpportunities?.length > 0) {
-      count = calendarOpportunities.filter(c => (Number(c.edgeAfterCosts || c.spread * 25) || 0) >= min).length;
-    }
-    return count;
-  };
+   const countByEdge = (min) => {
+     const { start, end } = getDateFilter();
+     let count = historyItems.filter(item => {
+       const itemDate = item.scanTime ? item.scanTime.split('T')[0] : (item.createdAt ? item.createdAt.split('T')[0] : '');
+       return (Number(item.edgeAfterCosts) || 0) >= min && itemDate >= start && itemDate <= end;
+     }).length;
+     if (count === 0 && calendarOpportunities?.length > 0) {
+       count = calendarOpportunities.filter(c => (Number(c.edgeAfterCosts || c.spread * 25) || 0) >= min).length;
+     }
+     return count;
+   };
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const paginatedItems = useMemo(() => {
@@ -1386,6 +1448,35 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Date Range Filter */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              {[
+                { id: 'TODAY', label: 'Today' },
+                { id: 'YESTERDAY', label: 'Yesterday' },
+                { id: 'WEEK', label: 'This Week' },
+                { id: 'MONTH', label: 'This Month' },
+                { id: 'CUSTOM', label: 'Custom' },
+              ].map(d => (
+                <button
+                  key={d.id}
+                  onClick={() => { setDateRange(d.id); setCurrentPage(1); }}
+                  className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${
+                    dateRange === d.id ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+
+            {dateRange === 'CUSTOM' && (
+              <div className="flex items-center gap-1">
+                <input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-xs font-mono text-slate-800 outline-none focus:border-emerald-500" />
+                <span className="text-[10px] text-slate-400">to</span>
+                <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-xs font-mono text-slate-800 outline-none focus:border-emerald-500" />
+              </div>
+            )}
+
             {/* Strategy Filters */}
             <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
               {[
