@@ -271,10 +271,10 @@ public class OptionArbHistoryService {
     }
 
     /**
-     * Scheduled: After market close (16:00 IST / 10:30 UTC), resolve OPEN opportunities
-     * by fetching closing option prices via Zerodha quote API
-     */
-    @Scheduled(cron = "0 30 10 * * 1-5", zone = "Asia/Kolkata")
+      * Scheduled: After market close (15:45 IST), resolve OPEN opportunities
+      * by fetching closing option prices via Zerodha quote API
+      */
+    @Scheduled(cron = "0 45 15 * * 1-5", zone = "Asia/Kolkata")
     public void resolveOpenOpportunities() {
         log.info("Starting post-market resolution of OPEN option arb opportunities");
 

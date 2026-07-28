@@ -39,6 +39,17 @@ public class OptionArbitrageController {
         Map<String, Object> response = new LinkedHashMap<>();
         List<ArbitrageOpportunity> allOpportunities = new ArrayList<>();
 
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            response.put("status", "market_closed");
+            response.put("timestamp", System.currentTimeMillis());
+            response.put("totalOpportunities", 0);
+            response.put("opportunities", Collections.emptyList());
+            response.put("summary", Map.of());
+            response.put("reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST.");
+            return ResponseEntity.ok(response);
+        }
+
         try {
             if ("NIFTY".equalsIgnoreCase(underlying) || "BOTH".equalsIgnoreCase(underlying)) {
                 double niftySpot = spotFetcher.getSpotPrice("NSE:NIFTY 50");

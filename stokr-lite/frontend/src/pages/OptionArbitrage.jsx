@@ -1508,7 +1508,7 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
                   const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN';
                   const pnlVal = item.pnlAfterCosts != null 
                     ? Number(item.pnlAfterCosts) 
-                    : (isRunning ? 0.0 : (item.edgeAfterCosts != null ? Number(item.edgeAfterCosts) : 0.0));
+                    : (isRunning ? null : (item.edgeAfterCosts != null ? Number(item.edgeAfterCosts) : 0.0));
 
                   const signalTimeFormatted = item.scanTime 
                     ? new Date(item.scanTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) 
@@ -1555,9 +1555,11 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
 
                         {/* Captured P&L Badge */}
                         <td className="px-1.5 py-1.5 text-right font-mono font-bold truncate">
-                          <span className={isRunning ? 'text-emerald-600 font-bold' : 'px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded border border-emerald-300 font-bold'}>
-                            {pnlVal >= 0 ? '+' : ''}₹{Math.round(pnlVal).toLocaleString('en-IN')}
-                          </span>
+                          {pnlVal !== null && !isNaN(pnlVal) 
+                            ? <span className={isRunning ? 'text-emerald-600 font-bold' : 'px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded border border-emerald-300 font-bold'}>
+                                {pnlVal >= 0 ? '+' : ''}₹{Math.round(pnlVal).toLocaleString('en-IN')}
+                              </span>
+                            : <span className="text-slate-400">--</span>}
                         </td>
                         <td className="px-1.5 py-1.5 text-center font-mono text-[10px] text-slate-500 truncate">{exitTimeFormatted}</td>
                         <td className="px-1.5 py-1.5 text-center whitespace-nowrap">

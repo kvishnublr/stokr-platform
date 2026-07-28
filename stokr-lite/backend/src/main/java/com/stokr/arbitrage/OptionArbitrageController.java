@@ -26,6 +26,7 @@ public class OptionArbitrageController {
     private final OptionArbHistoryService historyService;
     private final BidParityService bidParityService;
     private final BoxSpreadService boxSpreadService;
+    private final ZerodhaSpotPriceFetcher spotFetcher;
 
     private final Map<String, Object> autoExecSettings = new ConcurrentHashMap<>();
     private final List<Map<String, Object>> auditLogs = Collections.synchronizedList(new ArrayList<>());
@@ -33,11 +34,13 @@ public class OptionArbitrageController {
     public OptionArbitrageController(OptionChainService optionChainService,
                                      OptionArbHistoryService historyService,
                                      BidParityService bidParityService,
-                                     BoxSpreadService boxSpreadService) {
+                                     BoxSpreadService boxSpreadService,
+                                     ZerodhaSpotPriceFetcher spotFetcher) {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.bidParityService = bidParityService;
         this.boxSpreadService = boxSpreadService;
+        this.spotFetcher = spotFetcher;
 
         autoExecSettings.put("normalParityEnabled", true);
         autoExecSettings.put("normalEntryEdge", 150.0);
@@ -88,6 +91,20 @@ public class OptionArbitrageController {
                                                     @RequestParam(defaultValue = "false") boolean force) {
         List<Map<String, Object>> opps = new ArrayList<>();
 
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("timestamp", System.currentTimeMillis());
+            resp.put("underlying", underlying);
+            resp.put("marketClosed", true);
+            resp.put("opportunities", opps);
+            resp.put("count", 0);
+            resp.put("summary", Map.of("total", 0));
+            resp.put("disabled", true);
+            resp.put("reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST.");
+            return ResponseEntity.ok(resp);
+        }
+
         List<Map<String, Object>> bidOpps = bidParityService.scanBidParity(underlying);
         if (bidOpps != null) opps.addAll(bidOpps);
 
@@ -107,10 +124,22 @@ public class OptionArbitrageController {
 
     @GetMapping("/bid-parity/scan")
     public ResponseEntity<Map<String, Object>> scanBidParity(@RequestParam(defaultValue = "ALL") String underlying) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
         List<Map<String, Object>> opps = bidParityService.scanBidParity(underlying);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
         resp.put("opportunities", opps);
         resp.put("count", opps.size());
         return ResponseEntity.ok(resp);
@@ -118,10 +147,22 @@ public class OptionArbitrageController {
 
     @GetMapping("/box-spread/scan")
     public ResponseEntity<Map<String, Object>> scanBoxSpread(@RequestParam(defaultValue = "ALL") String underlying) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
         List<Map<String, Object>> opps = boxSpreadService.scanBoxSpread(underlying);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
         resp.put("opportunities", opps);
         resp.put("count", opps.size());
         return ResponseEntity.ok(resp);
@@ -272,14 +313,34 @@ public class OptionArbitrageController {
             allOpen.addAll(runningOpps);
 
             for (OptionArbOpportunity opp : allOpen) {
-                double lotSize = "BANKNIFTY".equals(opp.getUnderlying()) ? 15
-                    : "MIDCPNIFTY".equals(opp.getUnderlying()) ? 120
-                    : "FINNIFTY".equals(opp.getUnderlying()) ? 60 : 50;
+                int lotSize = switch (opp.getUnderlying()) {
+                    case "BANKNIFTY" -> 15;
+                    case "MIDCPNIFTY" -> 120;
+                    case "FINNIFTY" -> 60;
+                    default -> 50;
+                };
                 double ceP = opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() : 0;
                 double peP = opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0;
+
+                double currentCe = 0;
+                double currentPe = 0;
+                try {
+                    if (optionChainService != null && opp.getExpiryDate() != null && opp.getStrike() != null) {
+                        String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
+                        String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
+                        Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
+                        if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) currentCe = quotes.get(ceSymbol).lastPrice;
+                        if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) currentPe = quotes.get(peSymbol).lastPrice;
+                    }
+                } catch (Exception e) {
+                    log.debug("Could not fetch live option prices for {} {}: {}", opp.getUnderlying(), opp.getStrike(), e.getMessage());
+                }
+
                 double pnl = 0;
-                if ("BUY CE+PE / SELL FUT".equals(opp.getAction())) {
-                    pnl = ((ceP - ceP) + (peP - peP)) * lotSize;
+                if ("CONVERSION".equalsIgnoreCase(opp.getAction())) {
+                    pnl = ((currentCe - ceP) + (peP - currentPe)) * lotSize;
+                } else if ("REVERSAL".equalsIgnoreCase(opp.getAction())) {
+                    pnl = ((ceP - currentCe) + (currentPe - peP)) * lotSize;
                 }
                 pnlMap.put(String.valueOf(opp.getId()), Math.round(pnl * 100.0) / 100.0);
             }
