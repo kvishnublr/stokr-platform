@@ -112,6 +112,7 @@ public class BrokerOAuthController {
             case "ZERODHA" -> requestToken;
             case "DHAN" -> authCode;
             case "FYERS" -> fyersAuthCode != null ? fyersAuthCode : authCode;
+            case "NAVIA" -> authCode;
             default -> requestToken != null ? requestToken : authCode;
         };
     }

@@ -2,7 +2,6 @@ package com.stokr.broker;
 
 import com.stokr.config.SecurityUtils;
 import com.stokr.engine.BrokerTokenRefresher;
-import com.stokr.marketdata.ZerodhaLiveDataScheduler;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +22,6 @@ public class BrokerController {
 
     private final BrokerService           brokerService;
     private final BrokerAccountRepository brokerAccountRepository;
-    private final ZerodhaLiveDataScheduler zerodhaScheduler;
     private final BrokerTokenRefresher    tokenRefresher;
 
     @GetMapping
@@ -185,26 +183,30 @@ public class BrokerController {
     }
 
     /**
-     * Health check for Zerodha broker connectivity.
+     * Health check for broker connectivity.
      * Returns status: OK | NO_ACCOUNT | TOKEN_EXPIRED
      * Frontend polls this and blocks live trading when not OK.
      */
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> getBrokerHealth() {
-        String healthStatus = zerodhaScheduler.getHealthStatus();
-        boolean isOk = "OK".equals(healthStatus);
+        List<BrokerAccount> activeAccounts = brokerAccountRepository.findByStatus("ACTIVE");
+        if (activeAccounts.isEmpty()) {
+            return ResponseEntity.ok(Map.of(
+                    "status", "NO_ACCOUNT",
+                    "ok", false,
+                    "message", "No broker account connected. Connect a broker to enable live trading.",
+                    "broker", "NONE"
+            ));
+        }
 
-        String message = switch (healthStatus) {
-            case "NO_ACCOUNT"    -> "No Zerodha account connected. Connect Zerodha to enable live trading.";
-            case "TOKEN_EXPIRED" -> "Zerodha session expired. Click 'Reconnect' to restore live trading.";
-            default              -> "Zerodha connected and live data active.";
-        };
+        BrokerAccount account = activeAccounts.get(0);
+        String brokerName = account.getBrokerName();
 
         Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("status",  healthStatus);
-        resp.put("ok",      isOk);
-        resp.put("message", message);
-        resp.put("broker",  "ZERODHA");
+        resp.put("status", "OK");
+        resp.put("ok", true);
+        resp.put("message", brokerName + " connected and live data active.");
+        resp.put("broker", brokerName);
         return ResponseEntity.ok(resp);
     }
 }

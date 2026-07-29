@@ -330,7 +330,12 @@ public class OptionArbitrageController {
                     if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
                     if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
 
-                    double[] spotFut = spotFetcher.getSpotAndFutures(opp.getUnderlying());
+                    Map<String, String> spotKeyMap = Map.of(
+                        "NIFTY", "NSE:NIFTY 50", "BANKNIFTY", "NSE:NIFTY BANK",
+                        "MIDCPNIFTY", "NSE:NIFTY MID SELECT", "FINNIFTY", "NSE:NIFTY FIN SERVICE"
+                    );
+                    String resolvedSpotKey = spotKeyMap.getOrDefault(opp.getUnderlying(), opp.getUnderlying());
+                    double[] spotFut = spotFetcher.getSpotAndFutures(resolvedSpotKey, resolvedSpotKey);
                     double futLive = spotFut[1];
 
                     Map<String, Object> lp = new LinkedHashMap<>();

@@ -60,6 +60,10 @@ broker:
   fyers:
     api-key: ${FYERS_API_KEY:}
     redirect-uri: ${FYERS_REDIRECT_URI:http://localhost:8080/api/brokers/fyers/callback}
+  navia:
+    api-key: ${NAVIA_API_KEY:}
+    api-secret: ${NAVIA_API_SECRET:}
+    redirect-uri: ${NAVIA_REDIRECT_URI:http://localhost:8080/api/brokers/navia/callback}
 
 # Stokr UI base URL (used for OAuth callback redirects)
 stokr:

@@ -1307,7 +1307,6 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
       default: return { start: istDate, end: istDate };
     }
   };
-  const pageSize = 25;
 
   const handleSort = (col) => {
     if (sortColumn === col) {

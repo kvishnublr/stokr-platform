@@ -46,6 +46,12 @@ public class BrokerAccount {
     @Column(name = "zerodha_totp_secret", columnDefinition = "TEXT")
     private String zerodhaTotpSecret;
 
+    @Column(name = "navia_api_key", columnDefinition = "TEXT")
+    private String naviaApiKey;
+
+    @Column(name = "navia_api_secret", columnDefinition = "TEXT")
+    private String naviaApiSecret;
+
     @Column(name = "auto_reconnect")
     @Builder.Default
     private Boolean autoReconnect = false;
