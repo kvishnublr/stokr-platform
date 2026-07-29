@@ -25,6 +25,13 @@ const BROKER_META = {
     glow: 'rgba(16,185,129,0.3)',
     primary: false,
   },
+  NAVIA: {
+    color: 'linear-gradient(135deg, #f59e0b, #d97706)',
+    letter: 'N',
+    desc: 'Navia Markets — fire trades via API',
+    glow: 'rgba(245,158,11,0.3)',
+    primary: false,
+  },
 };
 
 const BROKER_OAUTH_MESSAGE = 'stokr_broker_oauth';
@@ -507,7 +514,7 @@ export default function Brokers() {
       <div>
         <SectionTitle color="linear-gradient(180deg, #6366f1, #a78bfa)">Available Brokers</SectionTitle>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '18px' }}>
-          {(supported || ['ZERODHA', 'DHAN', 'FYERS']).map((name, i) => {
+          {(supported || ['ZERODHA', 'DHAN', 'FYERS', 'NAVIA']).map((name, i) => {
             const brokerName = typeof name === 'string' ? name : name.name;
             const meta = BROKER_META[brokerName] || {
               color: 'linear-gradient(135deg, #64748b, #475569)', letter: brokerName[0],
