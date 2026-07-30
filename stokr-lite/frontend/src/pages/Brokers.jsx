@@ -63,10 +63,11 @@ export default function Brokers() {
 
   const [disconnectError, setDisconnectError] = useState(null);
 
-  // Navia API key form state
+  // Navia TOTP form state
   const [naviaFormOpen, setNaviaFormOpen] = useState(false);
-  const [naviaApiKey, setNaviaApiKey] = useState('');
-  const [naviaApiSecret, setNaviaApiSecret] = useState('');
+  const [naviaUid, setNaviaUid] = useState('');
+  const [naviaPassword, setNaviaPassword] = useState('');
+  const [naviaTotpSecret, setNaviaTotpSecret] = useState('');
   const [naviaSaving, setNaviaSaving] = useState(false);
   const [naviaMsg, setNaviaMsg] = useState(null);
 
@@ -121,13 +122,19 @@ export default function Brokers() {
   };
 
   const saveNaviaApiKey = async () => {
-    if (!naviaApiKey.trim()) { setNaviaMsg({ ok: false, text: 'API Key is required' }); return; }
+    if (!naviaUid.trim() || !naviaPassword.trim() || !naviaTotpSecret.trim()) {
+      setNaviaMsg({ ok: false, text: 'UID, Password, and TOTP Secret are all required' }); return;
+    }
     setNaviaSaving(true); setNaviaMsg(null);
     try {
-      await client.post('/brokers/navia/apikey', { apiKey: naviaApiKey.trim(), apiSecret: naviaApiSecret.trim() });
+      await client.post('/brokers/navia/connect', {
+        uid: naviaUid.trim(),
+        password: naviaPassword.trim(),
+        totpSecret: naviaTotpSecret.trim()
+      });
       setNaviaMsg({ ok: true, text: 'Navia connected successfully!' });
       setNaviaFormOpen(false);
-      setNaviaApiKey(''); setNaviaApiSecret('');
+      setNaviaUid(''); setNaviaPassword(''); setNaviaTotpSecret('');
       queryClient.invalidateQueries({ queryKey: ['brokers'] });
       queryClient.invalidateQueries({ queryKey: ['broker-health'] });
       refetchHealth();
@@ -538,7 +545,7 @@ export default function Brokers() {
         </div>
       )}
 
-      {/* Navia API Key Form */}
+      {/* Navia TOTP Form */}
       {naviaFormOpen && (
         <div className="card-crystal animate-fade-in-up" style={{ marginBottom: '28px', padding: '28px',
           border: '2px solid rgba(245,158,11,0.3)', background: 'linear-gradient(135deg, rgba(245,158,11,0.06), rgba(217,119,6,0.03))' }}>
@@ -548,21 +555,27 @@ export default function Brokers() {
               style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
           </div>
           <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-            Enter your Navia API credentials. Get them from <a href="https://web.navia.co.in" target="_blank" rel="noreferrer"
-              style={{ color: '#4f46e5', fontWeight: 600 }}>web.navia.co.in</a> → API Keys.
+            Enter your Navia login credentials. The TOTP secret is from your authenticator app setup.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div>
-              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>API Key</label>
-              <input type="text" value={naviaApiKey} onChange={e => setNaviaApiKey(e.target.value)}
-                placeholder="Enter your Navia API key"
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>Login UID</label>
+              <input type="text" value={naviaUid} onChange={e => setNaviaUid(e.target.value)}
+                placeholder="Enter your Navia login UID"
                 style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
                   background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
             </div>
             <div>
-              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>API Secret (optional)</label>
-              <input type="password" value={naviaApiSecret} onChange={e => setNaviaApiSecret(e.target.value)}
-                placeholder="Enter your Navia API secret (if any)"
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>Password</label>
+              <input type="password" value={naviaPassword} onChange={e => setNaviaPassword(e.target.value)}
+                placeholder="Enter your Navia login password"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
+                  background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>TOTP Secret</label>
+              <input type="text" value={naviaTotpSecret} onChange={e => setNaviaTotpSecret(e.target.value)}
+                placeholder="Enter your Navia TOTP secret (base32 key)"
                 style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
                   background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
             </div>

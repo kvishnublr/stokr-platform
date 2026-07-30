@@ -68,26 +68,32 @@ public class BrokerController {
         }
     }
 
-    @PostMapping("/navia/apikey")
-    public ResponseEntity<Map<String, Object>> connectNaviaApiKey(@RequestBody Map<String, String> body) {
-        String naviaApiKey = body.getOrDefault("apiKey", "").trim();
-        String naviaApiSecret = body.getOrDefault("apiSecret", "").trim();
-        if (naviaApiKey.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "apiKey is required"));
+    @PostMapping("/navia/connect")
+    public ResponseEntity<Map<String, Object>> connectNavia(@RequestBody Map<String, String> body) {
+        String uid = body.getOrDefault("uid", "").trim();
+        String password = body.getOrDefault("password", "").trim();
+        String totpSecret = body.getOrDefault("totpSecret", "").trim();
+        if (uid.isBlank() || password.isBlank() || totpSecret.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "uid, password, and totpSecret are required"));
         }
         try {
             Long userId = SecurityUtils.currentUserId();
             BrokerAdapter adapter = brokerRegistry.getAdapter("NAVIA");
             if (adapter instanceof NaviaAdapter navia) {
-                BrokerAccount account = navia.connectApiKey(userId, naviaApiKey, naviaApiSecret);
-                log.info("Navia API key connected for user {}, account {}", userId, account.getId());
+                BrokerAccount account = navia.connectWithTotp(userId, uid, password, totpSecret);
+                log.info("Navia connected with TOTP for user {}, uid={}, account {}", userId, uid, account.getId());
                 return ResponseEntity.ok(Map.of("status", "ok", "accountId", account.getId(), "broker", "NAVIA"));
             }
             return ResponseEntity.badRequest().body(Map.of("error", "Navia adapter not available"));
         } catch (Exception e) {
-            log.error("Navia API key connection failed", e);
+            log.error("Navia TOTP connection failed", e);
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    @PostMapping("/navia/apikey")
+    public ResponseEntity<Map<String, Object>> connectNaviaApiKey(@RequestBody Map<String, String> body) {
+        return connectNavia(body);
     }
 
     @GetMapping
