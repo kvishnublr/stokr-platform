@@ -27,7 +27,7 @@ public class NaviaAdapter implements BrokerAdapter {
         this.repository = repository;
     }
 
-    private record CachedSession(String token, long expiresAt) {
+    private record CachedSession(String token, String uid, long expiresAt) {
         boolean isExpired() { return System.currentTimeMillis() > expiresAt; }
     }
 
@@ -75,9 +75,13 @@ public class NaviaAdapter implements BrokerAdapter {
         log.info("Navia: logging in with TOTP for uid={}", uid);
 
         Map<String, Object> loginBody = new LinkedHashMap<>();
+        loginBody.put("site", "rocket");
+        loginBody.put("user_name", uid);
         loginBody.put("uid", uid);
+        loginBody.put("password", password);
         loginBody.put("pwd", password);
         loginBody.put("otp", otp);
+        loginBody.put("source", "web");
 
         try {
             String respJson = naviaPost("Login", loginBody, "DEFAULT", null);
@@ -91,9 +95,9 @@ public class NaviaAdapter implements BrokerAdapter {
             if (token == null || token.isBlank()) {
                 throw new RuntimeException("Navia login returned no token");
             }
-            sessionCache.put(account.getId(), new CachedSession(token, System.currentTimeMillis() + 25 * 60 * 1000));
+            sessionCache.put(account.getId(), new CachedSession(token, account.getClientId(), System.currentTimeMillis() + 25 * 60 * 1000));
             log.info("Navia: login successful for uid={}", uid);
-            return token;
+            return account.getClientId() + ":" + token;
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
@@ -141,7 +145,7 @@ public class NaviaAdapter implements BrokerAdapter {
         }
 
         try {
-            String respJson = naviaPost("PlaceOrder", body, "OrderService", accessToken);
+            String respJson = naviaPost("PlaceOrder", body, "OrderService", extractToken(accessToken));
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("Status").asText("");
             String message = root.path("Message").asText("");
@@ -167,7 +171,7 @@ public class NaviaAdapter implements BrokerAdapter {
         body.put("exch", "NFO");
         body.put("orderid", orderId);
         try {
-            naviaPost("CancelOrder", body, "OrderService", accessToken);
+            naviaPost("CancelOrder", body, "OrderService", extractToken(accessToken));
         } catch (Exception e) {
             log.warn("Navia cancel order {} failed: {}", orderId, e.getMessage());
         }
@@ -178,7 +182,7 @@ public class NaviaAdapter implements BrokerAdapter {
         log.info("Navia: fetching positions");
         try {
             Map<String, Object> body = Map.of("uid", extractUid(accessToken));
-            String respJson = naviaPost("PositionBook", body, "OrderService", accessToken);
+            String respJson = naviaPost("PositionBook", body, "OrderService", extractToken(accessToken));
             JsonNode root = MAPPER.readTree(respJson);
             JsonNode positions = root.path("ResponceDataObject").path("Positions");
             List<BrokerPosition> result = new ArrayList<>();
@@ -206,30 +210,56 @@ public class NaviaAdapter implements BrokerAdapter {
 
     @Override
     public BigDecimal getAvailableMargin(String accessToken) {
-        log.info("Navia: fetching margin");
+        log.info("Navia: fetching margin via GetOrderMargin");
         try {
-            String uid = extractUid(accessToken);
-            Map<String, Object> body = Map.of("uid", uid);
-            String respJson = naviaPost("CheckLogin", body, "OrderService", accessToken);
-            JsonNode root = MAPPER.readTree(respJson);
-            String status = root.path("Status").asText("");
-            if (!"OK".equalsIgnoreCase(status)) {
-                log.warn("Navia CheckLogin failed: {}", root.path("Message").asText());
+            String uid = resolveUid(accessToken);
+            if (uid == null) {
+                log.warn("Navia: could not resolve UID from token");
                 return BigDecimal.ZERO;
             }
-            log.info("Navia: session valid for uid={}", uid);
-            return new BigDecimal("100000");
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("uid", uid);
+            body.put("actid", uid);
+            body.put("exch", "NSE");
+            body.put("trantype", "Buy");
+            body.put("tsym", "RELIANCE-EQ");
+            body.put("qty", 1);
+            body.put("prc", "0");
+            body.put("trgprc", "0");
+            body.put("dscqty", 0);
+            body.put("prd", "MIS");
+            body.put("prctyp", "MKT");
+            body.put("ret", "DAY");
+            body.put("ordersource", "Web");
+            body.put("segment", "CASH");
+            body.put("mkt_protection", "0");
+            body.put("remarks", "");
+            body.put("ext_remarks", "");
+            body.put("cl_ord_id", "");
+            body.put("algo_id", "0");
+
+            String respJson = naviaPost("GetOrderMargin", body, "OrderService", extractToken(accessToken));
+            JsonNode root = MAPPER.readTree(respJson);
+            String status = root.path("Status").asText("");
+            if ("OK".equalsIgnoreCase(status)) {
+                JsonNode rd = root.path("ResponceDataObject");
+                BigDecimal margin = new BigDecimal(rd.path("ordermargin").asText("0"));
+                BigDecimal charges = new BigDecimal(rd.path("charges").asText("0"));
+                log.info("Navia: margin={}, charges={}", margin, charges);
+                return margin.add(charges);
+            }
+            log.warn("Navia GetOrderMargin failed: {}", root.path("Message").asText());
         } catch (Exception e) {
             log.warn("Navia getAvailableMargin failed: {}", e.getMessage());
-            return BigDecimal.ZERO;
         }
+        return BigDecimal.ZERO;
     }
 
     @Override
     public String getOrderStatus(String accessToken, String orderId) {
         try {
             Map<String, Object> body = Map.of("uid", extractUid(accessToken));
-            String respJson = naviaPost("OrderBook", body, "OrderService", accessToken);
+            String respJson = naviaPost("OrderBook", body, "OrderService", extractToken(accessToken));
             JsonNode root = MAPPER.readTree(respJson);
             JsonNode orders = root.path("ResponceDataObject").path("AllOrders");
             if (orders.isArray()) {
@@ -248,7 +278,7 @@ public class NaviaAdapter implements BrokerAdapter {
     public List<Map<String, Object>> getOrderBook(String accessToken) {
         try {
             Map<String, Object> body = Map.of("uid", extractUid(accessToken));
-            String respJson = naviaPost("OrderBook", body, "OrderService", accessToken);
+            String respJson = naviaPost("OrderBook", body, "OrderService", extractToken(accessToken));
             JsonNode root = MAPPER.readTree(respJson);
             JsonNode orders = root.path("ResponceDataObject").path("AllOrders");
             List<Map<String, Object>> result = new ArrayList<>();
@@ -309,7 +339,7 @@ public class NaviaAdapter implements BrokerAdapter {
         String bodyJson = MAPPER.writeValueAsString(body);
         String result = http.post()
                 .uri(url)
-                .header("Content-Type", "application/json")
+                .header("Content-Type", "text/plain")
                 .header("Module", module)
                 .header("Source", "WEB")
                 .header("AuthToken", token != null ? token : "DEFAULT")
@@ -322,12 +352,24 @@ public class NaviaAdapter implements BrokerAdapter {
         return result;
     }
 
+    private String resolveUid(String accessToken) {
+        if (accessToken == null) return null;
+        if (accessToken.contains(":")) return accessToken.split(":")[0];
+        for (CachedSession session : sessionCache.values()) {
+            if (accessToken.equals(session.token)) return session.uid;
+        }
+        return accessToken;
+    }
+
+    private String extractToken(String accessToken) {
+        if (accessToken == null) return null;
+        if (accessToken.contains(":")) return accessToken.substring(accessToken.indexOf(':') + 1);
+        return accessToken;
+    }
+
     private String extractUid(String token) {
         if (token == null) return "";
-        if (token.contains(":")) {
-            return token.split(":")[0];
-        }
-        return token;
+        return resolveUid(token);
     }
 
     public static String generateTotp(String secret) {
