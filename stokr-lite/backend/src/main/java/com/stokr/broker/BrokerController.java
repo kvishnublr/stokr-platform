@@ -23,6 +23,7 @@ public class BrokerController {
     private final BrokerService           brokerService;
     private final BrokerAccountRepository brokerAccountRepository;
     private final BrokerTokenRefresher    tokenRefresher;
+    private final BrokerRegistry          brokerRegistry;
 
     private String executionBroker = "PAPER";
 
@@ -64,6 +65,28 @@ public class BrokerController {
             }
         } catch (Exception e) {
             return ResponseEntity.ok(Map.of("ok", false, "message", "Unknown broker: " + broker, "broker", broker.toUpperCase()));
+        }
+    }
+
+    @PostMapping("/navia/apikey")
+    public ResponseEntity<Map<String, Object>> connectNaviaApiKey(@RequestBody Map<String, String> body) {
+        String naviaApiKey = body.getOrDefault("apiKey", "").trim();
+        String naviaApiSecret = body.getOrDefault("apiSecret", "").trim();
+        if (naviaApiKey.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "apiKey is required"));
+        }
+        try {
+            Long userId = SecurityUtils.currentUserId();
+            BrokerAdapter adapter = brokerRegistry.getAdapter("NAVIA");
+            if (adapter instanceof NaviaAdapter navia) {
+                BrokerAccount account = navia.connectApiKey(userId, naviaApiKey, naviaApiSecret);
+                log.info("Navia API key connected for user {}, account {}", userId, account.getId());
+                return ResponseEntity.ok(Map.of("status", "ok", "accountId", account.getId(), "broker", "NAVIA"));
+            }
+            return ResponseEntity.badRequest().body(Map.of("error", "Navia adapter not available"));
+        } catch (Exception e) {
+            log.error("Navia API key connection failed", e);
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 

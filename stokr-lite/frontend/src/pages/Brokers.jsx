@@ -63,6 +63,13 @@ export default function Brokers() {
 
   const [disconnectError, setDisconnectError] = useState(null);
 
+  // Navia API key form state
+  const [naviaFormOpen, setNaviaFormOpen] = useState(false);
+  const [naviaApiKey, setNaviaApiKey] = useState('');
+  const [naviaApiSecret, setNaviaApiSecret] = useState('');
+  const [naviaSaving, setNaviaSaving] = useState(false);
+  const [naviaMsg, setNaviaMsg] = useState(null);
+
   // Auto-reconnect state
   const [arOpen, setArOpen]           = useState(false);
   const [arPassword, setArPassword]   = useState('');
@@ -111,6 +118,22 @@ export default function Brokers() {
       setArMsg({ ok: data.result === 'OK', text: data.result === 'OK' ? 'Reconnected successfully!' : data.result });
       if (data.result === 'OK') { queryClient.invalidateQueries({ queryKey: ['broker-health'] }); refetchHealth(); refetchAr(); }
     } catch(e) { setArTrigger(null); setArMsg({ ok: false, text: e.response?.data?.error || e.message }); }
+  };
+
+  const saveNaviaApiKey = async () => {
+    if (!naviaApiKey.trim()) { setNaviaMsg({ ok: false, text: 'API Key is required' }); return; }
+    setNaviaSaving(true); setNaviaMsg(null);
+    try {
+      await client.post('/brokers/navia/apikey', { apiKey: naviaApiKey.trim(), apiSecret: naviaApiSecret.trim() });
+      setNaviaMsg({ ok: true, text: 'Navia connected successfully!' });
+      setNaviaFormOpen(false);
+      setNaviaApiKey(''); setNaviaApiSecret('');
+      queryClient.invalidateQueries({ queryKey: ['brokers'] });
+      queryClient.invalidateQueries({ queryKey: ['broker-health'] });
+      refetchHealth();
+    } catch(e) {
+      setNaviaMsg({ ok: false, text: e.response?.data?.error || e.message || 'Connection failed' });
+    } finally { setNaviaSaving(false); }
   };
 
   const disconnectMutation = useMutation({
@@ -185,6 +208,11 @@ export default function Brokers() {
   }, [connectingBroker, handleOauthResult]);
 
   const connectBroker = async (brokerName) => {
+    if (brokerName === 'NAVIA') {
+      setNaviaFormOpen(true);
+      setNaviaMsg(null);
+      return;
+    }
     setOauthResult(null);
     setConnectingBroker(brokerName);
     messageReceivedRef.current = false;
@@ -507,6 +535,53 @@ export default function Brokers() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Navia API Key Form */}
+      {naviaFormOpen && (
+        <div className="card-crystal animate-fade-in-up" style={{ marginBottom: '28px', padding: '28px',
+          border: '2px solid rgba(245,158,11,0.3)', background: 'linear-gradient(135deg, rgba(245,158,11,0.06), rgba(217,119,6,0.03))' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Connect Navia Markets</h3>
+            <button onClick={() => setNaviaFormOpen(false)}
+              style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+          </div>
+          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
+            Enter your Navia API credentials. Get them from <a href="https://web.navia.co.in" target="_blank" rel="noreferrer"
+              style={{ color: '#4f46e5', fontWeight: 600 }}>web.navia.co.in</a> → API Keys.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>API Key</label>
+              <input type="text" value={naviaApiKey} onChange={e => setNaviaApiKey(e.target.value)}
+                placeholder="Enter your Navia API key"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
+                  background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>API Secret (optional)</label>
+              <input type="password" value={naviaApiSecret} onChange={e => setNaviaApiSecret(e.target.value)}
+                placeholder="Enter your Navia API secret (if any)"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
+                  background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          {naviaMsg && (
+            <div style={{ padding: '10px 14px', borderRadius: '8px', marginTop: '14px',
+              background: naviaMsg.ok ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+              border: `1.5px solid ${naviaMsg.ok ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+              color: naviaMsg.ok ? '#059669' : '#dc2626', fontSize: '12px', fontWeight: 600 }}>
+              {naviaMsg.ok ? '✅' : '❌'} {naviaMsg.text}
+            </div>
+          )}
+          <button onClick={saveNaviaApiKey} disabled={naviaSaving}
+            style={{ marginTop: '16px', padding: '12px 28px', borderRadius: '12px', border: 'none',
+              background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+              color: 'white', fontWeight: 700, fontSize: '14px', cursor: naviaSaving ? 'not-allowed' : 'pointer',
+              opacity: naviaSaving ? 0.6 : 1 }}>
+            {naviaSaving ? 'Connecting...' : 'Connect Navia'}
+          </button>
         </div>
       )}
 
