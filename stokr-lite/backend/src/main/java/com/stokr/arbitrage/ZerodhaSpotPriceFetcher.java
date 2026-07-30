@@ -21,7 +21,7 @@ public class ZerodhaSpotPriceFetcher {
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper mapper = new ObjectMapper();
 
-    @Value("${zerodha.api-key:$ZERODHA_API_KEY}")
+    @Value("${broker.zerodha.api-key:}")
     private String apiKey;
 
     private final ConcurrentHashMap<String, Double> cache = new ConcurrentHashMap<>();
@@ -73,6 +73,12 @@ public class ZerodhaSpotPriceFetcher {
         try {
             String token = getAuthToken();
             if (token == null) {
+                log.warn("Zerodha auth token unavailable for quote fetch — spot/futures will be 0");
+                return new double[]{0, 0};
+            }
+
+            if (apiKey == null || apiKey.isBlank()) {
+                log.warn("Zerodha API key not configured (broker.zerodha.api-key) — quote fetch will fail");
                 return new double[]{0, 0};
             }
 

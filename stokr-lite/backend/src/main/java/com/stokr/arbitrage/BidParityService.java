@@ -38,20 +38,10 @@ public class BidParityService {
             "FINNIFTY", "NSE:NIFTY FIN SERVICE"
         );
 
-        String yy = String.format("%02d", LocalDate.now().getYear() % 100);
-        String mon = LocalDate.now().getMonth().name().substring(0, 3);
-
-        Map<String, String> futKeys = Map.of(
-            "NIFTY", "NFO:NIFTY" + yy + mon + "FUT",
-            "BANKNIFTY", "NFO:BANKNIFTY" + yy + mon + "FUT",
-            "MIDCPNIFTY", "NFO:MIDCPNIFTY" + yy + mon + "FUT",
-            "FINNIFTY", "NFO:FINNIFTY" + yy + mon + "FUT"
-        );
-
         for (String u : targets) {
             try {
                 String spotKey = spotKeys.getOrDefault(u, "NSE:NIFTY 50");
-                String futKey = futKeys.getOrDefault(u, "NFO:" + u + yy + mon + "FUT");
+                String futKey = FuturesKeyResolver.resolveFuturesKey(u, spotPriceFetcher, spotKey);
 
                 double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
                 double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
