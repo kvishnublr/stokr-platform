@@ -24,6 +24,49 @@ public class BrokerController {
     private final BrokerAccountRepository brokerAccountRepository;
     private final BrokerTokenRefresher    tokenRefresher;
 
+    private String executionBroker = "PAPER";
+
+    @GetMapping("/decoupled-routing")
+    public ResponseEntity<Map<String, Object>> getDecoupledRouting() {
+        return ResponseEntity.ok(Map.of("executionBroker", executionBroker));
+    }
+
+    @PostMapping("/decoupled-routing")
+    public ResponseEntity<Map<String, Object>> setDecoupledRouting(@RequestBody Map<String, String> body) {
+        String broker = body.getOrDefault("executionBroker", "PAPER");
+        this.executionBroker = broker.toUpperCase();
+        log.info("Execution broker changed to {}", this.executionBroker);
+        return ResponseEntity.ok(Map.of("status", "ok", "executionBroker", this.executionBroker));
+    }
+
+    @PostMapping("/test-execution")
+    public ResponseEntity<Map<String, Object>> testExecution(@RequestBody Map<String, String> body) {
+        String broker = body.getOrDefault("broker", "PAPER");
+        try {
+            BrokerAdapter adapter = brokerService.getAdapter(broker);
+            Long userId = SecurityUtils.currentUserId();
+            List<BrokerAccount> accounts = brokerAccountRepository.findByUserIdAndBrokerNameAndStatus(userId, broker.toUpperCase(), "ACTIVE");
+            if ("PAPER".equalsIgnoreCase(broker)) {
+                return ResponseEntity.ok(Map.of("ok", true, "message", "Paper trading is always available", "broker", "PAPER"));
+            }
+            if (accounts.isEmpty()) {
+                return ResponseEntity.ok(Map.of("ok", false, "message", "No active " + broker + " account. Connect " + broker + " first.", "broker", broker.toUpperCase()));
+            }
+            BrokerAccount account = accounts.get(0);
+            if (account.getAccessToken() == null || account.getAccessToken().isBlank()) {
+                return ResponseEntity.ok(Map.of("ok", false, "message", broker + " access token is missing. Reconnect.", "broker", broker.toUpperCase()));
+            }
+            try {
+                var margin = adapter.getAvailableMargin(account.getAccessToken());
+                return ResponseEntity.ok(Map.of("ok", true, "message", broker + " connected. Available margin: " + margin, "broker", broker.toUpperCase()));
+            } catch (Exception e) {
+                return ResponseEntity.ok(Map.of("ok", false, "message", broker + " API error: " + e.getMessage(), "broker", broker.toUpperCase()));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("ok", false, "message", "Unknown broker: " + broker, "broker", broker.toUpperCase()));
+        }
+    }
+
     @GetMapping
     public ResponseEntity<List<BrokerAccount>> getMyBrokers() {
         return ResponseEntity.ok(brokerService.getUserBrokers(SecurityUtils.currentUserId()));
