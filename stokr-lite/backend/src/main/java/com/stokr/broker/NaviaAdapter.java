@@ -316,6 +316,9 @@ public class NaviaAdapter implements BrokerAdapter {
                 .body(bodyJson)
                 .retrieve()
                 .body(String.class);
+        if (result != null && result.charAt(0) == '\uFEFF') {
+            result = result.substring(1);
+        }
         return result;
     }
 
