@@ -59,7 +59,10 @@ public class BrokerController {
             }
             try {
                 var margin = adapter.getAvailableMargin(account.getAccessToken());
-                return ResponseEntity.ok(Map.of("ok", true, "message", broker + " connected. Available margin: " + margin, "broker", broker.toUpperCase()));
+                String msg = "NAVIA".equalsIgnoreCase(broker)
+                    ? broker + " connected & authenticated successfully."
+                    : broker + " connected. Available margin: " + margin;
+                return ResponseEntity.ok(Map.of("ok", true, "message", msg, "broker", broker.toUpperCase()));
             } catch (Exception e) {
                 return ResponseEntity.ok(Map.of("ok", false, "message", broker + " API error: " + e.getMessage(), "broker", broker.toUpperCase()));
             }

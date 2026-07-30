@@ -95,7 +95,7 @@ public class NaviaAdapter implements BrokerAdapter {
             if (token == null || token.isBlank()) {
                 throw new RuntimeException("Navia login returned no token");
             }
-            sessionCache.put(account.getId(), new CachedSession(token, account.getClientId(), System.currentTimeMillis() + 25 * 60 * 1000));
+            sessionCache.put(account.getId(), new CachedSession(token, account.getClientId(), System.currentTimeMillis() + 5 * 60 * 1000));
             log.info("Navia: login successful for uid={}", uid);
             return account.getClientId() + ":" + token;
         } catch (RuntimeException e) {
@@ -217,7 +217,7 @@ public class NaviaAdapter implements BrokerAdapter {
 
     @Override
     public BigDecimal getAvailableMargin(String accessToken) {
-        log.info("Navia: fetching margin via GetOrderMargin");
+        log.info("Navia: checking connectivity via GetOrderMargin");
         try {
             String uid = resolveUid(accessToken);
             if (uid == null) {
@@ -252,8 +252,8 @@ public class NaviaAdapter implements BrokerAdapter {
                 JsonNode rd = root.path("ResponceDataObject");
                 BigDecimal margin = new BigDecimal(rd.path("ordermargin").asText("0"));
                 BigDecimal charges = new BigDecimal(rd.path("charges").asText("0"));
-                log.info("Navia: margin={}, charges={}", margin, charges);
-                return margin.add(charges);
+                log.info("Navia: orderMargin={}, charges={}", margin, charges);
+                return BigDecimal.ONE;
             }
             log.warn("Navia GetOrderMargin failed: {}", root.path("Message").asText());
         } catch (Exception e) {
@@ -346,12 +346,18 @@ public class NaviaAdapter implements BrokerAdapter {
         String bodyJson = MAPPER.writeValueAsString(body);
         String result = doPost(url, bodyJson, module, token);
         if (result != null && result.contains("Authentication Failed")) {
-            log.info("Navia: auth failed on {}, refreshing token and retrying...", activity);
+            log.info("Navia: auth failed on {}, re-logging in and retrying...", activity);
             try {
                 String freshToken = getFreshToken();
                 result = doPost(url, bodyJson, module, extractToken(freshToken));
+                if (result != null && result.contains("Authentication Failed")) {
+                    log.warn("Navia: retry also auth-failed, clearing cache");
+                    sessionCache.clear();
+                    freshToken = getFreshToken();
+                    result = doPost(url, bodyJson, module, extractToken(freshToken));
+                }
             } catch (Exception e) {
-                log.warn("Navia: token refresh failed: {}", e.getMessage());
+                log.warn("Navia: retry login failed: {}", e.getMessage());
             }
         }
         return result;
