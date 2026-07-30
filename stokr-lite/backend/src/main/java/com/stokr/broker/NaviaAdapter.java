@@ -217,7 +217,7 @@ public class NaviaAdapter implements BrokerAdapter {
 
     @Override
     public BigDecimal getAvailableMargin(String accessToken) {
-        log.info("Navia: checking connectivity via GetOrderMargin");
+        log.info("Navia: fetching available margin via GetOrderMargin");
         try {
             String uid = resolveUid(accessToken);
             if (uid == null) {
@@ -248,12 +248,11 @@ public class NaviaAdapter implements BrokerAdapter {
             String respJson = naviaPost("GetOrderMargin", body, "OrderService", extractToken(accessToken));
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("Status").asText("");
-            if ("OK".equalsIgnoreCase(status)) {
+            if ("OK".equalsIgnoreCase(status) || "Ok".equalsIgnoreCase(status)) {
                 JsonNode rd = root.path("ResponceDataObject");
-                BigDecimal margin = new BigDecimal(rd.path("ordermargin").asText("0"));
-                BigDecimal charges = new BigDecimal(rd.path("charges").asText("0"));
-                log.info("Navia: orderMargin={}, charges={}", margin, charges);
-                return BigDecimal.ONE;
+                BigDecimal availableMargin = new BigDecimal(rd.path("AvailableMargin").asText("0"));
+                log.info("Navia: AvailableMargin={}", availableMargin);
+                return availableMargin;
             }
             log.warn("Navia GetOrderMargin failed: {}", root.path("Message").asText());
         } catch (Exception e) {
