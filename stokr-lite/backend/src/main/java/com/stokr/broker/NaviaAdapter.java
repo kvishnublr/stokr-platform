@@ -113,6 +113,13 @@ public class NaviaAdapter implements BrokerAdapter {
         return accessToken;
     }
 
+    private String getFreshToken() {
+        List<BrokerAccount> accounts = repository.findByBrokerNameAndStatus("NAVIA", "ACTIVE");
+        if (accounts.isEmpty()) throw new RuntimeException("No active Navia account");
+        BrokerAccount account = accounts.get(0);
+        return loginWithTotp(account);
+    }
+
     @Override
     public BrokerOrderResponse placeOrder(String accessToken, BrokerOrderRequest request) {
         log.info("Navia: placing order {} {} {} qty={}", request.side(), request.symbol(), request.orderType(), request.quantity());
@@ -337,6 +344,20 @@ public class NaviaAdapter implements BrokerAdapter {
     private String naviaPost(String activity, Map<String, Object> body, String module, String token) throws Exception {
         String url = NAVIA_BASE + activity;
         String bodyJson = MAPPER.writeValueAsString(body);
+        String result = doPost(url, bodyJson, module, token);
+        if (result != null && result.contains("Authentication Failed")) {
+            log.info("Navia: auth failed on {}, refreshing token and retrying...", activity);
+            try {
+                String freshToken = getFreshToken();
+                result = doPost(url, bodyJson, module, extractToken(freshToken));
+            } catch (Exception e) {
+                log.warn("Navia: token refresh failed: {}", e.getMessage());
+            }
+        }
+        return result;
+    }
+
+    private String doPost(String url, String bodyJson, String module, String token) throws Exception {
         String result = http.post()
                 .uri(url)
                 .header("Content-Type", "text/plain")
