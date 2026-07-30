@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import client from '../api/client';
 
 let _toastListeners = [];
 let _toastId = 0;
@@ -65,7 +63,7 @@ export default function OptionArbitrage() {
 
   const fetchBrokerRouting = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/api/brokers/decoupled-routing`);
+      const res = await client.get('/brokers/decoupled-routing');
       if (res.data?.executionBroker) {
         setExecutionBroker(res.data.executionBroker);
       }
@@ -77,7 +75,7 @@ export default function OptionArbitrage() {
   const changeExecutionBroker = async (broker) => {
     setExecutionBroker(broker);
     try {
-      await axios.post(`${API_BASE}/api/brokers/decoupled-routing`, { executionBroker: broker });
+      await client.post('/brokers/decoupled-routing', { executionBroker: broker });
       showToast(`Order Execution Broker updated to ${broker}`, 'info');
     } catch (e) {
       showToast('Failed to update execution broker', 'error');
@@ -87,7 +85,7 @@ export default function OptionArbitrage() {
   const testBrokerConnection = async () => {
     setIsTestingBroker(true);
     try {
-      const res = await axios.post(`${API_BASE}/api/brokers/test-execution`, { broker: executionBroker });
+      const res = await client.post('/brokers/test-execution', { broker: executionBroker });
       if (res.data?.ok) {
         showToast(res.data.message, 'success');
       } else {
@@ -109,7 +107,7 @@ export default function OptionArbitrage() {
     queryKey: ['option-arb-live', underlyings],
     queryFn: async () => {
       const uParam = underlyings.includes('ALL') ? 'ALL' : underlyings.join(',');
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/scan`, { params: { underlying: uParam } });
+      const res = await client.get('/option-arbitrage/scan', { params: { underlying: uParam } });
       return res.data;
     },
     refetchInterval: autoRefresh ? 1000 : false,
@@ -120,7 +118,7 @@ export default function OptionArbitrage() {
   const { data: calendarLiveData } = useQuery({
     queryKey: ['calendar-scan-fallback'],
     queryFn: async () => {
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/calendar/scan`, { params: { underlying: 'ALL' } });
+      const res = await client.get('/option-arbitrage/calendar/scan', { params: { underlying: 'ALL' } });
       return res.data;
     },
     refetchInterval: 3000
@@ -130,7 +128,7 @@ export default function OptionArbitrage() {
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['option-arb-history'],
     queryFn: async () => {
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/history`, { params: { size: 7000 } });
+      const res = await client.get('/option-arbitrage/history', { params: { size: 7000 } });
       return res.data;
     },
     refetchInterval: autoRefresh ? 1000 : false,
@@ -160,7 +158,7 @@ export default function OptionArbitrage() {
 
   const handleExecuteInline = async (opp, lots = 1) => {
     try {
-      await axios.post(`${API_BASE}/api/option-arbitrage/paper-trade/execute`, {
+      await client.post('/option-arbitrage/paper-trade/execute', {
         opportunityId: opp.id,
         underlying: opp.underlying || opp.symbol,
         strike: opp.strike || opp.atmStrike || 0,
@@ -613,7 +611,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const { data, isLoading } = useQuery({
     queryKey: ['bid-parity-scan', underlying],
     queryFn: async () => {
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/bid-parity/scan`, { params: { underlying } });
+      const res = await client.get('/option-arbitrage/bid-parity/scan', { params: { underlying } });
       return res.data;
     },
     refetchInterval: 2000
@@ -723,7 +721,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const { data, isLoading } = useQuery({
     queryKey: ['box-spread-scan', underlying],
     queryFn: async () => {
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/box-spread/scan`, { params: { underlying } });
+      const res = await client.get('/option-arbitrage/box-spread/scan', { params: { underlying } });
       return res.data;
     },
     refetchInterval: 3000
@@ -836,7 +834,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
   const { data, isLoading } = useQuery({
     queryKey: ['iron-condor-scan', underlying],
     queryFn: async () => {
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/iron-condor/scan`, { params: { underlying } });
+      const res = await client.get('/option-arbitrage/iron-condor/scan', { params: { underlying } });
       return res.data;
     },
     refetchInterval: 3000
@@ -949,7 +947,7 @@ function CashSurgeView({ handleExecuteInline, executionBroker }) {
   const { data, isLoading } = useQuery({
     queryKey: ['cash-surge-scan'],
     queryFn: async () => {
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/cash-surge/scan`);
+      const res = await client.get('/option-arbitrage/cash-surge/scan');
       return res.data;
     },
     refetchInterval: 5000
@@ -1046,7 +1044,7 @@ function CashSwingView({ handleExecuteInline, executionBroker }) {
   const { data, isLoading } = useQuery({
     queryKey: ['cash-momentum-scan'],
     queryFn: async () => {
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/cash-momentum/scan`);
+      const res = await client.get('/option-arbitrage/cash-momentum/scan');
       return res.data;
     },
     refetchInterval: 5000
@@ -1144,7 +1142,7 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
   const { data, isLoading } = useQuery({
     queryKey: ['calendar-scan', underlying],
     queryFn: async () => {
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/calendar/scan`, { params: { underlying } });
+      const res = await client.get('/option-arbitrage/calendar/scan', { params: { underlying } });
       return res.data;
     },
     refetchInterval: 3000
@@ -1268,7 +1266,7 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
   const { data: livePnlData } = useQuery({
     queryKey: ['live-pnl'],
     queryFn: async () => {
-      const res = await axios.get(`${API_BASE}/api/option-arbitrage/history/live-pnl`);
+      const res = await client.get('/option-arbitrage/history/live-pnl');
       return res.data?.pnlMap || {};
     },
     refetchInterval: 30000,
