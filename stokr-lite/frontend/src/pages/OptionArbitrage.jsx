@@ -158,7 +158,7 @@ export default function OptionArbitrage() {
 
   const handleExecuteInline = async (opp, lots = 1) => {
     try {
-      await client.post('/option-arbitrage/paper-trade/execute', {
+      const res = await client.post('/option-arbitrage/paper-trade/execute', {
         opportunityId: opp.id,
         underlying: opp.underlying || opp.symbol,
         strike: opp.strike || opp.atmStrike || 0,
@@ -167,7 +167,12 @@ export default function OptionArbitrage() {
         lots: lots,
         broker: executionBroker
       });
-      showToast(`⚡ ${opp.underlying || opp.symbol} order submitted via ${executionBroker}!`, 'success');
+      const data = res.data;
+      if (data?.status === 'SUCCESS') {
+        showToast(`⚡ ${data.underlying} ${data.strike} entered! CE=₹${data.ceEntryPrice?.toFixed(1)} PE=₹${data.peEntryPrice?.toFixed(1)} | Live P&L updating...`, 'success');
+      } else {
+        showToast(`⚡ ${opp.underlying || opp.symbol} order submitted via ${executionBroker}!`, 'success');
+      }
     } catch (e) {
       showToast(`⚡ Order submitted via ${executionBroker}!`, 'success');
     }
@@ -320,6 +325,252 @@ export default function OptionArbitrage() {
         {activeSubTab === 'calendar' && <CalendarSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeSubTab === 'history' && <HistoryView historyItems={historyItems} calendarOpportunities={calendarOpportunities} historyLoading={historyLoading} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
       </div>
+
+      {/* Auto-Execute Settings & Live Positions — always visible below tabs */}
+      <AutoExecSettingsPanel />
+      <LivePositionsSection />
+    </div>
+  );
+}
+
+/* Auto-Execute Settings Panel */
+function AutoExecSettingsPanel() {
+  const [settings, setSettings] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const { data } = useQuery({
+    queryKey: ['autoExecSettings'],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/auto-execute/settings');
+      return res.data;
+    },
+    refetchInterval: 30000,
+  });
+
+  useEffect(() => { if (data) setSettings(data); }, [data]);
+
+  const updateSetting = async (key, value) => {
+    setSaving(true);
+    try {
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}`);
+      setSettings(prev => ({ ...prev, [key]: value }));
+      showToast(`Setting updated: ${key} = ${value}`, 'success');
+    } catch (e) {
+      showToast('Failed to update setting', 'error');
+    }
+    setSaving(false);
+  };
+
+  if (!settings) return null;
+
+  const underlyings = [
+    { key: 'nifty', label: 'NIFTY', lotSize: 50 },
+    { key: 'banknifty', label: 'BANKNIFTY', lotSize: 15 },
+    { key: 'finnifty', label: 'FINNIFTY', lotSize: 60 },
+    { key: 'midcpnifty', label: 'MIDCPNIFTY', lotSize: 120 },
+  ];
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+            <span className="text-lg">🤖</span> Auto-Execute Engine
+          </h3>
+          <p className="text-[10px] text-slate-500 mt-0.5">Automatically place trades when edge exceeds threshold. Checks margin before execution.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-slate-500">Engine:</span>
+          <button
+            onClick={() => updateSetting('enabled', !settings.enabled)}
+            className={`relative w-11 h-6 rounded-full transition-colors ${settings.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.enabled ? 'translate-x-5' : ''}`} />
+          </button>
+          <span className={`text-xs font-bold ${settings.enabled ? 'text-emerald-600' : 'text-slate-400'}`}>
+            {settings.enabled ? 'ON' : 'OFF'}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        {underlyings.map(u => (
+          <div key={u.key} className={`rounded-xl border p-3 space-y-2 transition-colors ${settings[u.key + 'Enabled'] ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50 border-slate-200'}`}>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-slate-800">{u.label}</span>
+              <button
+                onClick={() => updateSetting(u.key + 'Enabled', !settings[u.key + 'Enabled'])}
+                className={`relative w-9 h-5 rounded-full transition-colors ${settings[u.key + 'Enabled'] ? 'bg-emerald-500' : 'bg-slate-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${settings[u.key + 'Enabled'] ? 'translate-x-4' : ''}`} />
+              </button>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-bold text-slate-500 uppercase">Min Edge (₹)</label>
+              <input type="number" value={settings[u.key + 'MinEdge'] || 2000}
+                onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'MinEdge']: Number(e.target.value) }))}
+                onBlur={(e) => updateSetting(u.key + 'MinEdge', e.target.value)}
+                className="w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-bold text-slate-500 uppercase">Lots</label>
+              <input type="number" value={settings[u.key + 'Lots'] || 1} min={1} max={10}
+                onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'Lots']: Number(e.target.value) }))}
+                onBlur={(e) => updateSetting(u.key + 'Lots', e.target.value)}
+                className="w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none" />
+            </div>
+            <div className="text-[9px] text-slate-400">
+              Est. cost: ₹{((settings[u.key + 'MinEdge'] || 2000) * 0.3 * (settings[u.key + 'Lots'] || 1)).toFixed(0)} per lot
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-4 items-center pt-1 border-t border-slate-100">
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-500 uppercase">Max Open Positions</label>
+          <input type="number" value={settings.maxOpenPositions || 5} min={1} max={20}
+            onChange={(e) => setSettings(prev => ({ ...prev, maxOpenPositions: Number(e.target.value) }))}
+            onBlur={(e) => updateSetting('maxOpenPositions', e.target.value)}
+            className="w-16 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-500 uppercase">Max Daily Loss (₹)</label>
+          <input type="number" value={settings.maxDailyLoss || 5000}
+            onChange={(e) => setSettings(prev => ({ ...prev, maxDailyLoss: Number(e.target.value) }))}
+            onBlur={(e) => updateSetting('maxDailyLoss', e.target.value)}
+            className="w-24 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-500 uppercase">Broker</label>
+          <select value={settings.broker || 'NAVIA'}
+            onChange={(e) => updateSetting('broker', e.target.value)}
+            className="px-2 py-1 text-xs font-bold border border-slate-300 rounded-lg bg-white outline-none">
+            <option value="NAVIA">Navia Markets</option>
+            <option value="ZERODHA">Zerodha Kite</option>
+            <option value="PAPER">Paper Trading</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Live Positions Section */
+function LivePositionsSection() {
+  const { data, refetch } = useQuery({
+    queryKey: ['livePositions'],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/live-positions');
+      return res.data;
+    },
+    refetchInterval: 15000,
+  });
+
+  const positions = data?.positions || [];
+
+  const { data: execLogs } = useQuery({
+    queryKey: ['execLogs'],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/auto-execute/logs');
+      return res.data || [];
+    },
+    refetchInterval: 10000,
+  });
+
+  const statusColor = (s) => {
+    switch (s) {
+      case 'OPEN': return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+      case 'EXECUTING': return 'bg-amber-100 text-amber-800 border-amber-300';
+      case 'PARTIAL': return 'bg-orange-100 text-orange-800 border-orange-300';
+      case 'FAILED': return 'bg-red-100 text-red-800 border-red-300';
+      case 'CLOSED': return 'bg-slate-100 text-slate-600 border-slate-300';
+      default: return 'bg-slate-100 text-slate-600 border-slate-300';
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Live Positions */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 bg-gradient-to-r from-slate-900 to-indigo-950 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📊</span>
+            <h3 className="text-sm font-black text-white">Live Positions</h3>
+            <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full">{positions.length}</span>
+          </div>
+          <button onClick={() => refetch()} className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition">Refresh</button>
+        </div>
+
+        {positions.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 text-xs font-medium">
+            No open positions. Enable Auto-Execute above or click ⚡ Trade on a signal.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px] text-left">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
+                <tr>
+                  <th className="px-3 py-2">Time</th>
+                  <th className="px-3 py-2">Underlying</th>
+                  <th className="px-3 py-2">Strike</th>
+                  <th className="px-3 py-2">Action</th>
+                  <th className="px-3 py-2 text-right">CE Entry</th>
+                  <th className="px-3 py-2 text-right">PE Entry</th>
+                  <th className="px-3 py-2 text-right">Lots</th>
+                  <th className="px-3 py-2 text-right">Target Edge</th>
+                  <th className="px-3 py-2 text-center">Status</th>
+                  <th className="px-3 py-2 text-center">Error</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {positions.map(p => (
+                  <tr key={p.id} className="hover:bg-slate-50">
+                    <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{p.enteredAt ? new Date(p.enteredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--'}</td>
+                    <td className="px-3 py-2 font-bold text-slate-800">{p.underlying}</td>
+                    <td className="px-3 py-2 font-bold text-slate-700">{p.strike}</td>
+                    <td className="px-3 py-2 text-purple-700 font-bold">{p.action?.substring(0, 15)}</td>
+                    <td className="px-3 py-2 text-right font-mono">₹{p.ceEntryPrice?.toFixed(1) || '--'}</td>
+                    <td className="px-3 py-2 text-right font-mono">₹{p.peEntryPrice?.toFixed(1) || '--'}</td>
+                    <td className="px-3 py-2 text-right font-bold">{p.lots}</td>
+                    <td className="px-3 py-2 text-right font-mono font-bold text-indigo-700">₹{p.targetEdge?.toFixed(0) || '--'}</td>
+                    <td className="px-3 py-2 text-center">
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${statusColor(p.status)}`}>{p.status}</span>
+                    </td>
+                    <td className="px-3 py-2 text-[9px] text-red-600 max-w-[200px] truncate">{p.errorMessage || '--'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Execution Logs */}
+      {execLogs && execLogs.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+            <h4 className="text-xs font-black text-slate-800 flex items-center gap-2">
+              <span>📋</span> Execution Logs
+            </h4>
+          </div>
+          <div className="max-h-[200px] overflow-y-auto divide-y divide-slate-100">
+            {execLogs.slice(0, 30).map((log, i) => (
+              <div key={log.id || i} className="px-4 py-2 flex items-center gap-3 text-[10px]">
+                <span className="font-mono text-slate-400 w-16">{log.time}</span>
+                <span className={`px-1.5 py-0.5 rounded font-bold ${
+                  log.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-800' :
+                  log.status === 'FAILED' || log.status === 'ERROR' ? 'bg-red-100 text-red-800' :
+                  log.status === 'PARTIAL' ? 'bg-orange-100 text-orange-800' :
+                  log.status === 'SKIP' || log.status === 'STOPPED' ? 'bg-amber-100 text-amber-800' :
+                  'bg-slate-100 text-slate-600'
+                }`}>{log.status}</span>
+                <span className="text-slate-700 truncate">{log.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

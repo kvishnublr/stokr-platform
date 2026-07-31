@@ -39,8 +39,9 @@ public class OptionArbHistoryService {
     /**
      * Save detected opportunities from a scan result
      */
-    public void saveOpportunities(List<ArbitrageOpportunity> opportunities, String underlying, String strategyType) {
-        if (opportunities == null || opportunities.isEmpty()) return;
+    public List<OptionArbOpportunity> saveOpportunities(List<ArbitrageOpportunity> opportunities, String underlying, String strategyType) {
+        List<OptionArbOpportunity> saved = new ArrayList<>();
+        if (opportunities == null || opportunities.isEmpty()) return saved;
 
         for (ArbitrageOpportunity opp : opportunities) {
             try {
@@ -83,11 +84,13 @@ public class OptionArbHistoryService {
                 }
 
                 repository.save(entity);
+                saved.add(entity);
             } catch (Exception e) {
                 log.error("Failed to save opportunity: {}", e.getMessage());
             }
         }
         log.info("Saved {} opportunities for {}", opportunities.size(), underlying);
+        return saved;
     }
 
     public String determineStatus(LocalDate expiryDate) {

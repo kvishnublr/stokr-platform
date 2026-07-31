@@ -15,6 +15,14 @@ public interface OptionArbOpportunityRepository extends JpaRepository<OptionArbO
 
     List<OptionArbOpportunity> findByStatusOrderByScanTimeDesc(String status);
 
+    List<OptionArbOpportunity> findByStatus(String status);
+
+    @Query("SELECT o FROM OptionArbOpportunity o WHERE o.status = :status AND o.scanTime >= :since ORDER BY o.scanTime DESC")
+    List<OptionArbOpportunity> findRecentByStatus(@Param("status") String status, @Param("since") LocalDateTime since);
+
+    @Query(value = "SELECT * FROM option_arb_opportunities WHERE status = :status AND scan_time >= :since ORDER BY scan_time DESC LIMIT :maxRows", nativeQuery = true)
+    List<OptionArbOpportunity> findRecentByStatusLimited(@Param("status") String status, @Param("since") LocalDateTime since, @Param("maxRows") int maxRows);
+
     @Query("SELECT o FROM OptionArbOpportunity o WHERE o.status = :status AND o.scanTime >= :start AND o.scanTime < :end ORDER BY o.scanTime DESC")
     List<OptionArbOpportunity> findByStatusOrderByScanTimeBetween(@Param("status") String status, @Param("start") java.time.LocalDateTime start, @Param("end") java.time.LocalDateTime end);
 
