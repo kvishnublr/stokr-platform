@@ -509,7 +509,7 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
-    @PostMapping("/paper-trade/execute")
+    @PostMapping(value = "/paper-trade/execute", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> executePaperTrade(@RequestBody Map<String, Object> body) {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
