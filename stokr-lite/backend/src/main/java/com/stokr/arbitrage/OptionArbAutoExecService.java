@@ -121,6 +121,8 @@ public class OptionArbAutoExecService {
             return;
         }
 
+        String strategyFilter = (String) settings.getOrDefault("strategyFilter", "ALL");
+
         for (OptionArbOpportunity opp : newOpps) {
             if (currentOpen >= maxPositions) break;
             if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;
@@ -128,6 +130,11 @@ public class OptionArbAutoExecService {
             String key = opp.getUnderlying().toLowerCase();
             boolean enabled = Boolean.TRUE.equals(settings.get(key + "Enabled"));
             if (!enabled) continue;
+
+            String stratType = opp.getStrategyType() != null ? opp.getStrategyType().toUpperCase() : "";
+            String oppAction = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+            if ("PARITY".equals(strategyFilter) && !stratType.contains("PARITY") && !stratType.contains("BID")) continue;
+            if ("BOX".equals(strategyFilter) && !stratType.contains("BOX")) continue;
 
             double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 2000.0)).doubleValue();
             if (opp.getEdgeAfterCosts().doubleValue() < minEdge) continue;

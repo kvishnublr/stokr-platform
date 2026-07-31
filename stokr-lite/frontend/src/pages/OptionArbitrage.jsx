@@ -35,6 +35,18 @@ const TOAST_STYLES = {
   info: 'bg-indigo-600 text-white',
 };
 
+function notifyBrowser(title, body) {
+  if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body, icon: '/favicon.ico' });
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(p => {
+        if (p === 'granted') new Notification(title, { body, icon: '/favicon.ico' });
+      });
+    }
+  }
+}
+
 function ToastContainer({ toasts, dismiss }) {
   if (!toasts || toasts.length === 0) return null;
   return (
@@ -104,6 +116,9 @@ export default function OptionArbitrage() {
 
   useEffect(() => {
     fetchBrokerRouting();
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
   }, []);
 
   // Primary Live Arbitrage Signals Query
@@ -173,12 +188,20 @@ export default function OptionArbitrage() {
       });
       const data = res.data;
       if (data?.status === 'SUCCESS') {
-        showToast(`⚡ ${data.underlying} ${data.strike} entered! CE=₹${data.ceEntryPrice?.toFixed(1)} PE=₹${data.peEntryPrice?.toFixed(1)} | Live P&L updating...`, 'success');
+        const msg = `${data.underlying} ${data.strike} entered! CE=₹${data.ceEntryPrice?.toFixed(1)} PE=₹${data.peEntryPrice?.toFixed(1)}`;
+        showToast(`⚡ ${msg}`, 'success');
+        notifyBrowser('Trade Entered', msg);
+      } else if (data?.status === 'ERROR') {
+        showToast(`❌ Trade failed: ${data.message || 'Unknown error'}`, 'error');
+        notifyBrowser('Trade Failed', data.message || 'Unknown error');
       } else {
-        showToast(`⚡ ${opp.underlying || opp.symbol} order submitted via ${executionBroker}!`, 'success');
+        showToast(`⚡ Order submitted via ${executionBroker}!`, 'success');
+        notifyBrowser('Order Submitted', `${opp.underlying} order via ${executionBroker}`);
       }
     } catch (e) {
-      showToast(`⚡ Order submitted via ${executionBroker}!`, 'success');
+      const errMsg = e.response?.data?.message || e.message || 'Network error';
+      showToast(`❌ Trade failed: ${errMsg}`, 'error');
+      notifyBrowser('Trade Failed', errMsg);
     }
   };
 
@@ -349,7 +372,7 @@ export default function OptionArbitrage() {
         {activeSubTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeSubTab === 'cashswing' && <CashSwingView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeSubTab === 'calendar' && <CalendarSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeSubTab === 'history' && <HistoryView historyItems={historyItems} calendarOpportunities={calendarOpportunities} historyLoading={historyLoading} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeSubTab === 'history' && <HistoryView historyItems={historyItems} calendarOpportunities={calendarOpportunities} historyLoading={historyLoading} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={underlyings} />}
       </div>
     </div>
   );
@@ -450,6 +473,21 @@ function AutoExecSettingsPanel() {
 
       <div className="flex flex-wrap gap-4 items-center pt-1 border-t border-slate-100">
         <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-500 uppercase">Strategy Filter</label>
+          <div className="flex items-center gap-1">
+            {['ALL', 'PARITY', 'BOX'].map(s => (
+              <button key={s}
+                onClick={() => updateSetting('strategyFilter', s)}
+                className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${
+                  (settings.strategyFilter || 'ALL') === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {s === 'ALL' ? '🔀 All' : s === 'PARITY' ? '⚡ Parity' : '💎 Box'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-1">
           <label className="text-[9px] font-bold text-slate-500 uppercase">Max Open Positions</label>
           <input type="number" value={settings.maxOpenPositions || 5} min={1} max={20}
             onChange={(e) => setSettings(prev => ({ ...prev, maxOpenPositions: Number(e.target.value) }))}
@@ -480,6 +518,8 @@ function AutoExecSettingsPanel() {
 
 /* Live Positions Section */
 function LivePositionsSection() {
+  const lastLogCountRef = React.useRef(0);
+
   const { data, refetch } = useQuery({
     queryKey: ['livePositions'],
     queryFn: async () => {
@@ -499,6 +539,27 @@ function LivePositionsSection() {
     },
     refetchInterval: 10000,
   });
+
+  React.useEffect(() => {
+    if (execLogs && execLogs.length > lastLogCountRef.current) {
+      const newLogs = execLogs.slice(0, execLogs.length - lastLogCountRef.current);
+      newLogs.forEach(log => {
+        const type = log.type || '';
+        const status = log.status || '';
+        const detail = log.detail || '';
+        if (type === 'SIGNAL' && status === 'FIRING') {
+          notifyBrowser('Auto-Trade: Signal Fired', detail);
+        } else if (type === 'MARGIN' && status === 'SKIP') {
+          notifyBrowser('Auto-Trade: Margin Insufficient', detail);
+        } else if (type === 'RISK' && status === 'STOPPED') {
+          notifyBrowser('Auto-Trade: Risk Limit Hit', detail);
+        } else if (status === 'FAILED') {
+          notifyBrowser('Auto-Trade: Execution Failed', detail);
+        }
+      });
+    }
+    lastLogCountRef.current = execLogs?.length || 0;
+  }, [execLogs]);
 
   const statusColor = (s) => {
     switch (s) {
@@ -1522,9 +1583,10 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
 }
 
 /* 8. HISTORY VIEW */
-function HistoryView({ historyItems, calendarOpportunities, historyLoading, handleExecuteInline, executionBroker }) {
+function HistoryView({ historyItems, calendarOpportunities, historyLoading, handleExecuteInline, executionBroker, underlyings }) {
   const [strategyFilter, setStrategyFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [underlyingFilter, setUnderlyingFilter] = useState('ALL');
   const [minEdgeFilter, setMinEdgeFilter] = useState(300);
   const [customMinEdge, setCustomMinEdge] = useState('300');
   const [dateRange, setDateRange] = useState('TODAY');
@@ -1536,8 +1598,14 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 25;
 
+  const [pnlQueryTick, setPnlQueryTick] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setPnlQueryTick(t => t + 1), 10000);
+    return () => clearInterval(iv);
+  }, []);
+
   const { data: livePnlData } = useQuery({
-    queryKey: ['live-pnl', historyItems?.length],
+    queryKey: ['live-pnl', pnlQueryTick],
     queryFn: async () => {
       const runningIds = (historyItems || [])
         .filter(i => {
@@ -1545,15 +1613,15 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
           return s === 'RUNNING' || s === 'OPEN';
         })
         .map(i => i.id)
-        .slice(0, 300);
+        .slice(0, 500);
       if (runningIds.length === 0) return {};
       const res = await client.get('/option-arbitrage/history/live-pnl', {
         params: { ids: runningIds.join(',') }
       });
       return res.data?.pnlMap || {};
     },
-    refetchInterval: 15000,
-    staleTime: 10000,
+    refetchInterval: 10000,
+    staleTime: 8000,
     enabled: (historyItems || []).length > 0,
   });
 
@@ -1618,6 +1686,8 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
       if (statusFilter === 'RUNNING' && statusStr !== 'RUNNING' && statusStr !== 'OPEN') return false;
       if (statusFilter === 'EXITED' && statusStr !== 'EXITED' && statusStr !== 'CLOSED' && statusStr !== 'EXECUTED') return false;
 
+      if (underlyingFilter !== 'ALL' && item.underlying !== underlyingFilter) return false;
+
       return true;
     });
 
@@ -1681,7 +1751,7 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
       if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [historyItems, calendarOpportunities, strategyFilter, statusFilter, minEdgeFilter, dateRange, customStartDate, customEndDate, livePnlMap, sortColumn, sortDirection]);
+  }, [historyItems, calendarOpportunities, strategyFilter, statusFilter, underlyingFilter, minEdgeFilter, dateRange, customStartDate, customEndDate, livePnlMap, sortColumn, sortDirection]);
 
    const countByEdge = (min) => {
      const { start, end } = getDateFilter();
@@ -1775,6 +1845,21 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
                   }`}
                 >
                   {s.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Underlying Filter */}
+            <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+                <button
+                  key={u}
+                  onClick={() => { setUnderlyingFilter(u); setCurrentPage(1); }}
+                  className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${
+                    underlyingFilter === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {u}
                 </button>
               ))}
             </div>
