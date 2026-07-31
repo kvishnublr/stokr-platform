@@ -60,6 +60,10 @@ export default function OptionArbitrage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [executionBroker, setExecutionBroker] = useState('PAPER');
   const [isTestingBroker, setIsTestingBroker] = useState(false);
+  const [maxSignals, setMaxSignals] = useState(() => {
+    const saved = localStorage.getItem('stokr_max_signals');
+    return saved ? parseInt(saved) : 500;
+  });
 
   const fetchBrokerRouting = async () => {
     try {
@@ -126,13 +130,13 @@ export default function OptionArbitrage() {
 
   // History & Signals Log Query
   const { data: historyData, isLoading: historyLoading } = useQuery({
-    queryKey: ['option-arb-history'],
+    queryKey: ['option-arb-history', maxSignals],
     queryFn: async () => {
-      const res = await client.get('/option-arbitrage/history', { params: { size: 7000 } });
+      const res = await client.get('/option-arbitrage/history', { params: { size: maxSignals } });
       return res.data;
     },
-    refetchInterval: autoRefresh ? 1000 : false,
-    staleTime: 500,
+    refetchInterval: autoRefresh ? 5000 : false,
+    staleTime: 3000,
   });
 
   const opportunities = liveData?.opportunities || [];
@@ -260,13 +264,33 @@ export default function OptionArbitrage() {
         </div>
 
         <div className="flex items-center gap-2 px-2">
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] font-bold text-slate-500 uppercase">Max Signals:</span>
+            <select
+              value={maxSignals}
+              onChange={(e) => {
+                const v = parseInt(e.target.value);
+                setMaxSignals(v);
+                localStorage.setItem('stokr_max_signals', String(v));
+              }}
+              className="px-2 py-1 text-[10px] font-bold border border-slate-300 rounded-lg bg-white outline-none"
+            >
+              <option value={100}>100</option>
+              <option value={250}>250</option>
+              <option value={500}>500</option>
+              <option value={1000}>1000</option>
+              <option value={2000}>2000</option>
+              <option value={5000}>5000</option>
+              <option value={7000}>7000 (All)</option>
+            </select>
+          </div>
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
               autoRefresh ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-100 text-slate-600'
             }`}
           >
-            {autoRefresh ? '⚡ 1-Sec Live Tick: ON' : '⏱️ Auto-Refresh: OFF'}
+            {autoRefresh ? '⚡ Live Tick: ON' : '⏱️ Auto-Refresh: OFF'}
           </button>
         </div>
       </div>
@@ -277,6 +301,7 @@ export default function OptionArbitrage() {
           <>
             <SubTabButton id="signals" label="⚡ Live Arbitrage Signals" active={activeSubTab} onClick={setActiveSubTab} count={opportunities.length} />
             <SubTabButton id="bidparity" label="🎯 Bid Parity Scanner" active={activeSubTab} onClick={setActiveSubTab} />
+            <SubTabButton id="autotrade" label="🤖 Auto-Trade Engine" active={activeSubTab} onClick={setActiveSubTab} />
             <SubTabButton id="ironcondor" label="🛡️ 0DTE Iron Condor" active={activeSubTab} onClick={setActiveSubTab} />
             <SubTabButton id="cashsurge" label="🔥 10%+ Cash Surge" active={activeSubTab} onClick={setActiveSubTab} />
           </>
@@ -318,6 +343,7 @@ export default function OptionArbitrage() {
         )}
 
         {activeSubTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeSubTab === 'autotrade' && <><AutoExecSettingsPanel /><LivePositionsSection /></>}
         {activeSubTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeSubTab === 'ironcondor' && <IronCondorView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeSubTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
@@ -325,10 +351,6 @@ export default function OptionArbitrage() {
         {activeSubTab === 'calendar' && <CalendarSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeSubTab === 'history' && <HistoryView historyItems={historyItems} calendarOpportunities={calendarOpportunities} historyLoading={historyLoading} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
       </div>
-
-      {/* Auto-Execute Settings & Live Positions — always visible below tabs */}
-      <AutoExecSettingsPanel />
-      <LivePositionsSection />
     </div>
   );
 }
@@ -1515,13 +1537,24 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
   const pageSize = 25;
 
   const { data: livePnlData } = useQuery({
-    queryKey: ['live-pnl'],
+    queryKey: ['live-pnl', historyItems?.length],
     queryFn: async () => {
-      const res = await client.get('/option-arbitrage/history/live-pnl');
+      const runningIds = (historyItems || [])
+        .filter(i => {
+          const s = String(i.status || 'RUNNING').toUpperCase();
+          return s === 'RUNNING' || s === 'OPEN';
+        })
+        .map(i => i.id)
+        .slice(0, 300);
+      if (runningIds.length === 0) return {};
+      const res = await client.get('/option-arbitrage/history/live-pnl', {
+        params: { ids: runningIds.join(',') }
+      });
       return res.data?.pnlMap || {};
     },
-    refetchInterval: 30000,
-    staleTime: 15000,
+    refetchInterval: 15000,
+    staleTime: 10000,
+    enabled: (historyItems || []).length > 0,
   });
 
   const livePnlMap = livePnlData || {};

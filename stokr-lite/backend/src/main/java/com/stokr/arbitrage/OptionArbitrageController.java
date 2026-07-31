@@ -370,7 +370,8 @@ public class OptionArbitrageController {
     }
 
     @GetMapping("/history/live-pnl")
-    public ResponseEntity<Map<String, Object>> livePnl() {
+    public ResponseEntity<Map<String, Object>> livePnl(
+            @RequestParam(required = false) String ids) {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         try {
@@ -378,13 +379,22 @@ public class OptionArbitrageController {
             LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
             boolean marketOpen = !nowIST.isBefore(LocalTime.of(9, 15)) && !nowIST.isAfter(LocalTime.of(15, 30));
 
-            LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
-            LocalDateTime since = today.minusDays(1).atStartOfDay();
             List<OptionArbOpportunity> allOpen = new ArrayList<>();
-            allOpen.addAll(historyService.getRepository().findRecentByStatusLimited("RUNNING", since, 50));
-            allOpen.addAll(historyService.getRepository().findRecentByStatusLimited("OPEN", since, 25));
-            allOpen.addAll(historyService.getRepository().findRecentByStatusLimited("DETECTED", since, 25));
-            allOpen = allOpen.stream().distinct().limit(50).collect(Collectors.toList());
+            if (ids != null && !ids.isEmpty()) {
+                List<Long> idList = Arrays.stream(ids.split(","))
+                    .map(String::trim).filter(s -> !s.isEmpty())
+                    .map(Long::parseLong).collect(Collectors.toList());
+                if (!idList.isEmpty()) {
+                    allOpen.addAll(historyService.getRepository().findAllById(idList));
+                }
+            } else {
+                LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+                LocalDateTime since = today.minusDays(1).atStartOfDay();
+                allOpen.addAll(historyService.getRepository().findRecentByStatusLimited("RUNNING", since, 500));
+                allOpen.addAll(historyService.getRepository().findRecentByStatusLimited("OPEN", since, 100));
+                allOpen.addAll(historyService.getRepository().findRecentByStatusLimited("DETECTED", since, 100));
+                allOpen = allOpen.stream().distinct().limit(500).collect(Collectors.toList());
+            }
 
             Map<String, OptionChainService.OptionQuote> allQuotes = Map.of();
             if (marketOpen) {
