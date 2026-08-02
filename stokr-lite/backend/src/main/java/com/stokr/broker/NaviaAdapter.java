@@ -128,12 +128,12 @@ public class NaviaAdapter implements BrokerAdapter {
         body.put("uid", extractUid(accessToken));
         body.put("actid", extractUid(accessToken));
         body.put("exch", request.exchange() != null ? request.exchange() : "NFO");
-        body.put("trantype", request.side().name());
+        body.put("trantype", normalizeSide(request.side()));
         body.put("tsym", request.symbol());
         body.put("qty", request.quantity());
         body.put("trgprc", "0");
         body.put("dscqty", 0);
-        body.put("prd", request.productType() != null ? request.productType() : "MIS");
+        body.put("prd", normalizeProduct(request.productType()));
         body.put("ret", "DAY");
         body.put("ordersource", "Web");
         body.put("segment", "FNO");
@@ -144,7 +144,7 @@ public class NaviaAdapter implements BrokerAdapter {
         body.put("algo_id", "0");
 
         if (request.price() != null && request.price() > 0) {
-            body.put("prctyp", "LIMIT");
+            body.put("prctyp", "LMT");
             body.put("prc", String.valueOf(request.price()));
         } else {
             body.put("prctyp", "MKT");
@@ -157,7 +157,19 @@ public class NaviaAdapter implements BrokerAdapter {
             String status = root.path("Status").asText("");
             String message = root.path("Message").asText("");
             if ("OK".equalsIgnoreCase(status)) {
-                String orderId = root.path("ResponceDataObject").path("cl_ord_id").asText(null);
+                JsonNode rd = root.path("ResponceDataObject");
+                String orderId = firstNonBlank(
+                        rd.path("norenorderno").asText(null),
+                        rd.path("NorenOrdNo").asText(null),
+                        rd.path("nestOrderNumber").asText(null),
+                        rd.path("orderid").asText(null),
+                        rd.path("OrderNo").asText(null),
+                        rd.path("cl_ord_id").asText(null)
+                );
+                if (orderId == null || orderId.isBlank()) {
+                    log.warn("Navia PlaceOrder OK but no order id in response: {}", respJson);
+                    return new BrokerOrderResponse(null, "REJECTED", "OK but missing order id: " + message);
+                }
                 log.info("Navia order placed: {} -> {}", request.symbol(), orderId);
                 return new BrokerOrderResponse(orderId, "OPEN", message);
             }
@@ -224,21 +236,43 @@ public class NaviaAdapter implements BrokerAdapter {
                 log.warn("Navia: could not resolve UID from token");
                 return BigDecimal.ZERO;
             }
+            // Probe F&O first (NRML) with near-month NIFTY futures tsym
+            String futTsym = currentNiftyFutTsym();
+            BigDecimal fno = probeMargin(accessToken, uid, "NFO", futTsym, "FNO", "NRML");
+            if (fno != null && fno.compareTo(BigDecimal.ZERO) > 0) {
+                log.info("Navia: F&O AvailableMargin={} (tsym={})", fno, futTsym);
+                return fno;
+            }
+            // Fallback cash probe (known-working path on Contabo)
+            BigDecimal cash = probeMargin(accessToken, uid, "NSE", "RELIANCE-EQ", "CASH", "MIS");
+            if (cash != null) {
+                log.info("Navia: Cash AvailableMargin={}", cash);
+                return cash;
+            }
+        } catch (Exception e) {
+            log.warn("Navia getAvailableMargin failed: {}", e.getMessage());
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private BigDecimal probeMargin(String accessToken, String uid, String exch, String tsym,
+                                   String segment, String prd) {
+        try {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("uid", uid);
             body.put("actid", uid);
-            body.put("exch", "NSE");
-            body.put("trantype", "Buy");
-            body.put("tsym", "RELIANCE-EQ");
+            body.put("exch", exch);
+            body.put("trantype", "B");
+            body.put("tsym", tsym);
             body.put("qty", 1);
             body.put("prc", "0");
             body.put("trgprc", "0");
             body.put("dscqty", 0);
-            body.put("prd", "MIS");
+            body.put("prd", prd);
             body.put("prctyp", "MKT");
             body.put("ret", "DAY");
             body.put("ordersource", "Web");
-            body.put("segment", "CASH");
+            body.put("segment", segment);
             body.put("mkt_protection", "0");
             body.put("remarks", "");
             body.put("ext_remarks", "");
@@ -248,17 +282,69 @@ public class NaviaAdapter implements BrokerAdapter {
             String respJson = naviaPost("GetOrderMargin", body, "OrderService", extractToken(accessToken));
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("Status").asText("");
-            if ("OK".equalsIgnoreCase(status) || "Ok".equalsIgnoreCase(status)) {
-                JsonNode rd = root.path("ResponceDataObject");
-                BigDecimal availableMargin = new BigDecimal(rd.path("AvailableMargin").asText("0"));
-                log.info("Navia: AvailableMargin={}", availableMargin);
-                return availableMargin;
+            if (!"OK".equalsIgnoreCase(status) && !"Ok".equalsIgnoreCase(status)) {
+                log.warn("Navia GetOrderMargin {}/{} failed: {}", exch, tsym, root.path("Message").asText());
+                return null;
             }
-            log.warn("Navia GetOrderMargin failed: {}", root.path("Message").asText());
+            JsonNode rd = root.path("ResponceDataObject");
+            String[] fields = {
+                    "AvailableMargin", "availablemargin", "CashMarginAvailable",
+                    "NetAvailable", "MarginAvailable", "cash", "Collateral"
+            };
+            for (String f : fields) {
+                String raw = rd.path(f).asText(null);
+                if (raw != null && !raw.isBlank()) {
+                    try {
+                        BigDecimal v = new BigDecimal(raw.replace(",", ""));
+                        if (v.compareTo(BigDecimal.ZERO) >= 0) return v;
+                    } catch (Exception ignored) {}
+                }
+            }
+            log.warn("Navia GetOrderMargin OK but no margin fields: {}", respJson);
         } catch (Exception e) {
-            log.warn("Navia getAvailableMargin failed: {}", e.getMessage());
+            log.warn("Navia probeMargin {} failed: {}", tsym, e.getMessage());
         }
-        return BigDecimal.ZERO;
+        return null;
+    }
+
+    private static String normalizeSide(BrokerOrderRequest.Side side) {
+        if (side == null) return "B";
+        return side == BrokerOrderRequest.Side.BUY ? "B" : "S";
+    }
+
+    /** Navia/Noren product codes: M=NRML, I=MIS, C=CNC. Also accept full names. */
+    private static String normalizeProduct(String productType) {
+        if (productType == null || productType.isBlank()) return "M";
+        String p = productType.trim().toUpperCase(Locale.ROOT);
+        return switch (p) {
+            case "NRML", "M" -> "M";
+            case "MIS", "I", "INTRADAY" -> "I";
+            case "CNC", "C", "DELIVERY" -> "C";
+            default -> p;
+        };
+    }
+
+    private static String firstNonBlank(String... vals) {
+        if (vals == null) return null;
+        for (String v : vals) {
+            if (v != null && !v.isBlank() && !"null".equalsIgnoreCase(v)) return v;
+        }
+        return null;
+    }
+
+    /** Best-effort current-month NIFTY futures tsym for margin probe (NIFTY25AUGFUT). */
+    private static String currentNiftyFutTsym() {
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        java.time.LocalDate last = today.withDayOfMonth(today.lengthOfMonth());
+        while (last.getDayOfWeek() != java.time.DayOfWeek.TUESDAY) last = last.minusDays(1);
+        if (last.isBefore(today) || (last.equals(today) && java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata")).isAfter(java.time.LocalTime.of(15, 30)))) {
+            java.time.LocalDate next = today.plusMonths(1);
+            last = next.withDayOfMonth(next.lengthOfMonth());
+            while (last.getDayOfWeek() != java.time.DayOfWeek.TUESDAY) last = last.minusDays(1);
+        }
+        int yy = last.getYear() % 100;
+        String mon = last.getMonth().name().substring(0, 3);
+        return String.format("NIFTY%02d%sFUT", yy, mon);
     }
 
     @Override

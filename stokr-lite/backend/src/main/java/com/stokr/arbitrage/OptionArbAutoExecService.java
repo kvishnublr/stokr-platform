@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Bid-parity / option-arb auto execution (broker-routed).
  * Persists settings to option_arb_auto_exec_settings and executes 3-leg hedges (CE+PE+FUT).
+ * Never fires without a live broker AvailableMargin check.
  */
 @Slf4j
 @Service
@@ -30,6 +31,11 @@ public class OptionArbAutoExecService {
             "MIDCPNIFTY", 180000.0,
             "FINNIFTY", 200000.0
     );
+
+    /** Refuse to trade if broker reports less than this free margin (₹). */
+    private static final double MIN_AVAILABLE_MARGIN = 5_000.0;
+    /** Keep this fraction of free margin unused as buffer. */
+    private static final double MARGIN_USAGE_CAP = 0.85;
 
     private final OptionArbOpportunityRepository oppRepo;
     private final LivePositionRepository positionRepo;
@@ -45,7 +51,8 @@ public class OptionArbAutoExecService {
     public void init() {
         applyDefaults();
         loadFromDb();
-        log.info("Loaded {} auto-exec settings from DB (enabled={})", settings.size(), settings.get("enabled"));
+        log.info("Loaded {} auto-exec settings from DB (enabled={}, broker={})",
+                settings.size(), settings.get("enabled"), settings.get("broker"));
     }
 
     private void applyDefaults() {
@@ -73,36 +80,135 @@ public class OptionArbAutoExecService {
             for (AutoExecSetting row : settingsRepo.findAllByOrderBySettingKey()) {
                 parseAndPut(row.getSettingKey(), row.getSettingValue());
             }
+            applyLegacyAliases();
         } catch (Exception e) {
             log.warn("Could not load auto-exec settings from DB: {}", e.getMessage());
         }
     }
 
-    private void parseAndPut(String key, String value) {
-        if (key == null || value == null) return;
-        if ("enabled".equals(key) || key.endsWith("Enabled")) {
-            settings.put(key, Boolean.parseBoolean(value));
-        } else if (key.endsWith("MinEdge") || "maxDailyLoss".equals(key)) {
-            try { settings.put(key, Double.parseDouble(value)); } catch (Exception ignored) {}
-        } else if (key.endsWith("Lots") || "maxOpenPositions".equals(key)) {
-            try { settings.put(key, Integer.parseInt(value)); } catch (Exception ignored) {}
-        } else {
-            settings.put(key, value);
+    /**
+     * Map production legacy keys onto the camelCase keys this service uses.
+     * Does not overwrite an explicit camelCase value already present.
+     */
+    private void applyLegacyAliases() {
+        // enabled ← bid_parity_auto_enabled / auto_execute_enabled (only if enabled never set from those)
+        Object enabledRaw = settings.get("bid_parity_auto_enabled");
+        if (enabledRaw != null) {
+            settings.put("enabled", parseBool(String.valueOf(enabledRaw)));
+        }
+        // Prefer explicit "enabled" row if both exist — re-read from map after parseAndPut already set it
+        // parseAndPut already put "enabled" if key was "enabled". Legacy overwrites only when enabled still default false
+        // and bid_parity says true — handled below carefully:
+        if (settings.containsKey("bid_parity_auto_enabled")) {
+            boolean legacyOn = parseBool(String.valueOf(settings.get("bid_parity_auto_enabled")));
+            // Keep whichever is more explicit: if camelCase enabled was loaded as string/bool from DB it is already set.
+            // If only legacy exists, sync it.
+            if (!settings.containsKey("enabled") || !Boolean.TRUE.equals(settings.get("enabled"))) {
+                settings.put("enabled", legacyOn);
+            }
+        }
+
+        if (settings.containsKey("max_total_positions") && !settings.containsKey("maxOpenPositions_from_db")) {
+            try {
+                settings.put("maxOpenPositions", Integer.parseInt(String.valueOf(settings.get("max_total_positions")).replace(".0", "")));
+            } catch (Exception ignored) {}
+        }
+        if (settings.containsKey("min_edge_after_costs") || settings.containsKey("scanner_minEdgeAfterCosts")) {
+            Object v = settings.getOrDefault("scanner_minEdgeAfterCosts", settings.get("min_edge_after_costs"));
+            try {
+                double edge = Double.parseDouble(String.valueOf(v));
+                settings.putIfAbsent("niftyMinEdge", edge);
+                settings.putIfAbsent("bankniftyMinEdge", edge);
+                settings.putIfAbsent("finniftyMinEdge", edge);
+                settings.putIfAbsent("midcpniftyMinEdge", edge);
+            } catch (Exception ignored) {}
+        }
+        if (settings.containsKey("target_underlying")) {
+            String targets = String.valueOf(settings.get("target_underlying")).toUpperCase(Locale.ROOT);
+            for (String u : List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")) {
+                String k = u.toLowerCase(Locale.ROOT) + "Enabled";
+                // Only auto-enable from target list when legacy auto is on AND camelCase not explicitly false from DB
+                if (targets.contains(u) && Boolean.TRUE.equals(settings.get("enabled"))) {
+                    if (!settings.containsKey(k) || !(settings.get(k) instanceof Boolean)) {
+                        settings.put(k, true);
+                    }
+                }
+            }
         }
     }
 
+    private void parseAndPut(String key, String value) {
+        if (key == null || value == null) return;
+        String k = key.trim();
+        String v = value.trim();
+
+        // Always keep raw legacy keys for alias pass
+        if (k.contains("_") || k.startsWith("scanner_") || k.startsWith("bid_parity") || k.startsWith("auto_")) {
+            settings.put(k, v);
+        }
+
+        if ("enabled".equals(k) || k.endsWith("Enabled") || "bid_parity_auto_enabled".equals(k)
+                || "auto_execute_enabled".equals(k)) {
+            boolean b = parseBool(v);
+            if ("bid_parity_auto_enabled".equals(k) || "auto_execute_enabled".equals(k)) {
+                settings.put(k, v); // keep raw
+                // Do not set enabled here — applyLegacyAliases decides; but store boolean form too
+                settings.put(k + "_bool", b);
+            } else {
+                settings.put(k, b);
+            }
+        } else if (k.endsWith("MinEdge") || "maxDailyLoss".equals(k) || "min_edge_after_costs".equals(k)
+                || "scanner_minEdgeAfterCosts".equals(k)) {
+            try { settings.put(k, Double.parseDouble(v)); } catch (Exception ignored) {}
+        } else if (k.endsWith("Lots") || "maxOpenPositions".equals(k) || "max_total_positions".equals(k)
+                || "max_positions_per_underlying".equals(k)) {
+            try { settings.put(k, Integer.parseInt(v.replace(".0", ""))); } catch (Exception ignored) {}
+        } else {
+            settings.put(k, v);
+        }
+    }
+
+    static boolean parseBool(String value) {
+        if (value == null) return false;
+        String v = value.trim().toLowerCase(Locale.ROOT);
+        return "true".equals(v) || "1".equals(v) || "yes".equals(v) || "on".equals(v) || "1.0".equals(v);
+    }
+
     public Map<String, Object> getSettings() {
-        return new LinkedHashMap<>(settings);
+        Map<String, Object> out = new LinkedHashMap<>(settings);
+        out.put("enabled", Boolean.TRUE.equals(settings.get("enabled")));
+        out.put("broker", settings.getOrDefault("broker", "NAVIA"));
+        out.put("availableMarginGate", MIN_AVAILABLE_MARGIN);
+        out.put("marginUsageCap", MARGIN_USAGE_CAP);
+        return out;
     }
 
     @Transactional
     public void updateSetting(String key, String value) {
         parseAndPut(key, value);
+        if ("bid_parity_auto_enabled".equals(key) || "enabled".equals(key)) {
+            boolean on = parseBool(value);
+            settings.put("enabled", on);
+            // Keep both keys in sync in DB
+            upsertDb("enabled", on ? "true" : "false");
+            upsertDb("bid_parity_auto_enabled", on ? "1" : "0");
+            addLog("SETTINGS", "INFO", "Updated enabled=" + on);
+            return;
+        }
         AutoExecSetting row = settingsRepo.findBySettingKey(key).orElseGet(AutoExecSetting::new);
         row.setSettingKey(key);
         row.setSettingValue(value);
         settingsRepo.save(row);
+        applyLegacyAliases();
         addLog("SETTINGS", "INFO", "Updated '" + key + "' = " + value);
+    }
+
+    private void upsertDb(String key, String value) {
+        AutoExecSetting row = settingsRepo.findBySettingKey(key).orElseGet(AutoExecSetting::new);
+        row.setSettingKey(key);
+        row.setSettingValue(value);
+        settingsRepo.save(row);
+        settings.put(key, "enabled".equals(key) ? parseBool(value) : value);
     }
 
     public List<Map<String, Object>> getExecLogs() {
@@ -113,43 +219,63 @@ public class OptionArbAutoExecService {
 
     /**
      * Called after scan saves new opportunities.
+     * HARD RULE: fetch live broker AvailableMargin; skip if insufficient.
      */
     public void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {
-        if (!Boolean.TRUE.equals(settings.get("enabled"))) return;
-
-        LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 16)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
-
-        String broker = String.valueOf(settings.getOrDefault("broker", "NAVIA"));
-        int maxPositions = ((Number) settings.getOrDefault("maxOpenPositions", 3)).intValue();
-        long currentOpen = positionRepo.countAllOpen();
-        if (currentOpen >= maxPositions) return;
-
-        Long userId;
-        BrokerAccount account;
-        BrokerAdapter adapter;
-        try {
-            userId = brokerAccountRepo.findByStatus("ACTIVE").stream()
-                    .findFirst().map(BrokerAccount::getUserId).orElse(null);
-            if (userId == null) return;
-            List<BrokerAccount> accounts = brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(userId, broker, "ACTIVE");
-            if (accounts.isEmpty()) {
-                addLog("BROKER", "ERROR", "No ACTIVE " + broker + " account for user " + userId);
-                return;
-            }
-            account = accounts.get(0);
-            adapter = brokerService.getAdapter(broker);
-        } catch (Exception e) {
-            log.error("Auto-exec: broker setup failed: {}", e.getMessage());
+        applyLegacyAliases();
+        if (!Boolean.TRUE.equals(settings.get("enabled"))) {
+            log.debug("Auto-exec disabled — skip");
             return;
         }
 
-        double availableMargin;
+        LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(LocalTime.of(9, 16)) || nowIST.isAfter(LocalTime.of(15, 25))) {
+            addLog("TIME", "SKIP", "Outside auto-exec window 09:16–15:25 IST");
+            return;
+        }
+
+        String broker = String.valueOf(settings.getOrDefault("broker", "NAVIA")).toUpperCase(Locale.ROOT);
+        int maxPositions = ((Number) settings.getOrDefault("maxOpenPositions", 3)).intValue();
+        long currentOpen = positionRepo.countAllOpen();
+        if (currentOpen >= maxPositions) {
+            addLog("RISK", "SKIP", "Max open positions reached: " + currentOpen);
+            return;
+        }
+
+        BrokerAccount account;
+        BrokerAdapter adapter;
+        Long userId;
         try {
-            BigDecimal margin = adapter.getAvailableMargin(account.getAccessToken());
-            availableMargin = margin != null ? margin.doubleValue() : 0;
+            account = resolveBrokerAccount(broker);
+            if (account == null) {
+                addLog("BROKER", "ERROR", "No ACTIVE " + broker + " account");
+                return;
+            }
+            userId = account.getUserId();
+            adapter = brokerService.getAdapter(broker);
+
+            // Refresh Navia session before margin/order calls
+            if ("NAVIA".equals(broker) && adapter instanceof NaviaAdapter navia) {
+                try {
+                    String fresh = navia.loginWithTotp(account);
+                    account.setAccessToken(fresh);
+                    brokerAccountRepo.save(account);
+                } catch (Exception e) {
+                    addLog("BROKER", "ERROR", "Navia re-login failed: " + e.getMessage());
+                    return;
+                }
+            }
         } catch (Exception e) {
-            addLog("MARGIN", "ERROR", "Failed to fetch margin: " + e.getMessage());
+            log.error("Auto-exec: broker setup failed: {}", e.getMessage());
+            addLog("BROKER", "ERROR", e.getMessage());
+            return;
+        }
+
+        double availableMargin = fetchAvailableMarginOrAbort(adapter, account);
+        if (availableMargin < 0) return; // aborted
+        if (availableMargin < MIN_AVAILABLE_MARGIN) {
+            addLog("MARGIN", "BLOCKED", "AvailableMargin ₹" + String.format("%.0f", availableMargin)
+                    + " < minimum ₹" + String.format("%.0f", MIN_AVAILABLE_MARGIN) + " — no trades");
             return;
         }
 
@@ -172,13 +298,16 @@ public class OptionArbAutoExecService {
                         a.getEdgeAfterCosts().doubleValue()))
                 .toList();
 
+        addLog("MARGIN", "OK", "Broker=" + broker + " AvailableMargin=₹"
+                + String.format("%.0f", availableMargin) + " candidates=" + ranked.size());
+
         for (OptionArbOpportunity opp : ranked) {
             if (currentOpen >= maxPositions) break;
 
-            String key = opp.getUnderlying().toLowerCase();
+            String key = opp.getUnderlying().toLowerCase(Locale.ROOT);
             if (!Boolean.TRUE.equals(settings.get(key + "Enabled"))) continue;
 
-            String stratType = opp.getStrategyType() != null ? opp.getStrategyType().toUpperCase() : "";
+            String stratType = opp.getStrategyType() != null ? opp.getStrategyType().toUpperCase(Locale.ROOT) : "";
             if ("PARITY".equalsIgnoreCase(strategyFilter)
                     && !stratType.contains("PARITY") && !stratType.contains("BID")) continue;
             if ("BOX".equalsIgnoreCase(strategyFilter) && !stratType.contains("BOX")) continue;
@@ -202,41 +331,78 @@ public class OptionArbAutoExecService {
                 continue;
             }
 
+            // Re-fetch margin immediately before each fire
+            double liveMargin = fetchAvailableMarginOrAbort(adapter, account);
+            if (liveMargin < 0) return;
+            availableMargin = liveMargin;
+            if (availableMargin < MIN_AVAILABLE_MARGIN) {
+                addLog("MARGIN", "BLOCKED", "Live AvailableMargin ₹" + String.format("%.0f", availableMargin)
+                        + " below floor — stopping cycle");
+                return;
+            }
+
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
             double required = estimateHedgedMargin(opp.getUnderlying(), lots);
-            if (required > availableMargin * 0.9) {
+            double usable = availableMargin * MARGIN_USAGE_CAP;
+            if (required > usable) {
                 addLog("MARGIN", "SKIP", opp.getUnderlying() + " " + opp.getStrike()
                         + " needs ₹" + String.format("%.0f", required)
-                        + " but only ₹" + String.format("%.0f", availableMargin) + " available");
+                        + " but usable ₹" + String.format("%.0f", usable)
+                        + " (avail ₹" + String.format("%.0f", availableMargin) + " × "
+                        + String.format("%.0f", MARGIN_USAGE_CAP * 100) + "%)");
                 continue;
             }
 
             addLog("SIGNAL", "FIRING", opp.getUnderlying() + " " + opp.getStrike()
                     + " " + action + " Edge=₹" + String.format("%.0f", opp.getEdgeAfterCosts().doubleValue())
-                    + " ≥ ₹" + String.format("%.0f", minEdge));
+                    + " ≥ ₹" + String.format("%.0f", minEdge)
+                    + " | margin ₹" + String.format("%.0f", availableMargin));
             executeTrade(account, adapter, opp, lots, userId, action);
             currentOpen++;
-            availableMargin -= required;
         }
+    }
+
+    /** @return margin amount, or -1 if fetch failed (caller must abort). */
+    private double fetchAvailableMarginOrAbort(BrokerAdapter adapter, BrokerAccount account) {
+        try {
+            BigDecimal margin = adapter.getAvailableMargin(account.getAccessToken());
+            if (margin == null) {
+                addLog("MARGIN", "ERROR", "Broker returned null AvailableMargin — abort");
+                return -1;
+            }
+            return margin.doubleValue();
+        } catch (Exception e) {
+            addLog("MARGIN", "ERROR", "Failed to fetch AvailableMargin: " + e.getMessage() + " — abort");
+            return -1;
+        }
+    }
+
+    private BrokerAccount resolveBrokerAccount(String broker) {
+        // Prefer ACTIVE account for the requested broker (any user), then filter
+        List<BrokerAccount> byBroker = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
+        if (!byBroker.isEmpty()) return byBroker.get(0);
+
+        // Fallback: first ACTIVE user that has this broker
+        return brokerAccountRepo.findByStatus("ACTIVE").stream()
+                .map(BrokerAccount::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .map(uid -> brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(uid, broker, "ACTIVE"))
+                .filter(list -> !list.isEmpty())
+                .map(list -> list.get(0))
+                .findFirst()
+                .orElse(null);
     }
 
     /** Map legacy labels to CONVERSION / REVERSAL. */
     static String normalizeAction(String raw) {
         if (raw == null) return null;
         String a = raw.toUpperCase(Locale.ROOT);
-        if (a.contains("CONVERSION") || a.contains("BUY CE / SELL PE") || a.equals("BUY CE+PE / SELL FUT")) {
-            // Legacy "BUY CE+PE / SELL FUT" was mislabeled; true conversion is BUY CE / SELL PE / SELL FUT
-            if (a.equals("BUY CE+PE / SELL FUT")) {
-                // Old buggy label that meant sell-synth in some paths — refuse ambiguous legacy strings for live fire
-                // Prefer explicit CONVERSION/REVERSAL from fixed scanner.
-                return null;
-            }
-            return "CONVERSION";
+        if (a.equals("BUY CE+PE / SELL FUT") || a.equals("BUY FUT / SELL CE+PE")) {
+            return null; // ambiguous legacy — never live-fire
         }
-        if (a.contains("REVERSAL") || a.contains("SELL CE / BUY PE") || a.equals("BUY FUT / SELL CE+PE")) {
-            if (a.equals("BUY FUT / SELL CE+PE")) return null; // ambiguous legacy
-            return "REVERSAL";
-        }
+        if (a.contains("CONVERSION") || a.contains("BUY CE / SELL PE")) return "CONVERSION";
+        if (a.contains("REVERSAL") || a.contains("SELL CE / BUY PE")) return "REVERSAL";
         if (a.contains("BUY CE") && a.contains("SELL PE") && a.contains("SELL") && a.contains("FUT")) return "CONVERSION";
         if (a.contains("SELL CE") && a.contains("BUY PE") && a.contains("BUY") && a.contains("FUT")) return "REVERSAL";
         return null;
@@ -275,7 +441,6 @@ public class OptionArbAutoExecService {
         String token = account.getAccessToken();
 
         try {
-            // Leg 1 CE
             BrokerOrderResponse ceResp = place(adapter, token, ceSymbol,
                     conversion ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL, qty);
             if (!isPlaced(ceResp)) {
@@ -287,11 +452,9 @@ public class OptionArbAutoExecService {
             }
             position.setCeOrderId(ceResp.orderId());
 
-            // Leg 2 PE
             BrokerOrderResponse peResp = place(adapter, token, peSymbol,
                     conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY, qty);
             if (!isPlaced(peResp)) {
-                // Attempt square-off CE
                 place(adapter, token, ceSymbol,
                         conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY, qty);
                 position.setStatus("PARTIAL");
@@ -302,11 +465,9 @@ public class OptionArbAutoExecService {
             }
             position.setPeOrderId(peResp.orderId());
 
-            // Leg 3 FUT — required for hedge
             BrokerOrderResponse futResp = place(adapter, token, futSymbol,
                     conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY, qty);
             if (!isPlaced(futResp)) {
-                // Square CE+PE
                 place(adapter, token, ceSymbol,
                         conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY, qty);
                 place(adapter, token, peSymbol,
