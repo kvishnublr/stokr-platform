@@ -323,6 +323,11 @@ public class OptionChainService {
         return list;
     }
 
+    /** Public wrapper for box/calendar scanners that need candidate NFO symbols. */
+    public List<String> buildNfoSymbolCandidatesPublic(String underlying, LocalDate expiryDate, int strike, String type) {
+        return buildNfoSymbolCandidates(underlying, expiryDate, strike, type);
+    }
+
     public String buildNfoSymbol(String underlying, LocalDate expiryDate, int strike, String type) {
         List<String> candidates = buildNfoSymbolCandidates(underlying, expiryDate, strike, type);
         return candidates.isEmpty() ? null : candidates.get(0);

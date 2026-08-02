@@ -1106,7 +1106,7 @@ function BidParityPaperSimView() {
 
 /* 3. BOX SPREAD VIEW */
 function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {
-  const [underlying, setUnderlying] = useState('MIDCPNIFTY');
+  const [underlying, setUnderlying] = useState('NIFTY');
   const [expandedId, setExpandedId] = useState(null);
 
   const { data, isLoading } = useQuery({
@@ -1115,17 +1115,20 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       const res = await client.get('/option-arbitrage/box-spread/scan', { params: { underlying } });
       return res.data;
     },
-    refetchInterval: 3000
+    refetchInterval: 5000
   });
 
-  const opps = data?.opportunities || [];
+  const opps = (data?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) > 0);
+  const marketClosed = data?.marketClosed;
 
   return (
     <div className="space-y-4 w-full">
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-base font-bold text-slate-800">4-Leg Risk-Free Box Spread Scanner</h2>
-          <p className="text-xs text-slate-500">Detects 4-leg box mispricings delivering guaranteed expiry payoffs regardless of market direction</p>
+          <h2 className="text-base font-bold text-slate-800">4-Leg Box Spread Scanner</h2>
+          <p className="text-xs text-slate-500">
+            Same-expiry LONG/SHORT box vs PV(K2−K1) · executable bid/ask only · not auto-fired by Bid Parity 3-leg exec
+          </p>
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
@@ -1143,20 +1146,28 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
         </div>
       </div>
 
+      {marketClosed && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-4 py-3 rounded-xl">
+          Market closed — box scan runs Mon–Fri 09:15–15:30 IST.
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Box Spreads...</div>
         ) : opps.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No risk-free box spread anomalies currently detected</div>
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No executable box edges currently detected</div>
         ) : (
           <div className="overflow-x-auto w-full">
             <table className="w-full text-xs text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
                   <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Side</th>
                   <th className="px-2 py-2">Strike Pair</th>
                   <th className="px-2 py-2 text-right">Box Cost</th>
-                  <th className="px-2 py-2 text-right">Expiry Payoff</th>
+                  <th className="px-2 py-2 text-right">Fair PV</th>
+                  <th className="px-2 py-2 text-right">Width</th>
                   <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge (₹)</th>
                   <th className="px-2 py-2 text-center">Action</th>
                 </tr>
@@ -1164,41 +1175,54 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
               <tbody className="divide-y divide-slate-100">
                 {opps.map((opp, idx) => {
                   const isExp = expandedId === idx;
-                  const strike1 = opp.lowerStrike || opp.strike || 14400;
-                  const strike2 = opp.upperStrike || (strike1 + 100);
-                  const costVal = opp.boxCost ? Number(opp.boxCost) : Math.round(strike1 * 0.98);
-                  const payoffVal = opp.payoff ? Number(opp.payoff) : Math.round(strike2 * 1.02);
+                  const strike1 = Number(opp.lowerStrike || opp.strike || 0);
+                  const strike2 = Number(opp.upperStrike || 0);
+                  const costVal = Number(opp.boxCost ?? 0);
+                  const fairVal = Number(opp.fairValue ?? 0);
+                  const widthVal = Number(opp.width ?? (strike2 - strike1));
 
                   return (
-                    <React.Fragment key={idx}>
+                    <React.Fragment key={`${opp.action}-${strike1}-${strike2}-${idx}`}>
                       <tr
                         onClick={() => setExpandedId(isExp ? null : idx)}
                         className={`transition cursor-pointer ${isExp ? 'bg-purple-50/70 border-l-4 border-purple-600' : 'hover:bg-slate-50'}`}
                       >
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
-                        <td className="px-2 py-1.5 font-bold text-slate-700">{strike1} / {strike2}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">₹{costVal.toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">₹{payoffVal.toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">+₹{Math.round(opp.edgeAfterCosts || 350).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 font-bold text-purple-700">{String(opp.action || '').split(' (')[0]}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-700">{strike1} / {strike2 || '—'}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{costVal.toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{fairVal.toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{widthVal}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                          +₹{Math.round(opp.edgeAfterCosts || 0).toLocaleString('en-IN')}
+                        </td>
                         <td className="px-2 py-1.5 text-center">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
                             className="px-2 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded shadow-sm"
+                            title="Paper/manual only — box is 4-leg, not Bid Parity auto-exec"
                           >
-                            ⚡ Execute
+                            Execute
                           </button>
                         </td>
                       </tr>
-
                       {isExp && (
                         <tr className="bg-purple-50/40 border-b border-purple-100">
-                          <td colSpan={6} className="p-3">
+                          <td colSpan={8} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-purple-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">4-Leg Box Spread Breakdown:</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || 'BUY CE1 | SELL PE1 | SELL CE2 | BUY PE2'}</p>
+                              <span className="font-bold text-slate-800 text-xs uppercase block">4-leg breakdown</span>
+                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
+                                {opp.legs || opp.description}
+                              </p>
+                              <p className="text-[11px] text-slate-500">
+                                Expiry {opp.expiryDate || '—'} · DTE {opp.daysToExpiry ?? '—'} · Fill not guaranteed · Auto-exec does not fire boxes
+                              </p>
                               <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-purple-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
+                                  className="px-3 py-1 bg-purple-600 text-white rounded-lg text-xs font-bold shadow-md"
+                                >
+                                  Submit ({executionBroker})
                                 </button>
                               </div>
                             </div>

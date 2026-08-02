@@ -429,6 +429,9 @@ public class OptionArbAutoExecService {
         if (a.equals("BUY CE+PE / SELL FUT") || a.equals("BUY FUT / SELL CE+PE")) {
             return null; // ambiguous legacy — never live-fire
         }
+        if (a.contains("LONG BOX") || a.contains("SHORT BOX") || a.contains("BOX")) {
+            return null; // 4-leg box — not handled by 3-leg parity executor
+        }
         if (a.contains("CONVERSION") || a.contains("BUY CE / SELL PE")) return "CONVERSION";
         if (a.contains("REVERSAL") || a.contains("SELL CE / BUY PE")) return "REVERSAL";
         if (a.contains("BUY CE") && a.contains("SELL PE") && a.contains("SELL") && a.contains("FUT")) return "CONVERSION";
