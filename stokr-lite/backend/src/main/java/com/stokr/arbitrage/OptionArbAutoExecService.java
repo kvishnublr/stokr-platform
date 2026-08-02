@@ -467,8 +467,14 @@ public class OptionArbAutoExecService {
         positionRepo.save(position);
 
         boolean conversion = "CONVERSION".equals(action);
-        int qty = lots * lotSize;
+        // Navia F&O qty is in LOTS; Zerodha/others use units (lots * lotSize).
+        boolean naviaLots = adapter instanceof NaviaAdapter
+                || "NAVIA".equalsIgnoreCase(adapter.getBrokerName());
+        int qty = naviaLots ? Math.max(1, lots) : lots * lotSize;
         String token = account.getAccessToken();
+        addLog("EXEC", "QTY", opp.getUnderlying() + " broker=" + adapter.getBrokerName()
+                + " lots=" + lots + " lotSize=" + lotSize + " orderQty=" + qty
+                + (naviaLots ? " (Navia lots)" : " (units)"));
 
         BrokerOrderRequest.Side ceSide = conversion ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL;
         BrokerOrderRequest.Side peSide = conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
