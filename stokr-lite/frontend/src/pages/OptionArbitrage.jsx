@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
@@ -54,12 +55,20 @@ const ALL_U = ['ALL', 'NIFTY', 'BANKNIFTY', 'MIDCPNIFTY', 'FINNIFTY'];
 
 export default function OptionArbitrage() {
   const { toasts, dismiss: dismissToast } = useToastState();
+  const [searchParams] = useSearchParams();
   const [tradingHorizon, setTradingHorizon] = useState('INTRADAY'); // INTRADAY, SWING, POSITIONAL, ANALYTICS
-  const [activeSubTab, setActiveSubTab] = useState('signals');
+  const [activeSubTab, setActiveSubTab] = useState(() => searchParams.get('tab') === 'bidparity' ? 'bidparity' : 'signals');
   const [underlyings, setUnderlyings] = useState(['ALL']);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [executionBroker, setExecutionBroker] = useState('PAPER');
   const [isTestingBroker, setIsTestingBroker] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get('tab') === 'bidparity') {
+      setTradingHorizon('INTRADAY');
+      setActiveSubTab('bidparity');
+    }
+  }, [searchParams]);
 
   const fetchBrokerRouting = async () => {
     try {
@@ -271,7 +280,7 @@ export default function OptionArbitrage() {
         {tradingHorizon === 'INTRADAY' && (
           <>
             <SubTabButton id="signals" label="⚡ Live Arbitrage Signals" active={activeSubTab} onClick={setActiveSubTab} count={opportunities.length} />
-            <SubTabButton id="bidparity" label="🎯 Bid Parity Scanner" active={activeSubTab} onClick={setActiveSubTab} />
+            <SubTabButton id="bidparity" label="🎯 Bid Parity" active={activeSubTab} onClick={setActiveSubTab} />
             <SubTabButton id="ironcondor" label="🛡️ 0DTE Iron Condor" active={activeSubTab} onClick={setActiveSubTab} />
             <SubTabButton id="cashsurge" label="🔥 10%+ Cash Surge" active={activeSubTab} onClick={setActiveSubTab} />
           </>
@@ -312,7 +321,7 @@ export default function OptionArbitrage() {
           />
         )}
 
-        {activeSubTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeSubTab === 'bidparity' && <BidParityHub handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />}
         {activeSubTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeSubTab === 'ironcondor' && <IronCondorView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeSubTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
@@ -603,30 +612,71 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
   );
 }
 
-/* 2. BID PARITY VIEW */
-function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {
+/* 2. BID PARITY HUB — Intraday > Bid Parity > Live Signals | History */
+function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh }) {
+  const [searchParams] = useSearchParams();
+  const [bpTab, setBpTab] = useState(() => searchParams.get('bp') === 'history' ? 'history' : 'live');
+
+  useEffect(() => {
+    if (searchParams.get('bp') === 'history') setBpTab('history');
+    else if (searchParams.get('bp') === 'live') setBpTab('live');
+  }, [searchParams]);
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Intraday → Bid Parity</div>
+          <h2 className="text-base font-bold text-slate-800">Conversion &amp; Reversal Scanner</h2>
+          <p className="text-xs text-slate-500">Executable bid/ask parity vs monthly futures · 3-leg hedge (CE + PE + FUT)</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {[
+            { id: 'live', label: '📡 Live Signals' },
+            { id: 'history', label: '📜 History' },
+          ].map(t => (
+            <button
+              key={t.id}
+              onClick={() => setBpTab(t.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                bpTab === t.id ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {bpTab === 'live' && (
+        <BidParityLiveView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />
+      )}
+      {bpTab === 'history' && <BidParityHistoryView />}
+    </div>
+  );
+}
+
+function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }) {
   const [underlying, setUnderlying] = useState('NIFTY');
   const [expandedId, setExpandedId] = useState(null);
+  const [minEdge, setMinEdge] = useState(150);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['bid-parity-scan', underlying],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/bid-parity/scan', { params: { underlying } });
       return res.data;
     },
-    refetchInterval: 2000
+    refetchInterval: autoRefresh ? 5000 : false,
+    staleTime: 2000,
   });
 
-  const opps = data?.opportunities || [];
+  const opps = (data?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) >= minEdge);
+  const marketClosed = data?.marketClosed;
 
   return (
     <div className="space-y-4 w-full">
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-base font-bold text-slate-800">Bid Parity Conversion &amp; Reversal Scanner</h2>
-          <p className="text-xs text-slate-500">Scans live bid/ask spreads to capture instant synthetic vs futures pricing gaps</p>
-        </div>
-
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
           {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
             <button
@@ -640,13 +690,39 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
             </button>
           ))}
         </div>
+        <div className="flex items-center gap-2 text-xs">
+          <label className="font-semibold text-slate-600">Min edge ₹</label>
+          <input
+            type="number"
+            value={minEdge}
+            onChange={e => setMinEdge(Number(e.target.value) || 0)}
+            className="w-20 border border-slate-200 rounded-lg px-2 py-1 font-mono"
+          />
+          <button onClick={() => refetch()} className="px-3 py-1 rounded-lg bg-slate-900 text-white font-bold">
+            {isFetching ? 'Scanning…' : 'Refresh'}
+          </button>
+        </div>
       </div>
+
+      {marketClosed && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-4 py-3 rounded-xl">
+          Market closed — live bid-parity scan runs Mon–Fri 09:15–15:30 IST. Use History for past signals.
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-semibold px-4 py-3 rounded-xl">
+          Scan failed: {error.message}
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Bid Parity feeds...</div>
         ) : opps.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No bid parity spreads currently active for {underlying}</div>
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">
+            No executable bid-parity edges ≥ ₹{minEdge} for {underlying}
+          </div>
         ) : (
           <div className="overflow-x-auto w-full">
             <table className="w-full text-xs text-left border-collapse">
@@ -655,6 +731,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                   <th className="px-2 py-2">Symbol</th>
                   <th className="px-2 py-2">Strike</th>
                   <th className="px-2 py-2">Action</th>
+                  <th className="px-2 py-2 text-right">Spot / Fut</th>
                   <th className="px-2 py-2 text-right">CE Bid/Ask</th>
                   <th className="px-2 py-2 text-right">PE Bid/Ask</th>
                   <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge (₹)</th>
@@ -665,7 +742,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                 {opps.map((opp, idx) => {
                   const isExp = expandedId === idx;
                   return (
-                    <React.Fragment key={idx}>
+                    <React.Fragment key={`${opp.underlying}-${opp.strike}-${opp.action}-${idx}`}>
                       <tr
                         onClick={() => setExpandedId(isExp ? null : idx)}
                         className={`transition cursor-pointer ${isExp ? 'bg-amber-50/70 border-l-4 border-amber-600' : 'hover:bg-slate-50'}`}
@@ -673,28 +750,40 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
                         <td className="px-2 py-1.5 font-bold text-purple-700">{opp.action}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-[11px]">
+                          {Number(opp.spotPrice || 0).toFixed(1)} / {Number(opp.futuresPrice || 0).toFixed(1)}
+                        </td>
                         <td className="px-2 py-1.5 text-right font-mono text-xs">{opp.ceBid} / {opp.ceAsk}</td>
                         <td className="px-2 py-1.5 text-right font-mono text-xs">{opp.peBid} / {opp.peAsk}</td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">+₹{Math.round(opp.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                          +₹{Math.round(opp.edgeAfterCosts || 0).toLocaleString('en-IN')}
+                        </td>
                         <td className="px-2 py-1.5 text-center">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
                             className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm"
                           >
-                            ⚡ Execute
+                            Execute
                           </button>
                         </td>
                       </tr>
-
                       {isExp && (
                         <tr className="bg-amber-50/40 border-b border-amber-100">
-                          <td colSpan={7} className="p-3">
+                          <td colSpan={8} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-amber-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Bid Parity Leg Breakdown:</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || `BUY ${opp.strike} CE @ ${opp.ceAsk} | SELL ${opp.strike} PE @ ${opp.peBid}`}</p>
+                              <span className="font-bold text-slate-800 text-xs uppercase block">3-leg breakdown</span>
+                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
+                                {opp.legs || opp.description}
+                              </p>
+                              <p className="text-[11px] text-slate-500">
+                                Expiry {opp.expiryDate || '—'} · DTE {opp.daysToExpiry ?? '—'} · Fill not guaranteed (live book)
+                              </p>
                               <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
+                                  className="px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md"
+                                >
+                                  Submit ({executionBroker})
                                 </button>
                               </div>
                             </div>
@@ -712,6 +801,114 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
     </div>
   );
 }
+
+function BidParityHistoryView() {
+  const [underlying, setUnderlying] = useState('ALL');
+  const [days, setDays] = useState(7);
+  const [minEdge, setMinEdge] = useState(0);
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['bid-parity-history', underlying, days, minEdge],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/bid-parity/history', {
+        params: { underlying, days, minEdge },
+      });
+      return res.data;
+    },
+    staleTime: 10000,
+  });
+
+  const items = data?.items || [];
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button
+              key={u}
+              onClick={() => setUnderlying(u)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                underlying === u ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+        <select
+          value={days}
+          onChange={e => setDays(Number(e.target.value))}
+          className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 font-semibold"
+        >
+          <option value={1}>Today</option>
+          <option value={3}>3 days</option>
+          <option value={7}>7 days</option>
+          <option value={30}>30 days</option>
+        </select>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-semibold text-slate-600">Min ₹</span>
+          <input
+            type="number"
+            value={minEdge}
+            onChange={e => setMinEdge(Number(e.target.value) || 0)}
+            className="w-20 border border-slate-200 rounded-lg px-2 py-1 font-mono"
+          />
+        </div>
+        <button onClick={() => refetch()} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold">
+          Reload
+        </button>
+        <span className="text-xs text-slate-500 ml-auto">{items.length} signals</span>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading bid-parity history…</div>
+        ) : items.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No BID_PARITY history for this filter</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2">Time</th>
+                  <th className="px-2 py-2">Underlying</th>
+                  <th className="px-2 py-2">Strike</th>
+                  <th className="px-2 py-2">Action</th>
+                  <th className="px-2 py-2 text-right">Edge pts</th>
+                  <th className="px-2 py-2 text-right text-emerald-600">Net ₹</th>
+                  <th className="px-2 py-2">Expiry</th>
+                  <th className="px-2 py-2">Legs</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {items.map((row) => (
+                  <tr key={row.id} className="hover:bg-slate-50">
+                    <td className="px-2 py-1.5 font-mono text-[11px] text-slate-600">{row.scanTime || row.detectedAt}</td>
+                    <td className="px-2 py-1.5 font-bold">{row.underlying}</td>
+                    <td className="px-2 py-1.5 font-bold">{row.strike}</td>
+                    <td className="px-2 py-1.5 font-bold text-purple-700">{row.action}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{row.edgePoints}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                      ₹{Math.round(row.edgeAfterCosts || 0).toLocaleString('en-IN')}
+                    </td>
+                    <td className="px-2 py-1.5">{row.expiryDate}</td>
+                    <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500 max-w-[280px] truncate" title={row.legs}>
+                      {row.legs}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* legacy alias kept unused — BidParityView replaced by BidParityHub */
+function BidParityView() { return null; }
 
 /* 3. BOX SPREAD VIEW */
 function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {

@@ -10,7 +10,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -175,7 +174,7 @@ public class OptionArbAutoExecuteService {
                     double fut = spotFut[1];
                     if (spot <= 0) continue;
 
-                    List<ArbitrageOpportunity> opps = optionChainService.scanOptionChain(underlying, spot, fut);
+                    List<ArbitrageOpportunity> opps = optionChainService.scanBidParityChain(underlying, spot, fut, null);
                     opps.stream()
                         .filter(o -> "PARITY_BREAK".equals(o.type))
                         .filter(o -> o.edgeAfterCosts >= minEdge)
@@ -324,7 +323,7 @@ public class OptionArbAutoExecuteService {
                     log.info("EDGE CAPTURED: {} {} runningPnl={} >= edgeAtEntry={} — scanning for better opps",
                         underlying, trade.getStrike(), String.format("%.0f", runningPnl), String.format("%.0f", edgeAtEntry));
 
-                    List<ArbitrageOpportunity> opps = optionChainService.scanOptionChain(underlying, currentSpot, currentFut);
+                    List<ArbitrageOpportunity> opps = optionChainService.scanBidParityChain(underlying, currentSpot, currentFut, null);
                     Optional<ArbitrageOpportunity> betterOpp = opps.stream()
                         .filter(o -> "PARITY_BREAK".equals(o.type))
                         .filter(o -> o.edgeAfterCosts >= getMinEdge())
@@ -351,7 +350,7 @@ public class OptionArbAutoExecuteService {
                             currentSpot, deviationPct, trade.getStrike()));
                         tradeRepo.save(trade);
 
-                        List<ArbitrageOpportunity> opps = optionChainService.scanOptionChain(underlying, currentSpot, currentFut);
+                        List<ArbitrageOpportunity> opps = optionChainService.scanBidParityChain(underlying, currentSpot, currentFut, null);
                         opps.stream()
                             .filter(o -> "PARITY_BREAK".equals(o.type))
                             .filter(o -> o.edgeAfterCosts >= getMinEdge())
@@ -909,49 +908,22 @@ public class OptionArbAutoExecuteService {
     }
 
     private LocalDate getExpiryDate(String underlying) {
-        LocalDate today = LocalDate.now();
-        if ("NIFTY".equals(underlying)) {
-            LocalDate next = today;
-            while (next.getDayOfWeek() != DayOfWeek.TUESDAY) next = next.plusDays(1);
-            if (next.equals(today)) {
-                LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-                if (nowIST.isAfter(LocalTime.of(15, 0))) next = next.plusWeeks(1);
-            }
-            return next;
-        }
-        return getMonthlyExpiryDate();
+        return optionChainService.getWeeklyExpiryDate(underlying);
     }
 
     private LocalDate getMonthlyExpiryDate() {
-        LocalDate today = LocalDate.now();
-        LocalDate lastTuesday = today.withDayOfMonth(today.lengthOfMonth());
-        while (lastTuesday.getDayOfWeek() != DayOfWeek.TUESDAY) lastTuesday = lastTuesday.minusDays(1);
-        if (lastTuesday.isBefore(today)) {
-            lastTuesday = lastTuesday.plusMonths(1).withDayOfMonth(lastTuesday.plusMonths(1).lengthOfMonth());
-            while (lastTuesday.getDayOfWeek() != DayOfWeek.TUESDAY) lastTuesday = lastTuesday.minusDays(1);
-        }
-        return lastTuesday;
+        return optionChainService.getMonthlyExpiry("NIFTY");
     }
 
     private String buildNfoSymbol(String underlying, LocalDate expiry, int strike, String type) {
-        String clean = underlying.replace(" ", "");
-        int yy = expiry.getYear() % 100;
-        boolean hasWeekly = "NIFTY".equals(clean);
-        LocalDate monthly = getMonthlyExpiryDate();
-        if (!hasWeekly || expiry.equals(monthly)) {
-            String mon = expiry.getMonth().name().substring(0, 3);
-            return String.format("%s%02d%s%d%s", clean, yy, mon, strike, type);
-        } else {
-            int month = expiry.getMonthValue();
-            int day = expiry.getDayOfMonth();
-            return String.format("%s%02d%d%02d%d%s", clean, yy, month, day, strike, type);
-        }
+        return optionChainService.buildNfoSymbol(underlying, expiry, strike, type);
     }
 
     private String buildNfoFutSymbol(String underlying, LocalDate expiry) {
         String clean = underlying.replace(" ", "");
-        int yy = expiry.getYear() % 100;
-        String mon = expiry.getMonth().name().substring(0, 3);
+        LocalDate monthly = optionChainService.getMonthlyExpiry(underlying);
+        int yy = monthly.getYear() % 100;
+        String mon = monthly.getMonth().name().substring(0, 3);
         return String.format("%s%02d%sFUT", clean, yy, mon);
     }
 }

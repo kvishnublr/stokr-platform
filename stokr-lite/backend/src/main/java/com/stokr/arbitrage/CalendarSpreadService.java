@@ -30,7 +30,7 @@ public class CalendarSpreadService {
             if (spotPrice <= 0) return results;
 
             LocalDate nearExpiry = optionChainService.getWeeklyExpiryDate(underlying);
-            LocalDate farExpiry = optionChainService.getMonthlyExpiry();
+            LocalDate farExpiry = optionChainService.getMonthlyExpiry(underlying);
             if (nearExpiry == null || farExpiry == null || !farExpiry.isAfter(nearExpiry)) return results;
 
             int atmStrike = optionChainService.getATMStrike(underlying, spotPrice);
