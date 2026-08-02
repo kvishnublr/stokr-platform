@@ -25,11 +25,12 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class OptionArbAutoExecService {
 
+    /** Approximate SPAN+exposure for hedged conversion/reversal (CE+PE+FUT), not naked futures. */
     private static final Map<String, Double> HEDGED_MARGIN = Map.of(
-            "NIFTY", 150000.0,
-            "BANKNIFTY", 250000.0,
-            "MIDCPNIFTY", 180000.0,
-            "FINNIFTY", 200000.0
+            "NIFTY", 75000.0,
+            "BANKNIFTY", 120000.0,
+            "MIDCPNIFTY", 90000.0,
+            "FINNIFTY", 90000.0
     );
 
     /** Refuse to trade if broker reports less than this free margin (₹). */

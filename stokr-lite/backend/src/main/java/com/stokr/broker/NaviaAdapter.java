@@ -243,7 +243,7 @@ public class NaviaAdapter implements BrokerAdapter {
                 log.info("Navia: F&O AvailableMargin={} (tsym={})", fno, futTsym);
                 return fno;
             }
-            // Fallback cash probe (known-working path on Contabo)
+            // Fallback cash probe — Navia requires full product name MIS (not I)
             BigDecimal cash = probeMargin(accessToken, uid, "NSE", "RELIANCE-EQ", "CASH", "MIS");
             if (cash != null) {
                 log.info("Navia: Cash AvailableMargin={}", cash);
@@ -262,7 +262,7 @@ public class NaviaAdapter implements BrokerAdapter {
             body.put("uid", uid);
             body.put("actid", uid);
             body.put("exch", exch);
-            body.put("trantype", "B");
+            body.put("trantype", "Buy");
             body.put("tsym", tsym);
             body.put("qty", 1);
             body.put("prc", "0");
@@ -307,21 +307,23 @@ public class NaviaAdapter implements BrokerAdapter {
         return null;
     }
 
-    private static String normalizeSide(BrokerOrderRequest.Side side) {
-        if (side == null) return "B";
-        return side == BrokerOrderRequest.Side.BUY ? "B" : "S";
-    }
-
-    /** Navia/Noren product codes: M=NRML, I=MIS, C=CNC. Also accept full names. */
+    /** Navia accepts full product names (MIS/NRML/CNC), not Noren single-letter codes. */
     private static String normalizeProduct(String productType) {
-        if (productType == null || productType.isBlank()) return "M";
+        if (productType == null || productType.isBlank()) return "MIS";
         String p = productType.trim().toUpperCase(Locale.ROOT);
         return switch (p) {
-            case "NRML", "M" -> "M";
-            case "MIS", "I", "INTRADAY" -> "I";
-            case "CNC", "C", "DELIVERY" -> "C";
+            case "NRML", "M" -> "NRML";
+            case "MIS", "I", "INTRADAY" -> "MIS";
+            case "CNC", "C", "DELIVERY" -> "CNC";
             default -> p;
         };
+    }
+
+    private static String normalizeSide(BrokerOrderRequest.Side side) {
+        // Cash margin probe needs "Buy"; orders historically used BUY/SELL.
+        // Use full BUY/SELL — Navia PlaceOrder accepts these.
+        if (side == null) return "BUY";
+        return side.name(); // BUY / SELL
     }
 
     private static String firstNonBlank(String... vals) {
