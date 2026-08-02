@@ -29,6 +29,7 @@ public class OptionArbitrageController {
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
     private final LivePositionRepository livePositionRepo;
+    private final BidParityPaperSimulator paperSimulator;
 
     private final List<Map<String, Object>> auditLogs = Collections.synchronizedList(new ArrayList<>());
 
@@ -38,7 +39,8 @@ public class OptionArbitrageController {
                                      BoxSpreadService boxSpreadService,
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
-                                     LivePositionRepository livePositionRepo) {
+                                     LivePositionRepository livePositionRepo,
+                                     BidParityPaperSimulator paperSimulator) {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.bidParityService = bidParityService;
@@ -46,6 +48,7 @@ public class OptionArbitrageController {
         this.spotFetcher = spotFetcher;
         this.autoExecService = autoExecService;
         this.livePositionRepo = livePositionRepo;
+        this.paperSimulator = paperSimulator;
         addAuditLog("SYSTEM", "INFO", "Option Arbitrage Engine initialized. Ready for scanning.");
     }
 
@@ -176,6 +179,28 @@ public class OptionArbitrageController {
             resp.put("count", 0);
         }
         return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/bid-parity/paper-sim")
+    public ResponseEntity<Map<String, Object>> bidParityPaperSim(
+            @RequestParam(defaultValue = "NIFTY") String underlying,
+            @RequestParam(defaultValue = "150") double minEdge,
+            @RequestParam(defaultValue = "180000") double capital,
+            @RequestParam(defaultValue = "2") int maxTradesPerDay,
+            @RequestParam(defaultValue = "10") int days,
+            @RequestParam(defaultValue = "0.6") double fillRate) {
+        try {
+            return ResponseEntity.ok(paperSimulator.run(
+                    underlying, minEdge, capital, maxTradesPerDay, days, fillRate));
+        } catch (Exception e) {
+            log.error("Paper sim failed: {}", e.getMessage(), e);
+            return ResponseEntity.ok(Map.of(
+                    "error", e.getMessage() != null ? e.getMessage() : "sim failed",
+                    "projection", Map.of(),
+                    "daily", List.of(),
+                    "topSignals", List.of()
+            ));
+        }
     }
 
     @GetMapping("/box-spread/scan")

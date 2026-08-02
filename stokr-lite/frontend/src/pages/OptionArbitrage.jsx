@@ -634,6 +634,7 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh }) {
           {[
             { id: 'live', label: '📡 Live Signals' },
             { id: 'history', label: '📜 History' },
+            { id: 'paper', label: '🧪 Paper Sim' },
           ].map(t => (
             <button
               key={t.id}
@@ -652,6 +653,7 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh }) {
         <BidParityLiveView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />
       )}
       {bpTab === 'history' && <BidParityHistoryView />}
+      {bpTab === 'paper' && <BidParityPaperSimView />}
     </div>
   );
 }
@@ -909,6 +911,198 @@ function BidParityHistoryView() {
 
 /* legacy alias kept unused — BidParityView replaced by BidParityHub */
 function BidParityView() { return null; }
+
+function BidParityPaperSimView() {
+  const [underlying, setUnderlying] = useState('NIFTY');
+  const [minEdge, setMinEdge] = useState(150);
+  const [capital, setCapital] = useState(180000);
+  const [maxTrades, setMaxTrades] = useState(2);
+  const [days, setDays] = useState(10);
+  const [fillRate, setFillRate] = useState(0.6);
+
+  const { data, isLoading, isFetching, refetch, error } = useQuery({
+    queryKey: ['bid-parity-paper-sim', underlying, minEdge, capital, maxTrades, days, fillRate],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/bid-parity/paper-sim', {
+        params: { underlying, minEdge, capital, maxTradesPerDay: maxTrades, days, fillRate },
+      });
+      return res.data;
+    },
+    staleTime: 30000,
+  });
+
+  const p = data?.projection || {};
+  const daily = data?.daily || [];
+  const fresh = data?.freshSignals || [];
+  const top = data?.topSignals || [];
+
+  const fmt = (v) => (v == null ? '—' : `₹${Math.round(Number(v)).toLocaleString('en-IN')}`);
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'ALL'].map(u => (
+            <button key={u} onClick={() => setUnderlying(u)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-200'}`}>
+              {u}
+            </button>
+          ))}
+        </div>
+        <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">Min ₹
+          <input type="number" value={minEdge} onChange={e => setMinEdge(Number(e.target.value) || 0)} className="w-20 border rounded-lg px-2 py-1 font-mono" />
+        </label>
+        <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">Capital ₹
+          <input type="number" value={capital} onChange={e => setCapital(Number(e.target.value) || 0)} className="w-28 border rounded-lg px-2 py-1 font-mono" />
+        </label>
+        <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">Max/day
+          <input type="number" value={maxTrades} onChange={e => setMaxTrades(Number(e.target.value) || 1)} className="w-14 border rounded-lg px-2 py-1 font-mono" />
+        </label>
+        <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">Days
+          <input type="number" value={days} onChange={e => setDays(Number(e.target.value) || 1)} className="w-14 border rounded-lg px-2 py-1 font-mono" />
+        </label>
+        <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">Fill %
+          <input type="number" step="0.1" min="0" max="1" value={fillRate}
+            onChange={e => setFillRate(Number(e.target.value) || 0)} className="w-16 border rounded-lg px-2 py-1 font-mono" />
+        </label>
+        <button onClick={() => refetch()} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold ml-auto">
+          {isFetching ? 'Running…' : 'Run Paper Sim'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-semibold px-4 py-3 rounded-xl">
+          Sim failed: {error.message}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="p-12 text-center text-slate-400 text-sm font-semibold">Running paper-fill simulator…</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'Avg trades / day', value: p.avgTradesPerDay ?? '—' },
+              { label: 'Expected daily (fill)', value: fmt(p.expectedDailyAtFillRate), sub: 'conservative × fillRate' },
+              { label: 'Expected monthly', value: fmt(p.expectedMonthlyConservative), sub: '20 sessions × fillRate' },
+              { label: 'Monthly (slip +1pt)', value: fmt(p.expectedMonthlySlip), sub: 'stress case' },
+            ].map(c => (
+              <div key={c.label} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+                <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">{c.label}</div>
+                <div className="text-xl font-bold text-slate-900 mt-1">{c.value}</div>
+                {c.sub && <div className="text-[11px] text-slate-400 mt-1">{c.sub}</div>}
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 text-xs px-4 py-3 rounded-xl space-y-1">
+            <div className="font-bold">Source: {data?.source || '—'} · signals: {data?.rawSignalCount ?? 0} · {data?.elapsedMs ?? 0}ms</div>
+            <div>{p.note}</div>
+            <div className="text-amber-800/80">Mid monthly {fmt(p.expectedMonthlyMid)} · sample days {p.tradingDaysInSample ?? 0} (with trades {p.daysWithTrades ?? 0})</div>
+          </div>
+
+          {fresh.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+              <div className="px-3 py-2 bg-slate-50 border-b text-xs font-bold text-slate-700">Fresh off-hours / last-quote signals (new logic)</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 font-bold text-slate-600 uppercase">
+                    <tr>
+                      <th className="px-2 py-2">Underlying</th>
+                      <th className="px-2 py-2">Strike</th>
+                      <th className="px-2 py-2">Action</th>
+                      <th className="px-2 py-2 text-right">Cons ₹</th>
+                      <th className="px-2 py-2 text-right">Mid ₹</th>
+                      <th className="px-2 py-2 text-right">Slip ₹</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {fresh.slice(0, 15).map((r, i) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        <td className="px-2 py-1.5 font-bold">{r.underlying}</td>
+                        <td className="px-2 py-1.5 font-bold">{r.strike}</td>
+                        <td className="px-2 py-1.5 text-purple-700 font-bold">{r.action}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-emerald-600">{fmt(r.conservativeNet)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{fmt(r.midNet)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-amber-700">{fmt(r.slipNet)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+            <div className="px-3 py-2 bg-slate-50 border-b text-xs font-bold text-slate-700">Capital-constrained daily breakdown</div>
+            {daily.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-sm font-semibold">
+                No clean executable history yet (old junk filtered). Run during market hours for live expectancy.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 font-bold text-slate-600 uppercase">
+                    <tr>
+                      <th className="px-2 py-2">Date</th>
+                      <th className="px-2 py-2 text-right">Signals</th>
+                      <th className="px-2 py-2 text-right">Taken</th>
+                      <th className="px-2 py-2 text-right">Cons ₹</th>
+                      <th className="px-2 py-2 text-right">Mid ₹</th>
+                      <th className="px-2 py-2 text-right">Slip ₹</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {[...daily].reverse().map((d) => (
+                      <tr key={d.date} className="hover:bg-slate-50">
+                        <td className="px-2 py-1.5 font-mono">{d.date}</td>
+                        <td className="px-2 py-1.5 text-right">{d.signals}</td>
+                        <td className="px-2 py-1.5 text-right font-bold">{d.taken}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-emerald-600">{fmt(d.conservativePnl)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{fmt(d.midPnl)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-amber-700">{fmt(d.slipPnl)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {top.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+              <div className="px-3 py-2 bg-slate-50 border-b text-xs font-bold text-slate-700">Top clean signals in sample</div>
+              <div className="overflow-x-auto max-h-72">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 font-bold text-slate-600 uppercase sticky top-0">
+                    <tr>
+                      <th className="px-2 py-2">Date</th>
+                      <th className="px-2 py-2">U</th>
+                      <th className="px-2 py-2">Strike</th>
+                      <th className="px-2 py-2">Action</th>
+                      <th className="px-2 py-2 text-right">Cons ₹</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {top.slice(0, 25).map((r, i) => (
+                      <tr key={i}>
+                        <td className="px-2 py-1 font-mono text-[11px]">{r.date}</td>
+                        <td className="px-2 py-1 font-bold">{r.underlying}</td>
+                        <td className="px-2 py-1">{r.strike}</td>
+                        <td className="px-2 py-1 text-purple-700 font-bold">{r.action}</td>
+                        <td className="px-2 py-1 text-right font-mono text-emerald-600">{fmt(r.conservativeNet)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 /* 3. BOX SPREAD VIEW */
 function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {

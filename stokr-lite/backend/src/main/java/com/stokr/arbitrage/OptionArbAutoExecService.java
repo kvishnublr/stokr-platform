@@ -13,7 +13,8 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Bid-parity / option-arb auto execution (broker-routed).
@@ -47,6 +48,17 @@ public class OptionArbAutoExecService {
 
     private final ConcurrentHashMap<String, Object> settings = new ConcurrentHashMap<>();
     private final List<Map<String, Object>> execLogs = Collections.synchronizedList(new ArrayList<>());
+
+    /** Dedicated pool for parallel 3-leg placement (low latency). */
+    private final ExecutorService execPool = Executors.newFixedThreadPool(6, r -> {
+        Thread t = new Thread(r, "bid-parity-exec");
+        t.setDaemon(true);
+        return t;
+    });
+
+    private final AtomicLong marginCacheAt = new AtomicLong(0);
+    private volatile double marginCacheValue = -1;
+    private static final long MARGIN_CACHE_MS = 2500;
 
     @PostConstruct
     public void init() {
@@ -332,8 +344,8 @@ public class OptionArbAutoExecService {
                 continue;
             }
 
-            // Re-fetch margin immediately before each fire
-            double liveMargin = fetchAvailableMarginOrAbort(adapter, account);
+            // Use short-lived margin cache inside a cycle (re-check if stale)
+            double liveMargin = fetchAvailableMarginCached(adapter, account);
             if (liveMargin < 0) return;
             availableMargin = liveMargin;
             if (availableMargin < MIN_AVAILABLE_MARGIN) {
@@ -358,7 +370,12 @@ public class OptionArbAutoExecService {
                     + " " + action + " Edge=₹" + String.format("%.0f", opp.getEdgeAfterCosts().doubleValue())
                     + " ≥ ₹" + String.format("%.0f", minEdge)
                     + " | margin ₹" + String.format("%.0f", availableMargin));
-            executeTrade(account, adapter, opp, lots, userId, action);
+            long tExec = System.currentTimeMillis();
+            executeTradeFast(account, adapter, opp, lots, userId, action);
+            addLog("EXEC", "LATENCY", opp.getUnderlying() + " " + opp.getStrike()
+                    + " place+confirm " + (System.currentTimeMillis() - tExec) + "ms");
+            // Invalidate margin cache after a live fire
+            marginCacheAt.set(0);
             currentOpen++;
         }
     }
@@ -371,11 +388,21 @@ public class OptionArbAutoExecService {
                 addLog("MARGIN", "ERROR", "Broker returned null AvailableMargin — abort");
                 return -1;
             }
-            return margin.doubleValue();
+            marginCacheValue = margin.doubleValue();
+            marginCacheAt.set(System.currentTimeMillis());
+            return marginCacheValue;
         } catch (Exception e) {
             addLog("MARGIN", "ERROR", "Failed to fetch AvailableMargin: " + e.getMessage() + " — abort");
             return -1;
         }
+    }
+
+    private double fetchAvailableMarginCached(BrokerAdapter adapter, BrokerAccount account) {
+        long now = System.currentTimeMillis();
+        if (marginCacheValue >= 0 && (now - marginCacheAt.get()) < MARGIN_CACHE_MS) {
+            return marginCacheValue;
+        }
+        return fetchAvailableMarginOrAbort(adapter, account);
     }
 
     private BrokerAccount resolveBrokerAccount(String broker) {
@@ -409,8 +436,8 @@ public class OptionArbAutoExecService {
         return null;
     }
 
-    private void executeTrade(BrokerAccount account, BrokerAdapter adapter, OptionArbOpportunity opp,
-                              int lots, Long userId, String action) {
+    private void executeTradeFast(BrokerAccount account, BrokerAdapter adapter, OptionArbOpportunity opp,
+                                  int lots, Long userId, String action) {
         int lotSize = OptionChainService.getLotSize(opp.getUnderlying());
         LocalDate expiry = opp.getExpiryDate();
         String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), expiry, opp.getStrike(), "CE");
@@ -436,62 +463,96 @@ public class OptionArbAutoExecService {
                 .enteredAt(LocalDateTime.now())
                 .createdAt(LocalDateTime.now())
                 .build();
+        // Persist EXECUTING immediately so UI/ops can see in-flight
+        positionRepo.save(position);
 
         boolean conversion = "CONVERSION".equals(action);
         int qty = lots * lotSize;
         String token = account.getAccessToken();
 
+        BrokerOrderRequest.Side ceSide = conversion ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL;
+        BrokerOrderRequest.Side peSide = conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
+        BrokerOrderRequest.Side futSide = conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
+
         try {
-            BrokerOrderResponse ceResp = place(adapter, token, ceSymbol,
-                    conversion ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL, qty);
-            if (!isPlaced(ceResp)) {
+            // Fire all 3 legs in parallel for minimum hedge latency
+            CompletableFuture<BrokerOrderResponse> ceF = CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, ceSymbol, ceSide, qty), execPool);
+            CompletableFuture<BrokerOrderResponse> peF = CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, peSymbol, peSide, qty), execPool);
+            CompletableFuture<BrokerOrderResponse> futF = CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, futSymbol, futSide, qty), execPool);
+
+            CompletableFuture.allOf(ceF, peF, futF).get(8, TimeUnit.SECONDS);
+            BrokerOrderResponse ceResp = ceF.getNow(null);
+            BrokerOrderResponse peResp = peF.getNow(null);
+            BrokerOrderResponse futResp = futF.getNow(null);
+
+            boolean ceOk = isPlaced(ceResp);
+            boolean peOk = isPlaced(peResp);
+            boolean futOk = isPlaced(futResp);
+
+            if (ceOk) position.setCeOrderId(ceResp.orderId());
+            if (peOk) position.setPeOrderId(peResp.orderId());
+            if (futOk) position.setFutOrderId(futResp.orderId());
+
+            if (ceOk && peOk && futOk) {
+                position.setStatus("OPEN");
+                positionRepo.save(position);
+                addLog("EXEC", "SUCCESS", opp.getUnderlying() + " " + opp.getStrike() + " " + action
+                        + " lots=" + lots + " PARALLEL"
+                        + " CE:" + ceResp.orderId() + " PE:" + peResp.orderId() + " FUT:" + futResp.orderId());
+                return;
+            }
+
+            // Partial — square off whatever filled, in parallel
+            List<CompletableFuture<BrokerOrderResponse>> unwind = new ArrayList<>();
+            if (ceOk) unwind.add(CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, ceSymbol, flip(ceSide), qty), execPool));
+            if (peOk) unwind.add(CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, peSymbol, flip(peSide), qty), execPool));
+            if (futOk) unwind.add(CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, futSymbol, flip(futSide), qty), execPool));
+            if (!unwind.isEmpty()) {
+                try {
+                    CompletableFuture.allOf(unwind.toArray(CompletableFuture[]::new)).get(8, TimeUnit.SECONDS);
+                } catch (Exception unwindEx) {
+                    addLog("EXEC", "UNWIND_ERR", unwindEx.getMessage());
+                }
+            }
+
+            String err = "CE=" + statusOf(ceResp) + " PE=" + statusOf(peResp) + " FUT=" + statusOf(futResp);
+            if (!ceOk && !peOk && !futOk) {
                 position.setStatus("FAILED");
-                position.setErrorMessage("CE failed: " + (ceResp != null ? ceResp.message() : "null"));
-                positionRepo.save(position);
-                addLog("EXEC", "FAILED", opp.getUnderlying() + " CE: " + (ceResp != null ? ceResp.message() : "null"));
-                return;
-            }
-            position.setCeOrderId(ceResp.orderId());
-
-            BrokerOrderResponse peResp = place(adapter, token, peSymbol,
-                    conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY, qty);
-            if (!isPlaced(peResp)) {
-                place(adapter, token, ceSymbol,
-                        conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY, qty);
+                position.setErrorMessage(err);
+                addLog("EXEC", "FAILED", opp.getUnderlying() + " " + err);
+            } else {
                 position.setStatus("PARTIAL");
-                position.setErrorMessage("PE failed: " + (peResp != null ? peResp.message() : "null") + " (CE squared)");
-                positionRepo.save(position);
-                addLog("EXEC", "PARTIAL", opp.getUnderlying() + " PE failed, CE squared");
-                return;
+                position.setErrorMessage(err + " (unwind attempted)");
+                addLog("EXEC", "PARTIAL", opp.getUnderlying() + " " + err);
             }
-            position.setPeOrderId(peResp.orderId());
-
-            BrokerOrderResponse futResp = place(adapter, token, futSymbol,
-                    conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY, qty);
-            if (!isPlaced(futResp)) {
-                place(adapter, token, ceSymbol,
-                        conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY, qty);
-                place(adapter, token, peSymbol,
-                        conversion ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL, qty);
-                position.setStatus("PARTIAL");
-                position.setErrorMessage("FUT failed: " + (futResp != null ? futResp.message() : "null") + " (options squared)");
-                positionRepo.save(position);
-                addLog("EXEC", "PARTIAL", opp.getUnderlying() + " FUT failed, options squared");
-                return;
-            }
-            position.setFutOrderId(futResp.orderId());
-            position.setStatus("OPEN");
             positionRepo.save(position);
-
-            addLog("EXEC", "SUCCESS", opp.getUnderlying() + " " + opp.getStrike() + " " + action
-                    + " lots=" + lots
-                    + " CE:" + ceResp.orderId() + " PE:" + peResp.orderId() + " FUT:" + futResp.orderId());
+        } catch (TimeoutException te) {
+            position.setStatus("FAILED");
+            position.setErrorMessage("Parallel place timeout 8s");
+            positionRepo.save(position);
+            addLog("EXEC", "TIMEOUT", opp.getUnderlying() + " " + opp.getStrike());
         } catch (Exception e) {
             position.setStatus("FAILED");
             position.setErrorMessage(e.getMessage());
             positionRepo.save(position);
             addLog("EXEC", "ERROR", opp.getUnderlying() + " " + opp.getStrike() + ": " + e.getMessage());
         }
+    }
+
+    private static BrokerOrderRequest.Side flip(BrokerOrderRequest.Side s) {
+        return s == BrokerOrderRequest.Side.BUY ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
+    }
+
+    private static String statusOf(BrokerOrderResponse r) {
+        if (r == null) return "null";
+        if (r.orderId() != null && !r.orderId().isBlank()) return "OK:" + r.orderId();
+        return String.valueOf(r.status()) + ":" + r.message();
     }
 
     private BrokerOrderResponse place(BrokerAdapter adapter, String token, String symbol,

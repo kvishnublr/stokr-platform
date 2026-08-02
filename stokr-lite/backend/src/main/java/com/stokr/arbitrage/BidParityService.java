@@ -88,7 +88,7 @@ public class BidParityService {
     }
 
     /** Parse NFO:NIFTY25AUGFUT → last monthly expiry for that contract month. */
-    static LocalDate resolveFuturesExpiry(String underlying, String futKey) {
+    public static LocalDate resolveFuturesExpiry(String underlying, String futKey) {
         try {
             String key = futKey == null ? "" : futKey.replace("NFO:", "").toUpperCase(Locale.ROOT);
             // e.g. NIFTY25AUGFUT / BANKNIFTY25AUGFUT
