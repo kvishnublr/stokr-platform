@@ -281,3 +281,87 @@ When the user asks about Feishu/Lark/飞书 matters, route through Feishu/Lark s
 3. If you find a matching skill that is not installed or enabled, ask the user whether to install/enable and use it before proceeding.
 4. If no matching skill exists, say so briefly and continue with the safest available fallback.
 <!-- /autoclaw:feishu-lark-skill-guidance -->
+
+## Cursor Cloud specific instructions
+
+### Product layout
+
+The deployable app is **Stokr Lite** under `stokr-lite/`:
+
+| Component | Path | Dev port |
+|-----------|------|----------|
+| Spring Boot API | `stokr-lite/backend` | 8080 |
+| React (Vite) SPA | `stokr-lite/frontend` | 5173 |
+
+The repo root holds ops/debug scripts; it is not a separate runnable product.
+
+### System prerequisites (one-time on the VM)
+
+- **Java 21** (preinstalled on the cloud VM)
+- **Node.js 22+** and npm
+- **Maven 3.8+** (`sudo apt-get install -y maven`)
+- **PostgreSQL 16** (`sudo apt-get install -y postgresql postgresql-contrib`)
+
+Start PostgreSQL before backend work:
+
+```bash
+sudo pg_ctlcluster 16 main start
+```
+
+Create the local database once (if missing):
+
+```bash
+sudo -u postgres psql -c "CREATE USER stokr WITH PASSWORD 'stokr_pass' CREATEDB;"
+sudo -u postgres psql -c "CREATE DATABASE stokr_lite OWNER stokr;"
+```
+
+### Dependency install
+
+See `stokr-lite/frontend/package.json` and `stokr-lite/backend/pom.xml`. The update script runs `npm ci` and `mvn dependency:resolve`.
+
+### Running dev servers
+
+Use tmux sessions so servers survive between commands.
+
+**Backend** (from `stokr-lite/backend`):
+
+```bash
+export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/stokr_lite
+export SPRING_DATASOURCE_USERNAME=stokr
+export SPRING_DATASOURCE_PASSWORD=stokr_pass
+export SPRING_PROFILES_ACTIVE=local
+export JWT_SECRET=dev-local-jwt-secret-key-at-least-256-bits-long-for-testing
+mvn spring-boot:run
+```
+
+With `local` profile, admin credentials are `admin@stokr.in` / `$ADMIN_PASSWORD` (literal password string).
+
+**Frontend** (from `stokr-lite/frontend`):
+
+```bash
+npm run dev
+```
+
+Vite proxies `/api` → `http://localhost:8080` (see `vite.config.js`).
+
+Health check: `curl http://localhost:8080/actuator/health`
+
+### Flyway / fresh database caveats
+
+Flyway migrations run on backend startup. A **fresh** local `stokr_lite` database may fail mid-migration because:
+
+1. Early seed migrations insert explicit `strategies.id` values without bumping `strategies_id_seq` (fails around V31).
+2. `V34` uses `ON CONFLICT (strategy_type)` but no unique index exists on `strategy_type`.
+3. `V38` alters `option_arb_executed_trades`, which has no earlier `CREATE TABLE` migration.
+
+If migrations fail on a fresh DB, either repair manually (fix sequence with `SELECT setval('strategies_id_seq', (SELECT MAX(id) FROM strategies));`, apply remaining SQL, register rows in `flyway_schema_history`) or temporarily start with `--spring.flyway.enabled=false` after partial schema exists. The default remote DB in `application.yml` (`173.249.55.84`) is not reliably reachable from cloud agents.
+
+### Lint / tests
+
+- **Backend:** `mvn test` — no test sources today; exits successfully.
+- **Frontend:** no ESLint script; use `npm run build` as a compile check.
+- **CI:** deploy workflows only; no lint/test gates in GitHub Actions.
+
+### Optional services (not required for basic E2E)
+
+Broker OAuth (Zerodha/Dhan/Fyers/Navia), Chartink webhooks, and remote production Postgres are optional for login + dashboard + strategies UI smoke tests.
