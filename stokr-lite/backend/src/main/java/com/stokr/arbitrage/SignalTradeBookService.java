@@ -29,15 +29,18 @@ public class SignalTradeBookService {
     private final OptionArbOpportunityRepository opportunityRepo;
     private final LivePositionRepository livePositionRepo;
     private final OptionChainService optionChainService;
+    private final ZerodhaSpotPriceFetcher spotPriceFetcher;
 
     private final ConcurrentHashMap<String, Cached> cache = new ConcurrentHashMap<>();
 
     public SignalTradeBookService(OptionArbOpportunityRepository opportunityRepo,
                                   LivePositionRepository livePositionRepo,
-                                  OptionChainService optionChainService) {
+                                  OptionChainService optionChainService,
+                                  ZerodhaSpotPriceFetcher spotPriceFetcher) {
         this.opportunityRepo = opportunityRepo;
         this.livePositionRepo = livePositionRepo;
         this.optionChainService = optionChainService;
+        this.spotPriceFetcher = spotPriceFetcher;
     }
 
     public Map<String, Object> getTradeBook(String strategyType, String underlying, int days, double minEdge) {
@@ -406,17 +409,21 @@ public class SignalTradeBookService {
         int lotSize = p.getLotSize() != null ? p.getLotSize() : OptionChainService.getLotSize(p.getUnderlying());
         int lots = p.getLots() != null ? Math.max(1, p.getLots()) : 1;
 
-        // Paper without entry marks: show 0 until we have quotes + entry
         double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
         double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
         double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
+        // Recover executable marks from PAPER legs note when columns missing
+        if ((ceEntry <= 0 || peEntry <= 0 || futEntry <= 0) && p.getErrorMessage() != null) {
+            double[] parsed = parseEntryMarksFromLegs(p.getErrorMessage());
+            if (ceEntry <= 0 && parsed[0] > 0) ceEntry = parsed[0];
+            if (peEntry <= 0 && parsed[1] > 0) peEntry = parsed[1];
+            if (futEntry <= 0 && parsed[2] > 0) futEntry = parsed[2];
+        }
 
         if (ceEntry <= 0 && peEntry <= 0) {
-            // No marks yet — PnL unknown; keep stored currentPnl (usually 0)
             return p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0;
         }
 
-        // Need expiry from linked opportunity if present
         LocalDate expiry = null;
         if (p.getOpportunityId() != null) {
             expiry = opportunityRepo.findById(p.getOpportunityId())
@@ -428,9 +435,25 @@ public class SignalTradeBookService {
 
         String ceSym = optionChainService.buildNfoSymbol(p.getUnderlying(), expiry, p.getStrike(), "CE");
         String peSym = optionChainService.buildNfoSymbol(p.getUnderlying(), expiry, p.getStrike(), "PE");
-        Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSym, peSym));
+        String futSym = p.getFutSymbol();
+        if (futSym == null || futSym.isBlank()) {
+            futSym = buildMonthlyFutSymbol(p.getUnderlying());
+        }
+
+        List<String> instruments = new ArrayList<>();
+        instruments.add(ceSym);
+        instruments.add(peSym);
+        if (futSym != null && !futSym.isBlank()) instruments.add(futSym);
+        Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
         double ceLive = quotes.containsKey(ceSym) ? midOrLast(quotes.get(ceSym)) : 0;
         double peLive = quotes.containsKey(peSym) ? midOrLast(quotes.get(peSym)) : 0;
+        double futLive = 0;
+        if (futSym != null && quotes.containsKey(futSym)) {
+            futLive = midOrLast(quotes.get(futSym));
+        }
+        if (futLive <= 0) {
+            futLive = liveFuturesPrice(p.getUnderlying());
+        }
         if (ceLive <= 0 || peLive <= 0) {
             return p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0;
         }
@@ -438,21 +461,70 @@ public class SignalTradeBookService {
         String action = p.getAction() != null ? p.getAction().toUpperCase(Locale.ROOT) : "";
         double pts;
         if (strategy.contains("BOX")) {
-            // Approximate: use option legs only vs entry (fut not tracked for paper box)
-            // LONG BOX paid debit at entry; PnL ≈ change in box value
-            pts = ((ceLive - ceEntry) - (peLive - peEntry)); // crude single-strike proxy if only ATM stored
-            // Prefer target-edge decay not available — keep option MTM delta
+            pts = ((ceLive - ceEntry) - (peLive - peEntry));
         } else if (action.contains("CONVERSION") || (action.contains("BUY CE") && action.contains("SELL PE"))) {
+            // Long synth (BUY CE / SELL PE) + short futures hedge
             pts = (ceLive - ceEntry) + (peEntry - peLive);
-            if (futEntry > 0) {
-                // Conversion shorts fut — need fut live; skip if missing
+            if (futEntry > 0 && futLive > 0) {
+                pts += (futEntry - futLive);
             }
         } else if (action.contains("REVERSAL") || (action.contains("SELL CE") && action.contains("BUY PE"))) {
+            // Short synth (SELL CE / BUY PE) + long futures hedge
             pts = (ceEntry - ceLive) + (peLive - peEntry);
+            if (futEntry > 0 && futLive > 0) {
+                pts += (futLive - futEntry);
+            }
         } else {
             pts = (ceLive - ceEntry) + (peEntry - peLive);
+            if (futEntry > 0 && futLive > 0) {
+                pts += (futEntry - futLive);
+            }
         }
         return pts * lotSize * lots;
+    }
+
+    /** Parse "BUY 57700 CE @ 809.4 | SELL 57700 PE @ 613.5 | SELL BANKNIFTY FUT @ 57921.6" */
+    static double[] parseEntryMarksFromLegs(String note) {
+        double ce = 0, pe = 0, fut = 0;
+        if (note == null) return new double[]{0, 0, 0};
+        try {
+            java.util.regex.Matcher mCe = java.util.regex.Pattern
+                    .compile("CE\\s*@\\s*([0-9]+(?:\\.[0-9]+)?)", java.util.regex.Pattern.CASE_INSENSITIVE)
+                    .matcher(note);
+            if (mCe.find()) ce = Double.parseDouble(mCe.group(1));
+            java.util.regex.Matcher mPe = java.util.regex.Pattern
+                    .compile("PE\\s*@\\s*([0-9]+(?:\\.[0-9]+)?)", java.util.regex.Pattern.CASE_INSENSITIVE)
+                    .matcher(note);
+            if (mPe.find()) pe = Double.parseDouble(mPe.group(1));
+            java.util.regex.Matcher mFut = java.util.regex.Pattern
+                    .compile("FUT\\s*@\\s*([0-9]+(?:\\.[0-9]+)?)", java.util.regex.Pattern.CASE_INSENSITIVE)
+                    .matcher(note);
+            if (mFut.find()) fut = Double.parseDouble(mFut.group(1));
+        } catch (Exception ignored) {}
+        return new double[]{ce, pe, fut};
+    }
+
+    private double liveFuturesPrice(String underlying) {
+        try {
+            String spotKey = "NSE:" + ("NIFTY".equalsIgnoreCase(underlying) ? "NIFTY 50"
+                    : "BANKNIFTY".equalsIgnoreCase(underlying) ? "NIFTY BANK"
+                    : "FINNIFTY".equalsIgnoreCase(underlying) ? "NIFTY FIN SERVICE"
+                    : "MIDCPNIFTY".equalsIgnoreCase(underlying) ? "NIFTY MID SELECT"
+                    : underlying);
+            String futKey = FuturesKeyResolver.resolveFuturesKey(underlying, spotPriceFetcher, spotKey);
+            double[] sf = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
+            if (sf != null && sf.length > 1 && sf[1] > 0) return sf[1];
+        } catch (Exception e) {
+            log.debug("Fut live failed for {}: {}", underlying, e.getMessage());
+        }
+        return 0;
+    }
+
+    private String buildMonthlyFutSymbol(String underlying) {
+        LocalDate monthly = optionChainService.getMonthlyExpiry(underlying);
+        int yy = monthly.getYear() % 100;
+        String mon = monthly.getMonth().name().substring(0, 3);
+        return String.format("%s%02d%sFUT", underlying.replace(" ", ""), yy, mon);
     }
 
     private static double midOrLast(OptionChainService.OptionQuote q) {

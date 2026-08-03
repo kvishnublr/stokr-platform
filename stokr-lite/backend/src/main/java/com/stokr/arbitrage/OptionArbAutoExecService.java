@@ -640,6 +640,7 @@ public class OptionArbAutoExecService {
                 .lotSize(lotSize)
                 .ceEntryPrice(opp.getCeEntryPrice())
                 .peEntryPrice(opp.getPeEntryPrice())
+                .futEntryPrice(opp.getFuturesPrice())
                 .targetEdge(opp.getEdgeAfterCosts())
                 .status("EXECUTING")
                 .enteredAt(LocalDateTime.now())

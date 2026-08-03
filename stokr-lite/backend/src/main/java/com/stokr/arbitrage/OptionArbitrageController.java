@@ -295,12 +295,61 @@ public class OptionArbitrageController {
             int lotSize = OptionChainService.getLotSize(underlying);
             String paperId = "PAPER-" + System.currentTimeMillis();
 
-            java.math.BigDecimal ceEntry = body.get("cePrice") instanceof Number n
-                    ? java.math.BigDecimal.valueOf(n.doubleValue())
-                    : body.get("ceBid") instanceof Number n2 ? java.math.BigDecimal.valueOf(n2.doubleValue()) : null;
-            java.math.BigDecimal peEntry = body.get("pePrice") instanceof Number n
-                    ? java.math.BigDecimal.valueOf(n.doubleValue())
-                    : body.get("peBid") instanceof Number n2 ? java.math.BigDecimal.valueOf(n2.doubleValue()) : null;
+            boolean conversion = action.toUpperCase(java.util.Locale.ROOT).contains("CONVERSION")
+                    || (action.toUpperCase(java.util.Locale.ROOT).contains("BUY CE")
+                        && action.toUpperCase(java.util.Locale.ROOT).contains("SELL PE"));
+
+            // Prefer executable touch prices (ask for buys, bid for sells)
+            java.math.BigDecimal ceEntry = numBd(body, conversion ? "ceAsk" : "ceBid");
+            if (ceEntry == null) ceEntry = numBd(body, "cePrice");
+            if (ceEntry == null) ceEntry = numBd(body, "ceEntryPrice");
+            java.math.BigDecimal peEntry = numBd(body, conversion ? "peBid" : "peAsk");
+            if (peEntry == null) peEntry = numBd(body, "pePrice");
+            if (peEntry == null) peEntry = numBd(body, "peEntryPrice");
+            java.math.BigDecimal futEntry = numBd(body, "futuresPrice");
+            if (futEntry == null) futEntry = numBd(body, "futPrice");
+            if (futEntry == null) futEntry = numBd(body, "futEntryPrice");
+
+            String legs = String.valueOf(body.getOrDefault("legs", ""));
+            if ((ceEntry == null || peEntry == null || futEntry == null) && legs != null && !legs.isBlank()) {
+                double[] parsed = SignalTradeBookService.parseEntryMarksFromLegs(legs);
+                if (ceEntry == null && parsed[0] > 0) ceEntry = java.math.BigDecimal.valueOf(parsed[0]);
+                if (peEntry == null && parsed[1] > 0) peEntry = java.math.BigDecimal.valueOf(parsed[1]);
+                if (futEntry == null && parsed[2] > 0) futEntry = java.math.BigDecimal.valueOf(parsed[2]);
+            }
+
+            LocalDate expiry = null;
+            if (opportunityId != null) {
+                expiry = historyService.getRepository().findById(opportunityId)
+                        .map(OptionArbOpportunity::getExpiryDate).orElse(null);
+            }
+            String ceSymbol = expiry != null
+                    ? optionChainService.buildNfoSymbol(underlying, expiry, strike, "CE") : null;
+            String peSymbol = expiry != null
+                    ? optionChainService.buildNfoSymbol(underlying, expiry, strike, "PE") : null;
+            LocalDate monthly = optionChainService.getMonthlyExpiry(underlying);
+            String futSymbol = String.format("%s%02d%sFUT", underlying.replace(" ", ""),
+                    monthly.getYear() % 100, monthly.getMonth().name().substring(0, 3));
+
+            if (legs == null || legs.isBlank() || "null".equals(legs)) {
+                if (conversion) {
+                    legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
+                            strike,
+                            ceEntry != null ? ceEntry.doubleValue() : 0,
+                            strike,
+                            peEntry != null ? peEntry.doubleValue() : 0,
+                            underlying,
+                            futEntry != null ? futEntry.doubleValue() : 0);
+                } else {
+                    legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
+                            strike,
+                            ceEntry != null ? ceEntry.doubleValue() : 0,
+                            strike,
+                            peEntry != null ? peEntry.doubleValue() : 0,
+                            underlying,
+                            futEntry != null ? futEntry.doubleValue() : 0);
+                }
+            }
 
             LivePosition pos = LivePosition.builder()
                     .opportunityId(opportunityId)
@@ -308,17 +357,21 @@ public class OptionArbitrageController {
                     .strike(strike)
                     .action(action)
                     .strategyType(strategy)
+                    .ceSymbol(ceSymbol)
+                    .peSymbol(peSymbol)
+                    .futSymbol(futSymbol)
                     .lots(Math.max(1, lots))
                     .lotSize(lotSize)
                     .ceEntryPrice(ceEntry)
                     .peEntryPrice(peEntry)
+                    .futEntryPrice(futEntry)
                     .targetEdge(java.math.BigDecimal.valueOf(edge))
                     .currentPnl(java.math.BigDecimal.ZERO)
                     .status("ENTERED")
                     .ceOrderId(paperId)
                     .peOrderId(paperId)
                     .futOrderId(paperId)
-                    .errorMessage("PAPER " + strategy + " · " + String.valueOf(body.getOrDefault("legs", "")))
+                    .errorMessage("PAPER " + strategy + " · " + legs)
                     .enteredAt(LocalDateTime.now())
                     .createdAt(LocalDateTime.now())
                     .build();
@@ -336,6 +389,12 @@ public class OptionArbitrageController {
             resp.put("message", e.getMessage());
             return ResponseEntity.ok(resp);
         }
+    }
+
+    private static java.math.BigDecimal numBd(Map<String, Object> body, String key) {
+        Object v = body.get(key);
+        if (v instanceof Number n) return java.math.BigDecimal.valueOf(n.doubleValue());
+        return null;
     }
 
     @PostMapping("/live-positions/{id}/exit")

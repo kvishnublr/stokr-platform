@@ -183,8 +183,10 @@ export default function OptionArbitrage() {
 
   const handleExecuteInline = async (opp, lots = 1) => {
     try {
-      // Prefer Bid Parity auto-exec path when opportunity id exists (3-leg)
-      if (opp?.id && String(opp.strategyType || opp.type || '').toUpperCase().includes('PARITY')) {
+      const isPaper = String(executionBroker || '').toUpperCase() === 'PAPER';
+      const isParity = String(opp?.strategyType || opp?.type || '').toUpperCase().includes('PARITY');
+      // Live broker + DB opportunity → auto-exec 3-leg path
+      if (!isPaper && opp?.id && isParity) {
         const res = await client.get('/option-arbitrage/auto-execute/execute', {
           params: { opportunityId: opp.id, multiplier: lots },
         });
@@ -196,15 +198,21 @@ export default function OptionArbitrage() {
         }
         return;
       }
-      // Paper recorder for Box / Calendar / live rows without DB id
+      // Paper recorder (always for PAPER mode; also Box/Calendar without live fire)
       const res = await client.post('/option-arbitrage/paper-trade', {
         ...opp,
         lots,
         strategyType: opp.strategyType || opp.type || 'PAPER',
-        edgeAfterCosts: opp.edgeAfterCosts || opp.boxEdgeInr || 0,
+        edgeAfterCosts: opp.edgeAfterCosts || opp.boxEdgeInr || opp.targetEdge || 0,
+        futuresPrice: opp.futuresPrice || opp.futPrice || 0,
+        ceAsk: opp.ceAsk,
+        peBid: opp.peBid,
+        ceBid: opp.ceBid,
+        peAsk: opp.peAsk,
+        legs: opp.legs,
       });
       if (res.data?.status === 'SUBMITTED') {
-        showToast(`📝 Paper ${opp.underlying || ''} recorded (${executionBroker})`, 'success');
+        showToast(`📝 Paper ${opp.underlying || ''} recorded (${executionBroker || 'PAPER'})`, 'success');
       } else {
         showToast(res.data?.message || 'Paper trade failed', 'warning');
       }
@@ -944,8 +952,9 @@ function BidParityPositionsView({ executionBroker, autoRefresh = true }) {
       </div>
 
       <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl">
-        Auto-exit: when live PnL reaches near the entry edge (edge ₹300 → exit ≥ ₹290 by default).
-        Manual Exit still works anytime · Paper exits are virtual · Entry auto-exec stays separate.
+        Live PnL = hedged 3-leg MTM (CE + PE + FUT). Target edge is the entry opportunity — not guaranteed profit at fill.
+        A red number after enter usually means mark moved / spread; it does <b>not</b> mean “loss entry is good.”
+        Auto-exit fires when live PnL nears target edge (e.g. ₹300 → ≥ ₹290).
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
