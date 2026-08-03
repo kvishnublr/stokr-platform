@@ -72,20 +72,26 @@ public class BidParityService {
                     SCAN_POOL));
         }
 
+        // ALL+BOTH hits 4×(weekly+monthly) quote batches — 8s was too tight and returned empty on lag
+        long waitSec = "ALL".equals(uKey) ? 20L : 12L;
+        boolean timedOut = false;
         List<Map<String, Object>> results = new ArrayList<>();
         try {
             CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
-                    .get(8, TimeUnit.SECONDS);
-            for (CompletableFuture<List<Map<String, Object>>> f : futures) {
-                List<Map<String, Object>> part = f.getNow(List.of());
-                if (part != null) results.addAll(part);
-            }
+                    .get(waitSec, TimeUnit.SECONDS);
+        } catch (TimeoutException te) {
+            timedOut = true;
+            log.warn("Parallel Bid Parity scan timed out after {}s for {}|{} — collecting partials",
+                    waitSec, uKey, mode);
         } catch (Exception e) {
             log.warn("Parallel Bid Parity scan incomplete: {}", e.getMessage());
-            for (CompletableFuture<List<Map<String, Object>>> f : futures) {
-                if (f.isDone() && !f.isCompletedExceptionally()) {
-                    try { results.addAll(f.get()); } catch (Exception ignored) {}
-                }
+        }
+        for (CompletableFuture<List<Map<String, Object>>> f : futures) {
+            if (f.isDone() && !f.isCompletedExceptionally()) {
+                try {
+                    List<Map<String, Object>> part = f.getNow(List.of());
+                    if (part != null) results.addAll(part);
+                } catch (Exception ignored) {}
             }
         }
 
@@ -93,8 +99,20 @@ public class BidParityService {
                 ((Number) b.getOrDefault("edgeAfterCosts", 0)).doubleValue(),
                 ((Number) a.getOrDefault("edgeAfterCosts", 0)).doubleValue()));
 
-        scanCache.put(cacheKey, new CachedScan(System.currentTimeMillis(), deepCopy(results)));
+        // Never poison cache with empty timeout results (UI would flash "no signals" for 1.5s+)
+        if (!(timedOut && results.isEmpty())) {
+            scanCache.put(cacheKey, new CachedScan(System.currentTimeMillis(), deepCopy(results)));
+        }
+        // Stamp timeout marker on first row only for API consumers (controller reads separately)
+        lastScanTimedOut.set(timedOut);
         return results;
+    }
+
+    private final java.util.concurrent.atomic.AtomicBoolean lastScanTimedOut =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    public boolean consumeLastScanTimedOut() {
+        return lastScanTimedOut.getAndSet(false);
     }
 
     private List<Map<String, Object>> scanOne(String u, String spotKey, String mode) {

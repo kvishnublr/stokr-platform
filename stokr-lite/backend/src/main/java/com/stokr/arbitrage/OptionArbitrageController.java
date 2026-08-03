@@ -142,6 +142,7 @@ public class OptionArbitrageController {
         }
         long t0 = System.currentTimeMillis();
         List<Map<String, Object>> opps = bidParityService.scanBidParity(underlying, expiry);
+        boolean timedOut = bidParityService.consumeLastScanTimedOut();
         long scanMs = System.currentTimeMillis() - t0;
         if (opps != null && !opps.isEmpty()) triggerAutoExec();
         Map<String, Object> resp = new LinkedHashMap<>();
@@ -149,11 +150,15 @@ public class OptionArbitrageController {
         resp.put("underlying", underlying);
         resp.put("expiryMode", expiry);
         resp.put("marketClosed", false);
-        resp.put("opportunities", opps);
+        resp.put("opportunities", opps != null ? opps : Collections.emptyList());
         resp.put("count", opps != null ? opps.size() : 0);
         resp.put("scanMs", scanMs);
+        resp.put("timedOut", timedOut);
         resp.put("parityModel", "BLACK76_FUTURES");
         resp.put("note", "Black-76 futures parity. Weekly uses ATM-implied forward when index spot missing; hedge is monthly FUT.");
+        if (timedOut && (opps == null || opps.isEmpty())) {
+            resp.put("reason", "Scan timed out waiting on broker quotes — retry Refresh (or pick a single index).");
+        }
         return ResponseEntity.ok(resp);
     }
 

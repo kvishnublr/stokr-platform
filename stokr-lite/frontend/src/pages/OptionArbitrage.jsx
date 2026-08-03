@@ -1214,6 +1214,8 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
   const opps = (data?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) >= minEdge);
   const marketClosed = data?.marketClosed;
   const scanMs = data?.scanMs;
+  const timedOut = !!data?.timedOut;
+  const scanReason = data?.reason;
 
   const LOT = { NIFTY: 25, BANKNIFTY: 15, FINNIFTY: 25, MIDCPNIFTY: 50 };
   const LIQ = { NIFTY: 'high', BANKNIFTY: 'high', FINNIFTY: 'medium', MIDCPNIFTY: 'thin' };
@@ -1300,6 +1302,13 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
         </div>
       )}
 
+      {timedOut && (
+        <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold px-4 py-3 rounded-xl">
+          Broker quote lag — scan hit timeout{scanMs != null ? ` (${scanMs}ms)` : ''}.
+          {' '}{scanReason || 'Click Refresh, or switch to BANKNIFTY / NIFTY alone (faster than ALL).'}
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-semibold px-4 py-3 rounded-xl">
           Scan failed: {error.message}
@@ -1311,9 +1320,15 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Bid Parity feeds...</div>
         ) : opps.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold space-y-1">
-            <div>No executable bid-parity edges ≥ ₹{minEdge} for {underlying} ({expiryMode})</div>
+            <div>
+              {timedOut
+                ? 'Scan timed out before quotes arrived — not “no edges”.'
+                : `No executable bid-parity edges ≥ ₹${minEdge} for ${underlying} (${expiryMode})`}
+            </div>
             <div className="text-[11px] font-medium text-slate-400">
-              Try filter ALL · lower Min edge to ₹0–50 · Black-76 means tight NIFTY/BN books often show nothing
+              {timedOut
+                ? 'Try BANKNIFTY Monthly, then Refresh. ALL+Both is heaviest.'
+                : 'Try filter ALL · lower Min edge to ₹0–50 · Black-76 means tight NIFTY/BN books often show nothing'}
               {scanMs != null ? ` · last scan ${scanMs}ms` : ''}
             </div>
           </div>
