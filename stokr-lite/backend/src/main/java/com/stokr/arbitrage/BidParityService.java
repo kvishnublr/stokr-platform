@@ -26,6 +26,16 @@ public class BidParityService {
     }
 
     public List<Map<String, Object>> scanBidParity(String underlying) {
+        return scanBidParity(underlying, "MONTHLY");
+    }
+
+    /**
+     * @param expiryMode MONTHLY | WEEKLY | BOTH
+     */
+    public List<Map<String, Object>> scanBidParity(String underlying, String expiryMode) {
+        String mode = expiryMode == null ? "MONTHLY" : expiryMode.trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("MONTHLY", "WEEKLY", "BOTH").contains(mode)) mode = "MONTHLY";
+
         List<String> targets = "ALL".equalsIgnoreCase(underlying)
                 ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
                 : List.of(underlying);
@@ -60,21 +70,16 @@ public class BidParityService {
                 }
 
                 LocalDate futExpiry = resolveFuturesExpiry(u, futKey);
-                log.info("Scanning Bid Parity for {}: spot={}, fut={}, basis={}, futExpiry={}, key={}",
-                        u, spot, fut, String.format("%.2f", fut - spot), futExpiry, futKey);
+                log.info("Scanning Bid Parity for {}: spot={}, fut={}, basis={}, futExpiry={}, key={}, mode={}",
+                        u, spot, fut, String.format("%.2f", fut - spot), futExpiry, futKey, mode);
 
-                // Monthly options vs monthly futures — weekly vs monthly creates false "edges"
-                List<ArbitrageOpportunity> opps = optionChainService.scanBidParityChain(u, spot, fut, futExpiry);
-                if (opps != null && !opps.isEmpty()) {
-                    historyService.saveOpportunities(opps, u, "BID_PARITY");
-
-                    for (ArbitrageOpportunity opp : opps) {
-                        Map<String, Object> map = opp.toMap();
-                        map.put("strategyType", "BID_PARITY");
-                        map.put("guaranteedFill", false);
-                        map.put("bidEdgeInr", opp.edgeAfterCosts);
-                        results.add(map);
-                    }
+                if ("MONTHLY".equals(mode) || "BOTH".equals(mode)) {
+                    addOpps(results, optionChainService.scanBidParityChain(u, spot, fut, futExpiry, false),
+                            u, "MONTHLY", false);
+                }
+                if ("WEEKLY".equals(mode) || "BOTH".equals(mode)) {
+                    addOpps(results, optionChainService.scanBidParityChain(u, spot, fut, futExpiry, true),
+                            u, "WEEKLY", true);
                 }
             } catch (Exception e) {
                 log.error("Error scanning Bid Parity for {}: {}", u, e.getMessage(), e);
@@ -85,6 +90,30 @@ public class BidParityService {
                 ((Number) b.getOrDefault("edgeAfterCosts", 0)).doubleValue(),
                 ((Number) a.getOrDefault("edgeAfterCosts", 0)).doubleValue()));
         return results;
+    }
+
+    private void addOpps(List<Map<String, Object>> results, List<ArbitrageOpportunity> opps,
+                         String underlying, String expiryMode, boolean weekly) {
+        if (opps == null || opps.isEmpty()) return;
+        String strategyType = weekly ? "BID_PARITY_WEEKLY" : "BID_PARITY";
+        historyService.saveOpportunities(opps, underlying, strategyType);
+        for (ArbitrageOpportunity opp : opps) {
+            Map<String, Object> map = opp.toMap();
+            map.put("strategyType", strategyType);
+            map.put("expiryMode", expiryMode);
+            map.put("basisRisk", weekly);
+            map.put("guaranteedFill", false);
+            map.put("bidEdgeInr", opp.edgeAfterCosts);
+            if (opp.costBreakdown != null) {
+                if (opp.costBreakdown.containsKey("parityForward")) {
+                    map.put("parityForward", opp.costBreakdown.get("parityForward"));
+                }
+                if (opp.costBreakdown.containsKey("basisResidual")) {
+                    map.put("basisResidual", opp.costBreakdown.get("basisResidual"));
+                }
+            }
+            results.add(map);
+        }
     }
 
     /** Parse NFO:NIFTY25AUGFUT → last monthly expiry for that contract month. */

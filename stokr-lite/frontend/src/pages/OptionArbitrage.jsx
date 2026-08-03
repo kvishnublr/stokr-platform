@@ -1097,13 +1097,16 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
 
 function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }) {
   const [underlying, setUnderlying] = useState('NIFTY');
+  const [expiryMode, setExpiryMode] = useState('BOTH'); // MONTHLY | WEEKLY | BOTH
   const [expandedId, setExpandedId] = useState(null);
   const [minEdge, setMinEdge] = useState(150);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ['bid-parity-scan', underlying],
+    queryKey: ['bid-parity-scan', underlying, expiryMode],
     queryFn: async () => {
-      const res = await client.get('/option-arbitrage/bid-parity/scan', { params: { underlying } });
+      const res = await client.get('/option-arbitrage/bid-parity/scan', {
+        params: { underlying, expiry: expiryMode },
+      });
       return res.data;
     },
     refetchInterval: autoRefresh ? 5000 : false,
@@ -1116,18 +1119,37 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
   return (
     <div className="space-y-4 w-full">
       <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-            <button
-              key={u}
-              onClick={() => setUnderlying(u)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {u}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+            {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+              <button
+                key={u}
+                onClick={() => setUnderlying(u)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                  underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {u}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+            {[
+              { id: 'MONTHLY', label: 'Monthly' },
+              { id: 'WEEKLY', label: 'Weekly' },
+              { id: 'BOTH', label: 'Both' },
+            ].map(m => (
+              <button
+                key={m.id}
+                onClick={() => setExpiryMode(m.id)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                  expiryMode === m.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-2 text-xs">
           <label className="font-semibold text-slate-600">Min edge ₹</label>
@@ -1142,6 +1164,12 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
           </button>
         </div>
       </div>
+
+      {(expiryMode === 'WEEKLY' || expiryMode === 'BOTH') && (
+        <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl">
+          Weekly = weekly options vs interpolated forward; hedge still uses <span className="font-bold">monthly FUT</span> (basis residual). Higher min edge (₹300) applied server-side. Expiry-week of month is skipped (same as monthly).
+        </div>
+      )}
 
       {marketClosed && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-4 py-3 rounded-xl">
@@ -1160,7 +1188,7 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Bid Parity feeds...</div>
         ) : opps.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">
-            No executable bid-parity edges ≥ ₹{minEdge} for {underlying}
+            No executable bid-parity edges ≥ ₹{minEdge} for {underlying} ({expiryMode})
           </div>
         ) : (
           <div className="overflow-x-auto w-full">
@@ -1168,8 +1196,9 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
                   <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Expiry</th>
                   <th className="px-2 py-2">Strike</th>
-                  <th className="px-2 py-2">Action</th>
+                  <th className="px-2 py-2">Side</th>
                   <th className="px-2 py-2 text-right">Spot / Fut</th>
                   <th className="px-2 py-2 text-right">CE Bid/Ask</th>
                   <th className="px-2 py-2 text-right">PE Bid/Ask</th>
@@ -1180,13 +1209,20 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
               <tbody className="divide-y divide-slate-100">
                 {opps.map((opp, idx) => {
                   const isExp = expandedId === idx;
+                  const weekly = opp.expiryMode === 'WEEKLY' || opp.basisRisk || opp.strategyType === 'BID_PARITY_WEEKLY';
                   return (
-                    <React.Fragment key={`${opp.underlying}-${opp.strike}-${opp.action}-${idx}`}>
+                    <React.Fragment key={`${opp.underlying}-${opp.strike}-${opp.action}-${opp.expiryDate}-${idx}`}>
                       <tr
                         onClick={() => setExpandedId(isExp ? null : idx)}
                         className={`transition cursor-pointer ${isExp ? 'bg-amber-50/70 border-l-4 border-amber-600' : 'hover:bg-slate-50'}`}
                       >
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${weekly ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
+                            {weekly ? 'WEEKLY' : 'MONTHLY'}
+                          </span>
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">{opp.expiryDate || '—'}</div>
+                        </td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
                         <td className="px-2 py-1.5 font-bold text-purple-700">{opp.action}</td>
                         <td className="px-2 py-1.5 text-right font-mono text-[11px]">
@@ -1202,30 +1238,20 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
                             onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
                             className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm"
                           >
-                            Execute
+                            Submit
                           </button>
                         </td>
                       </tr>
                       {isExp && (
-                        <tr className="bg-amber-50/40 border-b border-amber-100">
-                          <td colSpan={8} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-amber-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">3-leg breakdown</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
-                                {opp.legs || opp.description}
-                              </p>
-                              <p className="text-[11px] text-slate-500">
-                                Expiry {opp.expiryDate || '—'} · DTE {opp.daysToExpiry ?? '—'} · Fill not guaranteed (live book)
-                              </p>
-                              <div className="flex justify-end pt-1">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                                  className="px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md"
-                                >
-                                  Submit ({executionBroker})
-                                </button>
+                        <tr className="bg-amber-50/40">
+                          <td colSpan={9} className="px-4 py-3 text-xs text-slate-700">
+                            <div className="font-semibold mb-1">{opp.description || opp.legs}</div>
+                            <div className="font-mono text-[11px] text-slate-600">{opp.legs}</div>
+                            {weekly && (
+                              <div className="mt-2 text-orange-800 font-semibold">
+                                Basis risk: parity vs F≈{opp.parityForward ?? '—'}; hedge monthly FUT (residual ≈ {opp.basisResidual ?? '—'} pts)
                               </div>
-                            </div>
+                            )}
                           </td>
                         </tr>
                       )}

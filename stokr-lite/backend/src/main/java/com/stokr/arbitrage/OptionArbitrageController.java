@@ -118,26 +118,31 @@ public class OptionArbitrageController {
     }
 
     @GetMapping("/bid-parity/scan")
-    public ResponseEntity<Map<String, Object>> scanBidParity(@RequestParam(defaultValue = "ALL") String underlying) {
+    public ResponseEntity<Map<String, Object>> scanBidParity(
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(defaultValue = "MONTHLY") String expiry) {
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
         if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
             return ResponseEntity.ok(Map.of(
                 "timestamp", System.currentTimeMillis(),
                 "underlying", underlying,
+                "expiryMode", expiry,
                 "marketClosed", true,
                 "opportunities", Collections.emptyList(),
                 "count", 0,
                 "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
             ));
         }
-        List<Map<String, Object>> opps = bidParityService.scanBidParity(underlying);
+        List<Map<String, Object>> opps = bidParityService.scanBidParity(underlying, expiry);
         if (opps != null && !opps.isEmpty()) triggerAutoExec();
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
+        resp.put("expiryMode", expiry);
         resp.put("marketClosed", false);
         resp.put("opportunities", opps);
         resp.put("count", opps.size());
+        resp.put("note", "WEEKLY uses weekly options vs interpolated forward; hedge is still monthly FUT (basis risk).");
         return ResponseEntity.ok(resp);
     }
 

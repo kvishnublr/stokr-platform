@@ -26,8 +26,12 @@ public class OptionChainService {
     private static final double RISK_FREE_RATE = 0.065;
     /** Minimum executable parity edge in index points before cost. */
     private static final double MIN_PARITY_DEVIATION = 2.0;
+    /** Weekly options vs monthly fut — require a bit more deviation (basis residual). */
+    private static final double MIN_PARITY_DEVIATION_WEEKLY = 3.0;
     /** Minimum net edge after costs (₹) to publish an opportunity. */
     private static final double MIN_EDGE_AFTER_COSTS = 150.0;
+    /** Higher bar for weekly (basis risk when hedging with monthly FUT). */
+    private static final double MIN_EDGE_AFTER_COSTS_WEEKLY = 300.0;
     /** Skip strikes where option spread is wider than this (pts). */
     private static final double MAX_OPTION_SPREAD = 25.0;
 
@@ -50,12 +54,27 @@ public class OptionChainService {
      */
     public List<ArbitrageOpportunity> scanBidParityChain(String underlying, double spotPrice, double futuresPrice,
                                                          LocalDate futuresExpiryHint) {
-        return scanOptionChain(underlying, spotPrice, futuresPrice, false, true, futuresExpiryHint);
+        return scanBidParityChain(underlying, spotPrice, futuresPrice, futuresExpiryHint, false);
+    }
+
+    /**
+     * @param weeklyOptions when true, scan nearest weekly option expiry vs interpolated
+     *                      weekly forward; hedge leg remains monthly FUT (basis residual).
+     */
+    public List<ArbitrageOpportunity> scanBidParityChain(String underlying, double spotPrice, double futuresPrice,
+                                                         LocalDate futuresExpiryHint, boolean weeklyOptions) {
+        return scanOptionChain(underlying, spotPrice, futuresPrice, false, !weeklyOptions, futuresExpiryHint, weeklyOptions);
     }
 
     public List<ArbitrageOpportunity> scanOptionChain(String underlying, double spotPrice, double futuresPrice,
                                                       boolean bypassCooldown, boolean monthlyExpiry,
                                                       LocalDate futuresExpiryHint) {
+        return scanOptionChain(underlying, spotPrice, futuresPrice, bypassCooldown, monthlyExpiry, futuresExpiryHint, false);
+    }
+
+    public List<ArbitrageOpportunity> scanOptionChain(String underlying, double spotPrice, double futuresPrice,
+                                                      boolean bypassCooldown, boolean monthlyExpiry,
+                                                      LocalDate futuresExpiryHint, boolean weeklyParityMode) {
         List<ArbitrageOpportunity> opportunities = new ArrayList<>();
 
         try {
@@ -67,12 +86,36 @@ public class OptionChainService {
 
             int atmStrike = getATMStrike(underlying, refPrice);
             List<Integer> strikes = generateStrikes(atmStrike, underlying);
-            LocalDate expiryDate = monthlyExpiry
-                    ? (futuresExpiryHint != null ? futuresExpiryHint : getMonthlyExpiry(underlying))
-                    : getWeeklyExpiryDate(underlying);
+            LocalDate monthlyExpiryDate = futuresExpiryHint != null ? futuresExpiryHint : getMonthlyExpiry(underlying);
+            LocalDate weeklyExpiryDate = getWeeklyExpiryDate(underlying);
+            LocalDate expiryDate = monthlyExpiry ? monthlyExpiryDate : weeklyExpiryDate;
 
-            double daysToExpiry = Duration.between(LocalDate.now().atStartOfDay(), expiryDate.atStartOfDay()).toDays();
+            // Expiry week of the month: weekly == monthly contract — treat as monthly only
+            if (weeklyParityMode && expiryDate.equals(monthlyExpiryDate)) {
+                log.info("Weekly Bid Parity skip for {}: weekly expiry {} is monthly contract", underlying, expiryDate);
+                return opportunities;
+            }
+
+            double daysToExpiry = Duration.between(LocalDate.now(ZoneId.of("Asia/Kolkata")).atStartOfDay(),
+                    expiryDate.atStartOfDay()).toDays();
             double yearsToExpiry = Math.max(daysToExpiry, 0.5) / 365.0;
+
+            // Parity forward: monthly uses live monthly fut; weekly uses time-interpolated forward
+            // so we don't invent false edges from F_monthly − F_weekly basis.
+            double parityForward = futuresPrice;
+            double basisResidual = 0;
+            if (weeklyParityMode) {
+                double daysToMonthly = Duration.between(LocalDate.now(ZoneId.of("Asia/Kolkata")).atStartOfDay(),
+                        monthlyExpiryDate.atStartOfDay()).toDays();
+                double Tw = Math.max(daysToExpiry, 0.5);
+                double Tm = Math.max(daysToMonthly, Tw);
+                parityForward = spotPrice + (futuresPrice - spotPrice) * (Tw / Tm);
+                basisResidual = futuresPrice - parityForward;
+                log.info("Weekly Bid Parity {}: weeklyExp={}, monthlyExp={}, F_m={}, F_w_interp={}, basisResidual={}",
+                        underlying, expiryDate, monthlyExpiryDate,
+                        String.format("%.2f", futuresPrice), String.format("%.2f", parityForward),
+                        String.format("%.2f", basisResidual));
+            }
 
             List<String> instruments = new ArrayList<>();
             for (int strike : strikes) {
@@ -80,11 +123,14 @@ public class OptionChainService {
                 instruments.addAll(buildNfoSymbolCandidates(underlying, expiryDate, strike, "PE"));
             }
 
-            log.info("Scanning {} strikes for {} (ATM={}, spot={}, fut={}, expiry={})",
-                    strikes.size(), underlying, atmStrike, spotPrice, futuresPrice, expiryDate);
+            log.info("Scanning {} strikes for {} (ATM={}, spot={}, fut={}, parityF={}, expiry={}, weekly={})",
+                    strikes.size(), underlying, atmStrike, spotPrice, futuresPrice, parityForward, expiryDate, weeklyParityMode);
 
             Map<String, OptionQuote> quotes = fetchQuotes(instruments);
             log.info("Got {} quotes back for {}", quotes.size(), underlying);
+
+            double minEdge = weeklyParityMode ? MIN_EDGE_AFTER_COSTS_WEEKLY : MIN_EDGE_AFTER_COSTS;
+            double minDev = weeklyParityMode ? MIN_PARITY_DEVIATION_WEEKLY : MIN_PARITY_DEVIATION;
 
             int validStrikes = 0;
             for (int strike : strikes) {
@@ -99,35 +145,37 @@ public class OptionChainService {
                 validStrikes++;
                 double dfK = strike * Math.exp(-RISK_FREE_RATE * yearsToExpiry);
 
-                // CONVERSION (buy synthetic / sell futures): BUY CE@ask, SELL PE@bid, SELL FUT
+                // CONVERSION: BUY CE@ask, SELL PE@bid, SELL FUT (monthly)
                 double synthBuy = ceQuote.ask - peQuote.bid + dfK;
-                double conversionPts = futuresPrice - synthBuy;
+                double conversionPts = parityForward - synthBuy;
 
-                // REVERSAL (sell synthetic / buy futures): SELL CE@bid, BUY PE@ask, BUY FUT
+                // REVERSAL: SELL CE@bid, BUY PE@ask, BUY FUT (monthly)
                 double synthSell = ceQuote.bid - peQuote.ask + dfK;
-                double reversalPts = synthSell - futuresPrice;
+                double reversalPts = synthSell - parityForward;
 
-                if (conversionPts >= MIN_PARITY_DEVIATION) {
+                if (conversionPts >= minDev) {
                     double edge = calculateParityEdge(conversionPts, underlying);
-                    if (edge >= MIN_EDGE_AFTER_COSTS) {
+                    if (edge >= minEdge) {
                         opportunities.add(buildParityOpportunity(
                                 underlying, strike, ceQuote, peQuote, conversionPts, edge,
-                                daysToExpiry, spotPrice, futuresPrice, true, expiryDate));
+                                daysToExpiry, spotPrice, futuresPrice, true, expiryDate,
+                                weeklyParityMode, parityForward, basisResidual));
                     }
                 }
-                if (reversalPts >= MIN_PARITY_DEVIATION) {
+                if (reversalPts >= minDev) {
                     double edge = calculateParityEdge(reversalPts, underlying);
-                    if (edge >= MIN_EDGE_AFTER_COSTS) {
+                    if (edge >= minEdge) {
                         opportunities.add(buildParityOpportunity(
                                 underlying, strike, ceQuote, peQuote, reversalPts, edge,
-                                daysToExpiry, spotPrice, futuresPrice, false, expiryDate));
+                                daysToExpiry, spotPrice, futuresPrice, false, expiryDate,
+                                weeklyParityMode, parityForward, basisResidual));
                     }
                 }
             }
 
             opportunities.sort((a, b) -> Double.compare(b.edgeAfterCosts, a.edgeAfterCosts));
-            log.info("Scan completed for {}: {} valid strikes, {} opportunities found",
-                    underlying, validStrikes, opportunities.size());
+            log.info("Scan completed for {}: {} valid strikes, {} opportunities found (weekly={})",
+                    underlying, validStrikes, opportunities.size(), weeklyParityMode);
 
         } catch (Exception e) {
             log.error("Error scanning option chain for {}: {}", underlying, e.getMessage(), e);
@@ -350,6 +398,15 @@ public class OptionChainService {
             OptionQuote ceQuote, OptionQuote peQuote, double parityDev,
             double edgeAfterCosts, double daysToExpiry, double spotPrice, double futuresPrice,
             boolean conversion, LocalDate expiryDate) {
+        return buildParityOpportunity(underlying, strike, ceQuote, peQuote, parityDev, edgeAfterCosts,
+                daysToExpiry, spotPrice, futuresPrice, conversion, expiryDate, false, futuresPrice, 0);
+    }
+
+    private ArbitrageOpportunity buildParityOpportunity(String underlying, int strike,
+            OptionQuote ceQuote, OptionQuote peQuote, double parityDev,
+            double edgeAfterCosts, double daysToExpiry, double spotPrice, double futuresPrice,
+            boolean conversion, LocalDate expiryDate, boolean weeklyParityMode,
+            double parityForward, double basisResidual) {
 
         ArbitrageOpportunity opp = new ArbitrageOpportunity();
         opp.underlying = underlying;
@@ -367,27 +424,34 @@ public class OptionChainService {
         opp.edgePoints = Math.round(Math.abs(parityDev) * 10.0) / 10.0;
         opp.edgeAfterCosts = Math.round(edgeAfterCosts * 10.0) / 10.0;
         opp.confidence = Math.min(99.0, 55.0 + Math.abs(parityDev) * 2.0);
+        if (weeklyParityMode) {
+            opp.confidence = Math.max(40.0, opp.confidence - 10.0); // basis residual haircut
+        }
         opp.daysToExpiry = daysToExpiry;
         opp.expiryDate = expiryDate;
 
         if (conversion) {
-            // Buy synthetic, sell futures
             opp.action = "CONVERSION";
             opp.legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
                     strike, ceQuote.ask, strike, peQuote.bid, underlying, futuresPrice);
-            opp.description = "Futures rich vs synthetic — BUY CE / SELL PE / SELL FUT";
+            opp.description = weeklyParityMode
+                    ? "Weekly options cheap vs interp. forward — BUY CE / SELL PE / SELL monthly FUT (basis risk)"
+                    : "Futures rich vs synthetic — BUY CE / SELL PE / SELL FUT";
         } else {
-            // Sell synthetic, buy futures
             opp.action = "REVERSAL";
             opp.legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
                     strike, ceQuote.bid, strike, peQuote.ask, underlying, futuresPrice);
-            opp.description = "Synthetic rich vs futures — SELL CE / BUY PE / BUY FUT";
+            opp.description = weeklyParityMode
+                    ? "Weekly synthetic rich vs interp. forward — SELL CE / BUY PE / BUY monthly FUT (basis risk)"
+                    : "Synthetic rich vs futures — SELL CE / BUY PE / BUY FUT";
         }
 
         Map<String, Double> costs = new LinkedHashMap<>();
         costs.put("grossPts", opp.edgePoints);
         costs.put("netInr", opp.edgeAfterCosts);
         costs.put("lotSize", (double) getLotSize(underlying));
+        costs.put("parityForward", Math.round(parityForward * 100.0) / 100.0);
+        costs.put("basisResidual", Math.round(basisResidual * 100.0) / 100.0);
         opp.costBreakdown = costs;
         return opp;
     }
