@@ -1,5 +1,6 @@
 package com.stokr.arbitrage;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -27,6 +28,7 @@ public class ArbitrageOpportunity {
     public double edgeAfterCosts; // Net edge after transaction costs (₹)
     public double daysToExpiry;
     public double confidence;     // 0-100
+    public LocalDate expiryDate;
 
     // Cost breakdown (for parity break opportunities)
     public Map<String, Double> costBreakdown;
@@ -61,6 +63,9 @@ public class ArbitrageOpportunity {
         map.put("edgeAfterCosts", Math.round(edgeAfterCosts * 100.0) / 100.0);
         map.put("daysToExpiry", daysToExpiry);
         map.put("confidence", Math.round(confidence));
+        map.put("expiryDate", expiryDate != null ? expiryDate.toString() : null);
+        map.put("strategyType", "BID_PARITY");
+        map.put("guaranteedFill", false);
         map.put("detectedAt", detectedAt.atZone(java.time.ZoneId.systemDefault()).withZoneSameInstant(java.time.ZoneId.of("Asia/Kolkata")).toLocalDateTime().atOffset(java.time.ZoneOffset.ofHoursMinutes(5, 30)).toString());
         if (costBreakdown != null) {
             map.put("costBreakdown", costBreakdown);

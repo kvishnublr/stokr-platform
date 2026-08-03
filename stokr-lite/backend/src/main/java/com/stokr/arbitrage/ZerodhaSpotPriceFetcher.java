@@ -10,6 +10,8 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -21,7 +23,7 @@ public class ZerodhaSpotPriceFetcher {
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper mapper = new ObjectMapper();
 
-    @Value("${broker.zerodha.api-key:}")
+    @Value("${broker.zerodha.api-key:${zerodha.api-key:}}")
     private String apiKey;
 
     private final ConcurrentHashMap<String, Double> cache = new ConcurrentHashMap<>();
@@ -97,15 +99,19 @@ public class ZerodhaSpotPriceFetcher {
             double spot = 0, fut = 0;
 
             if (data.isObject()) {
-                JsonNode spotNode = data.path(spotKey);
-                if (spotNode.isMissingNode()) spotNode = data.path(spotKey.replace(" ", "%20"));
-                spot = spotNode.path("last_price").asDouble(0);
-                if (spot <= 0) spot = spotNode.path("ohlc").path("close").asDouble(0);
+                spot = extractPrice(data, spotKey);
+                // Index instruments sometimes fail under one key form — try alternates
+                if (spot <= 0) {
+                    for (String alt : alternateSpotKeys(spotKey)) {
+                        spot = extractPrice(data, alt);
+                        if (spot > 0) break;
+                    }
+                }
 
-                JsonNode futNode = data.path(futuresKey);
-                if (futNode.isMissingNode()) futNode = data.path(futuresKey.replace(" ", "%20"));
-                fut = futNode.path("last_price").asDouble(0);
-                if (fut <= 0) fut = futNode.path("ohlc").path("close").asDouble(spot);
+                fut = extractPrice(data, futuresKey);
+                if (fut <= 0) {
+                    fut = extractPrice(data, futuresKey.replace(" ", "%20"));
+                }
 
                 if (spot > 0) {
                     cache.put(spotKey, spot);
@@ -118,12 +124,87 @@ public class ZerodhaSpotPriceFetcher {
             }
 
             log.info("SpotFetcher result for {} / {}: spot={}, fut={}", spotKey, futuresKey, spot, fut);
+            if (spot <= 0) {
+                for (String alt : alternateSpotKeys(spotKey)) {
+                    double[] retry = fetchPair(alt, futuresKey, token, now);
+                    if (retry[0] > 0) {
+                        spot = retry[0];
+                        if (retry[1] > 0) fut = retry[1];
+                        cache.put(spotKey, spot);
+                        cacheTimestamps.put(spotKey, now);
+                        log.info("SpotFetcher recovered spot via {}: {}", alt, spot);
+                        break;
+                    }
+                }
+            }
             return new double[]{spot, fut};
 
         } catch (Exception e) {
             log.error("Failed batch fetch for {} / {}: {}", spotKey, futuresKey, e.getMessage());
         }
         return new double[]{0, 0};
+    }
+
+    private double[] fetchPair(String spotKey, String futuresKey, String token, long now) {
+        try {
+            String urlStr = "https://api.kite.trade/quote?i=" + spotKey.replace(" ", "%20") + "&i=" + futuresKey.replace(" ", "%20");
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "token " + apiKey + ":" + token);
+            headers.set("X-Kite-Version", "3");
+            ResponseEntity<String> response = restTemplate.exchange(
+                    urlStr, HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            JsonNode data = mapper.readTree(response.getBody()).path("data");
+            double spot = extractPrice(data, spotKey);
+            double fut = extractPrice(data, futuresKey);
+            if (fut > 0) {
+                cache.put(futuresKey, fut);
+                cacheTimestamps.put(futuresKey, now);
+            }
+            return new double[]{spot, fut};
+        } catch (Exception e) {
+            return new double[]{0, 0};
+        }
+    }
+
+    private double extractPrice(JsonNode data, String key) {
+        if (key == null || key.isBlank()) return 0;
+        JsonNode node = data.path(key);
+        if (node.isMissingNode()) node = data.path(key.replace(" ", "%20"));
+        if (node.isMissingNode()) {
+            // Match by iterating keys (Kite may normalize whitespace)
+            var fields = data.fields();
+            while (fields.hasNext()) {
+                var e = fields.next();
+                if (e.getKey().equalsIgnoreCase(key) || e.getKey().replace("%20", " ").equalsIgnoreCase(key)) {
+                    node = e.getValue();
+                    break;
+                }
+            }
+        }
+        if (node == null || node.isMissingNode()) return 0;
+        double last = node.path("last_price").asDouble(0);
+        if (last > 0) return last;
+        return node.path("ohlc").path("close").asDouble(0);
+    }
+
+    private List<String> alternateSpotKeys(String spotKey) {
+        if (spotKey == null) return List.of();
+        List<String> alts = new ArrayList<>();
+        // Common Kite index key variants
+        if (spotKey.contains("NIFTY 50")) {
+            alts.add("NSE:NIFTY50");
+            alts.add("NSE:Nifty 50");
+        } else if (spotKey.contains("NIFTY BANK")) {
+            alts.add("NSE:NIFTYBANK");
+            alts.add("NSE:Nifty Bank");
+        } else if (spotKey.contains("NIFTY FIN")) {
+            alts.add("NSE:NIFTY FIN SERVICE");
+            alts.add("NSE:Nifty Fin Service");
+        } else if (spotKey.contains("MID SELECT")) {
+            alts.add("NSE:NIFTY MID SELECT");
+            alts.add("NSE:Nifty Mid Select");
+        }
+        return alts;
     }
 }
 

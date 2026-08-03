@@ -1198,3 +1198,54 @@
 .animate-confirm-in {
   animation: confirmScaleIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* ===== Bid Parity payoff chart ===== */
+@keyframes bpDrawLine {
+  from { stroke-dashoffset: 1400; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes bpAreaIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes bpPop {
+  from { opacity: 0; transform: translateY(6px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes bpPulse {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0; transform: scale(1.8); }
+}
+@keyframes bpOrb {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(12px, -10px); }
+}
+@keyframes bpShine {
+  0% { transform: translateX(-120%) skewX(-20deg); }
+  100% { transform: translateX(220%) skewX(-20deg); }
+}
+.bp-line-draw {
+  stroke-dasharray: 1400;
+  stroke-dashoffset: 1400;
+  animation: bpDrawLine 1.1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.bp-area-in {
+  animation: bpAreaIn 0.9s ease 0.25s forwards;
+  opacity: 0;
+}
+.bp-pop {
+  animation: bpPop 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.55s forwards;
+  opacity: 0;
+  transform-origin: center;
+}
+.bp-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bpPulse 2s ease-out infinite;
+}
+.bp-orb {
+  animation: bpOrb 8s ease-in-out infinite;
+}
+.bp-orb-delay {
+  animation: bpOrb 10s ease-in-out infinite reverse;
+}

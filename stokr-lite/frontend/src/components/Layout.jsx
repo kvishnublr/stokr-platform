@@ -12,8 +12,9 @@ const traderLinks = [
   { to: '/brokers', label: 'Brokers', icon: '🏦' },
   { to: '/orders', label: 'Orders', icon: '📋' },
   { to: '/positions', label: 'Positions', icon: '📈' },
-  { to: '/settings', label: 'Settings', icon: '⚙️' },
   { to: '/option-arbitrage', label: 'Option Arb', icon: '🔀' },
+  { to: '/option-arbitrage?tab=bidparity', label: 'Bid Parity', icon: '🎯' },
+  { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
 const adminLinks = [
@@ -229,7 +230,24 @@ export default function Layout() {
               key={link.to}
               to={link.to}
               end={link.end}
-              className={({ isActive }) => `nav-item-aurora ${isActive ? 'active' : ''}`}
+              className={({ isActive }) => {
+                const [path, qs] = link.to.split('?');
+                let active = isActive;
+                if (qs) {
+                  const want = new URLSearchParams(qs);
+                  const have = new URLSearchParams(location.search);
+                  // Bid Parity: highlight for any ?tab=bidparity (live or history)
+                  if (want.get('tab') === 'bidparity') {
+                    active = location.pathname === path && have.get('tab') === 'bidparity';
+                  } else {
+                    active = location.pathname === path
+                      && [...want.entries()].every(([k, v]) => have.get(k) === v);
+                  }
+                } else if (path === '/option-arbitrage') {
+                  active = location.pathname === path && !location.search.includes('tab=bidparity');
+                }
+                return `nav-item-aurora ${active ? 'active' : ''}`;
+              }}
               style={{ textDecoration: 'none' }}
             >
               <span style={{ fontSize: '20px', width: '28px', textAlign: 'center' }}>{link.icon}</span>
