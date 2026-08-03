@@ -1222,10 +1222,12 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
       const key = `${o.underlying}|${o.strike}|${o.action}|${o.expiryDate}|${o.expiryMode || ''}`;
       if (edge >= 300 || map.has(key) || o.sticky) {
         const prev = map.get(key);
+        const peak = Math.max(edge, Number(prev?.peakEdgeAfterCosts || 0), Number(o.peakEdgeAfterCosts || 0));
         map.set(key, {
           ...o,
           sticky: true,
           live: o.live !== false,
+          peakEdgeAfterCosts: peak,
           firstSeenAt: prev?.firstSeenAt || o.firstSeenAt || now,
           lastSeenAt: now,
         });
@@ -1235,8 +1237,9 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
     let rows = [...map.values()];
     if (underlying !== 'ALL') rows = rows.filter(r => r.underlying === underlying);
     if (expiryMode !== 'BOTH') rows = rows.filter(r => (r.expiryMode || 'MONTHLY') === expiryMode);
-    rows = rows.filter(o => (o.edgeAfterCosts || 0) >= minEdge);
-    rows.sort((a, b) => (b.edgeAfterCosts || 0) - (a.edgeAfterCosts || 0));
+    // Sticky rows stay visible even if live edge later dips below min
+    rows = rows.filter(o => o.sticky || (o.peakEdgeAfterCosts || o.edgeAfterCosts || 0) >= minEdge);
+    rows.sort((a, b) => (b.peakEdgeAfterCosts || b.edgeAfterCosts || 0) - (a.peakEdgeAfterCosts || a.edgeAfterCosts || 0));
     return rows;
   }, [data, underlying, expiryMode, minEdge]);
 

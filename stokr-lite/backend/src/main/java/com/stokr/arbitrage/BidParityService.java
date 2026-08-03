@@ -133,13 +133,16 @@ public class BidParityService {
             liveKeys.add(key);
             if (edge >= STICKY_MIN_EDGE) {
                 Map<String, Object> copy = new LinkedHashMap<>(opp);
+                StickySignal prev = stickySignals.get(key);
+                double peak = edge;
+                if (prev != null && prev.payload.get("peakEdgeAfterCosts") instanceof Number n) {
+                    peak = Math.max(peak, n.doubleValue());
+                }
                 copy.put("sticky", true);
                 copy.put("live", true);
-                copy.put("firstSeenAt", stickySignals.containsKey(key)
-                        ? stickySignals.get(key).firstSeenAt
-                        : now);
+                copy.put("peakEdgeAfterCosts", peak);
+                copy.put("firstSeenAt", prev != null ? prev.firstSeenAt : now);
                 copy.put("lastSeenAt", now);
-                StickySignal prev = stickySignals.get(key);
                 stickySignals.put(key, new StickySignal(
                         copy,
                         prev != null ? prev.firstSeenAt : now,
@@ -148,6 +151,7 @@ public class BidParityService {
                 ));
                 opp.put("sticky", true);
                 opp.put("live", true);
+                opp.put("peakEdgeAfterCosts", peak);
                 opp.put("firstSeenAt", stickySignals.get(key).firstSeenAt);
                 opp.put("lastSeenAt", now);
             } else {
