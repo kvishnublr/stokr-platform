@@ -235,14 +235,29 @@ public class SignalTradeBookService {
 
     /** Active (+ optional today's closed) positions with live PnL. */
     public Map<String, Object> getPositionsBook(String strategyNeedle, boolean includeClosedToday) {
+        return getPositionsBook(strategyNeedle, includeClosedToday, "BOTH");
+    }
+
+    /**
+     * @param mode PAPER | LIVE | BOTH — filter by fill mode
+     */
+    public Map<String, Object> getPositionsBook(String strategyNeedle, boolean includeClosedToday, String mode) {
         String needle = strategyNeedle == null ? "" : strategyNeedle.trim();
+        String modeKey = mode == null ? "BOTH" : mode.trim().toUpperCase(Locale.ROOT);
         List<LivePosition> all = needle.isEmpty()
                 ? livePositionRepo.findAll()
                 : livePositionRepo.findByStrategyNeedle(needle.isEmpty() ? "BID" : needle);
 
         LocalDate today = LocalDate.now(IST);
+        LocalTime now = LocalTime.now(IST);
+        boolean marketOpen = !now.isBefore(LocalTime.of(9, 15)) && !now.isAfter(LocalTime.of(15, 30));
+
         List<LivePosition> filtered = new ArrayList<>();
         for (LivePosition p : all) {
+            String m = detectMode(p);
+            if ("PAPER".equals(modeKey) && !"PAPER".equals(m)) continue;
+            if ("LIVE".equals(modeKey) && !"LIVE".equals(m)) continue;
+
             if (isActive(p)) {
                 filtered.add(p);
                 continue;
@@ -261,20 +276,22 @@ public class SignalTradeBookService {
             return tb.compareTo(ta);
         });
 
-        Map<Long, Double> livePnl = computeLivePnlForActive(filtered);
+        // Only MTM active legs during market hours — avoids after-hours quote hangs
+        List<LivePosition> activeOnly = filtered.stream().filter(SignalTradeBookService::isActive).toList();
+        Map<Long, Double> livePnl = marketOpen ? computeLivePnlForActive(activeOnly) : Map.of();
+
         List<Map<String, Object>> items = new ArrayList<>();
         double openPnl = 0;
         double closedPnl = 0;
         int openN = 0;
         int closedN = 0;
+        int paperOpen = 0;
+        int liveOpen = 0;
         for (LivePosition p : filtered) {
             Map<String, Object> row = p.toMap();
             boolean active = isActive(p);
-            String mode = "PAPER";
-            if (p.getCeOrderId() != null && p.getCeOrderId().startsWith("PAPER")) mode = "PAPER";
-            else if (p.getErrorMessage() != null && p.getErrorMessage().toUpperCase(Locale.ROOT).contains("PAPER")) mode = "PAPER";
-            else mode = "LIVE";
-            row.put("mode", mode);
+            String m = detectMode(p);
+            row.put("mode", m);
             row.put("tradeStatus", active ? "ENTERED" : (p.getStatus() != null ? p.getStatus().toUpperCase(Locale.ROOT) : "EXITED"));
             Double pnl;
             if (active) {
@@ -282,6 +299,8 @@ public class SignalTradeBookService {
                         p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0);
                 openPnl += pnl;
                 openN++;
+                if ("PAPER".equals(m)) paperOpen++;
+                else liveOpen++;
                 row.put("currentPnl", Math.round(pnl * 100.0) / 100.0);
                 row.put("exitPnl", null);
             } else {
@@ -302,15 +321,28 @@ public class SignalTradeBookService {
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("timestamp", System.currentTimeMillis());
+        out.put("mode", modeKey);
+        out.put("marketOpen", marketOpen);
         out.put("positions", items);
         out.put("count", items.size());
         out.put("openCount", openN);
         out.put("closedCount", closedN);
+        out.put("paperOpenCount", paperOpen);
+        out.put("liveOpenCount", liveOpen);
         out.put("openPnl", Math.round(openPnl * 100.0) / 100.0);
         out.put("closedPnl", Math.round(closedPnl * 100.0) / 100.0);
         out.put("netPnl", Math.round((openPnl + closedPnl) * 100.0) / 100.0);
         out.put("autoExitNearBuffer", AUTO_EXIT_NEAR_BUFFER_DEFAULT);
         return out;
+    }
+
+    public static String detectMode(LivePosition p) {
+        if (p == null) return "PAPER";
+        String id = p.getCeOrderId() != null ? p.getCeOrderId() : "";
+        if (id.startsWith("PAPER")) return "PAPER";
+        String msg = p.getErrorMessage() != null ? p.getErrorMessage().toUpperCase(Locale.ROOT) : "";
+        if (msg.contains("PAPER")) return "PAPER";
+        return "LIVE";
     }
 
     /**

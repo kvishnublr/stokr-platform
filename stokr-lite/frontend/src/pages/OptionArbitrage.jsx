@@ -800,8 +800,12 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh, chang
 
   const { data: posSummary } = useQuery({
     queryKey: ['bid-parity-pos-count'],
-    queryFn: async () => (await client.get('/option-arbitrage/live-positions', { params: { strategyType: 'BID', includeClosedToday: false } })).data,
-    refetchInterval: autoRefresh ? 4000 : false,
+    queryFn: async () => (await client.get('/option-arbitrage/live-positions', {
+      params: { strategyType: 'BID', includeClosedToday: false, mode: 'BOTH' },
+      timeout: 10000,
+    })).data,
+    refetchInterval: autoRefresh ? 5000 : false,
+    placeholderData: (prev) => prev,
   });
   const openN = posSummary?.openCount ?? (posSummary?.positions || []).length;
 
@@ -867,14 +871,28 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh, chang
 function BidParityPositionsView({ executionBroker, autoRefresh = true }) {
   const [exitingId, setExitingId] = useState(null);
   const [filter, setFilter] = useState('OPEN'); // OPEN | CLOSED | ALL
+  // Mode follows header execution broker; Both for comparison
+  const defaultMode = String(executionBroker || '').toUpperCase() === 'PAPER' ? 'PAPER' : 'LIVE';
+  const [modeFilter, setModeFilter] = useState(defaultMode); // PAPER | LIVE | BOTH
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['bid-parity-positions-book'],
-    queryFn: async () => (await client.get('/option-arbitrage/live-positions', {
-      params: { strategyType: 'BID', includeClosedToday: true },
-    })).data,
-    refetchInterval: autoRefresh ? 3000 : false,
-    staleTime: 1000,
+  useEffect(() => {
+    const next = String(executionBroker || '').toUpperCase() === 'PAPER' ? 'PAPER' : 'LIVE';
+    setModeFilter(next);
+  }, [executionBroker]);
+
+  const { data, isLoading, isFetching, isError, error, refetch, dataUpdatedAt } = useQuery({
+    queryKey: ['bid-parity-positions-book', modeFilter],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/live-positions', {
+        params: { strategyType: 'BID', includeClosedToday: true, mode: modeFilter },
+        timeout: 12000,
+      });
+      return res.data;
+    },
+    refetchInterval: autoRefresh ? 5000 : false,
+    staleTime: 2000,
+    placeholderData: (prev) => prev,
+    retry: 1,
   });
 
   const positions = data?.positions || [];
@@ -908,13 +926,17 @@ function BidParityPositionsView({ executionBroker, autoRefresh = true }) {
   const openPnl = data?.openPnl ?? 0;
   const closedPnl = data?.closedPnl ?? 0;
   const netPnl = data?.netPnl ?? 0;
+  const modeLabel = modeFilter === 'BOTH' ? 'Paper + Live' : modeFilter;
 
   return (
     <div className="space-y-4 w-full">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border border-slate-200 p-3">
-          <div className="text-[10px] font-bold uppercase text-slate-500">Open</div>
+          <div className="text-[10px] font-bold uppercase text-slate-500">Open ({modeLabel})</div>
           <div className="text-xl font-black text-slate-900">{data?.openCount ?? 0}</div>
+          <div className="text-[10px] text-slate-400 mt-0.5">
+            Paper {data?.paperOpenCount ?? 0} · Live {data?.liveOpenCount ?? 0}
+          </div>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-3">
           <div className="text-[10px] font-bold uppercase text-slate-500">Open PnL</div>
@@ -931,39 +953,70 @@ function BidParityPositionsView({ executionBroker, autoRefresh = true }) {
       </div>
 
       <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-          {[
-            { id: 'OPEN', label: 'Open' },
-            { id: 'CLOSED', label: 'Closed today' },
-            { id: 'ALL', label: 'All' },
-          ].map(t => (
-            <button key={t.id} onClick={() => setFilter(t.id)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold ${filter === t.id ? 'bg-amber-600 text-white' : 'text-slate-600'}`}>
-              {t.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+            {[
+              { id: 'PAPER', label: 'Paper' },
+              { id: 'LIVE', label: 'Live' },
+              { id: 'BOTH', label: 'Both' },
+            ].map(t => (
+              <button key={t.id} onClick={() => setModeFilter(t.id)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold ${modeFilter === t.id ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+            {[
+              { id: 'OPEN', label: 'Open' },
+              { id: 'CLOSED', label: 'Closed today' },
+              { id: 'ALL', label: 'All' },
+            ].map(t => (
+              <button key={t.id} onClick={() => setFilter(t.id)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold ${filter === t.id ? 'bg-amber-600 text-white' : 'text-slate-600'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-slate-500">Broker: <b>{executionBroker || 'PAPER'}</b></span>
+          <span className="text-slate-500">
+            Header: <b>{executionBroker || 'PAPER'}</b>
+            {data?.marketOpen === false ? ' · after hours' : ''}
+          </span>
           <button onClick={() => refetch()} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-bold">
-            {isFetching ? 'Updating…' : 'Refresh PnL'}
+            Refresh PnL
           </button>
+          {isFetching && (
+            <span className="text-[10px] font-bold text-slate-400">syncing…</span>
+          )}
+          {dataUpdatedAt ? (
+            <span className="text-[10px] text-slate-400 font-mono">
+              {new Date(dataUpdatedAt).toLocaleTimeString('en-IN')}
+            </span>
+          ) : null}
         </div>
       </div>
 
       <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl">
-        Live PnL = hedged 3-leg MTM (CE + PE + FUT). Target edge is the entry opportunity — not guaranteed profit at fill.
-        A red number after enter usually means mark moved / spread; it does <b>not</b> mean “loss entry is good.”
-        Auto-exit fires when live PnL nears target edge (e.g. ₹300 → ≥ ₹290).
+        Mode filter shows Paper / Live / Both so Navia view never mixes paper fills.
+        Near target: <b>smart roll</b> (close CE+PE, keep FUT, open new options) when a ≥₹300 signal exists; else full exit.
+        Paper (1 set) and Live (1 set) auto-tracks can run together for comparison.
       </div>
 
+      {isError && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold px-4 py-3 rounded-xl">
+          Positions refresh issue: {error?.message || 'retry Refresh'}. Showing last loaded rows if any.
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-        {isLoading ? (
+        {isLoading && !data ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading positions…</div>
         ) : rows.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">
-            No {filter === 'OPEN' ? 'open' : filter === 'CLOSED' ? 'closed' : ''} Bid Parity positions.
-            Submit from Live Signals to enter.
+            No {filter === 'OPEN' ? 'open' : filter === 'CLOSED' ? 'closed' : ''} {modeFilter === 'BOTH' ? '' : modeFilter + ' '}Bid Parity positions.
+            {modeFilter === 'LIVE' ? ' Live fires only when Navia auto-exec is ON and edge ≥ ₹300.' : ' Paper auto deploys 1 set by default when edge ≥ ₹300.'}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1101,6 +1154,9 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
       strategyFilter: settings.strategyFilter || 'PARITY',
       bidParityAutoExitEnabled: settings.bidParityAutoExitEnabled !== false,
       bidParityExitNearBuffer: Number(settings.bidParityExitNearBuffer ?? 10),
+      paperAutoEnabled: settings.paperAutoEnabled !== false,
+      paperMaxOpen: Number(settings.paperMaxOpen ?? 1),
+      smartRollEnabled: settings.smartRollEnabled !== false,
     });
   }, [settings]);
 
@@ -1349,10 +1405,11 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
 
       {/* Auto exit near entry edge */}
       <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-4">
-        <h3 className="text-sm font-bold text-slate-800 mb-1">Auto Exit (near entry edge)</h3>
+        <h3 className="text-sm font-bold text-slate-800 mb-1">Auto Exit + Smart Roll + Paper track</h3>
         <p className="text-[11px] text-slate-500 mb-3">
-          If you enter at edge ₹300, exit automatically when live PnL reaches ₹{Math.max(0, 300 - Number(form.bidParityExitNearBuffer || 10))}
-          (target − buffer). Works even when auto-exec entry is OFF.
+          Near target (edge ₹300 → ≥ ₹{Math.max(0, 300 - Number(form.bidParityExitNearBuffer || 10))}):
+          smart-roll options (keep FUT) when a new ≥₹300 signal exists; else full square-off.
+          Paper auto (1 set) runs beside Live for comparison.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs items-end">
           <div>
@@ -1373,8 +1430,38 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
               onChange={e => setField('bidParityExitNearBuffer', Number(e.target.value) || 0)}
               className="w-full border border-slate-200 rounded-lg px-2 py-1.5 font-mono" />
           </div>
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Smart roll (keep FUT)</label>
+            <button type="button"
+              onClick={() => setField('smartRollEnabled', !form.smartRollEnabled)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${
+                form.smartRollEnabled
+                  ? 'bg-emerald-600 text-white border-emerald-700'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}>
+              {form.smartRollEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Paper auto (1 set)</label>
+            <button type="button"
+              onClick={() => setField('paperAutoEnabled', !form.paperAutoEnabled)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${
+                form.paperAutoEnabled
+                  ? 'bg-sky-600 text-white border-sky-700'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}>
+              {form.paperAutoEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Paper max open</label>
+            <input type="number" min={1} max={3} value={form.paperMaxOpen}
+              onChange={e => setField('paperMaxOpen', Number(e.target.value) || 1)}
+              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 font-mono" />
+          </div>
           <div className="text-[11px] text-slate-600 font-semibold pb-1">
-            Example: edge 300 → auto-exit ≥ ₹{Math.max(0, 300 - Number(form.bidParityExitNearBuffer || 10))}
+            Live uses Auto-exec master switch + Navia · Paper track is independent.
           </div>
         </div>
       </div>

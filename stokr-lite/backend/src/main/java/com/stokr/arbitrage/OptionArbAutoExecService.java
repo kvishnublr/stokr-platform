@@ -92,6 +92,10 @@ public class OptionArbAutoExecService {
         // Auto-exit when live PnL ≥ targetEdge − buffer (independent of entry auto-exec)
         settings.put("bidParityAutoExitEnabled", true);
         settings.put("bidParityExitNearBuffer", 10.0);
+        // Dual track: paper 1-set always mirrors; live uses `enabled` + broker
+        settings.put("paperAutoEnabled", true);
+        settings.put("paperMaxOpen", 1);
+        settings.put("smartRollEnabled", true);
     }
 
     private void loadFromDb() {
@@ -180,7 +184,8 @@ public class OptionArbAutoExecService {
                 || "bidParityExitNearBuffer".equals(k) || "bid_parity_exit_near_buffer".equals(k)) {
             try { settings.put(k, Double.parseDouble(v)); } catch (Exception ignored) {}
         } else if (k.endsWith("Lots") || "maxOpenPositions".equals(k) || "max_total_positions".equals(k)
-                || "max_positions_per_underlying".equals(k) || "parallelTimeoutSec".equals(k)) {
+                || "max_positions_per_underlying".equals(k) || "parallelTimeoutSec".equals(k)
+                || "paperMaxOpen".equals(k)) {
             try { settings.put(k, Integer.parseInt(v.replace(".0", ""))); } catch (Exception ignored) {}
         } else {
             settings.put(k, v);
@@ -236,6 +241,20 @@ public class OptionArbAutoExecService {
         } catch (Exception e) {
             out.put("bidParityExitNearBuffer", 10.0);
         }
+        boolean paperAuto = settings.get("paperAutoEnabled") instanceof Boolean
+                ? Boolean.TRUE.equals(settings.get("paperAutoEnabled"))
+                : parseBool(String.valueOf(settings.getOrDefault("paperAutoEnabled", "true")));
+        out.put("paperAutoEnabled", paperAuto);
+        try {
+            out.put("paperMaxOpen", Integer.parseInt(String.valueOf(
+                    settings.getOrDefault("paperMaxOpen", 1)).replace(".0", "")));
+        } catch (Exception e) {
+            out.put("paperMaxOpen", 1);
+        }
+        boolean smartRoll = settings.get("smartRollEnabled") instanceof Boolean
+                ? Boolean.TRUE.equals(settings.get("smartRollEnabled"))
+                : parseBool(String.valueOf(settings.getOrDefault("smartRollEnabled", "true")));
+        out.put("smartRollEnabled", smartRoll);
         return out;
     }
 
@@ -604,7 +623,7 @@ public class OptionArbAutoExecService {
     }
 
     /** Map legacy labels to CONVERSION / REVERSAL. */
-    static String normalizeAction(String raw) {
+    public static String normalizeAction(String raw) {
         if (raw == null) return null;
         String a = raw.toUpperCase(Locale.ROOT);
         if (a.equals("BUY CE+PE / SELL FUT") || a.equals("BUY FUT / SELL CE+PE")) {
@@ -805,12 +824,320 @@ public class OptionArbAutoExecService {
     /** Count non-paper active Bid Parity / live positions. */
     public long countLiveOpenPositions() {
         return positionRepo.findAllActive().stream()
-                .filter(p -> {
-                    String id = p.getCeOrderId() != null ? p.getCeOrderId() : "";
-                    return !id.startsWith("PAPER");
-                })
+                .filter(p -> !isPaperPosition(p))
                 .count();
     }
+
+    public long countPaperOpenPositions() {
+        return positionRepo.findAllActive().stream()
+                .filter(OptionArbAutoExecService::isPaperPosition)
+                .count();
+    }
+
+    public boolean isPaperAutoEnabled() {
+        applyLegacyAliases();
+        if (settings.get("paperAutoEnabled") instanceof Boolean b) return b;
+        return parseBool(String.valueOf(settings.getOrDefault("paperAutoEnabled", "true")));
+    }
+
+    public boolean isSmartRollEnabled() {
+        applyLegacyAliases();
+        if (settings.get("smartRollEnabled") instanceof Boolean b) return b;
+        return parseBool(String.valueOf(settings.getOrDefault("smartRollEnabled", "true")));
+    }
+
+    public int paperMaxOpen() {
+        try {
+            return Math.max(1, Integer.parseInt(String.valueOf(settings.getOrDefault("paperMaxOpen", 1)).replace(".0", "")));
+        } catch (Exception e) {
+            return 1;
+        }
+    }
+
+    /**
+     * Paper track: enter up to paperMaxOpen virtual 1-lot sets on NIFTY/BN edges.
+     * Runs independently of live broker track.
+     */
+    public void evaluateAndExecutePaper(List<OptionArbOpportunity> newOpps) {
+        applyLegacyAliases();
+        if (!isPaperAutoEnabled()) return;
+
+        LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(LocalTime.of(9, 16)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
+
+        long open = countPaperOpenPositions();
+        int max = paperMaxOpen();
+        if (open >= max) {
+            addLog("PAPER", "SKIP", "Paper max open reached: " + open);
+            return;
+        }
+
+        List<OptionArbOpportunity> ranked = newOpps.stream()
+                .filter(o -> o.getUnderlying() != null && o.getEdgeAfterCosts() != null && o.getStrike() != null)
+                .filter(o -> "NIFTY".equalsIgnoreCase(o.getUnderlying()) || "BANKNIFTY".equalsIgnoreCase(o.getUnderlying()))
+                .sorted((a, b) -> Double.compare(
+                        b.getEdgeAfterCosts().doubleValue(),
+                        a.getEdgeAfterCosts().doubleValue()))
+                .toList();
+
+        for (OptionArbOpportunity opp : ranked) {
+            if (open >= max) break;
+            String key = opp.getUnderlying().toLowerCase(Locale.ROOT);
+            if (!Boolean.TRUE.equals(settings.get(key + "Enabled"))) continue;
+
+            String stratType = opp.getStrategyType() != null ? opp.getStrategyType().toUpperCase(Locale.ROOT) : "";
+            if (!stratType.contains("PARITY") && !stratType.contains("BID")) continue;
+
+            double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 300.0)).doubleValue();
+            if (opp.getEdgeAfterCosts().doubleValue() < minEdge) continue;
+            double maxEdge = ((Number) settings.getOrDefault(key + "MaxEdge",
+                    settings.getOrDefault("max_edge_after_costs", 800.0))).doubleValue();
+            if (opp.getEdgeAfterCosts().doubleValue() > maxEdge) continue;
+            if (opp.getEdgePoints() != null && opp.getEdgePoints().doubleValue() > 25.0) continue;
+            if (opp.getExpiryDate() == null) continue;
+
+            String action = normalizeAction(opp.getAction());
+            if (action == null) continue;
+
+            boolean already = positionRepo.findActiveByFingerprint(
+                    opp.getUnderlying(), opp.getStrike(), action, "BID").stream()
+                    .anyMatch(OptionArbAutoExecService::isPaperPosition);
+            if (already) continue;
+
+            int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
+            LivePosition pos = enterPaperPosition(opp, lots, action);
+            if (pos != null) {
+                open++;
+                addLog("PAPER", "ENTERED", opp.getUnderlying() + " " + opp.getStrike()
+                        + " " + action + " edge=₹" + String.format("%.0f", opp.getEdgeAfterCosts().doubleValue())
+                        + " pos#" + pos.getId());
+            }
+        }
+    }
+
+    public LivePosition enterPaperPosition(OptionArbOpportunity opp, int lots, String action) {
+        boolean conversion = "CONVERSION".equals(action);
+        int lotSize = OptionChainService.getLotSize(opp.getUnderlying());
+        LocalDate expiry = opp.getExpiryDate();
+        String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), expiry, opp.getStrike(), "CE");
+        String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), expiry, opp.getStrike(), "PE");
+        String futSymbol = buildMonthlyFutSymbol(opp.getUnderlying());
+        String paperId = "PAPER-" + System.currentTimeMillis();
+
+        BigDecimal ce = conversion
+                ? (opp.getCeAsk() != null ? opp.getCeAsk() : opp.getCeEntryPrice())
+                : (opp.getCeBid() != null ? opp.getCeBid() : opp.getCeEntryPrice());
+        BigDecimal pe = conversion
+                ? (opp.getPeBid() != null ? opp.getPeBid() : opp.getPeEntryPrice())
+                : (opp.getPeAsk() != null ? opp.getPeAsk() : opp.getPeEntryPrice());
+        BigDecimal fut = opp.getFuturesPrice();
+
+        String legs = conversion
+                ? String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
+                opp.getStrike(), ce != null ? ce.doubleValue() : 0,
+                opp.getStrike(), pe != null ? pe.doubleValue() : 0,
+                opp.getUnderlying(), fut != null ? fut.doubleValue() : 0)
+                : String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
+                opp.getStrike(), ce != null ? ce.doubleValue() : 0,
+                opp.getStrike(), pe != null ? pe.doubleValue() : 0,
+                opp.getUnderlying(), fut != null ? fut.doubleValue() : 0);
+
+        LivePosition position = LivePosition.builder()
+                .opportunityId(opp.getId())
+                .underlying(opp.getUnderlying())
+                .strike(opp.getStrike())
+                .action(action)
+                .strategyType(opp.getStrategyType() != null ? opp.getStrategyType() : "BID_PARITY")
+                .ceSymbol(ceSymbol)
+                .peSymbol(peSymbol)
+                .futSymbol(futSymbol)
+                .lots(Math.max(1, lots))
+                .lotSize(lotSize)
+                .ceEntryPrice(ce)
+                .peEntryPrice(pe)
+                .futEntryPrice(fut)
+                .targetEdge(opp.getEdgeAfterCosts())
+                .currentPnl(BigDecimal.ZERO)
+                .status("ENTERED")
+                .ceOrderId(paperId)
+                .peOrderId(paperId)
+                .futOrderId(paperId)
+                .errorMessage("PAPER BID_PARITY · " + legs)
+                .enteredAt(LocalDateTime.now())
+                .createdAt(LocalDateTime.now())
+                .build();
+        return positionRepo.save(position);
+    }
+
+    /**
+     * Smart roll: close CE+PE only, keep FUT, open new CE+PE on candidate strike.
+     * Returns new/updated position on success, null on failure (caller may full-exit).
+     */
+    public LivePosition smartRoll(LivePosition pos, OptionArbOpportunity newOpp, double capturedPnl) {
+        if (pos == null || newOpp == null || newOpp.getStrike() == null) return null;
+        if (Objects.equals(pos.getStrike(), newOpp.getStrike())) return null;
+
+        String action = normalizeAction(pos.getAction());
+        if (action == null) action = normalizeAction(newOpp.getAction());
+        if (action == null) return null;
+        boolean conversion = "CONVERSION".equals(action);
+        boolean paper = isPaperPosition(pos);
+
+        addLog("ROLL", "START", "pos#" + pos.getId() + " " + pos.getUnderlying()
+                + " " + pos.getStrike() + " → " + newOpp.getStrike()
+                + " captured≈₹" + String.format("%.0f", capturedPnl)
+                + (paper ? " PAPER" : " LIVE"));
+
+        if (paper) {
+            return smartRollPaper(pos, newOpp, action, conversion, capturedPnl);
+        }
+        return smartRollLive(pos, newOpp, action, conversion, capturedPnl);
+    }
+
+    private LivePosition smartRollPaper(LivePosition pos, OptionArbOpportunity newOpp,
+                                        String action, boolean conversion, double capturedPnl) {
+        LocalDate expiry = newOpp.getExpiryDate() != null ? newOpp.getExpiryDate()
+                : (pos.getOpportunityId() != null ? null : null);
+        if (newOpp.getExpiryDate() == null) {
+            addLog("ROLL", "ERROR", "pos#" + pos.getId() + " new opp missing expiry");
+            return null;
+        }
+        expiry = newOpp.getExpiryDate();
+        String ceSymbol = optionChainService.buildNfoSymbol(pos.getUnderlying(), expiry, newOpp.getStrike(), "CE");
+        String peSymbol = optionChainService.buildNfoSymbol(pos.getUnderlying(), expiry, newOpp.getStrike(), "PE");
+        BigDecimal ce = conversion
+                ? (newOpp.getCeAsk() != null ? newOpp.getCeAsk() : newOpp.getCeEntryPrice())
+                : (newOpp.getCeBid() != null ? newOpp.getCeBid() : newOpp.getCeEntryPrice());
+        BigDecimal pe = conversion
+                ? (newOpp.getPeBid() != null ? newOpp.getPeBid() : newOpp.getPeEntryPrice())
+                : (newOpp.getPeAsk() != null ? newOpp.getPeAsk() : newOpp.getPeEntryPrice());
+
+        String prev = pos.getErrorMessage() != null ? pos.getErrorMessage() : "";
+        pos.setErrorMessage(prev + " | ROLL " + pos.getStrike() + "→" + newOpp.getStrike()
+                + " captured₹" + Math.round(capturedPnl));
+        // Realize captured PnL into currentPnl baseline for next leg
+        pos.setCurrentPnl(BigDecimal.valueOf(Math.round(capturedPnl * 100.0) / 100.0));
+        pos.setStrike(newOpp.getStrike());
+        pos.setOpportunityId(newOpp.getId());
+        pos.setCeSymbol(ceSymbol);
+        pos.setPeSymbol(peSymbol);
+        pos.setCeEntryPrice(ce);
+        pos.setPeEntryPrice(pe);
+        // Keep futEntryPrice + futOrderId
+        pos.setTargetEdge(newOpp.getEdgeAfterCosts());
+        pos.setAction(action);
+        pos.setStatus("ENTERED");
+        pos.setCeOrderId("PAPER-" + System.currentTimeMillis());
+        pos.setPeOrderId(pos.getCeOrderId());
+        LivePosition saved = positionRepo.save(pos);
+        addLog("ROLL", "OK", "PAPER pos#" + saved.getId() + " now strike=" + saved.getStrike()
+                + " target=₹" + saved.getTargetEdge());
+        return saved;
+    }
+
+    private LivePosition smartRollLive(LivePosition pos, OptionArbOpportunity newOpp,
+                                       String action, boolean conversion, double capturedPnl) {
+        applyLegacyAliases();
+        String broker = String.valueOf(settings.getOrDefault("broker", "NAVIA")).toUpperCase(Locale.ROOT);
+        if ("PAPER".equals(broker)) {
+            addLog("ROLL", "ERROR", "Live roll but broker=PAPER");
+            return null;
+        }
+        try {
+            BrokerAccount account = resolveBrokerAccount(broker);
+            if (account == null) {
+                addLog("ROLL", "ERROR", "No ACTIVE " + broker);
+                return falseReturn();
+            }
+            BrokerAdapter adapter = brokerService.getAdapter(broker);
+            if ("NAVIA".equals(broker) && adapter instanceof NaviaAdapter navia) {
+                String fresh = navia.loginWithTotp(account);
+                account.setAccessToken(fresh);
+                brokerAccountRepo.save(account);
+            }
+
+            String ceSymbol = pos.getCeSymbol();
+            String peSymbol = pos.getPeSymbol();
+            if (ceSymbol == null || peSymbol == null) {
+                addLog("ROLL", "ERROR", "pos#" + pos.getId() + " missing option symbols");
+                return null;
+            }
+            if (newOpp.getExpiryDate() == null) return null;
+
+            int lots = pos.getLots() != null ? Math.max(1, pos.getLots()) : 1;
+            int lotSize = pos.getLotSize() != null ? pos.getLotSize()
+                    : OptionChainService.getLotSize(pos.getUnderlying());
+            boolean naviaLots = adapter instanceof NaviaAdapter
+                    || "NAVIA".equalsIgnoreCase(adapter.getBrokerName());
+            int qty = naviaLots ? lots : lots * lotSize;
+            String token = account.getAccessToken();
+            int timeoutSec = parallelTimeoutSec();
+
+            // 1) Close option legs only (reverse of entry)
+            BrokerOrderRequest.Side closeCe = conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
+            BrokerOrderRequest.Side closePe = conversion ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL;
+            CompletableFuture<BrokerOrderResponse> cCe = CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, ceSymbol, closeCe, qty), execPool);
+            CompletableFuture<BrokerOrderResponse> cPe = CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, peSymbol, closePe, qty), execPool);
+            CompletableFuture.allOf(cCe, cPe).get(timeoutSec, TimeUnit.SECONDS);
+            boolean ceClosed = isPlaced(cCe.getNow(null));
+            boolean peClosed = isPlaced(cPe.getNow(null));
+            if (!ceClosed || !peClosed) {
+                addLog("ROLL", "ERROR", "pos#" + pos.getId() + " option close failed CE="
+                        + statusOf(cCe.getNow(null)) + " PE=" + statusOf(cPe.getNow(null)));
+                return null;
+            }
+
+            // 2) Open new option legs (fut stays)
+            String newCe = optionChainService.buildNfoSymbol(pos.getUnderlying(), newOpp.getExpiryDate(), newOpp.getStrike(), "CE");
+            String newPe = optionChainService.buildNfoSymbol(pos.getUnderlying(), newOpp.getExpiryDate(), newOpp.getStrike(), "PE");
+            BrokerOrderRequest.Side openCe = conversion ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL;
+            BrokerOrderRequest.Side openPe = conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
+            CompletableFuture<BrokerOrderResponse> oCe = CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, newCe, openCe, qty), execPool);
+            CompletableFuture<BrokerOrderResponse> oPe = CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, newPe, openPe, qty), execPool);
+            CompletableFuture.allOf(oCe, oPe).get(timeoutSec, TimeUnit.SECONDS);
+            boolean ceOpen = isPlaced(oCe.getNow(null));
+            boolean peOpen = isPlaced(oPe.getNow(null));
+            if (!ceOpen || !peOpen) {
+                addLog("ROLL", "ERROR", "pos#" + pos.getId() + " new options failed — flattening fut");
+                // Emergency: close fut to avoid naked hedge
+                String futSymbol = pos.getFutSymbol() != null ? pos.getFutSymbol()
+                        : buildMonthlyFutSymbol(pos.getUnderlying());
+                BrokerOrderRequest.Side futClose = conversion ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL;
+                place(adapter, token, futSymbol, futClose, qty);
+                return null;
+            }
+
+            String prev = pos.getErrorMessage() != null ? pos.getErrorMessage() : "";
+            pos.setErrorMessage(prev + " | ROLL " + pos.getStrike() + "→" + newOpp.getStrike()
+                    + " captured₹" + Math.round(capturedPnl)
+                    + " CE:" + oCe.getNow(null).orderId() + " PE:" + oPe.getNow(null).orderId());
+            pos.setCurrentPnl(BigDecimal.valueOf(Math.round(capturedPnl * 100.0) / 100.0));
+            pos.setStrike(newOpp.getStrike());
+            pos.setOpportunityId(newOpp.getId());
+            pos.setCeSymbol(newCe);
+            pos.setPeSymbol(newPe);
+            pos.setCeEntryPrice(newOpp.getCeAsk() != null ? newOpp.getCeAsk() : newOpp.getCeEntryPrice());
+            pos.setPeEntryPrice(newOpp.getPeBid() != null ? newOpp.getPeBid() : newOpp.getPeEntryPrice());
+            pos.setTargetEdge(newOpp.getEdgeAfterCosts());
+            pos.setCeOrderId(oCe.getNow(null).orderId());
+            pos.setPeOrderId(oPe.getNow(null).orderId());
+            pos.setStatus("OPEN");
+            LivePosition saved = positionRepo.save(pos);
+            addLog("ROLL", "OK", "LIVE pos#" + saved.getId() + " now strike=" + saved.getStrike()
+                    + " target=₹" + saved.getTargetEdge() + " (fut held)");
+            return saved;
+        } catch (Exception e) {
+            addLog("ROLL", "ERROR", "pos#" + pos.getId() + " " + e.getMessage());
+            log.error("smartRollLive failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private LivePosition falseReturn() { return null; }
 
     private static boolean isPaperPosition(LivePosition pos) {
         if (pos == null) return true;

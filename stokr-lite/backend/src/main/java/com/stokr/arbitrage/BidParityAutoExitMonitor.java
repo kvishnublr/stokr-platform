@@ -5,15 +5,18 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
- * Auto-exit Bid Parity live positions when live PnL reaches near the entry edge.
- * Example: entered at edge ₹300 → exit when PnL ≥ ₹290 (buffer ₹10).
- * Independent of auto-exec ENTRY (can exit while entry stays OFF).
+ * Near-target handler:
+ * 1) Prefer smart roll (close CE+PE, keep FUT, open new options) when a ≥₹300 candidate exists
+ * 2) Else full exit (options + fut)
  */
 @Component
 public class BidParityAutoExitMonitor {
@@ -23,11 +26,14 @@ public class BidParityAutoExitMonitor {
 
     private final SignalTradeBookService tradeBookService;
     private final OptionArbAutoExecService autoExecService;
+    private final OptionArbHistoryService historyService;
 
     public BidParityAutoExitMonitor(SignalTradeBookService tradeBookService,
-                                    OptionArbAutoExecService autoExecService) {
+                                    OptionArbAutoExecService autoExecService,
+                                    OptionArbHistoryService historyService) {
         this.tradeBookService = tradeBookService;
         this.autoExecService = autoExecService;
+        this.historyService = historyService;
     }
 
     @Scheduled(fixedDelayString = "${option-arb.auto-exit-interval:5000}", initialDelay = 15000)
@@ -47,10 +53,13 @@ public class BidParityAutoExitMonitor {
         if (buffer > 500) buffer = 500;
 
         try {
-            // Preview candidates then broker-close live ones before marking EXITED
-            Map<String, Object> book = tradeBookService.getPositionsBook("BID", false);
+            Map<String, Object> book = tradeBookService.getPositionsBook("BID", false, "BOTH");
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> positions = (List<Map<String, Object>>) book.getOrDefault("positions", List.of());
+
+            List<OptionArbOpportunity> recent = historyService.getRepository()
+                    .findByScanTimeBetween(LocalDateTime.now().minusMinutes(5), LocalDateTime.now());
+
             for (Map<String, Object> row : positions) {
                 Object idObj = row.get("id");
                 if (!(idObj instanceof Number n)) continue;
@@ -64,9 +73,29 @@ public class BidParityAutoExitMonitor {
 
                 LivePosition pos = tradeBookService.findPosition(id);
                 if (pos == null) continue;
+
+                OptionArbOpportunity rollCand = null;
+                if (autoExecService.isSmartRollEnabled()) {
+                    rollCand = findRollCandidate(pos, recent, settings);
+                }
+
+                if (rollCand != null) {
+                    LivePosition rolled = autoExecService.smartRoll(pos, rollCand, pnl);
+                    if (rolled != null) {
+                        log.info("SMART-ROLL pos#{} {} {}→{} pnl≈{}", id, pos.getUnderlying(),
+                                pos.getStrike(), rollCand.getStrike(), pnl);
+                        autoExecService.addLog("ROLL", "OK",
+                                "pos#" + id + " → " + rollCand.getStrike()
+                                        + " edge=₹" + rollCand.getEdgeAfterCosts());
+                        continue;
+                    }
+                    autoExecService.addLog("ROLL", "FALLBACK",
+                            "pos#" + id + " roll failed — full exit");
+                }
+
                 boolean brokerOk = autoExecService.closeLiveHedge(pos);
                 if (!brokerOk) {
-                    log.warn("AUTO-EXIT broker close failed for pos#{} — not marking EXITED yet", id);
+                    log.warn("AUTO-EXIT broker close failed for pos#{} — retry next tick", id);
                     autoExecService.addLog("EXIT", "BLOCKED",
                             "AUTO near-edge pos#" + id + " broker close failed — retry next tick");
                     continue;
@@ -74,14 +103,46 @@ public class BidParityAutoExitMonitor {
                 LivePosition closed = tradeBookService.exitPosition(id, pnl,
                         String.format(java.util.Locale.ROOT,
                                 "AUTO_EXIT_NEAR_EDGE target=%.2f thr=%.2f pnl=%.2f", target, thr, pnl));
-                log.info("AUTO-EXIT near edge: pos#{} {} {} strike={} targetEdge={} exitPnl={}",
-                        closed.getId(), closed.getUnderlying(), closed.getAction(), closed.getStrike(),
-                        closed.getTargetEdge(), closed.getCurrentPnl());
+                log.info("AUTO-EXIT near edge: pos#{} {} strike={} exitPnl={}",
+                        closed.getId(), closed.getUnderlying(), closed.getStrike(), closed.getCurrentPnl());
                 autoExecService.addLog("EXIT", "OK",
                         "AUTO near-edge pos#" + closed.getId() + " pnl=" + closed.getCurrentPnl());
             }
         } catch (Exception e) {
-            log.warn("Bid Parity auto-exit tick failed: {}", e.getMessage());
+            log.warn("Bid Parity auto-exit/roll tick failed: {}", e.getMessage());
         }
+    }
+
+    private OptionArbOpportunity findRollCandidate(LivePosition pos,
+                                                   List<OptionArbOpportunity> recent,
+                                                   Map<String, Object> settings) {
+        if (pos.getUnderlying() == null || pos.getStrike() == null) return null;
+        String key = pos.getUnderlying().toLowerCase(java.util.Locale.ROOT);
+        final double minEdge = settings.get(key + "MinEdge") instanceof Number n
+                ? n.doubleValue() : 300.0;
+        double maxEdgeTmp = 800.0;
+        try {
+            maxEdgeTmp = Double.parseDouble(String.valueOf(
+                    settings.getOrDefault(key + "MaxEdge",
+                            settings.getOrDefault("max_edge_after_costs", 800.0))));
+        } catch (Exception ignored) {}
+        final double maxEdge = maxEdgeTmp;
+
+        final String wantAction = OptionArbAutoExecService.normalizeAction(pos.getAction());
+
+        return recent.stream()
+                .filter(o -> pos.getUnderlying().equalsIgnoreCase(o.getUnderlying()))
+                .filter(o -> o.getStrike() != null && !Objects.equals(o.getStrike(), pos.getStrike()))
+                .filter(o -> o.getEdgeAfterCosts() != null)
+                .filter(o -> o.getEdgeAfterCosts().doubleValue() >= minEdge)
+                .filter(o -> o.getEdgeAfterCosts().doubleValue() <= maxEdge)
+                .filter(o -> o.getEdgePoints() == null || o.getEdgePoints().doubleValue() <= 25.0)
+                .filter(o -> o.getExpiryDate() != null)
+                .filter(o -> {
+                    String a = OptionArbAutoExecService.normalizeAction(o.getAction());
+                    return wantAction == null || wantAction.equals(a);
+                })
+                .max(Comparator.comparingDouble(o -> o.getEdgeAfterCosts().doubleValue()))
+                .orElse(null);
     }
 }

@@ -769,9 +769,10 @@ public class OptionArbitrageController {
     @GetMapping("/live-positions")
     public ResponseEntity<Map<String, Object>> getLivePositions(
             @RequestParam(defaultValue = "BID") String strategyType,
-            @RequestParam(defaultValue = "true") boolean includeClosedToday) {
+            @RequestParam(defaultValue = "true") boolean includeClosedToday,
+            @RequestParam(defaultValue = "BOTH") String mode) {
         try {
-            return ResponseEntity.ok(tradeBookService.getPositionsBook(strategyType, includeClosedToday));
+            return ResponseEntity.ok(tradeBookService.getPositionsBook(strategyType, includeClosedToday, mode));
         } catch (Exception e) {
             log.error("live-positions failed: {}", e.getMessage());
             List<LivePosition> openPositions = livePositionRepo.findAllActive();
