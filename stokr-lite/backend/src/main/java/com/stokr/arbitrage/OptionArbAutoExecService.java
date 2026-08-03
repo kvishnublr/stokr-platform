@@ -107,21 +107,19 @@ public class OptionArbAutoExecService {
      * Does not overwrite an explicit camelCase value already present.
      */
     private void applyLegacyAliases() {
-        // enabled ← bid_parity_auto_enabled / auto_execute_enabled (only if enabled never set from those)
-        Object enabledRaw = settings.get("bid_parity_auto_enabled");
-        if (enabledRaw != null) {
-            settings.put("enabled", parseBool(String.valueOf(enabledRaw)));
+        // Master switch: explicit camelCase `enabled` wins. Only fall back to legacy
+        // bid_parity_auto_enabled when `enabled` was never loaded from DB.
+        boolean hasExplicitEnabled = settings.containsKey("enabled") && settings.get("enabled") instanceof Boolean;
+        if (!hasExplicitEnabled && settings.containsKey("bid_parity_auto_enabled")) {
+            settings.put("enabled", parseBool(String.valueOf(settings.get("bid_parity_auto_enabled"))));
         }
-        // Prefer explicit "enabled" row if both exist — re-read from map after parseAndPut already set it
-        // parseAndPut already put "enabled" if key was "enabled". Legacy overwrites only when enabled still default false
-        // and bid_parity says true — handled below carefully:
-        if (settings.containsKey("bid_parity_auto_enabled")) {
-            boolean legacyOn = parseBool(String.valueOf(settings.get("bid_parity_auto_enabled")));
-            // Keep whichever is more explicit: if camelCase enabled was loaded as string/bool from DB it is already set.
-            // If only legacy exists, sync it.
-            if (!settings.containsKey("enabled") || !Boolean.TRUE.equals(settings.get("enabled"))) {
-                settings.put("enabled", legacyOn);
-            }
+        // Keep legacy mirror in sync for UI / older clients
+        if (settings.get("enabled") instanceof Boolean) {
+            boolean on = Boolean.TRUE.equals(settings.get("enabled"));
+            settings.put("bid_parity_auto_enabled", on ? "1" : "0");
+            settings.put("bid_parity_auto_enabled_bool", on);
+            settings.put("auto_execute_enabled", on ? "true" : "false");
+            settings.put("auto_execute_enabled_bool", on);
         }
 
         if (settings.containsKey("max_total_positions") && !settings.containsKey("maxOpenPositions_from_db")) {
@@ -250,12 +248,17 @@ public class OptionArbAutoExecService {
     @Transactional
     public Map<String, Object> updateSettingsBulk(Map<String, Object> body) {
         if (body == null || body.isEmpty()) return getSettings();
+        // Ignore accidental {key,value} wrapper bodies (would otherwise write literal "key"/"value" rows)
+        if (body.containsKey("key") && body.containsKey("value") && body.size() <= 3) {
+            updateSetting(String.valueOf(body.get("key")), String.valueOf(body.get("value")));
+            return getSettings();
+        }
         for (Map.Entry<String, Object> e : body.entrySet()) {
             if (e.getKey() == null || e.getValue() == null) continue;
             String key = e.getKey().trim();
             // Skip read-only / derived keys
             if (Set.of("parallelLegs", "qtyMode", "hedgedMarginEstimate",
-                    "availableMarginGate_readonly").contains(key)) continue;
+                    "availableMarginGate_readonly", "key", "value").contains(key)) continue;
             if (key.endsWith("_bool") || key.contains(" ")) continue;
             updateSetting(key, String.valueOf(e.getValue()));
         }
@@ -431,6 +434,21 @@ public class OptionArbAutoExecService {
 
             double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 2000.0)).doubleValue();
             if (opp.getEdgeAfterCosts().doubleValue() < minEdge) continue;
+            // Hard ceiling: post Black-76, real 1-lot edges are small. Legacy stock-parity
+            // phantoms were ₹2–4k — never auto-fire those.
+            double maxEdge = ((Number) settings.getOrDefault(key + "MaxEdge",
+                    settings.getOrDefault("max_edge_after_costs", 800.0))).doubleValue();
+            if (opp.getEdgeAfterCosts().doubleValue() > maxEdge) {
+                addLog("SIGNAL", "SKIP", opp.getUnderlying() + " " + opp.getStrike()
+                        + " edge ₹" + String.format("%.0f", opp.getEdgeAfterCosts().doubleValue())
+                        + " > max ₹" + String.format("%.0f", maxEdge) + " (likely inflated model)");
+                continue;
+            }
+            if (opp.getEdgePoints() != null && opp.getEdgePoints().doubleValue() > 25.0) {
+                addLog("SIGNAL", "SKIP", opp.getUnderlying() + " " + opp.getStrike()
+                        + " edgePts " + opp.getEdgePoints() + " > 25 (stale/inflated)");
+                continue;
+            }
             if (opp.getExpiryDate() == null) continue;
 
             String action = normalizeAction(opp.getAction());
