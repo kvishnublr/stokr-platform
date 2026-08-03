@@ -1459,10 +1459,10 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, 
   const stickyRef = React.useRef(new Map()); // client belt-and-suspenders
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ['bid-parity-scan', underlying, expiryMode],
+    queryKey: ['bid-parity-scan', underlying, expiryMode, minEdge],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/bid-parity/scan', {
-        params: { underlying, expiry: expiryMode },
+        params: { underlying, expiry: expiryMode, minEdge },
       });
       lastDataRef.current = res.data;
       return res.data;
@@ -1504,6 +1504,7 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, 
   }, [data, underlying, expiryMode, minEdge]);
 
   const marketClosed = data?.marketClosed;
+  const fromTodayBoard = !!data?.fromTodayBoard;
   const scanMs = data?.scanMs;
   const timedOut = !!data?.timedOut;
   const scanReason = data?.reason;
@@ -1583,7 +1584,7 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, 
       <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl space-y-1">
         <div>
           Model: <span className="font-bold text-slate-900">Black-76</span> (C−P = DF·(F−K)).
-          Default min <span className="font-bold">₹300</span>. Once a signal prints ≥ ₹300 it <span className="font-bold text-emerald-700">stays on this board until market close</span> — it will not flicker away.
+          Default min <span className="font-bold">₹300</span>. Once a signal prints ≥ ₹300 it <span className="font-bold text-emerald-700">stays on this board for the day</span> — including after market close.
         </div>
         <div>
           <span className="text-emerald-700">NIFTY / BANKNIFTY</span> — best for live.{' '}
@@ -1604,7 +1605,15 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, 
 
       {marketClosed && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-4 py-3 rounded-xl">
-          Market closed — live bid-parity scan runs Mon–Fri 09:15–15:30 IST. Use History for past signals.
+          Market closed (Mon–Fri 09:15–15:30 IST). Showing <b>today&apos;s signals</b> on this board
+          {fromTodayBoard ? ` · ${opps.length} print${opps.length === 1 ? '' : 's'}` : ''}.
+          Live scan resumes next session.
+        </div>
+      )}
+
+      {!marketClosed && fromTodayBoard && (
+        <div className="bg-sky-50 border border-sky-200 text-sky-900 text-xs font-semibold px-4 py-3 rounded-xl">
+          No fresh live prints right now — showing today&apos;s saved signals (≥ ₹{minEdge}).
         </div>
       )}
 
@@ -1629,12 +1638,16 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, 
             <div>
               {timedOut
                 ? 'Scan timed out before quotes arrived — not “no edges”.'
-                : `No executable bid-parity edges ≥ ₹${minEdge} for ${underlying} (${expiryMode})`}
+                : marketClosed
+                  ? `No Bid Parity signals ≥ ₹${minEdge} saved for today (${underlying} / ${expiryMode}).`
+                  : `No executable bid-parity edges ≥ ₹${minEdge} for ${underlying} (${expiryMode})`}
             </div>
             <div className="text-[11px] font-medium text-slate-400">
               {timedOut
                 ? 'Try BANKNIFTY Monthly, then Refresh. ALL+Both is heaviest.'
-                : 'Try filter ALL · lower Min edge to ₹0–50 · Black-76 means tight NIFTY/BN books often show nothing'}
+                : marketClosed
+                  ? 'Signals appear here as they print during the session and remain after close.'
+                  : 'Try filter ALL · lower Min edge to ₹0–50 · Black-76 means tight NIFTY/BN books often show nothing'}
               {scanMs != null ? ` · last scan ${scanMs}ms` : ''}
             </div>
           </div>

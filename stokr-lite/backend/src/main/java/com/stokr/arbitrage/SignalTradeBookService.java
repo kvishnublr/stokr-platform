@@ -174,6 +174,65 @@ public class SignalTradeBookService {
         return new LinkedHashMap<>(payload);
     }
 
+    /**
+     * Today's Bid Parity signals for the Live Signals board after market close
+     * (or when live scan is empty). Deduped by strike fingerprint, peak edge kept.
+     */
+    public List<Map<String, Object>> todaysLiveBoardSignals(String underlying, String expiryMode, double minEdge) {
+        String uKey = underlying == null ? "ALL" : underlying.trim().toUpperCase(Locale.ROOT);
+        String mode = expiryMode == null ? "BOTH" : expiryMode.trim().toUpperCase(Locale.ROOT);
+        LocalDate today = LocalDate.now(IST);
+        LocalDateTime from = today.atStartOfDay();
+        LocalDateTime to = today.atTime(LocalTime.MAX);
+
+        List<OptionArbOpportunity> opps = opportunityRepo
+                .findByStrategyNeedleAndScanTimeBetween("BID", from, to);
+
+        Map<String, Map<String, Object>> byKey = new LinkedHashMap<>();
+        for (OptionArbOpportunity o : opps) {
+            if (!"ALL".equals(uKey) && (o.getUnderlying() == null
+                    || !uKey.equalsIgnoreCase(o.getUnderlying()))) continue;
+            double edge = o.getEdgeAfterCosts() != null ? o.getEdgeAfterCosts().doubleValue() : 0;
+            if (edge < minEdge) continue;
+
+            Map<String, Object> row = o.toMap();
+            // Infer weekly vs monthly from description/notes when present
+            String expMode = "MONTHLY";
+            String desc = ((o.getDescription() != null ? o.getDescription() : "")
+                    + " " + (o.getNotes() != null ? o.getNotes() : "")).toUpperCase(Locale.ROOT);
+            if (desc.contains("WEEKLY") || desc.contains("WEEK ")) expMode = "WEEKLY";
+            row.put("expiryMode", expMode);
+            if (!"BOTH".equals(mode) && !mode.equals(expMode)) continue;
+
+            row.put("sticky", true);
+            row.put("live", false);
+            row.put("fromTodayBoard", true);
+            row.put("peakEdgeAfterCosts", edge);
+            row.put("edgeAfterCosts", edge);
+            String key = String.valueOf(o.getUnderlying()).toUpperCase(Locale.ROOT) + "|"
+                    + o.getStrike() + "|"
+                    + String.valueOf(o.getAction()).toUpperCase(Locale.ROOT) + "|"
+                    + (o.getExpiryDate() != null ? o.getExpiryDate() : "") + "|"
+                    + expMode;
+            Map<String, Object> prev = byKey.get(key);
+            if (prev == null) {
+                byKey.put(key, row);
+            } else {
+                double prevPeak = prev.get("peakEdgeAfterCosts") instanceof Number n ? n.doubleValue() : 0;
+                if (edge >= prevPeak) {
+                    row.put("peakEdgeAfterCosts", edge);
+                    byKey.put(key, row);
+                }
+            }
+        }
+
+        List<Map<String, Object>> items = new ArrayList<>(byKey.values());
+        items.sort((a, b) -> Double.compare(
+                ((Number) b.getOrDefault("peakEdgeAfterCosts", 0)).doubleValue(),
+                ((Number) a.getOrDefault("peakEdgeAfterCosts", 0)).doubleValue()));
+        return items;
+    }
+
     /** Active (+ optional today's closed) positions with live PnL. */
     public Map<String, Object> getPositionsBook(String strategyNeedle, boolean includeClosedToday) {
         String needle = strategyNeedle == null ? "" : strategyNeedle.trim();
