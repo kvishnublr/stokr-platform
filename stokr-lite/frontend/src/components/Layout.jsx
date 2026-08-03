@@ -14,6 +14,8 @@ const traderLinks = [
   { to: '/positions', label: 'Positions', icon: '📈' },
   { to: '/option-arbitrage', label: 'Option Arb', icon: '🔀' },
   { to: '/option-arbitrage?tab=bidparity', label: 'Bid Parity', icon: '🎯' },
+  { to: '/option-arbitrage?tab=box', label: 'Box Spread', icon: '📦' },
+  { to: '/option-arbitrage?tab=calendar', label: 'Calendar', icon: '⏳' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
@@ -236,15 +238,16 @@ export default function Layout() {
                 if (qs) {
                   const want = new URLSearchParams(qs);
                   const have = new URLSearchParams(location.search);
-                  // Bid Parity: highlight for any ?tab=bidparity (live or history)
-                  if (want.get('tab') === 'bidparity') {
-                    active = location.pathname === path && have.get('tab') === 'bidparity';
+                  const tab = want.get('tab');
+                  if (tab === 'bidparity' || tab === 'box' || tab === 'calendar') {
+                    active = location.pathname === path && have.get('tab') === tab;
                   } else {
                     active = location.pathname === path
                       && [...want.entries()].every(([k, v]) => have.get(k) === v);
                   }
                 } else if (path === '/option-arbitrage') {
-                  active = location.pathname === path && !location.search.includes('tab=bidparity');
+                  const t = new URLSearchParams(location.search).get('tab');
+                  active = location.pathname === path && !t;
                 }
                 return `nav-item-aurora ${active ? 'active' : ''}`;
               }}

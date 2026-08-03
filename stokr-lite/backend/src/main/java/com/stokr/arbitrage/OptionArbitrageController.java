@@ -26,6 +26,7 @@ public class OptionArbitrageController {
     private final OptionArbHistoryService historyService;
     private final BidParityService bidParityService;
     private final BoxSpreadService boxSpreadService;
+    private final CalendarSpreadService calendarSpreadService;
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
     private final LivePositionRepository livePositionRepo;
@@ -37,6 +38,7 @@ public class OptionArbitrageController {
                                      OptionArbHistoryService historyService,
                                      BidParityService bidParityService,
                                      BoxSpreadService boxSpreadService,
+                                     CalendarSpreadService calendarSpreadService,
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
                                      LivePositionRepository livePositionRepo,
@@ -45,6 +47,7 @@ public class OptionArbitrageController {
         this.historyService = historyService;
         this.bidParityService = bidParityService;
         this.boxSpreadService = boxSpreadService;
+        this.calendarSpreadService = calendarSpreadService;
         this.spotFetcher = spotFetcher;
         this.autoExecService = autoExecService;
         this.livePositionRepo = livePositionRepo;
@@ -214,7 +217,40 @@ public class OptionArbitrageController {
     }
 
     @GetMapping("/box-spread/scan")
-    public ResponseEntity<Map<String, Object>> scanBoxSpread(@RequestParam(defaultValue = "ALL") String underlying) {
+    public ResponseEntity<Map<String, Object>> scanBoxSpread(
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(defaultValue = "BOTH") String expiry) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "expiryMode", expiry,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "scanMs", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        long t0 = System.currentTimeMillis();
+        List<Map<String, Object>> opps = boxSpreadService.scanBoxSpread(underlying, expiry);
+        long scanMs = System.currentTimeMillis() - t0;
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("expiryMode", expiry);
+        resp.put("marketClosed", false);
+        resp.put("opportunities", opps);
+        resp.put("count", opps.size());
+        resp.put("scanMs", scanMs);
+        resp.put("note", "Same-expiry 4-leg box vs DF·(K2−K1). Paper-only (not Bid Parity 3-leg auto-exec).");
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/calendar/scan")
+    public ResponseEntity<Map<String, Object>> scanCalendar(
+            @RequestParam(defaultValue = "ALL") String underlying) {
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
         if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
             return ResponseEntity.ok(Map.of(
@@ -223,17 +259,70 @@ public class OptionArbitrageController {
                 "marketClosed", true,
                 "opportunities", Collections.emptyList(),
                 "count", 0,
+                "scanMs", 0,
                 "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
             ));
         }
-        List<Map<String, Object>> opps = boxSpreadService.scanBoxSpread(underlying);
+        long t0 = System.currentTimeMillis();
+        List<Map<String, Object>> opps = calendarSpreadService.scanCalendarSpreads(underlying);
+        long scanMs = System.currentTimeMillis() - t0;
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
         resp.put("marketClosed", false);
         resp.put("opportunities", opps);
         resp.put("count", opps.size());
+        resp.put("scanMs", scanMs);
+        resp.put("note", "Weekly vs monthly calendar heuristic (not risk-free). Prefer NIFTY/BN depth.");
         return ResponseEntity.ok(resp);
+    }
+
+    /** Paper fill recorder for Box / Calendar / Bid Parity when no DB opportunity id. */
+    @PostMapping("/paper-trade")
+    public ResponseEntity<Map<String, Object>> paperTrade(@RequestBody Map<String, Object> body) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            String underlying = String.valueOf(body.getOrDefault("underlying", "NIFTY"));
+            String action = String.valueOf(body.getOrDefault("action", "PAPER"));
+            String strategy = String.valueOf(body.getOrDefault("strategyType",
+                    body.getOrDefault("type", "PAPER")));
+            int strike = body.get("strike") instanceof Number n ? n.intValue()
+                    : Integer.parseInt(String.valueOf(body.getOrDefault("strike", "0")));
+            int lots = body.get("lots") instanceof Number n ? n.intValue() : 1;
+            double edge = body.get("edgeAfterCosts") instanceof Number n ? n.doubleValue()
+                    : body.get("targetEdge") instanceof Number n2 ? n2.doubleValue() : 0;
+            int lotSize = OptionChainService.getLotSize(underlying);
+            String paperId = "PAPER-" + System.currentTimeMillis();
+
+            LivePosition pos = LivePosition.builder()
+                    .underlying(underlying)
+                    .strike(strike)
+                    .action(action)
+                    .strategyType(strategy)
+                    .lots(Math.max(1, lots))
+                    .lotSize(lotSize)
+                    .targetEdge(java.math.BigDecimal.valueOf(edge))
+                    .currentPnl(java.math.BigDecimal.ZERO)
+                    .status("OPEN")
+                    .ceOrderId(paperId)
+                    .peOrderId(paperId)
+                    .futOrderId(paperId)
+                    .errorMessage("PAPER " + strategy + " · " + String.valueOf(body.getOrDefault("legs", "")))
+                    .enteredAt(LocalDateTime.now())
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            livePositionRepo.save(pos);
+            addAuditLog("PAPER", "SUCCESS", strategy + " " + underlying + " " + strike + " edge≈₹" + Math.round(edge));
+            resp.put("status", "SUBMITTED");
+            resp.put("mode", "PAPER");
+            resp.put("position", pos.toMap());
+            resp.put("message", "Paper position recorded (no live broker order)");
+            return ResponseEntity.ok(resp);
+        } catch (Exception e) {
+            resp.put("status", "ERROR");
+            resp.put("message", e.getMessage());
+            return ResponseEntity.ok(resp);
+        }
     }
 
     @GetMapping("/signals")

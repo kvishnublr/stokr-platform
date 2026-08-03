@@ -58,8 +58,16 @@ export default function OptionArbitrage() {
   const { toasts, dismiss: dismissToast } = useToastState();
   const [searchParams] = useSearchParams();
   const bidParityOnly = searchParams.get('tab') === 'bidparity';
+  const boxOnly = searchParams.get('tab') === 'box';
+  const calendarOnly = searchParams.get('tab') === 'calendar';
+  const strategyHub = bidParityOnly || boxOnly || calendarOnly;
   const [tradingHorizon, setTradingHorizon] = useState('INTRADAY'); // INTRADAY, SWING, POSITIONAL, ANALYTICS
-  const [activeSubTab, setActiveSubTab] = useState(() => bidParityOnly ? 'bidparity' : 'signals');
+  const [activeSubTab, setActiveSubTab] = useState(() => {
+    if (bidParityOnly) return 'bidparity';
+    if (boxOnly) return 'box';
+    if (calendarOnly) return 'calendar';
+    return 'signals';
+  });
   const [underlyings, setUnderlyings] = useState(['ALL']);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [executionBroker, setExecutionBroker] = useState('PAPER');
@@ -69,8 +77,14 @@ export default function OptionArbitrage() {
     if (bidParityOnly) {
       setTradingHorizon('INTRADAY');
       setActiveSubTab('bidparity');
+    } else if (boxOnly) {
+      setTradingHorizon('SWING');
+      setActiveSubTab('box');
+    } else if (calendarOnly) {
+      setTradingHorizon('POSITIONAL');
+      setActiveSubTab('calendar');
     }
-  }, [bidParityOnly]);
+  }, [bidParityOnly, boxOnly, calendarOnly]);
 
   const fetchBrokerRouting = async () => {
     try {
@@ -169,8 +183,8 @@ export default function OptionArbitrage() {
 
   const handleExecuteInline = async (opp, lots = 1) => {
     try {
-      // Prefer Bid Parity auto-exec path (margin-gated + parallel 3-leg) when opportunity id exists
-      if (opp?.id) {
+      // Prefer Bid Parity auto-exec path when opportunity id exists (3-leg)
+      if (opp?.id && String(opp.strategyType || opp.type || '').toUpperCase().includes('PARITY')) {
         const res = await client.get('/option-arbitrage/auto-execute/execute', {
           params: { opportunityId: opp.id, multiplier: lots },
         });
@@ -182,68 +196,142 @@ export default function OptionArbitrage() {
         }
         return;
       }
-      showToast('No opportunity id — cannot execute', 'error');
+      // Paper recorder for Box / Calendar / live rows without DB id
+      const res = await client.post('/option-arbitrage/paper-trade', {
+        ...opp,
+        lots,
+        strategyType: opp.strategyType || opp.type || 'PAPER',
+        edgeAfterCosts: opp.edgeAfterCosts || opp.boxEdgeInr || 0,
+      });
+      if (res.data?.status === 'SUBMITTED') {
+        showToast(`📝 Paper ${opp.underlying || ''} recorded (${executionBroker})`, 'success');
+      } else {
+        showToast(res.data?.message || 'Paper trade failed', 'warning');
+      }
     } catch (e) {
       showToast(e.response?.data?.message || e.message || 'Execute failed', 'error');
     }
   };
 
-  // Bid Parity deep-link: only Live Signals + History — no other arb chrome
+  const renderStrategyChrome = (title, subtitle, accent) => {
+    // Static Tailwind maps only — dynamic via-${accent} classes get purged
+    const T = {
+      amber: {
+        shell: 'from-slate-900 via-amber-950 to-slate-900',
+        iconBox: 'bg-amber-600/30 border-amber-400/30',
+        sub: 'text-amber-200/80',
+        select: 'text-amber-300',
+        btn: 'bg-amber-600 hover:bg-amber-500',
+        icon: '🎯',
+      },
+      purple: {
+        shell: 'from-slate-900 via-purple-950 to-slate-900',
+        iconBox: 'bg-purple-600/30 border-purple-400/30',
+        sub: 'text-purple-200/80',
+        select: 'text-purple-300',
+        btn: 'bg-purple-600 hover:bg-purple-500',
+        icon: '📦',
+      },
+      sky: {
+        shell: 'from-slate-900 via-sky-950 to-slate-900',
+        iconBox: 'bg-sky-600/30 border-sky-400/30',
+        sub: 'text-sky-200/80',
+        select: 'text-sky-300',
+        btn: 'bg-sky-600 hover:bg-sky-500',
+        icon: '⏳',
+      },
+    }[accent] || {
+      shell: 'from-slate-900 via-indigo-950 to-slate-900',
+      iconBox: 'bg-indigo-600/30 border-indigo-400/30',
+      sub: 'text-indigo-200/80',
+      select: 'text-indigo-300',
+      btn: 'bg-indigo-600 hover:bg-indigo-500',
+      icon: '⚡',
+    };
+    return (
+      <div className={`bg-gradient-to-r ${T.shell} text-white rounded-2xl p-4 md:p-5 shadow-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4`}>
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-xl border ${T.iconBox}`}>
+            <span className="text-xl">{T.icon}</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-black tracking-tight text-white">{title}</h1>
+            <p className={`text-xs font-medium ${T.sub}`}>{subtitle}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
+            <span className="text-slate-300 font-medium">Execution:</span>
+            <select
+              value={executionBroker}
+              onChange={(e) => changeExecutionBroker(e.target.value)}
+              className={`bg-slate-900 font-bold border border-slate-700 rounded-lg px-2 py-1 outline-none text-xs ${T.select}`}
+            >
+              <option value="PAPER">📝 Paper Trading (Virtual ₹1 Cr)</option>
+              <option value="NAVIA">⚡ Navia Markets</option>
+              <option value="ICICI_DIRECT">🏦 ICICI Direct Breeze</option>
+              <option value="ZERODHA">🚀 Zerodha Kite</option>
+              <option value="DHAN">🎯 DhanHQ</option>
+              <option value="FYERS">🔥 Fyers API</option>
+            </select>
+          </div>
+          <button
+            onClick={testBrokerConnection}
+            disabled={isTestingBroker}
+            className={`px-3 py-1.5 text-white font-bold rounded-xl text-xs transition shadow-lg disabled:opacity-50 ${T.btn}`}
+          >
+            {isTestingBroker ? 'Testing...' : '⚡ Test Connection'}
+          </button>
+          <button
+            onClick={() => setAutoRefresh(!autoRefresh)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+              autoRefresh ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {autoRefresh ? '⚡ Live: ON' : '⏱️ Live: OFF'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Dedicated strategy hubs (sidebar deep-links)
   if (bidParityOnly) {
     return (
       <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
         <ToastContainer toasts={toasts} dismiss={dismissToast} />
-
-        <div className="bg-gradient-to-r from-slate-900 via-amber-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 shadow-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-600/30 rounded-xl border border-amber-400/30">
-              <span className="text-xl">🎯</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-black tracking-tight text-white">Bid Parity</h1>
-              <p className="text-xs text-amber-200/80 font-medium">Live Signals · History · Configuration</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
-              <span className="text-slate-300 font-medium">Execution:</span>
-              <select
-                value={executionBroker}
-                onChange={(e) => changeExecutionBroker(e.target.value)}
-                className="bg-slate-900 text-amber-300 font-bold border border-slate-700 rounded-lg px-2 py-1 outline-none text-xs"
-              >
-                <option value="PAPER">📝 Paper Trading (Virtual ₹1 Cr)</option>
-                <option value="NAVIA">⚡ Navia Markets</option>
-                <option value="ICICI_DIRECT">🏦 ICICI Direct Breeze</option>
-                <option value="ZERODHA">🚀 Zerodha Kite</option>
-                <option value="DHAN">🎯 DhanHQ</option>
-                <option value="FYERS">🔥 Fyers API</option>
-              </select>
-            </div>
-            <button
-              onClick={testBrokerConnection}
-              disabled={isTestingBroker}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-xs transition shadow-lg disabled:opacity-50"
-            >
-              {isTestingBroker ? 'Testing...' : '⚡ Test Connection'}
-            </button>
-            <button
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                autoRefresh ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              {autoRefresh ? '⚡ Live: ON' : '⏱️ Live: OFF'}
-            </button>
-          </div>
-        </div>
-
+        {renderStrategyChrome('Bid Parity', 'Live Signals · History · Configuration', 'amber')}
         <BidParityHub
           handleExecuteInline={handleExecuteInline}
           executionBroker={executionBroker}
           autoRefresh={autoRefresh}
           changeExecutionBroker={changeExecutionBroker}
+        />
+      </div>
+    );
+  }
+  if (boxOnly) {
+    return (
+      <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
+        <ToastContainer toasts={toasts} dismiss={dismissToast} />
+        {renderStrategyChrome('Box Spread', 'Live Signals · History · Paper only (4-leg)', 'purple')}
+        <BoxSpreadHub
+          handleExecuteInline={handleExecuteInline}
+          executionBroker={executionBroker}
+          autoRefresh={autoRefresh}
+        />
+      </div>
+    );
+  }
+  if (calendarOnly) {
+    return (
+      <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
+        <ToastContainer toasts={toasts} dismiss={dismissToast} />
+        {renderStrategyChrome('Calendar Spreads', 'Live Signals · History · Paper only', 'sky')}
+        <CalendarSpreadHub
+          handleExecuteInline={handleExecuteInline}
+          executionBroker={executionBroker}
+          autoRefresh={autoRefresh}
         />
       </div>
     );
@@ -1675,46 +1763,103 @@ function BidParityPaperSimView() {
   );
 }
 
-/* 3. BOX SPREAD VIEW */
-function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {
-  const [underlying, setUnderlying] = useState('NIFTY');
-  const [expandedId, setExpandedId] = useState(null);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['box-spread-scan', underlying],
-    queryFn: async () => {
-      const res = await client.get('/option-arbitrage/box-spread/scan', { params: { underlying } });
-      return res.data;
-    },
-    refetchInterval: 5000
-  });
-
-  const opps = (data?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) > 0);
-  const marketClosed = data?.marketClosed;
-
+/* 3. BOX SPREAD HUB + VIEW */
+function BoxSpreadHub({ handleExecuteInline, executionBroker, autoRefresh }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get('bp') === 'history' ? 'history' : 'live');
+  const switchTab = (id) => {
+    setTab(id);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'box');
+    if (id === 'live') next.delete('bp');
+    else next.set('bp', id);
+    setSearchParams(next, { replace: true });
+  };
   return (
     <div className="space-y-4 w-full">
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-800">4-Leg Box Spread Scanner</h2>
-          <p className="text-xs text-slate-500">
-            Same-expiry LONG/SHORT box vs PV(K2−K1) · executable bid/ask only · not auto-fired by Bid Parity 3-leg exec
-          </p>
+          <p className="text-xs text-slate-500">Same-expiry LONG/SHORT vs DF·(K2−K1) · weekly + monthly · paper only</p>
         </div>
-
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-            <button
-              key={u}
-              onClick={() => setUnderlying(u)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                underlying === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {u}
+          {[
+            { id: 'live', label: '📡 Live Signals' },
+            { id: 'history', label: '📜 History' },
+          ].map(t => (
+            <button key={t.id} onClick={() => switchTab(t.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${tab === t.id ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              {t.label}
             </button>
           ))}
         </div>
+      </div>
+      {tab === 'live' && <BoxSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />}
+      {tab === 'history' && <StrategyHistoryView strategyFilter="BOX_SPREAD" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} accent="purple" />}
+    </div>
+  );
+}
+
+function BoxSpreadView({ handleExecuteInline, executionBroker, autoRefresh = true }) {
+  const [underlying, setUnderlying] = useState('ALL');
+  const [expiryMode, setExpiryMode] = useState('BOTH');
+  const [expandedId, setExpandedId] = useState(null);
+  const [minEdge, setMinEdge] = useState(75);
+  const lastDataRef = React.useRef(null);
+
+  const { data, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['box-spread-scan', underlying, expiryMode],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/box-spread/scan', {
+        params: { underlying, expiry: expiryMode },
+      });
+      lastDataRef.current = res.data;
+      return res.data;
+    },
+    refetchInterval: autoRefresh ? 4000 : false,
+    staleTime: 1200,
+    placeholderData: (prev) => prev ?? lastDataRef.current ?? undefined,
+  });
+
+  const opps = (data?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) >= minEdge);
+  const marketClosed = data?.marketClosed;
+  const scanMs = data?.scanMs;
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+              <button key={u} onClick={() => setUnderlying(u)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                {u}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+            {['MONTHLY', 'WEEKLY', 'BOTH'].map(m => (
+              <button key={m} onClick={() => setExpiryMode(m)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${expiryMode === m ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <label className="font-semibold text-slate-600">Min ₹</label>
+          <input type="number" value={minEdge} onChange={e => setMinEdge(Number(e.target.value) || 0)}
+            className="w-20 border border-slate-200 rounded-lg px-2 py-1 font-mono" />
+          <button onClick={() => refetch()} className="px-3 py-1 rounded-lg bg-slate-900 text-white font-bold">
+            {isFetching ? 'Scanning…' : 'Refresh'}
+          </button>
+          {scanMs != null && <span className={`font-mono font-bold ${scanMs <= 2000 ? 'text-emerald-600' : 'text-amber-600'}`}>{scanMs}ms</span>}
+        </div>
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl">
+        Fair = DF·(K2−K1). Same-expiry 4 legs. Not auto-fired by Bid Parity 3-leg exec — use Paper Submit.
+        Empty NIFTY/BN often means tight books (healthy), not a broken scanner.
       </div>
 
       {marketClosed && (
@@ -1724,16 +1869,20 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       )}
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
-        {isLoading ? (
+        {isLoading && !data ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Box Spreads...</div>
         ) : opps.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No executable box edges currently detected</div>
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">
+            No executable box edges ≥ ₹{minEdge} for {underlying} ({expiryMode})
+            {scanMs != null ? ` · ${scanMs}ms` : ''}
+          </div>
         ) : (
           <div className="overflow-x-auto w-full">
             <table className="w-full text-xs text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
                   <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Expiry</th>
                   <th className="px-2 py-2">Side</th>
                   <th className="px-2 py-2">Strike Pair</th>
                   <th className="px-2 py-2 text-right">Box Cost</th>
@@ -1751,14 +1900,15 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                   const costVal = Number(opp.boxCost ?? 0);
                   const fairVal = Number(opp.fairValue ?? 0);
                   const widthVal = Number(opp.width ?? (strike2 - strike1));
-
                   return (
-                    <React.Fragment key={`${opp.action}-${strike1}-${strike2}-${idx}`}>
-                      <tr
-                        onClick={() => setExpandedId(isExp ? null : idx)}
-                        className={`transition cursor-pointer ${isExp ? 'bg-purple-50/70 border-l-4 border-purple-600' : 'hover:bg-slate-50'}`}
-                      >
+                    <React.Fragment key={`${opp.action}-${strike1}-${strike2}-${opp.expiryDate}-${idx}`}>
+                      <tr onClick={() => setExpandedId(isExp ? null : idx)}
+                        className={`transition cursor-pointer ${isExp ? 'bg-purple-50/70 border-l-4 border-purple-600' : 'hover:bg-slate-50'}`}>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">{opp.expiryMode || '—'}</span>
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">{opp.expiryDate || '—'}</div>
+                        </td>
                         <td className="px-2 py-1.5 font-bold text-purple-700">{String(opp.action || '').split(' (')[0]}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{strike1} / {strike2 || '—'}</td>
                         <td className="px-2 py-1.5 text-right font-mono">{costVal.toFixed(1)}</td>
@@ -1768,34 +1918,24 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                           +₹{Math.round(opp.edgeAfterCosts || 0).toLocaleString('en-IN')}
                         </td>
                         <td className="px-2 py-1.5 text-center">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                            className="px-2 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded shadow-sm"
-                            title="Paper/manual only — box is 4-leg, not Bid Parity auto-exec"
-                          >
-                            Execute
+                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
+                            className="px-2 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded shadow-sm">
+                            Paper
                           </button>
                         </td>
                       </tr>
                       {isExp && (
                         <tr className="bg-purple-50/40 border-b border-purple-100">
-                          <td colSpan={8} className="p-3">
+                          <td colSpan={9} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-purple-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">4-leg breakdown</span>
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
                                 {opp.legs || opp.description}
                               </p>
-                              <p className="text-[11px] text-slate-500">
-                                Expiry {opp.expiryDate || '—'} · DTE {opp.daysToExpiry ?? '—'} · Fill not guaranteed · Auto-exec does not fire boxes
-                              </p>
-                              <div className="flex justify-end pt-1">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                                  className="px-3 py-1 bg-purple-600 text-white rounded-lg text-xs font-bold shadow-md"
-                                >
-                                  Submit ({executionBroker})
-                                </button>
-                              </div>
+                              <button onClick={() => handleExecuteInline(opp)}
+                                className="px-3 py-1.5 rounded-lg bg-purple-600 text-white text-[11px] font-bold">
+                                📝 Paper trade ({executionBroker})
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1811,6 +1951,120 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
     </div>
   );
 }
+
+function StrategyHistoryView({ strategyFilter, handleExecuteInline, executionBroker, accent = 'slate' }) {
+  const [underlying, setUnderlying] = useState('ALL');
+  const [days, setDays] = useState(3);
+  const [minEdge, setMinEdge] = useState(0);
+  const btnActive = accent === 'purple' ? 'bg-purple-600 text-white'
+    : accent === 'sky' ? 'bg-sky-600 text-white'
+    : accent === 'amber' ? 'bg-amber-600 text-white'
+    : 'bg-slate-900 text-white';
+  const paperBtn = accent === 'purple' ? 'bg-purple-600'
+    : accent === 'sky' ? 'bg-sky-600'
+    : accent === 'amber' ? 'bg-amber-600'
+    : 'bg-slate-700';
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['strategy-history', strategyFilter, underlying, days, minEdge],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/signals', {
+        params: { underlying, days, minEdge },
+      });
+      return res.data;
+    },
+  });
+  const needle = strategyFilter.toUpperCase();
+  const items = (data?.signals || data?.opportunities || data?.items || []).filter(o => {
+    const t = String(o.strategyType || o.type || '').toUpperCase();
+    return t === needle || t.includes(needle.replace('_SPREAD', '')) || t.includes(needle.split('_')[0]);
+  });
+  return (
+    <div className="space-y-3">
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex gap-1.5 bg-slate-100 p-1 rounded-xl">
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button key={u} onClick={() => setUnderlying(u)}
+              className={`px-2 py-1 rounded-lg text-xs font-bold ${underlying === u ? btnActive : 'text-slate-600'}`}>{u}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <select value={days} onChange={e => setDays(Number(e.target.value))} className="border rounded-lg px-2 py-1">
+            {[1, 3, 7, 14].map(d => <option key={d} value={d}>{d}d</option>)}
+          </select>
+          <button onClick={() => refetch()} className="px-3 py-1 bg-slate-900 text-white rounded-lg font-bold">Refresh</button>
+        </div>
+      </div>
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+        {isLoading ? <div className="p-10 text-center text-slate-400 text-sm">Loading history…</div>
+          : items.length === 0 ? <div className="p-10 text-center text-slate-400 text-sm">No {strategyFilter} history</div>
+          : (
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2 text-left">Time</th>
+                  <th className="px-2 py-2 text-left">Symbol</th>
+                  <th className="px-2 py-2 text-left">Action</th>
+                  <th className="px-2 py-2 text-right">Edge ₹</th>
+                  <th className="px-2 py-2 text-center">Paper</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {items.slice(0, 100).map((row, i) => (
+                  <tr key={row.id || i} className="hover:bg-slate-50">
+                    <td className="px-2 py-1.5 font-mono text-slate-500">{String(row.scanTime || row.createdAt || '').slice(0, 19)}</td>
+                    <td className="px-2 py-1.5 font-bold">{row.underlying} {row.strike}</td>
+                    <td className="px-2 py-1.5">{row.action}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">₹{Math.round(row.edgeAfterCosts || 0)}</td>
+                    <td className="px-2 py-1.5 text-center">
+                      <button onClick={() => handleExecuteInline(row)} className={`px-2 py-0.5 ${paperBtn} text-white text-[10px] font-bold rounded`}>Paper</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+      </div>
+    </div>
+  );
+}
+
+function CalendarSpreadHub({ handleExecuteInline, executionBroker, autoRefresh }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get('bp') === 'history' ? 'history' : 'live');
+  const switchTab = (id) => {
+    setTab(id);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'calendar');
+    if (id === 'live') next.delete('bp');
+    else next.set('bp', id);
+    setSearchParams(next, { replace: true });
+  };
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">Calendar Time Spreads</h2>
+          <p className="text-xs text-slate-500">Weekly vs monthly same-strike CE/PE · heuristic (not risk-free) · paper only</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {[
+            { id: 'live', label: '📡 Live Signals' },
+            { id: 'history', label: '📜 History' },
+          ].map(t => (
+            <button key={t.id} onClick={() => switchTab(t.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${tab === t.id ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {tab === 'live' && <CalendarSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />}
+      {tab === 'history' && <StrategyHistoryView strategyFilter="CALENDAR_SPREAD" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} accent="sky" />}
+    </div>
+  );
+}
+
+/* legacy BOX view kept as BoxSpreadView above */
 
 /* 4. 0DTE IRON CONDOR VIEW */
 function IronCondorView({ handleExecuteInline, executionBroker }) {
@@ -2121,49 +2375,70 @@ function CashSwingView({ handleExecuteInline, executionBroker }) {
 }
 
 /* 7. CALENDAR SPREAD VIEW */
-function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
-  const [underlying, setUnderlying] = useState('BANKNIFTY');
+function CalendarSpreadView({ handleExecuteInline, executionBroker, autoRefresh = true }) {
+  const [underlying, setUnderlying] = useState('ALL');
   const [expandedId, setExpandedId] = useState(null);
+  const [minEdge, setMinEdge] = useState(75);
+  const lastDataRef = React.useRef(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['calendar-scan', underlying],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/calendar/scan', { params: { underlying } });
+      lastDataRef.current = res.data;
       return res.data;
     },
-    refetchInterval: 3000
+    refetchInterval: autoRefresh ? 4000 : false,
+    staleTime: 1200,
+    placeholderData: (prev) => prev ?? lastDataRef.current ?? undefined,
   });
 
-  const opps = data?.opportunities || [];
+  const opps = (data?.opportunities || []).filter(o => Math.abs(o.edgeAfterCosts || 0) >= minEdge);
+  const marketClosed = data?.marketClosed;
+  const scanMs = data?.scanMs;
 
   return (
     <div className="space-y-4 w-full">
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-base font-bold text-slate-800">Near vs Far Expiry Calendar Spreads</h2>
-          <p className="text-xs text-slate-500">Captures differential theta decay between near-week and far-month option contracts</p>
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+              <button key={u} onClick={() => setUnderlying(u)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                {u}
+              </button>
+            ))}
+          </div>
         </div>
-
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-            <button
-              key={u}
-              onClick={() => setUnderlying(u)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                underlying === u ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {u}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 text-xs">
+          <label className="font-semibold text-slate-600">Min ₹</label>
+          <input type="number" value={minEdge} onChange={e => setMinEdge(Number(e.target.value) || 0)}
+            className="w-20 border border-slate-200 rounded-lg px-2 py-1 font-mono" />
+          <button onClick={() => refetch()} className="px-3 py-1 rounded-lg bg-slate-900 text-white font-bold">
+            {isFetching ? 'Scanning…' : 'Refresh'}
+          </button>
+          {scanMs != null && <span className={`font-mono font-bold ${scanMs <= 2000 ? 'text-emerald-600' : 'text-amber-600'}`}>{scanMs}ms</span>}
         </div>
       </div>
 
+      <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl">
+        Weekly vs monthly same-strike CE/PE. Heuristic carry band — not risk-free arb. Prefer NIFTY/BN depth. Paper only.
+      </div>
+
+      {marketClosed && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-4 py-3 rounded-xl">
+          Market closed — calendar scan runs Mon–Fri 09:15–15:30 IST.
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
-        {isLoading ? (
+        {isLoading && !data ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Calendar Time Spreads...</div>
         ) : opps.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No calendar spread opportunities detected for {underlying}</div>
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">
+            No calendar edges ≥ ₹{minEdge} for {underlying}
+            {scanMs != null ? ` · ${scanMs}ms` : ''}
+          </div>
         ) : (
           <div className="overflow-x-auto w-full">
             <table className="w-full text-xs text-left border-collapse">
@@ -2172,25 +2447,29 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
                   <th className="px-2 py-2">Symbol</th>
                   <th className="px-2 py-2">Type</th>
                   <th className="px-2 py-2">Strike</th>
-                  <th className="px-2 py-2 text-right">Near Price</th>
-                  <th className="px-2 py-2 text-right">Far Price</th>
-                  <th className="px-2 py-2 text-right">Spread</th>
-                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Target Edge (₹)</th>
+                  <th className="px-2 py-2">Near / Far</th>
+                  <th className="px-2 py-2 text-right">Near Mid</th>
+                  <th className="px-2 py-2 text-right">Far Mid</th>
+                  <th className="px-2 py-2 text-right">Debit</th>
+                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge (₹)</th>
                   <th className="px-2 py-2 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {opps.slice(0, 25).map((opp, idx) => {
+                {opps.slice(0, 40).map((opp, idx) => {
                   const isExp = expandedId === idx;
                   return (
-                    <React.Fragment key={idx}>
+                    <React.Fragment key={`${opp.underlying}-${opp.strike}-${opp.optionType}-${opp.action}-${idx}`}>
                       <tr
                         onClick={() => setExpandedId(isExp ? null : idx)}
-                        className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}
+                        className={`transition cursor-pointer ${isExp ? 'bg-sky-50/70 border-l-4 border-sky-600' : 'hover:bg-slate-50'}`}
                       >
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
-                        <td className="px-2 py-1.5 font-bold text-indigo-700">{opp.optionType}</td>
+                        <td className="px-2 py-1.5 font-bold text-sky-700">{opp.optionType}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
+                        <td className="px-2 py-1.5 text-[10px] font-mono text-slate-500">
+                          {opp.nearExpiry || '—'} → {opp.farExpiry || '—'}
+                        </td>
                         <td className="px-2 py-1.5 text-right font-mono text-slate-600">₹{Number(opp.nearPrice || 0).toFixed(1)}</td>
                         <td className="px-2 py-1.5 text-right font-mono text-slate-600">₹{Number(opp.farPrice || 0).toFixed(1)}</td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-700">{Number(opp.spread || 0).toFixed(1)}</td>
@@ -2198,26 +2477,25 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
                         <td className="px-2 py-1.5 text-center">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                            className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded shadow-sm"
+                            className="px-2 py-0.5 bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-bold rounded shadow-sm"
                           >
-                            ⏳ Execute
+                            Paper
                           </button>
                         </td>
                       </tr>
 
                       {isExp && (
-                        <tr className="bg-indigo-50/40 border-b border-indigo-100">
-                          <td colSpan={8} className="p-3">
-                            <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">Calendar Spread Leg Breakdown:</span>
+                        <tr className="bg-sky-50/40 border-b border-sky-100">
+                          <td colSpan={9} className="p-3">
+                            <div className="bg-white rounded-xl p-3 border border-sky-200 shadow-md space-y-2">
+                              <span className="font-bold text-slate-800 text-xs uppercase block">{opp.action || 'Calendar'}</span>
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
-                                BUY NEAR ({opp.nearSymbol} @ ₹{opp.nearPrice}) | SELL FAR ({opp.farSymbol} @ ₹{opp.farPrice})
+                                {opp.legs || opp.description || `${opp.optionType} ${opp.strike}`}
                               </p>
-                              <div className="flex justify-end pt-1">
-                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⏳ Submit ({executionBroker})
-                                </button>
-                              </div>
+                              <button onClick={() => handleExecuteInline(opp)}
+                                className="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-[11px] font-bold">
+                                📝 Paper trade ({executionBroker})
+                              </button>
                             </div>
                           </td>
                         </tr>
