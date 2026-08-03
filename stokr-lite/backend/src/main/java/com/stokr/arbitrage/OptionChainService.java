@@ -425,7 +425,7 @@ public class OptionChainService {
     }
 
     /** ATM mid synthetic → implied forward: F = K + (C_mid − P_mid) / DF. */
-    private Double impliedForwardFromAtm(Map<String, OptionQuote> quotes, String underlying,
+    public Double impliedForwardFromAtm(Map<String, OptionQuote> quotes, String underlying,
                                          LocalDate expiryDate, int atmStrike, double df) {
         if (df <= 0) return null;
         int step = getStrikeStep(underlying);

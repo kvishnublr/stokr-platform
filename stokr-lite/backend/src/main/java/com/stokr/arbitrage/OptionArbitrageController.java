@@ -27,6 +27,7 @@ public class OptionArbitrageController {
     private final BidParityService bidParityService;
     private final BoxSpreadService boxSpreadService;
     private final CalendarSpreadService calendarSpreadService;
+    private final JellyRollService jellyRollService;
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
     private final LivePositionRepository livePositionRepo;
@@ -40,6 +41,7 @@ public class OptionArbitrageController {
                                      BidParityService bidParityService,
                                      BoxSpreadService boxSpreadService,
                                      CalendarSpreadService calendarSpreadService,
+                                     JellyRollService jellyRollService,
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
                                      LivePositionRepository livePositionRepo,
@@ -50,6 +52,7 @@ public class OptionArbitrageController {
         this.bidParityService = bidParityService;
         this.boxSpreadService = boxSpreadService;
         this.calendarSpreadService = calendarSpreadService;
+        this.jellyRollService = jellyRollService;
         this.spotFetcher = spotFetcher;
         this.autoExecService = autoExecService;
         this.livePositionRepo = livePositionRepo;
@@ -283,30 +286,118 @@ public class OptionArbitrageController {
 
     @GetMapping("/calendar/scan")
     public ResponseEntity<Map<String, Object>> scanCalendar(
-            @RequestParam(defaultValue = "ALL") String underlying) {
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(defaultValue = "100") double minEdge) {
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
         if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
-            return ResponseEntity.ok(Map.of(
-                "timestamp", System.currentTimeMillis(),
-                "underlying", underlying,
-                "marketClosed", true,
-                "opportunities", Collections.emptyList(),
-                "count", 0,
-                "scanMs", 0,
-                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
-            ));
+            long t0 = System.currentTimeMillis();
+            List<Map<String, Object>> today = tradeBookService.todaysLiveBoardSignals(
+                    "CALENDAR", underlying, "BOTH", minEdge);
+            Map<String, Object> closed = new LinkedHashMap<>();
+            closed.put("timestamp", System.currentTimeMillis());
+            closed.put("underlying", underlying);
+            closed.put("marketClosed", true);
+            closed.put("fromTodayBoard", true);
+            closed.put("opportunities", today);
+            closed.put("count", today.size());
+            closed.put("scanMs", System.currentTimeMillis() - t0);
+            closed.put("reason", "Market closed — showing today's Calendar signals (Live board).");
+            closed.put("note", "After hours: Live Signals defaults to today's saved prints (≥ min edge).");
+            return ResponseEntity.ok(closed);
         }
         long t0 = System.currentTimeMillis();
         List<Map<String, Object>> opps = calendarSpreadService.scanCalendarSpreads(underlying);
         long scanMs = System.currentTimeMillis() - t0;
+        boolean usedTodayFallback = false;
+        if (opps == null || opps.isEmpty()) {
+            List<Map<String, Object>> today = tradeBookService.todaysLiveBoardSignals(
+                    "CALENDAR", underlying, "BOTH", minEdge);
+            if (!today.isEmpty()) {
+                opps = today;
+                usedTodayFallback = true;
+            }
+        }
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
         resp.put("marketClosed", false);
-        resp.put("opportunities", opps);
-        resp.put("count", opps.size());
+        resp.put("fromTodayBoard", usedTodayFallback);
+        resp.put("opportunities", opps != null ? opps : Collections.emptyList());
+        resp.put("count", opps != null ? opps.size() : 0);
         resp.put("scanMs", scanMs);
-        resp.put("note", "Weekly vs monthly calendar heuristic (not risk-free). Prefer NIFTY/BN depth.");
+        resp.put("note", usedTodayFallback
+                ? "No fresh live prints — showing today's saved Calendar signals."
+                : "Weekly vs monthly calendar heuristic (not risk-free). Prefer NIFTY/BN depth.");
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/jelly-roll/scan")
+    public ResponseEntity<Map<String, Object>> scanJellyRoll(
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(defaultValue = "150") double minEdge) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            long t0 = System.currentTimeMillis();
+            List<Map<String, Object>> today = tradeBookService.todaysLiveBoardSignals(
+                    "JELLY", underlying, "BOTH", minEdge);
+            Map<String, Object> closed = new LinkedHashMap<>();
+            closed.put("timestamp", System.currentTimeMillis());
+            closed.put("underlying", underlying);
+            closed.put("marketClosed", true);
+            closed.put("fromTodayBoard", true);
+            closed.put("opportunities", today);
+            closed.put("count", today.size());
+            closed.put("scanMs", System.currentTimeMillis() - t0);
+            closed.put("reason", "Market closed — showing today's Jelly Roll signals (Live board).");
+            closed.put("note", "After hours: Live Signals defaults to today's saved prints (≥ min edge).");
+            return ResponseEntity.ok(closed);
+        }
+        long t0 = System.currentTimeMillis();
+        List<Map<String, Object>> opps = jellyRollService.scanJellyRoll(underlying);
+        long scanMs = System.currentTimeMillis() - t0;
+        boolean usedTodayFallback = false;
+        if (opps == null || opps.isEmpty()) {
+            List<Map<String, Object>> today = tradeBookService.todaysLiveBoardSignals(
+                    "JELLY", underlying, "BOTH", minEdge);
+            if (!today.isEmpty()) {
+                opps = today;
+                usedTodayFallback = true;
+            }
+        }
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("fromTodayBoard", usedTodayFallback);
+        resp.put("opportunities", opps != null ? opps : Collections.emptyList());
+        resp.put("count", opps != null ? opps.size() : 0);
+        resp.put("scanMs", scanMs);
+        resp.put("note", usedTodayFallback
+                ? "No fresh live prints — showing today's saved Jelly Roll signals."
+                : "Jelly Roll = calendar of synthetics vs DF·(F−K). Paper-only for now.");
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/jelly-roll/history")
+    public ResponseEntity<Map<String, Object>> jellyRollHistory(
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(defaultValue = "0") double minEdge,
+            @RequestParam(defaultValue = "7") int days) {
+        return ResponseEntity.ok(tradeBookService.getTradeBook("JELLY_ROLL", underlying, days, minEdge));
+    }
+
+    @GetMapping("/implied-forward")
+    public ResponseEntity<Map<String, Object>> impliedForward(
+            @RequestParam(defaultValue = "ALL") String underlying) {
+        long t0 = System.currentTimeMillis();
+        List<Map<String, Object>> items = jellyRollService.impliedForwardStrip(underlying);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("items", items);
+        resp.put("count", items.size());
+        resp.put("scanMs", System.currentTimeMillis() - t0);
+        resp.put("note", "ATM mid synth implied F vs listed monthly FUT. Feeds Bid Parity / Jelly context.");
         return ResponseEntity.ok(resp);
     }
 

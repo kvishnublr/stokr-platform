@@ -60,10 +60,12 @@ export default function OptionArbitrage() {
   const bidParityOnly = searchParams.get('tab') === 'bidparity';
   const boxOnly = searchParams.get('tab') === 'box';
   const calendarOnly = searchParams.get('tab') === 'calendar';
-  const strategyHub = bidParityOnly || boxOnly || calendarOnly;
+  const jellyOnly = searchParams.get('tab') === 'jelly';
+  const strategyHub = bidParityOnly || boxOnly || calendarOnly || jellyOnly;
   const [tradingHorizon, setTradingHorizon] = useState('INTRADAY'); // INTRADAY, SWING, POSITIONAL, ANALYTICS
   const [activeSubTab, setActiveSubTab] = useState(() => {
     if (bidParityOnly) return 'bidparity';
+    if (jellyOnly) return 'jelly';
     if (boxOnly) return 'box';
     if (calendarOnly) return 'calendar';
     return 'signals';
@@ -77,6 +79,9 @@ export default function OptionArbitrage() {
     if (bidParityOnly) {
       setTradingHorizon('INTRADAY');
       setActiveSubTab('bidparity');
+    } else if (jellyOnly) {
+      setTradingHorizon('SWING');
+      setActiveSubTab('jelly');
     } else if (boxOnly) {
       setTradingHorizon('SWING');
       setActiveSubTab('box');
@@ -84,7 +89,7 @@ export default function OptionArbitrage() {
       setTradingHorizon('POSITIONAL');
       setActiveSubTab('calendar');
     }
-  }, [bidParityOnly, boxOnly, calendarOnly]);
+  }, [bidParityOnly, boxOnly, calendarOnly, jellyOnly]);
 
   const fetchBrokerRouting = async () => {
     try {
@@ -248,6 +253,14 @@ export default function OptionArbitrage() {
         btn: 'bg-sky-600 hover:bg-sky-500',
         icon: '⏳',
       },
+      teal: {
+        shell: 'from-slate-900 via-teal-950 to-slate-900',
+        iconBox: 'bg-teal-600/30 border-teal-400/30',
+        sub: 'text-teal-200/80',
+        select: 'text-teal-300',
+        btn: 'bg-teal-600 hover:bg-teal-500',
+        icon: '🌀',
+      },
     }[accent] || {
       shell: 'from-slate-900 via-indigo-950 to-slate-900',
       iconBox: 'bg-indigo-600/30 border-indigo-400/30',
@@ -314,6 +327,19 @@ export default function OptionArbitrage() {
           executionBroker={executionBroker}
           autoRefresh={autoRefresh}
           changeExecutionBroker={changeExecutionBroker}
+        />
+      </div>
+    );
+  }
+  if (jellyOnly) {
+    return (
+      <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
+        <ToastContainer toasts={toasts} dismiss={dismissToast} />
+        {renderStrategyChrome('Jelly Roll', 'Live Signals · History · Paper only (term-structure twin of Bid Parity)', 'teal')}
+        <JellyRollHub
+          handleExecuteInline={handleExecuteInline}
+          executionBroker={executionBroker}
+          autoRefresh={autoRefresh}
         />
       </div>
     );
@@ -835,6 +861,8 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh, chang
           ))}
         </div>
       </div>
+
+      <ImpliedForwardStrip underlying="ALL" autoRefresh={autoRefresh} accent="amber" />
 
       {bpTab === 'live' && (
         <BidParityLiveView
@@ -1531,6 +1559,70 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* Implied Forward vs FUT strip — shared by Bid Parity + Jelly */
+function ImpliedForwardStrip({ underlying = 'ALL', autoRefresh = true, accent = 'amber' }) {
+  const { data, isFetching } = useQuery({
+    queryKey: ['implied-forward', underlying],
+    queryFn: async () => (await client.get('/option-arbitrage/implied-forward', { params: { underlying } })).data,
+    refetchInterval: autoRefresh ? 15000 : false,
+    staleTime: 8000,
+    placeholderData: (prev) => prev,
+  });
+  const items = data?.items || [];
+  const border = accent === 'teal' ? 'border-teal-200' : accent === 'sky' ? 'border-sky-200' : 'border-amber-200';
+  const bg = accent === 'teal' ? 'bg-teal-50/80' : accent === 'sky' ? 'bg-sky-50/80' : 'bg-amber-50/80';
+  const title = accent === 'teal' ? 'text-teal-900' : accent === 'sky' ? 'text-sky-900' : 'text-amber-900';
+
+  if (!items.length && !isFetching) {
+    return (
+      <div className={`${bg} border ${border} text-xs font-semibold px-4 py-2 rounded-xl ${title}`}>
+        Implied Forward strip — no ATM synth quotes right now (broker / after hours).
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${bg} border ${border} rounded-xl px-3 py-2.5 overflow-x-auto`}>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className={`text-[11px] font-bold uppercase tracking-wide ${title}`}>
+          Implied Forward vs FUT
+        </div>
+        <div className="text-[10px] text-slate-500 font-semibold">
+          ATM mid synth F = K + (C−P)/DF · {isFetching ? 'updating…' : `${data?.scanMs ?? '—'}ms`}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2 min-w-max">
+        {items.map((row) => {
+          const w = row.weekly || {};
+          const m = row.monthly || {};
+          const wBasis = Number(w.basisVsFut);
+          const mBasis = Number(m.basisVsFut);
+          const basisCls = (b) => !Number.isFinite(b) ? 'text-slate-500'
+            : Math.abs(b) < 5 ? 'text-emerald-700'
+              : Math.abs(b) < 20 ? 'text-amber-700' : 'text-rose-700';
+          return (
+            <div key={row.underlying} className="bg-white/90 border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] min-w-[160px]">
+              <div className="font-black text-slate-800">{row.underlying}</div>
+              <div className="font-mono text-slate-600">
+                FUT {Number(row.futures || 0).toFixed(1)}
+                {row.spot ? ` · spot ${Number(row.spot).toFixed(1)}` : ''}
+              </div>
+              <div className={`font-mono ${basisCls(wBasis)}`}>
+                W {w.impliedForward != null ? Number(w.impliedForward).toFixed(1) : '—'}
+                {Number.isFinite(wBasis) ? ` (${wBasis >= 0 ? '+' : ''}${wBasis.toFixed(1)})` : ''}
+              </div>
+              <div className={`font-mono ${basisCls(mBasis)}`}>
+                M {m.impliedForward != null ? Number(m.impliedForward).toFixed(1) : '—'}
+                {Number.isFinite(mBasis) ? ` (${mBasis >= 0 ? '+' : ''}${mBasis.toFixed(1)})` : ''}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -2578,13 +2670,18 @@ function StrategyHistoryView({ strategyFilter, handleExecuteInline, executionBro
   const [exitingId, setExitingId] = useState(null);
   const btnActive = accent === 'purple' ? 'bg-purple-600 text-white'
     : accent === 'sky' ? 'bg-sky-600 text-white'
+    : accent === 'teal' ? 'bg-teal-600 text-white'
     : accent === 'amber' ? 'bg-amber-600 text-white'
     : 'bg-slate-900 text-white';
   const paperBtn = accent === 'purple' ? 'bg-purple-600'
     : accent === 'sky' ? 'bg-sky-600'
+    : accent === 'teal' ? 'bg-teal-600'
     : accent === 'amber' ? 'bg-amber-600'
     : 'bg-slate-700';
-  const statusActive = accent === 'purple' ? 'bg-purple-600 text-white' : accent === 'sky' ? 'bg-sky-600 text-white' : 'bg-slate-900 text-white';
+  const statusActive = accent === 'purple' ? 'bg-purple-600 text-white'
+    : accent === 'sky' ? 'bg-sky-600 text-white'
+    : accent === 'teal' ? 'bg-teal-600 text-white'
+    : 'bg-slate-900 text-white';
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['strategy-history-trades', strategyFilter, underlying, days, minEdge],
@@ -2749,6 +2846,210 @@ function CalendarSpreadHub({ handleExecuteInline, executionBroker, autoRefresh }
       </div>
       {tab === 'live' && <CalendarSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />}
       {tab === 'history' && <StrategyHistoryView strategyFilter="CALENDAR_SPREAD" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} accent="sky" />}
+    </div>
+  );
+}
+
+function JellyRollHub({ handleExecuteInline, executionBroker, autoRefresh }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get('bp') === 'history' ? 'history' : 'live');
+  const switchTab = (id) => {
+    setTab(id);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'jelly');
+    if (id === 'live') next.delete('bp');
+    else next.set('bp', id);
+    setSearchParams(next, { replace: true });
+  };
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">Jelly Roll Scanner</h2>
+          <p className="text-xs text-slate-500">Calendar of synthetics vs DF·(F−K) · term-structure twin of Bid Parity · paper only</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {[
+            { id: 'live', label: '📡 Live Signals' },
+            { id: 'history', label: '📜 History' },
+          ].map(t => (
+            <button key={t.id} onClick={() => switchTab(t.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${tab === t.id ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <ImpliedForwardStrip underlying="ALL" autoRefresh={autoRefresh} accent="teal" />
+      {tab === 'live' && <JellyRollView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />}
+      {tab === 'history' && <StrategyHistoryView strategyFilter="JELLY_ROLL" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} accent="teal" />}
+    </div>
+  );
+}
+
+function JellyRollView({ handleExecuteInline, executionBroker, autoRefresh = true }) {
+  const [underlying, setUnderlying] = useState('ALL');
+  const [expandedId, setExpandedId] = useState(null);
+  const [minEdge, setMinEdge] = useState(150);
+  const lastDataRef = React.useRef(null);
+
+  const { data, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['jelly-roll-scan', underlying, minEdge],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/jelly-roll/scan', {
+        params: { underlying, minEdge },
+      });
+      lastDataRef.current = res.data;
+      return res.data;
+    },
+    refetchInterval: autoRefresh ? 4000 : false,
+    staleTime: 1200,
+    placeholderData: (prev) => prev ?? lastDataRef.current ?? undefined,
+  });
+
+  const opps = (data?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) >= minEdge);
+  const marketClosed = data?.marketClosed;
+  const fromTodayBoard = !!data?.fromTodayBoard;
+  const scanMs = data?.scanMs;
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+              <button key={u} onClick={() => setUnderlying(u)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                {u}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <label className="font-semibold text-slate-600">Min ₹</label>
+          <input type="number" value={minEdge} onChange={e => setMinEdge(Number(e.target.value) || 0)}
+            className="w-20 border border-slate-200 rounded-lg px-2 py-1 font-mono" />
+          <button onClick={() => refetch()} className="px-3 py-1 rounded-lg bg-slate-900 text-white font-bold">
+            {isFetching ? 'Scanning…' : 'Refresh'}
+          </button>
+          {scanMs != null && <span className={`font-mono font-bold ${scanMs <= 2000 ? 'text-emerald-600' : 'text-amber-600'}`}>{scanMs}ms</span>}
+          {opps.length > 0 && (
+            <span className="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
+              {opps.length} held
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl space-y-1">
+        <div>
+          Fair near/far synth = DF·(F−K) using <span className="font-bold">monthly FUT</span>.
+          Long jelly = buy far synth / sell near; Short = opposite. Default min <span className="font-bold">₹150</span> after ~₹80 costs.
+        </div>
+        <div>
+          Paper only for now (same desk pattern as Bid Parity, no live auto-fire yet).
+          Prefer <span className="text-emerald-700 font-bold">NIFTY / BANKNIFTY</span>.
+        </div>
+      </div>
+
+      {marketClosed && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-4 py-3 rounded-xl">
+          Market closed (Mon–Fri 09:15–15:30 IST). Showing <b>today&apos;s signals</b>
+          {fromTodayBoard ? ` · ${opps.length} print${opps.length === 1 ? '' : 's'}` : ''}.
+        </div>
+      )}
+
+      {!marketClosed && fromTodayBoard && (
+        <div className="bg-sky-50 border border-sky-200 text-sky-900 text-xs font-semibold px-4 py-3 rounded-xl">
+          No fresh live prints — showing today&apos;s saved jelly signals (≥ ₹{minEdge}).
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+        {isLoading && !data ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Jelly Rolls...</div>
+        ) : opps.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold space-y-1">
+            <div>
+              {marketClosed
+                ? `No Jelly Roll signals ≥ ₹${minEdge} saved for today (${underlying}).`
+                : `No executable jelly edges ≥ ₹${minEdge} for ${underlying}`}
+              {scanMs != null ? ` · ${scanMs}ms` : ''}
+            </div>
+            <div className="text-[11px] font-medium text-slate-400">
+              Tight term structure is healthy — lower Min ₹ or check Implied Forward strip above.
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Near / Far</th>
+                  <th className="px-2 py-2">Strike</th>
+                  <th className="px-2 py-2">Side</th>
+                  <th className="px-2 py-2 text-right">Mkt Pay</th>
+                  <th className="px-2 py-2 text-right">Fair Pay</th>
+                  <th className="px-2 py-2 text-right">Pts</th>
+                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge (₹)</th>
+                  <th className="px-2 py-2 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {opps.map((opp, idx) => {
+                  const isExp = expandedId === idx;
+                  return (
+                    <React.Fragment key={`${opp.underlying}-${opp.strike}-${opp.action}-${opp.nearExpiry}-${idx}`}>
+                      <tr onClick={() => setExpandedId(isExp ? null : idx)}
+                        className={`transition cursor-pointer ${isExp ? 'bg-teal-50/70 border-l-4 border-teal-600' : 'hover:bg-slate-50'}`}>
+                        <td className="px-2 py-1.5 font-bold text-slate-800">
+                          {opp.underlying}
+                          {opp.fromTodayBoard && <div className="text-[9px] text-emerald-700 font-bold">HELD</div>}
+                        </td>
+                        <td className="px-2 py-1.5 text-[10px] font-mono text-slate-500">
+                          {opp.nearExpiry || '—'} → {opp.farExpiry || opp.expiryDate || '—'}
+                        </td>
+                        <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
+                        <td className="px-2 py-1.5 font-bold text-teal-700">{opp.action}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{Number(opp.marketPay || 0).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{Number(opp.fairPay || 0).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{Number(opp.edgePoints || 0).toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                          +₹{Math.round(opp.edgeAfterCosts || 0).toLocaleString('en-IN')}
+                          {opp.quality === 'REVIEW' && <div className="text-[9px] text-rose-600 font-bold">check book</div>}
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
+                            className="px-2 py-0.5 bg-teal-600 text-white text-[10px] font-bold rounded shadow-sm">
+                            Paper
+                          </button>
+                        </td>
+                      </tr>
+                      {isExp && (
+                        <tr className="bg-teal-50/40 border-b border-teal-100">
+                          <td colSpan={9} className="p-3">
+                            <div className="bg-white rounded-xl p-3 border border-teal-200 shadow-md space-y-2">
+                              <span className="font-bold text-slate-800 text-xs uppercase block">4-leg jelly breakdown</span>
+                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
+                                {opp.legs || opp.description}
+                              </p>
+                              <button onClick={() => handleExecuteInline(opp)}
+                                className="px-3 py-1.5 rounded-lg bg-teal-600 text-white text-[11px] font-bold">
+                                Paper trade ({executionBroker})
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -3067,13 +3368,15 @@ function CashSwingView({ handleExecuteInline, executionBroker }) {
 function CalendarSpreadView({ handleExecuteInline, executionBroker, autoRefresh = true }) {
   const [underlying, setUnderlying] = useState('ALL');
   const [expandedId, setExpandedId] = useState(null);
-  const [minEdge, setMinEdge] = useState(75);
+  const [minEdge, setMinEdge] = useState(100);
   const lastDataRef = React.useRef(null);
 
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['calendar-scan', underlying],
+    queryKey: ['calendar-scan', underlying, minEdge],
     queryFn: async () => {
-      const res = await client.get('/option-arbitrage/calendar/scan', { params: { underlying } });
+      const res = await client.get('/option-arbitrage/calendar/scan', {
+        params: { underlying, minEdge },
+      });
       lastDataRef.current = res.data;
       return res.data;
     },
@@ -3084,6 +3387,7 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker, autoRefresh 
 
   const opps = (data?.opportunities || []).filter(o => Math.abs(o.edgeAfterCosts || 0) >= minEdge);
   const marketClosed = data?.marketClosed;
+  const fromTodayBoard = !!data?.fromTodayBoard;
   const scanMs = data?.scanMs;
 
   return (
@@ -3107,16 +3411,29 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker, autoRefresh 
             {isFetching ? 'Scanning…' : 'Refresh'}
           </button>
           {scanMs != null && <span className={`font-mono font-bold ${scanMs <= 2000 ? 'text-emerald-600' : 'text-amber-600'}`}>{scanMs}ms</span>}
+          {opps.length > 0 && (
+            <span className="text-[10px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded">
+              {opps.length} held
+            </span>
+          )}
         </div>
       </div>
 
       <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl">
-        Weekly vs monthly same-strike CE/PE. Heuristic carry band — not risk-free arb. Prefer NIFTY/BN depth. Paper only.
+        Weekly vs monthly same-strike CE/PE. Heuristic √T carry — not risk-free arb. Prefer NIFTY/BN depth. Paper only.
+        Prints stay on this board for the day after close.
       </div>
 
       {marketClosed && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-4 py-3 rounded-xl">
-          Market closed — calendar scan runs Mon–Fri 09:15–15:30 IST.
+          Market closed (Mon–Fri 09:15–15:30 IST). Showing <b>today&apos;s signals</b>
+          {fromTodayBoard ? ` · ${opps.length} print${opps.length === 1 ? '' : 's'}` : ''}.
+        </div>
+      )}
+
+      {!marketClosed && fromTodayBoard && (
+        <div className="bg-sky-50 border border-sky-200 text-sky-900 text-xs font-semibold px-4 py-3 rounded-xl">
+          No fresh live prints — showing today&apos;s saved calendar signals (≥ ₹{minEdge}).
         </div>
       )}
 
@@ -3124,9 +3441,16 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker, autoRefresh 
         {isLoading && !data ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Calendar Time Spreads...</div>
         ) : opps.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm font-semibold">
-            No calendar edges ≥ ₹{minEdge} for {underlying}
-            {scanMs != null ? ` · ${scanMs}ms` : ''}
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold space-y-1">
+            <div>
+              {marketClosed
+                ? `No Calendar signals ≥ ₹${minEdge} saved for today (${underlying}).`
+                : `No calendar edges ≥ ₹${minEdge} for ${underlying}`}
+              {scanMs != null ? ` · ${scanMs}ms` : ''}
+            </div>
+            <div className="text-[11px] font-medium text-slate-400">
+              Empty NIFTY/BN often means fair carry — try ALL or lower Min ₹.
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto w-full">
@@ -3153,7 +3477,10 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker, autoRefresh 
                         onClick={() => setExpandedId(isExp ? null : idx)}
                         className={`transition cursor-pointer ${isExp ? 'bg-sky-50/70 border-l-4 border-sky-600' : 'hover:bg-slate-50'}`}
                       >
-                        <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-800">
+                          {opp.underlying}
+                          {opp.fromTodayBoard && <div className="text-[9px] text-emerald-700 font-bold">HELD</div>}
+                        </td>
                         <td className="px-2 py-1.5 font-bold text-sky-700">{opp.optionType}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
                         <td className="px-2 py-1.5 text-[10px] font-mono text-slate-500">

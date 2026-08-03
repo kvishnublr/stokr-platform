@@ -14,6 +14,7 @@ const traderLinks = [
   { to: '/positions', label: 'Positions', icon: '📈' },
   { to: '/option-arbitrage', label: 'Option Arb', icon: '🔀' },
   { to: '/option-arbitrage?tab=bidparity', label: 'Bid Parity', icon: '🎯' },
+  { to: '/option-arbitrage?tab=jelly', label: 'Jelly Roll', icon: '🌀' },
   { to: '/option-arbitrage?tab=box', label: 'Box Spread', icon: '📦' },
   { to: '/option-arbitrage?tab=calendar', label: 'Calendar', icon: '⏳' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
@@ -239,7 +240,7 @@ export default function Layout() {
                   const want = new URLSearchParams(qs);
                   const have = new URLSearchParams(location.search);
                   const tab = want.get('tab');
-                  if (tab === 'bidparity' || tab === 'box' || tab === 'calendar') {
+                  if (tab === 'bidparity' || tab === 'box' || tab === 'calendar' || tab === 'jelly') {
                     active = location.pathname === path && have.get('tab') === tab;
                   } else {
                     active = location.pathname === path
