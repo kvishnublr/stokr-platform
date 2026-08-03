@@ -21,8 +21,10 @@ public class CalendarSpreadService {
 
     private static final Logger log = LoggerFactory.getLogger(CalendarSpreadService.class);
     private static final double RISK_FREE_RATE = 0.065;
-    private static final double MIN_EDGE_RS = 75.0;
-    private static final double MAX_OPTION_SPREAD = 25.0;
+    private static final double MIN_EDGE_RS = 100.0;
+    private static final double MAX_EDGE_RS = 500.0; // reject Bid-Parity-style inflated heuristics
+    private static final double MAX_EDGE_PTS = 12.0;
+    private static final double MAX_OPTION_SPREAD = 15.0;
     private static final double COSTS = 40.0;
     private static final long CACHE_TTL_MS = 1500;
 
@@ -118,10 +120,10 @@ public class CalendarSpreadService {
             if (!nearExpiry.isAfter(LocalDate.now(ZoneId.of("Asia/Kolkata")))) return results;
 
             int atmStrike = optionChainService.getATMStrike(underlying, spotPrice);
-            // Focus ATM ±2 for liquidity
+            // ATM ±1 only — calendars need depth; wider strikes = wider books = fake edges
             int step = OptionChainService.getStrikeStep(underlying);
             List<Integer> strikes = new ArrayList<>();
-            for (int i = -2; i <= 2; i++) strikes.add(atmStrike + i * step);
+            for (int i = -1; i <= 1; i++) strikes.add(atmStrike + i * step);
 
             List<String> instruments = new ArrayList<>();
             for (int strike : strikes) {
@@ -179,44 +181,65 @@ public class CalendarSpreadService {
         long farDte = Math.max(nearDte + 1, Duration.between(
                 LocalDate.now(ZoneId.of("Asia/Kolkata")).atStartOfDay(), farExpiry.atStartOfDay()).toDays());
 
-        // Debit calendar (BUY far / SELL near): pay farAsk, receive nearBid
-        double debit = far.ask - near.bid;
-        // Credit calendar (SELL far / BUY near): receive farBid, pay nearAsk
-        double credit = far.bid - near.ask;
+        double nearMid = (near.bid + near.ask) / 2.0;
+        double farMid = (far.bid + far.ask) / 2.0;
+        double midDebit = farMid - nearMid;
+        // Executable buy-calendar debit / sell-calendar credit
+        double buyDebit = far.ask - near.bid;
+        double sellCredit = far.bid - near.ask; // often negative (still a debit)
 
-        double carryBand = Math.max(2.0, Math.abs(futuresPrice - spotPrice) * ((farDte - nearDte) / 365.0) * RISK_FREE_RATE * 8);
-        // Heuristic: calendar debit should roughly sit in a band; large debit = sell calendar, tiny/negative = buy
-        double fairish = Math.max(carryBand, (near.bid + near.ask) / 4.0); // rough floor vs near premium
+        // sqrt-time fair debit: ATM-ish far TV ≈ near TV * sqrt(Tfar/Tnear)
+        double intrinsic = "CE".equals(optionType)
+                ? Math.max(0, spotPrice - strike)
+                : Math.max(0, strike - spotPrice);
+        double nearTv = Math.max(1.0, nearMid - intrinsic);
+        double fairFarTv = nearTv * Math.sqrt(farDte / (double) nearDte);
+        double fairDebit = Math.max(1.0, fairFarTv - nearTv);
+        // small carry pad so we only flag clear outliers
+        double pad = Math.max(1.5, Math.abs(futuresPrice - spotPrice) * ((farDte - nearDte) / 365.0) * RISK_FREE_RATE * 4);
 
-        // SELL calendar if debit is rich vs fairish
-        double sellEdgePts = debit - fairish;
-        double buyEdgePts = fairish - Math.max(debit, 0.1); // buy if cheap
+        double richPts = midDebit - (fairDebit + pad);   // mid calendar too expensive → sell
+        double cheapPts = (fairDebit - pad) - midDebit;  // mid calendar too cheap → buy
 
-        if (sellEdgePts * lotSize - COSTS >= MIN_EDGE_RS && sellEdgePts <= 40) {
+        // Require executable edge to retain ≥35% of mid edge (reject one-sided books)
+        if (richPts >= 2.0 && richPts <= MAX_EDGE_PTS) {
+            // Sell calendar: sell far @bid, buy near @ask → net = sellCredit (vs paying fair)
+            double execEdgePts = sellCredit - fairDebit; // how much better than fair on exec
+            if (execEdgePts < richPts * 0.35) return;
+            double net = execEdgePts * lotSize - COSTS;
+            if (net < MIN_EDGE_RS || net > MAX_EDGE_RS) return;
             Map<String, Object> opp = baseOpp(underlying, optionType, strike, nearExpiry, farExpiry,
                     nearDte, farDte, near, far, lotSize, spotPrice, futuresPrice);
-            opp.put("spread", round2(debit));
-            opp.put("expectedCarry", round2(fairish));
-            opp.put("edgePoints", round2(sellEdgePts));
-            opp.put("edgeAfterCosts", round2(sellEdgePts * lotSize - COSTS));
+            opp.put("spread", round2(buyDebit));
+            opp.put("midDebit", round2(midDebit));
+            opp.put("expectedCarry", round2(fairDebit));
+            opp.put("edgePoints", round2(execEdgePts));
+            opp.put("edgeAfterCosts", round2(net));
+            opp.put("quality", net > 350 ? "REVIEW" : "OK");
             opp.put("action", "SELL_FAR_BUY_NEAR");
             opp.put("legs", String.format("SELL %s %s @ %.1f | BUY %s %s @ %.1f",
                     farExpiry, optionType, far.bid, nearExpiry, optionType, near.ask));
-            opp.put("description", "Calendar rich — sell far / buy near (credit/debit depending on fills)");
+            opp.put("description", "Calendar rich vs √T fair — sell far / buy near (heuristic)");
             opp.put("strategyType", "CALENDAR_SPREAD");
             results.add(opp);
             toSave.add(toArb(opp, near, far));
-        } else if (buyEdgePts * lotSize - COSTS >= MIN_EDGE_RS && buyEdgePts <= 40 && credit < fairish) {
+        } else if (cheapPts >= 2.0 && cheapPts <= MAX_EDGE_PTS) {
+            double execEdgePts = fairDebit - buyDebit;
+            if (execEdgePts < cheapPts * 0.35) return;
+            double net = execEdgePts * lotSize - COSTS;
+            if (net < MIN_EDGE_RS || net > MAX_EDGE_RS) return;
             Map<String, Object> opp = baseOpp(underlying, optionType, strike, nearExpiry, farExpiry,
                     nearDte, farDte, near, far, lotSize, spotPrice, futuresPrice);
-            opp.put("spread", round2(debit));
-            opp.put("expectedCarry", round2(fairish));
-            opp.put("edgePoints", round2(buyEdgePts));
-            opp.put("edgeAfterCosts", round2(buyEdgePts * lotSize - COSTS));
+            opp.put("spread", round2(buyDebit));
+            opp.put("midDebit", round2(midDebit));
+            opp.put("expectedCarry", round2(fairDebit));
+            opp.put("edgePoints", round2(execEdgePts));
+            opp.put("edgeAfterCosts", round2(net));
+            opp.put("quality", net > 350 ? "REVIEW" : "OK");
             opp.put("action", "BUY_FAR_SELL_NEAR");
             opp.put("legs", String.format("BUY %s %s @ %.1f | SELL %s %s @ %.1f",
                     farExpiry, optionType, far.ask, nearExpiry, optionType, near.bid));
-            opp.put("description", "Calendar cheap — buy far / sell near");
+            opp.put("description", "Calendar cheap vs √T fair — buy far / sell near (heuristic)");
             opp.put("strategyType", "CALENDAR_SPREAD");
             results.add(opp);
             toSave.add(toArb(opp, near, far));
