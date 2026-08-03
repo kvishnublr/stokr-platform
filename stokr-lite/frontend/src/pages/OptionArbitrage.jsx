@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router-dom';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
+import BidParityPayoffChart from '../components/BidParityPayoffChart';
 
 let _toastListeners = [];
 let _toastId = 0;
@@ -730,7 +731,12 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh, chang
       {bpTab === 'live' && (
         <BidParityLiveView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />
       )}
-      {bpTab === 'history' && <BidParityHistoryView />}
+      {bpTab === 'history' && (
+        <BidParityHistoryView
+          handleExecuteInline={handleExecuteInline}
+          executionBroker={executionBroker}
+        />
+      )}
       {bpTab === 'config' && (
         <BidParityConfigView
           executionBroker={executionBroker}
@@ -1100,6 +1106,7 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
   const [expiryMode, setExpiryMode] = useState('BOTH'); // MONTHLY | WEEKLY | BOTH
   const [expandedId, setExpandedId] = useState(null);
   const [minEdge, setMinEdge] = useState(150);
+  const [paperLots, setPaperLots] = useState(1);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['bid-parity-scan', underlying, expiryMode],
@@ -1264,20 +1271,47 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
                         </td>
                       </tr>
                       {isExp && (
-                        <tr className="bg-amber-50/40">
-                          <td colSpan={10} className="px-4 py-3 text-xs text-slate-700">
-                            <div className="font-semibold mb-1">{opp.description || opp.legs}</div>
-                            <div className="font-mono text-[11px] text-slate-600">{opp.legs}</div>
-                            {weekly && (
-                              <div className="mt-2 text-orange-800 font-semibold">
-                                Basis risk: parity vs F≈{opp.parityForward ?? '—'}; hedge monthly FUT (residual ≈ {opp.basisResidual ?? '—'} pts)
+                        <tr className="bg-slate-50/80">
+                          <td colSpan={10} className="px-3 py-4">
+                            <div className="space-y-3 animate-[expandDown_0.35s_ease]">
+                              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                <div className="font-semibold text-slate-700">{opp.description || opp.legs}</div>
+                                <div className="flex items-center gap-2">
+                                  <label className="font-bold text-slate-500">Lots</label>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={10}
+                                    value={paperLots}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => setPaperLots(Math.max(1, Number(e.target.value) || 1))}
+                                    className="w-14 border border-slate-200 rounded-lg px-2 py-1 font-mono"
+                                  />
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp, paperLots); }}
+                                    className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-[11px] font-bold shadow"
+                                  >
+                                    Submit ({executionBroker})
+                                  </button>
+                                </div>
                               </div>
-                            )}
-                            {thin && (
-                              <div className="mt-2 text-amber-800 font-semibold">
-                                {u} liquidity is thinner than NIFTY/BN — verify CE/PE/FUT bid-ask qty before live fire. Big ₹ ≠ easy fill.
-                              </div>
-                            )}
+                              {weekly && (
+                                <div className="text-orange-800 text-xs font-semibold">
+                                  Basis risk: parity vs F≈{opp.parityForward ?? '—'}; hedge monthly FUT (residual ≈ {opp.basisResidual ?? '—'} pts)
+                                </div>
+                              )}
+                              {thin && (
+                                <div className="text-amber-800 text-xs font-semibold">
+                                  {u} liquidity is thinner than NIFTY/BN — verify CE/PE/FUT bid-ask qty before live fire.
+                                </div>
+                              )}
+                              <BidParityPayoffChart
+                                opp={opp}
+                                lots={paperLots}
+                                executionBroker={executionBroker}
+                                onPaperTrade={(o, lots) => handleExecuteInline(o, lots)}
+                              />
+                            </div>
                           </td>
                         </tr>
                       )}
@@ -1293,10 +1327,11 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
   );
 }
 
-function BidParityHistoryView() {
+function BidParityHistoryView({ handleExecuteInline, executionBroker }) {
   const [underlying, setUnderlying] = useState('ALL');
   const [days, setDays] = useState(7);
   const [minEdge, setMinEdge] = useState(0);
+  const [expandedId, setExpandedId] = useState(null);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['bid-parity-history', underlying, days, minEdge],
@@ -1349,7 +1384,7 @@ function BidParityHistoryView() {
         <button onClick={() => refetch()} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold">
           Reload
         </button>
-        <span className="text-xs text-slate-500 ml-auto">{items.length} signals</span>
+        <span className="text-xs text-slate-500 ml-auto">{items.length} signals · click row for payoff</span>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
@@ -1373,22 +1408,44 @@ function BidParityHistoryView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {items.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50">
-                    <td className="px-2 py-1.5 font-mono text-[11px] text-slate-600">{row.scanTime || row.detectedAt}</td>
-                    <td className="px-2 py-1.5 font-bold">{row.underlying}</td>
-                    <td className="px-2 py-1.5 font-bold">{row.strike}</td>
-                    <td className="px-2 py-1.5 font-bold text-purple-700">{row.action}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{row.edgePoints}</td>
-                    <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
-                      ₹{Math.round(row.edgeAfterCosts || 0).toLocaleString('en-IN')}
-                    </td>
-                    <td className="px-2 py-1.5">{row.expiryDate}</td>
-                    <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500 max-w-[280px] truncate" title={row.legs}>
-                      {row.legs}
-                    </td>
-                  </tr>
-                ))}
+                {items.map((row) => {
+                  const open = expandedId === row.id;
+                  return (
+                    <React.Fragment key={row.id}>
+                      <tr
+                        className={`cursor-pointer transition ${open ? 'bg-amber-50/70 border-l-4 border-amber-600' : 'hover:bg-slate-50'}`}
+                        onClick={() => setExpandedId(open ? null : row.id)}
+                      >
+                        <td className="px-2 py-1.5 font-mono text-[11px] text-slate-600">{row.scanTime || row.detectedAt}</td>
+                        <td className="px-2 py-1.5 font-bold">{row.underlying}</td>
+                        <td className="px-2 py-1.5 font-bold">{row.strike}</td>
+                        <td className="px-2 py-1.5 font-bold text-purple-700">{row.action}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{row.edgePoints}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                          ₹{Math.round(row.edgeAfterCosts || 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-2 py-1.5">{row.expiryDate}</td>
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500 max-w-[280px] truncate" title={row.legs}>
+                          {row.legs}
+                        </td>
+                      </tr>
+                      {open && (
+                        <tr className="bg-slate-50/80">
+                          <td colSpan={8} className="px-3 py-4">
+                            <BidParityPayoffChart
+                              opp={row}
+                              lots={1}
+                              executionBroker={executionBroker || 'PAPER'}
+                              onPaperTrade={handleExecuteInline
+                                ? (o, lots) => handleExecuteInline(o, lots)
+                                : undefined}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
