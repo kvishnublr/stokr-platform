@@ -62,23 +62,28 @@ public class SignalTradeBookService {
         // Positions for this strategy (active + recent exits)
         List<LivePosition> positions = livePositionRepo.findByStrategyNeedle(needle);
         Map<Long, LivePosition> byOppId = new HashMap<>();
-        Map<String, LivePosition> byFingerprint = new HashMap<>();
+        List<LivePosition> unmatched = new ArrayList<>();
         for (LivePosition p : positions) {
             if (p.getOpportunityId() != null) {
                 byOppId.putIfAbsent(p.getOpportunityId(), p);
+            } else {
+                unmatched.add(p);
             }
-            String fp = fingerprint(p.getUnderlying(), p.getStrike(), p.getAction());
-            // Prefer active over exited for fingerprint match
-            LivePosition existing = byFingerprint.get(fp);
-            if (existing == null || isActive(p) && !isActive(existing)) {
-                byFingerprint.put(fp, p);
-            }
+        }
+        // Fingerprint index for positions without opportunityId — one-shot consume
+        Map<String, Deque<LivePosition>> byFingerprint = new HashMap<>();
+        for (LivePosition p : unmatched) {
+            byFingerprint
+                    .computeIfAbsent(fingerprint(p.getUnderlying(), p.getStrike(), p.getAction()),
+                            k -> new ArrayDeque<>())
+                    .add(p);
         }
 
         // Precompute live PnL for active entries (batch quotes where possible)
         Map<Long, Double> livePnlByPosId = computeLivePnlForActive(positions);
 
         List<Map<String, Object>> items = new ArrayList<>();
+        Set<Long> usedPosIds = new HashSet<>();
         for (OptionArbOpportunity o : opps) {
             if (!"ALL".equals(uKey) && (o.getUnderlying() == null
                     || !uKey.equalsIgnoreCase(o.getUnderlying()))) continue;
@@ -88,23 +93,31 @@ public class SignalTradeBookService {
             LivePosition pos = null;
             if (o.getId() != null) pos = byOppId.get(o.getId());
             if (pos == null) {
-                pos = byFingerprint.get(fingerprint(o.getUnderlying(), o.getStrike(), o.getAction()));
+                Deque<LivePosition> q = byFingerprint.get(
+                        fingerprint(o.getUnderlying(), o.getStrike(), o.getAction()));
+                if (q != null) {
+                    while (!q.isEmpty()) {
+                        LivePosition cand = q.pollFirst();
+                        if (cand.getId() != null && usedPosIds.contains(cand.getId())) continue;
+                        pos = cand;
+                        break;
+                    }
+                }
+            }
+            if (pos != null && pos.getId() != null) {
+                if (usedPosIds.contains(pos.getId())) pos = null;
+                else usedPosIds.add(pos.getId());
             }
 
             Map<String, Object> row = o.toMap();
             enrichTradeFields(row, o, pos, livePnlByPosId);
             items.add(row);
-            if (items.size() >= 1000) break;
+            if (items.size() >= 800) break;
         }
 
-        // Also surface orphan ENTERED/EXITED positions without a matching opportunity row in window
-        Set<Long> seenPos = new HashSet<>();
-        for (Map<String, Object> row : items) {
-            Object pid = row.get("positionId");
-            if (pid instanceof Number n) seenPos.add(n.longValue());
-        }
+        // Orphan ENTERED/EXITED positions not linked to an opportunity row in this window
         for (LivePosition p : positions) {
-            if (p.getId() != null && seenPos.contains(p.getId())) continue;
+            if (p.getId() != null && usedPosIds.contains(p.getId())) continue;
             if (!"ALL".equals(uKey) && (p.getUnderlying() == null
                     || !uKey.equalsIgnoreCase(p.getUnderlying()))) continue;
             if (!isActive(p) && p.getExitedAt() != null
@@ -123,6 +136,8 @@ public class SignalTradeBookService {
             row.put("legs", p.getErrorMessage());
             enrichTradeFields(row, null, p, livePnlByPosId);
             items.add(row);
+            if (p.getId() != null) usedPosIds.add(p.getId());
+            if (items.size() >= 1000) break;
         }
 
         items.sort((a, b) -> String.valueOf(b.getOrDefault("scanTime", ""))
