@@ -1096,7 +1096,7 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
 }
 
 function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }) {
-  const [underlying, setUnderlying] = useState('NIFTY');
+  const [underlying, setUnderlying] = useState('ALL');
   const [expiryMode, setExpiryMode] = useState('BOTH'); // MONTHLY | WEEKLY | BOTH
   const [expandedId, setExpandedId] = useState(null);
   const [minEdge, setMinEdge] = useState(150);
@@ -1116,12 +1116,15 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
   const opps = (data?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) >= minEdge);
   const marketClosed = data?.marketClosed;
 
+  const LOT = { NIFTY: 25, BANKNIFTY: 15, FINNIFTY: 25, MIDCPNIFTY: 50 };
+  const LIQ = { NIFTY: 'high', BANKNIFTY: 'high', FINNIFTY: 'medium', MIDCPNIFTY: 'thin' };
+
   return (
     <div className="space-y-4 w-full">
       <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-            {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
               <button
                 key={u}
                 onClick={() => setUnderlying(u)}
@@ -1165,11 +1168,18 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
         </div>
       </div>
 
-      {(expiryMode === 'WEEKLY' || expiryMode === 'BOTH') && (
-        <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl">
-          Weekly = weekly options vs interpolated forward; hedge still uses <span className="font-bold">monthly FUT</span> (basis residual). Higher min edge (₹300) applied server-side. Expiry-week of month is skipped (same as monthly).
+      <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl space-y-1">
+        <div>
+          <span className="text-emerald-700">NIFTY / BANKNIFTY</span> — best for live (deep book).{' '}
+          <span className="text-amber-700">FINNIFTY / MIDCPNIFTY</span> — usable, but thinner books; bigger ₹ edges are often
+          just larger lot × same points (MIDCP lot 50). Prefer ≥ ₹500–1k min edge there and check bid/ask qty before fire.
         </div>
-      )}
+        {(expiryMode === 'WEEKLY' || expiryMode === 'BOTH') && (
+          <div>
+            Weekly = weekly options vs interpolated forward; hedge still uses <span className="font-bold">monthly FUT</span> (basis residual). Higher min edge (₹300) applied server-side. Expiry-week of month is skipped (same as monthly).
+          </div>
+        )}
+      </div>
 
       {marketClosed && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-4 py-3 rounded-xl">
@@ -1202,6 +1212,7 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
                   <th className="px-2 py-2 text-right">Spot / Fut</th>
                   <th className="px-2 py-2 text-right">CE Bid/Ask</th>
                   <th className="px-2 py-2 text-right">PE Bid/Ask</th>
+                  <th className="px-2 py-2 text-right">Pts×Lot</th>
                   <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge (₹)</th>
                   <th className="px-2 py-2 text-center">Action</th>
                 </tr>
@@ -1210,13 +1221,20 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
                 {opps.map((opp, idx) => {
                   const isExp = expandedId === idx;
                   const weekly = opp.expiryMode === 'WEEKLY' || opp.basisRisk || opp.strategyType === 'BID_PARITY_WEEKLY';
+                  const u = String(opp.underlying || '').toUpperCase();
+                  const lot = LOT[u] || 25;
+                  const thin = LIQ[u] === 'thin' || LIQ[u] === 'medium';
+                  const pts = Number(opp.edgePoints || 0);
                   return (
                     <React.Fragment key={`${opp.underlying}-${opp.strike}-${opp.action}-${opp.expiryDate}-${idx}`}>
                       <tr
                         onClick={() => setExpandedId(isExp ? null : idx)}
                         className={`transition cursor-pointer ${isExp ? 'bg-amber-50/70 border-l-4 border-amber-600' : 'hover:bg-slate-50'}`}
                       >
-                        <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-800">
+                          {opp.underlying}
+                          {thin && <div className="text-[9px] text-amber-700 font-bold">thinner book</div>}
+                        </td>
                         <td className="px-2 py-1.5">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${weekly ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
                             {weekly ? 'WEEKLY' : 'MONTHLY'}
@@ -1230,6 +1248,9 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono text-xs">{opp.ceBid} / {opp.ceAsk}</td>
                         <td className="px-2 py-1.5 text-right font-mono text-xs">{opp.peBid} / {opp.peAsk}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-[11px] text-slate-600">
+                          {pts > 0 ? `${pts}×${lot}` : `lot ${lot}`}
+                        </td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
                           +₹{Math.round(opp.edgeAfterCosts || 0).toLocaleString('en-IN')}
                         </td>
@@ -1244,12 +1265,17 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
                       </tr>
                       {isExp && (
                         <tr className="bg-amber-50/40">
-                          <td colSpan={9} className="px-4 py-3 text-xs text-slate-700">
+                          <td colSpan={10} className="px-4 py-3 text-xs text-slate-700">
                             <div className="font-semibold mb-1">{opp.description || opp.legs}</div>
                             <div className="font-mono text-[11px] text-slate-600">{opp.legs}</div>
                             {weekly && (
                               <div className="mt-2 text-orange-800 font-semibold">
                                 Basis risk: parity vs F≈{opp.parityForward ?? '—'}; hedge monthly FUT (residual ≈ {opp.basisResidual ?? '—'} pts)
+                              </div>
+                            )}
+                            {thin && (
+                              <div className="mt-2 text-amber-800 font-semibold">
+                                {u} liquidity is thinner than NIFTY/BN — verify CE/PE/FUT bid-ask qty before live fire. Big ₹ ≠ easy fill.
                               </div>
                             )}
                           </td>
