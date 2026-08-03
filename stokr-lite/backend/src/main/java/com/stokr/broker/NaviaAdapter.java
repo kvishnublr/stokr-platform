@@ -238,16 +238,16 @@ public class NaviaAdapter implements BrokerAdapter {
             }
             // Probe F&O first (NRML) with near-month NIFTY futures tsym
             String futTsym = currentNiftyFutTsym();
-            BigDecimal fno = probeMargin(accessToken, uid, "NFO", futTsym, "FNO", "NRML");
-            if (fno != null && fno.compareTo(BigDecimal.ZERO) > 0) {
-                log.info("Navia: F&O AvailableMargin={} (tsym={})", fno, futTsym);
-                return fno;
+            MarginProbe fno = probeMargin(accessToken, uid, "NFO", futTsym, "FNO", "NRML", 1, "Buy");
+            if (fno != null && fno.available() != null && fno.available().compareTo(BigDecimal.ZERO) > 0) {
+                log.info("Navia: F&O AvailableMargin={} (tsym={})", fno.available(), futTsym);
+                return fno.available();
             }
             // Fallback cash probe — Navia requires full product name MIS (not I)
-            BigDecimal cash = probeMargin(accessToken, uid, "NSE", "RELIANCE-EQ", "CASH", "MIS");
-            if (cash != null) {
-                log.info("Navia: Cash AvailableMargin={}", cash);
-                return cash;
+            MarginProbe cash = probeMargin(accessToken, uid, "NSE", "RELIANCE-EQ", "CASH", "MIS", 1, "Buy");
+            if (cash != null && cash.available() != null) {
+                log.info("Navia: Cash AvailableMargin={}", cash.available());
+                return cash.available();
             }
         } catch (Exception e) {
             log.warn("Navia getAvailableMargin failed: {}", e.getMessage());
@@ -255,16 +255,38 @@ public class NaviaAdapter implements BrokerAdapter {
         return BigDecimal.ZERO;
     }
 
-    private BigDecimal probeMargin(String accessToken, String uid, String exch, String tsym,
-                                   String segment, String prd) {
+    /**
+     * Live GetOrderMargin for a specific NFO contract + qty.
+     * Used as pre-flight before Bid Parity 3-leg: returns AvailableMargin and best-effort Required.
+     */
+    public MarginProbe getOrderMarginProbe(String accessToken, String tsym, int qty, String side, String product) {
+        String uid = resolveUid(accessToken);
+        if (uid == null) throw new IllegalStateException("Navia UID missing for margin probe");
+        int q = Math.max(1, qty);
+        String prd = normalizeProduct(product);
+        String trantype = side == null || side.isBlank() ? "Buy" : side;
+        // Navia GetOrderMargin historically accepted "Buy"/"Sell" or BUY/SELL
+        if ("BUY".equalsIgnoreCase(trantype)) trantype = "Buy";
+        if ("SELL".equalsIgnoreCase(trantype)) trantype = "Sell";
+        MarginProbe probe = probeMargin(accessToken, uid, "NFO", tsym, "FNO", prd, q, trantype);
+        if (probe == null) {
+            throw new IllegalStateException("Navia GetOrderMargin failed for " + tsym + " qty=" + q);
+        }
+        return probe;
+    }
+
+    public record MarginProbe(BigDecimal available, BigDecimal required, String tsym, int qty) {}
+
+    private MarginProbe probeMargin(String accessToken, String uid, String exch, String tsym,
+                                   String segment, String prd, int qty, String trantype) {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("uid", uid);
             body.put("actid", uid);
             body.put("exch", exch);
-            body.put("trantype", "Buy");
+            body.put("trantype", trantype);
             body.put("tsym", tsym);
-            body.put("qty", 1);
+            body.put("qty", qty);
             body.put("prc", "0");
             body.put("trgprc", "0");
             body.put("dscqty", 0);
@@ -283,26 +305,46 @@ public class NaviaAdapter implements BrokerAdapter {
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("Status").asText("");
             if (!"OK".equalsIgnoreCase(status) && !"Ok".equalsIgnoreCase(status)) {
-                log.warn("Navia GetOrderMargin {}/{} failed: {}", exch, tsym, root.path("Message").asText());
+                log.warn("Navia GetOrderMargin {}/{} qty={} failed: {}", exch, tsym, qty, root.path("Message").asText());
                 return null;
             }
             JsonNode rd = root.path("ResponceDataObject");
-            String[] fields = {
+            BigDecimal available = firstMoney(rd,
                     "AvailableMargin", "availablemargin", "CashMarginAvailable",
-                    "NetAvailable", "MarginAvailable", "cash", "Collateral"
-            };
-            for (String f : fields) {
-                String raw = rd.path(f).asText(null);
-                if (raw != null && !raw.isBlank()) {
-                    try {
-                        BigDecimal v = new BigDecimal(raw.replace(",", ""));
-                        if (v.compareTo(BigDecimal.ZERO) >= 0) return v;
-                    } catch (Exception ignored) {}
-                }
+                    "NetAvailable", "MarginAvailable", "cash", "Collateral");
+            BigDecimal required = firstMoney(rd,
+                    "OrderMargin", "ordermargin", "MarginRequired", "marginrequired",
+                    "RequiredMargin", "requiredmargin", "TotalMargin", "totalmargin",
+                    "SpanMargin", "spanmargin", "ExposureMargin", "exposuremargin",
+                    "NonCashMargin", "marginused");
+            // Some Navia payloads nest numbers differently
+            if (required == null) {
+                double span = rd.path("span").asDouble(0);
+                double expo = rd.path("expo").asDouble(0);
+                if (span + expo > 0) required = BigDecimal.valueOf(span + expo);
             }
-            log.warn("Navia GetOrderMargin OK but no margin fields: {}", respJson);
+            log.info("Navia GetOrderMargin {} qty={} available={} required={}", tsym, qty, available, required);
+            return new MarginProbe(available, required, tsym, qty);
         } catch (Exception e) {
             log.warn("Navia probeMargin {} failed: {}", tsym, e.getMessage());
+        }
+        return null;
+    }
+
+    private static BigDecimal firstMoney(JsonNode rd, String... fields) {
+        if (rd == null || rd.isMissingNode()) return null;
+        for (String f : fields) {
+            String raw = rd.path(f).asText(null);
+            if (raw == null || raw.isBlank()) {
+                if (rd.path(f).isNumber()) {
+                    return BigDecimal.valueOf(rd.path(f).asDouble());
+                }
+                continue;
+            }
+            try {
+                BigDecimal v = new BigDecimal(raw.replace(",", "").trim());
+                if (v.compareTo(BigDecimal.ZERO) >= 0) return v;
+            } catch (Exception ignored) {}
         }
         return null;
     }

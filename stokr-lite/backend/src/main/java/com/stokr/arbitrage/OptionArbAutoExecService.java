@@ -448,8 +448,8 @@ public class OptionArbAutoExecService {
                 continue;
             }
 
-            // Use short-lived margin cache inside a cycle (re-check if stale)
-            double liveMargin = fetchAvailableMarginCached(adapter, account);
+            // Fresh AvailableMargin (no stale cache) + required check before placing 3 legs
+            double liveMargin = fetchAvailableMarginOrAbort(adapter, account);
             if (liveMargin < 0) return;
             availableMargin = liveMargin;
             if (availableMargin < minMargin) {
@@ -460,20 +460,62 @@ public class OptionArbAutoExecService {
 
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
             double required = estimateHedgedMargin(opp.getUnderlying(), lots);
+
+            // Navia live pre-flight: GetOrderMargin on monthly FUT @ order qty (lots).
+            // Naked FUT required is an upper bound; hedged 3-leg is lower — take
+            // max(staticHedgedEstimate, liveNakedFutRequired * 0.55) as conservative required.
+            if (adapter instanceof NaviaAdapter navia) {
+                try {
+                    String futSymbol = buildMonthlyFutSymbol(opp.getUnderlying());
+                    String futSide = "CONVERSION".equals(action) ? "Sell" : "Buy";
+                    int orderQty = Math.max(1, lots); // Navia F&O qty = lots
+                    NaviaAdapter.MarginProbe probe = navia.getOrderMarginProbe(
+                            account.getAccessToken(), futSymbol, orderQty, futSide, "NRML");
+                    if (probe.available() != null && probe.available().doubleValue() >= 0) {
+                        availableMargin = probe.available().doubleValue();
+                        marginCacheValue = availableMargin;
+                        marginCacheAt.set(System.currentTimeMillis());
+                    }
+                    if (probe.required() != null && probe.required().doubleValue() > 0) {
+                        double liveReq = probe.required().doubleValue() * 0.55;
+                        required = Math.max(required, liveReq);
+                        addLog("MARGIN", "NAVIA_PROBE", futSymbol + " qty=" + orderQty
+                                + " " + futSide
+                                + " Available₹" + String.format("%.0f", availableMargin)
+                                + " NakedReq₹" + String.format("%.0f", probe.required().doubleValue())
+                                + " HedgedReq₹" + String.format("%.0f", required));
+                    } else {
+                        addLog("MARGIN", "NAVIA_PROBE", futSymbol + " qty=" + orderQty
+                                + " Available₹" + String.format("%.0f", availableMargin)
+                                + " Required=n/a → using estimate ₹" + String.format("%.0f", required));
+                    }
+                } catch (Exception e) {
+                    addLog("MARGIN", "BLOCKED", "Navia live margin probe failed — abort fire: " + e.getMessage());
+                    return;
+                }
+            }
+
             double usable = availableMargin * usageCap;
+            addLog("MARGIN", "CHECK", opp.getUnderlying() + " " + opp.getStrike()
+                    + " Available₹" + String.format("%.0f", availableMargin)
+                    + " Required₹" + String.format("%.0f", required)
+                    + " Usable₹" + String.format("%.0f", usable)
+                    + " (cap " + String.format("%.0f", usageCap * 100) + "%)");
+
             if (required > usable) {
                 addLog("MARGIN", "SKIP", opp.getUnderlying() + " " + opp.getStrike()
                         + " needs ₹" + String.format("%.0f", required)
                         + " but usable ₹" + String.format("%.0f", usable)
                         + " (avail ₹" + String.format("%.0f", availableMargin) + " × "
-                        + String.format("%.0f", usageCap * 100) + "%)");
+                        + String.format("%.0f", usageCap * 100) + "%) — 3-leg NOT placed");
                 continue;
             }
 
             addLog("SIGNAL", "FIRING", opp.getUnderlying() + " " + opp.getStrike()
                     + " " + action + " Edge=₹" + String.format("%.0f", opp.getEdgeAfterCosts().doubleValue())
                     + " ≥ ₹" + String.format("%.0f", minEdge)
-                    + " | margin ₹" + String.format("%.0f", availableMargin));
+                    + " | avail ₹" + String.format("%.0f", availableMargin)
+                    + " req ₹" + String.format("%.0f", required));
             long tExec = System.currentTimeMillis();
             executeTradeFast(account, adapter, opp, lots, userId, action);
             addLog("EXEC", "LATENCY", opp.getUnderlying() + " " + opp.getStrike()
