@@ -2,9 +2,9 @@ package com.stokr.arbitrage;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -23,24 +23,39 @@ import java.util.*;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class OptionArbHistoryService {
 
     private final OptionArbOpportunityRepository repository;
     private final ZerodhaSpotPriceFetcher spotFetcher;
+    private final SignalTradeBookService tradeBookService;
+
+    public OptionArbHistoryService(OptionArbOpportunityRepository repository,
+                                   ZerodhaSpotPriceFetcher spotFetcher,
+                                   @Lazy SignalTradeBookService tradeBookService) {
+        this.repository = repository;
+        this.spotFetcher = spotFetcher;
+        this.tradeBookService = tradeBookService;
+    }
 
     @Value("${zerodha.api-key:$ZERODHA_API_KEY}")
     private String apiKey;
 
     private static final ObjectMapper mapper = new ObjectMapper();
+    /** Soft-dedupe window: refresh same signal instead of flooding rows */
+    private static final int DEDUPE_MINUTES = 3;
 
     public OptionArbOpportunityRepository getRepository() { return repository; }
 
     /**
-     * Save detected opportunities from a scan result
+     * Save detected opportunities from a scan result.
+     * Soft-dedupes within {@link #DEDUPE_MINUTES} and stamps generated ids back onto opps.
      */
     public void saveOpportunities(List<ArbitrageOpportunity> opportunities, String underlying, String strategyType) {
         if (opportunities == null || opportunities.isEmpty()) return;
+
+        int saved = 0;
+        int updated = 0;
+        LocalDateTime since = LocalDateTime.now().minusMinutes(DEDUPE_MINUTES);
 
         for (ArbitrageOpportunity opp : opportunities) {
             try {
@@ -48,48 +63,82 @@ public class OptionArbHistoryService {
                         ? opp.expiryDate
                         : LocalDate.now().plusDays(Math.max(0, (long) opp.daysToExpiry));
                 String underlyingCode = opp.underlying != null ? opp.underlying : underlying;
+                String st = strategyType != null ? strategyType : "NORMAL_PARITY";
+                String action = opp.action != null ? opp.action : "";
 
-                OptionArbOpportunity entity = OptionArbOpportunity.builder()
-                    .scanTime(LocalDateTime.now())
-                    .underlying(underlyingCode)
-                    .type(opp.type)
-                    .strike(opp.strike)
-                    .action(opp.action)
-                    .legs(opp.legs)
-                    .description(opp.description)
-                    .spotPrice(BigDecimal.valueOf(opp.spotPrice))
-                    .futuresPrice(BigDecimal.valueOf(opp.futuresPrice))
-                    .ceEntryPrice(BigDecimal.valueOf(opp.cePrice))
-                    .peEntryPrice(BigDecimal.valueOf(opp.pePrice))
-                    .ceBid(BigDecimal.valueOf(opp.ceBid))
-                    .ceAsk(BigDecimal.valueOf(opp.ceAsk))
-                    .peBid(BigDecimal.valueOf(opp.peBid))
-                    .peAsk(BigDecimal.valueOf(opp.peAsk))
-                    .edgePoints(BigDecimal.valueOf(opp.edgePoints))
-                    .edgeAfterCosts(BigDecimal.valueOf(opp.edgeAfterCosts))
-                    .confidence(BigDecimal.valueOf(opp.confidence))
-                    .daysToExpiry(BigDecimal.valueOf(opp.daysToExpiry))
-                    .expiryDate(expiry)
-                    .status(determineStatus(expiry))
-                    .strategyType(strategyType != null ? strategyType : "NORMAL_PARITY")
-                    .createdAt(LocalDateTime.now())
-                    .build();
+                List<OptionArbOpportunity> recent = repository.findRecentSimilar(
+                        st, underlyingCode, opp.strike, action, expiry, since);
 
-                // Store cost breakdown as JSON
-                if (opp.costBreakdown != null && !opp.costBreakdown.isEmpty()) {
-                    try {
-                        entity.setCostBreakdown(opp.costBreakdown);
-                    } catch (Exception e) {
-                        log.warn("Failed to serialize costBreakdown: {}", e.getMessage());
+                OptionArbOpportunity entity;
+                if (!recent.isEmpty()) {
+                    entity = recent.get(0);
+                    entity.setScanTime(LocalDateTime.now());
+                    entity.setSpotPrice(BigDecimal.valueOf(opp.spotPrice));
+                    entity.setFuturesPrice(BigDecimal.valueOf(opp.futuresPrice));
+                    entity.setCeEntryPrice(BigDecimal.valueOf(opp.cePrice));
+                    entity.setPeEntryPrice(BigDecimal.valueOf(opp.pePrice));
+                    entity.setCeBid(BigDecimal.valueOf(opp.ceBid));
+                    entity.setCeAsk(BigDecimal.valueOf(opp.ceAsk));
+                    entity.setPeBid(BigDecimal.valueOf(opp.peBid));
+                    entity.setPeAsk(BigDecimal.valueOf(opp.peAsk));
+                    entity.setEdgePoints(BigDecimal.valueOf(opp.edgePoints));
+                    entity.setEdgeAfterCosts(BigDecimal.valueOf(opp.edgeAfterCosts));
+                    entity.setConfidence(BigDecimal.valueOf(opp.confidence));
+                    entity.setDaysToExpiry(BigDecimal.valueOf(opp.daysToExpiry));
+                    entity.setLegs(opp.legs);
+                    entity.setDescription(opp.description);
+                    entity.setStatus(determineStatus(expiry));
+                    if (opp.costBreakdown != null && !opp.costBreakdown.isEmpty()) {
+                        try { entity.setCostBreakdown(opp.costBreakdown); } catch (Exception ignored) {}
                     }
-                }
+                    entity = repository.save(entity);
+                    updated++;
+                } else {
+                    entity = OptionArbOpportunity.builder()
+                        .scanTime(LocalDateTime.now())
+                        .underlying(underlyingCode)
+                        .type(opp.type)
+                        .strike(opp.strike)
+                        .action(opp.action)
+                        .legs(opp.legs)
+                        .description(opp.description)
+                        .spotPrice(BigDecimal.valueOf(opp.spotPrice))
+                        .futuresPrice(BigDecimal.valueOf(opp.futuresPrice))
+                        .ceEntryPrice(BigDecimal.valueOf(opp.cePrice))
+                        .peEntryPrice(BigDecimal.valueOf(opp.pePrice))
+                        .ceBid(BigDecimal.valueOf(opp.ceBid))
+                        .ceAsk(BigDecimal.valueOf(opp.ceAsk))
+                        .peBid(BigDecimal.valueOf(opp.peBid))
+                        .peAsk(BigDecimal.valueOf(opp.peAsk))
+                        .edgePoints(BigDecimal.valueOf(opp.edgePoints))
+                        .edgeAfterCosts(BigDecimal.valueOf(opp.edgeAfterCosts))
+                        .confidence(BigDecimal.valueOf(opp.confidence))
+                        .daysToExpiry(BigDecimal.valueOf(opp.daysToExpiry))
+                        .expiryDate(expiry)
+                        .status(determineStatus(expiry))
+                        .strategyType(st)
+                        .createdAt(LocalDateTime.now())
+                        .build();
 
-                repository.save(entity);
+                    if (opp.costBreakdown != null && !opp.costBreakdown.isEmpty()) {
+                        try {
+                            entity.setCostBreakdown(opp.costBreakdown);
+                        } catch (Exception e) {
+                            log.warn("Failed to serialize costBreakdown: {}", e.getMessage());
+                        }
+                    }
+
+                    entity = repository.save(entity);
+                    saved++;
+                }
+                opp.id = entity.getId();
             } catch (Exception e) {
                 log.error("Failed to save opportunity: {}", e.getMessage());
             }
         }
-        log.info("Saved {} opportunities for {}", opportunities.size(), underlying);
+        try { tradeBookService.invalidate(); } catch (Exception ignored) {}
+        log.info("Persisted opportunities for {} ({}): inserted={}, refreshed={}",
+                underlying, strategyType, saved, updated);
     }
 
     public String determineStatus(LocalDate expiryDate) {

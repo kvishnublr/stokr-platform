@@ -1444,9 +1444,11 @@ function BidParityHistoryView({ handleExecuteInline, executionBroker }) {
   const [underlying, setUnderlying] = useState('ALL');
   const [days, setDays] = useState(7);
   const [minEdge, setMinEdge] = useState(0);
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [expandedId, setExpandedId] = useState(null);
+  const [exitingId, setExitingId] = useState(null);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['bid-parity-history', underlying, days, minEdge],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/bid-parity/history', {
@@ -1454,10 +1456,57 @@ function BidParityHistoryView({ handleExecuteInline, executionBroker }) {
       });
       return res.data;
     },
-    staleTime: 10000,
+    staleTime: 1500,
+    refetchInterval: 4000,
   });
 
-  const items = data?.items || [];
+  const items = (data?.items || []).filter(row => {
+    if (statusFilter === 'ALL') return true;
+    return String(row.tradeStatus || row.status || '').toUpperCase() === statusFilter;
+  });
+  const summary = data?.summary || {};
+  const queryMs = data?.queryMs;
+  const cached = data?.cached;
+
+  const exitPosition = async (positionId) => {
+    if (!positionId) return;
+    setExitingId(positionId);
+    try {
+      const res = await client.post(`/option-arbitrage/live-positions/${positionId}/exit`, { note: 'manual-ui' });
+      if (res.data?.status === 'EXITED') {
+        showToast(`Exited · PnL ₹${Math.round(res.data?.exitPnl || 0)}`, 'success');
+        refetch();
+      } else {
+        showToast(res.data?.message || 'Exit failed', 'warning');
+      }
+    } catch (e) {
+      showToast(e.response?.data?.message || e.message || 'Exit failed', 'error');
+    } finally {
+      setExitingId(null);
+    }
+  };
+
+  const statusBadge = (st) => {
+    const s = String(st || 'SIGNAL').toUpperCase();
+    const cls = s === 'ENTERED' ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+      : s === 'EXITED' ? 'bg-slate-200 text-slate-800 border-slate-300'
+      : s === 'EXPIRED' || s === 'FAILED' ? 'bg-amber-100 text-amber-800 border-amber-300'
+      : 'bg-sky-100 text-sky-800 border-sky-300';
+    return <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${cls}`}>{s}</span>;
+  };
+
+  const pnlCell = (row) => {
+    const st = String(row.tradeStatus || row.status || '').toUpperCase();
+    if (st === 'ENTERED') {
+      const v = Number(row.currentPnl ?? row.pnlAfterCosts ?? 0);
+      return <span className={`font-mono font-bold ${v >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{Math.round(v).toLocaleString('en-IN')}</span>;
+    }
+    if (st === 'EXITED') {
+      const v = Number(row.exitPnl ?? row.pnlAfterCosts ?? 0);
+      return <span className={`font-mono font-bold ${v >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{Math.round(v).toLocaleString('en-IN')}</span>;
+    }
+    return <span className="text-slate-400">—</span>;
+  };
 
   return (
     <div className="space-y-4 w-full">
@@ -1472,6 +1521,14 @@ function BidParityHistoryView({ handleExecuteInline, executionBroker }) {
               }`}
             >
               {u}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+          {['ALL', 'SIGNAL', 'ENTERED', 'EXITED'].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold ${statusFilter === s ? 'bg-amber-600 text-white' : 'text-slate-600'}`}>
+              {s}
             </button>
           ))}
         </div>
@@ -1495,9 +1552,12 @@ function BidParityHistoryView({ handleExecuteInline, executionBroker }) {
           />
         </div>
         <button onClick={() => refetch()} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold">
-          Reload
+          {isFetching ? 'Loading…' : 'Reload'}
         </button>
-        <span className="text-xs text-slate-500 ml-auto">{items.length} signals · click row for payoff</span>
+        <span className="text-xs text-slate-500 ml-auto">
+          {items.length} rows · sig {summary.signals ?? '—'} · in {summary.entered ?? '—'} · out {summary.exited ?? '—'}
+          {queryMs != null && <span className="ml-2 font-mono text-emerald-600">{cached ? 'cache' : `${queryMs}ms`}</span>}
+        </span>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
@@ -1514,37 +1574,51 @@ function BidParityHistoryView({ handleExecuteInline, executionBroker }) {
                   <th className="px-2 py-2">Underlying</th>
                   <th className="px-2 py-2">Strike</th>
                   <th className="px-2 py-2">Action</th>
-                  <th className="px-2 py-2 text-right">Edge pts</th>
-                  <th className="px-2 py-2 text-right text-emerald-600">Net ₹</th>
-                  <th className="px-2 py-2">Expiry</th>
-                  <th className="px-2 py-2">Legs</th>
+                  <th className="px-2 py-2 text-center">Status</th>
+                  <th className="px-2 py-2 text-right text-emerald-600">Edge ₹</th>
+                  <th className="px-2 py-2 text-right">PnL ₹</th>
+                  <th className="px-2 py-2">Entered</th>
+                  <th className="px-2 py-2">Exited</th>
+                  <th className="px-2 py-2 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {items.map((row) => {
                   const open = expandedId === row.id;
+                  const st = String(row.tradeStatus || row.status || 'SIGNAL').toUpperCase();
                   return (
-                    <React.Fragment key={row.id}>
+                    <React.Fragment key={`${row.id}-${row.positionId || ''}`}>
                       <tr
                         className={`cursor-pointer transition ${open ? 'bg-amber-50/70 border-l-4 border-amber-600' : 'hover:bg-slate-50'}`}
                         onClick={() => setExpandedId(open ? null : row.id)}
                       >
-                        <td className="px-2 py-1.5 font-mono text-[11px] text-slate-600">{row.scanTime || row.detectedAt}</td>
+                        <td className="px-2 py-1.5 font-mono text-[11px] text-slate-600">{String(row.scanTime || row.detectedAt || '').slice(0, 19)}</td>
                         <td className="px-2 py-1.5 font-bold">{row.underlying}</td>
                         <td className="px-2 py-1.5 font-bold">{row.strike}</td>
                         <td className="px-2 py-1.5 font-bold text-purple-700">{row.action}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{row.edgePoints}</td>
+                        <td className="px-2 py-1.5 text-center">{statusBadge(st)}</td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
                           ₹{Math.round(row.edgeAfterCosts || 0).toLocaleString('en-IN')}
                         </td>
-                        <td className="px-2 py-1.5">{row.expiryDate}</td>
-                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500 max-w-[280px] truncate" title={row.legs}>
-                          {row.legs}
+                        <td className="px-2 py-1.5 text-right">{pnlCell(row)}</td>
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{row.enteredAt ? String(row.enteredAt).slice(0, 19) : '—'}</td>
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{row.exitedAt || row.exitTime ? String(row.exitedAt || row.exitTime).slice(0, 19) : '—'}</td>
+                        <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          {st === 'SIGNAL' && (
+                            <button onClick={() => handleExecuteInline(row)} className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded">Paper</button>
+                          )}
+                          {st === 'ENTERED' && row.positionId && (
+                            <button disabled={exitingId === row.positionId}
+                              onClick={() => exitPosition(row.positionId)}
+                              className="px-2 py-0.5 bg-slate-800 text-white text-[10px] font-bold rounded disabled:opacity-50">
+                              {exitingId === row.positionId ? '…' : 'Exit'}
+                            </button>
+                          )}
                         </td>
                       </tr>
                       {open && (
                         <tr className="bg-slate-50/80">
-                          <td colSpan={8} className="px-3 py-4">
+                          <td colSpan={10} className="px-3 py-4">
                             <BidParityPayoffChart
                               opp={row}
                               lots={1}
@@ -1954,8 +2028,10 @@ function BoxSpreadView({ handleExecuteInline, executionBroker, autoRefresh = tru
 
 function StrategyHistoryView({ strategyFilter, handleExecuteInline, executionBroker, accent = 'slate' }) {
   const [underlying, setUnderlying] = useState('ALL');
-  const [days, setDays] = useState(3);
+  const [days, setDays] = useState(7);
   const [minEdge, setMinEdge] = useState(0);
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [exitingId, setExitingId] = useState(null);
   const btnActive = accent === 'purple' ? 'bg-purple-600 text-white'
     : accent === 'sky' ? 'bg-sky-600 text-white'
     : accent === 'amber' ? 'bg-amber-600 text-white'
@@ -1964,20 +2040,53 @@ function StrategyHistoryView({ strategyFilter, handleExecuteInline, executionBro
     : accent === 'sky' ? 'bg-sky-600'
     : accent === 'amber' ? 'bg-amber-600'
     : 'bg-slate-700';
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ['strategy-history', strategyFilter, underlying, days, minEdge],
+  const statusActive = accent === 'purple' ? 'bg-purple-600 text-white' : accent === 'sky' ? 'bg-sky-600 text-white' : 'bg-slate-900 text-white';
+
+  const { data, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ['strategy-history-trades', strategyFilter, underlying, days, minEdge],
     queryFn: async () => {
-      const res = await client.get('/option-arbitrage/signals', {
-        params: { underlying, days, minEdge },
+      const res = await client.get('/option-arbitrage/history/trades', {
+        params: { strategyType: strategyFilter, underlying, days, minEdge },
       });
       return res.data;
     },
+    staleTime: 1500,
+    refetchInterval: 4000,
   });
-  const needle = strategyFilter.toUpperCase();
-  const items = (data?.signals || data?.opportunities || data?.items || []).filter(o => {
-    const t = String(o.strategyType || o.type || '').toUpperCase();
-    return t === needle || t.includes(needle.replace('_SPREAD', '')) || t.includes(needle.split('_')[0]);
+
+  const items = (data?.items || []).filter(row => {
+    if (statusFilter === 'ALL') return true;
+    return String(row.tradeStatus || row.status || '').toUpperCase() === statusFilter;
   });
+  const summary = data?.summary || {};
+
+  const exitPosition = async (positionId) => {
+    if (!positionId) return;
+    setExitingId(positionId);
+    try {
+      const res = await client.post(`/option-arbitrage/live-positions/${positionId}/exit`, { note: 'manual-ui' });
+      if (res.data?.status === 'EXITED') {
+        showToast(`Exited · PnL ₹${Math.round(res.data?.exitPnl || 0)}`, 'success');
+        refetch();
+      } else {
+        showToast(res.data?.message || 'Exit failed', 'warning');
+      }
+    } catch (e) {
+      showToast(e.response?.data?.message || e.message || 'Exit failed', 'error');
+    } finally {
+      setExitingId(null);
+    }
+  };
+
+  const statusBadge = (st) => {
+    const s = String(st || 'SIGNAL').toUpperCase();
+    const cls = s === 'ENTERED' ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+      : s === 'EXITED' ? 'bg-slate-200 text-slate-800 border-slate-300'
+      : s === 'EXPIRED' || s === 'FAILED' ? 'bg-amber-100 text-amber-800 border-amber-300'
+      : 'bg-sky-100 text-sky-800 border-sky-300';
+    return <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${cls}`}>{s}</span>;
+  };
+
   return (
     <div className="space-y-3">
       <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-2 items-center justify-between">
@@ -1987,11 +2096,23 @@ function StrategyHistoryView({ strategyFilter, handleExecuteInline, executionBro
               className={`px-2 py-1 rounded-lg text-xs font-bold ${underlying === u ? btnActive : 'text-slate-600'}`}>{u}</button>
           ))}
         </div>
+        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+          {['ALL', 'SIGNAL', 'ENTERED', 'EXITED'].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold ${statusFilter === s ? statusActive : 'text-slate-600'}`}>{s}</button>
+          ))}
+        </div>
         <div className="flex items-center gap-2 text-xs">
           <select value={days} onChange={e => setDays(Number(e.target.value))} className="border rounded-lg px-2 py-1">
             {[1, 3, 7, 14].map(d => <option key={d} value={d}>{d}d</option>)}
           </select>
-          <button onClick={() => refetch()} className="px-3 py-1 bg-slate-900 text-white rounded-lg font-bold">Refresh</button>
+          <button onClick={() => refetch()} className="px-3 py-1 bg-slate-900 text-white rounded-lg font-bold">
+            {isFetching ? '…' : 'Refresh'}
+          </button>
+          <span className="text-slate-500">
+            sig {summary.signals ?? 0} · in {summary.entered ?? 0} · out {summary.exited ?? 0}
+            {data?.queryMs != null && <span className="ml-1 font-mono text-emerald-600">{data.cached ? 'cache' : `${data.queryMs}ms`}</span>}
+          </span>
         </div>
       </div>
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
@@ -2004,22 +2125,46 @@ function StrategyHistoryView({ strategyFilter, handleExecuteInline, executionBro
                   <th className="px-2 py-2 text-left">Time</th>
                   <th className="px-2 py-2 text-left">Symbol</th>
                   <th className="px-2 py-2 text-left">Action</th>
+                  <th className="px-2 py-2 text-center">Status</th>
                   <th className="px-2 py-2 text-right">Edge ₹</th>
-                  <th className="px-2 py-2 text-center">Paper</th>
+                  <th className="px-2 py-2 text-right">PnL ₹</th>
+                  <th className="px-2 py-2 text-left">Entered</th>
+                  <th className="px-2 py-2 text-left">Exited</th>
+                  <th className="px-2 py-2 text-center">Do</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {items.slice(0, 100).map((row, i) => (
-                  <tr key={row.id || i} className="hover:bg-slate-50">
-                    <td className="px-2 py-1.5 font-mono text-slate-500">{String(row.scanTime || row.createdAt || '').slice(0, 19)}</td>
-                    <td className="px-2 py-1.5 font-bold">{row.underlying} {row.strike}</td>
-                    <td className="px-2 py-1.5">{row.action}</td>
-                    <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">₹{Math.round(row.edgeAfterCosts || 0)}</td>
-                    <td className="px-2 py-1.5 text-center">
-                      <button onClick={() => handleExecuteInline(row)} className={`px-2 py-0.5 ${paperBtn} text-white text-[10px] font-bold rounded`}>Paper</button>
-                    </td>
-                  </tr>
-                ))}
+                {items.slice(0, 200).map((row, i) => {
+                  const st = String(row.tradeStatus || row.status || 'SIGNAL').toUpperCase();
+                  const pnl = st === 'ENTERED' ? Number(row.currentPnl ?? 0)
+                    : st === 'EXITED' ? Number(row.exitPnl ?? row.pnlAfterCosts ?? 0) : null;
+                  return (
+                    <tr key={`${row.id}-${row.positionId || i}`} className="hover:bg-slate-50">
+                      <td className="px-2 py-1.5 font-mono text-slate-500">{String(row.scanTime || row.createdAt || '').slice(0, 19)}</td>
+                      <td className="px-2 py-1.5 font-bold">{row.underlying} {row.strike}</td>
+                      <td className="px-2 py-1.5">{row.action}</td>
+                      <td className="px-2 py-1.5 text-center">{statusBadge(st)}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">₹{Math.round(row.edgeAfterCosts || 0)}</td>
+                      <td className={`px-2 py-1.5 text-right font-mono font-bold ${pnl == null ? 'text-slate-400' : pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {pnl == null ? '—' : `₹${Math.round(pnl)}`}
+                      </td>
+                      <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{row.enteredAt ? String(row.enteredAt).slice(0, 19) : '—'}</td>
+                      <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{row.exitedAt || row.exitTime ? String(row.exitedAt || row.exitTime).slice(0, 19) : '—'}</td>
+                      <td className="px-2 py-1.5 text-center">
+                        {st === 'SIGNAL' && (
+                          <button onClick={() => handleExecuteInline(row)} className={`px-2 py-0.5 ${paperBtn} text-white text-[10px] font-bold rounded`}>Paper</button>
+                        )}
+                        {st === 'ENTERED' && row.positionId && (
+                          <button disabled={exitingId === row.positionId}
+                            onClick={() => exitPosition(row.positionId)}
+                            className="px-2 py-0.5 bg-slate-800 text-white text-[10px] font-bold rounded disabled:opacity-50">
+                            {exitingId === row.positionId ? '…' : 'Exit'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

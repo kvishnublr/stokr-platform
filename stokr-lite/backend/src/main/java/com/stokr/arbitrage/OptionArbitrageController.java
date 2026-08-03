@@ -31,6 +31,7 @@ public class OptionArbitrageController {
     private final OptionArbAutoExecService autoExecService;
     private final LivePositionRepository livePositionRepo;
     private final BidParityPaperSimulator paperSimulator;
+    private final SignalTradeBookService tradeBookService;
 
     private final List<Map<String, Object>> auditLogs = Collections.synchronizedList(new ArrayList<>());
 
@@ -42,7 +43,8 @@ public class OptionArbitrageController {
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
                                      LivePositionRepository livePositionRepo,
-                                     BidParityPaperSimulator paperSimulator) {
+                                     BidParityPaperSimulator paperSimulator,
+                                     SignalTradeBookService tradeBookService) {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.bidParityService = bidParityService;
@@ -52,6 +54,7 @@ public class OptionArbitrageController {
         this.autoExecService = autoExecService;
         this.livePositionRepo = livePositionRepo;
         this.paperSimulator = paperSimulator;
+        this.tradeBookService = tradeBookService;
         addAuditLog("SYSTEM", "INFO", "Option Arbitrage Engine initialized. Ready for scanning.");
     }
 
@@ -161,37 +164,26 @@ public class OptionArbitrageController {
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
             @RequestParam(defaultValue = "7") int days) {
-        Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("timestamp", System.currentTimeMillis());
-        try {
-            ZoneId ist = ZoneId.of("Asia/Kolkata");
-            LocalDate today = LocalDate.now(ist);
-            LocalDate start = startDate != null && !startDate.isEmpty() ? LocalDate.parse(startDate) : today.minusDays(Math.max(0, days - 1));
-            LocalDate end = endDate != null && !endDate.isEmpty() ? LocalDate.parse(endDate) : today;
+        // Cached trade-book: signals + ENTERED/EXITED + live/exit PnL
+        return ResponseEntity.ok(tradeBookService.getTradeBook("BID_PARITY", underlying, days, minEdge));
+    }
 
-            List<OptionArbOpportunity> all = historyService.getRepository()
-                    .findByScanTimeBetween(start.atStartOfDay(), end.atTime(LocalTime.MAX));
-            List<Map<String, Object>> filtered = all.stream()
-                    .filter(o -> o.getStrategyType() != null && o.getStrategyType().toUpperCase().contains("BID"))
-                    .filter(o -> "ALL".equalsIgnoreCase(underlying) || underlying.equalsIgnoreCase(o.getUnderlying()))
-                    .filter(o -> o.getEdgeAfterCosts() != null && o.getEdgeAfterCosts().doubleValue() >= minEdge)
-                    .sorted((a, b) -> {
-                        if (a.getScanTime() == null || b.getScanTime() == null) return 0;
-                        return b.getScanTime().compareTo(a.getScanTime());
-                    })
-                    .limit(1000)
-                    .map(OptionArbOpportunity::toMap)
-                    .toList();
-            resp.put("items", filtered);
-            resp.put("count", filtered.size());
-            resp.put("startDate", start.toString());
-            resp.put("endDate", end.toString());
-        } catch (Exception e) {
-            log.error("Bid parity history failed: {}", e.getMessage());
-            resp.put("items", Collections.emptyList());
-            resp.put("count", 0);
-        }
-        return ResponseEntity.ok(resp);
+    @GetMapping("/box-spread/history")
+    public ResponseEntity<Map<String, Object>> boxSpreadHistory(
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(defaultValue = "0") double minEdge,
+            @RequestParam(defaultValue = "7") int days) {
+        return ResponseEntity.ok(tradeBookService.getTradeBook("BOX_SPREAD", underlying, days, minEdge));
+    }
+
+    /** Unified History for Bid Parity / Box / Calendar — ultrafast cached. */
+    @GetMapping("/history/trades")
+    public ResponseEntity<Map<String, Object>> tradeHistory(
+            @RequestParam(defaultValue = "BID_PARITY") String strategyType,
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(defaultValue = "0") double minEdge,
+            @RequestParam(defaultValue = "7") int days) {
+        return ResponseEntity.ok(tradeBookService.getTradeBook(strategyType, underlying, days, minEdge));
     }
 
     @GetMapping("/bid-parity/paper-sim")
@@ -291,19 +283,33 @@ public class OptionArbitrageController {
             int lots = body.get("lots") instanceof Number n ? n.intValue() : 1;
             double edge = body.get("edgeAfterCosts") instanceof Number n ? n.doubleValue()
                     : body.get("targetEdge") instanceof Number n2 ? n2.doubleValue() : 0;
+            Long opportunityId = null;
+            if (body.get("id") instanceof Number n) opportunityId = n.longValue();
+            else if (body.get("opportunityId") instanceof Number n) opportunityId = n.longValue();
+
             int lotSize = OptionChainService.getLotSize(underlying);
             String paperId = "PAPER-" + System.currentTimeMillis();
 
+            java.math.BigDecimal ceEntry = body.get("cePrice") instanceof Number n
+                    ? java.math.BigDecimal.valueOf(n.doubleValue())
+                    : body.get("ceBid") instanceof Number n2 ? java.math.BigDecimal.valueOf(n2.doubleValue()) : null;
+            java.math.BigDecimal peEntry = body.get("pePrice") instanceof Number n
+                    ? java.math.BigDecimal.valueOf(n.doubleValue())
+                    : body.get("peBid") instanceof Number n2 ? java.math.BigDecimal.valueOf(n2.doubleValue()) : null;
+
             LivePosition pos = LivePosition.builder()
+                    .opportunityId(opportunityId)
                     .underlying(underlying)
                     .strike(strike)
                     .action(action)
                     .strategyType(strategy)
                     .lots(Math.max(1, lots))
                     .lotSize(lotSize)
+                    .ceEntryPrice(ceEntry)
+                    .peEntryPrice(peEntry)
                     .targetEdge(java.math.BigDecimal.valueOf(edge))
                     .currentPnl(java.math.BigDecimal.ZERO)
-                    .status("OPEN")
+                    .status("ENTERED")
                     .ceOrderId(paperId)
                     .peOrderId(paperId)
                     .futOrderId(paperId)
@@ -312,11 +318,37 @@ public class OptionArbitrageController {
                     .createdAt(LocalDateTime.now())
                     .build();
             livePositionRepo.save(pos);
+            tradeBookService.invalidate();
             addAuditLog("PAPER", "SUCCESS", strategy + " " + underlying + " " + strike + " edge≈₹" + Math.round(edge));
             resp.put("status", "SUBMITTED");
             resp.put("mode", "PAPER");
+            resp.put("tradeStatus", "ENTERED");
             resp.put("position", pos.toMap());
-            resp.put("message", "Paper position recorded (no live broker order)");
+            resp.put("message", "Paper position ENTERED (no live broker order)");
+            return ResponseEntity.ok(resp);
+        } catch (Exception e) {
+            resp.put("status", "ERROR");
+            resp.put("message", e.getMessage());
+            return ResponseEntity.ok(resp);
+        }
+    }
+
+    @PostMapping("/live-positions/{id}/exit")
+    public ResponseEntity<Map<String, Object>> exitLivePosition(
+            @PathVariable long id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            Double pnl = null;
+            if (body != null && body.get("pnl") instanceof Number n) pnl = n.doubleValue();
+            String note = body != null ? String.valueOf(body.getOrDefault("note", "manual")) : "manual";
+            LivePosition pos = tradeBookService.exitPosition(id, pnl, note);
+            resp.put("status", "EXITED");
+            resp.put("tradeStatus", "EXITED");
+            resp.put("position", pos.toMap());
+            resp.put("exitPnl", pos.getCurrentPnl());
+            resp.put("exitedAt", pos.getExitedAt() != null ? pos.getExitedAt().toString() : null);
+            addAuditLog("EXIT", "SUCCESS", "pos=" + id + " pnl=" + pos.getCurrentPnl());
             return ResponseEntity.ok(resp);
         } catch (Exception e) {
             resp.put("status", "ERROR");
@@ -641,7 +673,7 @@ public class OptionArbitrageController {
 
     @GetMapping("/live-positions")
     public ResponseEntity<Map<String, Object>> getLivePositions() {
-        List<LivePosition> openPositions = livePositionRepo.findAllOpen();
+        List<LivePosition> openPositions = livePositionRepo.findAllActive();
         List<Map<String, Object>> posList = openPositions.stream().map(LivePosition::toMap).toList();
         return ResponseEntity.ok(Map.of("positions", posList, "count", posList.size()));
     }
