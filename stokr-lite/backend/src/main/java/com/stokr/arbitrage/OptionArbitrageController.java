@@ -480,10 +480,33 @@ public class OptionArbitrageController {
     }
 
     @PostMapping("/auto-execute/settings")
-    public ResponseEntity<Map<String, Object>> updateSetting(@RequestParam String key, @RequestParam String value) {
+    public ResponseEntity<Map<String, Object>> updateSetting(
+            @RequestParam(required = false) String key,
+            @RequestParam(required = false) String value,
+            @RequestBody(required = false) Map<String, Object> body) {
+        if (body != null && !body.isEmpty() && (key == null || key.isBlank())) {
+            Map<String, Object> updated = autoExecService.updateSettingsBulk(body);
+            addAuditLog("SETTINGS", "INFO", "Bulk updated Bid Parity settings (" + body.size() + " keys)");
+            return ResponseEntity.ok(updated);
+        }
+        if (key == null || value == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "key and value required (or JSON body for bulk)"));
+        }
         autoExecService.updateSetting(key, value);
         addAuditLog("SETTINGS", "INFO", "Updated setting '" + key + "' = " + value);
         return ResponseEntity.ok(autoExecService.getSettings());
+    }
+
+    @PostMapping("/auto-execute/settings/bulk")
+    public ResponseEntity<Map<String, Object>> updateSettingsBulk(@RequestBody Map<String, Object> body) {
+        Map<String, Object> updated = autoExecService.updateSettingsBulk(body != null ? body : Map.of());
+        addAuditLog("SETTINGS", "INFO", "Bulk updated Bid Parity settings");
+        return ResponseEntity.ok(updated);
+    }
+
+    @GetMapping("/auto-execute/readiness")
+    public ResponseEntity<Map<String, Object>> autoExecReadiness() {
+        return ResponseEntity.ok(autoExecService.probeBrokerReadiness());
     }
 
     @PostMapping("/auto-execute/run")

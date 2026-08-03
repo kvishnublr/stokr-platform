@@ -34,10 +34,10 @@ public class OptionArbAutoExecService {
             "FINNIFTY", 90000.0
     );
 
-    /** Refuse to trade if broker reports less than this free margin (₹). */
-    private static final double MIN_AVAILABLE_MARGIN = 5_000.0;
-    /** Keep this fraction of free margin unused as buffer. */
-    private static final double MARGIN_USAGE_CAP = 0.85;
+    /** Default refuse-to-trade floor if broker reports less free margin (₹). */
+    private static final double DEFAULT_MIN_AVAILABLE_MARGIN = 5_000.0;
+    /** Default keep this fraction of free margin unused as buffer. */
+    private static final double DEFAULT_MARGIN_USAGE_CAP = 0.85;
 
     private final OptionArbOpportunityRepository oppRepo;
     private final LivePositionRepository positionRepo;
@@ -86,6 +86,9 @@ public class OptionArbAutoExecService {
         settings.put("maxOpenPositions", 3);
         settings.put("maxDailyLoss", 5000.0);
         settings.put("strategyFilter", "PARITY");
+        settings.put("availableMarginGate", DEFAULT_MIN_AVAILABLE_MARGIN);
+        settings.put("marginUsageCap", DEFAULT_MARGIN_USAGE_CAP);
+        settings.put("parallelTimeoutSec", 8);
     }
 
     private void loadFromDb() {
@@ -171,14 +174,37 @@ public class OptionArbAutoExecService {
                 settings.put(k, b);
             }
         } else if (k.endsWith("MinEdge") || "maxDailyLoss".equals(k) || "min_edge_after_costs".equals(k)
-                || "scanner_minEdgeAfterCosts".equals(k)) {
+                || "scanner_minEdgeAfterCosts".equals(k)
+                || "availableMarginGate".equals(k) || "marginUsageCap".equals(k)) {
             try { settings.put(k, Double.parseDouble(v)); } catch (Exception ignored) {}
         } else if (k.endsWith("Lots") || "maxOpenPositions".equals(k) || "max_total_positions".equals(k)
-                || "max_positions_per_underlying".equals(k)) {
+                || "max_positions_per_underlying".equals(k) || "parallelTimeoutSec".equals(k)) {
             try { settings.put(k, Integer.parseInt(v.replace(".0", ""))); } catch (Exception ignored) {}
         } else {
             settings.put(k, v);
         }
+    }
+
+    private double marginGate() {
+        Object v = settings.get("availableMarginGate");
+        if (v instanceof Number n) return Math.max(0, n.doubleValue());
+        return DEFAULT_MIN_AVAILABLE_MARGIN;
+    }
+
+    private double marginUsageCap() {
+        Object v = settings.get("marginUsageCap");
+        if (v instanceof Number n) {
+            double c = n.doubleValue();
+            if (c > 1.0) c = c / 100.0; // allow "85" meaning 85%
+            return Math.min(1.0, Math.max(0.1, c));
+        }
+        return DEFAULT_MARGIN_USAGE_CAP;
+    }
+
+    private int parallelTimeoutSec() {
+        Object v = settings.get("parallelTimeoutSec");
+        if (v instanceof Number n) return Math.min(30, Math.max(3, n.intValue()));
+        return 8;
     }
 
     static boolean parseBool(String value) {
@@ -191,8 +217,12 @@ public class OptionArbAutoExecService {
         Map<String, Object> out = new LinkedHashMap<>(settings);
         out.put("enabled", Boolean.TRUE.equals(settings.get("enabled")));
         out.put("broker", settings.getOrDefault("broker", "NAVIA"));
-        out.put("availableMarginGate", MIN_AVAILABLE_MARGIN);
-        out.put("marginUsageCap", MARGIN_USAGE_CAP);
+        out.put("availableMarginGate", marginGate());
+        out.put("marginUsageCap", marginUsageCap());
+        out.put("parallelTimeoutSec", parallelTimeoutSec());
+        out.put("parallelLegs", true);
+        out.put("qtyMode", "NAVIA_LOTS_OTHERS_UNITS");
+        out.put("hedgedMarginEstimate", new LinkedHashMap<>(HEDGED_MARGIN));
         return out;
     }
 
@@ -214,6 +244,78 @@ public class OptionArbAutoExecService {
         settingsRepo.save(row);
         applyLegacyAliases();
         addLog("SETTINGS", "INFO", "Updated '" + key + "' = " + value);
+    }
+
+    /** Bulk update for Config UI — accepts camelCase keys only. */
+    @Transactional
+    public Map<String, Object> updateSettingsBulk(Map<String, Object> body) {
+        if (body == null || body.isEmpty()) return getSettings();
+        for (Map.Entry<String, Object> e : body.entrySet()) {
+            if (e.getKey() == null || e.getValue() == null) continue;
+            String key = e.getKey().trim();
+            // Skip read-only / derived keys
+            if (Set.of("parallelLegs", "qtyMode", "hedgedMarginEstimate",
+                    "availableMarginGate_readonly").contains(key)) continue;
+            if (key.endsWith("_bool") || key.contains(" ")) continue;
+            updateSetting(key, String.valueOf(e.getValue()));
+        }
+        return getSettings();
+    }
+
+    /**
+     * Live readiness probe for Bid Parity Config UI:
+     * broker account present, TOTP re-login (Navia), AvailableMargin.
+     */
+    public Map<String, Object> probeBrokerReadiness() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        String broker = String.valueOf(settings.getOrDefault("broker", "NAVIA")).toUpperCase(Locale.ROOT);
+        out.put("broker", broker);
+        out.put("autoExecEnabled", Boolean.TRUE.equals(settings.get("enabled")));
+        out.put("parallelLegs", true);
+        out.put("marginGate", marginGate());
+        out.put("marginUsageCap", marginUsageCap());
+        try {
+            BrokerAccount account = resolveBrokerAccount(broker);
+            if (account == null) {
+                out.put("ok", false);
+                out.put("connected", false);
+                out.put("message", "No ACTIVE " + broker + " account. Connect " + broker + " under Brokers.");
+                return out;
+            }
+            out.put("accountId", account.getId());
+            out.put("clientId", account.getClientId());
+            BrokerAdapter adapter = brokerService.getAdapter(broker);
+            if ("NAVIA".equals(broker) && adapter instanceof NaviaAdapter navia) {
+                String fresh = navia.loginWithTotp(account);
+                account.setAccessToken(fresh);
+                brokerAccountRepo.save(account);
+                out.put("login", "OK");
+            } else {
+                out.put("login", "SKIPPED");
+            }
+            BigDecimal margin = adapter.getAvailableMargin(account.getAccessToken());
+            double avail = margin != null ? margin.doubleValue() : -1;
+            out.put("availableMargin", avail);
+            out.put("connected", avail >= 0);
+            boolean gateOk = avail >= marginGate();
+            out.put("marginGateOk", gateOk);
+            out.put("ok", gateOk);
+            out.put("message", gateOk
+                    ? broker + " connected. AvailableMargin ₹" + String.format("%.0f", avail)
+                    : broker + " connected but AvailableMargin ₹" + String.format("%.0f", avail)
+                      + " below gate ₹" + String.format("%.0f", marginGate()));
+            // Estimate how many NIFTY sets fit
+            double usable = avail * marginUsageCap();
+            double oneSet = estimateHedgedMargin("NIFTY", 1);
+            out.put("usableMargin", usable);
+            out.put("niftyOneSetEstimate", oneSet);
+            out.put("maxNiftySets", oneSet > 0 ? (int) Math.floor(usable / oneSet) : 0);
+        } catch (Exception e) {
+            out.put("ok", false);
+            out.put("connected", false);
+            out.put("message", broker + " probe failed: " + e.getMessage());
+        }
+        return out;
     }
 
     private void upsertDb(String key, String value) {
@@ -286,9 +388,11 @@ public class OptionArbAutoExecService {
 
         double availableMargin = fetchAvailableMarginOrAbort(adapter, account);
         if (availableMargin < 0) return; // aborted
-        if (availableMargin < MIN_AVAILABLE_MARGIN) {
+        double minMargin = marginGate();
+        double usageCap = marginUsageCap();
+        if (availableMargin < minMargin) {
             addLog("MARGIN", "BLOCKED", "AvailableMargin ₹" + String.format("%.0f", availableMargin)
-                    + " < minimum ₹" + String.format("%.0f", MIN_AVAILABLE_MARGIN) + " — no trades");
+                    + " < minimum ₹" + String.format("%.0f", minMargin) + " — no trades");
             return;
         }
 
@@ -348,7 +452,7 @@ public class OptionArbAutoExecService {
             double liveMargin = fetchAvailableMarginCached(adapter, account);
             if (liveMargin < 0) return;
             availableMargin = liveMargin;
-            if (availableMargin < MIN_AVAILABLE_MARGIN) {
+            if (availableMargin < minMargin) {
                 addLog("MARGIN", "BLOCKED", "Live AvailableMargin ₹" + String.format("%.0f", availableMargin)
                         + " below floor — stopping cycle");
                 return;
@@ -356,13 +460,13 @@ public class OptionArbAutoExecService {
 
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
             double required = estimateHedgedMargin(opp.getUnderlying(), lots);
-            double usable = availableMargin * MARGIN_USAGE_CAP;
+            double usable = availableMargin * usageCap;
             if (required > usable) {
                 addLog("MARGIN", "SKIP", opp.getUnderlying() + " " + opp.getStrike()
                         + " needs ₹" + String.format("%.0f", required)
                         + " but usable ₹" + String.format("%.0f", usable)
                         + " (avail ₹" + String.format("%.0f", availableMargin) + " × "
-                        + String.format("%.0f", MARGIN_USAGE_CAP * 100) + "%)");
+                        + String.format("%.0f", usageCap * 100) + "%)");
                 continue;
             }
 
@@ -475,24 +579,25 @@ public class OptionArbAutoExecService {
                 || "NAVIA".equalsIgnoreCase(adapter.getBrokerName());
         int qty = naviaLots ? Math.max(1, lots) : lots * lotSize;
         String token = account.getAccessToken();
+        int timeoutSec = parallelTimeoutSec();
         addLog("EXEC", "QTY", opp.getUnderlying() + " broker=" + adapter.getBrokerName()
                 + " lots=" + lots + " lotSize=" + lotSize + " orderQty=" + qty
-                + (naviaLots ? " (Navia lots)" : " (units)"));
+                + (naviaLots ? " (Navia lots)" : " (units)")
+                + " parallelTimeout=" + timeoutSec + "s");
 
         BrokerOrderRequest.Side ceSide = conversion ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL;
         BrokerOrderRequest.Side peSide = conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
         BrokerOrderRequest.Side futSide = conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
 
-        try {
-            // Fire all 3 legs in parallel for minimum hedge latency
-            CompletableFuture<BrokerOrderResponse> ceF = CompletableFuture.supplyAsync(
-                    () -> place(adapter, token, ceSymbol, ceSide, qty), execPool);
-            CompletableFuture<BrokerOrderResponse> peF = CompletableFuture.supplyAsync(
-                    () -> place(adapter, token, peSymbol, peSide, qty), execPool);
-            CompletableFuture<BrokerOrderResponse> futF = CompletableFuture.supplyAsync(
-                    () -> place(adapter, token, futSymbol, futSide, qty), execPool);
+        CompletableFuture<BrokerOrderResponse> ceF = CompletableFuture.supplyAsync(
+                () -> place(adapter, token, ceSymbol, ceSide, qty), execPool);
+        CompletableFuture<BrokerOrderResponse> peF = CompletableFuture.supplyAsync(
+                () -> place(adapter, token, peSymbol, peSide, qty), execPool);
+        CompletableFuture<BrokerOrderResponse> futF = CompletableFuture.supplyAsync(
+                () -> place(adapter, token, futSymbol, futSide, qty), execPool);
 
-            CompletableFuture.allOf(ceF, peF, futF).get(8, TimeUnit.SECONDS);
+        try {
+            CompletableFuture.allOf(ceF, peF, futF).get(timeoutSec, TimeUnit.SECONDS);
             BrokerOrderResponse ceResp = ceF.getNow(null);
             BrokerOrderResponse peResp = peF.getNow(null);
             BrokerOrderResponse futResp = futF.getNow(null);
@@ -515,20 +620,8 @@ public class OptionArbAutoExecService {
             }
 
             // Partial — square off whatever filled, in parallel
-            List<CompletableFuture<BrokerOrderResponse>> unwind = new ArrayList<>();
-            if (ceOk) unwind.add(CompletableFuture.supplyAsync(
-                    () -> place(adapter, token, ceSymbol, flip(ceSide), qty), execPool));
-            if (peOk) unwind.add(CompletableFuture.supplyAsync(
-                    () -> place(adapter, token, peSymbol, flip(peSide), qty), execPool));
-            if (futOk) unwind.add(CompletableFuture.supplyAsync(
-                    () -> place(adapter, token, futSymbol, flip(futSide), qty), execPool));
-            if (!unwind.isEmpty()) {
-                try {
-                    CompletableFuture.allOf(unwind.toArray(CompletableFuture[]::new)).get(8, TimeUnit.SECONDS);
-                } catch (Exception unwindEx) {
-                    addLog("EXEC", "UNWIND_ERR", unwindEx.getMessage());
-                }
-            }
+            unwindFilled(adapter, token, ceSymbol, peSymbol, futSymbol, ceSide, peSide, futSide,
+                    qty, ceOk, peOk, futOk, timeoutSec);
 
             String err = "CE=" + statusOf(ceResp) + " PE=" + statusOf(peResp) + " FUT=" + statusOf(futResp);
             if (!ceOk && !peOk && !futOk) {
@@ -542,15 +635,51 @@ public class OptionArbAutoExecService {
             }
             positionRepo.save(position);
         } catch (TimeoutException te) {
-            position.setStatus("FAILED");
-            position.setErrorMessage("Parallel place timeout 8s");
+            boolean ceOk = isPlaced(ceF.getNow(null));
+            boolean peOk = isPlaced(peF.getNow(null));
+            boolean futOk = isPlaced(futF.getNow(null));
+            if (ceOk && ceF.getNow(null) != null) position.setCeOrderId(ceF.getNow(null).orderId());
+            if (peOk && peF.getNow(null) != null) position.setPeOrderId(peF.getNow(null).orderId());
+            if (futOk && futF.getNow(null) != null) position.setFutOrderId(futF.getNow(null).orderId());
+            if (ceOk || peOk || futOk) {
+                unwindFilled(adapter, token, ceSymbol, peSymbol, futSymbol, ceSide, peSide, futSide,
+                        qty, ceOk, peOk, futOk, timeoutSec);
+                position.setStatus("PARTIAL");
+                position.setErrorMessage("Parallel place timeout " + timeoutSec + "s (unwind attempted)");
+                addLog("EXEC", "TIMEOUT", opp.getUnderlying() + " " + opp.getStrike()
+                        + " partial fills unwound CE=" + ceOk + " PE=" + peOk + " FUT=" + futOk);
+            } else {
+                position.setStatus("FAILED");
+                position.setErrorMessage("Parallel place timeout " + timeoutSec + "s — no confirmed fills yet; check order book");
+                addLog("EXEC", "TIMEOUT", opp.getUnderlying() + " " + opp.getStrike()
+                        + " — no confirmed fills at timeout; verify Navia order book");
+            }
             positionRepo.save(position);
-            addLog("EXEC", "TIMEOUT", opp.getUnderlying() + " " + opp.getStrike());
         } catch (Exception e) {
             position.setStatus("FAILED");
             position.setErrorMessage(e.getMessage());
             positionRepo.save(position);
             addLog("EXEC", "ERROR", opp.getUnderlying() + " " + opp.getStrike() + ": " + e.getMessage());
+        }
+    }
+
+    private void unwindFilled(BrokerAdapter adapter, String token,
+                              String ceSymbol, String peSymbol, String futSymbol,
+                              BrokerOrderRequest.Side ceSide, BrokerOrderRequest.Side peSide,
+                              BrokerOrderRequest.Side futSide, int qty,
+                              boolean ceOk, boolean peOk, boolean futOk, int timeoutSec) {
+        List<CompletableFuture<BrokerOrderResponse>> unwind = new ArrayList<>();
+        if (ceOk) unwind.add(CompletableFuture.supplyAsync(
+                () -> place(adapter, token, ceSymbol, flip(ceSide), qty), execPool));
+        if (peOk) unwind.add(CompletableFuture.supplyAsync(
+                () -> place(adapter, token, peSymbol, flip(peSide), qty), execPool));
+        if (futOk) unwind.add(CompletableFuture.supplyAsync(
+                () -> place(adapter, token, futSymbol, flip(futSide), qty), execPool));
+        if (unwind.isEmpty()) return;
+        try {
+            CompletableFuture.allOf(unwind.toArray(CompletableFuture[]::new)).get(timeoutSec, TimeUnit.SECONDS);
+        } catch (Exception unwindEx) {
+            addLog("EXEC", "UNWIND_ERR", unwindEx.getMessage());
         }
     }
 

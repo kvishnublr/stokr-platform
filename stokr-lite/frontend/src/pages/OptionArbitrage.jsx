@@ -168,18 +168,22 @@ export default function OptionArbitrage() {
 
   const handleExecuteInline = async (opp, lots = 1) => {
     try {
-      await client.post('/option-arbitrage/paper-trade/execute', {
-        opportunityId: opp.id,
-        underlying: opp.underlying || opp.symbol,
-        strike: opp.strike || opp.atmStrike || 0,
-        action: opp.action || 'BUY',
-        strategyType: opp.strategyType || opp.type || 'ARBITRAGE',
-        lots: lots,
-        broker: executionBroker
-      });
-      showToast(`⚡ ${opp.underlying || opp.symbol} order submitted via ${executionBroker}!`, 'success');
+      // Prefer Bid Parity auto-exec path (margin-gated + parallel 3-leg) when opportunity id exists
+      if (opp?.id) {
+        const res = await client.get('/option-arbitrage/auto-execute/execute', {
+          params: { opportunityId: opp.id, multiplier: lots },
+        });
+        const status = res.data?.status || 'SUBMITTED';
+        if (status === 'SUBMITTED' || status === 'COMPLETED') {
+          showToast(`⚡ ${opp.underlying || opp.symbol} submitted to auto-exec (${executionBroker})`, 'success');
+        } else {
+          showToast(res.data?.message || `Exec status: ${status}`, 'warning');
+        }
+        return;
+      }
+      showToast('No opportunity id — cannot execute', 'error');
     } catch (e) {
-      showToast(`⚡ Order submitted via ${executionBroker}!`, 'success');
+      showToast(e.response?.data?.message || e.message || 'Execute failed', 'error');
     }
   };
 
@@ -196,7 +200,7 @@ export default function OptionArbitrage() {
             </div>
             <div>
               <h1 className="text-xl font-black tracking-tight text-white">Bid Parity</h1>
-              <p className="text-xs text-amber-200/80 font-medium">Conversion &amp; Reversal · Live Signals + History</p>
+              <p className="text-xs text-amber-200/80 font-medium">Live Signals · History · Configuration</p>
             </div>
           </div>
 
@@ -234,7 +238,12 @@ export default function OptionArbitrage() {
           </div>
         </div>
 
-        <BidParityHub handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />
+        <BidParityHub
+          handleExecuteInline={handleExecuteInline}
+          executionBroker={executionBroker}
+          autoRefresh={autoRefresh}
+          changeExecutionBroker={changeExecutionBroker}
+        />
       </div>
     );
   }
@@ -667,13 +676,19 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
   );
 }
 
-/* 2. BID PARITY HUB — Live Signals | History only */
-function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh }) {
+/* 2. BID PARITY HUB — Live Signals | History | Configuration */
+function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh, changeExecutionBroker }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [bpTab, setBpTab] = useState(() => searchParams.get('bp') === 'history' ? 'history' : 'live');
+  const initialBp = () => {
+    const bp = searchParams.get('bp');
+    if (bp === 'history' || bp === 'config') return bp;
+    return 'live';
+  };
+  const [bpTab, setBpTab] = useState(initialBp);
 
   useEffect(() => {
-    if (searchParams.get('bp') === 'history') setBpTab('history');
+    const bp = searchParams.get('bp');
+    if (bp === 'history' || bp === 'config') setBpTab(bp);
     else setBpTab('live');
   }, [searchParams]);
 
@@ -681,8 +696,8 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh }) {
     setBpTab(id);
     const next = new URLSearchParams(searchParams);
     next.set('tab', 'bidparity');
-    if (id === 'history') next.set('bp', 'history');
-    else next.delete('bp');
+    if (id === 'live') next.delete('bp');
+    else next.set('bp', id);
     setSearchParams(next, { replace: true });
   };
 
@@ -697,6 +712,7 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh }) {
           {[
             { id: 'live', label: '📡 Live Signals' },
             { id: 'history', label: '📜 History' },
+            { id: 'config', label: '⚙️ Configuration' },
           ].map(t => (
             <button
               key={t.id}
@@ -715,6 +731,366 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh }) {
         <BidParityLiveView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />
       )}
       {bpTab === 'history' && <BidParityHistoryView />}
+      {bpTab === 'config' && (
+        <BidParityConfigView
+          executionBroker={executionBroker}
+          changeExecutionBroker={changeExecutionBroker}
+        />
+      )}
+    </div>
+  );
+}
+
+function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [probe, setProbe] = useState(null);
+  const [probing, setProbing] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const { data: settings, isLoading, refetch } = useQuery({
+    queryKey: ['bid-parity-settings'],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+  });
+
+  const { data: logs, refetch: refetchLogs } = useQuery({
+    queryKey: ['bid-parity-exec-logs'],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/logs')).data,
+    refetchInterval: 5000,
+  });
+
+  const { data: positions } = useQuery({
+    queryKey: ['bid-parity-live-positions'],
+    queryFn: async () => (await client.get('/option-arbitrage/live-positions')).data,
+    refetchInterval: 5000,
+  });
+
+  useEffect(() => {
+    if (!settings) return;
+    setForm({
+      enabled: !!settings.enabled,
+      broker: settings.broker || 'NAVIA',
+      niftyEnabled: !!settings.niftyEnabled,
+      bankniftyEnabled: !!settings.bankniftyEnabled,
+      finniftyEnabled: !!settings.finniftyEnabled,
+      midcpniftyEnabled: !!settings.midcpniftyEnabled,
+      niftyMinEdge: Number(settings.niftyMinEdge ?? 2000),
+      bankniftyMinEdge: Number(settings.bankniftyMinEdge ?? 2000),
+      finniftyMinEdge: Number(settings.finniftyMinEdge ?? 2000),
+      midcpniftyMinEdge: Number(settings.midcpniftyMinEdge ?? 2000),
+      niftyLots: Number(settings.niftyLots ?? 1),
+      bankniftyLots: Number(settings.bankniftyLots ?? 1),
+      finniftyLots: Number(settings.finniftyLots ?? 1),
+      midcpniftyLots: Number(settings.midcpniftyLots ?? 1),
+      maxOpenPositions: Number(settings.maxOpenPositions ?? 3),
+      maxDailyLoss: Number(settings.maxDailyLoss ?? 5000),
+      availableMarginGate: Number(settings.availableMarginGate ?? 5000),
+      marginUsageCap: Number(settings.marginUsageCap ?? 0.85),
+      parallelTimeoutSec: Number(settings.parallelTimeoutSec ?? 8),
+      strategyFilter: settings.strategyFilter || 'PARITY',
+    });
+  }, [settings]);
+
+  const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+
+  const save = async () => {
+    if (!form) return;
+    setSaving(true); setMsg(null);
+    try {
+      // Persist auto-exec broker + sync UI execution broker for Test Connection
+      await client.post('/option-arbitrage/auto-execute/settings/bulk', form);
+      if (form.broker && changeExecutionBroker && form.broker !== executionBroker) {
+        try { await changeExecutionBroker(form.broker); } catch (_) { /* optional */ }
+      }
+      await refetch();
+      setMsg({ ok: true, text: 'Configuration saved' });
+      showToast('Bid Parity configuration saved', 'success');
+    } catch (e) {
+      setMsg({ ok: false, text: e.response?.data?.error || e.message || 'Save failed' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runProbe = async () => {
+    setProbing(true); setProbe(null);
+    try {
+      // Save broker first so probe uses selected broker
+      if (form?.broker) {
+        await client.post('/option-arbitrage/auto-execute/settings', null, {
+          params: { key: 'broker', value: form.broker },
+        });
+      }
+      const res = await client.get('/option-arbitrage/auto-execute/readiness');
+      setProbe(res.data);
+      if (res.data?.ok) showToast(res.data.message, 'success');
+      else showToast(res.data?.message || 'Navia probe failed', 'warning');
+    } catch (e) {
+      setProbe({ ok: false, message: e.response?.data?.message || e.message });
+      showToast('Probe failed', 'error');
+    } finally {
+      setProbing(false);
+      refetchLogs();
+    }
+  };
+
+  if (isLoading || !form) {
+    return <div className="p-10 text-center text-slate-400 text-sm font-semibold">Loading configuration…</div>;
+  }
+
+  const indices = [
+    { key: 'nifty', label: 'NIFTY' },
+    { key: 'banknifty', label: 'BANKNIFTY' },
+    { key: 'finnifty', label: 'FINNIFTY' },
+    { key: 'midcpnifty', label: 'MIDCPNIFTY' },
+  ];
+
+  return (
+    <div className="space-y-4 w-full">
+      {/* Master switches */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">Auto-Execute</h3>
+            <p className="text-xs text-slate-500">Margin-gated parallel CE+PE+FUT on Navia · window 09:16–15:25 IST</p>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.enabled}
+              onChange={e => setField('enabled', e.target.checked)}
+              className="w-4 h-4 accent-amber-600"
+            />
+            <span className={form.enabled ? 'text-emerald-700' : 'text-slate-500'}>
+              {form.enabled ? 'ENABLED' : 'DISABLED'}
+            </span>
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Execution Broker</label>
+            <select
+              value={form.broker}
+              onChange={e => setField('broker', e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 font-bold"
+            >
+              <option value="NAVIA">Navia Markets</option>
+              <option value="ZERODHA">Zerodha Kite</option>
+              <option value="PAPER">Paper (no live fire)</option>
+            </select>
+          </div>
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Strategy Filter</label>
+            <select
+              value={form.strategyFilter}
+              onChange={e => setField('strategyFilter', e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 font-bold"
+            >
+              <option value="PARITY">Bid Parity only</option>
+              <option value="ALL">All strategies</option>
+            </select>
+          </div>
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Parallel place timeout (sec)</label>
+            <input
+              type="number"
+              min={3}
+              max={30}
+              value={form.parallelTimeoutSec}
+              onChange={e => setField('parallelTimeoutSec', Number(e.target.value) || 8)}
+              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 font-mono"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={runProbe}
+            disabled={probing}
+            className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold disabled:opacity-50"
+          >
+            {probing ? 'Probing Navia…' : '🔌 Test Navia + Margin'}
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : '💾 Save Configuration'}
+          </button>
+        </div>
+
+        {msg && (
+          <div className={`text-xs font-semibold px-3 py-2 rounded-xl ${msg.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
+            {msg.text}
+          </div>
+        )}
+        {probe && (
+          <div className={`text-xs font-semibold px-3 py-2 rounded-xl space-y-1 ${probe.ok ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900'}`}>
+            <div>{probe.message}</div>
+            {probe.availableMargin != null && (
+              <div className="font-mono">
+                AvailableMargin ₹{Number(probe.availableMargin).toLocaleString('en-IN')}
+                {' · '}usable ₹{Number(probe.usableMargin || 0).toLocaleString('en-IN')}
+                {' · '}~{probe.maxNiftySets ?? 0} NIFTY set(s)
+              </div>
+            )}
+            <div className="text-[10px] opacity-80">
+              Parallel 3-leg: {probe.parallelLegs ? 'ON' : 'OFF'} · Auto-exec: {probe.autoExecEnabled ? 'ON' : 'OFF'} · Gate ₹{probe.marginGate}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Per-index */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100 text-sm font-bold text-slate-800">Per-Index Enable / Min Edge / Lots</div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 text-slate-600 font-bold">
+              <tr>
+                <th className="px-3 py-2 text-left">Index</th>
+                <th className="px-3 py-2 text-center">Enabled</th>
+                <th className="px-3 py-2 text-right">Min Edge ₹</th>
+                <th className="px-3 py-2 text-right">Lots</th>
+                <th className="px-3 py-2 text-right">Est. Margin / set</th>
+              </tr>
+            </thead>
+            <tbody>
+              {indices.map(({ key, label }) => {
+                const est = (settings?.hedgedMarginEstimate || {})[label] || 200000;
+                return (
+                  <tr key={key} className="border-t border-slate-100">
+                    <td className="px-3 py-2 font-bold">{label}</td>
+                    <td className="px-3 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={!!form[`${key}Enabled`]}
+                        onChange={e => setField(`${key}Enabled`, e.target.checked)}
+                        className="accent-amber-600"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        value={form[`${key}MinEdge`]}
+                        onChange={e => setField(`${key}MinEdge`, Number(e.target.value) || 0)}
+                        className="w-24 border border-slate-200 rounded px-2 py-1 font-mono text-right"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        min={1}
+                        value={form[`${key}Lots`]}
+                        onChange={e => setField(`${key}Lots`, Number(e.target.value) || 1)}
+                        className="w-16 border border-slate-200 rounded px-2 py-1 font-mono text-right"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-slate-500">
+                      ₹{Math.round(est * 1.15).toLocaleString('en-IN')}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Risk / margin */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <h3 className="text-sm font-bold text-slate-800 mb-3">Risk &amp; Margin Gates</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Max open positions</label>
+            <input type="number" min={1} value={form.maxOpenPositions}
+              onChange={e => setField('maxOpenPositions', Number(e.target.value) || 1)}
+              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 font-mono" />
+          </div>
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Max daily loss ₹</label>
+            <input type="number" value={form.maxDailyLoss}
+              onChange={e => setField('maxDailyLoss', Number(e.target.value) || 0)}
+              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 font-mono" />
+          </div>
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Min AvailableMargin ₹</label>
+            <input type="number" value={form.availableMarginGate}
+              onChange={e => setField('availableMarginGate', Number(e.target.value) || 0)}
+              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 font-mono" />
+          </div>
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Margin usage cap (0–1)</label>
+            <input type="number" step="0.01" min={0.1} max={1}
+              value={form.marginUsageCap}
+              onChange={e => setField('marginUsageCap', Number(e.target.value) || 0.85)}
+              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 font-mono" />
+          </div>
+        </div>
+        <p className="text-[11px] text-slate-500 mt-3">
+          Before each fire: refresh Navia TOTP → fetch AvailableMargin → require ≥ gate → require hedged estimate ≤ AvailableMargin × usage cap → place CE+PE+FUT in parallel (Navia qty = lots).
+        </p>
+      </div>
+
+      {/* Open positions */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <h3 className="text-sm font-bold text-slate-800 mb-2">
+          Live Positions ({positions?.count ?? 0})
+        </h3>
+        {(positions?.positions || []).length === 0 ? (
+          <div className="text-xs text-slate-400 font-semibold">No open Bid Parity positions</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-slate-600 font-bold">
+                <tr>
+                  <th className="px-2 py-1 text-left">Underlying</th>
+                  <th className="px-2 py-1 text-right">Strike</th>
+                  <th className="px-2 py-1">Action</th>
+                  <th className="px-2 py-1">Status</th>
+                  <th className="px-2 py-1 text-right">Lots</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(positions.positions || []).map((p, i) => (
+                  <tr key={p.id || i} className="border-t border-slate-100">
+                    <td className="px-2 py-1 font-bold">{p.underlying}</td>
+                    <td className="px-2 py-1 text-right font-mono">{p.strike}</td>
+                    <td className="px-2 py-1">{p.action}</td>
+                    <td className="px-2 py-1">{p.status}</td>
+                    <td className="px-2 py-1 text-right">{p.lots}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Exec logs */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-slate-800">Auto-Exec Logs</h3>
+          <button onClick={() => refetchLogs()} className="text-[11px] font-bold text-slate-500 hover:text-slate-800">Refresh</button>
+        </div>
+        <div className="max-h-64 overflow-y-auto space-y-1 font-mono text-[11px]">
+          {(logs || []).length === 0 && <div className="text-slate-400">No logs yet</div>}
+          {(logs || []).slice(0, 40).map((l, i) => (
+            <div key={l.id || i} className="flex gap-2 border-b border-slate-50 py-1">
+              <span className="text-slate-400 w-14 shrink-0">{l.time}</span>
+              <span className={`font-bold w-16 shrink-0 ${
+                l.status === 'OK' || l.status === 'SUCCESS' ? 'text-emerald-600'
+                  : l.status === 'BLOCKED' || l.status === 'ERROR' || l.status === 'FAILED' ? 'text-red-600'
+                    : 'text-amber-700'
+              }`}>{l.status}</span>
+              <span className="text-slate-400 w-14 shrink-0">{l.type}</span>
+              <span className="text-slate-700">{l.message}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
