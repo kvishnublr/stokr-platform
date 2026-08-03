@@ -169,6 +169,81 @@ public class SignalTradeBookService {
         return new LinkedHashMap<>(payload);
     }
 
+    /** Active (+ optional today's closed) positions with live PnL. */
+    public Map<String, Object> getPositionsBook(String strategyNeedle, boolean includeClosedToday) {
+        String needle = strategyNeedle == null ? "" : strategyNeedle.trim();
+        List<LivePosition> all = needle.isEmpty()
+                ? livePositionRepo.findAll()
+                : livePositionRepo.findByStrategyNeedle(needle.isEmpty() ? "BID" : needle);
+
+        LocalDate today = LocalDate.now(IST);
+        List<LivePosition> filtered = new ArrayList<>();
+        for (LivePosition p : all) {
+            if (isActive(p)) {
+                filtered.add(p);
+                continue;
+            }
+            if (includeClosedToday && p.getExitedAt() != null
+                    && p.getExitedAt().toLocalDate().equals(today)) {
+                filtered.add(p);
+            }
+        }
+        filtered.sort((a, b) -> {
+            LocalDateTime ta = a.getEnteredAt() != null ? a.getEnteredAt() : a.getCreatedAt();
+            LocalDateTime tb = b.getEnteredAt() != null ? b.getEnteredAt() : b.getCreatedAt();
+            if (ta == null && tb == null) return 0;
+            if (ta == null) return 1;
+            if (tb == null) return -1;
+            return tb.compareTo(ta);
+        });
+
+        Map<Long, Double> livePnl = computeLivePnlForActive(filtered);
+        List<Map<String, Object>> items = new ArrayList<>();
+        double openPnl = 0;
+        double closedPnl = 0;
+        int openN = 0;
+        int closedN = 0;
+        for (LivePosition p : filtered) {
+            Map<String, Object> row = p.toMap();
+            boolean active = isActive(p);
+            String mode = "PAPER";
+            if (p.getCeOrderId() != null && p.getCeOrderId().startsWith("PAPER")) mode = "PAPER";
+            else if (p.getErrorMessage() != null && p.getErrorMessage().toUpperCase(Locale.ROOT).contains("PAPER")) mode = "PAPER";
+            else mode = "LIVE";
+            row.put("mode", mode);
+            row.put("tradeStatus", active ? "ENTERED" : (p.getStatus() != null ? p.getStatus().toUpperCase(Locale.ROOT) : "EXITED"));
+            Double pnl;
+            if (active) {
+                pnl = livePnl.getOrDefault(p.getId(),
+                        p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0);
+                openPnl += pnl;
+                openN++;
+                row.put("currentPnl", Math.round(pnl * 100.0) / 100.0);
+                row.put("exitPnl", null);
+            } else {
+                pnl = p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0;
+                closedPnl += pnl;
+                closedN++;
+                row.put("currentPnl", null);
+                row.put("exitPnl", Math.round(pnl * 100.0) / 100.0);
+            }
+            row.put("pnl", Math.round(pnl * 100.0) / 100.0);
+            row.put("pnlLabel", pnl >= 0 ? "PROFIT" : "LOSS");
+            items.add(row);
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("timestamp", System.currentTimeMillis());
+        out.put("positions", items);
+        out.put("count", items.size());
+        out.put("openCount", openN);
+        out.put("closedCount", closedN);
+        out.put("openPnl", Math.round(openPnl * 100.0) / 100.0);
+        out.put("closedPnl", Math.round(closedPnl * 100.0) / 100.0);
+        out.put("netPnl", Math.round((openPnl + closedPnl) * 100.0) / 100.0);
+        return out;
+    }
+
     public void invalidate() {
         cache.clear();
     }

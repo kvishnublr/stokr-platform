@@ -300,7 +300,7 @@ export default function OptionArbitrage() {
     return (
       <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
         <ToastContainer toasts={toasts} dismiss={dismissToast} />
-        {renderStrategyChrome('Bid Parity', 'Live Signals · History · Configuration', 'amber')}
+        {renderStrategyChrome('Bid Parity', 'Live Signals · Positions · History · Configuration', 'amber')}
         <BidParityHub
           handleExecuteInline={handleExecuteInline}
           executionBroker={executionBroker}
@@ -765,19 +765,19 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
   );
 }
 
-/* 2. BID PARITY HUB — Live Signals | History | Configuration */
+/* 2. BID PARITY HUB — Live Signals | Positions | History | Configuration */
 function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh, changeExecutionBroker }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialBp = () => {
     const bp = searchParams.get('bp');
-    if (bp === 'history' || bp === 'config') return bp;
+    if (bp === 'history' || bp === 'config' || bp === 'positions') return bp;
     return 'live';
   };
   const [bpTab, setBpTab] = useState(initialBp);
 
   useEffect(() => {
     const bp = searchParams.get('bp');
-    if (bp === 'history' || bp === 'config') setBpTab(bp);
+    if (bp === 'history' || bp === 'config' || bp === 'positions') setBpTab(bp);
     else setBpTab('live');
   }, [searchParams]);
 
@@ -790,6 +790,13 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh, chang
     setSearchParams(next, { replace: true });
   };
 
+  const { data: posSummary } = useQuery({
+    queryKey: ['bid-parity-pos-count'],
+    queryFn: async () => (await client.get('/option-arbitrage/live-positions', { params: { strategyType: 'BID', includeClosedToday: false } })).data,
+    refetchInterval: autoRefresh ? 4000 : false,
+  });
+  const openN = posSummary?.openCount ?? (posSummary?.positions || []).length;
+
   return (
     <div className="space-y-4 w-full">
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
@@ -800,6 +807,7 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh, chang
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
           {[
             { id: 'live', label: '📡 Live Signals' },
+            { id: 'positions', label: openN > 0 ? `💼 Positions (${openN})` : '💼 Positions' },
             { id: 'history', label: '📜 History' },
             { id: 'config', label: '⚙️ Configuration' },
           ].map(t => (
@@ -817,7 +825,20 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh, chang
       </div>
 
       {bpTab === 'live' && (
-        <BidParityLiveView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />
+        <BidParityLiveView
+          handleExecuteInline={async (opp, lots) => {
+            await handleExecuteInline(opp, lots);
+            showToast('Opened — live PnL / Exit on Positions', 'success');
+            switchTab('positions');
+          }}
+          executionBroker={executionBroker}
+          autoRefresh={autoRefresh}
+          onOpenPositions={() => switchTab('positions')}
+          openPositionCount={openN}
+        />
+      )}
+      {bpTab === 'positions' && (
+        <BidParityPositionsView executionBroker={executionBroker} autoRefresh={autoRefresh} />
       )}
       {bpTab === 'history' && (
         <BidParityHistoryView
@@ -831,6 +852,182 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh, chang
           changeExecutionBroker={changeExecutionBroker}
         />
       )}
+    </div>
+  );
+}
+
+function BidParityPositionsView({ executionBroker, autoRefresh = true }) {
+  const [exitingId, setExitingId] = useState(null);
+  const [filter, setFilter] = useState('OPEN'); // OPEN | CLOSED | ALL
+
+  const { data, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ['bid-parity-positions-book'],
+    queryFn: async () => (await client.get('/option-arbitrage/live-positions', {
+      params: { strategyType: 'BID', includeClosedToday: true },
+    })).data,
+    refetchInterval: autoRefresh ? 3000 : false,
+    staleTime: 1000,
+  });
+
+  const positions = data?.positions || [];
+  const rows = positions.filter(p => {
+    const st = String(p.tradeStatus || p.status || '').toUpperCase();
+    const open = st === 'ENTERED' || st === 'OPEN' || st === 'PARTIAL' || st === 'EXECUTING';
+    if (filter === 'OPEN') return open;
+    if (filter === 'CLOSED') return !open;
+    return true;
+  });
+
+  const exitPosition = async (positionId) => {
+    if (!positionId) return;
+    setExitingId(positionId);
+    try {
+      const res = await client.post(`/option-arbitrage/live-positions/${positionId}/exit`, { note: 'positions-tab' });
+      if (res.data?.status === 'EXITED') {
+        showToast(`Exited · PnL ₹${Math.round(Number(res.data?.exitPnl || 0)).toLocaleString('en-IN')}`, 'success');
+        refetch();
+      } else {
+        showToast(res.data?.message || 'Exit failed', 'warning');
+      }
+    } catch (e) {
+      showToast(e.response?.data?.message || e.message || 'Exit failed', 'error');
+    } finally {
+      setExitingId(null);
+    }
+  };
+
+  const pnlCls = (v) => Number(v) >= 0 ? 'text-emerald-600' : 'text-red-600';
+  const openPnl = data?.openPnl ?? 0;
+  const closedPnl = data?.closedPnl ?? 0;
+  const netPnl = data?.netPnl ?? 0;
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white rounded-xl border border-slate-200 p-3">
+          <div className="text-[10px] font-bold uppercase text-slate-500">Open</div>
+          <div className="text-xl font-black text-slate-900">{data?.openCount ?? 0}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-3">
+          <div className="text-[10px] font-bold uppercase text-slate-500">Open PnL</div>
+          <div className={`text-xl font-black ${pnlCls(openPnl)}`}>₹{Math.round(openPnl).toLocaleString('en-IN')}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-3">
+          <div className="text-[10px] font-bold uppercase text-slate-500">Closed today</div>
+          <div className={`text-xl font-black ${pnlCls(closedPnl)}`}>₹{Math.round(closedPnl).toLocaleString('en-IN')}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-3">
+          <div className="text-[10px] font-bold uppercase text-slate-500">Net today</div>
+          <div className={`text-xl font-black ${pnlCls(netPnl)}`}>₹{Math.round(netPnl).toLocaleString('en-IN')}</div>
+        </div>
+      </div>
+
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+          {[
+            { id: 'OPEN', label: 'Open' },
+            { id: 'CLOSED', label: 'Closed today' },
+            { id: 'ALL', label: 'All' },
+          ].map(t => (
+            <button key={t.id} onClick={() => setFilter(t.id)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold ${filter === t.id ? 'bg-amber-600 text-white' : 'text-slate-600'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-slate-500">Broker: <b>{executionBroker || 'PAPER'}</b></span>
+          <button onClick={() => refetch()} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-bold">
+            {isFetching ? 'Updating…' : 'Refresh PnL'}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl">
+        Live mark-to-market on open legs · Paper exits are virtual · Auto-exec stays separate from manual Exit here.
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading positions…</div>
+        ) : rows.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">
+            No {filter === 'OPEN' ? 'open' : filter === 'CLOSED' ? 'closed' : ''} Bid Parity positions.
+            Submit from Live Signals to enter.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2">Mode</th>
+                  <th className="px-2 py-2">Status</th>
+                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Side</th>
+                  <th className="px-2 py-2">Strike</th>
+                  <th className="px-2 py-2 text-right">Target edge</th>
+                  <th className="px-2 py-2 text-right">Live / Exit PnL</th>
+                  <th className="px-2 py-2">P/L</th>
+                  <th className="px-2 py-2">Entered</th>
+                  <th className="px-2 py-2">Exited</th>
+                  <th className="px-2 py-2 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((p) => {
+                  const st = String(p.tradeStatus || p.status || '').toUpperCase();
+                  const open = st === 'ENTERED' || st === 'OPEN' || st === 'PARTIAL' || st === 'EXECUTING';
+                  const pnl = open ? Number(p.currentPnl ?? p.pnl ?? 0) : Number(p.exitPnl ?? p.pnl ?? 0);
+                  const mode = p.mode || (String(p.ceOrderId || '').startsWith('PAPER') ? 'PAPER' : 'LIVE');
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-50">
+                      <td className="px-2 py-1.5">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                          mode === 'PAPER' ? 'bg-sky-50 text-sky-800 border-sky-200' : 'bg-amber-50 text-amber-800 border-amber-200'
+                        }`}>{mode}</span>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                          open ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-slate-200 text-slate-800 border-slate-300'
+                        }`}>{open ? 'ENTERED' : 'EXITED'}</span>
+                      </td>
+                      <td className="px-2 py-1.5 font-bold">{p.underlying}</td>
+                      <td className="px-2 py-1.5 font-bold text-purple-700">{p.action}</td>
+                      <td className="px-2 py-1.5 font-bold">{p.strike}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-emerald-700">
+                        ₹{Math.round(Number(p.targetEdge || 0)).toLocaleString('en-IN')}
+                      </td>
+                      <td className={`px-2 py-1.5 text-right font-mono font-black ${pnlCls(pnl)}`}>
+                        ₹{Math.round(pnl).toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <span className={`text-[10px] font-bold ${pnl >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                          {pnl >= 0 ? 'PROFIT' : 'LOSS'}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{p.enteredAt ? String(p.enteredAt).slice(0, 19) : '—'}</td>
+                      <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{p.exitedAt ? String(p.exitedAt).slice(0, 19) : '—'}</td>
+                      <td className="px-2 py-1.5 text-center">
+                        {open ? (
+                          <button
+                            disabled={exitingId === p.id}
+                            onClick={() => exitPosition(p.id)}
+                            className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold rounded disabled:opacity-50"
+                          >
+                            {exitingId === p.id ? 'Exiting…' : 'Exit'}
+                          </button>
+                        ) : (
+                          <span className="text-slate-400 text-[10px]">done</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -854,8 +1051,10 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
   });
 
   const { data: positions } = useQuery({
-    queryKey: ['bid-parity-live-positions'],
-    queryFn: async () => (await client.get('/option-arbitrage/live-positions')).data,
+    queryKey: ['bid-parity-live-positions-config'],
+    queryFn: async () => (await client.get('/option-arbitrage/live-positions', {
+      params: { strategyType: 'BID', includeClosedToday: false },
+    })).data,
     refetchInterval: 5000,
   });
 
@@ -1131,7 +1330,10 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
       {/* Open positions */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
         <h3 className="text-sm font-bold text-slate-800 mb-2">
-          Live Positions ({positions?.count ?? 0})
+          Live Positions ({positions?.openCount ?? positions?.count ?? 0})
+          <span className="ml-2 text-[11px] font-semibold text-slate-500">
+            (full board → Positions tab)
+          </span>
         </h3>
         {(positions?.positions || []).length === 0 ? (
           <div className="text-xs text-slate-400 font-semibold">No open Bid Parity positions</div>
@@ -1140,20 +1342,26 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
             <table className="w-full text-xs">
               <thead className="bg-slate-50 text-slate-600 font-bold">
                 <tr>
+                  <th className="px-2 py-1 text-left">Mode</th>
                   <th className="px-2 py-1 text-left">Underlying</th>
                   <th className="px-2 py-1 text-right">Strike</th>
                   <th className="px-2 py-1">Action</th>
                   <th className="px-2 py-1">Status</th>
+                  <th className="px-2 py-1 text-right">Live PnL</th>
                   <th className="px-2 py-1 text-right">Lots</th>
                 </tr>
               </thead>
               <tbody>
                 {(positions.positions || []).map((p, i) => (
                   <tr key={p.id || i} className="border-t border-slate-100">
+                    <td className="px-2 py-1 font-bold">{p.mode || '—'}</td>
                     <td className="px-2 py-1 font-bold">{p.underlying}</td>
                     <td className="px-2 py-1 text-right font-mono">{p.strike}</td>
                     <td className="px-2 py-1">{p.action}</td>
-                    <td className="px-2 py-1">{p.status}</td>
+                    <td className="px-2 py-1">{p.tradeStatus || p.status}</td>
+                    <td className={`px-2 py-1 text-right font-mono font-bold ${Number(p.currentPnl ?? p.pnl ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      ₹{Math.round(Number(p.currentPnl ?? p.pnl ?? 0)).toLocaleString('en-IN')}
+                    </td>
                     <td className="px-2 py-1 text-right">{p.lots}</td>
                   </tr>
                 ))}
@@ -1189,7 +1397,7 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
   );
 }
 
-function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }) {
+function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, onOpenPositions, openPositionCount = 0 }) {
   const [underlying, setUnderlying] = useState('ALL');
   const [expiryMode, setExpiryMode] = useState('BOTH'); // MONTHLY | WEEKLY | BOTH
   const [expandedId, setExpandedId] = useState(null);
@@ -1254,6 +1462,15 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
 
   return (
     <div className="space-y-4 w-full">
+      {openPositionCount > 0 && (
+        <button
+          type="button"
+          onClick={() => onOpenPositions && onOpenPositions()}
+          className="w-full text-left bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-bold px-4 py-3 rounded-xl hover:bg-emerald-100 transition"
+        >
+          {openPositionCount} open position{openPositionCount > 1 ? 's' : ''} — click for live PnL / Exit →
+        </button>
+      )}
       <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">

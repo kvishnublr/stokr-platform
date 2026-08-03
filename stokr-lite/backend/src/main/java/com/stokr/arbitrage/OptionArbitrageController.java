@@ -677,10 +677,17 @@ public class OptionArbitrageController {
     }
 
     @GetMapping("/live-positions")
-    public ResponseEntity<Map<String, Object>> getLivePositions() {
-        List<LivePosition> openPositions = livePositionRepo.findAllActive();
-        List<Map<String, Object>> posList = openPositions.stream().map(LivePosition::toMap).toList();
-        return ResponseEntity.ok(Map.of("positions", posList, "count", posList.size()));
+    public ResponseEntity<Map<String, Object>> getLivePositions(
+            @RequestParam(defaultValue = "BID") String strategyType,
+            @RequestParam(defaultValue = "true") boolean includeClosedToday) {
+        try {
+            return ResponseEntity.ok(tradeBookService.getPositionsBook(strategyType, includeClosedToday));
+        } catch (Exception e) {
+            log.error("live-positions failed: {}", e.getMessage());
+            List<LivePosition> openPositions = livePositionRepo.findAllActive();
+            List<Map<String, Object>> posList = openPositions.stream().map(LivePosition::toMap).toList();
+            return ResponseEntity.ok(Map.of("positions", posList, "count", posList.size()));
+        }
     }
 
     @GetMapping("/auto-execute/execute")
