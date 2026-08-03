@@ -14,6 +14,8 @@ public class BidParityService {
 
     private static final Logger log = LoggerFactory.getLogger(BidParityService.class);
     private static final long SCAN_CACHE_TTL_MS = 1500;
+    /** Once edge ≥ this, keep showing until market close (even if later scans miss it). */
+    private static final double STICKY_MIN_EDGE = 300.0;
     private static final ExecutorService SCAN_POOL = Executors.newFixedThreadPool(4, r -> {
         Thread t = new Thread(r, "bid-parity-scan");
         t.setDaemon(true);
@@ -26,6 +28,11 @@ public class BidParityService {
 
     private final ConcurrentHashMap<String, CachedScan> scanCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> futKeyCache = new ConcurrentHashMap<>();
+    /** Session sticky signals — key = underlying|strike|action|expiry|mode */
+    private final ConcurrentHashMap<String, StickySignal> stickySignals = new ConcurrentHashMap<>();
+
+    private final java.util.concurrent.atomic.AtomicBoolean lastScanTimedOut =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     public BidParityService(OptionChainService optionChainService,
                             OptionArbHistoryService historyService,
@@ -95,6 +102,9 @@ public class BidParityService {
             }
         }
 
+        // Stick signals ≥ ₹300 for the session — never drop when a later scan misses them
+        results = mergeSticky(uKey, mode, results);
+
         results.sort((a, b) -> Double.compare(
                 ((Number) b.getOrDefault("edgeAfterCosts", 0)).doubleValue(),
                 ((Number) a.getOrDefault("edgeAfterCosts", 0)).doubleValue()));
@@ -103,16 +113,88 @@ public class BidParityService {
         if (!(timedOut && results.isEmpty())) {
             scanCache.put(cacheKey, new CachedScan(System.currentTimeMillis(), deepCopy(results)));
         }
-        // Stamp timeout marker on first row only for API consumers (controller reads separately)
         lastScanTimedOut.set(timedOut);
         return results;
     }
 
-    private final java.util.concurrent.atomic.AtomicBoolean lastScanTimedOut =
-            new java.util.concurrent.atomic.AtomicBoolean(false);
-
     public boolean consumeLastScanTimedOut() {
         return lastScanTimedOut.getAndSet(false);
+    }
+
+    /** Purge + upsert sticky, then union live scan with sticky rows for this filter. */
+    private List<Map<String, Object>> mergeSticky(String uKey, String mode, List<Map<String, Object>> live) {
+        purgeExpiredSticky();
+        long now = System.currentTimeMillis();
+        Set<String> liveKeys = new HashSet<>();
+
+        for (Map<String, Object> opp : live) {
+            double edge = ((Number) opp.getOrDefault("edgeAfterCosts", 0)).doubleValue();
+            String key = stickyKey(opp);
+            liveKeys.add(key);
+            if (edge >= STICKY_MIN_EDGE) {
+                Map<String, Object> copy = new LinkedHashMap<>(opp);
+                copy.put("sticky", true);
+                copy.put("live", true);
+                copy.put("firstSeenAt", stickySignals.containsKey(key)
+                        ? stickySignals.get(key).firstSeenAt
+                        : now);
+                copy.put("lastSeenAt", now);
+                StickySignal prev = stickySignals.get(key);
+                stickySignals.put(key, new StickySignal(
+                        copy,
+                        prev != null ? prev.firstSeenAt : now,
+                        now,
+                        LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"))
+                ));
+                opp.put("sticky", true);
+                opp.put("live", true);
+                opp.put("firstSeenAt", stickySignals.get(key).firstSeenAt);
+                opp.put("lastSeenAt", now);
+            } else {
+                opp.put("sticky", false);
+                opp.put("live", true);
+            }
+        }
+
+        List<Map<String, Object>> merged = new ArrayList<>(live);
+        for (Map.Entry<String, StickySignal> e : stickySignals.entrySet()) {
+            if (liveKeys.contains(e.getKey())) continue;
+            StickySignal s = e.getValue();
+            if (!matchesFilter(s.payload, uKey, mode)) continue;
+            Map<String, Object> row = new LinkedHashMap<>(s.payload);
+            row.put("sticky", true);
+            row.put("live", false); // not in this scan — kept from earlier
+            row.put("firstSeenAt", s.firstSeenAt);
+            row.put("lastSeenAt", s.lastSeenAt);
+            merged.add(row);
+        }
+        return merged;
+    }
+
+    private void purgeExpiredSticky() {
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        java.time.LocalTime now = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        // Clear after market close or next calendar day
+        boolean afterClose = now.isAfter(java.time.LocalTime.of(15, 35));
+        stickySignals.entrySet().removeIf(e ->
+                !today.equals(e.getValue().day) || afterClose);
+        if (afterClose) stickySignals.clear();
+    }
+
+    private static boolean matchesFilter(Map<String, Object> opp, String uKey, String mode) {
+        String u = String.valueOf(opp.getOrDefault("underlying", "")).toUpperCase(Locale.ROOT);
+        if (!"ALL".equals(uKey) && !uKey.equals(u)) return false;
+        String em = String.valueOf(opp.getOrDefault("expiryMode", "MONTHLY")).toUpperCase(Locale.ROOT);
+        if ("BOTH".equals(mode)) return true;
+        return mode.equals(em);
+    }
+
+    private static String stickyKey(Map<String, Object> opp) {
+        return String.valueOf(opp.getOrDefault("underlying", "")).toUpperCase(Locale.ROOT) + "|"
+                + opp.getOrDefault("strike", 0) + "|"
+                + String.valueOf(opp.getOrDefault("action", "")).toUpperCase(Locale.ROOT) + "|"
+                + opp.getOrDefault("expiryDate", "") + "|"
+                + String.valueOf(opp.getOrDefault("expiryMode", "")).toUpperCase(Locale.ROOT);
     }
 
     private List<Map<String, Object>> scanOne(String u, String spotKey, String mode) {
@@ -203,6 +285,8 @@ public class BidParityService {
     }
 
     private record CachedScan(long atMs, List<Map<String, Object>> opps) {}
+
+    private record StickySignal(Map<String, Object> payload, long firstSeenAt, long lastSeenAt, LocalDate day) {}
 
     /** Parse NFO:NIFTY25AUGFUT → last monthly expiry for that contract month. */
     public static LocalDate resolveFuturesExpiry(String underlying, String futKey) {

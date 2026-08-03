@@ -1193,9 +1193,10 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
   const [underlying, setUnderlying] = useState('ALL');
   const [expiryMode, setExpiryMode] = useState('BOTH'); // MONTHLY | WEEKLY | BOTH
   const [expandedId, setExpandedId] = useState(null);
-  const [minEdge, setMinEdge] = useState(50);
+  const [minEdge, setMinEdge] = useState(300);
   const [paperLots, setPaperLots] = useState(1);
   const lastDataRef = React.useRef(null);
+  const stickyRef = React.useRef(new Map()); // client belt-and-suspenders
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['bid-parity-scan', underlying, expiryMode],
@@ -1211,11 +1212,39 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
     placeholderData: (prev) => prev ?? lastDataRef.current ?? undefined,
   });
 
-  const opps = (data?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) >= minEdge);
+  // Merge server list into sticky map — never drop a signal once seen this session
+  const opps = React.useMemo(() => {
+    const incoming = data?.opportunities || [];
+    const map = stickyRef.current;
+    const now = Date.now();
+    for (const o of incoming) {
+      const edge = Number(o.edgeAfterCosts || 0);
+      const key = `${o.underlying}|${o.strike}|${o.action}|${o.expiryDate}|${o.expiryMode || ''}`;
+      if (edge >= 300 || map.has(key) || o.sticky) {
+        const prev = map.get(key);
+        map.set(key, {
+          ...o,
+          sticky: true,
+          live: o.live !== false,
+          firstSeenAt: prev?.firstSeenAt || o.firstSeenAt || now,
+          lastSeenAt: now,
+        });
+      }
+    }
+    // If this response was empty/timeout, keep prior sticky rows
+    let rows = [...map.values()];
+    if (underlying !== 'ALL') rows = rows.filter(r => r.underlying === underlying);
+    if (expiryMode !== 'BOTH') rows = rows.filter(r => (r.expiryMode || 'MONTHLY') === expiryMode);
+    rows = rows.filter(o => (o.edgeAfterCosts || 0) >= minEdge);
+    rows.sort((a, b) => (b.edgeAfterCosts || 0) - (a.edgeAfterCosts || 0));
+    return rows;
+  }, [data, underlying, expiryMode, minEdge]);
+
   const marketClosed = data?.marketClosed;
   const scanMs = data?.scanMs;
   const timedOut = !!data?.timedOut;
   const scanReason = data?.reason;
+  const stickyCount = opps.filter(o => o.sticky && o.live === false).length;
 
   const LOT = { NIFTY: 25, BANKNIFTY: 15, FINNIFTY: 25, MIDCPNIFTY: 50 };
   const LIQ = { NIFTY: 'high', BANKNIFTY: 'high', FINNIFTY: 'medium', MIDCPNIFTY: 'thin' };
@@ -1271,13 +1300,18 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
               {scanMs}ms
             </span>
           )}
+          {opps.length > 0 && (
+            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+              {opps.length} held{stickyCount > 0 ? ` · ${stickyCount} sticky` : ''}
+            </span>
+          )}
         </div>
       </div>
 
       <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl space-y-1">
         <div>
-          Model: <span className="font-bold text-slate-900">Black-76</span> (C−P = DF·(F−K)). Real edges are usually a few points —
-          empty NIFTY/BN often means the book is tight, not a broken scanner. Default min ₹50 after costs.
+          Model: <span className="font-bold text-slate-900">Black-76</span> (C−P = DF·(F−K)).
+          Default min <span className="font-bold">₹300</span>. Once a signal prints ≥ ₹300 it <span className="font-bold text-emerald-700">stays on this board until market close</span> — it will not flicker away.
         </div>
         <div>
           <span className="text-emerald-700">NIFTY / BANKNIFTY</span> — best for live.{' '}
@@ -1366,6 +1400,9 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
                         <td className="px-2 py-1.5 font-bold text-slate-800">
                           {opp.underlying}
                           {thin && <div className="text-[9px] text-amber-700 font-bold">thinner book</div>}
+                          {opp.sticky && opp.live === false && (
+                            <div className="text-[9px] text-emerald-700 font-bold">HELD</div>
+                          )}
                         </td>
                         <td className="px-2 py-1.5">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${weekly ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-700'}`}>
