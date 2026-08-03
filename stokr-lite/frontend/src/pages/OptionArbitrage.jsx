@@ -1542,6 +1542,8 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, 
   const [expandedId, setExpandedId] = useState(null);
   const [minEdge, setMinEdge] = useState(300);
   const [paperLots, setPaperLots] = useState(1);
+  const [sortColumn, setSortColumn] = useState('edge');
+  const [sortDirection, setSortDirection] = useState('desc');
   const lastDataRef = React.useRef(null);
   const stickyRef = React.useRef(new Map()); // client belt-and-suspenders
 
@@ -1559,6 +1561,36 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, 
     placeholderData: (prev) => prev ?? lastDataRef.current ?? undefined,
   });
 
+  const handleSort = (col) => {
+    if (sortColumn === col) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortColumn(col);
+      setSortDirection(col === 'symbol' || col === 'side' || col === 'expiry' ? 'asc' : 'desc');
+    }
+  };
+
+  const LiveSortHeader = ({ col, label, align = 'left' }) => {
+    const isSel = sortColumn === col;
+    return (
+      <th
+        onClick={() => handleSort(col)}
+        className={`px-2 py-2 cursor-pointer hover:bg-slate-100 transition select-none ${
+          align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
+        }`}
+      >
+        <div className={`flex items-center gap-0.5 ${
+          align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'
+        }`}>
+          <span>{label}</span>
+          <span className={`text-[9px] ${isSel ? 'text-amber-700' : 'text-slate-400'}`}>
+            {isSel ? (sortDirection === 'asc' ? '▲' : '▼') : '↕'}
+          </span>
+        </div>
+      </th>
+    );
+  };
+
   // Merge server list into sticky map — never drop a signal once seen this session
   const opps = React.useMemo(() => {
     const incoming = data?.opportunities || [];
@@ -1567,18 +1599,19 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, 
     for (const o of incoming) {
       const edge = Number(o.edgeAfterCosts || 0);
       const key = `${o.underlying}|${o.strike}|${o.action}|${o.expiryDate}|${o.expiryMode || ''}`;
-      if (edge >= 300 || map.has(key) || o.sticky) {
-        const prev = map.get(key);
-        const peak = Math.max(edge, Number(prev?.peakEdgeAfterCosts || 0), Number(o.peakEdgeAfterCosts || 0));
-        map.set(key, {
-          ...o,
-          sticky: true,
-          live: o.live !== false,
-          peakEdgeAfterCosts: peak,
-          firstSeenAt: prev?.firstSeenAt || o.firstSeenAt || now,
-          lastSeenAt: now,
-        });
-      }
+      // Always merge server rows for this scan; sticky keeps ≥₹300 prints for the day
+      const keepSticky = edge >= 300 || map.has(key) || o.sticky;
+      if (!keepSticky && edge < minEdge) continue;
+      const prev = map.get(key);
+      const peak = Math.max(edge, Number(prev?.peakEdgeAfterCosts || 0), Number(o.peakEdgeAfterCosts || 0));
+      map.set(key, {
+        ...o,
+        sticky: keepSticky || !!prev?.sticky || !!o.sticky || peak >= 300,
+        live: o.live !== false,
+        peakEdgeAfterCosts: peak,
+        firstSeenAt: prev?.firstSeenAt || o.firstSeenAt || now,
+        lastSeenAt: now,
+      });
     }
     // If this response was empty/timeout, keep prior sticky rows
     let rows = [...map.values()];
@@ -1586,9 +1619,54 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, 
     if (expiryMode !== 'BOTH') rows = rows.filter(r => (r.expiryMode || 'MONTHLY') === expiryMode);
     // Sticky rows stay visible even if live edge later dips below min
     rows = rows.filter(o => o.sticky || (o.peakEdgeAfterCosts || o.edgeAfterCosts || 0) >= minEdge);
-    rows.sort((a, b) => (b.peakEdgeAfterCosts || b.edgeAfterCosts || 0) - (a.peakEdgeAfterCosts || a.edgeAfterCosts || 0));
+
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    const num = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const str = (v) => String(v ?? '').toUpperCase();
+    rows.sort((a, b) => {
+      let cmp = 0;
+      switch (sortColumn) {
+        case 'symbol':
+          cmp = str(a.underlying).localeCompare(str(b.underlying));
+          break;
+        case 'expiry':
+          cmp = str(a.expiryDate).localeCompare(str(b.expiryDate))
+            || str(a.expiryMode || 'MONTHLY').localeCompare(str(b.expiryMode || 'MONTHLY'));
+          break;
+        case 'strike':
+          cmp = num(a.strike) - num(b.strike);
+          break;
+        case 'side':
+          cmp = str(a.action).localeCompare(str(b.action));
+          break;
+        case 'spot':
+          cmp = num(a.spotPrice) - num(b.spotPrice);
+          break;
+        case 'ce':
+          cmp = num(a.ceBid) - num(b.ceBid);
+          break;
+        case 'pe':
+          cmp = num(a.peBid) - num(b.peBid);
+          break;
+        case 'pts':
+          cmp = num(a.edgePoints) - num(b.edgePoints);
+          break;
+        case 'edge':
+        default:
+          cmp = num(a.peakEdgeAfterCosts || a.edgeAfterCosts) - num(b.peakEdgeAfterCosts || b.edgeAfterCosts);
+          break;
+      }
+      if (cmp === 0) {
+        cmp = num(b.peakEdgeAfterCosts || b.edgeAfterCosts) - num(a.peakEdgeAfterCosts || a.edgeAfterCosts);
+        return cmp;
+      }
+      return cmp * dir;
+    });
     return rows;
-  }, [data, underlying, expiryMode, minEdge]);
+  }, [data, underlying, expiryMode, minEdge, sortColumn, sortDirection]);
 
   const marketClosed = data?.marketClosed;
   const fromTodayBoard = !!data?.fromTodayBoard;
@@ -1733,7 +1811,9 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, 
               {timedOut
                 ? 'Try BANKNIFTY Monthly, then Refresh. ALL+Both is heaviest.'
                 : marketClosed
-                  ? 'Signals appear here as they print during the session and remain after close.'
+                  ? underlying === 'NIFTY'
+                    ? 'NIFTY Black-76 edges today stayed well below ₹300 — lower Min edge (e.g. ₹100) or switch to BANKNIFTY / ALL.'
+                    : 'Signals appear here as they print during the session and remain after close.'
                   : 'Try filter ALL · lower Min edge to ₹0–50 · Black-76 means tight NIFTY/BN books often show nothing'}
               {scanMs != null ? ` · last scan ${scanMs}ms` : ''}
             </div>
@@ -1743,15 +1823,15 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh, 
             <table className="w-full text-xs text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
-                  <th className="px-2 py-2">Symbol</th>
-                  <th className="px-2 py-2">Expiry</th>
-                  <th className="px-2 py-2">Strike</th>
-                  <th className="px-2 py-2">Side</th>
-                  <th className="px-2 py-2 text-right">Spot / Fut</th>
-                  <th className="px-2 py-2 text-right">CE Bid/Ask</th>
-                  <th className="px-2 py-2 text-right">PE Bid/Ask</th>
-                  <th className="px-2 py-2 text-right">Pts×Lot</th>
-                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge (₹)</th>
+                  <LiveSortHeader col="symbol" label="Symbol" />
+                  <LiveSortHeader col="expiry" label="Expiry" />
+                  <LiveSortHeader col="strike" label="Strike" />
+                  <LiveSortHeader col="side" label="Side" />
+                  <LiveSortHeader col="spot" label="Spot / Fut" align="right" />
+                  <LiveSortHeader col="ce" label="CE Bid/Ask" align="right" />
+                  <LiveSortHeader col="pe" label="PE Bid/Ask" align="right" />
+                  <LiveSortHeader col="pts" label="Pts×Lot" align="right" />
+                  <LiveSortHeader col="edge" label="Net Edge (₹)" align="right" />
                   <th className="px-2 py-2 text-center">Action</th>
                 </tr>
               </thead>
