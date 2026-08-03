@@ -7,15 +7,25 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.Month;
 import java.util.*;
+import java.util.concurrent.*;
 
 @Service
 public class BidParityService {
 
     private static final Logger log = LoggerFactory.getLogger(BidParityService.class);
+    private static final long SCAN_CACHE_TTL_MS = 1500;
+    private static final ExecutorService SCAN_POOL = Executors.newFixedThreadPool(4, r -> {
+        Thread t = new Thread(r, "bid-parity-scan");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final OptionChainService optionChainService;
     private final OptionArbHistoryService historyService;
     private final ZerodhaSpotPriceFetcher spotPriceFetcher;
+
+    private final ConcurrentHashMap<String, CachedScan> scanCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> futKeyCache = new ConcurrentHashMap<>();
 
     public BidParityService(OptionChainService optionChainService,
                             OptionArbHistoryService historyService,
@@ -35,12 +45,17 @@ public class BidParityService {
     public List<Map<String, Object>> scanBidParity(String underlying, String expiryMode) {
         String mode = expiryMode == null ? "MONTHLY" : expiryMode.trim().toUpperCase(Locale.ROOT);
         if (!Set.of("MONTHLY", "WEEKLY", "BOTH").contains(mode)) mode = "MONTHLY";
+        String uKey = underlying == null ? "ALL" : underlying.trim().toUpperCase(Locale.ROOT);
+        String cacheKey = uKey + "|" + mode;
 
-        List<String> targets = "ALL".equalsIgnoreCase(underlying)
+        CachedScan hit = scanCache.get(cacheKey);
+        if (hit != null && (System.currentTimeMillis() - hit.atMs) < SCAN_CACHE_TTL_MS) {
+            return deepCopy(hit.opps);
+        }
+
+        List<String> targets = "ALL".equals(uKey)
                 ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
-                : List.of(underlying);
-
-        List<Map<String, Object>> results = new ArrayList<>();
+                : List.of(uKey);
 
         Map<String, String> spotKeys = Map.of(
                 "NIFTY", "NSE:NIFTY 50",
@@ -49,51 +64,83 @@ public class BidParityService {
                 "FINNIFTY", "NSE:NIFTY FIN SERVICE"
         );
 
+        List<CompletableFuture<List<Map<String, Object>>>> futures = new ArrayList<>();
         for (String u : targets) {
-            try {
-                String spotKey = spotKeys.getOrDefault(u, "NSE:NIFTY 50");
-                String futKey = FuturesKeyResolver.resolveFuturesKey(u, spotPriceFetcher, spotKey);
+            final String modeFinal = mode;
+            futures.add(CompletableFuture.supplyAsync(
+                    () -> scanOne(u, spotKeys.getOrDefault(u, "NSE:NIFTY 50"), modeFinal),
+                    SCAN_POOL));
+        }
 
-                double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
-                double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
-                double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : 0;
-
-                // Prefer futures for parity; use spot only for ATM when available.
-                // Never invent futures from spot — that falsely zeros basis and creates junk edges.
-                if (fut <= 0) {
-                    log.warn("No futures quote for {} (key={}), skipping Bid Parity scan", u, futKey);
-                    continue;
+        List<Map<String, Object>> results = new ArrayList<>();
+        try {
+            CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                    .get(8, TimeUnit.SECONDS);
+            for (CompletableFuture<List<Map<String, Object>>> f : futures) {
+                List<Map<String, Object>> part = f.getNow(List.of());
+                if (part != null) results.addAll(part);
+            }
+        } catch (Exception e) {
+            log.warn("Parallel Bid Parity scan incomplete: {}", e.getMessage());
+            for (CompletableFuture<List<Map<String, Object>>> f : futures) {
+                if (f.isDone() && !f.isCompletedExceptionally()) {
+                    try { results.addAll(f.get()); } catch (Exception ignored) {}
                 }
-                boolean spotMissing = spot <= 0;
-                if (spotMissing) {
-                    log.warn("Index spot missing for {} — monthly scan uses futures {} for ATM; weekly skipped",
-                            u, fut);
-                    spot = fut; // ATM only for monthly
-                }
-
-                LocalDate futExpiry = resolveFuturesExpiry(u, futKey);
-                log.info("Scanning Bid Parity for {}: spot={}, fut={}, basis={}, futExpiry={}, key={}, mode={}",
-                        u, spot, fut, String.format("%.2f", fut - spot), futExpiry, futKey, mode);
-
-                if ("MONTHLY".equals(mode) || "BOTH".equals(mode)) {
-                    addOpps(results, optionChainService.scanBidParityChain(u, spot, fut, futExpiry, false),
-                            u, "MONTHLY", false);
-                }
-                if (("WEEKLY".equals(mode) || "BOTH".equals(mode)) && !spotMissing && Math.abs(spot - fut) >= 0.5) {
-                    addOpps(results, optionChainService.scanBidParityChain(u, spot, fut, futExpiry, true),
-                            u, "WEEKLY", true);
-                } else if ("WEEKLY".equals(mode) || "BOTH".equals(mode)) {
-                    log.warn("Skipping weekly Bid Parity for {}: need distinct spot vs fut (spot={}, fut={})",
-                            u, spot, fut);
-                }
-            } catch (Exception e) {
-                log.error("Error scanning Bid Parity for {}: {}", u, e.getMessage(), e);
             }
         }
 
         results.sort((a, b) -> Double.compare(
                 ((Number) b.getOrDefault("edgeAfterCosts", 0)).doubleValue(),
                 ((Number) a.getOrDefault("edgeAfterCosts", 0)).doubleValue()));
+
+        scanCache.put(cacheKey, new CachedScan(System.currentTimeMillis(), deepCopy(results)));
+        return results;
+    }
+
+    private List<Map<String, Object>> scanOne(String u, String spotKey, String mode) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        try {
+            String futKey = futKeyCache.computeIfAbsent(u,
+                    k -> FuturesKeyResolver.resolveFuturesKey(k, spotPriceFetcher, spotKey));
+
+            double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
+            double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
+            double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : 0;
+
+            if (fut <= 0) {
+                // stale cached key — retry resolve once
+                futKeyCache.remove(u);
+                futKey = FuturesKeyResolver.resolveFuturesKey(u, spotPriceFetcher, spotKey);
+                futKeyCache.put(u, futKey);
+                spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
+                spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
+                fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : 0;
+            }
+            if (fut <= 0) {
+                log.warn("No futures quote for {} (key={}), skipping Bid Parity scan", u, futKey);
+                return results;
+            }
+            if (spot <= 0) {
+                log.warn("Index spot missing for {} — monthly uses fut {}; weekly uses ATM-implied forward", u, fut);
+                spot = fut;
+            }
+
+            LocalDate futExpiry = resolveFuturesExpiry(u, futKey);
+            log.info("Scanning Bid Parity for {}: spot={}, fut={}, basis={}, futExpiry={}, key={}, mode={}",
+                    u, spot, fut, String.format("%.2f", fut - spot), futExpiry, futKey, mode);
+
+            if ("MONTHLY".equals(mode) || "BOTH".equals(mode)) {
+                addOpps(results, optionChainService.scanBidParityChain(u, spot, fut, futExpiry, false),
+                        u, "MONTHLY", false);
+            }
+            if ("WEEKLY".equals(mode) || "BOTH".equals(mode)) {
+                // Weekly always attempted — OptionChainService falls back to ATM-implied F
+                addOpps(results, optionChainService.scanBidParityChain(u, spot, fut, futExpiry, true),
+                        u, "WEEKLY", true);
+            }
+        } catch (Exception e) {
+            log.error("Error scanning Bid Parity for {}: {}", u, e.getMessage(), e);
+        }
         return results;
     }
 
@@ -131,11 +178,18 @@ public class BidParityService {
         }
     }
 
+    private static List<Map<String, Object>> deepCopy(List<Map<String, Object>> src) {
+        List<Map<String, Object>> out = new ArrayList<>(src.size());
+        for (Map<String, Object> m : src) out.add(new LinkedHashMap<>(m));
+        return out;
+    }
+
+    private record CachedScan(long atMs, List<Map<String, Object>> opps) {}
+
     /** Parse NFO:NIFTY25AUGFUT → last monthly expiry for that contract month. */
     public static LocalDate resolveFuturesExpiry(String underlying, String futKey) {
         try {
             String key = futKey == null ? "" : futKey.replace("NFO:", "").toUpperCase(Locale.ROOT);
-            // e.g. NIFTY25AUGFUT / BANKNIFTY25AUGFUT
             int futIdx = key.lastIndexOf("FUT");
             if (futIdx > 5) {
                 String mon = key.substring(futIdx - 3, futIdx);

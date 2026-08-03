@@ -25,17 +25,19 @@ public class OptionChainService {
 
     private static final double RISK_FREE_RATE = 0.065;
     /** Minimum executable parity edge in index points before cost. */
-    private static final double MIN_PARITY_DEVIATION = 2.0;
+    private static final double MIN_PARITY_DEVIATION = 1.5;
     /** Weekly options vs monthly fut — require a bit more deviation (basis residual). */
-    private static final double MIN_PARITY_DEVIATION_WEEKLY = 3.0;
+    private static final double MIN_PARITY_DEVIATION_WEEKLY = 2.5;
     /** Anything above this is almost always stale/crossed quotes, not arb. */
     private static final double MAX_PARITY_DEVIATION = 25.0;
     /** Minimum net edge after costs (₹) to publish an opportunity. */
-    private static final double MIN_EDGE_AFTER_COSTS = 150.0;
+    private static final double MIN_EDGE_AFTER_COSTS = 50.0;
     /** Higher bar for weekly (basis risk when hedging with monthly FUT). */
-    private static final double MIN_EDGE_AFTER_COSTS_WEEKLY = 300.0;
+    private static final double MIN_EDGE_AFTER_COSTS_WEEKLY = 100.0;
     /** Skip strikes where option spread is wider than this (pts). */
     private static final double MAX_OPTION_SPREAD = 25.0;
+    /** Flat brokerage assumption for 3 legs (discount broker ~₹20/leg). */
+    private static final double BROKERAGE_3LEG = 60.0;
 
     public OptionChainService(ZerodhaTokenManager tokenManager) {
         this.tokenManager = tokenManager;
@@ -102,28 +104,27 @@ public class OptionChainService {
                     expiryDate.atStartOfDay()).toDays();
             double yearsToExpiry = Math.max(daysToExpiry, 0.5) / 365.0;
 
-            // Parity forward: monthly uses live monthly fut; weekly uses time-interpolated forward
-            // so we don't invent false edges from F_monthly − F_weekly basis.
+            // Parity forward: monthly = live monthly fut. Weekly = spot→fut interp when
+            // possible; else ATM option-implied forward (index spot often unavailable).
             double parityForward = futuresPrice;
             double basisResidual = 0;
+            boolean needImpliedWeeklyForward = false;
             if (weeklyParityMode) {
-                // Need a real spot≠fut basis to interpolate weekly forward. If spot was
-                // missing/cloned to fut, Tw-interp collapses to F_monthly and invents edge.
-                if (spotPrice <= 0 || Math.abs(spotPrice - futuresPrice) < 0.5) {
-                    log.warn("Weekly Bid Parity skip for {}: spot≈fut (spot={}, fut={}) — cannot interpolate weekly forward",
-                            underlying, spotPrice, futuresPrice);
-                    return opportunities;
+                boolean canInterp = spotPrice > 0 && Math.abs(spotPrice - futuresPrice) >= 0.5;
+                if (canInterp) {
+                    double daysToMonthly = Duration.between(LocalDate.now(ZoneId.of("Asia/Kolkata")).atStartOfDay(),
+                            monthlyExpiryDate.atStartOfDay()).toDays();
+                    double Tw = Math.max(daysToExpiry, 0.5);
+                    double Tm = Math.max(daysToMonthly, Tw);
+                    parityForward = spotPrice + (futuresPrice - spotPrice) * (Tw / Tm);
+                    basisResidual = futuresPrice - parityForward;
+                    log.info("Weekly Bid Parity {}: weeklyExp={}, monthlyExp={}, F_m={}, F_w_interp={}, basisResidual={}",
+                            underlying, expiryDate, monthlyExpiryDate,
+                            String.format("%.2f", futuresPrice), String.format("%.2f", parityForward),
+                            String.format("%.2f", basisResidual));
+                } else {
+                    needImpliedWeeklyForward = true;
                 }
-                double daysToMonthly = Duration.between(LocalDate.now(ZoneId.of("Asia/Kolkata")).atStartOfDay(),
-                        monthlyExpiryDate.atStartOfDay()).toDays();
-                double Tw = Math.max(daysToExpiry, 0.5);
-                double Tm = Math.max(daysToMonthly, Tw);
-                parityForward = spotPrice + (futuresPrice - spotPrice) * (Tw / Tm);
-                basisResidual = futuresPrice - parityForward;
-                log.info("Weekly Bid Parity {}: weeklyExp={}, monthlyExp={}, F_m={}, F_w_interp={}, basisResidual={}",
-                        underlying, expiryDate, monthlyExpiryDate,
-                        String.format("%.2f", futuresPrice), String.format("%.2f", parityForward),
-                        String.format("%.2f", basisResidual));
             }
 
             List<String> instruments = new ArrayList<>();
@@ -132,11 +133,25 @@ public class OptionChainService {
                 instruments.addAll(buildNfoSymbolCandidates(underlying, expiryDate, strike, "PE"));
             }
 
-            log.info("Scanning {} strikes for {} (ATM={}, spot={}, fut={}, parityF={}, expiry={}, weekly={})",
-                    strikes.size(), underlying, atmStrike, spotPrice, futuresPrice, parityForward, expiryDate, weeklyParityMode);
-
             Map<String, OptionQuote> quotes = fetchQuotes(instruments);
             log.info("Got {} quotes back for {}", quotes.size(), underlying);
+
+            double df = Math.exp(-RISK_FREE_RATE * yearsToExpiry);
+            if (needImpliedWeeklyForward) {
+                Double atmImp = impliedForwardFromAtm(quotes, underlying, expiryDate, atmStrike, df);
+                if (atmImp == null || atmImp <= 0) {
+                    log.warn("Weekly Bid Parity skip for {}: no ATM-implied forward", underlying);
+                    return opportunities;
+                }
+                parityForward = atmImp;
+                basisResidual = futuresPrice - parityForward;
+                log.info("Weekly Bid Parity {}: ATM-implied F_w={} (monthly F={}, residual={})",
+                        underlying, String.format("%.2f", parityForward),
+                        String.format("%.2f", futuresPrice), String.format("%.2f", basisResidual));
+            }
+
+            log.info("Scanning {} strikes for {} (ATM={}, spot={}, fut={}, parityF={}, expiry={}, weekly={})",
+                    strikes.size(), underlying, atmStrike, spotPrice, futuresPrice, parityForward, expiryDate, weeklyParityMode);
 
             double minEdge = weeklyParityMode ? MIN_EDGE_AFTER_COSTS_WEEKLY : MIN_EDGE_AFTER_COSTS;
             double minDev = weeklyParityMode ? MIN_PARITY_DEVIATION_WEEKLY : MIN_PARITY_DEVIATION;
@@ -152,26 +167,17 @@ public class OptionChainService {
                 if ((peQuote.ask - peQuote.bid) > MAX_OPTION_SPREAD) continue;
 
                 validStrikes++;
-                // NSE index options are futures-style (Black-76):
-                //   C - P = DF * (F - K)
-                // Comparing undiscounted F to DF*K (stock-style) invents ~F*r*T fake
-                // conversion edges (~₹2–4k on BN/NIFTY) — do NOT do that.
-                double df = Math.exp(-RISK_FREE_RATE * yearsToExpiry);
-                double fairSynth = df * (parityForward - strike); // DF*(F-K)
+                // NSE index options are futures-style (Black-76): C - P = DF * (F - K)
+                double fairSynth = df * (parityForward - strike);
 
-                // CONVERSION: BUY CE@ask, SELL PE@bid, SELL FUT → edge if fair > paid
-                double paidSynth = ceQuote.ask - peQuote.bid; // debit to buy synthetic forward
+                double paidSynth = ceQuote.ask - peQuote.bid;
                 double conversionPts = fairSynth - paidSynth;
-
-                // REVERSAL: SELL CE@bid, BUY PE@ask, BUY FUT → edge if received > fair
                 double receivedSynth = ceQuote.bid - peQuote.ask;
                 double reversalPts = receivedSynth - fairSynth;
 
-                // Liquidity: ≥1 lot on touch; near expiry / weekly demand deeper book
                 int lotSize = getLotSize(underlying);
-                int minTouchQty = (weeklyParityMode || daysToExpiry <= 3) ? lotSize * 2 : lotSize;
+                int minTouchQty = lotSize;
 
-                // Mid-market must still show edge — kills one-sided stale touch prints
                 double ceMid = (ceQuote.bid + ceQuote.ask) / 2.0;
                 double peMid = (peQuote.bid + peQuote.ask) / 2.0;
                 double midSynth = ceMid - peMid;
@@ -409,13 +415,31 @@ public class OptionChainService {
     }
 
     /**
-     * Touch edge must clear minDev, stay under MAX (stale quote guard), and mid-market
-     * must still show ≥50% of the touch edge (or at least minDev/2).
+     * Touch edge must clear minDev, stay under MAX, and mid-market must still show
+     * meaningful edge (≥35% of touch or minDev/2) — filters one-sided stale prints.
      */
     private boolean isTradableParityEdge(double touchPts, double midPts, double minDev) {
         if (touchPts < minDev || touchPts > MAX_PARITY_DEVIATION) return false;
-        if (midPts < Math.max(minDev * 0.5, touchPts * 0.5)) return false;
+        if (midPts < Math.max(minDev * 0.5, touchPts * 0.35)) return false;
         return true;
+    }
+
+    /** ATM mid synthetic → implied forward: F = K + (C_mid − P_mid) / DF. */
+    private Double impliedForwardFromAtm(Map<String, OptionQuote> quotes, String underlying,
+                                         LocalDate expiryDate, int atmStrike, double df) {
+        if (df <= 0) return null;
+        int step = getStrikeStep(underlying);
+        for (int offset : new int[]{0, step, -step, 2 * step, -2 * step}) {
+            int k = atmStrike + offset;
+            OptionQuote ce = getFirstValidQuote(quotes, buildNfoSymbolCandidates(underlying, expiryDate, k, "CE"));
+            OptionQuote pe = getFirstValidQuote(quotes, buildNfoSymbolCandidates(underlying, expiryDate, k, "PE"));
+            if (ce == null || pe == null) continue;
+            if (ce.bid <= 0 || ce.ask <= 0 || pe.bid <= 0 || pe.ask <= 0) continue;
+            double ceMid = (ce.bid + ce.ask) / 2.0;
+            double peMid = (pe.bid + pe.ask) / 2.0;
+            return k + (ceMid - peMid) / df;
+        }
+        return null;
     }
 
     private double calculateParityEdge(double parityDev, String underlying) {
@@ -423,7 +447,7 @@ public class OptionChainService {
         int lotSize = getLotSize(underlying);
         double grossEdge = pts * lotSize;
         double stt = grossEdge * 0.001;
-        double brokerage = 120.0; // ~3 legs * ₹40
+        double brokerage = BROKERAGE_3LEG;
         double exchange = grossEdge * 0.000345;
         double sebi = grossEdge * 0.000001;
         double gst = (brokerage + exchange) * 0.18;

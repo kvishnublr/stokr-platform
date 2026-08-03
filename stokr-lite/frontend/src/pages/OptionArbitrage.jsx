@@ -1105,8 +1105,9 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
   const [underlying, setUnderlying] = useState('ALL');
   const [expiryMode, setExpiryMode] = useState('BOTH'); // MONTHLY | WEEKLY | BOTH
   const [expandedId, setExpandedId] = useState(null);
-  const [minEdge, setMinEdge] = useState(150);
+  const [minEdge, setMinEdge] = useState(50);
   const [paperLots, setPaperLots] = useState(1);
+  const lastDataRef = React.useRef(null);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['bid-parity-scan', underlying, expiryMode],
@@ -1114,14 +1115,17 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
       const res = await client.get('/option-arbitrage/bid-parity/scan', {
         params: { underlying, expiry: expiryMode },
       });
+      lastDataRef.current = res.data;
       return res.data;
     },
-    refetchInterval: autoRefresh ? 5000 : false,
-    staleTime: 2000,
+    refetchInterval: autoRefresh ? 4000 : false,
+    staleTime: 1200,
+    placeholderData: (prev) => prev ?? lastDataRef.current ?? undefined,
   });
 
   const opps = (data?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) >= minEdge);
   const marketClosed = data?.marketClosed;
+  const scanMs = data?.scanMs;
 
   const LOT = { NIFTY: 25, BANKNIFTY: 15, FINNIFTY: 25, MIDCPNIFTY: 50 };
   const LIQ = { NIFTY: 'high', BANKNIFTY: 'high', FINNIFTY: 'medium', MIDCPNIFTY: 'thin' };
@@ -1172,27 +1176,33 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
           <button onClick={() => refetch()} className="px-3 py-1 rounded-lg bg-slate-900 text-white font-bold">
             {isFetching ? 'Scanning…' : 'Refresh'}
           </button>
+          {scanMs != null && (
+            <span className={`font-mono font-bold ${scanMs <= 2000 ? 'text-emerald-600' : 'text-amber-600'}`}>
+              {scanMs}ms
+            </span>
+          )}
         </div>
       </div>
 
       <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl space-y-1">
         <div>
-          Model: <span className="font-bold text-slate-900">Black-76 futures parity</span> (C−P = DF·(F−K)). Real edges are usually a few points after costs — not ₹2–4k. Click a row for payoff + quality badge.
+          Model: <span className="font-bold text-slate-900">Black-76</span> (C−P = DF·(F−K)). Real edges are usually a few points —
+          empty NIFTY/BN often means the book is tight, not a broken scanner. Default min ₹50 after costs.
         </div>
         <div>
-          <span className="text-emerald-700">NIFTY / BANKNIFTY</span> — best for live (deep book).{' '}
-          <span className="text-amber-700">FINNIFTY / MIDCPNIFTY</span> — thinner books; verify touch qty. Prefer paper until scan shows sparse OK-quality edges.
+          <span className="text-emerald-700">NIFTY / BANKNIFTY</span> — best for live.{' '}
+          <span className="text-amber-700">FINNIFTY / MIDCPNIFTY</span> — thinner; verify touch qty. Use filter <span className="font-bold">ALL</span> to see everything fast.
         </div>
         {(expiryMode === 'WEEKLY' || expiryMode === 'BOTH') && (
           <div>
-            Weekly needs a real spot≠fut basis to interpolate forward; hedge still uses <span className="font-bold">monthly FUT</span>. Skipped when spot is missing/cloned.
+            Weekly uses ATM-implied forward when index spot is missing; hedge still <span className="font-bold">monthly FUT</span> (basis risk).
           </div>
         )}
       </div>
 
-      {opps.some(o => Number(o.edgeAfterCosts) > 1500 && String(o.parityModel || '') !== 'BLACK76_FUTURES') && (
+      {opps.some(o => Number(o.edgeAfterCosts) > 1500) && (
         <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold px-4 py-3 rounded-xl">
-          Large ₹ edges without Black-76 stamp look like the old stock-parity bug — do not live-trade. Refresh after deploy; true edges should be much smaller.
+          Large ₹ edges (&gt;1500) look inflated — check payoff Quality badge before trading.
         </div>
       )}
 
@@ -1209,11 +1219,15 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
       )}
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
-        {isLoading ? (
+        {isLoading && !data ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Bid Parity feeds...</div>
         ) : opps.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm font-semibold">
-            No executable bid-parity edges ≥ ₹{minEdge} for {underlying} ({expiryMode})
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold space-y-1">
+            <div>No executable bid-parity edges ≥ ₹{minEdge} for {underlying} ({expiryMode})</div>
+            <div className="text-[11px] font-medium text-slate-400">
+              Try filter ALL · lower Min edge to ₹0–50 · Black-76 means tight NIFTY/BN books often show nothing
+              {scanMs != null ? ` · last scan ${scanMs}ms` : ''}
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto w-full">
