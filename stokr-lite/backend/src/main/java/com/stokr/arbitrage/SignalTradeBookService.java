@@ -179,6 +179,16 @@ public class SignalTradeBookService {
      * (or when live scan is empty). Deduped by strike fingerprint, peak edge kept.
      */
     public List<Map<String, Object>> todaysLiveBoardSignals(String underlying, String expiryMode, double minEdge) {
+        return todaysLiveBoardSignals("BID", underlying, expiryMode, minEdge);
+    }
+
+    /**
+     * Today's saved signals for a strategy Live board (BID / BOX / …).
+     * Deduped by fingerprint; peak edge kept. Flattens costBreakdown for Box UI.
+     */
+    public List<Map<String, Object>> todaysLiveBoardSignals(String strategyNeedle, String underlying,
+                                                            String expiryMode, double minEdge) {
+        String needle = strategyNeedle == null || strategyNeedle.isBlank() ? "BID" : strategyNeedle.trim();
         String uKey = underlying == null ? "ALL" : underlying.trim().toUpperCase(Locale.ROOT);
         String mode = expiryMode == null ? "BOTH" : expiryMode.trim().toUpperCase(Locale.ROOT);
         LocalDate today = LocalDate.now(IST);
@@ -186,7 +196,7 @@ public class SignalTradeBookService {
         LocalDateTime to = today.atTime(LocalTime.MAX);
 
         List<OptionArbOpportunity> opps = opportunityRepo
-                .findByStrategyNeedleAndScanTimeBetween("BID", from, to);
+                .findByStrategyNeedleAndScanTimeBetween(needle, from, to);
 
         Map<String, Map<String, Object>> byKey = new LinkedHashMap<>();
         for (OptionArbOpportunity o : opps) {
@@ -196,11 +206,20 @@ public class SignalTradeBookService {
             if (edge < minEdge) continue;
 
             Map<String, Object> row = o.toMap();
-            // Infer weekly vs monthly from description/notes when present
+            // Infer weekly vs monthly from description/notes/strategy when present
             String expMode = "MONTHLY";
             String desc = ((o.getDescription() != null ? o.getDescription() : "")
-                    + " " + (o.getNotes() != null ? o.getNotes() : "")).toUpperCase(Locale.ROOT);
+                    + " " + (o.getNotes() != null ? o.getNotes() : "")
+                    + " " + (o.getStrategyType() != null ? o.getStrategyType() : "")).toUpperCase(Locale.ROOT);
             if (desc.contains("WEEKLY") || desc.contains("WEEK ")) expMode = "WEEKLY";
+            Object costsObj = row.get("costBreakdown");
+            if (costsObj instanceof Map<?, ?> costs) {
+                for (String k : List.of("lowerStrike", "upperStrike", "boxCost", "fairValue", "width", "payoff", "costsInr")) {
+                    if (costs.containsKey(k) && !row.containsKey(k)) {
+                        row.put(k, costs.get(k));
+                    }
+                }
+            }
             row.put("expiryMode", expMode);
             if (!"BOTH".equals(mode) && !mode.equals(expMode)) continue;
 

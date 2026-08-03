@@ -127,8 +127,15 @@ public class BoxSpreadService {
             for (LocalDate expiry : expiries) {
                 List<ArbitrageOpportunity> opps = scanBoxSpreadForUnderlying(u, spot, fut > 0 ? fut : ref, expiry);
                 if (opps == null || opps.isEmpty()) continue;
-                historyService.saveOpportunities(opps, u, "BOX_SPREAD");
                 String expiryMode = expiry.equals(monthly) ? "MONTHLY" : "WEEKLY";
+                // Stamp expiry mode into description so after-hours board can filter WEEKLY/MONTHLY
+                for (ArbitrageOpportunity opp : opps) {
+                    String d = opp.description != null ? opp.description : "";
+                    if (!d.toUpperCase(Locale.ROOT).contains(expiryMode)) {
+                        opp.description = "[" + expiryMode + "] " + d;
+                    }
+                }
+                historyService.saveOpportunities(opps, u, "BOX_SPREAD");
                 for (ArbitrageOpportunity opp : opps) {
                     Map<String, Object> map = opp.toMap();
                     map.put("strategyType", "BOX_SPREAD");

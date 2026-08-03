@@ -2386,10 +2386,10 @@ function BoxSpreadView({ handleExecuteInline, executionBroker, autoRefresh = tru
   const lastDataRef = React.useRef(null);
 
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['box-spread-scan', underlying, expiryMode],
+    queryKey: ['box-spread-scan', underlying, expiryMode, minEdge],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/box-spread/scan', {
-        params: { underlying, expiry: expiryMode },
+        params: { underlying, expiry: expiryMode, minEdge },
       });
       lastDataRef.current = res.data;
       return res.data;
@@ -2401,6 +2401,7 @@ function BoxSpreadView({ handleExecuteInline, executionBroker, autoRefresh = tru
 
   const opps = (data?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) >= minEdge);
   const marketClosed = data?.marketClosed;
+  const fromTodayBoard = !!data?.fromTodayBoard;
   const scanMs = data?.scanMs;
 
   return (
@@ -2432,17 +2433,36 @@ function BoxSpreadView({ handleExecuteInline, executionBroker, autoRefresh = tru
             {isFetching ? 'Scanning…' : 'Refresh'}
           </button>
           {scanMs != null && <span className={`font-mono font-bold ${scanMs <= 2000 ? 'text-emerald-600' : 'text-amber-600'}`}>{scanMs}ms</span>}
+          {opps.length > 0 && (
+            <span className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded">
+              {opps.length} held
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl">
-        Fair = DF·(K2−K1). Same-expiry 4 legs. Not auto-fired by Bid Parity 3-leg exec — use Paper Submit.
-        Empty NIFTY/BN often means tight books (healthy), not a broken scanner.
+      <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl space-y-1">
+        <div>
+          Fair = DF·(K2−K1). Same-expiry 4 legs. Default min <span className="font-bold">₹75</span> after ~₹80 costs.
+          Once a signal prints it <span className="font-bold text-emerald-700">stays on this board for the day</span> — including after close.
+        </div>
+        <div>
+          <span className="text-emerald-700">NIFTY / BANKNIFTY</span> books are usually tight (often no print).{' '}
+          <span className="text-amber-700">MIDCP / FIN</span> thinner — verify spreads before paper.
+        </div>
       </div>
 
       {marketClosed && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-4 py-3 rounded-xl">
-          Market closed — box scan runs Mon–Fri 09:15–15:30 IST.
+          Market closed (Mon–Fri 09:15–15:30 IST). Showing <b>today&apos;s signals</b> on this board
+          {fromTodayBoard ? ` · ${opps.length} print${opps.length === 1 ? '' : 's'}` : ''}.
+          Live scan resumes next session.
+        </div>
+      )}
+
+      {!marketClosed && fromTodayBoard && (
+        <div className="bg-sky-50 border border-sky-200 text-sky-900 text-xs font-semibold px-4 py-3 rounded-xl">
+          No fresh live prints right now — showing today&apos;s saved box signals (≥ ₹{minEdge}).
         </div>
       )}
 
@@ -2450,9 +2470,18 @@ function BoxSpreadView({ handleExecuteInline, executionBroker, autoRefresh = tru
         {isLoading && !data ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Box Spreads...</div>
         ) : opps.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm font-semibold">
-            No executable box edges ≥ ₹{minEdge} for {underlying} ({expiryMode})
-            {scanMs != null ? ` · ${scanMs}ms` : ''}
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold space-y-1">
+            <div>
+              {marketClosed
+                ? `No Box Spread signals ≥ ₹${minEdge} saved for today (${underlying} / ${expiryMode}).`
+                : `No executable box edges ≥ ₹${minEdge} for ${underlying} (${expiryMode})`}
+              {scanMs != null ? ` · ${scanMs}ms` : ''}
+            </div>
+            <div className="text-[11px] font-medium text-slate-400">
+              {marketClosed
+                ? 'NIFTY/BN often print nothing on tight books — try ALL or MIDCPNIFTY, or check History.'
+                : 'Empty NIFTY/BN often means tight books (healthy). Try ALL · lower Min ₹.'}
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto w-full">
@@ -2478,11 +2507,19 @@ function BoxSpreadView({ handleExecuteInline, executionBroker, autoRefresh = tru
                   const costVal = Number(opp.boxCost ?? 0);
                   const fairVal = Number(opp.fairValue ?? 0);
                   const widthVal = Number(opp.width ?? (strike2 - strike1));
+                  const thin = String(opp.underlying || '').toUpperCase() === 'MIDCPNIFTY'
+                    || String(opp.underlying || '').toUpperCase() === 'FINNIFTY';
                   return (
                     <React.Fragment key={`${opp.action}-${strike1}-${strike2}-${opp.expiryDate}-${idx}`}>
                       <tr onClick={() => setExpandedId(isExp ? null : idx)}
                         className={`transition cursor-pointer ${isExp ? 'bg-purple-50/70 border-l-4 border-purple-600' : 'hover:bg-slate-50'}`}>
-                        <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-800">
+                          {opp.underlying}
+                          {thin && <div className="text-[9px] text-amber-700 font-bold">thinner book</div>}
+                          {opp.fromTodayBoard && (
+                            <div className="text-[9px] text-emerald-700 font-bold">HELD</div>
+                          )}
+                        </td>
                         <td className="px-2 py-1.5">
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">{opp.expiryMode || '—'}</span>
                           <div className="text-[10px] text-slate-500 font-mono mt-0.5">{opp.expiryDate || '—'}</div>
@@ -2494,6 +2531,9 @@ function BoxSpreadView({ handleExecuteInline, executionBroker, autoRefresh = tru
                         <td className="px-2 py-1.5 text-right font-mono">{widthVal}</td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
                           +₹{Math.round(opp.edgeAfterCosts || 0).toLocaleString('en-IN')}
+                          {Number(opp.edgeAfterCosts) > 400 && (
+                            <div className="text-[9px] text-rose-600 font-bold">check book</div>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-center">
                           <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}

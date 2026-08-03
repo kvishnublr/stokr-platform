@@ -234,32 +234,50 @@ public class OptionArbitrageController {
     @GetMapping("/box-spread/scan")
     public ResponseEntity<Map<String, Object>> scanBoxSpread(
             @RequestParam(defaultValue = "ALL") String underlying,
-            @RequestParam(defaultValue = "BOTH") String expiry) {
+            @RequestParam(defaultValue = "BOTH") String expiry,
+            @RequestParam(defaultValue = "75") double minEdge) {
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
         if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
-            return ResponseEntity.ok(Map.of(
-                "timestamp", System.currentTimeMillis(),
-                "underlying", underlying,
-                "expiryMode", expiry,
-                "marketClosed", true,
-                "opportunities", Collections.emptyList(),
-                "count", 0,
-                "scanMs", 0,
-                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
-            ));
+            long t0 = System.currentTimeMillis();
+            List<Map<String, Object>> today = tradeBookService.todaysLiveBoardSignals(
+                    "BOX", underlying, expiry, minEdge);
+            Map<String, Object> closed = new LinkedHashMap<>();
+            closed.put("timestamp", System.currentTimeMillis());
+            closed.put("underlying", underlying);
+            closed.put("expiryMode", expiry);
+            closed.put("marketClosed", true);
+            closed.put("fromTodayBoard", true);
+            closed.put("opportunities", today);
+            closed.put("count", today.size());
+            closed.put("scanMs", System.currentTimeMillis() - t0);
+            closed.put("reason", "Market closed — showing today's Box Spread signals (Live board).");
+            closed.put("note", "After hours: Live Signals defaults to today's saved prints (≥ min edge).");
+            return ResponseEntity.ok(closed);
         }
         long t0 = System.currentTimeMillis();
         List<Map<String, Object>> opps = boxSpreadService.scanBoxSpread(underlying, expiry);
         long scanMs = System.currentTimeMillis() - t0;
+        boolean usedTodayFallback = false;
+        if (opps == null || opps.isEmpty()) {
+            List<Map<String, Object>> today = tradeBookService.todaysLiveBoardSignals(
+                    "BOX", underlying, expiry, minEdge);
+            if (!today.isEmpty()) {
+                opps = today;
+                usedTodayFallback = true;
+            }
+        }
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
         resp.put("expiryMode", expiry);
         resp.put("marketClosed", false);
-        resp.put("opportunities", opps);
-        resp.put("count", opps.size());
+        resp.put("fromTodayBoard", usedTodayFallback);
+        resp.put("opportunities", opps != null ? opps : Collections.emptyList());
+        resp.put("count", opps != null ? opps.size() : 0);
         resp.put("scanMs", scanMs);
-        resp.put("note", "Same-expiry 4-leg box vs DF·(K2−K1). Paper-only (not Bid Parity 3-leg auto-exec).");
+        resp.put("note", usedTodayFallback
+                ? "No fresh live prints — showing today's saved Box Spread signals."
+                : "Same-expiry 4-leg box vs DF·(K2−K1). Paper-only (not Bid Parity 3-leg auto-exec).");
         return ResponseEntity.ok(resp);
     }
 
