@@ -47,13 +47,38 @@ public class BidParityAutoExitMonitor {
         if (buffer > 500) buffer = 500;
 
         try {
-            List<LivePosition> exited = tradeBookService.autoExitNearTargetEdge("BID", buffer);
-            for (LivePosition p : exited) {
+            // Preview candidates then broker-close live ones before marking EXITED
+            Map<String, Object> book = tradeBookService.getPositionsBook("BID", false);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> positions = (List<Map<String, Object>>) book.getOrDefault("positions", List.of());
+            for (Map<String, Object> row : positions) {
+                Object idObj = row.get("id");
+                if (!(idObj instanceof Number n)) continue;
+                long id = n.longValue();
+                double target = row.get("targetEdge") instanceof Number t ? t.doubleValue() : 0;
+                double pnl = row.get("currentPnl") instanceof Number p ? p.doubleValue()
+                        : row.get("pnl") instanceof Number p2 ? p2.doubleValue() : 0;
+                if (target <= 0) continue;
+                double thr = SignalTradeBookService.autoExitThreshold(target, buffer);
+                if (pnl + 1e-9 < thr) continue;
+
+                LivePosition pos = tradeBookService.findPosition(id);
+                if (pos == null) continue;
+                boolean brokerOk = autoExecService.closeLiveHedge(pos);
+                if (!brokerOk) {
+                    log.warn("AUTO-EXIT broker close failed for pos#{} — not marking EXITED yet", id);
+                    autoExecService.addLog("EXIT", "BLOCKED",
+                            "AUTO near-edge pos#" + id + " broker close failed — retry next tick");
+                    continue;
+                }
+                LivePosition closed = tradeBookService.exitPosition(id, pnl,
+                        String.format(java.util.Locale.ROOT,
+                                "AUTO_EXIT_NEAR_EDGE target=%.2f thr=%.2f pnl=%.2f", target, thr, pnl));
                 log.info("AUTO-EXIT near edge: pos#{} {} {} strike={} targetEdge={} exitPnl={}",
-                        p.getId(), p.getUnderlying(), p.getAction(), p.getStrike(),
-                        p.getTargetEdge(), p.getCurrentPnl());
+                        closed.getId(), closed.getUnderlying(), closed.getAction(), closed.getStrike(),
+                        closed.getTargetEdge(), closed.getCurrentPnl());
                 autoExecService.addLog("EXIT", "OK",
-                        "AUTO near-edge pos#" + p.getId() + " pnl=" + p.getCurrentPnl());
+                        "AUTO near-edge pos#" + closed.getId() + " pnl=" + closed.getCurrentPnl());
             }
         } catch (Exception e) {
             log.warn("Bid Parity auto-exit tick failed: {}", e.getMessage());

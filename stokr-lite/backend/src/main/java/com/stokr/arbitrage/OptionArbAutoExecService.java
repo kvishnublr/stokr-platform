@@ -369,7 +369,7 @@ public class OptionArbAutoExecService {
 
         String broker = String.valueOf(settings.getOrDefault("broker", "NAVIA")).toUpperCase(Locale.ROOT);
         int maxPositions = ((Number) settings.getOrDefault("maxOpenPositions", 3)).intValue();
-        long currentOpen = positionRepo.countAllOpen();
+        long currentOpen = countLiveOpenPositions();
         if (currentOpen >= maxPositions) {
             addLog("RISK", "SKIP", "Max open positions reached: " + currentOpen);
             return;
@@ -473,11 +473,13 @@ public class OptionArbAutoExecService {
                 continue;
             }
 
-            if (positionRepo.findByUserIdAndStatusOrderByEnteredAtDesc(userId, "OPEN").stream()
-                    .anyMatch(p -> Objects.equals(opp.getId(), p.getOpportunityId())
-                            || (Objects.equals(p.getUnderlying(), opp.getUnderlying())
-                            && Objects.equals(p.getStrike(), opp.getStrike())
-                            && "OPEN".equals(p.getStatus())))) {
+            if (positionRepo.findActiveByFingerprint(
+                    opp.getUnderlying(), opp.getStrike(), action, "BID").stream().findFirst().isPresent()
+                    || positionRepo.findByOpportunityIdOrderByEnteredAtDesc(opp.getId()).stream()
+                    .anyMatch(p -> {
+                        String s = p.getStatus() != null ? p.getStatus().toUpperCase(Locale.ROOT) : "";
+                        return "OPEN".equals(s) || "ENTERED".equals(s) || "PARTIAL".equals(s) || "EXECUTING".equals(s);
+                    })) {
                 continue;
             }
 
@@ -798,6 +800,105 @@ public class OptionArbAutoExecService {
         int yy = monthly.getYear() % 100;
         String mon = monthly.getMonth().name().substring(0, 3);
         return String.format("%s%02d%sFUT", underlying.replace(" ", ""), yy, mon);
+    }
+
+    /** Count non-paper active Bid Parity / live positions. */
+    public long countLiveOpenPositions() {
+        return positionRepo.findAllActive().stream()
+                .filter(p -> {
+                    String id = p.getCeOrderId() != null ? p.getCeOrderId() : "";
+                    return !id.startsWith("PAPER");
+                })
+                .count();
+    }
+
+    private static boolean isPaperPosition(LivePosition pos) {
+        if (pos == null) return true;
+        String id = pos.getCeOrderId() != null ? pos.getCeOrderId() : "";
+        if (id.startsWith("PAPER")) return true;
+        String msg = pos.getErrorMessage() != null ? pos.getErrorMessage().toUpperCase(Locale.ROOT) : "";
+        return msg.contains("PAPER");
+    }
+
+    /**
+     * Close a live 3-leg hedge at market (reverse CE/PE/FUT).
+     * No-op for paper positions. Returns true if broker close attempted successfully
+     * or position is paper (caller should still mark EXITED in trade book).
+     */
+    public boolean closeLiveHedge(LivePosition pos) {
+        if (pos == null) return false;
+        if (isPaperPosition(pos)) {
+            addLog("EXIT", "PAPER", "pos#" + pos.getId() + " virtual close (no broker orders)");
+            return true;
+        }
+        applyLegacyAliases();
+        String broker = String.valueOf(settings.getOrDefault("broker", "NAVIA")).toUpperCase(Locale.ROOT);
+        try {
+            BrokerAccount account = resolveBrokerAccount(broker);
+            if (account == null) {
+                addLog("EXIT", "ERROR", "pos#" + pos.getId() + " no ACTIVE " + broker + " account");
+                return false;
+            }
+            BrokerAdapter adapter = brokerService.getAdapter(broker);
+            if ("NAVIA".equals(broker) && adapter instanceof NaviaAdapter navia) {
+                String fresh = navia.loginWithTotp(account);
+                account.setAccessToken(fresh);
+                brokerAccountRepo.save(account);
+            }
+            String action = normalizeAction(pos.getAction());
+            if (action == null) action = "CONVERSION";
+            boolean conversion = "CONVERSION".equals(action);
+
+            String ceSymbol = pos.getCeSymbol();
+            String peSymbol = pos.getPeSymbol();
+            String futSymbolRaw = pos.getFutSymbol();
+            final String futSymbol = (futSymbolRaw == null || futSymbolRaw.isBlank())
+                    ? buildMonthlyFutSymbol(pos.getUnderlying())
+                    : futSymbolRaw;
+            if (ceSymbol == null || peSymbol == null) {
+                addLog("EXIT", "ERROR", "pos#" + pos.getId() + " missing option symbols");
+                return false;
+            }
+
+            int lots = pos.getLots() != null ? Math.max(1, pos.getLots()) : 1;
+            int lotSize = pos.getLotSize() != null ? pos.getLotSize()
+                    : OptionChainService.getLotSize(pos.getUnderlying());
+            boolean naviaLots = adapter instanceof NaviaAdapter
+                    || "NAVIA".equalsIgnoreCase(adapter.getBrokerName());
+            int qty = naviaLots ? lots : lots * lotSize;
+            String token = account.getAccessToken();
+            int timeoutSec = parallelTimeoutSec();
+
+            // Reverse entry sides
+            BrokerOrderRequest.Side ceSide = conversion ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
+            BrokerOrderRequest.Side peSide = conversion ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL;
+            BrokerOrderRequest.Side futSide = conversion ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL;
+
+            addLog("EXIT", "FIRING", "pos#" + pos.getId() + " " + pos.getUnderlying() + " "
+                    + pos.getStrike() + " " + action + " CLOSE 3-leg qty=" + qty);
+
+            CompletableFuture<BrokerOrderResponse> ceF = CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, ceSymbol, ceSide, qty), execPool);
+            CompletableFuture<BrokerOrderResponse> peF = CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, peSymbol, peSide, qty), execPool);
+            CompletableFuture<BrokerOrderResponse> futF = CompletableFuture.supplyAsync(
+                    () -> place(adapter, token, futSymbol, futSide, qty), execPool);
+
+            CompletableFuture.allOf(ceF, peF, futF).get(timeoutSec, TimeUnit.SECONDS);
+            boolean ceOk = isPlaced(ceF.getNow(null));
+            boolean peOk = isPlaced(peF.getNow(null));
+            boolean futOk = isPlaced(futF.getNow(null));
+            addLog("EXIT", (ceOk && peOk && futOk) ? "OK" : "PARTIAL",
+                    "pos#" + pos.getId()
+                            + " CE:" + statusOf(ceF.getNow(null))
+                            + " PE:" + statusOf(peF.getNow(null))
+                            + " FUT:" + statusOf(futF.getNow(null)));
+            return ceOk && peOk && futOk;
+        } catch (Exception e) {
+            addLog("EXIT", "ERROR", "pos#" + pos.getId() + " " + e.getMessage());
+            log.error("closeLiveHedge failed pos#{}: {}", pos.getId(), e.getMessage());
+            return false;
+        }
     }
 
     void addLog(String type, String status, String message) {

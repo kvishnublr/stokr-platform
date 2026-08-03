@@ -406,6 +406,19 @@ public class OptionArbitrageController {
             Double pnl = null;
             if (body != null && body.get("pnl") instanceof Number n) pnl = n.doubleValue();
             String note = body != null ? String.valueOf(body.getOrDefault("note", "manual")) : "manual";
+            LivePosition existing = tradeBookService.findPosition(id);
+            if (existing == null) {
+                resp.put("status", "ERROR");
+                resp.put("message", "Position not found: " + id);
+                return ResponseEntity.ok(resp);
+            }
+            boolean brokerOk = autoExecService.closeLiveHedge(existing);
+            if (!brokerOk) {
+                resp.put("status", "ERROR");
+                resp.put("message", "Broker close failed — position left OPEN for retry");
+                addAuditLog("EXIT", "ERROR", "pos=" + id + " broker close failed");
+                return ResponseEntity.ok(resp);
+            }
             LivePosition pos = tradeBookService.exitPosition(id, pnl, note);
             resp.put("status", "EXITED");
             resp.put("tradeStatus", "EXITED");

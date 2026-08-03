@@ -55,8 +55,10 @@ public class OptionArbAutoExecuteService {
     }
 
     public boolean isAutoExecEnabled() {
-        return settingsRepo.findBySettingKey("auto_execute_enabled")
-            .map(s -> "true".equalsIgnoreCase(s.getSettingValue()))
+        // Legacy Zerodha ExecutedTrade loop — OFF unless explicitly re-enabled.
+        // Live Bid Parity uses OptionArbAutoExecService (LivePosition + Navia/broker).
+        return settingsRepo.findBySettingKey("legacy_zerodha_auto_exec")
+            .map(s -> "true".equalsIgnoreCase(s.getSettingValue()) || "1".equals(s.getSettingValue()))
             .orElse(false);
     }
 

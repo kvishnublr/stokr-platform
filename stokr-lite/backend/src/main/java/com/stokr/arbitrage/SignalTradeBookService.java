@@ -301,6 +301,10 @@ public class SignalTradeBookService {
         cache.clear();
     }
 
+    public LivePosition findPosition(long positionId) {
+        return livePositionRepo.findById(positionId).orElse(null);
+    }
+
     public LivePosition exitPosition(long positionId, Double pnlOverride, String note) {
         LivePosition pos = livePositionRepo.findById(positionId)
                 .orElseThrow(() -> new IllegalArgumentException("Position not found: " + positionId));
