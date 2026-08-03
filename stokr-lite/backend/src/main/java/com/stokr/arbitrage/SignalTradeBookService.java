@@ -23,6 +23,8 @@ public class SignalTradeBookService {
     private static final Logger log = LoggerFactory.getLogger(SignalTradeBookService.class);
     private static final long CACHE_TTL_MS = 2000;
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+    /** Default: exit when live PnL ≥ targetEdge − 10 (e.g. 300 → 290). */
+    public static final double AUTO_EXIT_NEAR_BUFFER_DEFAULT = 10.0;
 
     private final OptionArbOpportunityRepository opportunityRepo;
     private final LivePositionRepository livePositionRepo;
@@ -229,6 +231,10 @@ public class SignalTradeBookService {
             }
             row.put("pnl", Math.round(pnl * 100.0) / 100.0);
             row.put("pnlLabel", pnl >= 0 ? "PROFIT" : "LOSS");
+            double target = p.getTargetEdge() != null ? p.getTargetEdge().doubleValue() : 0;
+            double autoExitAt = autoExitThreshold(target, AUTO_EXIT_NEAR_BUFFER_DEFAULT);
+            row.put("autoExitAt", target > 0 ? autoExitAt : null);
+            row.put("autoExitNearBuffer", AUTO_EXIT_NEAR_BUFFER_DEFAULT);
             items.add(row);
         }
 
@@ -241,7 +247,51 @@ public class SignalTradeBookService {
         out.put("openPnl", Math.round(openPnl * 100.0) / 100.0);
         out.put("closedPnl", Math.round(closedPnl * 100.0) / 100.0);
         out.put("netPnl", Math.round((openPnl + closedPnl) * 100.0) / 100.0);
+        out.put("autoExitNearBuffer", AUTO_EXIT_NEAR_BUFFER_DEFAULT);
         return out;
+    }
+
+    /**
+     * Exit threshold derived from entry edge: targetEdge − buffer.
+     * Example: edge 300, buffer 10 → exit when live PnL ≥ 290.
+     */
+    public static double autoExitThreshold(double targetEdge, double nearBuffer) {
+        if (targetEdge <= 0) return 0;
+        double buf = Math.max(0, nearBuffer);
+        return Math.round(Math.max(0, targetEdge - buf) * 100.0) / 100.0;
+    }
+
+    /**
+     * Scan active Bid/Box positions; exit when live PnL ≥ targetEdge − nearBuffer.
+     * Also refreshes stored currentPnl for open legs.
+     */
+    public List<LivePosition> autoExitNearTargetEdge(String strategyNeedle, double nearBuffer) {
+        String needle = strategyNeedle == null || strategyNeedle.isBlank() ? "BID" : strategyNeedle.trim();
+        List<LivePosition> active = livePositionRepo.findByStrategyNeedle(needle).stream()
+                .filter(SignalTradeBookService::isActive)
+                .toList();
+        if (active.isEmpty()) return List.of();
+
+        Map<Long, Double> livePnl = computeLivePnlForActive(active);
+        List<LivePosition> exited = new ArrayList<>();
+        for (LivePosition p : active) {
+            double pnl = livePnl.getOrDefault(p.getId(),
+                    p.getCurrentPnl() != null ? p.getCurrentPnl().doubleValue() : 0);
+            // Keep MTM warm for Positions UI
+            p.setCurrentPnl(BigDecimal.valueOf(Math.round(pnl * 100.0) / 100.0));
+            livePositionRepo.save(p);
+
+            double target = p.getTargetEdge() != null ? p.getTargetEdge().doubleValue() : 0;
+            if (target <= 0) continue;
+            double thr = autoExitThreshold(target, nearBuffer);
+            if (pnl + 1e-9 >= thr) {
+                LivePosition closed = exitPosition(p.getId(), pnl,
+                        String.format(Locale.ROOT, "AUTO_EXIT_NEAR_EDGE target=%.2f thr=%.2f pnl=%.2f",
+                                target, thr, pnl));
+                exited.add(closed);
+            }
+        }
+        return exited;
     }
 
     public void invalidate() {

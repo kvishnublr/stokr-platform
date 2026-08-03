@@ -944,7 +944,8 @@ function BidParityPositionsView({ executionBroker, autoRefresh = true }) {
       </div>
 
       <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl">
-        Live mark-to-market on open legs · Paper exits are virtual · Auto-exec stays separate from manual Exit here.
+        Auto-exit: when live PnL reaches near the entry edge (edge ₹300 → exit ≥ ₹290 by default).
+        Manual Exit still works anytime · Paper exits are virtual · Entry auto-exec stays separate.
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
@@ -966,6 +967,7 @@ function BidParityPositionsView({ executionBroker, autoRefresh = true }) {
                   <th className="px-2 py-2">Side</th>
                   <th className="px-2 py-2">Strike</th>
                   <th className="px-2 py-2 text-right">Target edge</th>
+                  <th className="px-2 py-2 text-right">Auto-exit ≥</th>
                   <th className="px-2 py-2 text-right">Live / Exit PnL</th>
                   <th className="px-2 py-2">P/L</th>
                   <th className="px-2 py-2">Entered</th>
@@ -979,6 +981,10 @@ function BidParityPositionsView({ executionBroker, autoRefresh = true }) {
                   const open = st === 'ENTERED' || st === 'OPEN' || st === 'PARTIAL' || st === 'EXECUTING';
                   const pnl = open ? Number(p.currentPnl ?? p.pnl ?? 0) : Number(p.exitPnl ?? p.pnl ?? 0);
                   const mode = p.mode || (String(p.ceOrderId || '').startsWith('PAPER') ? 'PAPER' : 'LIVE');
+                  const target = Number(p.targetEdge || 0);
+                  const autoAt = p.autoExitAt != null
+                    ? Number(p.autoExitAt)
+                    : (target > 0 ? Math.max(0, target - 10) : null);
                   return (
                     <tr key={p.id} className="hover:bg-slate-50">
                       <td className="px-2 py-1.5">
@@ -995,7 +1001,10 @@ function BidParityPositionsView({ executionBroker, autoRefresh = true }) {
                       <td className="px-2 py-1.5 font-bold text-purple-700">{p.action}</td>
                       <td className="px-2 py-1.5 font-bold">{p.strike}</td>
                       <td className="px-2 py-1.5 text-right font-mono text-emerald-700">
-                        ₹{Math.round(Number(p.targetEdge || 0)).toLocaleString('en-IN')}
+                        ₹{Math.round(target).toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono text-amber-800">
+                        {autoAt != null ? `₹${Math.round(autoAt).toLocaleString('en-IN')}` : '—'}
                       </td>
                       <td className={`px-2 py-1.5 text-right font-mono font-black ${pnlCls(pnl)}`}>
                         ₹{Math.round(pnl).toLocaleString('en-IN')}
@@ -1081,6 +1090,8 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
       marginUsageCap: Number(settings.marginUsageCap ?? 0.85),
       parallelTimeoutSec: Number(settings.parallelTimeoutSec ?? 8),
       strategyFilter: settings.strategyFilter || 'PARITY',
+      bidParityAutoExitEnabled: settings.bidParityAutoExitEnabled !== false,
+      bidParityExitNearBuffer: Number(settings.bidParityExitNearBuffer ?? 10),
     });
   }, [settings]);
 
@@ -1325,6 +1336,38 @@ function BidParityConfigView({ executionBroker, changeExecutionBroker }) {
         <p className="text-[11px] text-slate-500 mt-3">
           Before each fire: refresh Navia TOTP → fetch AvailableMargin → require ≥ gate → require hedged estimate ≤ AvailableMargin × usage cap → place CE+PE+FUT in parallel (Navia qty = lots).
         </p>
+      </div>
+
+      {/* Auto exit near entry edge */}
+      <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-4">
+        <h3 className="text-sm font-bold text-slate-800 mb-1">Auto Exit (near entry edge)</h3>
+        <p className="text-[11px] text-slate-500 mb-3">
+          If you enter at edge ₹300, exit automatically when live PnL reaches ₹{Math.max(0, 300 - Number(form.bidParityExitNearBuffer || 10))}
+          (target − buffer). Works even when auto-exec entry is OFF.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs items-end">
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Auto exit enabled</label>
+            <button type="button"
+              onClick={() => setField('bidParityAutoExitEnabled', !form.bidParityAutoExitEnabled)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${
+                form.bidParityAutoExitEnabled
+                  ? 'bg-emerald-600 text-white border-emerald-700'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}>
+              {form.bidParityAutoExitEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
+          <div>
+            <label className="font-semibold text-slate-600 block mb-1">Near-edge buffer ₹</label>
+            <input type="number" min={0} max={200} value={form.bidParityExitNearBuffer}
+              onChange={e => setField('bidParityExitNearBuffer', Number(e.target.value) || 0)}
+              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 font-mono" />
+          </div>
+          <div className="text-[11px] text-slate-600 font-semibold pb-1">
+            Example: edge 300 → auto-exit ≥ ₹{Math.max(0, 300 - Number(form.bidParityExitNearBuffer || 10))}
+          </div>
+        </div>
       </div>
 
       {/* Open positions */}

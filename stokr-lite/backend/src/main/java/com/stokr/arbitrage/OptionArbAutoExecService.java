@@ -89,6 +89,9 @@ public class OptionArbAutoExecService {
         settings.put("availableMarginGate", DEFAULT_MIN_AVAILABLE_MARGIN);
         settings.put("marginUsageCap", DEFAULT_MARGIN_USAGE_CAP);
         settings.put("parallelTimeoutSec", 8);
+        // Auto-exit when live PnL ≥ targetEdge − buffer (independent of entry auto-exec)
+        settings.put("bidParityAutoExitEnabled", true);
+        settings.put("bidParityExitNearBuffer", 10.0);
     }
 
     private void loadFromDb() {
@@ -173,7 +176,8 @@ public class OptionArbAutoExecService {
             }
         } else if (k.endsWith("MinEdge") || "maxDailyLoss".equals(k) || "min_edge_after_costs".equals(k)
                 || "scanner_minEdgeAfterCosts".equals(k)
-                || "availableMarginGate".equals(k) || "marginUsageCap".equals(k)) {
+                || "availableMarginGate".equals(k) || "marginUsageCap".equals(k)
+                || "bidParityExitNearBuffer".equals(k) || "bid_parity_exit_near_buffer".equals(k)) {
             try { settings.put(k, Double.parseDouble(v)); } catch (Exception ignored) {}
         } else if (k.endsWith("Lots") || "maxOpenPositions".equals(k) || "max_total_positions".equals(k)
                 || "max_positions_per_underlying".equals(k) || "parallelTimeoutSec".equals(k)) {
@@ -221,6 +225,17 @@ public class OptionArbAutoExecService {
         out.put("parallelLegs", true);
         out.put("qtyMode", "NAVIA_LOTS_OTHERS_UNITS");
         out.put("hedgedMarginEstimate", new LinkedHashMap<>(HEDGED_MARGIN));
+        boolean autoExit = settings.get("bidParityAutoExitEnabled") instanceof Boolean
+                ? Boolean.TRUE.equals(settings.get("bidParityAutoExitEnabled"))
+                : parseBool(String.valueOf(settings.getOrDefault("bid_parity_auto_exit", "true")));
+        out.put("bidParityAutoExitEnabled", autoExit);
+        Object buf = settings.getOrDefault("bidParityExitNearBuffer",
+                settings.getOrDefault("bid_parity_exit_near_buffer", 10.0));
+        try {
+            out.put("bidParityExitNearBuffer", Double.parseDouble(String.valueOf(buf)));
+        } catch (Exception e) {
+            out.put("bidParityExitNearBuffer", 10.0);
+        }
         return out;
     }
 
@@ -784,7 +799,11 @@ public class OptionArbAutoExecService {
         return String.format("%s%02d%sFUT", underlying.replace(" ", ""), yy, mon);
     }
 
-    private void addLog(String type, String status, String message) {
+    void addLog(String type, String status, String message) {
+        addLogInternal(type, status, message);
+    }
+
+    private void addLogInternal(String type, String status, String message) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("id", System.currentTimeMillis());
         entry.put("time", LocalTime.now(ZoneId.of("Asia/Kolkata"))
