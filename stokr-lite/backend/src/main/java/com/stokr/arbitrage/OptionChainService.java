@@ -28,6 +28,8 @@ public class OptionChainService {
     private static final double MIN_PARITY_DEVIATION = 2.0;
     /** Weekly options vs monthly fut — require a bit more deviation (basis residual). */
     private static final double MIN_PARITY_DEVIATION_WEEKLY = 3.0;
+    /** Anything above this is almost always stale/crossed quotes, not arb. */
+    private static final double MAX_PARITY_DEVIATION = 25.0;
     /** Minimum net edge after costs (₹) to publish an opportunity. */
     private static final double MIN_EDGE_AFTER_COSTS = 150.0;
     /** Higher bar for weekly (basis risk when hedging with monthly FUT). */
@@ -105,6 +107,13 @@ public class OptionChainService {
             double parityForward = futuresPrice;
             double basisResidual = 0;
             if (weeklyParityMode) {
+                // Need a real spot≠fut basis to interpolate weekly forward. If spot was
+                // missing/cloned to fut, Tw-interp collapses to F_monthly and invents edge.
+                if (spotPrice <= 0 || Math.abs(spotPrice - futuresPrice) < 0.5) {
+                    log.warn("Weekly Bid Parity skip for {}: spot≈fut (spot={}, fut={}) — cannot interpolate weekly forward",
+                            underlying, spotPrice, futuresPrice);
+                    return opportunities;
+                }
                 double daysToMonthly = Duration.between(LocalDate.now(ZoneId.of("Asia/Kolkata")).atStartOfDay(),
                         monthlyExpiryDate.atStartOfDay()).toDays();
                 double Tw = Math.max(daysToExpiry, 0.5);
@@ -143,32 +152,50 @@ public class OptionChainService {
                 if ((peQuote.ask - peQuote.bid) > MAX_OPTION_SPREAD) continue;
 
                 validStrikes++;
-                double dfK = strike * Math.exp(-RISK_FREE_RATE * yearsToExpiry);
+                // NSE index options are futures-style (Black-76):
+                //   C - P = DF * (F - K)
+                // Comparing undiscounted F to DF*K (stock-style) invents ~F*r*T fake
+                // conversion edges (~₹2–4k on BN/NIFTY) — do NOT do that.
+                double df = Math.exp(-RISK_FREE_RATE * yearsToExpiry);
+                double fairSynth = df * (parityForward - strike); // DF*(F-K)
 
-                // CONVERSION: BUY CE@ask, SELL PE@bid, SELL FUT (monthly)
-                double synthBuy = ceQuote.ask - peQuote.bid + dfK;
-                double conversionPts = parityForward - synthBuy;
+                // CONVERSION: BUY CE@ask, SELL PE@bid, SELL FUT → edge if fair > paid
+                double paidSynth = ceQuote.ask - peQuote.bid; // debit to buy synthetic forward
+                double conversionPts = fairSynth - paidSynth;
 
-                // REVERSAL: SELL CE@bid, BUY PE@ask, BUY FUT (monthly)
-                double synthSell = ceQuote.bid - peQuote.ask + dfK;
-                double reversalPts = synthSell - parityForward;
+                // REVERSAL: SELL CE@bid, BUY PE@ask, BUY FUT → edge if received > fair
+                double receivedSynth = ceQuote.bid - peQuote.ask;
+                double reversalPts = receivedSynth - fairSynth;
 
-                if (conversionPts >= minDev) {
+                // Liquidity: ≥1 lot on touch; near expiry / weekly demand deeper book
+                int lotSize = getLotSize(underlying);
+                int minTouchQty = (weeklyParityMode || daysToExpiry <= 3) ? lotSize * 2 : lotSize;
+
+                // Mid-market must still show edge — kills one-sided stale touch prints
+                double ceMid = (ceQuote.bid + ceQuote.ask) / 2.0;
+                double peMid = (peQuote.bid + peQuote.ask) / 2.0;
+                double midSynth = ceMid - peMid;
+                double midConversionPts = fairSynth - midSynth;
+                double midReversalPts = midSynth - fairSynth;
+
+                if (isTradableParityEdge(conversionPts, midConversionPts, minDev)
+                        && ceQuote.askQty >= minTouchQty && peQuote.bidQty >= minTouchQty) {
                     double edge = calculateParityEdge(conversionPts, underlying);
                     if (edge >= minEdge) {
                         opportunities.add(buildParityOpportunity(
                                 underlying, strike, ceQuote, peQuote, conversionPts, edge,
                                 daysToExpiry, spotPrice, futuresPrice, true, expiryDate,
-                                weeklyParityMode, parityForward, basisResidual));
+                                weeklyParityMode, parityForward, basisResidual, df, fairSynth));
                     }
                 }
-                if (reversalPts >= minDev) {
+                if (isTradableParityEdge(reversalPts, midReversalPts, minDev)
+                        && ceQuote.bidQty >= minTouchQty && peQuote.askQty >= minTouchQty) {
                     double edge = calculateParityEdge(reversalPts, underlying);
                     if (edge >= minEdge) {
                         opportunities.add(buildParityOpportunity(
                                 underlying, strike, ceQuote, peQuote, reversalPts, edge,
                                 daysToExpiry, spotPrice, futuresPrice, false, expiryDate,
-                                weeklyParityMode, parityForward, basisResidual));
+                                weeklyParityMode, parityForward, basisResidual, df, fairSynth));
                     }
                 }
             }
@@ -381,6 +408,16 @@ public class OptionChainService {
         return candidates.isEmpty() ? null : candidates.get(0);
     }
 
+    /**
+     * Touch edge must clear minDev, stay under MAX (stale quote guard), and mid-market
+     * must still show ≥50% of the touch edge (or at least minDev/2).
+     */
+    private boolean isTradableParityEdge(double touchPts, double midPts, double minDev) {
+        if (touchPts < minDev || touchPts > MAX_PARITY_DEVIATION) return false;
+        if (midPts < Math.max(minDev * 0.5, touchPts * 0.5)) return false;
+        return true;
+    }
+
     private double calculateParityEdge(double parityDev, String underlying) {
         double pts = Math.abs(parityDev);
         int lotSize = getLotSize(underlying);
@@ -398,15 +435,17 @@ public class OptionChainService {
             OptionQuote ceQuote, OptionQuote peQuote, double parityDev,
             double edgeAfterCosts, double daysToExpiry, double spotPrice, double futuresPrice,
             boolean conversion, LocalDate expiryDate) {
+        double df = Math.exp(-RISK_FREE_RATE * Math.max(daysToExpiry, 0.5) / 365.0);
+        double fairSynth = df * (futuresPrice - strike);
         return buildParityOpportunity(underlying, strike, ceQuote, peQuote, parityDev, edgeAfterCosts,
-                daysToExpiry, spotPrice, futuresPrice, conversion, expiryDate, false, futuresPrice, 0);
+                daysToExpiry, spotPrice, futuresPrice, conversion, expiryDate, false, futuresPrice, 0, df, fairSynth);
     }
 
     private ArbitrageOpportunity buildParityOpportunity(String underlying, int strike,
             OptionQuote ceQuote, OptionQuote peQuote, double parityDev,
             double edgeAfterCosts, double daysToExpiry, double spotPrice, double futuresPrice,
             boolean conversion, LocalDate expiryDate, boolean weeklyParityMode,
-            double parityForward, double basisResidual) {
+            double parityForward, double basisResidual, double df, double fairSynth) {
 
         ArbitrageOpportunity opp = new ArbitrageOpportunity();
         opp.underlying = underlying;
@@ -427,6 +466,10 @@ public class OptionChainService {
         if (weeklyParityMode) {
             opp.confidence = Math.max(40.0, opp.confidence - 10.0); // basis residual haircut
         }
+        // Spot cloned from fut → lower confidence (no real basis)
+        if (spotPrice > 0 && futuresPrice > 0 && Math.abs(spotPrice - futuresPrice) < 0.05) {
+            opp.confidence = Math.max(35.0, opp.confidence - 8.0);
+        }
         opp.daysToExpiry = daysToExpiry;
         opp.expiryDate = expiryDate;
 
@@ -435,15 +478,15 @@ public class OptionChainService {
             opp.legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
                     strike, ceQuote.ask, strike, peQuote.bid, underlying, futuresPrice);
             opp.description = weeklyParityMode
-                    ? "Weekly options cheap vs interp. forward — BUY CE / SELL PE / SELL monthly FUT (basis risk)"
-                    : "Futures rich vs synthetic — BUY CE / SELL PE / SELL FUT";
+                    ? "Weekly Black-76 parity — BUY CE / SELL PE / SELL monthly FUT (basis risk)"
+                    : "Futures-style parity — BUY CE / SELL PE / SELL FUT";
         } else {
             opp.action = "REVERSAL";
             opp.legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
                     strike, ceQuote.bid, strike, peQuote.ask, underlying, futuresPrice);
             opp.description = weeklyParityMode
-                    ? "Weekly synthetic rich vs interp. forward — SELL CE / BUY PE / BUY monthly FUT (basis risk)"
-                    : "Synthetic rich vs futures — SELL CE / BUY PE / BUY FUT";
+                    ? "Weekly Black-76 parity — SELL CE / BUY PE / BUY monthly FUT (basis risk)"
+                    : "Futures-style parity — SELL CE / BUY PE / BUY FUT";
         }
 
         Map<String, Double> costs = new LinkedHashMap<>();
@@ -452,6 +495,12 @@ public class OptionChainService {
         costs.put("lotSize", (double) getLotSize(underlying));
         costs.put("parityForward", Math.round(parityForward * 100.0) / 100.0);
         costs.put("basisResidual", Math.round(basisResidual * 100.0) / 100.0);
+        costs.put("df", Math.round(df * 1_000_000.0) / 1_000_000.0);
+        costs.put("fairSynth", Math.round(fairSynth * 100.0) / 100.0);
+        costs.put("ceBidQty", (double) ceQuote.bidQty);
+        costs.put("ceAskQty", (double) ceQuote.askQty);
+        costs.put("peBidQty", (double) peQuote.bidQty);
+        costs.put("peAskQty", (double) peQuote.askQty);
         opp.costBreakdown = costs;
         return opp;
     }

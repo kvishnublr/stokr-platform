@@ -1177,16 +1177,24 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
 
       <div className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-4 py-3 rounded-xl space-y-1">
         <div>
+          Model: <span className="font-bold text-slate-900">Black-76 futures parity</span> (C−P = DF·(F−K)). Real edges are usually a few points after costs — not ₹2–4k. Click a row for payoff + quality badge.
+        </div>
+        <div>
           <span className="text-emerald-700">NIFTY / BANKNIFTY</span> — best for live (deep book).{' '}
-          <span className="text-amber-700">FINNIFTY / MIDCPNIFTY</span> — usable, but thinner books; bigger ₹ edges are often
-          just larger lot × same points (MIDCP lot 50). Prefer ≥ ₹500–1k min edge there and check bid/ask qty before fire.
+          <span className="text-amber-700">FINNIFTY / MIDCPNIFTY</span> — thinner books; verify touch qty. Prefer paper until scan shows sparse OK-quality edges.
         </div>
         {(expiryMode === 'WEEKLY' || expiryMode === 'BOTH') && (
           <div>
-            Weekly = weekly options vs interpolated forward; hedge still uses <span className="font-bold">monthly FUT</span> (basis residual). Higher min edge (₹300) applied server-side. Expiry-week of month is skipped (same as monthly).
+            Weekly needs a real spot≠fut basis to interpolate forward; hedge still uses <span className="font-bold">monthly FUT</span>. Skipped when spot is missing/cloned.
           </div>
         )}
       </div>
+
+      {opps.some(o => Number(o.edgeAfterCosts) > 1500 && String(o.parityModel || '') !== 'BLACK76_FUTURES') && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold px-4 py-3 rounded-xl">
+          Large ₹ edges without Black-76 stamp look like the old stock-parity bug — do not live-trade. Refresh after deploy; true edges should be much smaller.
+        </div>
+      )}
 
       {marketClosed && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-4 py-3 rounded-xl">
@@ -1260,6 +1268,9 @@ function BidParityLiveView({ handleExecuteInline, executionBroker, autoRefresh }
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
                           +₹{Math.round(opp.edgeAfterCosts || 0).toLocaleString('en-IN')}
+                          {(Number(opp.edgeAfterCosts) > 1500 || Number(opp.edgePoints) > 30) && (
+                            <div className="text-[9px] text-rose-600 font-bold">check model</div>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-center">
                           <button

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const LOT = { NIFTY: 25, BANKNIFTY: 15, FINNIFTY: 25, MIDCPNIFTY: 50 };
+const R = 0.065;
 
 function isConversion(action) {
   const a = String(action || '').toUpperCase();
@@ -10,12 +11,15 @@ function isConversion(action) {
 /** Expiry P&amp;L for 1 set (CE+PE+FUT), ₹. Nearly flat for true parity hedge. */
 export function buildParityPayoff(opp, lots = 1) {
   const K = Number(opp.strike) || 0;
-  const F = Number(opp.futuresPrice) || Number(opp.spotPrice) || K;
-  const spot = Number(opp.spotPrice) || F;
+  const hedgeF = Number(opp.futuresPrice) || Number(opp.spotPrice) || K;
+  const F = Number(opp.parityForward) || hedgeF;
+  const spot = Number(opp.spotPrice) || hedgeF;
   const u = String(opp.underlying || 'NIFTY').toUpperCase();
   const lotSize = Number(opp.lotSize) || LOT[u] || 25;
   const mult = lotSize * Math.max(1, lots);
   const conversion = isConversion(opp.action);
+  const dte = Math.max(Number(opp.daysToExpiry) || 1, 0.5);
+  const df = Number(opp.df) || Math.exp(-R * dte / 365);
 
   const ceAsk = Number(opp.ceAsk ?? opp.cePrice) || 0;
   const ceBid = Number(opp.ceBid ?? opp.cePrice) || 0;
@@ -24,10 +28,18 @@ export function buildParityPayoff(opp, lots = 1) {
   const ceEntry = conversion ? ceAsk : ceBid;
   const peEntry = conversion ? peBid : peAsk;
 
-  const range = Math.max(K * 0.06, (LOT[u] === 15 ? 800 : 400));
+  // Black-76 fair synthetic = DF*(parityForward-K)
+  const fairSynth = Number(opp.fairSynth) || df * (F - K);
+  const modelEdgePts = conversion
+    ? (fairSynth - (ceEntry - peEntry))
+    : ((ceEntry - peEntry) - fairSynth);
+  const modelEdgeInr = modelEdgePts * mult;
+
+  // Expiry intrinsic hedge P&L (options settle intrinsic; monthly FUT hedge)
+  const range = Math.max(K * 0.05, u.includes('BANK') ? 900 : 350);
   const minS = Math.round((spot - range) / 10) * 10;
   const maxS = Math.round((spot + range) / 10) * 10;
-  const step = Math.max(5, Math.round((maxS - minS) / 80 / 5) * 5);
+  const step = Math.max(5, Math.round((maxS - minS) / 90 / 5) * 5);
 
   const points = [];
   for (let s = minS; s <= maxS; s += step) {
@@ -37,11 +49,11 @@ export function buildParityPayoff(opp, lots = 1) {
     if (conversion) {
       cePnl = (ce - ceEntry) * mult;
       pePnl = (peEntry - pe) * mult;
-      futPnl = (F - s) * mult;
+      futPnl = (hedgeF - s) * mult;
     } else {
       cePnl = (ceEntry - ce) * mult;
       pePnl = (pe - peEntry) * mult;
-      futPnl = (s - F) * mult;
+      futPnl = (s - hedgeF) * mult;
     }
     const total = cePnl + pePnl + futPnl;
     points.push({ s, total, cePnl, pePnl, futPnl });
@@ -50,12 +62,18 @@ export function buildParityPayoff(opp, lots = 1) {
   const totals = points.map(p => p.total);
   const maxProfit = Math.max(...totals);
   const maxLoss = Math.min(...totals);
-  // Theoretical locked edge (constant term)
+  // Undiscounted locked constant vs monthly FUT hedge
   const lockedPts = conversion
-    ? (F - K - ceEntry + peEntry)
-    : (ceEntry - peEntry - F + K);
+    ? (hedgeF - K - ceEntry + peEntry)
+    : (ceEntry - peEntry - hedgeF + K);
   const lockedInr = lockedPts * mult;
-  const netEdge = Number(opp.edgeAfterCosts) || lockedInr;
+  const netEdge = Number(opp.edgeAfterCosts);
+  const scanEdge = Number.isFinite(netEdge) ? netEdge : modelEdgeInr;
+
+  // Inflated if scan edge >> model Black-76 edge (legacy stock-style bug signature)
+  const inflated = Math.abs(scanEdge) > 500 && Math.abs(scanEdge - modelEdgeInr) > Math.max(800, Math.abs(modelEdgeInr) * 3);
+  const spotEqualsFut = Math.abs(spot - hedgeF) < 0.05;
+  const quality = inflated ? 'INFLATED' : (Math.abs(modelEdgePts) < 2 ? 'NOISE' : 'OK');
 
   return {
     points,
@@ -63,7 +81,8 @@ export function buildParityPayoff(opp, lots = 1) {
     maxS,
     spot,
     strike: K,
-    fut: F,
+    fut: hedgeF,
+    parityForward: F,
     conversion,
     lotSize,
     lots: Math.max(1, lots),
@@ -71,12 +90,23 @@ export function buildParityPayoff(opp, lots = 1) {
     maxProfit,
     maxLoss,
     lockedInr,
-    netEdge,
+    modelEdgeInr,
+    modelEdgePts,
+    fairSynth,
+    df,
+    netEdge: scanEdge,
+    inflated,
+    spotEqualsFut,
+    quality,
     ceEntry,
     peEntry,
+    ceBidQty: Number(opp.ceBidQty) || 0,
+    ceAskQty: Number(opp.ceAskQty) || 0,
+    peBidQty: Number(opp.peBidQty) || 0,
+    peAskQty: Number(opp.peAskQty) || 0,
     legs: conversion
-      ? [`BUY ${K} CE @ ${ceEntry}`, `SELL ${K} PE @ ${peEntry}`, `SELL FUT @ ${F}`]
-      : [`SELL ${K} CE @ ${ceEntry}`, `BUY ${K} PE @ ${peEntry}`, `BUY FUT @ ${F}`],
+      ? [`BUY ${K} CE @ ${ceEntry}`, `SELL ${K} PE @ ${peEntry}`, `SELL FUT @ ${hedgeF}`]
+      : [`SELL ${K} CE @ ${ceEntry}`, `BUY ${K} PE @ ${peEntry}`, `BUY FUT @ ${hedgeF}`],
   };
 }
 
@@ -86,9 +116,6 @@ function money(v) {
   return `${sign}₹${Math.abs(n).toLocaleString('en-IN')}`;
 }
 
-/**
- * Opstra-style animated payoff for Bid Parity conversion / reversal.
- */
 export default function BidParityPayoffChart({
   opp,
   lots = 1,
@@ -104,16 +131,19 @@ export default function BidParityPayoffChart({
     setDrawn(false);
     const t = requestAnimationFrame(() => setDrawn(true));
     return () => cancelAnimationFrame(t);
-  }, [opp?.strike, opp?.action, opp?.expiryDate, lots]);
+  }, [opp?.strike, opp?.action, opp?.expiryDate, opp?.edgeAfterCosts, lots]);
 
   const W = 720;
-  const H = 320;
-  const pad = { l: 56, r: 24, t: 28, b: 40 };
+  const H = 340;
+  const pad = { l: 58, r: 24, t: 36, b: 42 };
   const iw = W - pad.l - pad.r;
   const ih = H - pad.t - pad.b;
 
-  const yMin = Math.min(model.maxLoss, 0) - Math.abs(model.maxProfit - model.maxLoss) * 0.15;
-  const yMax = Math.max(model.maxProfit, 0) + Math.abs(model.maxProfit - model.maxLoss) * 0.2;
+  // Zoom Y around the flat band so small real edges are visible
+  const band = Math.max(Math.abs(model.maxProfit), Math.abs(model.maxLoss), Math.abs(model.modelEdgeInr), 200);
+  const yPad = band * 0.35;
+  const yMin = Math.min(model.maxLoss, 0, model.modelEdgeInr) - yPad;
+  const yMax = Math.max(model.maxProfit, 0, model.modelEdgeInr) + yPad;
   const x = (s) => pad.l + ((s - model.minS) / Math.max(1, model.maxS - model.minS)) * iw;
   const y = (pnl) => pad.t + ((yMax - pnl) / Math.max(1e-6, yMax - yMin)) * ih;
 
@@ -124,10 +154,10 @@ export default function BidParityPayoffChart({
 
   const totalPath = pathFor('total');
   const zeroY = y(0);
+  const edgeY = y(model.modelEdgeInr);
   const spotX = x(model.spot);
   const strikeX = x(model.strike);
 
-  // Area under total curve vs zero
   const areaD = (() => {
     if (!model.points.length) return '';
     let d = `M${x(model.points[0].s)},${zeroY}`;
@@ -151,19 +181,35 @@ export default function BidParityPayoffChart({
   };
 
   const weekly = opp.expiryMode === 'WEEKLY' || opp.basisRisk || opp.strategyType === 'BID_PARITY_WEEKLY';
+  const qualityTone = model.quality === 'OK'
+    ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-100'
+    : model.quality === 'INFLATED'
+      ? 'border-rose-400/50 bg-rose-500/20 text-rose-100'
+      : 'border-amber-400/40 bg-amber-500/15 text-amber-100';
 
   return (
     <div className="bp-payoff animate-[fadeInUp_0.45s_ease-out]">
       <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-950 via-slate-900 to-amber-950 text-white shadow-xl">
-        {/* soft orbs */}
         <div className="pointer-events-none absolute -left-16 -top-20 h-56 w-56 rounded-full bg-amber-500/20 blur-3xl bp-orb" />
         <div className="pointer-events-none absolute -right-10 bottom-0 h-48 w-48 rounded-full bg-emerald-400/15 blur-3xl bp-orb-delay" />
 
         <div className="relative p-4 md:p-5 space-y-4">
+          {model.inflated && (
+            <div className="rounded-xl border border-rose-400/40 bg-rose-500/20 px-3 py-2 text-xs font-bold text-rose-100">
+              ⚠️ Scan edge looks inflated vs Black-76 futures parity. True model edge ≈ {money(model.modelEdgeInr)}
+              {' '}({model.modelEdgePts.toFixed(1)} pts) — do not treat {money(model.netEdge)} as locked profit.
+            </div>
+          )}
+          {model.quality === 'NOISE' && !model.inflated && (
+            <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100">
+              Edge within noise (&lt;2 pts). Payoff is flat near zero — not a trade.
+            </div>
+          )}
+
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300/80">
-                Expiry Payoff · Opstra-style
+                Expiry Payoff · Black-76 futures parity
               </div>
               <h3 className="text-lg font-black tracking-tight mt-0.5">
                 {opp.underlying} {model.strike}{' '}
@@ -171,18 +217,23 @@ export default function BidParityPayoffChart({
               </h3>
               <p className="text-[11px] text-slate-300 mt-1 font-medium">
                 {model.legs.join(' · ')} · lot {model.lotSize} × {model.lots}
-                {weekly ? ' · weekly basis residual' : ''}
+                {weekly ? ' · weekly + monthly FUT basis risk' : ''}
+                {model.spotEqualsFut ? ' · spot≈fut (basis unknown)' : ''}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <StatPill label="Max profit" value={money(model.maxProfit)} tone="good" />
-              <StatPill label="Max loss" value={money(model.maxLoss)} tone={model.maxLoss < -50 ? 'bad' : 'muted'} />
-              <StatPill label="Net edge" value={money(model.netEdge)} tone="accent" />
-              <StatPill label="Locked ≈" value={money(model.lockedInr)} tone="muted" />
+              <div className={`rounded-xl border px-3 py-1.5 ${qualityTone}`}>
+                <div className="text-[9px] font-bold uppercase tracking-wider opacity-70">Quality</div>
+                <div className="text-sm font-black">{model.quality}</div>
+              </div>
+              <StatPill label="True edge ≈" value={money(model.modelEdgeInr)} tone="good" />
+              <StatPill label="Max on curve" value={money(model.maxProfit)} tone="accent" />
+              <StatPill label="Min on curve" value={money(model.maxLoss)} tone={model.maxLoss < -100 ? 'bad' : 'muted'} />
+              <StatPill label="Scan net" value={money(model.netEdge)} tone={model.inflated ? 'bad' : 'muted'} />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_200px] gap-4 items-stretch">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_210px] gap-4 items-stretch">
             <div className="rounded-xl bg-slate-950/60 border border-white/10 p-2 backdrop-blur-sm">
               <svg
                 ref={svgRef}
@@ -193,7 +244,7 @@ export default function BidParityPayoffChart({
               >
                 <defs>
                   <linearGradient id="bpProfitFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#34d399" stopOpacity="0.45" />
+                    <stop offset="0%" stopColor="#34d399" stopOpacity="0.4" />
                     <stop offset="100%" stopColor="#34d399" stopOpacity="0.02" />
                   </linearGradient>
                   <linearGradient id="bpStroke" x1="0" y1="0" x2="1" y2="0">
@@ -210,61 +261,29 @@ export default function BidParityPayoffChart({
                   </filter>
                 </defs>
 
-                {/* grid */}
                 {[0.25, 0.5, 0.75].map((t) => (
-                  <line
-                    key={t}
-                    x1={pad.l}
-                    x2={W - pad.r}
-                    y1={pad.t + ih * t}
-                    y2={pad.t + ih * t}
-                    stroke="rgba(148,163,184,0.15)"
-                    strokeDasharray="4 6"
-                  />
+                  <line key={t} x1={pad.l} x2={W - pad.r} y1={pad.t + ih * t} y2={pad.t + ih * t}
+                    stroke="rgba(148,163,184,0.15)" strokeDasharray="4 6" />
                 ))}
 
-                {/* zero line */}
-                <line
-                  x1={pad.l}
-                  x2={W - pad.r}
-                  y1={zeroY}
-                  y2={zeroY}
-                  stroke="rgba(248,250,252,0.35)"
-                  strokeWidth="1.25"
-                />
+                <line x1={pad.l} x2={W - pad.r} y1={zeroY} y2={zeroY} stroke="rgba(248,250,252,0.35)" strokeWidth="1.25" />
+                {/* model edge reference */}
+                <line x1={pad.l} x2={W - pad.r} y1={edgeY} y2={edgeY} stroke="rgba(52,211,153,0.55)" strokeDasharray="6 4" strokeWidth="1.5" />
+                <text x={W - pad.r} y={edgeY - 4} textAnchor="end" fill="#6ee7b7" fontSize="10" fontWeight="700">
+                  edge {money(model.modelEdgeInr)}
+                </text>
 
-                {/* strike + spot guides */}
                 <line x1={strikeX} x2={strikeX} y1={pad.t} y2={H - pad.b} stroke="rgba(167,139,250,0.45)" strokeDasharray="3 5" />
                 <line x1={spotX} x2={spotX} y1={pad.t} y2={H - pad.b} stroke="rgba(251,191,36,0.55)" strokeDasharray="2 4" />
                 <text x={strikeX + 4} y={pad.t + 12} fill="#c4b5fd" fontSize="10" fontWeight="700">K {model.strike}</text>
                 <text x={spotX + 4} y={pad.t + 24} fill="#fcd34d" fontSize="10" fontWeight="700">Spot {Math.round(model.spot)}</text>
 
-                {/* profit/loss area */}
-                <path
-                  d={areaD}
-                  fill="url(#bpProfitFill)"
-                  className={drawn ? 'bp-area-in' : 'opacity-0'}
-                />
-
-                {/* leg ghosts */}
+                <path d={areaD} fill="url(#bpProfitFill)" className={drawn ? 'bp-area-in' : 'opacity-0'} />
                 <path d={pathFor('cePnl')} fill="none" stroke="#38bdf8" strokeWidth="1.2" strokeOpacity="0.35" strokeDasharray="4 4" className={drawn ? 'bp-line-draw' : ''} />
                 <path d={pathFor('pePnl')} fill="none" stroke="#f472b6" strokeWidth="1.2" strokeOpacity="0.35" strokeDasharray="4 4" className={drawn ? 'bp-line-draw' : ''} style={{ animationDelay: '0.08s' }} />
                 <path d={pathFor('futPnl')} fill="none" stroke="#a78bfa" strokeWidth="1.2" strokeOpacity="0.35" strokeDasharray="4 4" className={drawn ? 'bp-line-draw' : ''} style={{ animationDelay: '0.16s' }} />
+                <path d={totalPath} fill="none" stroke="url(#bpStroke)" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" filter="url(#bpGlow)" className={drawn ? 'bp-line-draw' : ''} style={{ animationDelay: '0.12s' }} />
 
-                {/* main payoff */}
-                <path
-                  d={totalPath}
-                  fill="none"
-                  stroke="url(#bpStroke)"
-                  strokeWidth="3.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  filter="url(#bpGlow)"
-                  className={drawn ? 'bp-line-draw' : ''}
-                  style={{ animationDelay: '0.12s' }}
-                />
-
-                {/* max profit marker */}
                 {(() => {
                   const peak = model.points.reduce((a, b) => (b.total >= a.total ? b : a));
                   return (
@@ -278,48 +297,24 @@ export default function BidParityPayoffChart({
                   );
                 })()}
 
-                {/* hover crosshair */}
                 {hover && (
                   <g>
                     <line x1={x(hover.s)} x2={x(hover.s)} y1={pad.t} y2={H - pad.b} stroke="rgba(255,255,255,0.35)" />
                     <circle cx={x(hover.s)} cy={y(hover.total)} r="6" fill="#fbbf24" stroke="#fff" strokeWidth="2" />
-                    <rect
-                      x={Math.min(W - 150, Math.max(pad.l, x(hover.s) - 60))}
-                      y={Math.max(pad.t, y(hover.total) - 48)}
-                      width="120"
-                      height="36"
-                      rx="8"
-                      fill="rgba(15,23,42,0.92)"
-                      stroke="rgba(251,191,36,0.5)"
-                    />
-                    <text
-                      x={Math.min(W - 150, Math.max(pad.l, x(hover.s) - 60)) + 60}
-                      y={Math.max(pad.t, y(hover.total) - 48) + 15}
-                      textAnchor="middle"
-                      fill="#f8fafc"
-                      fontSize="10"
-                      fontWeight="700"
-                    >
-                      Spot {Math.round(hover.s)}
-                    </text>
-                    <text
-                      x={Math.min(W - 150, Math.max(pad.l, x(hover.s) - 60)) + 60}
-                      y={Math.max(pad.t, y(hover.total) - 48) + 28}
-                      textAnchor="middle"
-                      fill={hover.total >= 0 ? '#34d399' : '#f87171'}
-                      fontSize="11"
-                      fontWeight="800"
-                    >
+                    <rect x={Math.min(W - 150, Math.max(pad.l, x(hover.s) - 60))} y={Math.max(pad.t, y(hover.total) - 48)}
+                      width="120" height="36" rx="8" fill="rgba(15,23,42,0.92)" stroke="rgba(251,191,36,0.5)" />
+                    <text x={Math.min(W - 150, Math.max(pad.l, x(hover.s) - 60)) + 60} y={Math.max(pad.t, y(hover.total) - 48) + 15}
+                      textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="700">Spot {Math.round(hover.s)}</text>
+                    <text x={Math.min(W - 150, Math.max(pad.l, x(hover.s) - 60)) + 60} y={Math.max(pad.t, y(hover.total) - 48) + 28}
+                      textAnchor="middle" fill={hover.total >= 0 ? '#34d399' : '#f87171'} fontSize="11" fontWeight="800">
                       {money(hover.total)}
                     </text>
                   </g>
                 )}
 
-                {/* axes labels */}
                 <text x={pad.l} y={H - 12} fill="#94a3b8" fontSize="10">{Math.round(model.minS)}</text>
                 <text x={W - pad.r} y={H - 12} fill="#94a3b8" fontSize="10" textAnchor="end">{Math.round(model.maxS)}</text>
                 <text x={12} y={pad.t + 8} fill="#94a3b8" fontSize="10">P&amp;L ₹</text>
-                <text x={12} y={zeroY + 3} fill="#cbd5e1" fontSize="10">0</text>
               </svg>
 
               <div className="flex flex-wrap gap-3 px-2 pb-1 text-[10px] font-bold text-slate-400">
@@ -327,31 +322,35 @@ export default function BidParityPayoffChart({
                 <span className="text-sky-400/80">– – CE</span>
                 <span className="text-pink-400/80">– – PE</span>
                 <span className="text-violet-400/80">– – FUT</span>
-                <span className="ml-auto text-slate-500 font-medium">Hover to scrub spot → P&amp;L</span>
+                <span className="text-emerald-400/80">- - Black-76 edge</span>
+                <span className="ml-auto text-slate-500 font-medium">Hover scrub · flat ≈ locked</span>
               </div>
             </div>
 
             <div className="flex flex-col gap-3">
               <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-2 backdrop-blur">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">At expiry</div>
-                <Row k="If all 3 legs fill clean" v="≈ flat locked edge" />
-                <Row k="Max profit" v={money(model.maxProfit)} good />
-                <Row k="Worst on chart" v={money(model.maxLoss)} />
-                <Row k="Breakeven" v={Math.abs(model.maxLoss) < 80 && model.maxProfit > 0 ? 'Edge locked (all spots)' : 'See curve'} />
-                <p className="text-[10px] text-slate-400 leading-relaxed pt-1">
-                  True conversion/reversal payoff is nearly <span className="text-emerald-300 font-bold">horizontal</span> —
-                  max profit ≈ captured edge. Slip / partial fill can tilt this.
-                </p>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Model check</div>
+                <Row k="Fair DF·(F−K)" v={model.fairSynth.toFixed(1)} />
+                <Row k="C−P (touch)" v={(model.ceEntry - model.peEntry).toFixed(1)} />
+                <Row k="True pts" v={model.modelEdgePts.toFixed(1)} good={model.modelEdgePts >= 2} />
+                <Row k="True ₹" v={money(model.modelEdgeInr)} good={model.modelEdgeInr >= 150} />
+                <Row k="Expiry flat ≈" v={money(model.lockedInr)} />
+                <div className="text-[10px] text-slate-400 pt-1 leading-relaxed">
+                  Touch qty CE {model.conversion ? `ask ${model.ceAskQty}` : `bid ${model.ceBidQty}`}
+                  {' · '}PE {model.conversion ? `bid ${model.peBidQty}` : `ask ${model.peAskQty}`}
+                </div>
               </div>
 
               {onPaperTrade && (
                 <button
                   type="button"
+                  disabled={model.inflated || model.quality === 'NOISE'}
                   onClick={(e) => { e.stopPropagation(); onPaperTrade(opp, model.lots); }}
-                  className="bp-cta group relative overflow-hidden rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 px-4 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-900/40 transition hover:scale-[1.02] active:scale-[0.99]"
+                  className="bp-cta group relative overflow-hidden rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 px-4 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-900/40 transition hover:scale-[1.02] active:scale-[0.99] disabled:opacity-40 disabled:hover:scale-100"
                 >
-                  <span className="relative z-10">📝 Paper trade this setup</span>
-                  <span className="absolute inset-0 translate-x-[-100%] bg-white/25 skew-x-[-20deg] group-hover:animate-[bpShine_0.8s_ease]" />
+                  <span className="relative z-10">
+                    {model.inflated || model.quality === 'NOISE' ? '🚫 Not tradeable' : '📝 Paper trade this setup'}
+                  </span>
                   <div className="relative z-10 text-[10px] font-bold text-slate-900/70 mt-0.5">
                     via {executionBroker} · {model.conversion ? 'Conversion' : 'Reversal'}
                   </div>

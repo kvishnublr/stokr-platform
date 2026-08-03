@@ -64,9 +64,11 @@ public class BidParityService {
                     log.warn("No futures quote for {} (key={}), skipping Bid Parity scan", u, futKey);
                     continue;
                 }
-                if (spot <= 0) {
-                    log.warn("Index spot missing for {} — using futures {} for ATM only", u, fut);
-                    spot = fut;
+                boolean spotMissing = spot <= 0;
+                if (spotMissing) {
+                    log.warn("Index spot missing for {} — monthly scan uses futures {} for ATM; weekly skipped",
+                            u, fut);
+                    spot = fut; // ATM only for monthly
                 }
 
                 LocalDate futExpiry = resolveFuturesExpiry(u, futKey);
@@ -77,9 +79,12 @@ public class BidParityService {
                     addOpps(results, optionChainService.scanBidParityChain(u, spot, fut, futExpiry, false),
                             u, "MONTHLY", false);
                 }
-                if ("WEEKLY".equals(mode) || "BOTH".equals(mode)) {
+                if (("WEEKLY".equals(mode) || "BOTH".equals(mode)) && !spotMissing && Math.abs(spot - fut) >= 0.5) {
                     addOpps(results, optionChainService.scanBidParityChain(u, spot, fut, futExpiry, true),
                             u, "WEEKLY", true);
+                } else if ("WEEKLY".equals(mode) || "BOTH".equals(mode)) {
+                    log.warn("Skipping weekly Bid Parity for {}: need distinct spot vs fut (spot={}, fut={})",
+                            u, spot, fut);
                 }
             } catch (Exception e) {
                 log.error("Error scanning Bid Parity for {}: {}", u, e.getMessage(), e);
@@ -102,6 +107,7 @@ public class BidParityService {
             map.put("strategyType", strategyType);
             map.put("expiryMode", expiryMode);
             map.put("basisRisk", weekly);
+            map.put("parityModel", "BLACK76_FUTURES");
             map.put("guaranteedFill", false);
             map.put("bidEdgeInr", opp.edgeAfterCosts);
             if (opp.costBreakdown != null) {
@@ -110,6 +116,15 @@ public class BidParityService {
                 }
                 if (opp.costBreakdown.containsKey("basisResidual")) {
                     map.put("basisResidual", opp.costBreakdown.get("basisResidual"));
+                }
+                if (opp.costBreakdown.containsKey("fairSynth")) {
+                    map.put("fairSynth", opp.costBreakdown.get("fairSynth"));
+                }
+                if (opp.costBreakdown.containsKey("df")) {
+                    map.put("df", opp.costBreakdown.get("df"));
+                }
+                for (String qk : List.of("ceBidQty", "ceAskQty", "peBidQty", "peAskQty")) {
+                    if (opp.costBreakdown.containsKey(qk)) map.put(qk, opp.costBreakdown.get(qk));
                 }
             }
             results.add(map);
