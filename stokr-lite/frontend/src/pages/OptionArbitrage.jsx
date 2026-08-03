@@ -56,19 +56,20 @@ const ALL_U = ['ALL', 'NIFTY', 'BANKNIFTY', 'MIDCPNIFTY', 'FINNIFTY'];
 export default function OptionArbitrage() {
   const { toasts, dismiss: dismissToast } = useToastState();
   const [searchParams] = useSearchParams();
+  const bidParityOnly = searchParams.get('tab') === 'bidparity';
   const [tradingHorizon, setTradingHorizon] = useState('INTRADAY'); // INTRADAY, SWING, POSITIONAL, ANALYTICS
-  const [activeSubTab, setActiveSubTab] = useState(() => searchParams.get('tab') === 'bidparity' ? 'bidparity' : 'signals');
+  const [activeSubTab, setActiveSubTab] = useState(() => bidParityOnly ? 'bidparity' : 'signals');
   const [underlyings, setUnderlyings] = useState(['ALL']);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [executionBroker, setExecutionBroker] = useState('PAPER');
   const [isTestingBroker, setIsTestingBroker] = useState(false);
 
   useEffect(() => {
-    if (searchParams.get('tab') === 'bidparity') {
+    if (bidParityOnly) {
       setTradingHorizon('INTRADAY');
       setActiveSubTab('bidparity');
     }
-  }, [searchParams]);
+  }, [bidParityOnly]);
 
   const fetchBrokerRouting = async () => {
     try {
@@ -182,6 +183,62 @@ export default function OptionArbitrage() {
     }
   };
 
+  // Bid Parity deep-link: only Live Signals + History — no other arb chrome
+  if (bidParityOnly) {
+    return (
+      <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
+        <ToastContainer toasts={toasts} dismiss={dismissToast} />
+
+        <div className="bg-gradient-to-r from-slate-900 via-amber-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 shadow-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-amber-600/30 rounded-xl border border-amber-400/30">
+              <span className="text-xl">🎯</span>
+            </div>
+            <div>
+              <h1 className="text-xl font-black tracking-tight text-white">Bid Parity</h1>
+              <p className="text-xs text-amber-200/80 font-medium">Conversion &amp; Reversal · Live Signals + History</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="bg-slate-800/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
+              <span className="text-slate-300 font-medium">Execution:</span>
+              <select
+                value={executionBroker}
+                onChange={(e) => changeExecutionBroker(e.target.value)}
+                className="bg-slate-900 text-amber-300 font-bold border border-slate-700 rounded-lg px-2 py-1 outline-none text-xs"
+              >
+                <option value="PAPER">📝 Paper Trading (Virtual ₹1 Cr)</option>
+                <option value="NAVIA">⚡ Navia Markets</option>
+                <option value="ICICI_DIRECT">🏦 ICICI Direct Breeze</option>
+                <option value="ZERODHA">🚀 Zerodha Kite</option>
+                <option value="DHAN">🎯 DhanHQ</option>
+                <option value="FYERS">🔥 Fyers API</option>
+              </select>
+            </div>
+            <button
+              onClick={testBrokerConnection}
+              disabled={isTestingBroker}
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-xs transition shadow-lg disabled:opacity-50"
+            >
+              {isTestingBroker ? 'Testing...' : '⚡ Test Connection'}
+            </button>
+            <button
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                autoRefresh ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {autoRefresh ? '⚡ Live: ON' : '⏱️ Live: OFF'}
+            </button>
+          </div>
+        </div>
+
+        <BidParityHub handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-full space-y-5 font-sans text-slate-900">
       <ToastContainer toasts={toasts} dismiss={dismissToast} />
@@ -280,7 +337,6 @@ export default function OptionArbitrage() {
         {tradingHorizon === 'INTRADAY' && (
           <>
             <SubTabButton id="signals" label="⚡ Live Arbitrage Signals" active={activeSubTab} onClick={setActiveSubTab} count={opportunities.length} />
-            <SubTabButton id="bidparity" label="🎯 Bid Parity" active={activeSubTab} onClick={setActiveSubTab} />
             <SubTabButton id="ironcondor" label="🛡️ 0DTE Iron Condor" active={activeSubTab} onClick={setActiveSubTab} />
             <SubTabButton id="cashsurge" label="🔥 10%+ Cash Surge" active={activeSubTab} onClick={setActiveSubTab} />
           </>
@@ -321,7 +377,6 @@ export default function OptionArbitrage() {
           />
         )}
 
-        {activeSubTab === 'bidparity' && <BidParityHub handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />}
         {activeSubTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeSubTab === 'ironcondor' && <IronCondorView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeSubTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
@@ -612,21 +667,29 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
   );
 }
 
-/* 2. BID PARITY HUB — Intraday > Bid Parity > Live Signals | History */
+/* 2. BID PARITY HUB — Live Signals | History only */
 function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh }) {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [bpTab, setBpTab] = useState(() => searchParams.get('bp') === 'history' ? 'history' : 'live');
 
   useEffect(() => {
     if (searchParams.get('bp') === 'history') setBpTab('history');
-    else if (searchParams.get('bp') === 'live') setBpTab('live');
+    else setBpTab('live');
   }, [searchParams]);
+
+  const switchTab = (id) => {
+    setBpTab(id);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'bidparity');
+    if (id === 'history') next.set('bp', 'history');
+    else next.delete('bp');
+    setSearchParams(next, { replace: true });
+  };
 
   return (
     <div className="space-y-4 w-full">
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Intraday → Bid Parity</div>
           <h2 className="text-base font-bold text-slate-800">Conversion &amp; Reversal Scanner</h2>
           <p className="text-xs text-slate-500">Executable bid/ask parity vs monthly futures · 3-leg hedge (CE + PE + FUT)</p>
         </div>
@@ -634,11 +697,10 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh }) {
           {[
             { id: 'live', label: '📡 Live Signals' },
             { id: 'history', label: '📜 History' },
-            { id: 'paper', label: '🧪 Paper Sim' },
           ].map(t => (
             <button
               key={t.id}
-              onClick={() => setBpTab(t.id)}
+              onClick={() => switchTab(t.id)}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
                 bpTab === t.id ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
               }`}
@@ -653,7 +715,6 @@ function BidParityHub({ handleExecuteInline, executionBroker, autoRefresh }) {
         <BidParityLiveView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} autoRefresh={autoRefresh} />
       )}
       {bpTab === 'history' && <BidParityHistoryView />}
-      {bpTab === 'paper' && <BidParityPaperSimView />}
     </div>
   );
 }

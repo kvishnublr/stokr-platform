@@ -13,8 +13,7 @@ const traderLinks = [
   { to: '/orders', label: 'Orders', icon: '📋' },
   { to: '/positions', label: 'Positions', icon: '📈' },
   { to: '/option-arbitrage', label: 'Option Arb', icon: '🔀' },
-  { to: '/option-arbitrage?tab=bidparity&bp=live', label: 'Bid Parity', icon: '🎯' },
-  { to: '/option-arbitrage?tab=bidparity&bp=history', label: 'BP History', icon: '📜' },
+  { to: '/option-arbitrage?tab=bidparity', label: 'Bid Parity', icon: '🎯' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
@@ -237,8 +236,13 @@ export default function Layout() {
                 if (qs) {
                   const want = new URLSearchParams(qs);
                   const have = new URLSearchParams(location.search);
-                  active = location.pathname === path
-                    && [...want.entries()].every(([k, v]) => have.get(k) === v);
+                  // Bid Parity: highlight for any ?tab=bidparity (live or history)
+                  if (want.get('tab') === 'bidparity') {
+                    active = location.pathname === path && have.get('tab') === 'bidparity';
+                  } else {
+                    active = location.pathname === path
+                      && [...want.entries()].every(([k, v]) => have.get(k) === v);
+                  }
                 } else if (path === '/option-arbitrage') {
                   active = location.pathname === path && !location.search.includes('tab=bidparity');
                 }
