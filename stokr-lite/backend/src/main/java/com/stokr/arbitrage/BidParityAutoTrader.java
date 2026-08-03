@@ -1,25 +1,24 @@
 package com.stokr.arbitrage;
 
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
 import java.util.Map;
 
+/**
+ * Legacy WS tick-cycle auto-trader.
+ * Disabled: live bid-parity execution is owned by {@link OptionArbAutoExecService}
+ * (3-leg CE+PE+FUT, DB-backed settings). Kept as a bean so existing injections compile.
+ */
 @Service
 public class BidParityAutoTrader {
-
-    @Scheduled(fixedDelayString = "5000", initialDelay = 15000)
-    public void tickCycle() {
-        // Temporarily disabled during server recovery.
-    }
 
     public boolean isRunning() {
         return false;
     }
 
     public String getStatus() {
-        return "DISABLED";
+        return "DISABLED_USE_OPTION_ARB_AUTO_EXEC";
     }
 
     public Map<String, Object> getAllLiveTicks() {

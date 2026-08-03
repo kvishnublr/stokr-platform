@@ -12,8 +12,12 @@ const traderLinks = [
   { to: '/brokers', label: 'Brokers', icon: '🏦' },
   { to: '/orders', label: 'Orders', icon: '📋' },
   { to: '/positions', label: 'Positions', icon: '📈' },
-  { to: '/settings', label: 'Settings', icon: '⚙️' },
   { to: '/option-arbitrage', label: 'Option Arb', icon: '🔀' },
+  { to: '/option-arbitrage?tab=bidparity', label: 'Bid Parity', icon: '🎯' },
+  { to: '/option-arbitrage?tab=jelly', label: 'Jelly Roll', icon: '🌀' },
+  { to: '/option-arbitrage?tab=box', label: 'Box Spread', icon: '📦' },
+  { to: '/option-arbitrage?tab=calendar', label: 'Calendar', icon: '⏳' },
+  { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
 const adminLinks = [
@@ -229,7 +233,25 @@ export default function Layout() {
               key={link.to}
               to={link.to}
               end={link.end}
-              className={({ isActive }) => `nav-item-aurora ${isActive ? 'active' : ''}`}
+              className={({ isActive }) => {
+                const [path, qs] = link.to.split('?');
+                let active = isActive;
+                if (qs) {
+                  const want = new URLSearchParams(qs);
+                  const have = new URLSearchParams(location.search);
+                  const tab = want.get('tab');
+                  if (tab === 'bidparity' || tab === 'box' || tab === 'calendar' || tab === 'jelly') {
+                    active = location.pathname === path && have.get('tab') === tab;
+                  } else {
+                    active = location.pathname === path
+                      && [...want.entries()].every(([k, v]) => have.get(k) === v);
+                  }
+                } else if (path === '/option-arbitrage') {
+                  const t = new URLSearchParams(location.search).get('tab');
+                  active = location.pathname === path && !t;
+                }
+                return `nav-item-aurora ${active ? 'active' : ''}`;
+              }}
               style={{ textDecoration: 'none' }}
             >
               <span style={{ fontSize: '20px', width: '28px', textAlign: 'center' }}>{link.icon}</span>

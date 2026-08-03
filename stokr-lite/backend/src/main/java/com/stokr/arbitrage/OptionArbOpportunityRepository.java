@@ -62,6 +62,35 @@ public interface OptionArbOpportunityRepository extends JpaRepository<OptionArbO
 
     List<OptionArbOpportunity> findByStrategyTypeOrderByScanTimeDesc(String strategyType);
 
+    @Query("""
+        SELECT o FROM OptionArbOpportunity o
+        WHERE o.strategyType = :strategyType
+          AND o.underlying = :underlying
+          AND o.strike = :strike
+          AND o.action = :action
+          AND o.expiryDate = :expiryDate
+          AND o.scanTime >= :since
+        ORDER BY o.scanTime DESC
+        """)
+    List<OptionArbOpportunity> findRecentSimilar(
+            @Param("strategyType") String strategyType,
+            @Param("underlying") String underlying,
+            @Param("strike") Integer strike,
+            @Param("action") String action,
+            @Param("expiryDate") java.time.LocalDate expiryDate,
+            @Param("since") LocalDateTime since);
+
+    @Query("""
+        SELECT o FROM OptionArbOpportunity o
+        WHERE UPPER(o.strategyType) LIKE CONCAT('%', UPPER(:strategyNeedle), '%')
+          AND o.scanTime >= :start AND o.scanTime < :end
+        ORDER BY o.scanTime DESC
+        """)
+    List<OptionArbOpportunity> findByStrategyNeedleAndScanTimeBetween(
+            @Param("strategyNeedle") String strategyNeedle,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end);
+
     @Query("SELECT COALESCE(SUM(o.edgeAfterCosts), 0) FROM OptionArbOpportunity o WHERE o.strategyType = :strategyType")
     java.math.BigDecimal sumEdgeByStrategy(@Param("strategyType") String strategyType);
 
