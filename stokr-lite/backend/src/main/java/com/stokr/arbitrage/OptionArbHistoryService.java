@@ -350,13 +350,7 @@ public class OptionArbHistoryService {
                     }
                 }
 
-                // Lot size for margin calculation
-                int lotSize = switch (opp.getUnderlying()) {
-                    case "BANKNIFTY" -> 15;
-                    case "MIDCPNIFTY" -> 120;
-                    case "FINNIFTY" -> 60;
-                    default -> 50;
-                };
+                int lotSize = OptionChainService.getLotSize(opp.getUnderlying());
                 BigDecimal pnlAmount = pnl.multiply(BigDecimal.valueOf(lotSize));
                 BigDecimal costs = pnlAmount.abs().multiply(BigDecimal.valueOf(0.0005)).add(BigDecimal.valueOf(50));
                 BigDecimal pnlAfterCosts = pnlAmount.subtract(costs);
