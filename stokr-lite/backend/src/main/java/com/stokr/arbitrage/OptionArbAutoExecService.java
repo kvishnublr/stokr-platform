@@ -144,10 +144,10 @@ public class OptionArbAutoExecService {
                     .anyMatch(p -> opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
 
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
-            double entryCost = estimateEntryCost(opp, lots);
-            if (entryCost > availableMargin * 0.9) {
+            double hedgedMargin = estimateHedgedMargin(opp.getUnderlying(), lots);
+            if (hedgedMargin > availableMargin * 0.9) {
                 addLog("MARGIN", "SKIP", opp.getUnderlying() + " " + opp.getStrike()
-                        + " needs ₹" + String.format("%.0f", entryCost)
+                        + " needs ₹" + String.format("%.0f", hedgedMargin)
                         + " but only ₹" + String.format("%.0f", availableMargin) + " available");
                 continue;
             }
@@ -155,14 +155,18 @@ public class OptionArbAutoExecService {
             addLog("SIGNAL", "FIRING", opp.getUnderlying() + " " + opp.getStrike()
                     + " Edge=₹" + String.format("%.0f", opp.getEdgeAfterCosts().doubleValue())
                     + " > threshold ₹" + String.format("%.0f", minEdge) + " — executing NOW");
-            executeTrade(account, adapter, opp, lots, userId);
-            currentOpen++;
-            availableMargin -= entryCost;
+            boolean opened = executeTrade(account, adapter, opp, lots, userId);
+            if (opened) {
+                currentOpen++;
+                availableMargin -= hedgedMargin;
+            }
         }
     }
 
-    private void executeTrade(BrokerAccount account, BrokerAdapter adapter, OptionArbOpportunity opp, int lots, Long userId) {
+    private boolean executeTrade(BrokerAccount account, BrokerAdapter adapter, OptionArbOpportunity opp, int lots, Long userId) {
         int lotSize = getLotSize(opp.getUnderlying());
+        String action = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+        boolean isConversion = "CONVERSION".equals(action) || action.contains("BUY CE+PE") || action.contains("BUY CE");
 
         LivePosition position = LivePosition.builder()
                 .userId(userId)
@@ -175,6 +179,7 @@ public class OptionArbAutoExecService {
                 .lotSize(lotSize)
                 .ceEntryPrice(opp.getCeEntryPrice())
                 .peEntryPrice(opp.getPeEntryPrice())
+                .futEntryPrice(opp.getFuturesPrice())
                 .targetEdge(opp.getEdgeAfterCosts())
                 .status("EXECUTING")
                 .enteredAt(LocalDateTime.now())
@@ -184,75 +189,213 @@ public class OptionArbAutoExecService {
         try {
             String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
             String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
+            String futSymbol = optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate());
             position.setCeSymbol(ceSymbol);
             position.setPeSymbol(peSymbol);
-
-            boolean isBuyCE = opp.getAction() != null && opp.getAction().toUpperCase().contains("BUY CE");
+            position.setFutSymbol(futSymbol);
 
             int ceQty = lots * lotSize;
             int peQty = lots * lotSize;
+            int futQty = lots * lotSize;
 
-            BrokerOrderRequest ceReq = BrokerOrderRequest.builder()
-                    .symbol(ceSymbol).exchange("NFO")
-                    .side(isBuyCE ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL)
-                    .quantity(ceQty).price(0.0)
-                    .orderType(BrokerOrderRequest.OrderType.MARKET)
-                    .productType("MIS").build();
-            BrokerOrderResponse ceResp = adapter.placeOrder(account.getAccessToken(), ceReq);
+            double futPrice = opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0;
 
-            if (!ceResp.isSuccess()) {
-                position.setStatus("FAILED");
-                position.setErrorMessage("CE order failed: " + ceResp.message());
-                positionRepo.save(position);
-                addLog("EXEC", "FAILED", opp.getUnderlying() + " " + opp.getStrike() + " CE: " + ceResp.message());
-                return;
+            // BUY-first: place BUY legs first, then hedge with sell legs.
+            // CONVERSION: BUY CE, SELL FUT, SELL PE
+            // REVERSAL: BUY PE, BUY FUT, SELL CE
+            List<PlannedLeg> orderPlan;
+            if (isConversion) {
+                orderPlan = List.of(
+                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.BUY, ceQty, 0.0, "ce"),
+                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.SELL, futQty, futPrice, "fut"),
+                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.SELL, peQty, 0.0, "pe")
+                );
+            } else {
+                orderPlan = List.of(
+                    new PlannedLeg(peSymbol, BrokerOrderRequest.Side.BUY, peQty, 0.0, "pe"),
+                    new PlannedLeg(futSymbol, BrokerOrderRequest.Side.BUY, futQty, futPrice, "fut"),
+                    new PlannedLeg(ceSymbol, BrokerOrderRequest.Side.SELL, ceQty, 0.0, "ce")
+                );
             }
-            position.setCeOrderId(ceResp.orderId());
 
-            BrokerOrderRequest peReq = BrokerOrderRequest.builder()
-                    .symbol(peSymbol).exchange("NFO")
-                    .side(isBuyCE ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY)
-                    .quantity(peQty).price(0.0)
-                    .orderType(BrokerOrderRequest.OrderType.MARKET)
-                    .productType("MIS").build();
-            BrokerOrderResponse peResp = adapter.placeOrder(account.getAccessToken(), peReq);
+            List<PlacedLeg> placedLegs = new ArrayList<>();
 
-            if (!peResp.isSuccess()) {
-                position.setStatus("PARTIAL");
-                position.setErrorMessage("PE order failed: " + peResp.message() + " (CE placed: " + ceResp.orderId() + ")");
-                positionRepo.save(position);
-                addLog("EXEC", "PARTIAL", opp.getUnderlying() + " " + opp.getStrike() + " PE failed: " + peResp.message());
-                return;
+            for (PlannedLeg leg : orderPlan) {
+                String symbol = leg.symbol();
+                BrokerOrderRequest.Side side = leg.side();
+                int qty = leg.quantity();
+                double price = leg.price();
+                String legKey = leg.legKey();
+
+                BrokerOrderRequest req = BrokerOrderRequest.builder()
+                        .symbol(symbol).exchange("NFO")
+                        .side(side)
+                        .quantity(qty).price(price)
+                        .orderType(price > 0 ? BrokerOrderRequest.OrderType.LIMIT : BrokerOrderRequest.OrderType.MARKET)
+                        .productType("MIS").build();
+                BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
+
+                if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
+                    log.warn("Auto-exec: {} {} order failed: {}", legKey, symbol, resp.message());
+                    addLog("EXEC", "LEG_FAILED", legKey + " " + symbol + " " + side + ": " + resp.message());
+                    cancelPendingLegs(account, adapter, placedLegs);
+                    position.setStatus("FAILED");
+                    position.setErrorMessage(legKey + " order failed: " + resp.message());
+                    positionRepo.save(position);
+                    addLog("EXEC", "FAILED", opp.getUnderlying() + " " + opp.getStrike() + " — cancelled all legs");
+                    return false;
+                }
+
+                placedLegs.add(new PlacedLeg(leg, resp.orderId(), resp.status()));
+                if ("ce".equals(legKey)) position.setCeOrderId(resp.orderId());
+                else if ("pe".equals(legKey)) position.setPeOrderId(resp.orderId());
+                else if ("fut".equals(legKey)) position.setFutOrderId(resp.orderId());
+
+                try { Thread.sleep(300); } catch (InterruptedException ignored) {}
             }
-            position.setPeOrderId(peResp.orderId());
+
+            awaitFinalStatuses(account, adapter, placedLegs);
+            List<PlacedLeg> filledLegs = placedLegs.stream()
+                    .filter(leg -> isCompleteStatus(leg.status))
+                    .toList();
+            List<PlacedLeg> nonCompleteLegs = placedLegs.stream()
+                    .filter(leg -> !isCompleteStatus(leg.status))
+                    .toList();
+
+            if (filledLegs.size() != orderPlan.size()) {
+                cancelPendingLegs(account, adapter, nonCompleteLegs);
+                squareOffFilledLegs(account, adapter, filledLegs);
+                position.setStatus(filledLegs.isEmpty() ? "FAILED" : "PARTIAL");
+                position.setErrorMessage("Only " + filledLegs.size() + "/" + orderPlan.size() + " legs filled. Pending orders cancelled and filled legs squared off.");
+                positionRepo.save(position);
+                addLog("EXEC", "FAILED", opp.getUnderlying() + " " + opp.getStrike()
+                        + " — only " + filledLegs.size() + "/" + orderPlan.size() + " legs filled; reverted trade");
+                return false;
+            }
+
             position.setStatus("OPEN");
+            position.setEntryCost(BigDecimal.valueOf(estimateEntryCost(opp, lots)));
             positionRepo.save(position);
 
             addLog("EXEC", "SUCCESS", opp.getUnderlying() + " " + opp.getStrike() + " " + opp.getAction()
                     + " | Lots=" + lots + " Edge=₹" + String.format("%.0f", opp.getEdgeAfterCosts().doubleValue())
-                    + " | CE:" + ceResp.orderId() + " PE:" + peResp.orderId());
+                    + " | 3-leg box fully filled");
+            return true;
 
         } catch (Exception e) {
             position.setStatus("FAILED");
             position.setErrorMessage(e.getMessage());
             positionRepo.save(position);
             addLog("EXEC", "ERROR", opp.getUnderlying() + " " + opp.getStrike() + ": " + e.getMessage());
+            return false;
         }
+    }
+
+    private void awaitFinalStatuses(BrokerAccount account, BrokerAdapter adapter, List<PlacedLeg> placedLegs) {
+        for (int attempt = 0; attempt < 10; attempt++) {
+            boolean allComplete = true;
+            boolean anyTerminalFailure = false;
+            for (PlacedLeg leg : placedLegs) {
+                String latest = adapter.getOrderStatus(account.getAccessToken(), leg.orderId);
+                if (latest != null && !latest.isBlank() && !"UNKNOWN".equalsIgnoreCase(latest)) {
+                    leg.status = latest;
+                }
+                allComplete &= isCompleteStatus(leg.status);
+                anyTerminalFailure |= isFailureStatus(leg.status);
+            }
+            if (allComplete || anyTerminalFailure) {
+                return;
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    private void cancelPendingLegs(BrokerAccount account, BrokerAdapter adapter, List<PlacedLeg> legs) {
+        for (PlacedLeg leg : legs) {
+            if (leg.orderId == null || leg.orderId.isBlank() || isCompleteStatus(leg.status)) {
+                continue;
+            }
+            try {
+                adapter.cancelOrder(account.getAccessToken(), leg.orderId);
+            } catch (Exception e) {
+                log.warn("Failed to cancel {} {}: {}", leg.leg.legKey(), leg.orderId, e.getMessage());
+            }
+        }
+    }
+
+    private void squareOffFilledLegs(BrokerAccount account, BrokerAdapter adapter, List<PlacedLeg> legs) {
+        for (PlacedLeg leg : legs) {
+            BrokerOrderRequest.Side closeSide = leg.leg.side() == BrokerOrderRequest.Side.BUY
+                    ? BrokerOrderRequest.Side.SELL
+                    : BrokerOrderRequest.Side.BUY;
+            BrokerOrderRequest closeReq = BrokerOrderRequest.builder()
+                    .symbol(leg.leg.symbol())
+                    .exchange("NFO")
+                    .side(closeSide)
+                    .quantity(leg.leg.quantity())
+                    .price(0.0)
+                    .orderType(BrokerOrderRequest.OrderType.MARKET)
+                    .productType("MIS")
+                    .build();
+            try {
+                BrokerOrderResponse closeResp = adapter.placeOrder(account.getAccessToken(), closeReq);
+                addLog("EXEC", "SQUARE_OFF", leg.leg.legKey() + " " + leg.leg.symbol() + " -> "
+                        + closeSide + " [" + closeResp.status() + "]");
+            } catch (Exception e) {
+                log.error("Failed to square off {} {}: {}", leg.leg.legKey(), leg.leg.symbol(), e.getMessage());
+                addLog("EXEC", "SQUARE_OFF_FAILED", leg.leg.legKey() + " " + leg.leg.symbol() + ": " + e.getMessage());
+            }
+        }
+    }
+
+    private boolean isCompleteStatus(String status) {
+        return "COMPLETE".equalsIgnoreCase(status) || "TRADED".equalsIgnoreCase(status);
+    }
+
+    private boolean isFailureStatus(String status) {
+        if (status == null) {
+            return false;
+        }
+        String normalized = status.toUpperCase(Locale.ROOT);
+        return normalized.contains("REJECT")
+                || normalized.contains("CANCEL")
+                || normalized.contains("EXPIRE")
+                || normalized.contains("FAIL");
     }
 
     private double estimateEntryCost(OptionArbOpportunity opp, int lots) {
         int lotSize = getLotSize(opp.getUnderlying());
         double ce = opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() : 0;
         double pe = opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0;
-        return (ce + pe) * lotSize * lots;
+        double fut = opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0;
+        return (ce + pe + fut) * lotSize * lots;
+    }
+
+    private double estimateHedgedMargin(String underlying, int lots) {
+        // Hedged margin for box spread (FUT + CE + PE) — margin is the max of individual legs, not sum
+        // With SEBI SPAN+Exposure, hedged NFO positions get ~60-70% margin benefit
+        Map<String, Double> baseMargins = Map.of(
+            "NIFTY", 120000.0,
+            "BANKNIFTY", 200000.0,
+            "MIDCPNIFTY", 150000.0,
+            "FINNIFTY", 160000.0
+        );
+        double base = baseMargins.getOrDefault(underlying, 150000.0);
+        return base * lots * 1.15; // 15% buffer for slippage
     }
 
     private int getLotSize(String underlying) {
         return switch (underlying) {
+            case "NIFTY" -> 25;
             case "BANKNIFTY" -> 15;
-            case "MIDCPNIFTY" -> 120;
-            case "FINNIFTY" -> 60;
-            default -> 50;
+            case "MIDCPNIFTY" -> 50;
+            case "FINNIFTY" -> 25;
+            default -> 25;
         };
     }
 
@@ -265,5 +408,19 @@ public class OptionArbAutoExecService {
         entry.put("message", message);
         execLogs.add(entry);
         if (execLogs.size() > 200) execLogs.remove(0);
+    }
+
+    private record PlannedLeg(String symbol, BrokerOrderRequest.Side side, int quantity, double price, String legKey) {}
+
+    private static final class PlacedLeg {
+        private final PlannedLeg leg;
+        private final String orderId;
+        private String status;
+
+        private PlacedLeg(PlannedLeg leg, String orderId, String status) {
+            this.leg = leg;
+            this.orderId = orderId;
+            this.status = status;
+        }
     }
 }

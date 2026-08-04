@@ -962,7 +962,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
             <button
               key={u}
               onClick={() => setUnderlying(u)}
@@ -980,7 +980,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Bid Parity feeds...</div>
         ) : opps.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No bid parity spreads currently active for {underlying}</div>
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No bid parity spreads currently active for {underlying === 'ALL' ? 'any underlying' : underlying}</div>
         ) : (
           <div className="overflow-x-auto w-full">
             <table className="w-full text-xs text-left border-collapse">
@@ -1072,7 +1072,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
             <button
               key={u}
               onClick={() => setUnderlying(u)}
@@ -1185,7 +1185,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
             <button
               key={u}
               onClick={() => setUnderlying(u)}
@@ -1203,7 +1203,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning 0DTE Iron Condor spreads...</div>
         ) : opps.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No 0DTE Iron Condor setups meeting risk criteria for {underlying}</div>
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No 0DTE Iron Condor setups meeting risk criteria for {underlying === 'ALL' ? 'any underlying' : underlying}</div>
         ) : (
           <div className="overflow-x-auto w-full">
             <table className="w-full text-xs text-left border-collapse">

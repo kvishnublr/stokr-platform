@@ -404,6 +404,7 @@ public class OptionArbitrageController {
                         if (opp.getExpiryDate() != null && opp.getStrike() != null) {
                             symbols.add(optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE"));
                             symbols.add(optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE"));
+                            symbols.add(optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate()));
                         }
                     }
                     allQuotes = optionChainService.fetchQuotes(symbols);
@@ -413,23 +414,22 @@ public class OptionArbitrageController {
             }
 
             for (OptionArbOpportunity opp : allOpen) {
-                int lotSize = switch (opp.getUnderlying()) {
-                    case "BANKNIFTY" -> 15;
-                    case "MIDCPNIFTY" -> 120;
-                    case "FINNIFTY" -> 60;
-                    default -> 50;
-                };
+                int lotSize = OptionChainService.getLotSize(opp.getUnderlying());
                 double ceP = opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() : 0;
                 double peP = opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0;
+                double futP = opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0;
 
                 double currentCe = 0;
                 double currentPe = 0;
+                double currentFut = 0;
                 if (marketOpen && opp.getExpiryDate() != null && opp.getStrike() != null) {
                     try {
                         String ceSym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
                         String peSym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
+                        String futSym = optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate());
                         if (allQuotes.containsKey(ceSym) && allQuotes.get(ceSym).lastPrice > 0) currentCe = allQuotes.get(ceSym).lastPrice;
                         if (allQuotes.containsKey(peSym) && allQuotes.get(peSym).lastPrice > 0) currentPe = allQuotes.get(peSym).lastPrice;
+                        if (allQuotes.containsKey(futSym) && allQuotes.get(futSym).lastPrice > 0) currentFut = allQuotes.get(futSym).lastPrice;
                     } catch (Exception e) {
                         log.debug("Quote lookup failed for {} {}: {}", opp.getUnderlying(), opp.getStrike(), e.getMessage());
                     }
@@ -437,12 +437,17 @@ public class OptionArbitrageController {
 
                 double pnl = 0;
                 String act = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
-                if (marketOpen && (currentCe > 0 || currentPe > 0)) {
+                if (marketOpen && (currentCe > 0 || currentPe > 0 || currentFut > 0)) {
                     if ("CONVERSION".equalsIgnoreCase(opp.getAction()) || act.contains("BUY CE+PE")) {
-                        pnl = ((currentCe - ceP) + (peP - currentPe)) * lotSize;
+                        if (currentCe > 0 && ceP > 0) pnl += currentCe - ceP;
+                        if (currentPe > 0 && peP > 0) pnl += peP - currentPe;
+                        if (currentFut > 0 && futP > 0) pnl += futP - currentFut;
                     } else if ("REVERSAL".equalsIgnoreCase(opp.getAction()) || act.contains("SELL CE+PE")) {
-                        pnl = ((ceP - currentCe) + (currentPe - peP)) * lotSize;
+                        if (currentCe > 0 && ceP > 0) pnl += ceP - currentCe;
+                        if (currentPe > 0 && peP > 0) pnl += currentPe - peP;
+                        if (currentFut > 0 && futP > 0) pnl += currentFut - futP;
                     }
+                    pnl *= lotSize;
                 }
                 pnlMap.put(String.valueOf(opp.getId()), Math.round(pnl * 100.0) / 100.0);
             }
@@ -581,6 +586,147 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
+    @GetMapping("/backtest")
+    public ResponseEntity<Map<String, Object>> backtest(
+            @RequestParam(defaultValue = "ALL") String underlying,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(defaultValue = "1000") double minEdge,
+            @RequestParam(defaultValue = "1") int lots,
+            @RequestParam(defaultValue = "250000") double capital,
+            @RequestParam(defaultValue = "3") int maxConcurrent) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            ZoneId ist = ZoneId.of("Asia/Kolkata");
+            LocalDate today = LocalDate.now(ist);
+            LocalDate start = startDate != null ? LocalDate.parse(startDate) : today.minusDays(30);
+            LocalDate end = endDate != null ? LocalDate.parse(endDate) : today;
+
+            List<OptionArbOpportunity> allOpps;
+            if ("ALL".equals(underlying)) {
+                allOpps = historyService.getRepository().findByScanTimeBetween(start.atStartOfDay(), end.atTime(LocalTime.MAX));
+            } else {
+                allOpps = historyService.getRepository().findByScanTimeBetweenAndUnderlyingOrderByScanTimeDesc(start.atStartOfDay(), end.atTime(LocalTime.MAX), underlying);
+            }
+
+            List<OptionArbOpportunity> tradeable = allOpps.stream()
+                .filter(o -> o.getEdgeAfterCosts() != null && o.getEdgeAfterCosts().doubleValue() >= minEdge)
+                .filter(o -> o.getExpiryDate() != null && o.getStrike() != null)
+                .sorted(Comparator.comparing(OptionArbOpportunity::getScanTime))
+                .toList();
+
+            // Deduplicate: pick best edge per (underlying, strike) per 5-minute window
+            Map<String, OptionArbOpportunity> bestPerWindow = new LinkedHashMap<>();
+            for (OptionArbOpportunity opp : tradeable) {
+                if (opp.getScanTime() == null) continue;
+                long minuteBucket = opp.getScanTime().atZone(ZoneId.of("Asia/Kolkata")).toEpochSecond() / 300;
+                String dedupeKey = opp.getUnderlying() + "_" + opp.getStrike() + "_" + minuteBucket;
+                OptionArbOpportunity existing = bestPerWindow.get(dedupeKey);
+                if (existing == null || opp.getEdgeAfterCosts().doubleValue() > existing.getEdgeAfterCosts().doubleValue()) {
+                    bestPerWindow.put(dedupeKey, opp);
+                }
+            }
+            List<OptionArbOpportunity> deduped = new ArrayList<>(bestPerWindow.values());
+            deduped.sort(Comparator.comparing(OptionArbOpportunity::getScanTime));
+
+            // Simulate: pick best edge per underlying per minute window
+            List<Map<String, Object>> trades = new ArrayList<>();
+            double totalPnl = 0;
+            double maxDrawdown = 0;
+            double peakPnl = 0;
+            int wins = 0, losses = 0;
+            Map<String, Integer> underlyingTrades = new LinkedHashMap<>();
+            double[] dailyPnl = new double[31];
+
+            long currentDayStart = 0;
+            int dayIndex = 0;
+
+            for (OptionArbOpportunity opp : deduped) {
+                int lotSize = OptionChainService.getLotSize(opp.getUnderlying());
+                double edge = opp.getEdgeAfterCosts().doubleValue();
+                double tradePnl = edge * lots;
+                totalPnl += tradePnl;
+                if (tradePnl > 0) wins++; else losses++;
+
+                if (totalPnl > peakPnl) peakPnl = totalPnl;
+                double dd = peakPnl - totalPnl;
+                if (dd > maxDrawdown) maxDrawdown = dd;
+
+                if (opp.getScanTime() != null) {
+                    long dayMillis = opp.getScanTime().toLocalDate().atStartOfDay(ist).toInstant().toEpochMilli();
+                    if (dayMillis != currentDayStart) {
+                        currentDayStart = dayMillis;
+                        dayIndex++;
+                    }
+                    if (dayIndex < dailyPnl.length) dailyPnl[dayIndex] += tradePnl;
+                }
+
+                underlyingTrades.merge(opp.getUnderlying(), 1, Integer::sum);
+
+                Map<String, Object> trade = new LinkedHashMap<>();
+                trade.put("time", opp.getScanTime() != null ? opp.getScanTime().toString() : "");
+                trade.put("underlying", opp.getUnderlying());
+                trade.put("strike", opp.getStrike());
+                trade.put("action", opp.getAction());
+                trade.put("edge", Math.round(edge));
+                trade.put("pnl", Math.round(tradePnl));
+                trade.put("lotSize", lotSize);
+                trades.add(trade);
+            }
+
+            double avgDailyPnl = dayIndex > 0 ? totalPnl / dayIndex : 0;
+            double winRate = (wins + losses) > 0 ? (double) wins / (wins + losses) * 100 : 0;
+
+            resp.put("period", start + " to " + end);
+            resp.put("totalSignals", allOpps.size());
+            resp.put("tradeableSignals", deduped.size());
+            resp.put("minEdgeFilter", minEdge);
+            resp.put("capital", capital);
+            resp.put("lots", lots);
+            resp.put("totalPnl", Math.round(totalPnl));
+            resp.put("avgDailyPnl", Math.round(avgDailyPnl));
+            resp.put("maxDrawdown", Math.round(maxDrawdown));
+            resp.put("wins", wins);
+            resp.put("losses", losses);
+            resp.put("winRate", Math.round(winRate * 10.0) / 10.0);
+            resp.put("underlyingBreakdown", underlyingTrades);
+            resp.put("trades", trades.stream().limit(200).toList());
+        } catch (Exception e) {
+            log.error("Backtest failed: {}", e.getMessage(), e);
+            resp.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/margin-check")
+    public ResponseEntity<Map<String, Object>> marginCheck(
+            @RequestParam String underlying,
+            @RequestParam(defaultValue = "1") int lots) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        try {
+            int lotSize = OptionChainService.getLotSize(underlying);
+
+            // Hedged margin estimates for box spread (FUT + CE + PE)
+            Map<String, Double> hedgedMargins = Map.of(
+                "NIFTY", 150000.0,
+                "BANKNIFTY", 250000.0,
+                "MIDCPNIFTY", 180000.0,
+                "FINNIFTY", 200000.0
+            );
+            double estimatedMargin = hedgedMargins.getOrDefault(underlying, 200000.0) * lots * 1.15;
+
+            resp.put("underlying", underlying);
+            resp.put("lots", lots);
+            resp.put("lotSize", lotSize);
+            resp.put("estimatedMargin", Math.round(estimatedMargin));
+            resp.put("capitalRequired", Math.round(estimatedMargin));
+            resp.put("note", "Estimated margin for hedged box spread. Actual margin from broker may differ.");
+        } catch (Exception e) {
+            resp.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
+    }
+
     @GetMapping("/export-signals")
     public ResponseEntity<byte[]> exportSignalsCsv(
             @RequestParam(defaultValue = "ALL") String underlying,
@@ -631,7 +777,11 @@ public class OptionArbitrageController {
     private void triggerAutoExec() {
         try {
             List<OptionArbOpportunity> recentOpps = historyService.getRepository()
-                .findRecentByStatusLimited("RUNNING", LocalDateTime.now().minusSeconds(30), 20);
+                .findRecentByStatusLimited("DETECTED", LocalDateTime.now().minusSeconds(60), 50);
+            if (recentOpps.isEmpty()) {
+                recentOpps = historyService.getRepository()
+                    .findRecentByStatusLimited("RUNNING", LocalDateTime.now().minusSeconds(60), 50);
+            }
             if (!recentOpps.isEmpty()) {
                 autoExecService.evaluateAndExecute(recentOpps);
             }
