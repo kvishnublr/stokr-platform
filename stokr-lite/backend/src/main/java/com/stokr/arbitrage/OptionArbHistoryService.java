@@ -36,17 +36,30 @@ public class OptionArbHistoryService {
 
     public OptionArbOpportunityRepository getRepository() { return repository; }
 
+    private static final java.time.Duration DEDUP_WINDOW = java.time.Duration.ofMinutes(15);
+
     /**
-     * Save detected opportunities from a scan result
+     * Save detected opportunities from a scan result.
+     * Deduplicates: skips if same underlying+strike+action already saved within DEDUP_WINDOW.
      */
     public List<OptionArbOpportunity> saveOpportunities(List<ArbitrageOpportunity> opportunities, String underlying, String strategyType) {
         List<OptionArbOpportunity> saved = new ArrayList<>();
         if (opportunities == null || opportunities.isEmpty()) return saved;
 
+        int skipped = 0;
+        LocalDateTime cutoff = LocalDateTime.now().minus(DEDUP_WINDOW);
+
         for (ArbitrageOpportunity opp : opportunities) {
             try {
-                LocalDate expiry = LocalDate.now().plusDays((long) opp.daysToExpiry);
                 String underlyingCode = opp.underlying != null ? opp.underlying : underlying;
+
+                long existing = repository.countRecentSimilar(underlyingCode, opp.strike, opp.action, strategyType, cutoff);
+                if (existing > 0) {
+                    skipped++;
+                    continue;
+                }
+
+                LocalDate expiry = LocalDate.now().plusDays((long) opp.daysToExpiry);
 
                 OptionArbOpportunity entity = OptionArbOpportunity.builder()
                     .scanTime(LocalDateTime.now())
@@ -74,7 +87,6 @@ public class OptionArbHistoryService {
                     .createdAt(LocalDateTime.now())
                     .build();
 
-                // Store cost breakdown as JSON
                 if (opp.costBreakdown != null && !opp.costBreakdown.isEmpty()) {
                     try {
                         entity.setCostBreakdown(opp.costBreakdown);
@@ -89,27 +101,38 @@ public class OptionArbHistoryService {
                 log.error("Failed to save opportunity: {}", e.getMessage());
             }
         }
-        log.info("Saved {} opportunities for {}", opportunities.size(), underlying);
+        if (skipped > 0) log.info("Dedup: skipped {} duplicate signals (within {})", skipped, DEDUP_WINDOW);
+        log.info("Saved {} opportunities for {} (skipped {} duplicates)", saved.size(), underlying, skipped);
         return saved;
     }
 
     public List<OptionArbOpportunity> saveIronCondorOpportunities(List<Map<String, Object>> opps) {
         List<OptionArbOpportunity> saved = new ArrayList<>();
         if (opps == null || opps.isEmpty()) return saved;
+        int skipped = 0;
+        LocalDateTime cutoff = LocalDateTime.now().minus(DEDUP_WINDOW);
         for (Map<String, Object> o : opps) {
             try {
                 String underlying = (String) o.getOrDefault("underlying", "NIFTY");
+                String action = (String) o.getOrDefault("action", "");
+                int strike = toInt(o.get("strike"));
+
+                long existing = repository.countRecentSimilar(underlying, strike, action, "IRON_CONDOR", cutoff);
+                if (existing > 0) {
+                    skipped++;
+                    continue;
+                }
+
                 String expiryStr = (String) o.getOrDefault("expiry", LocalDate.now().toString());
                 LocalDate expiry = LocalDate.parse(expiryStr);
-                int strike = toInt(o.get("strike"));
                 OptionArbOpportunity entity = OptionArbOpportunity.builder()
                     .scanTime(LocalDateTime.now())
                     .underlying(underlying)
                     .type("IRON_CONDOR")
                     .strike(strike)
-                    .action((String) o.getOrDefault("action", ""))
+                    .action(action)
                     .legs((String) o.getOrDefault("legs", ""))
-                    .description((String) o.getOrDefault("action", ""))
+                    .description(action)
                     .spotPrice(toBD(o.get("spotPrice")))
                     .futuresPrice(toBD(o.get("spotPrice")))
                     .edgeAfterCosts(toBD(o.get("edgeAfterCosts")))
@@ -126,7 +149,8 @@ public class OptionArbHistoryService {
                 log.error("Failed to save Iron Condor opp: {}", e.getMessage());
             }
         }
-        log.info("Saved {} Iron Condor opportunities", saved.size());
+        if (skipped > 0) log.info("Iron Condor dedup: skipped {} duplicates", skipped);
+        log.info("Saved {} Iron Condor opportunities (skipped {})", saved.size(), skipped);
         return saved;
     }
 
