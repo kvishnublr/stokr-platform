@@ -2,6 +2,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 
+function fmtTime(dt) {
+  if (!dt) return '--';
+  const d = new Date(dt);
+  const day = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  return `${day} ${time}`;
+}
+
 let _toastListeners = [];
 let _toastId = 0;
 function _notifyToast(toast) { _toastListeners.forEach(fn => fn(toast)); }
@@ -75,7 +83,7 @@ export default function OptionArbitrage() {
   const [isTestingBroker, setIsTestingBroker] = useState(false);
   const [maxSignals, setMaxSignals] = useState(() => {
     const saved = localStorage.getItem('stokr_max_signals');
-    return saved ? parseInt(saved) : 500;
+    return saved ? parseInt(saved) : 300;
   });
 
   const fetchBrokerRouting = async () => {
@@ -130,8 +138,8 @@ export default function OptionArbitrage() {
       const res = await client.get('/option-arbitrage/scan', { params: { underlying: uParam } });
       return res.data;
     },
-    refetchInterval: autoRefresh ? 1000 : false,
-    staleTime: 500,
+    refetchInterval: autoRefresh ? 5000 : false,
+    staleTime: 2000,
   });
 
   // Calendar Scan Query Fallback
@@ -141,7 +149,7 @@ export default function OptionArbitrage() {
       const res = await client.get('/option-arbitrage/calendar/scan', { params: { underlying: 'ALL' } });
       return res.data;
     },
-    refetchInterval: 3000
+    refetchInterval: 30000
   });
 
   // History & Signals Log Query
@@ -151,8 +159,8 @@ export default function OptionArbitrage() {
       const res = await client.get('/option-arbitrage/history', { params: { size: maxSignals } });
       return res.data;
     },
-    refetchInterval: autoRefresh ? 5000 : false,
-    staleTime: 3000,
+    refetchInterval: autoRefresh ? 30000 : false,
+    staleTime: 10000,
   });
 
   const opportunities = liveData?.opportunities || [];
@@ -306,7 +314,9 @@ export default function OptionArbitrage() {
               <option value={1000}>1000</option>
               <option value={2000}>2000</option>
               <option value={5000}>5000</option>
-              <option value={7000}>7000 (All)</option>
+              <option value={10000}>10000</option>
+              <option value={50000}>50000</option>
+              <option value={200000}>ALL</option>
             </select>
           </div>
           <button
@@ -319,6 +329,9 @@ export default function OptionArbitrage() {
           </button>
         </div>
       </div>
+
+      {/* Live Positions — always visible */}
+      <LivePositionsSection />
 
       {/* Active Tab View Rendering */}
       <div className="space-y-5 w-full">
@@ -336,7 +349,7 @@ export default function OptionArbitrage() {
         )}
 
         {activeTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'autotrade' && <><AutoExecSettingsPanel /><LivePositionsSection /></>}
+        {activeTab === 'autotrade' && <AutoExecSettingsPanel />}
         {activeTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
@@ -482,54 +495,51 @@ function AutoExecSettingsPanel() {
           </select>
         </div>
       </div>
+
+      {/* Roll-Over Settings */}
+      <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-slate-100">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold text-slate-500 uppercase">Auto Roll-Over:</span>
+          <button
+            onClick={() => updateSetting('rolloverEnabled', !settings.rolloverEnabled)}
+            className={`relative w-11 h-6 rounded-full transition-colors ${settings.rolloverEnabled ? 'bg-amber-500' : 'bg-slate-300'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.rolloverEnabled ? 'translate-x-5' : ''}`} />
+          </button>
+          <span className={`text-xs font-bold ${settings.rolloverEnabled ? 'text-amber-600' : 'text-slate-400'}`}>
+            {settings.rolloverEnabled ? 'ON' : 'OFF'}
+          </span>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-500 uppercase">Roll-Over at % Target</label>
+          <input type="number" value={settings.rolloverThresholdPct || 90} min={50} max={99}
+            onChange={(e) => setSettings(prev => ({ ...prev, rolloverThresholdPct: Number(e.target.value) }))}
+            onBlur={(e) => updateSetting('rolloverThresholdPct', e.target.value)}
+            className="w-16 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+          <span className="text-[9px] text-slate-400">%</span>
+        </div>
+        <div className="text-[9px] text-slate-400 italic">
+          When a position reaches {settings.rolloverThresholdPct || 90}% of target edge, auto square-off and take new position
+        </div>
+      </div>
     </div>
   );
 }
 
-/* Live Positions Section */
+/* Live Positions Section — standalone, always visible, 2s tick-by-tick refresh */
 function LivePositionsSection() {
-  const lastLogCountRef = React.useRef(0);
-
+  const [collapsed, setCollapsed] = useState(true);
   const { data, refetch } = useQuery({
     queryKey: ['livePositions'],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/live-positions');
       return res.data;
     },
-    refetchInterval: 15000,
+    refetchInterval: 2000,
+    staleTime: 1000,
   });
 
   const positions = data?.positions || [];
-
-  const { data: execLogs } = useQuery({
-    queryKey: ['execLogs'],
-    queryFn: async () => {
-      const res = await client.get('/option-arbitrage/auto-execute/logs');
-      return res.data || [];
-    },
-    refetchInterval: 10000,
-  });
-
-  React.useEffect(() => {
-    if (execLogs && execLogs.length > lastLogCountRef.current) {
-      const newLogs = execLogs.slice(0, execLogs.length - lastLogCountRef.current);
-      newLogs.forEach(log => {
-        const type = log.type || '';
-        const status = log.status || '';
-        const detail = log.detail || '';
-        if (type === 'SIGNAL' && status === 'FIRING') {
-          notifyBrowser('Auto-Trade: Signal Fired', detail);
-        } else if (type === 'MARGIN' && status === 'SKIP') {
-          notifyBrowser('Auto-Trade: Margin Insufficient', detail);
-        } else if (type === 'RISK' && status === 'STOPPED') {
-          notifyBrowser('Auto-Trade: Risk Limit Hit', detail);
-        } else if (status === 'FAILED') {
-          notifyBrowser('Auto-Trade: Execution Failed', detail);
-        }
-      });
-    }
-    lastLogCountRef.current = execLogs?.length || 0;
-  }, [execLogs]);
 
   const statusColor = (s) => {
     switch (s) {
@@ -542,24 +552,30 @@ function LivePositionsSection() {
     }
   };
 
+  if (positions.length === 0) return null;
+
   return (
     <div className="space-y-4">
-      {/* Live Positions */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 bg-gradient-to-r from-slate-900 to-indigo-950 flex items-center justify-between">
+        <div className="px-4 py-3 bg-gradient-to-r from-slate-900 to-indigo-950 flex items-center justify-between cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
           <div className="flex items-center gap-2">
             <span className="text-lg">📊</span>
             <h3 className="text-sm font-black text-white">Live Positions</h3>
             <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full">{positions.length}</span>
+            <span className="px-2 py-0.5 bg-white/10 text-white/60 text-[9px] font-bold rounded-full">2s tick</span>
+            {data?.totalPnl != null && (
+              <span className={`px-2.5 py-0.5 text-[11px] font-black rounded-full ${data.totalPnl >= 0 ? 'bg-emerald-500/30 text-emerald-300' : 'bg-red-500/30 text-red-300'}`}>
+                Total P&L: ₹{Math.round(data.totalPnl).toLocaleString('en-IN')}
+              </span>
+            )}
           </div>
-          <button onClick={() => refetch()} className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition">Refresh</button>
+          <div className="flex items-center gap-2">
+            <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition">Refresh</button>
+            <span className="text-white/60 text-xs">{collapsed ? '▼' : '▲'}</span>
+          </div>
         </div>
 
-        {positions.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-xs font-medium">
-            No open positions. Enable Auto-Execute above or click ⚡ Trade on a signal.
-          </div>
-        ) : (
+        {!collapsed && (
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] text-left">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
@@ -570,60 +586,55 @@ function LivePositionsSection() {
                   <th className="px-3 py-2">Action</th>
                   <th className="px-3 py-2 text-right">CE Entry</th>
                   <th className="px-3 py-2 text-right">PE Entry</th>
-                  <th className="px-3 py-2 text-right">Lots</th>
+                  <th className="px-3 py-2 text-right">FUT Entry</th>
                   <th className="px-3 py-2 text-right">Target Edge</th>
+                  <th className="px-3 py-2 text-center">Edge Progress</th>
+                  <th className="px-3 py-2 text-right">Live P&amp;L</th>
+                  <th className="px-3 py-2 text-right">Lots</th>
                   <th className="px-3 py-2 text-center">Status</th>
                   <th className="px-3 py-2 text-center">Error</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {positions.map(p => (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{p.enteredAt ? new Date(p.enteredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--'}</td>
-                    <td className="px-3 py-2 font-bold text-slate-800">{p.underlying}</td>
-                    <td className="px-3 py-2 font-bold text-slate-700">{p.strike}</td>
-                    <td className="px-3 py-2 text-purple-700 font-bold">{p.action?.substring(0, 15)}</td>
-                    <td className="px-3 py-2 text-right font-mono">₹{p.ceEntryPrice?.toFixed(1) || '--'}</td>
-                    <td className="px-3 py-2 text-right font-mono">₹{p.peEntryPrice?.toFixed(1) || '--'}</td>
-                    <td className="px-3 py-2 text-right font-bold">{p.lots}</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-indigo-700">₹{p.targetEdge?.toFixed(0) || '--'}</td>
-                    <td className="px-3 py-2 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${statusColor(p.status)}`}>{p.status}</span>
-                    </td>
-                    <td className="px-3 py-2 text-[9px] text-red-600 max-w-[200px] truncate">{p.errorMessage || '--'}</td>
-                  </tr>
-                ))}
+                {positions.map(p => {
+                  const pnl = p.currentPnl || 0;
+                  const target = p.targetEdge || 0;
+                  const captured = p.edgeCaptured || 0;
+                  return (
+                    <tr key={p.id} className={`hover:bg-slate-50 ${captured >= 90 ? 'bg-amber-50' : ''}`}>
+                      <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{fmtTime(p.enteredAt)}</td>
+                      <td className="px-3 py-2 font-bold text-slate-800">{p.underlying}</td>
+                      <td className="px-3 py-2 font-bold text-slate-700">{p.strike}</td>
+                      <td className="px-3 py-2 text-purple-700 font-bold text-[10px]">{p.action?.substring(0, 18)}</td>
+                      <td className="px-3 py-2 text-right font-mono">₹{p.ceEntryPrice?.toFixed(1) || '--'}</td>
+                      <td className="px-3 py-2 text-right font-mono">₹{p.peEntryPrice?.toFixed(1) || '--'}</td>
+                      <td className="px-3 py-2 text-right font-mono">₹{p.futEntryPrice?.toFixed(1) || '--'}</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-indigo-700">₹{target?.toFixed(0) || '--'}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${captured >= 90 ? 'bg-amber-500' : captured >= 50 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                              style={{ width: `${Math.min(100, captured)}%` }} />
+                          </div>
+                          <span className={`text-[10px] font-bold ${captured >= 90 ? 'text-amber-600' : captured >= 50 ? 'text-emerald-600' : 'text-blue-600'}`}>{captured}%</span>
+                        </div>
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {pnl !== 0 ? `₹${Math.round(pnl).toLocaleString('en-IN')}` : '--'}
+                      </td>
+                      <td className="px-3 py-2 text-right font-bold">{p.lots}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${statusColor(p.status)}`}>{p.status}</span>
+                      </td>
+                      <td className="px-3 py-2 text-[9px] text-red-600 max-w-[200px] truncate">{p.errorMessage || '--'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
-
-      {/* Execution Logs */}
-      {execLogs && execLogs.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
-            <h4 className="text-xs font-black text-slate-800 flex items-center gap-2">
-              <span>📋</span> Execution Logs
-            </h4>
-          </div>
-          <div className="max-h-[200px] overflow-y-auto divide-y divide-slate-100">
-            {execLogs.slice(0, 30).map((log, i) => (
-              <div key={log.id || i} className="px-4 py-2 flex items-center gap-3 text-[10px]">
-                <span className="font-mono text-slate-400 w-16">{log.time}</span>
-                <span className={`px-1.5 py-0.5 rounded font-bold ${
-                  log.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-800' :
-                  log.status === 'FAILED' || log.status === 'ERROR' ? 'bg-red-100 text-red-800' :
-                  log.status === 'PARTIAL' ? 'bg-orange-100 text-orange-800' :
-                  log.status === 'SKIP' || log.status === 'STOPPED' ? 'bg-amber-100 text-amber-800' :
-                  'bg-slate-100 text-slate-600'
-                }`}>{log.status}</span>
-                <span className="text-slate-700 truncate">{log.message}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -652,6 +663,8 @@ function SubTabButton({ id, label, active, onClick, count }) {
 /* 1. SIGNALS VIEW */
 function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpportunities, summary, scanLoading, handleExecuteInline, executionBroker }) {
   const [strategyTypeFilter, setStrategyTypeFilter] = useState('ALL');
+  const [minEdge, setMinEdge] = useState(300);
+  const [customEdge, setCustomEdge] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [lotsMap, setLotsMap] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
@@ -682,9 +695,10 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
       if (strategyTypeFilter === 'BOX' && !typeStr.includes('BOX')) return false;
       if (strategyTypeFilter === 'CALENDAR' && !typeStr.includes('CALENDAR') && !typeStr.includes('TIME')) return false;
       if (strategyTypeFilter === 'CONDOR' && !typeStr.includes('CONDOR') && !typeStr.includes('IRON')) return false;
+      if ((Number(o.edgeAfterCosts) || 0) < minEdge) return false;
       return true;
     });
-  }, [combinedOpps, strategyTypeFilter]);
+  }, [combinedOpps, strategyTypeFilter, minEdge]);
 
   const totalEdge = useMemo(() => {
     return filteredOpps.reduce((sum, o) => sum + (Number(o.edgeAfterCosts) || 0), 0);
@@ -744,6 +758,18 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
               {f.label}
             </button>
           ))}
+        </div>
+
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          <span className="text-[10px] font-bold text-slate-500 px-1">EDGE ≥</span>
+          {[0, 300, 500, 1000].map(e => (
+            <button key={e} onClick={() => { setMinEdge(e); setCustomEdge(''); setCurrentPage(1); }}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${minEdge === e && !customEdge ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              ₹{e}
+            </button>
+          ))}
+          <input type="number" placeholder="Custom" value={customEdge} onChange={e => { setCustomEdge(e.target.value); setMinEdge(Number(e.target.value) || 0); setCurrentPage(1); }}
+            className="w-16 px-1.5 py-1 rounded-lg text-[10px] font-bold border border-slate-300 focus:outline-none focus:border-emerald-500" />
         </div>
       </div>
 
@@ -910,8 +936,13 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
 /* 2. BID PARITY VIEW */
 function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {
   const [underlying, setUnderlying] = useState('NIFTY');
+  const [minEdge, setMinEdge] = useState(300);
+  const [customEdge, setCustomEdge] = useState('');
   const [expandedId, setExpandedId] = useState(null);
-  const [pnlMap, setPnlMap] = useState({});
+  const [sortCol, setSortCol] = useState('scanTime');
+  const [sortAsc, setSortAsc] = useState(false);
+  const [histPage, setHistPage] = useState(0);
+  const PAGE_SIZE = 200;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['bid-parity-scan', underlying],
@@ -919,93 +950,167 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       const res = await client.get('/option-arbitrage/bid-parity/scan', { params: { underlying } });
       return res.data;
     },
-    refetchInterval: 3000
+    refetchInterval: 30000
   });
 
+  const today = new Date().toLocaleDateString('en-CA');
+
   const { data: historyData } = useQuery({
-    queryKey: ['bid-parity-history'],
+    queryKey: ['bid-parity-history', underlying, histPage],
     queryFn: async () => {
-      const res = await client.get('/option-arbitrage/history', { params: { size: 200 } });
+      const params = { page: histPage, size: PAGE_SIZE, strategyType: 'BID_PARITY', startDate: today, endDate: today };
+      if (underlying !== 'ALL') params.underlying = underlying;
+      const res = await client.get('/option-arbitrage/history', { params });
       return res.data;
     }
   });
 
-  const liveOpps = liveData?.opportunities || [];
+  const liveOpps = (liveData?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) >= minEdge);
   const historyOpps = (historyData?.items || []).filter(i =>
-    (i.strategyType || '').includes('BID_PARITY')
+    (i.edgeAfterCosts || 0) >= minEdge
   );
 
   const allOpps = [...liveOpps];
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
-  useQuery({
-    queryKey: ['bid-parity-pnl', allOpps.filter(o => o.status === 'RUNNING' || o.status === 'OPEN').map(o => o.id).join(',')],
+  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  const totalHistory = historyData?.totalElements || 0;
+  const totalHistoryPages = historyData?.totalPages || 0;
+
+  const allUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+
+  const sortedOpps = [...filteredByUnderlying].sort((a, b) => {
+    let va, vb;
+    if (sortCol === 'scanTime') { va = a.scanTime || a.entryTime || ''; vb = b.scanTime || b.entryTime || ''; }
+    else if (sortCol === 'underlying') { va = a.underlying || ''; vb = b.underlying || ''; }
+    else if (sortCol === 'strike') { va = a.strike || 0; vb = b.strike || 0; }
+    else if (sortCol === 'edge') { va = a.edgeAfterCosts || 0; vb = b.edgeAfterCosts || 0; }
+    else if (sortCol === 'pnl') { va = a.pnlAfterCosts || 0; vb = b.pnlAfterCosts || 0; }
+    else { va = a[sortCol] || ''; vb = b[sortCol] || ''; }
+    if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortAsc ? va - vb : vb - va;
+  });
+  const toggleSort = (col) => { if (sortCol === col) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(false); } };
+  const sortIcon = (col) => sortCol === col ? (sortAsc ? ' ▲' : ' ▼') : ' ↕';
+
+  const runningIds = sortedOpps.filter(o => o.id).map(o => o.id).slice(0, 100);
+  const { data: pnlData } = useQuery({
+    queryKey: ['bid-parity-pnl', runningIds.join(',')],
     queryFn: async () => {
-      const ids = allOpps.filter(o => o.status === 'RUNNING' || o.status === 'OPEN').map(o => o.id).slice(0, 50);
-      if (ids.length === 0) return {};
-      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: ids.join(',') } });
+      if (runningIds.length === 0) return {};
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: runningIds.join(',') } });
       return res.data?.pnlMap || {};
     },
     refetchInterval: 10000,
-    onSuccess: (data) => setPnlMap(data)
+    enabled: runningIds.length > 0
   });
+  const pnlMap = pnlData || {};
+
+  const statsByUnderlying = useMemo(() => {
+    return allUnds.map(u => {
+      const items = allOpps.filter(o => o.underlying === u);
+      const getPnl = (o) => {
+        const live = pnlMap[String(o.id)];
+        if (live != null) return Number(live);
+        return o.pnlAfterCosts != null ? Number(o.pnlAfterCosts) : null;
+      };
+      const inProfit = items.filter(o => { const p = getPnl(o); return p != null && p > 0; }).length;
+      const inLoss = items.filter(o => { const p = getPnl(o); return p != null && p < 0; }).length;
+      const running = items.filter(o => { const s = String(o.status || 'RUNNING').toUpperCase(); return s === 'RUNNING' || s === 'OPEN' || s === 'DETECTED'; }).length;
+      const exited = items.filter(o => { const s = String(o.status || '').toUpperCase(); return s === 'EXITED' || s === 'CLOSED'; }).length;
+      const maxEdge = items.length > 0 ? Math.max(...items.map(o => Number(o.edgeAfterCosts) || 0)) : 0;
+      const hitTarget = items.filter(o => {
+        const p = getPnl(o);
+        const edge = Number(o.edgeAfterCosts) || 0;
+        return p != null && edge > 0 && p >= edge;
+      }).length;
+      return { underlying: u, total: items.length, inProfit, inLoss, running, exited, maxEdge, hitTarget };
+    }).filter(s => s.total > 0);
+  }, [allOpps, pnlMap]);
 
   return (
     <div className="space-y-4 w-full">
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-800">Bid Parity Conversion &amp; Reversal Scanner</h2>
-          <p className="text-xs text-slate-500">Scans live bid/ask spreads to capture instant synthetic vs futures pricing gaps</p>
+          <p className="text-xs text-slate-500">{sortedOpps.length} signals shown{totalHistory > 0 ? ` of ${totalHistory.toLocaleString('en-IN')} total today` : ''}</p>
+        </div>
+
+        <div className="flex flex-wrap gap-2 w-full mt-2">
+          {statsByUnderlying.map(s => (
+            <div key={s.underlying} className="flex-1 min-w-[180px] bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-3 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-slate-700">{s.underlying}</span>
+                <span className="text-[10px] font-bold text-slate-500">{s.total} signals</span>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] font-bold">
+                <span className="text-emerald-600">✓ {s.inProfit} profit</span>
+                <span className="text-red-500">✗ {s.inLoss} loss</span>
+                <span className="text-blue-600">● {s.running} running</span>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] font-bold">
+                <span className="text-amber-600">🎯 {s.hitTarget} hit target</span>
+                <span className="text-purple-600">Max: ₹{Math.round(s.maxEdge).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          ))}
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-            <button key={u} onClick={() => setUnderlying(u)}
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          <span className="text-[10px] font-bold text-slate-500 px-1">EDGE ≥</span>
+          {[300, 500, 1000].map(e => (
+            <button key={e} onClick={() => { setMinEdge(e); setCustomEdge(''); setHistPage(0); }}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${minEdge === e && !customEdge ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              ₹{e}
+            </button>
+          ))}
+          <input type="number" placeholder="Custom" value={customEdge} onChange={e => { setCustomEdge(e.target.value); setMinEdge(Number(e.target.value) || 0); setHistPage(0); }}
+            className="w-16 px-1.5 py-1 rounded-lg text-[10px] font-bold border border-slate-300 focus:outline-none focus:border-emerald-500" />
         </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Bid Parity feeds...</div>
-        ) : allOpps.length === 0 ? (
+        ) : sortedOpps.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No bid parity spreads for {underlying}</div>
         ) : (
           <div className="overflow-x-auto w-full">
             <table className="w-full text-[11px] text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
-                  <th className="px-2 py-2">Time</th>
-                  <th className="px-2 py-2">Symbol</th>
-                  <th className="px-2 py-2">Strike</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strike')}>Strike{sortIcon('strike')}</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">CE</th>
                   <th className="px-2 py-2 text-right">PE</th>
                   <th className="px-2 py-2 text-right">FUT</th>
-                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge</th>
+                  <th className="px-2 py-2 text-right text-emerald-600 font-bold cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('edge')}>Net Edge{sortIcon('edge')}</th>
                   <th className="px-2 py-2 text-center">Status</th>
-                  <th className="px-2 py-2 text-right">P&amp;L</th>
+                  <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('pnl')}>P&amp;L{sortIcon('pnl')}</th>
                   <th className="px-2 py-2 text-center">Exit</th>
                   <th className="px-2 py-2 text-center">Trade</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {allOpps.map((opp, idx) => {
+                {sortedOpps.map((opp, idx) => {
                   const isExp = expandedId === (opp.id || idx);
                   const statusStr = String(opp.status || 'RUNNING').toUpperCase();
                   const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED';
                   const livePnl = opp.id && pnlMap[String(opp.id)] != null ? pnlMap[String(opp.id)] : null;
                   const pnlDisplay = opp.pnlAfterCosts != null ? Number(opp.pnlAfterCosts) : livePnl;
 
-                  const timeStr = opp.scanTime || opp.entryTime
-                    ? new Date(opp.scanTime || opp.entryTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
-                    : '--';
-                  const exitStr = opp.exitTime
-                    ? new Date(opp.exitTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
-                    : '--';
+                  const timeStr = fmtTime(opp.scanTime || opp.entryTime);
+                  const exitStr = fmtTime(opp.exitTime);
                   const ceVal = Number(opp.ceEntryPrice || opp.cePrice || opp.ceBid || 0).toFixed(1);
                   const peVal = Number(opp.peEntryPrice || opp.pePrice || opp.peBid || 0).toFixed(1);
                   const futVal = Number(opp.futuresPrice || 0).toFixed(1);
@@ -1078,6 +1183,17 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
             </table>
           </div>
         )}
+        {totalHistoryPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50">
+            <span className="text-xs text-slate-500">Page {histPage + 1} of {totalHistoryPages} ({totalHistory.toLocaleString('en-IN')} signals today)</span>
+            <div className="flex gap-1">
+              <button disabled={histPage === 0} onClick={() => setHistPage(0)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">First</button>
+              <button disabled={histPage === 0} onClick={() => setHistPage(histPage - 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Prev</button>
+              <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(histPage + 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Next</button>
+              <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(totalHistoryPages - 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Last</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1086,7 +1202,13 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
 /* 3. BOX SPREAD VIEW */
 function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {
   const [underlying, setUnderlying] = useState('NIFTY');
+  const [minEdge, setMinEdge] = useState(0);
+  const [customEdge, setCustomEdge] = useState('');
   const [expandedId, setExpandedId] = useState(null);
+  const [sortCol, setSortCol] = useState('scanTime');
+  const [sortAsc, setSortAsc] = useState(false);
+  const [histPage, setHistPage] = useState(0);
+  const PAGE_SIZE = 200;
 
   const { data: liveData, isLoading } = useQuery({
     queryKey: ['box-spread-scan', underlying],
@@ -1094,68 +1216,157 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       const res = await client.get('/option-arbitrage/box-spread/scan', { params: { underlying } });
       return res.data;
     },
-    refetchInterval: 3000
+    refetchInterval: 30000
   });
 
+  const today2 = new Date().toLocaleDateString('en-CA');
+
   const { data: historyData } = useQuery({
-    queryKey: ['box-history'],
+    queryKey: ['box-history', underlying, histPage],
     queryFn: async () => {
-      const res = await client.get('/option-arbitrage/history', { params: { size: 200 } });
+      const params = { page: histPage, size: PAGE_SIZE, strategyType: 'BOX_SPREAD', startDate: today2, endDate: today2 };
+      if (underlying !== 'ALL') params.underlying = underlying;
+      const res = await client.get('/option-arbitrage/history', { params });
       return res.data;
     }
   });
 
-  const liveOpps = liveData?.opportunities || [];
+  const liveOpps = (liveData?.opportunities || []).filter(o => (o.edgeAfterCosts || o.boxEdgeInr || 0) >= minEdge);
   const historyOpps = (historyData?.items || []).filter(i =>
-    (i.strategyType || '').includes('BOX')
+    (i.edgeAfterCosts || i.boxEdgeInr || 0) >= minEdge
   );
 
   const allOpps = [...liveOpps];
   const liveIds = new Set(liveOpps.map(o => o.id));
   historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
+  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  const totalHistory = historyData?.totalElements || 0;
+  const totalHistoryPages = historyData?.totalPages || 0;
+
+  const boxRunningIds = allOpps.filter(o => o.id).map(o => o.id).slice(0, 100);
+  const { data: boxPnlData } = useQuery({
+    queryKey: ['box-pnl', boxRunningIds.join(',')],
+    queryFn: async () => {
+      if (boxRunningIds.length === 0) return {};
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: boxRunningIds.join(',') } });
+      return res.data?.pnlMap || {};
+    },
+    refetchInterval: 10000,
+    enabled: boxRunningIds.length > 0
+  });
+  const boxPnlMap = boxPnlData || {};
+
+  const boxUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+  const boxStats = useMemo(() => {
+    return boxUnds.map(u => {
+      const items = allOpps.filter(o => o.underlying === u);
+      const getPnl = (o) => {
+        const live = boxPnlMap[String(o.id)];
+        if (live != null) return Number(live);
+        return o.pnlAfterCosts != null ? Number(o.pnlAfterCosts) : null;
+      };
+      const inProfit = items.filter(o => { const p = getPnl(o); return p != null && p > 0; }).length;
+      const inLoss = items.filter(o => { const p = getPnl(o); return p != null && p < 0; }).length;
+      const running = items.filter(o => { const s = String(o.status || 'RUNNING').toUpperCase(); return s === 'RUNNING' || s === 'OPEN' || s === 'DETECTED'; }).length;
+      const exited = items.filter(o => { const s = String(o.status || '').toUpperCase(); return s === 'EXITED' || s === 'CLOSED'; }).length;
+      const maxEdge = items.length > 0 ? Math.max(...items.map(o => Number(o.edgeAfterCosts || o.boxEdgeInr) || 0)) : 0;
+      const hitTarget = items.filter(o => {
+        const p = getPnl(o);
+        const edge = Number(o.edgeAfterCosts || o.boxEdgeInr) || 0;
+        return p != null && edge > 0 && p >= edge;
+      }).length;
+      return { underlying: u, total: items.length, inProfit, inLoss, running, exited, maxEdge, hitTarget };
+    }).filter(s => s.total > 0);
+  }, [allOpps, boxPnlMap]);
+
+  const sortedOpps = [...filteredByUnderlying].sort((a, b) => {
+    let va, vb;
+    if (sortCol === 'scanTime') { va = a.scanTime || a.entryTime || ''; vb = b.scanTime || b.entryTime || ''; }
+    else if (sortCol === 'underlying') { va = a.underlying || ''; vb = b.underlying || ''; }
+    else if (sortCol === 'edge') { va = a.edgeAfterCosts || a.boxEdgeInr || 0; vb = b.edgeAfterCosts || b.boxEdgeInr || 0; }
+    else if (sortCol === 'pnl') { va = a.pnlAfterCosts || 0; vb = b.pnlAfterCosts || 0; }
+    else { va = a[sortCol] || ''; vb = b[sortCol] || ''; }
+    if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortAsc ? va - vb : vb - va;
+  });
+  const toggleSort = (col) => { if (sortCol === col) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(false); } };
+  const sortIcon = (col) => sortCol === col ? (sortAsc ? ' ▲' : ' ▼') : ' ↕';
+
   return (
     <div className="space-y-4 w-full">
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-800">4-Leg Risk-Free Box Spread Scanner</h2>
-          <p className="text-xs text-slate-500">Detects 4-leg box mispricings delivering guaranteed expiry payoffs regardless of market direction</p>
+          <p className="text-xs text-slate-500">{sortedOpps.length} signals shown{totalHistory > 0 ? ` of ${totalHistory.toLocaleString('en-IN')} total today` : ''}</p>
         </div>
+
+        <div className="flex flex-wrap gap-2 w-full mt-2">
+          {boxStats.map(s => (
+            <div key={s.underlying} className="flex-1 min-w-[180px] bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl border border-purple-200 p-3 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-purple-700">{s.underlying}</span>
+                <span className="text-[10px] font-bold text-purple-500">{s.total} signals</span>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] font-bold">
+                <span className="text-emerald-600">✓ {s.inProfit} profit</span>
+                <span className="text-red-500">✗ {s.inLoss} loss</span>
+                <span className="text-blue-600">● {s.running} running</span>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] font-bold">
+                <span className="text-amber-600">🎯 {s.hitTarget} hit target</span>
+                <span className="text-purple-600">Max: ₹{Math.round(s.maxEdge).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-            <button key={u} onClick={() => setUnderlying(u)}
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          <span className="text-[10px] font-bold text-slate-500 px-1">EDGE ≥</span>
+          {[300, 500, 1000].map(e => (
+            <button key={e} onClick={() => { setMinEdge(e); setCustomEdge(''); setHistPage(0); }}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${minEdge === e && !customEdge ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              ₹{e}
+            </button>
+          ))}
+          <input type="number" placeholder="Custom" value={customEdge} onChange={e => { setCustomEdge(e.target.value); setMinEdge(Number(e.target.value) || 0); setHistPage(0); }}
+            className="w-16 px-1.5 py-1 rounded-lg text-[10px] font-bold border border-slate-300 focus:outline-none focus:border-emerald-500" />
         </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Box Spreads...</div>
-        ) : allOpps.length === 0 ? (
+        ) : sortedOpps.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No box spread setups for {underlying}</div>
         ) : (
           <div className="overflow-x-auto w-full">
             <table className="w-full text-[11px] text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
-                  <th className="px-2 py-2">Time</th>
-                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
                   <th className="px-2 py-2">Strike Pair</th>
                   <th className="px-2 py-2">Action</th>
                   <th className="px-2 py-2 text-right">CE</th>
                   <th className="px-2 py-2 text-right">PE</th>
-                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge</th>
+                  <th className="px-2 py-2 text-right text-emerald-600 font-bold cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('edge')}>Net Edge{sortIcon('edge')}</th>
                   <th className="px-2 py-2 text-center">Status</th>
-                  <th className="px-2 py-2 text-right">P&amp;L</th>
+                  <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('pnl')}>P&amp;L{sortIcon('pnl')}</th>
                   <th className="px-2 py-2 text-center">Exit</th>
                   <th className="px-2 py-2 text-center">Trade</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {allOpps.map((opp, idx) => {
+                {sortedOpps.map((opp, idx) => {
                   const isExp = expandedId === (opp.id || idx);
                   const statusStr = String(opp.status || 'RUNNING').toUpperCase();
                   const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED';
@@ -1163,12 +1374,8 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                   const strike2 = opp.action ? parseInt(opp.action.match(/\d+\/(\d+)/)?.[1] || 0) : strike1 + 50;
                   const edgeVal = Number(opp.edgeAfterCosts || opp.boxEdgeInr || 0);
 
-                  const timeStr = opp.scanTime || opp.entryTime
-                    ? new Date(opp.scanTime || opp.entryTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
-                    : '--';
-                  const exitStr = opp.exitTime
-                    ? new Date(opp.exitTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
-                    : '--';
+                  const timeStr = fmtTime(opp.scanTime || opp.entryTime);
+                  const exitStr = fmtTime(opp.exitTime);
                   const ceVal = Number(opp.ceEntryPrice || opp.cePrice || 0).toFixed(1);
                   const peVal = Number(opp.peEntryPrice || opp.pePrice || 0).toFixed(1);
 
@@ -1229,6 +1436,17 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
             </table>
           </div>
         )}
+        {totalHistoryPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50">
+            <span className="text-xs text-slate-500">Page {histPage + 1} of {totalHistoryPages} ({totalHistory.toLocaleString('en-IN')} signals today)</span>
+            <div className="flex gap-1">
+              <button disabled={histPage === 0} onClick={() => setHistPage(0)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">First</button>
+              <button disabled={histPage === 0} onClick={() => setHistPage(histPage - 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Prev</button>
+              <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(histPage + 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Next</button>
+              <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(totalHistoryPages - 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Last</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1236,19 +1454,98 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
 
 /* 4. 0DTE IRON CONDOR VIEW */
 function IronCondorView({ handleExecuteInline, executionBroker }) {
-  const [underlying, setUnderlying] = useState('NIFTY');
+  const [underlying, setUnderlying] = useState('ALL');
+  const [minEdge, setMinEdge] = useState(300);
+  const [customEdge, setCustomEdge] = useState('');
   const [expandedId, setExpandedId] = useState(null);
+  const [sortCol, setSortCol] = useState('scanTime');
+  const [sortAsc, setSortAsc] = useState(false);
+  const [histPage, setHistPage] = useState(0);
+  const PAGE_SIZE = 200;
 
-  const { data, isLoading } = useQuery({
+  const { data: liveData, isLoading } = useQuery({
     queryKey: ['iron-condor-scan', underlying],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/iron-condor/scan', { params: { underlying } });
       return res.data;
     },
-    refetchInterval: 3000
+    refetchInterval: 30000
   });
 
-  const opps = data?.opportunities || [];
+  const today2 = new Date().toLocaleDateString('en-CA');
+
+  const { data: historyData } = useQuery({
+    queryKey: ['iron-history', underlying, histPage],
+    queryFn: async () => {
+      const params = { page: histPage, size: PAGE_SIZE, strategyType: 'IRON_CONDOR', startDate: today2, endDate: today2 };
+      if (underlying !== 'ALL') params.underlying = underlying;
+      const res = await client.get('/option-arbitrage/history', { params });
+      return res.data;
+    }
+  });
+
+  const liveOpps = (liveData?.opportunities || []).filter(o => (o.edgeAfterCosts || o.maxProfitRs || 0) >= minEdge);
+  const historyOpps = (historyData?.items || []).filter(i => (i.edgeAfterCosts || 0) >= minEdge);
+
+  const allOpps = [...liveOpps];
+  const liveIds = new Set(liveOpps.map(o => o.id));
+  historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
+
+  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  const totalHistory = historyData?.totalElements || 0;
+  const totalHistoryPages = historyData?.totalPages || 0;
+
+  const icRunningIds = allOpps.filter(o => o.id).map(o => o.id).slice(0, 100);
+  const { data: icPnlData } = useQuery({
+    queryKey: ['ic-pnl', icRunningIds.join(',')],
+    queryFn: async () => {
+      if (icRunningIds.length === 0) return {};
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: icRunningIds.join(',') } });
+      return res.data?.pnlMap || {};
+    },
+    refetchInterval: 10000,
+    enabled: icRunningIds.length > 0
+  });
+  const icPnlMap = icPnlData || {};
+
+  const icUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+  const icStats = useMemo(() => {
+    return icUnds.map(u => {
+      const items = allOpps.filter(o => o.underlying === u);
+      const getPnl = (o) => {
+        const live = icPnlMap[String(o.id)];
+        if (live != null) return Number(live);
+        return o.pnlAfterCosts != null ? Number(o.pnlAfterCosts) : null;
+      };
+      const inProfit = items.filter(o => { const p = getPnl(o); return p != null && p > 0; }).length;
+      const inLoss = items.filter(o => { const p = getPnl(o); return p != null && p < 0; }).length;
+      const running = items.filter(o => { const s = String(o.status || 'RUNNING').toUpperCase(); return s === 'RUNNING' || s === 'OPEN' || s === 'DETECTED'; }).length;
+      const maxEdge = items.length > 0 ? Math.max(...items.map(o => Number(o.edgeAfterCosts) || 0)) : 0;
+      const hitTarget = items.filter(o => {
+        const p = getPnl(o);
+        const edge = Number(o.edgeAfterCosts) || 0;
+        return p != null && edge > 0 && p >= edge;
+      }).length;
+      return { underlying: u, total: items.length, inProfit, inLoss, running, maxEdge, hitTarget };
+    }).filter(s => s.total > 0);
+  }, [allOpps, icPnlMap]);
+
+  const sortedOpps = [...filteredByUnderlying].sort((a, b) => {
+    const av = a[sortCol]; const bv = b[sortCol];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (sortCol === 'edgeAfterCosts' || sortCol === 'strike') return sortAsc ? Number(av) - Number(bv) : Number(bv) - Number(av);
+    if (sortCol === 'scanTime') return sortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+    return sortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+  });
+
+  const ColHead = ({ col, children, right }) => (
+    <th className={`px-2 py-2 cursor-pointer hover:text-indigo-600 select-none ${right ? 'text-right' : ''}`}
+      onClick={() => { if (sortCol === col) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(false); } }}>
+      {children} {sortCol === col ? (sortAsc ? '▲' : '▼') : ''}
+    </th>
+  );
 
   return (
     <div className="space-y-4 w-full">
@@ -1259,77 +1556,103 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
-          {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-            <button
-              key={u}
-              onClick={() => setUnderlying(u)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                underlying === u ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
-              }`}
-            >
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
             </button>
           ))}
         </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          <span className="text-[10px] font-bold text-slate-500 px-1">EDGE ≥</span>
+          {[300, 500, 1000].map(e => (
+            <button key={e} onClick={() => { setMinEdge(e); setCustomEdge(''); }}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${minEdge === e && !customEdge ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              ₹{e}
+            </button>
+          ))}
+          <input type="number" placeholder="Custom" value={customEdge} onChange={e => { setCustomEdge(e.target.value); setMinEdge(Number(e.target.value) || 0); }}
+            className="w-16 px-1.5 py-1 rounded-lg text-[10px] font-bold border border-slate-300 focus:outline-none focus:border-emerald-500" />
+        </div>
       </div>
 
+      {icStats.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {icStats.map(s => (
+            <div key={s.underlying} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-center">
+              <div className="text-[10px] font-bold text-slate-500 uppercase">{s.underlying}</div>
+              <div className="text-lg font-black text-slate-800">{s.total}</div>
+              <div className="flex justify-center gap-2 text-[10px] mt-1">
+                <span className="text-emerald-600 font-bold">▲ {s.inProfit}</span>
+                <span className="text-red-500 font-bold">▼ {s.inLoss}</span>
+                <span className="text-blue-500 font-bold">● {s.running}</span>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5">Max Edge: ₹{Math.round(s.maxEdge)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+        <div className="px-4 py-2 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-600">{sortedOpps.length} signals shown of {totalHistory.toLocaleString('en-IN')} total today</span>
+        </div>
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning 0DTE Iron Condor spreads...</div>
-        ) : opps.length === 0 ? (
+        ) : sortedOpps.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No 0DTE Iron Condor setups meeting risk criteria for {underlying}</div>
         ) : (
           <div className="overflow-x-auto w-full">
             <table className="w-full text-xs text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
-                  <th className="px-2 py-2">Symbol</th>
-                  <th className="px-2 py-2">ATM Strike</th>
-                  <th className="px-2 py-2">Call Wing</th>
-                  <th className="px-2 py-2">Put Wing</th>
-                  <th className="px-2 py-2 text-right font-bold text-emerald-600">Net Credit</th>
-                  <th className="px-2 py-2 text-right">Max Risk</th>
-                  <th className="px-2 py-2 text-center font-bold text-emerald-600">Win Prob</th>
+                  <ColHead col="scanTime">Time</ColHead>
+                  <ColHead col="underlying">Underlying</ColHead>
+                  <ColHead col="strike">Strike</ColHead>
+                  <ColHead col="action">Action / Legs</ColHead>
+                  <ColHead col="edgeAfterCosts" right>Edge ₹</ColHead>
+                  <th className="px-2 py-2 text-center">Status</th>
                   <th className="px-2 py-2 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {opps.map((opp, idx) => {
-                  const isExp = expandedId === idx;
+                {sortedOpps.map((opp, idx) => {
+                  const isExp = expandedId === opp.id;
+                  const st = String(opp.status || 'RUNNING').toUpperCase();
+                  const stColor = st === 'RUNNING' || st === 'OPEN' || st === 'DETECTED' ? 'bg-blue-100 text-blue-700' : st === 'EXITED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500';
+                  const pnlVal = icPnlMap[String(opp.id)];
+                  const edge = Number(opp.edgeAfterCosts) || 0;
                   return (
-                    <React.Fragment key={idx}>
-                      <tr
-                        onClick={() => setExpandedId(isExp ? null : idx)}
-                        className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}
-                      >
+                    <React.Fragment key={opp.id || idx}>
+                      <tr onClick={() => setExpandedId(isExp ? null : opp.id)}
+                        className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}>
+                        <td className="px-2 py-1.5 text-slate-600 font-mono whitespace-nowrap">{fmtTime(opp.scanTime)}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
-                        <td className="px-2 py-1.5 font-bold text-slate-700">{opp.atmStrike}</td>
-                        <td className="px-2 py-1.5 font-mono text-purple-700 font-bold">{opp.shortCallStrike} / {opp.longCallStrike}</td>
-                        <td className="px-2 py-1.5 font-mono text-indigo-700 font-bold">{opp.shortPutStrike} / {opp.longPutStrike}</td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">+₹{Number(opp.maxProfitRs || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-slate-500">₹{Number(opp.maxRiskRs || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-1.5 text-center font-bold text-emerald-600">{opp.winProbability || 84.5}%</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
+                        <td className="px-2 py-1.5 font-mono text-xs text-slate-600 max-w-[200px] truncate" title={opp.action}>{opp.action}</td>
+                        <td className={`px-2 py-1.5 text-right font-mono font-bold ${edge >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{edge >= 0 ? '+' : ''}₹{Math.round(edge)}</td>
+                        <td className="px-2 py-1.5 text-center"><span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${stColor}`}>{st}</span></td>
                         <td className="px-2 py-1.5 text-center">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                            className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded shadow-sm"
-                          >
-                            ⚡ Execute
+                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
+                            className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded shadow-sm">
+                            Execute
                           </button>
                         </td>
                       </tr>
-
                       {isExp && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
-                          <td colSpan={8} className="p-3">
+                          <td colSpan={7} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
-                              <span className="font-bold text-slate-800 text-xs uppercase block">0DTE Iron Condor Wing Breakdown:</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
-                                SELL {opp.shortCallStrike} CE | BUY {opp.longCallStrike} CE | SELL {opp.shortPutStrike} PE | BUY {opp.longPutStrike} PE
-                              </p>
+                              <span className="font-bold text-slate-800 text-xs uppercase block">Iron Condor Details</span>
+                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || opp.action}</p>
+                              <div className="grid grid-cols-3 gap-2 text-[10px]">
+                                <div>Spot: ₹{Number(opp.spotPrice || 0).toLocaleString('en-IN')}</div>
+                                <div>Expiry: {opp.expiryDate}</div>
+                                <div>Confidence: {Number(opp.confidence || 0).toFixed(1)}%</div>
+                              </div>
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md">
-                                  ⚡ Submit ({executionBroker})
+                                  Submit ({executionBroker})
                                 </button>
                               </div>
                             </div>
@@ -1341,6 +1664,17 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+        {totalHistoryPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50">
+            <span className="text-xs text-slate-500">Page {histPage + 1} of {totalHistoryPages} ({totalHistory.toLocaleString('en-IN')} signals today)</span>
+            <div className="flex gap-1">
+              <button disabled={histPage === 0} onClick={() => setHistPage(0)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">First</button>
+              <button disabled={histPage === 0} onClick={() => setHistPage(histPage - 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Prev</button>
+              <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(histPage + 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Next</button>
+              <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(totalHistoryPages - 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Last</button>
+            </div>
           </div>
         )}
       </div>
@@ -1358,7 +1692,7 @@ function CashSurgeView({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/cash-surge/scan');
       return res.data;
     },
-    refetchInterval: 5000
+    refetchInterval: 30000
   });
 
   const opps = data?.opportunities || [];
@@ -1455,7 +1789,7 @@ function CashSwingView({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/cash-momentum/scan');
       return res.data;
     },
-    refetchInterval: 5000
+    refetchInterval: 30000
   });
 
   const opps = data?.opportunities || [];
@@ -1553,7 +1887,7 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
       const res = await client.get('/option-arbitrage/calendar/scan', { params: { underlying } });
       return res.data;
     },
-    refetchInterval: 3000
+    refetchInterval: 30000
   });
 
   const opps = data?.opportunities || [];
@@ -2047,13 +2381,8 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
                     ? Number(item.pnlAfterCosts) 
                     : (isRunning ? null : (item.edgeAfterCosts != null ? Number(item.edgeAfterCosts) : 0.0));
 
-                  const signalTimeFormatted = item.scanTime 
-                    ? new Date(item.scanTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) 
-                    : (item.createdAt ? new Date(item.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : '--');
-
-                  const exitTimeFormatted = item.exitTime
-                    ? new Date(item.exitTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
-                    : '--';
+                  const signalTimeFormatted = fmtTime(item.scanTime || item.createdAt);
+                  const exitTimeFormatted = fmtTime(item.exitTime);
 
                   const ceVal = Number(item.ceEntryPrice || item.cePrice || 0).toFixed(1);
                   const peVal = Number(item.peEntryPrice || item.pePrice || 0).toFixed(1);
