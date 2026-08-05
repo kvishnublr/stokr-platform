@@ -67,9 +67,8 @@ const ALL_U = ['ALL', 'NIFTY', 'BANKNIFTY', 'MIDCPNIFTY', 'FINNIFTY'];
 export default function OptionArbitrage() {
   const { toasts, dismiss: dismissToast } = useToastState();
   const urlParams = new URLSearchParams(window.location.search);
-  const initialTab = urlParams.get('tab') || 'signals';
-  const [tradingHorizon, setTradingHorizon] = useState('INTRADAY'); // INTRADAY, SWING, POSITIONAL, ANALYTICS
-  const [activeSubTab, setActiveSubTab] = useState(initialTab);
+  const initialTab = urlParams.get('tab') || 'live';
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [underlyings, setUnderlyings] = useState(['ALL']);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [executionBroker, setExecutionBroker] = useState('PAPER');
@@ -259,31 +258,32 @@ export default function OptionArbitrage() {
         </div>
       </div>
 
-      {/* Main Trading Horizon Navigation Bar */}
+      {/* Tab Navigation Bar */}
       <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           {[
-            { id: 'INTRADAY', label: '⚡ Intraday Arbitrage (0-1D)', icon: '⚡' },
-            { id: 'SWING', label: '🔄 Swing Arbitrage (2-5D)', icon: '💎' },
-            { id: 'POSITIONAL', label: '⏳ Positional & Calendar', icon: '⏳' },
-            { id: 'ANALYTICS', label: '📈 Signals & Trade History', icon: '📊' },
-          ].map(h => (
+            { key: 'live', label: '⚡ Live Scan' },
+            { key: 'bidparity', label: '🎯 Bid Parity' },
+            { key: 'box', label: '💎 Box Spread' },
+            { key: 'autotrade', label: '🤖 Auto-Trade' },
+            { key: 'ironcondor', label: '🛡️ Iron Condor' },
+            { key: 'cashsurge', label: '🔥 Cash Surge' },
+            { key: 'cashswing', label: '🚀 Cash Swing' },
+            { key: 'calendar', label: '⏳ Calendar' },
+            { key: 'history', label: '📊 History' },
+          ].map(tab => (
             <button
-              key={h.id}
-              onClick={() => {
-                setTradingHorizon(h.id);
-                if (h.id === 'INTRADAY') setActiveSubTab('signals');
-                if (h.id === 'SWING') setActiveSubTab('box');
-                if (h.id === 'POSITIONAL') setActiveSubTab('calendar');
-                if (h.id === 'ANALYTICS') setActiveSubTab('history');
-              }}
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
-                tradingHorizon === h.id
+                activeTab === tab.key
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
                   : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              <span>{h.label}</span>
+              <span>{tab.label}</span>
+              {tab.key === 'live' && <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === tab.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>{opportunities.length}</span>}
+              {tab.key === 'history' && <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === tab.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>{historyItems.length}</span>}
             </button>
           ))}
         </div>
@@ -320,41 +320,9 @@ export default function OptionArbitrage() {
         </div>
       </div>
 
-      {/* Sub-Tab Navigation Bar */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-200">
-        {tradingHorizon === 'INTRADAY' && (
-          <>
-            <SubTabButton id="signals" label="⚡ Live Arbitrage Signals" active={activeSubTab} onClick={setActiveSubTab} count={opportunities.length} />
-            <SubTabButton id="bidparity" label="🎯 Bid Parity Scanner" active={activeSubTab} onClick={setActiveSubTab} />
-            <SubTabButton id="autotrade" label="🤖 Auto-Trade Engine" active={activeSubTab} onClick={setActiveSubTab} />
-            <SubTabButton id="ironcondor" label="🛡️ 0DTE Iron Condor" active={activeSubTab} onClick={setActiveSubTab} />
-            <SubTabButton id="cashsurge" label="🔥 10%+ Cash Surge" active={activeSubTab} onClick={setActiveSubTab} />
-          </>
-        )}
-
-        {tradingHorizon === 'SWING' && (
-          <>
-            <SubTabButton id="box" label="💎 Risk-Free Box Spread" active={activeSubTab} onClick={setActiveSubTab} />
-            <SubTabButton id="cashswing" label="🚀 2-5D Cash Swing" active={activeSubTab} onClick={setActiveSubTab} />
-          </>
-        )}
-
-        {tradingHorizon === 'POSITIONAL' && (
-          <>
-            <SubTabButton id="calendar" label="⏳ Calendar Time Spreads" active={activeSubTab} onClick={setActiveSubTab} />
-          </>
-        )}
-
-        {tradingHorizon === 'ANALYTICS' && (
-          <>
-            <SubTabButton id="history" label="📊 Trade History & Analytics" active={activeSubTab} onClick={setActiveSubTab} count={historyItems.length} />
-          </>
-        )}
-      </div>
-
-      {/* Active Sub-Tab View Rendering */}
+      {/* Active Tab View Rendering */}
       <div className="space-y-5 w-full">
-        {activeSubTab === 'signals' && (
+        {activeTab === 'live' && (
           <SignalsView
             underlyings={underlyings}
             toggleUnderlying={toggleUnderlying}
@@ -367,14 +335,14 @@ export default function OptionArbitrage() {
           />
         )}
 
-        {activeSubTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeSubTab === 'autotrade' && <><AutoExecSettingsPanel /><LivePositionsSection /></>}
-        {activeSubTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeSubTab === 'ironcondor' && <IronCondorView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeSubTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeSubTab === 'cashswing' && <CashSwingView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeSubTab === 'calendar' && <CalendarSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeSubTab === 'history' && <HistoryView historyItems={historyItems} calendarOpportunities={calendarOpportunities} historyLoading={historyLoading} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={underlyings} />}
+        {activeTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeTab === 'autotrade' && <><AutoExecSettingsPanel /><LivePositionsSection /></>}
+        {activeTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeTab === 'cashswing' && <CashSwingView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeTab === 'calendar' && <CalendarSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeTab === 'history' && <HistoryView historyItems={historyItems} calendarOpportunities={calendarOpportunities} historyLoading={historyLoading} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={underlyings} />}
       </div>
     </div>
   );
