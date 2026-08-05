@@ -911,17 +911,45 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
 function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {
   const [underlying, setUnderlying] = useState('NIFTY');
   const [expandedId, setExpandedId] = useState(null);
+  const [pnlMap, setPnlMap] = useState({});
 
-  const { data, isLoading } = useQuery({
+  const { data: liveData, isLoading } = useQuery({
     queryKey: ['bid-parity-scan', underlying],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/bid-parity/scan', { params: { underlying } });
       return res.data;
     },
-    refetchInterval: 2000
+    refetchInterval: 3000
   });
 
-  const opps = data?.opportunities || [];
+  const { data: historyData } = useQuery({
+    queryKey: ['bid-parity-history'],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/history', { params: { size: 200 } });
+      return res.data;
+    }
+  });
+
+  const liveOpps = liveData?.opportunities || [];
+  const historyOpps = (historyData?.items || []).filter(i =>
+    (i.strategyType || '').includes('BID_PARITY')
+  );
+
+  const allOpps = [...liveOpps];
+  const liveIds = new Set(liveOpps.map(o => o.id));
+  historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
+
+  useQuery({
+    queryKey: ['bid-parity-pnl', allOpps.filter(o => o.status === 'RUNNING' || o.status === 'OPEN').map(o => o.id).join(',')],
+    queryFn: async () => {
+      const ids = allOpps.filter(o => o.status === 'RUNNING' || o.status === 'OPEN').map(o => o.id).slice(0, 50);
+      if (ids.length === 0) return {};
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: ids.join(',') } });
+      return res.data?.pnlMap || {};
+    },
+    refetchInterval: 10000,
+    onSuccess: (data) => setPnlMap(data)
+  });
 
   return (
     <div className="space-y-4 w-full">
@@ -930,16 +958,10 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
           <h2 className="text-base font-bold text-slate-800">Bid Parity Conversion &amp; Reversal Scanner</h2>
           <p className="text-xs text-slate-500">Scans live bid/ask spreads to capture instant synthetic vs futures pricing gaps</p>
         </div>
-
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
           {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-            <button
-              key={u}
-              onClick={() => setUnderlying(u)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
-              }`}
-            >
+            <button key={u} onClick={() => setUnderlying(u)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
             </button>
           ))}
@@ -949,53 +971,97 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Bid Parity feeds...</div>
-        ) : opps.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No bid parity spreads currently active for {underlying}</div>
+        ) : allOpps.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No bid parity spreads for {underlying}</div>
         ) : (
           <div className="overflow-x-auto w-full">
-            <table className="w-full text-xs text-left border-collapse">
+            <table className="w-full text-[11px] text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
+                  <th className="px-2 py-2">Time</th>
                   <th className="px-2 py-2">Symbol</th>
                   <th className="px-2 py-2">Strike</th>
                   <th className="px-2 py-2">Action</th>
-                  <th className="px-2 py-2 text-right">CE Bid/Ask</th>
-                  <th className="px-2 py-2 text-right">PE Bid/Ask</th>
-                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge (₹)</th>
-                  <th className="px-2 py-2 text-center">Action</th>
+                  <th className="px-2 py-2 text-right">CE</th>
+                  <th className="px-2 py-2 text-right">PE</th>
+                  <th className="px-2 py-2 text-right">FUT</th>
+                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge</th>
+                  <th className="px-2 py-2 text-center">Status</th>
+                  <th className="px-2 py-2 text-right">P&amp;L</th>
+                  <th className="px-2 py-2 text-center">Exit</th>
+                  <th className="px-2 py-2 text-center">Trade</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {opps.map((opp, idx) => {
-                  const isExp = expandedId === idx;
+                {allOpps.map((opp, idx) => {
+                  const isExp = expandedId === (opp.id || idx);
+                  const statusStr = String(opp.status || 'RUNNING').toUpperCase();
+                  const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED';
+                  const livePnl = opp.id && pnlMap[String(opp.id)] != null ? pnlMap[String(opp.id)] : null;
+                  const pnlDisplay = opp.pnlAfterCosts != null ? Number(opp.pnlAfterCosts) : livePnl;
+
+                  const timeStr = opp.scanTime || opp.entryTime
+                    ? new Date(opp.scanTime || opp.entryTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+                    : '--';
+                  const exitStr = opp.exitTime
+                    ? new Date(opp.exitTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+                    : '--';
+                  const ceVal = Number(opp.ceEntryPrice || opp.cePrice || opp.ceBid || 0).toFixed(1);
+                  const peVal = Number(opp.peEntryPrice || opp.pePrice || opp.peBid || 0).toFixed(1);
+                  const futVal = Number(opp.futuresPrice || 0).toFixed(1);
+
                   return (
-                    <React.Fragment key={idx}>
-                      <tr
-                        onClick={() => setExpandedId(isExp ? null : idx)}
-                        className={`transition cursor-pointer ${isExp ? 'bg-amber-50/70 border-l-4 border-amber-600' : 'hover:bg-slate-50'}`}
-                      >
+                    <React.Fragment key={opp.id || idx}>
+                      <tr onClick={() => setExpandedId(isExp ? null : (opp.id || idx))}
+                        className={`transition cursor-pointer ${isExp ? 'bg-amber-50/70 border-l-4 border-amber-600' : 'hover:bg-slate-50'}`}>
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{timeStr}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{opp.strike}</td>
-                        <td className="px-2 py-1.5 font-bold text-purple-700">{opp.action}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-xs">{opp.ceBid} / {opp.ceAsk}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-xs">{opp.peBid} / {opp.peAsk}</td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">+₹{Math.round(opp.edgeAfterCosts || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 font-bold text-purple-700 truncate max-w-[120px]">{opp.action}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{ceVal}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{peVal}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{futVal}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                          +₹{Math.round(Number(opp.edgeAfterCosts || 0)).toLocaleString('en-IN')}
+                        </td>
                         <td className="px-2 py-1.5 text-center">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                            className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm"
-                          >
-                            ⚡ Execute
+                          <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${
+                            isRunning ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                            statusStr === 'DETECTED' ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                            statusStr === 'MISSED' ? 'bg-slate-100 text-slate-600 border-slate-300' :
+                            statusStr === 'FAILED' ? 'bg-red-100 text-red-800 border-red-300' :
+                            statusStr === 'EXPIRED' ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                            'bg-blue-100 text-blue-800 border-blue-300'
+                          }`}>
+                            {isRunning ? '🟢 RUNNING' : statusStr === 'DETECTED' ? '🔵 DETECTED' :
+                             statusStr === 'EXPIRED' ? '⏰ EXPIRED' : statusStr === 'MISSED' ? '⚪ MISSED' :
+                             statusStr === 'FAILED' ? '❌ FAILED' : statusStr}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold">
+                          {pnlDisplay != null && !isNaN(pnlDisplay)
+                            ? <span className={pnlDisplay >= 0 ? 'text-emerald-600' : 'text-red-600'}>₹{Math.round(pnlDisplay).toLocaleString('en-IN')}</span>
+                            : <span className="text-slate-400">--</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
+                        <td className="px-2 py-1.5 text-center">
+                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
+                            className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm">
+                            ⚡ Trade
                           </button>
                         </td>
                       </tr>
-
                       {isExp && (
                         <tr className="bg-amber-50/40 border-b border-amber-100">
-                          <td colSpan={7} className="p-3">
+                          <td colSpan={12} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-amber-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">Bid Parity Leg Breakdown:</span>
-                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || `BUY ${opp.strike} CE @ ${opp.ceAsk} | SELL ${opp.strike} PE @ ${opp.peBid}`}</p>
+                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || `BUY ${opp.strike} CE @ ${ceVal} | SELL ${opp.strike} PE @ ${peVal} | ${opp.action}`}</p>
+                              {opp.costBreakdown && (
+                                <div className="text-[10px] font-mono text-slate-600 grid grid-cols-4 gap-1">
+                                  {Object.entries(opp.costBreakdown).map(([k,v]) => <span key={k}>{k}: ₹{v}</span>)}
+                                </div>
+                              )}
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⚡ Submit ({executionBroker})
@@ -1019,10 +1085,10 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
 
 /* 3. BOX SPREAD VIEW */
 function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {
-  const [underlying, setUnderlying] = useState('MIDCPNIFTY');
+  const [underlying, setUnderlying] = useState('NIFTY');
   const [expandedId, setExpandedId] = useState(null);
 
-  const { data, isLoading } = useQuery({
+  const { data: liveData, isLoading } = useQuery({
     queryKey: ['box-spread-scan', underlying],
     queryFn: async () => {
       const res = await client.get('/option-arbitrage/box-spread/scan', { params: { underlying } });
@@ -1031,7 +1097,22 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
     refetchInterval: 3000
   });
 
-  const opps = data?.opportunities || [];
+  const { data: historyData } = useQuery({
+    queryKey: ['box-history'],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/history', { params: { size: 200 } });
+      return res.data;
+    }
+  });
+
+  const liveOpps = liveData?.opportunities || [];
+  const historyOpps = (historyData?.items || []).filter(i =>
+    (i.strategyType || '').includes('BOX')
+  );
+
+  const allOpps = [...liveOpps];
+  const liveIds = new Set(liveOpps.map(o => o.id));
+  historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
 
   return (
     <div className="space-y-4 w-full">
@@ -1040,16 +1121,10 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
           <h2 className="text-base font-bold text-slate-800">4-Leg Risk-Free Box Spread Scanner</h2>
           <p className="text-xs text-slate-500">Detects 4-leg box mispricings delivering guaranteed expiry payoffs regardless of market direction</p>
         </div>
-
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
           {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-            <button
-              key={u}
-              onClick={() => setUnderlying(u)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                underlying === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
-              }`}
-            >
+            <button key={u} onClick={() => setUnderlying(u)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
             </button>
           ))}
@@ -1059,53 +1134,82 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Box Spreads...</div>
-        ) : opps.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No risk-free box spread anomalies currently detected</div>
+        ) : allOpps.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No box spread setups for {underlying}</div>
         ) : (
           <div className="overflow-x-auto w-full">
-            <table className="w-full text-xs text-left border-collapse">
+            <table className="w-full text-[11px] text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
+                  <th className="px-2 py-2">Time</th>
                   <th className="px-2 py-2">Symbol</th>
                   <th className="px-2 py-2">Strike Pair</th>
-                  <th className="px-2 py-2 text-right">Box Cost</th>
-                  <th className="px-2 py-2 text-right">Expiry Payoff</th>
-                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge (₹)</th>
-                  <th className="px-2 py-2 text-center">Action</th>
+                  <th className="px-2 py-2">Action</th>
+                  <th className="px-2 py-2 text-right">CE</th>
+                  <th className="px-2 py-2 text-right">PE</th>
+                  <th className="px-2 py-2 text-right text-emerald-600 font-bold">Net Edge</th>
+                  <th className="px-2 py-2 text-center">Status</th>
+                  <th className="px-2 py-2 text-right">P&amp;L</th>
+                  <th className="px-2 py-2 text-center">Exit</th>
+                  <th className="px-2 py-2 text-center">Trade</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {opps.map((opp, idx) => {
-                  const isExp = expandedId === idx;
-                  const strike1 = opp.lowerStrike || opp.strike || 14400;
-                  const strike2 = opp.upperStrike || (strike1 + 100);
-                  const costVal = opp.boxCost ? Number(opp.boxCost) : Math.round(strike1 * 0.98);
-                  const payoffVal = opp.payoff ? Number(opp.payoff) : Math.round(strike2 * 1.02);
+                {allOpps.map((opp, idx) => {
+                  const isExp = expandedId === (opp.id || idx);
+                  const statusStr = String(opp.status || 'RUNNING').toUpperCase();
+                  const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED';
+                  const strike1 = opp.strike || 0;
+                  const strike2 = opp.action ? parseInt(opp.action.match(/\d+\/(\d+)/)?.[1] || 0) : strike1 + 50;
+                  const edgeVal = Number(opp.edgeAfterCosts || opp.boxEdgeInr || 0);
+
+                  const timeStr = opp.scanTime || opp.entryTime
+                    ? new Date(opp.scanTime || opp.entryTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+                    : '--';
+                  const exitStr = opp.exitTime
+                    ? new Date(opp.exitTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+                    : '--';
+                  const ceVal = Number(opp.ceEntryPrice || opp.cePrice || 0).toFixed(1);
+                  const peVal = Number(opp.peEntryPrice || opp.pePrice || 0).toFixed(1);
 
                   return (
-                    <React.Fragment key={idx}>
-                      <tr
-                        onClick={() => setExpandedId(isExp ? null : idx)}
-                        className={`transition cursor-pointer ${isExp ? 'bg-purple-50/70 border-l-4 border-purple-600' : 'hover:bg-slate-50'}`}
-                      >
+                    <React.Fragment key={opp.id || idx}>
+                      <tr onClick={() => setExpandedId(isExp ? null : (opp.id || idx))}
+                        className={`transition cursor-pointer ${isExp ? 'bg-purple-50/70 border-l-4 border-purple-600' : 'hover:bg-slate-50'}`}>
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{timeStr}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
-                        <td className="px-2 py-1.5 font-bold text-slate-700">{strike1} / {strike2}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">₹{costVal.toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">₹{payoffVal.toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">+₹{Math.round(opp.edgeAfterCosts || 350).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-700">{strike1}/{strike2}</td>
+                        <td className="px-2 py-1.5 font-bold text-purple-700 truncate max-w-[120px]">{opp.action}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{ceVal}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{peVal}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                          +₹{Math.round(edgeVal).toLocaleString('en-IN')}
+                        </td>
                         <td className="px-2 py-1.5 text-center">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
-                            className="px-2 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded shadow-sm"
-                          >
-                            ⚡ Execute
+                          <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${
+                            isRunning ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                            statusStr === 'EXPIRED' ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                            'bg-blue-100 text-blue-800 border-blue-300'
+                          }`}>
+                            {isRunning ? '🟢 RUNNING' : statusStr === 'EXPIRED' ? '⏰ EXPIRED' : statusStr}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold">
+                          {opp.pnlAfterCosts != null
+                            ? <span className={opp.pnlAfterCosts >= 0 ? 'text-emerald-600' : 'text-red-600'}>₹{Math.round(opp.pnlAfterCosts).toLocaleString('en-IN')}</span>
+                            : <span className="text-slate-400">--</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
+                        <td className="px-2 py-1.5 text-center">
+                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
+                            className="px-2 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded shadow-sm">
+                            ⚡ Trade
                           </button>
                         </td>
                       </tr>
-
                       {isExp && (
                         <tr className="bg-purple-50/40 border-b border-purple-100">
-                          <td colSpan={6} className="p-3">
+                          <td colSpan={11} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-purple-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">4-Leg Box Spread Breakdown:</span>
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || 'BUY CE1 | SELL PE1 | SELL CE2 | BUY PE2'}</p>
