@@ -252,7 +252,10 @@ public class BidParityService {
 
             List<ArbitrageOpportunity> single = new ArrayList<>();
             single.add(opp);
-            historyService.saveOpportunities(single, underlying, "BID_PARITY");
+            var savedEntities = historyService.saveOpportunities(single, underlying, "BID_PARITY");
+            if (!savedEntities.isEmpty()) {
+                map.put("id", savedEntities.get(0).getId());
+            }
         }
 
         log.info("Bid parity scan for {}: {} opportunities (ATM={}, expiry={}, DTE={})",

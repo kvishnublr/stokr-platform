@@ -1,0 +1,1 @@
+SELECT id, strike, spot_price, futures_price, ce_bid, ce_ask, pe_bid, pe_ask, edge_points, edge_after_costs, action, strategy_type, created_at FROM option_arb_opportunities WHERE underlying = 'BANKNIFTY' ORDER BY created_at DESC LIMIT 15;

@@ -55,13 +55,16 @@ public class BoxSpreadService {
 
                 List<ArbitrageOpportunity> opps = scanBoxSpreadForUnderlying(u, spot, fut);
                 if (opps != null && !opps.isEmpty()) {
-                    historyService.saveOpportunities(opps, u, "BOX_SPREAD");
+                    var savedEntities = historyService.saveOpportunities(opps, u, "BOX_SPREAD");
 
-                    for (ArbitrageOpportunity opp : opps) {
-                        Map<String, Object> map = opp.toMap();
+                    for (int idx = 0; idx < opps.size(); idx++) {
+                        Map<String, Object> map = opps.get(idx).toMap();
                         map.put("strategyType", "BOX_SPREAD");
                         map.put("guaranteedFill", true);
-                        map.put("boxEdgeInr", opp.edgeAfterCosts);
+                        map.put("boxEdgeInr", opps.get(idx).edgeAfterCosts);
+                        if (idx < savedEntities.size()) {
+                            map.put("id", savedEntities.get(idx).getId());
+                        }
                         results.add(map);
                     }
                 }

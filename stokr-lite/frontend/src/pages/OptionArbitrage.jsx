@@ -1654,7 +1654,10 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
       if (strategyFilter === 'CONDOR' && !typeStr.includes('CONDOR') && !typeStr.includes('IRON')) return false;
 
       if (statusFilter === 'RUNNING' && statusStr !== 'RUNNING' && statusStr !== 'OPEN') return false;
+      if (statusFilter === 'DETECTED' && statusStr !== 'DETECTED' && statusStr !== 'NEW') return false;
       if (statusFilter === 'EXITED' && statusStr !== 'EXITED' && statusStr !== 'CLOSED' && statusStr !== 'EXECUTED') return false;
+      if (statusFilter === 'MISSED' && statusStr !== 'MISSED' && statusStr !== 'SKIPPED') return false;
+      if (statusFilter === 'FAILED' && statusStr !== 'FAILED' && statusStr !== 'REJECTED') return false;
 
       if (underlyingFilter !== 'ALL' && item.underlying !== underlyingFilter) return false;
 
@@ -1837,9 +1840,12 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
             {/* Status Filters */}
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
               {[
-                { id: 'ALL', label: 'All Status' },
+                { id: 'ALL', label: 'All' },
                 { id: 'RUNNING', label: '🟢 Running' },
+                { id: 'DETECTED', label: '🔵 Detected' },
                 { id: 'EXITED', label: '🔴 Exited' },
+                { id: 'MISSED', label: '⚪ Missed' },
+                { id: 'FAILED', label: '❌ Failed' },
               ].map(st => (
                 <button
                   key={st.id}
@@ -1932,7 +1938,7 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
                   const rowId = item.id || idx;
                   const isExp = expandedId === rowId;
                   const statusStr = String(item.status || 'RUNNING').toUpperCase();
-                  const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN';
+                  const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED';
                   const pnlVal = item.pnlAfterCosts != null 
                     ? Number(item.pnlAfterCosts) 
                     : (isRunning ? null : (item.edgeAfterCosts != null ? Number(item.edgeAfterCosts) : 0.0));
@@ -1974,9 +1980,19 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
                         {/* Status Badge */}
                         <td className="px-1.5 py-1.5 text-center truncate">
                           <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${
-                            isRunning ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-blue-100 text-blue-800 border-blue-300'
+                            statusStr === 'RUNNING' || statusStr === 'OPEN' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                            statusStr === 'DETECTED' || statusStr === 'NEW' ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                            statusStr === 'MISSED' || statusStr === 'SKIPPED' ? 'bg-slate-100 text-slate-600 border-slate-300' :
+                            statusStr === 'FAILED' || statusStr === 'REJECTED' ? 'bg-red-100 text-red-800 border-red-300' :
+                            statusStr === 'EXPIRED' ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                            'bg-blue-100 text-blue-800 border-blue-300'
                           }`}>
-                            {isRunning ? '🟢 RUNNING' : '🔴 EXITED'}
+                            {statusStr === 'RUNNING' || statusStr === 'OPEN' ? '🟢 RUNNING' :
+                             statusStr === 'DETECTED' || statusStr === 'NEW' ? '🔵 DETECTED' :
+                             statusStr === 'MISSED' || statusStr === 'SKIPPED' ? '⚪ MISSED' :
+                             statusStr === 'FAILED' || statusStr === 'REJECTED' ? '❌ FAILED' :
+                             statusStr === 'EXPIRED' ? '⏰ EXPIRED' :
+                             `🔴 ${statusStr}`}
                           </span>
                         </td>
 
