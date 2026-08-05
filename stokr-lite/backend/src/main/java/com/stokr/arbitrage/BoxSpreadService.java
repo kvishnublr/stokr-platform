@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.*;
 
 @Service
@@ -17,7 +16,7 @@ public class BoxSpreadService {
     private final OptionArbHistoryService historyService;
     private final ZerodhaSpotPriceFetcher spotPriceFetcher;
 
-    private static final double MIN_BOX_EDGE_AFTER_COSTS = -1000.0;
+    private static final double MIN_BOX_EDGE_AFTER_COSTS = 0.0;
 
     public BoxSpreadService(OptionChainService optionChainService,
                             OptionArbHistoryService historyService,
@@ -81,29 +80,26 @@ public class BoxSpreadService {
         try {
             int step = OptionChainService.getStrikeStep(underlying);
             int atmStrike = (int) (Math.round(spotPrice / step) * step);
+            int lotSize = OptionChainService.getLotSize(underlying);
+
+            LocalDate weeklyExpiry = optionChainService.getWeeklyExpiryDate(underlying);
+            if (weeklyExpiry == null) {
+                log.warn("No weekly expiry found for {}", underlying);
+                return opps;
+            }
 
             List<Integer> strikes = new ArrayList<>();
             for (int i = -3; i <= 3; i++) {
                 strikes.add(atmStrike + i * step);
             }
 
-            LocalDate expiryDate = LocalDate.now();
             List<String> instruments = new ArrayList<>();
-
-            for (int s : strikes) {
-                String mon = expiryDate.getMonth().name().substring(0, 3);
-                int yy = expiryDate.getYear() % 100;
-                int month = expiryDate.getMonthValue();
-                int day = expiryDate.getDayOfMonth();
-
-                instruments.add(String.format("%s%02d%s%dCE", underlying, yy, mon, s));
-                instruments.add(String.format("%s%02d%s%dPE", underlying, yy, mon, s));
-                instruments.add(String.format("%s%02d%d%02d%dCE", underlying, yy, month, day, s));
-                instruments.add(String.format("%s%02d%d%02d%dPE", underlying, yy, month, day, s));
+            for (int strike : strikes) {
+                instruments.add(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, strike, "CE"));
+                instruments.add(optionChainService.buildNfoSymbol(underlying, weeklyExpiry, strike, "PE"));
             }
 
             Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
-            int lotSize = OptionChainService.getLotSize(underlying);
 
             for (int i = 0; i < strikes.size(); i++) {
                 for (int j = i + 1; j < strikes.size(); j++) {
@@ -111,32 +107,15 @@ public class BoxSpreadService {
                     int k2 = strikes.get(j);
                     double width = k2 - k1;
 
-                    String mon = expiryDate.getMonth().name().substring(0, 3);
-                    int yy = expiryDate.getYear() % 100;
-                    int month = expiryDate.getMonthValue();
-                    int day = expiryDate.getDayOfMonth();
-
-                    String ce1Key = String.format("%s%02d%s%dCE", underlying, yy, mon, k1);
-                    String pe1Key = String.format("%s%02d%s%dPE", underlying, yy, mon, k1);
-                    String ce2Key = String.format("%s%02d%s%dCE", underlying, yy, mon, k2);
-                    String pe2Key = String.format("%s%02d%s%dPE", underlying, yy, mon, k2);
+                    String ce1Key = optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k1, "CE");
+                    String pe1Key = optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k1, "PE");
+                    String ce2Key = optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k2, "CE");
+                    String pe2Key = optionChainService.buildNfoSymbol(underlying, weeklyExpiry, k2, "PE");
 
                     OptionChainService.OptionQuote ce1 = quotes.get(ce1Key);
                     OptionChainService.OptionQuote pe1 = quotes.get(pe1Key);
                     OptionChainService.OptionQuote ce2 = quotes.get(ce2Key);
                     OptionChainService.OptionQuote pe2 = quotes.get(pe2Key);
-
-                    if (ce1 == null || pe1 == null || ce2 == null || pe2 == null) {
-                        ce1Key = String.format("%s%02d%d%02d%dCE", underlying, yy, month, day, k1);
-                        pe1Key = String.format("%s%02d%d%02d%dPE", underlying, yy, month, day, k1);
-                        ce2Key = String.format("%s%02d%d%02d%dCE", underlying, yy, month, day, k2);
-                        pe2Key = String.format("%s%02d%d%02d%dPE", underlying, yy, month, day, k2);
-
-                        ce1 = quotes.get(ce1Key);
-                        pe1 = quotes.get(pe1Key);
-                        ce2 = quotes.get(ce2Key);
-                        pe2 = quotes.get(pe2Key);
-                    }
 
                     if (ce1 == null || pe1 == null || ce2 == null || pe2 == null) continue;
 
@@ -145,18 +124,32 @@ public class BoxSpreadService {
                     double ce2Bid = ce2.bid > 0 ? ce2.bid : ce2.lastPrice;
                     double pe2Ask = pe2.ask > 0 ? pe2.ask : pe2.lastPrice;
 
+                    if (ce1Ask <= 0 || pe1Bid <= 0 || ce2Bid <= 0 || pe2Ask <= 0) continue;
+
                     double buyBoxCost = ce1Ask - pe1Bid - ce2Bid + pe2Ask;
                     double buyBoxEdgePoints = width - buyBoxCost;
                     double grossBuyEdge = buyBoxEdgePoints * lotSize;
-                    double buyCosts = 160.0;
-                    double netBuyEdge = grossBuyEdge - buyCosts;
+                    double brokerage = 120.0;
+                    double stt = grossBuyEdge * 0.001;
+                    double exchange = grossBuyEdge * 0.000345 * 4;
+                    double sebi = grossBuyEdge * 0.00001;
+                    double gst = (brokerage + exchange + sebi) * 0.18;
+                    double ipft = grossBuyEdge * 0.00001;
+                    double totalCosts = stt + brokerage + exchange + sebi + gst + ipft;
+                    double netBuyEdge = grossBuyEdge - totalCosts;
 
                     if (netBuyEdge >= MIN_BOX_EDGE_AFTER_COSTS) {
+                        long daysToExpiry = java.time.Duration.between(
+                            LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays();
+
                         ArbitrageOpportunity opp = new ArbitrageOpportunity();
                         opp.underlying = underlying;
                         opp.strike = k1;
                         opp.type = "BOX_SPREAD";
                         opp.action = "LONG BOX (" + k1 + "/" + k2 + ")";
+                        opp.legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %d CE @ %.1f | BUY %d PE @ %.1f",
+                            k1, ce1Ask, k1, pe1Bid, k2, ce2Bid, k2, pe2Ask);
+                        opp.description = String.format("Width=%d | Cost=%.1f | Net=%.1f", (int)width, buyBoxCost, netBuyEdge);
                         opp.spotPrice = spotPrice;
                         opp.futuresPrice = futuresPrice;
                         opp.cePrice = ce1.lastPrice;
@@ -165,15 +158,29 @@ public class BoxSpreadService {
                         opp.ceAsk = ce1.ask;
                         opp.peBid = pe1.bid;
                         opp.peAsk = pe1.ask;
-                        opp.edgePoints = Math.round(buyBoxEdgePoints * 10.0) / 10.0;
-                        opp.edgeAfterCosts = Math.round(netBuyEdge * 10.0) / 10.0;
+                        opp.edgePoints = Math.round(buyBoxEdgePoints * 100.0) / 100.0;
+                        opp.edgeAfterCosts = Math.round(netBuyEdge * 100.0) / 100.0;
+                        opp.daysToExpiry = daysToExpiry;
                         opp.confidence = 95.0;
-                        opp.legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %d CE @ %.1f | BUY %d PE @ %.1f",
-                            k1, ce1Ask, k1, pe1Bid, k2, ce2Bid, k2, pe2Ask);
+
+                        Map<String, Double> costs = new LinkedHashMap<>();
+                        costs.put("stt", Math.round(stt * 100.0) / 100.0);
+                        costs.put("brokerage", brokerage);
+                        costs.put("exchange", Math.round(exchange * 100.0) / 100.0);
+                        costs.put("sebi", Math.round(sebi * 100.0) / 100.0);
+                        costs.put("gst", Math.round(gst * 100.0) / 100.0);
+                        costs.put("ipft", Math.round(ipft * 100.0) / 100.0);
+                        costs.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
+                        costs.put("netEdge", Math.round(netBuyEdge * 100.0) / 100.0);
+                        opp.costBreakdown = costs;
+
                         opps.add(opp);
                     }
                 }
             }
+
+            log.info("Box spread scan for {}: {} strikes, {} combos, {} profitable (expiry={}, ATM={})",
+                underlying, strikes.size(), (strikes.size() * (strikes.size()-1))/2, opps.size(), weeklyExpiry, atmStrike);
         } catch (Exception e) {
             log.error("Error calculating Box Spread for {}: {}", underlying, e.getMessage(), e);
         }

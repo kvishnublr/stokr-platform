@@ -27,6 +27,7 @@ public class OptionArbitrageController {
     private final OptionArbHistoryService historyService;
     private final BidParityService bidParityService;
     private final BoxSpreadService boxSpreadService;
+    private final CalendarSpreadService calendarSpreadService;
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
     private final LivePositionRepository livePositionRepo;
@@ -38,6 +39,7 @@ public class OptionArbitrageController {
                                      OptionArbHistoryService historyService,
                                      BidParityService bidParityService,
                                      BoxSpreadService boxSpreadService,
+                                     CalendarSpreadService calendarSpreadService,
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
                                      LivePositionRepository livePositionRepo) {
@@ -45,6 +47,7 @@ public class OptionArbitrageController {
         this.historyService = historyService;
         this.bidParityService = bidParityService;
         this.boxSpreadService = boxSpreadService;
+        this.calendarSpreadService = calendarSpreadService;
         this.spotFetcher = spotFetcher;
         this.autoExecService = autoExecService;
         this.livePositionRepo = livePositionRepo;
@@ -176,6 +179,181 @@ public class OptionArbitrageController {
         resp.put("marketClosed", false);
         resp.put("opportunities", opps);
         resp.put("count", opps.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/calendar/scan")
+    public ResponseEntity<Map<String, Object>> scanCalendarSpread(
+            @RequestParam(defaultValue = "ALL") String underlying) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<String> targets = "ALL".equalsIgnoreCase(underlying)
+            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            : List.of(underlying);
+        Map<String, String> spotKeys = Map.of(
+            "NIFTY", "NSE:NIFTY 50",
+            "BANKNIFTY", "NSE:NIFTY BANK",
+            "MIDCPNIFTY", "NSE:NIFTY MID SELECT",
+            "FINNIFTY", "NSE:NIFTY FIN SERVICE"
+        );
+        List<Map<String, Object>> allOpps = new ArrayList<>();
+        for (String u : targets) {
+            try {
+                String spotKey = spotKeys.getOrDefault(u, "NSE:NIFTY 50");
+                String futKey = FuturesKeyResolver.resolveFuturesKey(u, spotFetcher, spotKey);
+                double[] spotFut = spotFetcher.getSpotAndFutures(spotKey, futKey);
+                double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
+                double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : spot;
+                if (spot <= 0) continue;
+                List<Map<String, Object>> opps = calendarSpreadService.scanCalendarSpreads(u, spot, fut);
+                allOpps.addAll(opps);
+            } catch (Exception e) {
+                log.error("Calendar scan error for {}: {}", u, e.getMessage());
+            }
+        }
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("opportunities", allOpps);
+        resp.put("count", allOpps.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/iron-condor/scan")
+    public ResponseEntity<Map<String, Object>> scanIronCondor(
+            @RequestParam(defaultValue = "ALL") String underlying) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<String> targets = "ALL".equalsIgnoreCase(underlying)
+            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            : List.of(underlying);
+        List<Map<String, Object>> allOpps = new ArrayList<>();
+        for (String u : targets) {
+            try {
+                allOpps.addAll(scanIronCondorForUnderlying(u));
+            } catch (Exception e) {
+                log.error("Iron Condor scan error for {}: {}", u, e.getMessage());
+            }
+        }
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("opportunities", allOpps);
+        resp.put("count", allOpps.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    private List<Map<String, Object>> scanIronCondorForUnderlying(String underlying) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+        if (expiry == null) return results;
+
+        double[] spotFut = null;
+        try {
+            Map<String, String> spotKeys = Map.of(
+                "NIFTY", "NSE:NIFTY 50", "BANKNIFTY", "NSE:NIFTY BANK",
+                "MIDCPNIFTY", "NSE:NIFTY MID SELECT", "FINNIFTY", "NSE:NIFTY FIN SERVICE"
+            );
+            String spotKey = spotKeys.getOrDefault(underlying, "NSE:NIFTY 50");
+            String futKey = FuturesKeyResolver.resolveFuturesKey(underlying, spotFetcher, spotKey);
+            spotFut = spotFetcher.getSpotAndFutures(spotKey, futKey);
+        } catch (Exception e) { return results; }
+        if (spotFut == null || spotFut[0] <= 0) return results;
+        double spot = spotFut[0];
+        int step = OptionChainService.getStrikeStep(underlying);
+        int atmStrike = (int) (Math.round(spot / step) * step);
+        int lotSize = OptionChainService.getLotSize(underlying);
+
+        List<Integer> strikes = new ArrayList<>();
+        for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
+
+        List<String> instruments = new ArrayList<>();
+        for (int s : strikes) {
+            instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, s, "CE"));
+            instruments.add(optionChainService.buildNfoSymbol(underlying, expiry, s, "PE"));
+        }
+        Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
+
+        for (int wingWidth = 1; wingWidth <= 3; wingWidth++) {
+            int putSell = atmStrike - wingWidth * step;
+            int callSell = atmStrike + wingWidth * step;
+            int putBuy = putSell - step;
+            int callBuy = callSell + step;
+
+            String psKey = optionChainService.buildNfoSymbol(underlying, expiry, putSell, "PE");
+            String pbKey = optionChainService.buildNfoSymbol(underlying, expiry, putBuy, "PE");
+            String csKey = optionChainService.buildNfoSymbol(underlying, expiry, callSell, "CE");
+            String cbKey = optionChainService.buildNfoSymbol(underlying, expiry, callBuy, "CE");
+
+            OptionChainService.OptionQuote ps = quotes.get(psKey);
+            OptionChainService.OptionQuote pb = quotes.get(pbKey);
+            OptionChainService.OptionQuote cs = quotes.get(csKey);
+            OptionChainService.OptionQuote cb = quotes.get(cbKey);
+            if (ps == null || pb == null || cs == null || cb == null) continue;
+
+            double psBid = ps.bid > 0 ? ps.bid : ps.lastPrice;
+            double pbAsk = pb.ask > 0 ? pb.ask : pb.lastPrice;
+            double csBid = cs.bid > 0 ? cs.bid : cs.lastPrice;
+            double cbAsk = cb.ask > 0 ? cb.ask : cb.lastPrice;
+            if (psBid <= 0 || pbAsk <= 0 || csBid <= 0 || cbAsk <= 0) continue;
+
+            double credit = (psBid - pbAsk) + (csBid - cbAsk);
+            double maxLoss = (double) step - credit;
+            if (maxLoss <= 0) continue;
+            double riskReward = credit / maxLoss;
+            double netEdge = credit * lotSize - 200.0;
+
+            if (riskReward >= 0.2) {
+                Map<String, Object> opp = new LinkedHashMap<>();
+                opp.put("type", "IRON_CONDOR");
+                opp.put("underlying", underlying);
+                opp.put("strike", putSell);
+                opp.put("action", "SELL " + putSell + "PE/" + callSell + "CE | BUY " + putBuy + "PE/" + callBuy + "CE");
+                opp.put("legs", String.format("SELL %d PE @ %.1f | BUY %d PE @ %.1f | SELL %d CE @ %.1f | BUY %d CE @ %.1f",
+                    putSell, psBid, putBuy, pbAsk, callSell, csBid, callBuy, cbAsk));
+                opp.put("credit", Math.round(credit * 100.0) / 100.0);
+                opp.put("maxLoss", Math.round(maxLoss * 100.0) / 100.0);
+                opp.put("riskReward", Math.round(riskReward * 100.0) / 100.0);
+                opp.put("edgeAfterCosts", Math.round(netEdge * 10.0) / 10.0);
+                opp.put("expiry", expiry.toString());
+                opp.put("lotSize", lotSize);
+                opp.put("spotPrice", spot);
+                opp.put("wingWidth", wingWidth * step);
+                opp.put("confidence", Math.min(95, 60 + riskReward * 100));
+                results.add(opp);
+            }
+        }
+        return results;
+    }
+
+    @GetMapping("/cash-momentum/scan")
+    public ResponseEntity<Map<String, Object>> scanCashMomentum(
+            @RequestParam(defaultValue = "ALL") String underlying) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("opportunities", Collections.emptyList());
+        resp.put("count", 0);
+        resp.put("message", "Cash momentum scanner is a stub. Implement with real stock data feed.");
         return ResponseEntity.ok(resp);
     }
 
