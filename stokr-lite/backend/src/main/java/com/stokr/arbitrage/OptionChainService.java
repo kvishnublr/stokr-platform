@@ -195,10 +195,11 @@ public class OptionChainService {
 
     public static int getLotSize(String underlying) {
         return switch (underlying.toUpperCase()) {
+            case "NIFTY" -> 25;
             case "BANKNIFTY" -> 15;
             case "MIDCPNIFTY" -> 50;
             case "FINNIFTY" -> 25;
-            default -> 25; // NIFTY
+            default -> 25;
         };
     }
 
@@ -216,7 +217,7 @@ public class OptionChainService {
             case "BANKNIFTY" -> DayOfWeek.WEDNESDAY;
             case "FINNIFTY" -> DayOfWeek.TUESDAY;
             case "MIDCPNIFTY" -> DayOfWeek.MONDAY;
-            default -> DayOfWeek.THURSDAY; // NIFTY
+            default -> DayOfWeek.TUESDAY; // NIFTY — SEBI changed from Thursday to Tuesday
         };
     }
 
@@ -242,22 +243,22 @@ public class OptionChainService {
     public LocalDate getMonthlyExpiry() {
         LocalDate today = LocalDate.now();
         LocalDate lastDayOfMonth = today.withDayOfMonth(today.lengthOfMonth());
-        LocalDate lastThursday = lastDayOfMonth;
-        while (lastThursday.getDayOfWeek() != DayOfWeek.THURSDAY) {
-            lastThursday = lastThursday.minusDays(1);
+        LocalDate expiryDay = lastDayOfMonth;
+        while (expiryDay.getDayOfWeek() != DayOfWeek.TUESDAY) {
+            expiryDay = expiryDay.minusDays(1);
         }
-        if (lastThursday.equals(today)) {
+        if (expiryDay.equals(today)) {
             LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
             if (nowIST.isAfter(LocalTime.of(15, 30))) {
-                lastThursday = lastThursday.plusMonths(1);
-                lastDayOfMonth = lastThursday.withDayOfMonth(lastThursday.lengthOfMonth());
-                lastThursday = lastDayOfMonth;
-                while (lastThursday.getDayOfWeek() != DayOfWeek.THURSDAY) {
-                    lastThursday = lastThursday.minusDays(1);
+                expiryDay = expiryDay.plusMonths(1);
+                lastDayOfMonth = expiryDay.withDayOfMonth(expiryDay.lengthOfMonth());
+                expiryDay = lastDayOfMonth;
+                while (expiryDay.getDayOfWeek() != DayOfWeek.TUESDAY) {
+                    expiryDay = expiryDay.minusDays(1);
                 }
             }
         }
-        return lastThursday;
+        return expiryDay;
     }
 
     private List<String> buildNfoSymbolCandidates(String underlying, LocalDate expiryDate, int strike, String type) {
@@ -280,15 +281,30 @@ public class OptionChainService {
         return candidates.isEmpty() ? null : candidates.get(0);
     }
 
+    public String buildNfoFutSymbol(String underlying, LocalDate expiryDate) {
+        String clean = underlying.replace(" ", "");
+        int yy = expiryDate.getYear() % 100;
+        String mon = expiryDate.getMonth().name().substring(0, 3);
+        return String.format("%s%02d%sFUT", clean, yy, mon);
+    }
+
     private double calculateParityEdge(double parityDev, String underlying) {
         double pts = Math.abs(parityDev);
         int lotSize = getLotSize(underlying);
         double grossEdge = pts * lotSize;
+
+        // 3-leg box trade: CE + PE + FUT = 6 orders (3 buy + 3 sell)
+        // STT: 0.1% on sell-side only (options), 0.0125% on sell-side (futures)
+        // Approximate: 3 sell legs × 0.1% of grossEdge (conservative)
         double stt = grossEdge * 0.001;
+        // Brokerage: flat ₹20/order × 6 orders = ₹120
         double brokerage = 120.0;
-        double exchange = grossEdge * 0.000345;
+        // Exchange txn: 0.00345% per side × 6 sides
+        double exchange = grossEdge * 0.000345 * 6;
+        // SEBI: 0.0001% of turnover
         double sebi = grossEdge * 0.000001;
-        double gst = (brokerage + exchange) * 0.18;
+        // GST: 18% on (brokerage + exchange + SEBI)
+        double gst = (brokerage + exchange + sebi) * 0.18;
         double totalCosts = stt + brokerage + exchange + sebi + gst;
         return Math.max(0, grossEdge - totalCosts);
     }

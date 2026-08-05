@@ -151,8 +151,9 @@ public class OptionArbOpportunity {
         map.put("pnlAmount", pnlAmount != null ? pnlAmount.doubleValue() : null);
         map.put("ceExitPrice", ceExitPrice != null ? ceExitPrice.doubleValue() : null);
         map.put("peExitPrice", peExitPrice != null ? peExitPrice.doubleValue() : null);
+        map.put("entryTime", scanTime != null ? scanTime.toString() : null);
         map.put("exitTime", exitTime != null ? exitTime.toString() : null);
-        int lotSize = "BANKNIFTY".equals(underlying) ? 15 : "MIDCPNIFTY".equals(underlying) ? 120 : "FINNIFTY".equals(underlying) ? 60 : 50;
+        int lotSize = OptionChainService.getLotSize(underlying);
         map.put("lotSize", lotSize);
         map.put("notes", notes);
         map.put("createdAt", createdAt != null ? createdAt.toString() : null);

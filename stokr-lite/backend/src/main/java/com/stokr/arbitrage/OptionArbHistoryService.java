@@ -39,8 +39,9 @@ public class OptionArbHistoryService {
     /**
      * Save detected opportunities from a scan result
      */
-    public void saveOpportunities(List<ArbitrageOpportunity> opportunities, String underlying, String strategyType) {
-        if (opportunities == null || opportunities.isEmpty()) return;
+    public List<OptionArbOpportunity> saveOpportunities(List<ArbitrageOpportunity> opportunities, String underlying, String strategyType) {
+        List<OptionArbOpportunity> saved = new ArrayList<>();
+        if (opportunities == null || opportunities.isEmpty()) return saved;
 
         for (ArbitrageOpportunity opp : opportunities) {
             try {
@@ -83,11 +84,62 @@ public class OptionArbHistoryService {
                 }
 
                 repository.save(entity);
+                saved.add(entity);
             } catch (Exception e) {
                 log.error("Failed to save opportunity: {}", e.getMessage());
             }
         }
         log.info("Saved {} opportunities for {}", opportunities.size(), underlying);
+        return saved;
+    }
+
+    public List<OptionArbOpportunity> saveIronCondorOpportunities(List<Map<String, Object>> opps) {
+        List<OptionArbOpportunity> saved = new ArrayList<>();
+        if (opps == null || opps.isEmpty()) return saved;
+        for (Map<String, Object> o : opps) {
+            try {
+                String underlying = (String) o.getOrDefault("underlying", "NIFTY");
+                String expiryStr = (String) o.getOrDefault("expiry", LocalDate.now().toString());
+                LocalDate expiry = LocalDate.parse(expiryStr);
+                int strike = toInt(o.get("strike"));
+                OptionArbOpportunity entity = OptionArbOpportunity.builder()
+                    .scanTime(LocalDateTime.now())
+                    .underlying(underlying)
+                    .type("IRON_CONDOR")
+                    .strike(strike)
+                    .action((String) o.getOrDefault("action", ""))
+                    .legs((String) o.getOrDefault("legs", ""))
+                    .description((String) o.getOrDefault("action", ""))
+                    .spotPrice(toBD(o.get("spotPrice")))
+                    .futuresPrice(toBD(o.get("spotPrice")))
+                    .edgeAfterCosts(toBD(o.get("edgeAfterCosts")))
+                    .confidence(toBD(o.get("confidence")))
+                    .daysToExpiry(BigDecimal.valueOf(java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), expiry)))
+                    .expiryDate(expiry)
+                    .status(determineStatus(expiry))
+                    .strategyType("IRON_CONDOR")
+                    .createdAt(LocalDateTime.now())
+                    .build();
+                repository.save(entity);
+                saved.add(entity);
+            } catch (Exception e) {
+                log.error("Failed to save Iron Condor opp: {}", e.getMessage());
+            }
+        }
+        log.info("Saved {} Iron Condor opportunities", saved.size());
+        return saved;
+    }
+
+    private int toInt(Object v) {
+        if (v == null) return 0;
+        if (v instanceof Number) return ((Number) v).intValue();
+        try { return Integer.parseInt(v.toString()); } catch (Exception e) { return 0; }
+    }
+
+    private BigDecimal toBD(Object v) {
+        if (v == null) return BigDecimal.ZERO;
+        if (v instanceof Number) return BigDecimal.valueOf(((Number) v).doubleValue());
+        try { return new BigDecimal(v.toString()); } catch (Exception e) { return BigDecimal.ZERO; }
     }
 
     public String determineStatus(LocalDate expiryDate) {
@@ -127,6 +179,38 @@ public class OptionArbHistoryService {
      * Fetch historical page of opportunities
      */
     public Page<OptionArbOpportunity> getHistory(int page, int size) {
+        return repository.findAllByOrderByScanTimeDesc(PageRequest.of(page, size));
+    }
+
+    public Page<OptionArbOpportunity> getHistory(int page, int size, String strategyType) {
+        if (strategyType != null && !strategyType.isBlank()) {
+            return repository.findByStrategyTypeOrderByScanTimeDesc(strategyType, PageRequest.of(page, size));
+        }
+        return repository.findAllByOrderByScanTimeDesc(PageRequest.of(page, size));
+    }
+
+    public Page<OptionArbOpportunity> getHistory(int page, int size, String strategyType, String underlying, String startDate, String endDate) {
+        if (startDate != null && !startDate.isBlank() && endDate != null && !endDate.isBlank()) {
+            java.time.LocalDate start = java.time.LocalDate.parse(startDate);
+            java.time.LocalDate end = java.time.LocalDate.parse(endDate);
+            java.time.LocalDateTime startDt = start.atStartOfDay();
+            java.time.LocalDateTime endDt = end.atTime(java.time.LocalTime.MAX);
+            if (strategyType != null && !strategyType.isBlank() && underlying != null && !underlying.isBlank()) {
+                return repository.findByStrategyTypeAndUnderlyingAndScanTimeBetweenOrderByScanTimeDesc(strategyType, underlying, startDt, endDt, PageRequest.of(page, size));
+            } else if (strategyType != null && !strategyType.isBlank()) {
+                return repository.findByStrategyTypeAndScanTimeBetweenOrderByScanTimeDesc(strategyType, startDt, endDt, PageRequest.of(page, size));
+            } else if (underlying != null && !underlying.isBlank()) {
+                return repository.findByUnderlyingAndScanTimeBetweenOrderByScanTimeDesc(underlying, startDt, endDt, PageRequest.of(page, size));
+            } else {
+                return repository.findByScanTimeBetweenOrderByScanTimeDesc(startDt, endDt, PageRequest.of(page, size));
+            }
+        }
+        if (strategyType != null && !strategyType.isBlank() && underlying != null && !underlying.isBlank()) {
+            return repository.findByStrategyTypeAndUnderlyingOrderByScanTimeDesc(strategyType, underlying, PageRequest.of(page, size));
+        }
+        if (strategyType != null && !strategyType.isBlank()) {
+            return repository.findByStrategyTypeOrderByScanTimeDesc(strategyType, PageRequest.of(page, size));
+        }
         return repository.findAllByOrderByScanTimeDesc(PageRequest.of(page, size));
     }
 
@@ -347,13 +431,7 @@ public class OptionArbHistoryService {
                     }
                 }
 
-                // Lot size for margin calculation
-                int lotSize = switch (opp.getUnderlying()) {
-                    case "BANKNIFTY" -> 15;
-                    case "MIDCPNIFTY" -> 120;
-                    case "FINNIFTY" -> 60;
-                    default -> 50;
-                };
+                int lotSize = OptionChainService.getLotSize(opp.getUnderlying());
                 BigDecimal pnlAmount = pnl.multiply(BigDecimal.valueOf(lotSize));
                 BigDecimal costs = pnlAmount.abs().multiply(BigDecimal.valueOf(0.0005)).add(BigDecimal.valueOf(50));
                 BigDecimal pnlAfterCosts = pnlAmount.subtract(costs);
