@@ -2168,10 +2168,8 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
   }, [historyItems, calendarOpportunities, strategyFilter, statusFilter, underlyingFilter, minEdgeFilter, dateRange, customStartDate, customEndDate, livePnlMap, sortColumn, sortDirection]);
 
    const countByEdge = (min) => {
-     const { start, end } = getDateFilter();
      let count = historyItems.filter(item => {
-       const itemDate = item.scanTime ? item.scanTime.split('T')[0] : (item.createdAt ? item.createdAt.split('T')[0] : '');
-       return (Number(item.edgeAfterCosts) || 0) >= min && itemDate >= start && itemDate <= end;
+       return (Number(item.edgeAfterCosts) || 0) >= min;
      }).length;
      if (count === 0 && calendarOpportunities?.length > 0) {
        count = calendarOpportunities.filter(c => (Number(c.edgeAfterCosts || c.spread * 25) || 0) >= min).length;
