@@ -2349,7 +2349,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
 
       {/* Ultra-Compact History Data Table (100% Fit, No Side Overflow) */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
-        {historyLoading ? (
+        {histLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading trade analytics...</div>
         ) : filteredItems.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No records match current filters (Min Edge ≥ ₹{minEdgeFilter})</div>
