@@ -152,11 +152,16 @@ export default function OptionArbitrage() {
     refetchInterval: 30000
   });
 
-  // History & Signals Log Query
+  // History & Signals Log Query - fetches up to 50K, server-side date filtered
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['option-arb-history', maxSignals],
     queryFn: async () => {
-      const res = await client.get('/option-arbitrage/history', { params: { size: maxSignals } });
+      const now = new Date();
+      const istNow = new Date(now.getTime() + (now.getTimezoneOffset() + 330) * 60000);
+      const today = istNow.toISOString().split('T')[0];
+      const res = await client.get('/option-arbitrage/history', {
+        params: { size: maxSignals, startDate: today, endDate: today }
+      });
       return res.data;
     },
     refetchInterval: autoRefresh ? 30000 : false,
@@ -355,7 +360,7 @@ export default function OptionArbitrage() {
         {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'cashswing' && <CashSwingView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'calendar' && <CalendarSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'history' && <HistoryView historyItems={historyItems} calendarOpportunities={calendarOpportunities} historyLoading={historyLoading} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={underlyings} />}
+        {activeTab === 'history' && <HistoryView calendarOpportunities={calendarOpportunities} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={underlyings} />}
       </div>
     </div>
   );
@@ -1991,7 +1996,7 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
 }
 
 /* 8. HISTORY VIEW */
-function HistoryView({ historyItems, calendarOpportunities, historyLoading, handleExecuteInline, executionBroker, underlyings }) {
+function HistoryView({ calendarOpportunities, handleExecuteInline, executionBroker, underlyings }) {
   const [strategyFilter, setStrategyFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [underlyingFilter, setUnderlyingFilter] = useState('ALL');
@@ -2012,45 +2017,19 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
     return () => clearInterval(iv);
   }, []);
 
-  const { data: livePnlData } = useQuery({
-    queryKey: ['live-pnl', pnlQueryTick],
-    queryFn: async () => {
-      const runningIds = (historyItems || [])
-        .filter(i => {
-          const s = String(i.status || 'RUNNING').toUpperCase();
-          return s === 'RUNNING' || s === 'OPEN';
-        })
-        .map(i => i.id)
-        .slice(0, 500);
-      if (runningIds.length === 0) return {};
-      const res = await client.get('/option-arbitrage/history/live-pnl', {
-        params: { ids: runningIds.join(',') }
-      });
-      return res.data?.pnlMap || {};
-    },
-    refetchInterval: 10000,
-    staleTime: 8000,
-    enabled: (historyItems || []).length > 0,
-  });
-
-  const livePnlMap = livePnlData || {};
-
-  const getDateFilter = () => {
+  const getDateRange = () => {
     const now = new Date();
-    const istOffset = now.getTimezoneOffset();
-    const istNow = new Date(now.getTime() + (istOffset + 330) * 60000);
+    const istNow = new Date(now.getTime() + (now.getTimezoneOffset() + 330) * 60000);
     const istDate = istNow.toISOString().split('T')[0];
-    const istTime = istNow.toISOString().split('T')[1].split(':')[0];
     switch (dateRange) {
       case 'TODAY': return { start: istDate, end: istDate };
       case 'YESTERDAY': {
         const y = new Date(istNow); y.setDate(y.getDate() - 1);
-        const yDate = y.toISOString().split('T')[0];
-        return { start: yDate, end: yDate };
+        return { start: y.toISOString().split('T')[0], end: y.toISOString().split('T')[0] };
       }
       case 'WEEK': {
         const d = new Date(istNow); d.setDate(d.getDate() - d.getDay());
-        const e = new Date(istNow); e.setDate(e.getDate() + (6 - e.getDay()));
+        const e = new Date(istNow); e.setDate(e.getDate() + (6 - d.getDay()));
         return { start: d.toISOString().split('T')[0], end: e.toISOString().split('T')[0] };
       }
       case 'MONTH': {
@@ -2066,6 +2045,41 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
     }
   };
 
+  const dr = getDateRange();
+  const strategyParam = strategyFilter === 'PARITY' ? 'BID_PARITY' : strategyFilter === 'BOX' ? 'BOX_SPREAD' : strategyFilter === 'CONDOR' ? 'IRON_CONDOR' : null;
+  const underlyingParam = underlyingFilter !== 'ALL' ? underlyingFilter : null;
+
+  const { data: histData, isLoading: histLoading } = useQuery({
+    queryKey: ['hist-tab', dr.start, dr.end, strategyFilter, underlyingFilter],
+    queryFn: async () => {
+      const params = { page: 0, size: 50000, startDate: dr.start, endDate: dr.end };
+      if (strategyParam) params.strategyType = strategyParam;
+      if (underlyingParam) params.underlying = underlyingParam;
+      const res = await client.get('/option-arbitrage/history', { params });
+      return res.data;
+    },
+    staleTime: 30000,
+  });
+
+  const historyItems = histData?.items || [];
+
+  const { data: livePnlData } = useQuery({
+    queryKey: ['hist-pnl', pnlQueryTick],
+    queryFn: async () => {
+      const runningIds = historyItems
+        .filter(i => { const s = String(i.status || 'RUNNING').toUpperCase(); return s === 'RUNNING' || s === 'OPEN'; })
+        .map(i => i.id).slice(0, 500);
+      if (runningIds.length === 0) return {};
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: runningIds.join(',') } });
+      return res.data?.pnlMap || {};
+    },
+    refetchInterval: 10000,
+    staleTime: 8000,
+    enabled: historyItems.length > 0,
+  });
+
+  const livePnlMap = livePnlData || {};
+
   const handleSort = (col) => {
     if (sortColumn === col) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -2076,28 +2090,17 @@ function HistoryView({ historyItems, calendarOpportunities, historyLoading, hand
   };
 
   const filteredItems = useMemo(() => {
-    const { start, end } = getDateFilter();
     let items = historyItems.filter(item => {
       const edge = Number(item.edgeAfterCosts) || Number(item.grossEdge) || 0;
-      const typeStr = String(item.strategyType || item.type || '').toUpperCase();
       const statusStr = String(item.status || 'RUNNING').toUpperCase();
-      const itemDate = item.scanTime ? item.scanTime.split('T')[0] : (item.createdAt ? item.createdAt.split('T')[0] : '');
 
       if (edge < minEdgeFilter) return false;
-      if (itemDate < start || itemDate > end) return false;
-
-      if (strategyFilter === 'PARITY' && !typeStr.includes('PARITY') && !typeStr.includes('BID')) return false;
-      if (strategyFilter === 'BOX' && !typeStr.includes('BOX')) return false;
-      if (strategyFilter === 'CALENDAR' && !typeStr.includes('CALENDAR') && !typeStr.includes('TIME')) return false;
-      if (strategyFilter === 'CONDOR' && !typeStr.includes('CONDOR') && !typeStr.includes('IRON')) return false;
 
       if (statusFilter === 'RUNNING' && statusStr !== 'RUNNING' && statusStr !== 'OPEN') return false;
       if (statusFilter === 'DETECTED' && statusStr !== 'DETECTED' && statusStr !== 'NEW') return false;
       if (statusFilter === 'EXITED' && statusStr !== 'EXITED' && statusStr !== 'CLOSED' && statusStr !== 'EXECUTED') return false;
       if (statusFilter === 'MISSED' && statusStr !== 'MISSED' && statusStr !== 'SKIPPED') return false;
       if (statusFilter === 'FAILED' && statusStr !== 'FAILED' && statusStr !== 'REJECTED') return false;
-
-      if (underlyingFilter !== 'ALL' && item.underlying !== underlyingFilter) return false;
 
       return true;
     });
