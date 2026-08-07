@@ -646,11 +646,11 @@ public class OptionArbitrageController {
                 if (currentCe > 0 || currentPe > 0 || currentFut > 0) {
                     if ("CONVERSION".equalsIgnoreCase(opp.getAction()) || act.contains("BUY CE+PE")) {
                         if (currentCe > 0 && ceP > 0) pnl += currentCe - ceP;
-                        if (currentPe > 0 && peP > 0) pnl += peP - currentPe;
+                        if (currentPe > 0 && peP > 0) pnl += currentPe - peP;
                         if (currentFut > 0 && futP > 0) pnl += futP - currentFut;
                     } else if ("REVERSAL".equalsIgnoreCase(opp.getAction()) || act.contains("SELL CE+PE")) {
                         if (currentCe > 0 && ceP > 0) pnl += ceP - currentCe;
-                        if (currentPe > 0 && peP > 0) pnl += currentPe - peP;
+                        if (currentPe > 0 && peP > 0) pnl += peP - currentPe;
                         if (currentFut > 0 && futP > 0) pnl += currentFut - futP;
                     }
                     pnl *= lotSize;
@@ -740,11 +740,11 @@ public class OptionArbitrageController {
             if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
                 if (action.contains("BUY CE+PE")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
                 } else if (action.contains("SELL CE+PE")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                     if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
                 } else {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
