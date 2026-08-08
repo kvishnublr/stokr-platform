@@ -385,7 +385,26 @@ public class OptionArbAutoExecService {
 
             if (!shouldExit) continue;
 
-            // Square off existing position
+            // ROLLOVER: close only CE+PE, keep FUT (saves ~₹384 per rollover)
+            if ("ROLLOVER".equals(exitReason)) {
+                boolean rolled;
+                if (isPaper) {
+                    rolled = true;
+                    addLog("ROLLOVER", "OPTIONS_ROLLED", pos.getUnderlying() + " " + pos.getStrike()
+                            + " — PAPER mode, rolling options only (P&L ₹" + String.format("%.0f", pnl) + ")");
+                } else {
+                    rolled = rollOptionsOnly(account, adapter, pos, ceCurrent, peCurrent, futCurrent, pnl);
+                }
+                if (!rolled) {
+                    addLog("ROLLOVER", "ROLL_FAILED", "Failed to roll options for " + pos.getUnderlying() + " " + pos.getStrike());
+                    continue;
+                }
+                addLog("ROLLOVER", "OPTIONS_ROLLED", pos.getUnderlying() + " " + pos.getStrike()
+                        + " — CE+PE rolled, FUT kept (P&L ₹" + String.format("%.0f", pnl) + ")");
+                continue;
+            }
+
+            // AUTO-EXIT: close ALL legs (no re-entry)
             boolean squaredOff;
             if (isPaper) {
                 squaredOff = true;
@@ -427,11 +446,6 @@ public class OptionArbAutoExecService {
             }
 
             addLog(exitReason, "SQUARED_OFF", pos.getUnderlying() + " " + pos.getStrike() + " — P&L ₹" + String.format("%.0f", pnl));
-
-            // Only re-enter on rollover, not on auto-exit
-            if ("ROLLOVER".equals(exitReason)) {
-                addLog("ROLLOVER", "NEW_ENTRY", "Looking for new entry for " + pos.getUnderlying());
-            }
         }
     }
 
@@ -479,6 +493,101 @@ public class OptionArbAutoExecService {
             return true;
         } catch (Exception e) {
             log.error("Rollover square-off failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean rollOptionsOnly(BrokerAccount account, BrokerAdapter adapter, LivePosition pos,
+                                     double ceCurrent, double peCurrent, double futCurrent, double pnl) {
+        try {
+            int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
+            int lots = pos.getLots() != null ? pos.getLots() : 1;
+            int qty = lotSize * lots;
+            String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
+
+            // Step 1: Close existing CE+PE legs (opposite direction)
+            List<PlannedLeg> closePlan;
+            if (action.contains("BUY CE+PE")) {
+                // Was long CE, short PE → close: SELL CE, BUY PE
+                closePlan = List.of(
+                    new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "ce-close"),
+                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "pe-close")
+                );
+            } else {
+                // Was short CE, long PE → close: BUY CE, SELL PE
+                closePlan = List.of(
+                    new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "ce-close"),
+                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "pe-close")
+                );
+            }
+
+            addLog("ROLLOVER", "CLOSING_OPTIONS", "Closing CE+PE legs (FUT kept)...");
+            for (PlannedLeg leg : closePlan) {
+                BrokerOrderRequest req = BrokerOrderRequest.builder()
+                        .symbol(leg.symbol()).exchange("NFO")
+                        .side(leg.side()).quantity(leg.quantity())
+                        .price(leg.price())
+                        .orderType(BrokerOrderRequest.OrderType.MARKET)
+                        .productType("MIS").build();
+                BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
+                if (!resp.isSuccess()) {
+                    addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
+                    return false;
+                }
+                try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+            }
+
+            // Step 2: Enter new CE+PE legs (same direction as original)
+            List<PlannedLeg> entryPlan;
+            if (action.contains("BUY CE+PE")) {
+                // Re-enter: BUY CE, SELL PE
+                entryPlan = List.of(
+                    new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "ce-entry"),
+                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "pe-entry")
+                );
+            } else {
+                // Re-enter: SELL CE, BUY PE
+                entryPlan = List.of(
+                    new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "ce-entry"),
+                    new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "pe-entry")
+                );
+            }
+
+            addLog("ROLLOVER", "ENTERING_OPTIONS", "Entering new CE+PE legs...");
+            for (PlannedLeg leg : entryPlan) {
+                BrokerOrderRequest req = BrokerOrderRequest.builder()
+                        .symbol(leg.symbol()).exchange("NFO")
+                        .side(leg.side()).quantity(leg.quantity())
+                        .price(leg.price())
+                        .orderType(BrokerOrderRequest.OrderType.MARKET)
+                        .productType("MIS").build();
+                BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
+                if (!resp.isSuccess()) {
+                    addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
+                    return false;
+                }
+                try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+            }
+
+            // Step 3: Update position with new CE/PE entry prices
+            pos.setCeEntryPrice(BigDecimal.valueOf(ceCurrent));
+            pos.setPeEntryPrice(BigDecimal.valueOf(peCurrent));
+            pos.setFutEntryPrice(BigDecimal.valueOf(futCurrent));
+            pos.setCurrentPnl(BigDecimal.valueOf(pnl));
+            pos.setEnteredAt(LocalDateTime.now());
+            positionRepo.save(pos);
+
+            // Recalculate target edge with new prices
+            double newTarget = recalculateTargetEdge(ceCurrent, peCurrent, futCurrent,
+                    pos.getStrike(), pos.getAction(), pos.getUnderlying());
+            pos.setTargetEdge(BigDecimal.valueOf(newTarget));
+            positionRepo.save(pos);
+
+            addLog("ROLLOVER", "OPTIONSROLLED", pos.getUnderlying() + " " + pos.getStrike()
+                    + " — CE+PE rolled, FUT kept (saved ~₹384 in FUT charges)");
+            return true;
+        } catch (Exception e) {
+            log.error("rollOptionsOnly failed: {}", e.getMessage());
             return false;
         }
     }
