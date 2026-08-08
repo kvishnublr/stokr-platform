@@ -80,7 +80,8 @@ public class OptionChainService {
                     ceExec, peExec, strike, RISK_FREE_RATE, yearsToExpiry, futuresPrice);
 
                 if (Math.abs(parityDev) >= MIN_PARITY_DEVIATION) {
-                    double edgeAfterCosts = calculateParityEdge(parityDev, underlying);
+                    double grossEdge = Math.abs(parityDev) * getLotSize(underlying);
+                    double edgeAfterCosts = calculateParityEdge(ceQuote.lastPrice, peQuote.lastPrice, futuresPrice, getLotSize(underlying), grossEdge);
                     opportunities.add(buildParityOpportunity(
                         underlying, strike, ceQuote, peQuote, parityDev,
                         edgeAfterCosts, daysToExpiry, spotPrice, futuresPrice));
@@ -288,24 +289,18 @@ public class OptionChainService {
         return String.format("%s%02d%sFUT", clean, yy, mon);
     }
 
-    private double calculateParityEdge(double parityDev, String underlying) {
-        double pts = Math.abs(parityDev);
-        int lotSize = getLotSize(underlying);
-        double grossEdge = pts * lotSize;
+    private double calculateParityEdge(double cePrice, double pePrice, double futPrice, int lotSize, double grossEdge) {
+        if (cePrice <= 0 || pePrice <= 0 || futPrice <= 0 || lotSize <= 0) return 0;
 
-        // 3-leg box trade: CE + PE + FUT = 6 orders (3 buy + 3 sell)
-        // STT: 0.1% on sell-side only (options), 0.0125% on sell-side (futures)
-        // Approximate: 3 sell legs × 0.1% of grossEdge (conservative)
-        double stt = grossEdge * 0.001;
-        // Brokerage: flat ₹20/order × 6 orders = ₹120
         double brokerage = 120.0;
-        // Exchange txn: 0.00345% per side × 6 sides
-        double exchange = grossEdge * 0.000345 * 6;
-        // SEBI: 0.0001% of turnover
-        double sebi = grossEdge * 0.000001;
-        // GST: 18% on (brokerage + exchange + SEBI)
+        double stt = (pePrice * lotSize * 0.00125) + (futPrice * lotSize * 0.00025);
+        double totalTurnover = (cePrice + pePrice + futPrice) * lotSize * 2;
+        double exchange = totalTurnover * 0.0000345;
+        double sebi = totalTurnover * 0.000001;
         double gst = (brokerage + exchange + sebi) * 0.18;
-        double totalCosts = stt + brokerage + exchange + sebi + gst;
+        double stamp = (cePrice + pePrice + futPrice) * lotSize * 0.00005;
+        double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
+
         return Math.max(0, grossEdge - totalCosts);
     }
 

@@ -37,16 +37,16 @@ public class OptionArbAutoExecService {
         defaults.put("enabled", true);
         defaults.put("broker", "NAVIA");
         defaults.put("niftyEnabled", true);
-        defaults.put("niftyMinEdge", 500.0);
+        defaults.put("niftyMinEdge", 800.0);
         defaults.put("niftyLots", 1);
         defaults.put("bankniftyEnabled", true);
-        defaults.put("bankniftyMinEdge", 500.0);
+        defaults.put("bankniftyMinEdge", 800.0);
         defaults.put("bankniftyLots", 1);
         defaults.put("finniftyEnabled", true);
-        defaults.put("finniftyMinEdge", 500.0);
+        defaults.put("finniftyMinEdge", 800.0);
         defaults.put("finniftyLots", 1);
         defaults.put("midcpniftyEnabled", true);
-        defaults.put("midcpniftyMinEdge", 500.0);
+        defaults.put("midcpniftyMinEdge", 800.0);
         defaults.put("midcpniftyLots", 1);
         defaults.put("maxOpenPositions", 1);
         defaults.put("maxDailyLoss", 5000.0);
@@ -739,17 +739,20 @@ public class OptionArbAutoExecService {
     private double recalculateTargetEdge(double ceEntry, double peEntry, double futEntry, int strike, String action, String underlying) {
         if (ceEntry <= 0 || peEntry <= 0 || futEntry <= 0) return 0;
 
+        int lotSize = getLotSize(underlying);
         double synthetic = ceEntry - peEntry + strike;
         double parityDev = Math.abs(futEntry - synthetic);
+        double grossEdge = parityDev * lotSize;
 
-        double grossEdge = parityDev * getLotSize(underlying);
-        double stt = grossEdge * 0.001;
         double brokerage = 120.0;
-        double exchange = grossEdge * 0.000345 * 6;
-        double sebi = grossEdge * 0.00001;
+        double stt = (peEntry * lotSize * 0.00125) + (futEntry * lotSize * 0.00025);
+        double totalTurnover = (ceEntry + peEntry + futEntry) * lotSize * 2;
+        double exchange = totalTurnover * 0.0000345;
+        double sebi = totalTurnover * 0.000001;
         double gst = (brokerage + exchange + sebi) * 0.18;
-        double ipft = grossEdge * 0.00001;
-        double totalCosts = stt + brokerage + exchange + sebi + gst + ipft;
+        double stamp = (ceEntry + peEntry + futEntry) * lotSize * 0.00005;
+        double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
+
         return Math.max(0, grossEdge - totalCosts);
     }
 
