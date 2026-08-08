@@ -29,4 +29,13 @@ public interface LivePositionRepository extends JpaRepository<LivePosition, Long
 
     @Query("SELECT COUNT(p) FROM LivePosition p WHERE p.status = 'OPEN'")
     long countAllOpen();
+
+    @Query("SELECT p FROM LivePosition p WHERE p.status IN ('FAILED','REJECTED') ORDER BY p.enteredAt DESC")
+    List<LivePosition> findAllFailed();
+
+    @Query("SELECT p FROM LivePosition p WHERE p.status IN ('OPEN','EXECUTING') ORDER BY p.enteredAt DESC")
+    List<LivePosition> findAllOpenIncludingExecuting();
+
+    @Query("SELECT p FROM LivePosition p WHERE p.status = :status ORDER BY p.enteredAt DESC")
+    List<LivePosition> findByStatusExact(@Param("status") String status);
 }

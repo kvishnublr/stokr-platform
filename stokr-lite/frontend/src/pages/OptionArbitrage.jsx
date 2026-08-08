@@ -2062,16 +2062,18 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
 function PaperTradesView() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [underlyingFilter, setUnderlyingFilter] = useState('ALL');
+  const [modeFilter, setModeFilter] = useState('ALL');
   const [sortCol, setSortCol] = useState('enteredAt');
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['paperTrades', statusFilter, underlyingFilter],
+    queryKey: ['paperTrades', statusFilter, underlyingFilter, modeFilter],
     queryFn: async () => {
       const params = {};
       if (statusFilter !== 'ALL') params.status = statusFilter;
       if (underlyingFilter !== 'ALL') params.underlying = underlyingFilter;
+      if (modeFilter !== 'ALL') params.mode = modeFilter;
       const res = await client.get('/option-arbitrage/paper-trades', { params });
       return res.data;
     },
@@ -2082,6 +2084,9 @@ function PaperTradesView() {
   const totalPnl = data?.totalPnl || 0;
   const openCount = data?.openCount || 0;
   const closedCount = data?.closedCount || 0;
+  const failedCount = data?.failedCount || 0;
+  const paperCount = data?.paperCount || 0;
+  const liveCount = data?.liveCount || 0;
 
   const sorted = [...positions].sort((a, b) => {
     let va, vb;
@@ -2122,28 +2127,44 @@ function PaperTradesView() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-3 gap-3 mb-3">
+        <div className="grid grid-cols-5 gap-3 mb-3">
           <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-3 text-center">
             <div className="text-[10px] font-bold text-slate-500 uppercase">Total Trades</div>
             <div className="text-xl font-black text-slate-800">{positions.length}</div>
           </div>
           <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl border border-emerald-200 p-3 text-center">
-            <div className="text-[10px] font-bold text-emerald-600 uppercase">Open Positions</div>
+            <div className="text-[10px] font-bold text-emerald-600 uppercase">Open</div>
             <div className="text-xl font-black text-emerald-700">{openCount}</div>
           </div>
           <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-3 text-center">
-            <div className="text-[10px] font-bold text-slate-500 uppercase">Exited / Closed</div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase">Exited</div>
             <div className="text-xl font-black text-slate-600">{closedCount}</div>
+          </div>
+          <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl border border-red-200 p-3 text-center">
+            <div className="text-[10px] font-bold text-red-500 uppercase">Failed</div>
+            <div className="text-xl font-black text-red-700">{failedCount}</div>
+          </div>
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border border-blue-200 p-3 text-center">
+            <div className="text-[10px] font-bold text-blue-500 uppercase">PAPER / LIVE</div>
+            <div className="text-lg font-black text-blue-700">{paperCount} / {liveCount}</div>
           </div>
         </div>
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-            {['ALL', 'OPEN', 'EXITED'].map(s => (
+            {['ALL', 'OPEN', 'EXITED', 'FAILED'].map(s => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition ${statusFilter === s ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
-                {s === 'ALL' ? '📋 All' : s === 'OPEN' ? '🟢 Open' : '⏹ Exited'}
+                {s === 'ALL' ? '📋 All' : s === 'OPEN' ? '🟢 Open' : s === 'EXITED' ? '⏹ Exited' : '❌ Failed'}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            {['ALL', 'PAPER', 'LIVE'].map(m => (
+              <button key={m} onClick={() => setModeFilter(m)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition ${modeFilter === m ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                {m === 'ALL' ? '📋 All' : m === 'PAPER' ? '📝 Paper' : '⚡ Live'}
               </button>
             ))}
           </div>
@@ -2170,6 +2191,7 @@ function PaperTradesView() {
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                 <tr>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('enteredAt')}>Entry Time{sortIcon('enteredAt')}</th>
+                  <th className="px-2 py-2">Mode</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
                   <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strike')}>Strike{sortIcon('strike')}</th>
                   <th className="px-2 py-2">Action</th>
@@ -2186,11 +2208,17 @@ function PaperTradesView() {
                 {sorted.map((pos) => {
                   const isExp = expandedId === pos.id;
                   const pnl = pos.pnl || 0;
+                  const isPaper = pos.ceOrderId && pos.ceOrderId.startsWith('PAPER');
                   return (
                     <React.Fragment key={pos.id}>
                       <tr onClick={() => setExpandedId(isExp ? null : pos.id)}
                         className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}>
                         <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(pos.enteredAt)}</td>
+                        <td className="px-2 py-1.5">
+                          <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${isPaper ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                            {isPaper ? '📝 PAPER' : '⚡ LIVE'}
+                          </span>
+                        </td>
                         <td className="px-2 py-1.5 font-bold text-slate-800">{pos.underlying}</td>
                         <td className="px-2 py-1.5 font-bold text-slate-700">{pos.strike}</td>
                         <td className="px-2 py-1.5 font-bold text-purple-700 truncate max-w-[100px]">{pos.action}</td>
@@ -2200,7 +2228,7 @@ function PaperTradesView() {
                         <td className="px-2 py-1.5 text-center font-bold">{pos.lots}</td>
                         <td className="px-2 py-1.5 text-center">
                           <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${statusColor(pos.status)}`}>
-                            {pos.status === 'OPEN' ? '🟢 OPEN' : pos.status === 'CLOSED' || pos.status === 'EXITED' ? '⏹ EXITED' : pos.status}
+                            {pos.status === 'OPEN' ? '🟢 OPEN' : pos.status === 'CLOSED' || pos.status === 'EXITED' ? '⏹ EXITED' : pos.status === 'FAILED' ? '❌ FAILED' : pos.status === 'REJECTED' ? '🚫 REJECTED' : pos.status}
                           </span>
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold">
@@ -2210,9 +2238,9 @@ function PaperTradesView() {
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{pos.exitedAt ? fmtTime(pos.exitedAt) : '--'}</td>
                       </tr>
-                      {isExp && (
+                      {(isExp || (pos.status === 'FAILED' || pos.status === 'REJECTED') && pos.errorMessage) && (
                         <tr className="bg-indigo-50/40 border-b border-indigo-100">
-                          <td colSpan={11} className="p-3">
+                          <td colSpan={12} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">Position Details:</span>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] font-mono">
@@ -2226,9 +2254,13 @@ function PaperTradesView() {
                                 <div><span className="text-slate-500">PE Exit:</span> <span className="font-bold">{pos.peExitPrice != null ? Number(pos.peExitPrice).toFixed(1) : '--'}</span></div>
                                 <div><span className="text-slate-500">FUT Exit:</span> <span className="font-bold">{pos.futExitPrice != null ? Number(pos.futExitPrice).toFixed(1) : '--'}</span></div>
                                 <div><span className="text-slate-500">Entry Cost:</span> <span className="font-bold">₹{pos.entryCost != null ? Math.round(pos.entryCost) : '--'}</span></div>
+                                <div><span className="text-slate-500">Order IDs:</span> <span className="font-bold text-[9px]">{pos.ceOrderId || '--'}</span></div>
+                                <div><span className="text-slate-500">Mode:</span> <span className="font-bold">{isPaper ? 'PAPER' : 'LIVE'}</span></div>
                               </div>
                               {pos.errorMessage && (
-                                <div className="text-[10px] text-red-600 font-mono mt-1">Error: {pos.errorMessage}</div>
+                                <div className={`text-[10px] font-mono mt-1 p-2 rounded-lg ${(pos.status === 'FAILED' || pos.status === 'REJECTED') ? 'bg-red-50 text-red-700 border border-red-200' : 'text-amber-600'}`}>
+                                  <span className="font-bold">Error/Log:</span> {pos.errorMessage}
+                                </div>
                               )}
                             </div>
                           </td>

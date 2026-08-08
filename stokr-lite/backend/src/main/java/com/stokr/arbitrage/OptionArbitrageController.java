@@ -826,18 +826,28 @@ public class OptionArbitrageController {
     @GetMapping("/paper-trades")
     public ResponseEntity<Map<String, Object>> getPaperTrades(
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String underlying) {
+            @RequestParam(required = false) String underlying,
+            @RequestParam(required = false) String mode) {
         Map<String, Object> resp = new LinkedHashMap<>();
         List<LivePosition> positions;
         if ("CLOSED".equalsIgnoreCase(status) || "EXITED".equalsIgnoreCase(status)) {
             positions = livePositionRepo.findAllClosed();
         } else if ("OPEN".equalsIgnoreCase(status)) {
             positions = livePositionRepo.findAllOpen();
+        } else if ("FAILED".equalsIgnoreCase(status) || "REJECTED".equalsIgnoreCase(status)) {
+            positions = livePositionRepo.findAllFailed();
         } else {
             positions = livePositionRepo.findAllByOrderByEnteredAtDesc();
         }
         if (underlying != null && !underlying.isEmpty() && !"ALL".equalsIgnoreCase(underlying)) {
             positions = positions.stream().filter(p -> underlying.equalsIgnoreCase(p.getUnderlying())).toList();
+        }
+        if ("PAPER".equalsIgnoreCase(mode) || "LIVE".equalsIgnoreCase(mode)) {
+            boolean wantPaper = "PAPER".equalsIgnoreCase(mode);
+            positions = positions.stream().filter(p -> {
+                boolean isPaper = p.getCeOrderId() != null && p.getCeOrderId().startsWith("PAPER");
+                return wantPaper == isPaper;
+            }).toList();
         }
 
         // Compute P&L for all positions
@@ -915,6 +925,9 @@ public class OptionArbitrageController {
 
         long openCount = positions.stream().filter(p -> "OPEN".equals(p.getStatus())).count();
         long closedCount = positions.stream().filter(p -> "CLOSED".equals(p.getStatus()) || "EXITED".equals(p.getStatus())).count();
+        long failedCount = positions.stream().filter(p -> "FAILED".equals(p.getStatus()) || "REJECTED".equals(p.getStatus())).count();
+        long paperCount = positions.stream().filter(p -> p.getCeOrderId() != null && p.getCeOrderId().startsWith("PAPER")).count();
+        long liveCount = positions.size() - paperCount;
         double totalPnl = posList.stream().mapToDouble(m -> {
             Object pnl = m.get("pnl");
             return pnl != null ? ((Number) pnl).doubleValue() : 0;
@@ -924,6 +937,9 @@ public class OptionArbitrageController {
         resp.put("total", posList.size());
         resp.put("openCount", openCount);
         resp.put("closedCount", closedCount);
+        resp.put("failedCount", failedCount);
+        resp.put("paperCount", paperCount);
+        resp.put("liveCount", liveCount);
         resp.put("totalPnl", Math.round(totalPnl));
         return ResponseEntity.ok(resp);
     }
