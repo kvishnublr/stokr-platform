@@ -823,6 +823,15 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
+    @PostMapping("/rollover/{positionId}")
+    public ResponseEntity<Map<String, Object>> rolloverPosition(@PathVariable Long positionId) {
+        Map<String, Object> result = autoExecService.rollPosition(positionId);
+        if (result.containsKey("error")) {
+            return ResponseEntity.badRequest().body(result);
+        }
+        return ResponseEntity.ok(result);
+    }
+
     @GetMapping("/paper-trades")
     public ResponseEntity<Map<String, Object>> getPaperTrades(
             @RequestParam(required = false) String status,

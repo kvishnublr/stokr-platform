@@ -254,14 +254,13 @@ public class OptionArbAutoExecService {
     @Scheduled(fixedDelayString = "30000", initialDelay = 30000)
     public synchronized void checkRollover() {
         Map<String, Object> settings = getSettings();
-        boolean rolloverEnabled = Boolean.TRUE.equals(settings.get("rolloverEnabled"));
         boolean autoExitEnabled = Boolean.TRUE.equals(settings.get("autoExitEnabled"));
-        if (!rolloverEnabled && !autoExitEnabled) return;
+        boolean stopLossEnabled = Boolean.TRUE.equals(settings.get("stopLossEnabled"));
+        if (!autoExitEnabled && !stopLossEnabled) return;
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
         if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
-        double rolloverThresholdPct = ((Number) settings.getOrDefault("rolloverThresholdPct", 90.0)).doubleValue();
         double autoExitThresholdPct = ((Number) settings.getOrDefault("autoExitThresholdPct", 90.0)).doubleValue();
 
         List<LivePosition> openPositions = positionRepo.findAllOpen().stream()
@@ -345,7 +344,6 @@ public class OptionArbAutoExecService {
             boolean shouldExit = false;
             String exitReason = "";
 
-            boolean stopLossEnabled = Boolean.TRUE.equals(settings.get("stopLossEnabled"));
             double stopLossPct = ((Number) settings.getOrDefault("stopLossPct", 50.0)).doubleValue();
 
             // Stop-loss: close position if loss exceeds threshold
@@ -372,39 +370,10 @@ public class OptionArbAutoExecService {
                 addLog("AUTO_EXIT", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrike()
                         + " — " + String.format("%.0f", pctAchieved) + "% of target reached (₹" + String.format("%.0f", pnl) + ")");
             }
-            // Roll-over: close + re-enter new position
-            else if (rolloverEnabled && pctAchieved >= rolloverThresholdPct) {
-                shouldExit = true;
-                exitReason = "ROLLOVER";
-                log.info("ROLLOVER: {} {} strike {} — {}% of target ₹{} reached (P&L ₹{}). Rolling over...",
-                        pos.getUnderlying(), pos.getAction(), pos.getStrike(), String.format("%.0f", pctAchieved),
-                        String.format("%.0f", targetEdge), String.format("%.0f", pnl));
-                addLog("ROLLOVER", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrike()
-                        + " — " + String.format("%.0f", pctAchieved) + "% of target reached (₹" + String.format("%.0f", pnl) + ")");
-            }
 
             if (!shouldExit) continue;
 
-            // ROLLOVER: close only CE+PE, keep FUT (saves ~₹384 per rollover)
-            if ("ROLLOVER".equals(exitReason)) {
-                boolean rolled;
-                if (isPaper) {
-                    rolled = true;
-                    addLog("ROLLOVER", "OPTIONS_ROLLED", pos.getUnderlying() + " " + pos.getStrike()
-                            + " — PAPER mode, rolling options only (P&L ₹" + String.format("%.0f", pnl) + ")");
-                } else {
-                    rolled = rollOptionsOnly(account, adapter, pos, ceCurrent, peCurrent, futCurrent, pnl);
-                }
-                if (!rolled) {
-                    addLog("ROLLOVER", "ROLL_FAILED", "Failed to roll options for " + pos.getUnderlying() + " " + pos.getStrike());
-                    continue;
-                }
-                addLog("ROLLOVER", "OPTIONS_ROLLED", pos.getUnderlying() + " " + pos.getStrike()
-                        + " — CE+PE rolled, FUT kept (P&L ₹" + String.format("%.0f", pnl) + ")");
-                continue;
-            }
-
-            // AUTO-EXIT: close ALL legs (no re-entry)
+            // Close ALL legs (auto-exit or stop-loss)
             boolean squaredOff;
             if (isPaper) {
                 squaredOff = true;
@@ -497,6 +466,92 @@ public class OptionArbAutoExecService {
         }
     }
 
+    public synchronized Map<String, Object> rollPosition(Long positionId) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        LivePosition pos = positionRepo.findById(positionId).orElse(null);
+        if (pos == null) { result.put("error", "Position not found"); return result; }
+        if (!"OPEN".equals(pos.getStatus())) { result.put("error", "Position is " + pos.getStatus() + ", not OPEN"); return result; }
+
+        Map<String, Object> settings = getSettings();
+        String broker = (String) settings.getOrDefault("broker", "NAVIA");
+        boolean isPaper = "PAPER".equalsIgnoreCase(broker);
+
+        List<String> symbols = new ArrayList<>();
+        if (pos.getCeSymbol() != null) symbols.add(pos.getCeSymbol());
+        if (pos.getPeSymbol() != null) symbols.add(pos.getPeSymbol());
+        if (pos.getFutSymbol() != null) symbols.add(pos.getFutSymbol());
+
+        Map<String, OptionChainService.OptionQuote> quotes;
+        try {
+            quotes = optionChainService.fetchQuotes(symbols);
+        } catch (Exception e) {
+            result.put("error", "Quote fetch failed: " + e.getMessage());
+            return result;
+        }
+
+        double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
+        if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
+        if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
+        if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+
+        double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
+        double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
+        double futEntry = pos.getFutEntryPrice() != null ? pos.getFutEntryPrice().doubleValue() : 0;
+        int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
+        int lots = pos.getLots() != null ? pos.getLots() : 1;
+
+        double pnl = 0;
+        String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
+        if (action.contains("BUY CE+PE")) {
+            if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
+            if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+            if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+        } else if (action.contains("SELL CE+PE")) {
+            if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
+            if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+            if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
+        }
+        pnl *= lotSize * lots;
+
+        boolean success;
+        if (isPaper) {
+            success = true;
+            addLog("MANUAL_ROLLOVER", "PAPER_ROLL", pos.getUnderlying() + " " + pos.getStrike()
+                    + " — PAPER mode, rolling CE+PE (P&L ₹" + String.format("%.0f", pnl) + ")");
+        } else {
+            BrokerAccount account = null;
+            BrokerAdapter adapter = null;
+            try {
+                Long userId = brokerAccountRepo.findByStatus("ACTIVE").stream()
+                        .findFirst().map(BrokerAccount::getUserId).orElse(null);
+                if (userId == null) { result.put("error", "No active broker account"); return result; }
+                List<BrokerAccount> accounts = brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(userId, broker, "ACTIVE");
+                if (accounts.isEmpty()) { result.put("error", "No " + broker + " account found"); return result; }
+                account = accounts.get(0);
+                adapter = brokerService.getAdapter(broker);
+            } catch (Exception e) {
+                result.put("error", "Broker setup failed: " + e.getMessage());
+                return result;
+            }
+            success = rollOptionsOnly(account, adapter, pos, ceCurrent, peCurrent, futCurrent, pnl);
+        }
+
+        if (success) {
+            result.put("success", true);
+            result.put("positionId", pos.getId());
+            result.put("underlying", pos.getUnderlying());
+            result.put("strike", pos.getStrike());
+            result.put("pnl", Math.round(pnl));
+            result.put("message", "CE+PE rolled, FUT kept");
+            addLog("MANUAL_ROLLOVER", "ROLLED", pos.getUnderlying() + " " + pos.getStrike()
+                    + " — P&L ₹" + String.format("%.0f", pnl));
+        } else {
+            result.put("error", "Rollover order failed");
+            addLog("MANUAL_ROLLOVER", "FAILED", pos.getUnderlying() + " " + pos.getStrike());
+        }
+        return result;
+    }
+
     private boolean rollOptionsOnly(BrokerAccount account, BrokerAdapter adapter, LivePosition pos,
                                      double ceCurrent, double peCurrent, double futCurrent, double pnl) {
         try {
@@ -569,10 +624,9 @@ public class OptionArbAutoExecService {
                 try { Thread.sleep(300); } catch (InterruptedException ignored) {}
             }
 
-            // Step 3: Update position with new CE/PE entry prices
+            // Step 3: Update position with new CE/PE entry prices (FUT stays, don't update its entry)
             pos.setCeEntryPrice(BigDecimal.valueOf(ceCurrent));
             pos.setPeEntryPrice(BigDecimal.valueOf(peCurrent));
-            pos.setFutEntryPrice(BigDecimal.valueOf(futCurrent));
             pos.setCurrentPnl(BigDecimal.valueOf(pnl));
             pos.setEnteredAt(LocalDateTime.now());
             positionRepo.save(pos);

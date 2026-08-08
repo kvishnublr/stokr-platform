@@ -536,30 +536,16 @@ function AutoExecSettingsPanel() {
         </div>
       </div>
 
-      {/* Roll-Over Settings */}
+      {/* Roll-Over Info */}
       <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-slate-100">
         <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold text-slate-500 uppercase">Auto Roll-Over:</span>
-          <button
-            onClick={() => updateSetting('rolloverEnabled', !settings.rolloverEnabled)}
-            className={`relative w-11 h-6 rounded-full transition-colors ${settings.rolloverEnabled ? 'bg-amber-500' : 'bg-slate-300'}`}
-          >
-            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.rolloverEnabled ? 'translate-x-5' : ''}`} />
-          </button>
-          <span className={`text-xs font-bold ${settings.rolloverEnabled ? 'text-amber-600' : 'text-slate-400'}`}>
-            {settings.rolloverEnabled ? 'ON' : 'OFF'}
+          <span className="text-[10px] font-bold text-slate-500 uppercase">Roll-Over:</span>
+          <span className="px-2 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-200">
+            🔄 MANUAL — Click "Roll CE+PE" on any OPEN position
           </span>
         </div>
-        <div className="space-y-1">
-          <label className="text-[9px] font-bold text-slate-500 uppercase">Roll-Over at % Target</label>
-          <input type="number" value={settings.rolloverThresholdPct || 90} min={50} max={99}
-            onChange={(e) => setSettings(prev => ({ ...prev, rolloverThresholdPct: Number(e.target.value) }))}
-            onBlur={(e) => updateSetting('rolloverThresholdPct', e.target.value)}
-            className="w-16 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
-          <span className="text-[9px] text-slate-400">%</span>
-        </div>
         <div className="text-[9px] text-slate-400 italic">
-          When a position reaches {settings.rolloverThresholdPct || 90}% of target edge, auto square-off and take new position
+          Only CE+PE legs are rolled. FUT position stays, saving ~₹384 per rollover.
         </div>
       </div>
     </div>
@@ -569,6 +555,7 @@ function AutoExecSettingsPanel() {
 /* Live Positions Section — standalone, always visible, 2s tick-by-tick refresh */
 function LivePositionsSection() {
   const [collapsed, setCollapsed] = useState(true);
+  const [rollingId, setRollingId] = useState(null);
   const { data, refetch } = useQuery({
     queryKey: ['livePositions'],
     queryFn: async () => {
@@ -580,6 +567,21 @@ function LivePositionsSection() {
   });
 
   const positions = data?.positions || [];
+  const openPositions = positions.filter(p => p.status === 'OPEN');
+
+  const handleRollover = async (positionId, underlying, strike) => {
+    if (!window.confirm(`Roll CE+PE for ${underlying} ${strike}?\n\nFUT position stays, only options are rolled.`)) return;
+    setRollingId(positionId);
+    try {
+      const res = await client.post(`/option-arbitrage/rollover/${positionId}`);
+      alert(`✅ Rolled! P&L: ₹${res.data.pnl}`);
+      refetch();
+    } catch (e) {
+      alert(`❌ Failed: ${e.response?.data?.error || e.message}`);
+    } finally {
+      setRollingId(null);
+    }
+  };
 
   const statusColor = (s) => {
     switch (s) {
@@ -632,6 +634,7 @@ function LivePositionsSection() {
                   <th className="px-3 py-2 text-right">Live P&amp;L</th>
                   <th className="px-3 py-2 text-right">Lots</th>
                   <th className="px-3 py-2 text-center">Status</th>
+                  <th className="px-3 py-2 text-center">Rollover</th>
                   <th className="px-3 py-2 text-center">Error</th>
                 </tr>
               </thead>
@@ -665,6 +668,21 @@ function LivePositionsSection() {
                       <td className="px-3 py-2 text-right font-bold">{p.lots}</td>
                       <td className="px-3 py-2 text-center">
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${statusColor(p.status)}`}>{p.status}</span>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {p.status === 'OPEN' && (
+                          <button
+                            disabled={rollingId === p.id}
+                            onClick={() => handleRollover(p.id, p.underlying, p.strike)}
+                            className={`px-2 py-1 rounded-lg text-[9px] font-bold transition border ${
+                              rollingId === p.id
+                                ? 'bg-slate-200 text-slate-500 border-slate-300 cursor-wait'
+                                : 'bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100 hover:border-indigo-400'
+                            }`}
+                          >
+                            {rollingId === p.id ? '⏳ Rolling...' : '🔄 Roll CE+PE'}
+                          </button>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-[9px] text-red-600 max-w-[200px] truncate">{p.errorMessage || '--'}</td>
                     </tr>
