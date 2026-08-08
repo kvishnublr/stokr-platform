@@ -327,11 +327,11 @@ public class OptionChainService {
         opp.daysToExpiry = daysToExpiry;
 
         if (parityDev > 0) {
-            opp.action = "BUY FUT / SELL CE+PE";
+            opp.action = "BUY FUT + SELL CE + BUY PE";
             opp.legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
                 strike, ceQuote.bid, strike, peQuote.ask, underlying, futuresPrice);
         } else {
-            opp.action = "BUY CE+PE / SELL FUT";
+            opp.action = "BUY CE + SELL PE + SELL FUT";
             opp.legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
                 strike, ceQuote.ask, strike, peQuote.bid, underlying, futuresPrice);
         }

@@ -322,11 +322,11 @@ public class OptionArbAutoExecService {
             double pnl = 0;
             String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
             if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-                if (action.contains("BUY CE+PE")) {
+                if (action.contains("BUY CE +")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
                     if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
-                } else if (action.contains("SELL CE+PE")) {
+                } else if (action.contains("SELL CE +")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
                     if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
                     if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
@@ -426,13 +426,13 @@ public class OptionArbAutoExecService {
             String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
 
             List<PlannedLeg> closePlan;
-            if (action.contains("BUY CE+PE")) {
+            if (action.contains("BUY CE +")) {
                 closePlan = List.of(
                     new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "ce"),
                     new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "pe"),
                     new PlannedLeg(pos.getFutSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "fut")
                 );
-            } else if (action.contains("SELL CE+PE")) {
+            } else if (action.contains("SELL CE +")) {
                 closePlan = List.of(
                     new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "ce"),
                     new PlannedLeg(pos.getPeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "pe"),
@@ -502,11 +502,11 @@ public class OptionArbAutoExecService {
 
         double pnl = 0;
         String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
-        if (action.contains("BUY CE+PE")) {
+        if (action.contains("BUY CE +")) {
             if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
             if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
             if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
-        } else if (action.contains("SELL CE+PE")) {
+        } else if (action.contains("SELL CE +")) {
             if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
             if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
             if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
@@ -562,7 +562,7 @@ public class OptionArbAutoExecService {
 
             // Step 1: Close existing CE+PE legs (opposite direction)
             List<PlannedLeg> closePlan;
-            if (action.contains("BUY CE+PE")) {
+            if (action.contains("BUY CE +")) {
                 // Was long CE, short PE → close: SELL CE, BUY PE
                 closePlan = List.of(
                     new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.SELL, qty, 0.0, "ce-close"),
@@ -594,7 +594,7 @@ public class OptionArbAutoExecService {
 
             // Step 2: Enter new CE+PE legs (same direction as original)
             List<PlannedLeg> entryPlan;
-            if (action.contains("BUY CE+PE")) {
+            if (action.contains("BUY CE +")) {
                 // Re-enter: BUY CE, SELL PE
                 entryPlan = List.of(
                     new PlannedLeg(pos.getCeSymbol(), BrokerOrderRequest.Side.BUY, qty, 0.0, "ce-entry"),
@@ -649,7 +649,7 @@ public class OptionArbAutoExecService {
     private boolean executeTrade(BrokerAccount account, BrokerAdapter adapter, OptionArbOpportunity opp, int lots, Long userId) {
         int lotSize = getLotSize(opp.getUnderlying());
         String action = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
-        boolean isConversion = "CONVERSION".equals(action) || action.contains("BUY CE+PE") || action.contains("BUY CE");
+        boolean isConversion = "CONVERSION".equals(action) || action.contains("BUY CE +");
 
         LivePosition position = LivePosition.builder()
                 .userId(userId)
@@ -932,11 +932,11 @@ public class OptionArbAutoExecService {
         String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
         double pnl = 0;
         if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-            if (action.contains("BUY CE+PE")) {
+            if (action.contains("BUY CE +")) {
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
                 if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                 if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
-            } else if (action.contains("SELL CE+PE")) {
+            } else if (action.contains("SELL CE +")) {
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
                 if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
                 if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;

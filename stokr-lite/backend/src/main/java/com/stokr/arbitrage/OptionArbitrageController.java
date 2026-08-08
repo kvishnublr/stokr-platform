@@ -646,7 +646,7 @@ public class OptionArbitrageController {
                                     int lotCount = pos.getLots() != null ? pos.getLots() : 1;
                                     double pnl = 0;
                                     String act = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
-                                    if (act.contains("BUY CE+PE")) {
+                                    if (act.contains("BUY CE +")) {
                                         if (ceExit > 0 && ceEntry > 0) pnl += ceExit - ceEntry;
                                         if (peExit > 0 && peEntry > 0) pnl += peEntry - peExit;
                                         if (futExit > 0 && futEntry > 0) pnl += futEntry - futExit;
@@ -680,7 +680,7 @@ public class OptionArbitrageController {
                                 double pnl = 0;
                                 String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
                                 if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-                                    if (action.contains("BUY CE+PE")) {
+                                    if (action.contains("BUY CE +")) {
                                         if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
                                         if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                                         if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
@@ -783,11 +783,11 @@ public class OptionArbitrageController {
             double pnl = 0;
             String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
             if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-                if (action.contains("BUY CE+PE")) {
+                if (action.contains("BUY CE +")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
                     if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
-                } else if (action.contains("SELL CE+PE")) {
+                } else if (action.contains("SELL CE +")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
                     if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
                     if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
@@ -894,7 +894,7 @@ public class OptionArbitrageController {
                     double ceExit = p.getCeExitPrice() != null ? p.getCeExitPrice().doubleValue() : 0;
                     double peExit = p.getPeExitPrice() != null ? p.getPeExitPrice().doubleValue() : 0;
                     double futExit = p.getFutExitPrice() != null ? p.getFutExitPrice().doubleValue() : 0;
-                    if (action.contains("BUY CE+PE")) {
+                    if (action.contains("BUY CE +")) {
                         if (ceExit > 0 && ceEntry > 0) pnl += ceExit - ceEntry;
                         if (peExit > 0 && peEntry > 0) pnl += peExit - peEntry;
                         if (futExit > 0 && futEntry > 0) pnl += futEntry - futExit;
@@ -914,7 +914,7 @@ public class OptionArbitrageController {
                 double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
                 double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
                 double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
-                if (action.contains("BUY CE+PE")) {
+                if (action.contains("BUY CE +")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
                     if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
@@ -1021,7 +1021,7 @@ public class OptionArbitrageController {
             if (opp == null) {
                 String underlying = (String) body.getOrDefault("underlying", "NIFTY");
                 Number strikeNum = (Number) body.get("strike");
-                String action = (String) body.getOrDefault("action", "BUY FUT / SELL CE+PE");
+                String action = (String) body.getOrDefault("action", "BUY FUT + SELL CE + BUY PE");
                 String strategyType = (String) body.getOrDefault("strategyType", "BID_PARITY");
                 String description = (String) body.getOrDefault("description", strategyType + " " + underlying + " " + (strikeNum != null ? strikeNum.intValue() : ""));
                 Number edgeNum = (Number) body.getOrDefault("edgeAfterCosts", 0);

@@ -165,12 +165,12 @@ public class BidParityService {
 
             if (isConvergent) {
                 edgePoints = parityDev1;
-                action = "BUY FUT / SELL CE+PE";
+                action = "BUY FUT + SELL CE + BUY PE";
                 legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
                     strike, ceQuote.bid, strike, peQuote.ask, underlying, fut);
             } else {
                 edgePoints = parityDev2;
-                action = "BUY CE+PE / SELL FUT";
+                action = "BUY CE + SELL PE + SELL FUT";
                 legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
                     strike, ceQuote.ask, strike, peQuote.bid, underlying, fut);
             }
