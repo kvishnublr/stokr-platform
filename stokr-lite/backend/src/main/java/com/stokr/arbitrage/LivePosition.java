@@ -82,6 +82,9 @@ public class LivePosition {
         map.put("ceEntryPrice", ceEntryPrice != null ? ceEntryPrice.doubleValue() : null);
         map.put("peEntryPrice", peEntryPrice != null ? peEntryPrice.doubleValue() : null);
         map.put("futEntryPrice", futEntryPrice != null ? futEntryPrice.doubleValue() : null);
+        map.put("ceExitPrice", ceExitPrice != null ? ceExitPrice.doubleValue() : null);
+        map.put("peExitPrice", peExitPrice != null ? peExitPrice.doubleValue() : null);
+        map.put("futExitPrice", futExitPrice != null ? futExitPrice.doubleValue() : null);
         map.put("currentPnl", currentPnl != null ? currentPnl.doubleValue() : 0);
         map.put("targetEdge", targetEdge != null ? targetEdge.doubleValue() : null);
         map.put("status", status);

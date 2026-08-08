@@ -48,8 +48,10 @@ public class OptionArbAutoExecService {
         defaults.put("midcpniftyEnabled", true);
         defaults.put("midcpniftyMinEdge", 300.0);
         defaults.put("midcpniftyLots", 1);
-        defaults.put("maxOpenPositions", 5);
+        defaults.put("maxOpenPositions", 1);
         defaults.put("maxDailyLoss", 5000.0);
+        defaults.put("stopLossEnabled", true);
+        defaults.put("stopLossPct", 50.0);
         defaults.put("rolloverEnabled", true);
         defaults.put("rolloverThresholdPct", 90.0);
         defaults.put("autoExitEnabled", true);
@@ -137,7 +139,7 @@ public class OptionArbAutoExecService {
         if (!opps.isEmpty()) evaluateAndExecute(opps);
     }
 
-    public void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {
+    public synchronized void evaluateAndExecute(List<OptionArbOpportunity> newOpps) {
         Map<String, Object> settings = getSettings();
         if (!Boolean.TRUE.equals(settings.get("enabled"))) return;
 
@@ -145,7 +147,7 @@ public class OptionArbAutoExecService {
         if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
         String broker = (String) settings.getOrDefault("broker", "NAVIA");
-        int maxPositions = (int) settings.getOrDefault("maxOpenPositions", 5);
+        int maxPositions = (int) settings.getOrDefault("maxOpenPositions", 1);
         long currentOpen = positionRepo.countAllOpen();
         if (currentOpen >= maxPositions) return;
 
@@ -176,10 +178,28 @@ public class OptionArbAutoExecService {
         }
 
         double maxDailyLoss = ((Number) settings.getOrDefault("maxDailyLoss", 5000.0)).doubleValue();
-        double todayPnl = positionRepo.findAllOpen().stream()
-                .filter(p -> p.getCurrentPnl() != null)
-                .mapToDouble(p -> p.getCurrentPnl().doubleValue())
-                .sum();
+        double todayPnl = 0;
+        try {
+            List<LivePosition> openPos = positionRepo.findAllOpen();
+            if (!openPos.isEmpty()) {
+                List<String> syms = new ArrayList<>();
+                for (LivePosition p : openPos) {
+                    if (p.getCeSymbol() != null) syms.add(p.getCeSymbol());
+                    if (p.getPeSymbol() != null) syms.add(p.getPeSymbol());
+                    if (p.getFutSymbol() != null) syms.add(p.getFutSymbol());
+                }
+                Map<String, OptionChainService.OptionQuote> q = syms.isEmpty() ? Map.of() : optionChainService.fetchQuotes(syms);
+                for (LivePosition p : openPos) {
+                    todayPnl += computePnl(p, q);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Daily loss quote fetch failed, using stored values: {}", e.getMessage());
+            todayPnl = positionRepo.findAllOpen().stream()
+                    .filter(p -> p.getCurrentPnl() != null)
+                    .mapToDouble(p -> p.getCurrentPnl().doubleValue())
+                    .sum();
+        }
         if (todayPnl < -maxDailyLoss) {
             addLog("RISK", "STOPPED", "Daily loss limit hit: ₹" + String.format("%.0f", todayPnl));
             return;
@@ -232,7 +252,7 @@ public class OptionArbAutoExecService {
      * When live P&L reaches rolloverThresholdPct% of target edge, square off and open new position.
      */
     @Scheduled(fixedDelayString = "30000", initialDelay = 30000)
-    public void checkRollover() {
+    public synchronized void checkRollover() {
         Map<String, Object> settings = getSettings();
         boolean rolloverEnabled = Boolean.TRUE.equals(settings.get("rolloverEnabled"));
         boolean autoExitEnabled = Boolean.TRUE.equals(settings.get("autoExitEnabled"));
@@ -324,6 +344,23 @@ public class OptionArbAutoExecService {
 
             boolean shouldExit = false;
             String exitReason = "";
+
+            boolean stopLossEnabled = Boolean.TRUE.equals(settings.get("stopLossEnabled"));
+            double stopLossPct = ((Number) settings.getOrDefault("stopLossPct", 50.0)).doubleValue();
+
+            // Stop-loss: close position if loss exceeds threshold
+            if (stopLossEnabled && targetEdge > 0 && pnlPerLot < 0) {
+                double lossPct = Math.abs(pnlPerLot / targetEdge) * 100;
+                if (lossPct >= stopLossPct) {
+                    shouldExit = true;
+                    exitReason = "STOP_LOSS";
+                    log.info("STOP_LOSS: {} {} strike {} — loss {}% exceeds threshold {}% (P&L ₹{})",
+                            pos.getUnderlying(), pos.getAction(), pos.getStrike(), String.format("%.0f", lossPct),
+                            String.format("%.0f", stopLossPct), String.format("%.0f", pnl));
+                    addLog("STOP_LOSS", "TRIGGERED", pos.getUnderlying() + " " + pos.getStrike()
+                            + " — loss " + String.format("%.0f", lossPct) + "% (₹" + String.format("%.0f", pnl) + ")");
+                }
+            }
 
             // Auto-exit: close position when target edge met (no re-entry)
             if (autoExitEnabled && pctAchieved >= autoExitThresholdPct) {
@@ -714,6 +751,36 @@ public class OptionArbAutoExecService {
         double ipft = grossEdge * 0.00001;
         double totalCosts = stt + brokerage + exchange + sebi + gst + ipft;
         return Math.max(0, grossEdge - totalCosts);
+    }
+
+    private double computePnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
+        double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
+        if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
+        if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
+        if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+        double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
+        double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
+        double futEntry = pos.getFutEntryPrice() != null ? pos.getFutEntryPrice().doubleValue() : 0;
+        int lotSize = pos.getLotSize() != null ? pos.getLotSize() : 25;
+        int lots = pos.getLots() != null ? pos.getLots() : 1;
+        String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
+        double pnl = 0;
+        if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
+            if (action.contains("BUY CE+PE")) {
+                if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
+                if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+            } else if (action.contains("SELL CE+PE")) {
+                if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
+                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+                if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
+            } else {
+                if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
+                if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+            }
+        }
+        return pnl * lotSize * lots;
     }
 
     private void addLog(String type, String status, String message) {

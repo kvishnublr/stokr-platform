@@ -1068,6 +1068,10 @@ public class OptionArbitrageController {
 
             // Create a LivePosition so it shows in Live Positions section
             try {
+                long openCount = livePositionRepo.countAllOpen();
+                if (openCount >= 1) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "Already have 1 open position. Close it first."));
+                }
                 int lotSize = getLotSize(opp.getUnderlying());
                 String futSymbol = opp.getExpiryDate() != null
                     ? optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate()) : null;
