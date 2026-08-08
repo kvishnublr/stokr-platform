@@ -26,7 +26,7 @@ public class OptionChainService {
 
     private static final double RISK_FREE_RATE = 0.065;
     private static final double MIN_PARITY_DEVIATION = 0.5;
-    private static final double MIN_EDGE_AFTER_COSTS = 10.0;
+    private static final double MIN_EDGE_AFTER_COSTS = 300.0;
 
     private final ConcurrentHashMap<String, Long> cooldownMap = new ConcurrentHashMap<>();
 
@@ -206,7 +206,7 @@ public class OptionChainService {
     public List<Integer> generateStrikes(int atmStrike, String underlying) {
         int step = getStrikeStep(underlying);
         List<Integer> strikes = new ArrayList<>();
-        for (int i = -10; i <= 10; i++) {
+        for (int i = -5; i <= 5; i++) {
             strikes.add(atmStrike + i * step);
         }
         return strikes;
@@ -332,11 +332,11 @@ public class OptionChainService {
         opp.daysToExpiry = daysToExpiry;
 
         if (parityDev > 0) {
-            opp.action = "BUY CE+PE / SELL FUT";
-            opp.legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
-                strike, ceQuote.bid, strike, ceQuote.ask, underlying, futuresPrice);
-        } else {
             opp.action = "BUY FUT / SELL CE+PE";
+            opp.legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
+                strike, ceQuote.bid, strike, peQuote.ask, underlying, futuresPrice);
+        } else {
+            opp.action = "BUY CE+PE / SELL FUT";
             opp.legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
                 strike, ceQuote.ask, strike, peQuote.bid, underlying, futuresPrice);
         }

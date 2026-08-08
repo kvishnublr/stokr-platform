@@ -43,10 +43,10 @@ public class OptionArbAutoExecService {
         defaults.put("bankniftyMinEdge", 500.0);
         defaults.put("bankniftyLots", 1);
         defaults.put("finniftyEnabled", true);
-        defaults.put("finniftyMinEdge", 300.0);
+        defaults.put("finniftyMinEdge", 500.0);
         defaults.put("finniftyLots", 1);
         defaults.put("midcpniftyEnabled", true);
-        defaults.put("midcpniftyMinEdge", 300.0);
+        defaults.put("midcpniftyMinEdge", 500.0);
         defaults.put("midcpniftyLots", 1);
         defaults.put("maxOpenPositions", 1);
         defaults.put("maxDailyLoss", 5000.0);
@@ -325,15 +325,15 @@ public class OptionArbAutoExecService {
             if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
                 if (action.contains("BUY CE+PE")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
                 } else if (action.contains("SELL CE+PE")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
                     if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
                 } else {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
                 }
             }
@@ -768,15 +768,15 @@ public class OptionArbAutoExecService {
         if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
             if (action.contains("BUY CE+PE")) {
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                 if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
             } else if (action.contains("SELL CE+PE")) {
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
-                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+                if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
                 if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
             } else {
                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                 if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
             }
         }

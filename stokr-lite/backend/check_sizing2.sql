@@ -1,0 +1,1 @@
+SELECT setting_key, setting_value FROM option_arb_auto_exec_settings WHERE setting_key LIKE '%nifty%' OR setting_key LIKE '%banknifty%' OR setting_key LIKE '%finnifty%' OR setting_key LIKE '%midcpnifty%' ORDER BY setting_key;

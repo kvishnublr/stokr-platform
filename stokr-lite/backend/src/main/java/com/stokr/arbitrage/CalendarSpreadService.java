@@ -16,7 +16,7 @@ public class CalendarSpreadService {
 
     private static final Logger log = LoggerFactory.getLogger(CalendarSpreadService.class);
     private static final double RISK_FREE_RATE = 0.065;
-    private static final double MIN_EDGE_RS = 100.0;
+    private static final double MIN_EDGE_RS = 300.0;
 
     private final OptionChainService optionChainService;
 

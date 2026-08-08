@@ -648,11 +648,11 @@ public class OptionArbitrageController {
                                     String act = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
                                     if (act.contains("BUY CE+PE")) {
                                         if (ceExit > 0 && ceEntry > 0) pnl += ceExit - ceEntry;
-                                        if (peExit > 0 && peEntry > 0) pnl += peExit - peEntry;
+                                        if (peExit > 0 && peEntry > 0) pnl += peEntry - peExit;
                                         if (futExit > 0 && futEntry > 0) pnl += futEntry - futExit;
                                     } else {
                                         if (ceExit > 0 && ceEntry > 0) pnl += ceEntry - ceExit;
-                                        if (peExit > 0 && peEntry > 0) pnl += peEntry - peExit;
+                                        if (peExit > 0 && peEntry > 0) pnl += peExit - peEntry;
                                         if (futExit > 0 && futEntry > 0) pnl += futExit - futEntry;
                                     }
                                     pnl *= lotSz * lotCount;
@@ -682,11 +682,11 @@ public class OptionArbitrageController {
                                 if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
                                     if (action.contains("BUY CE+PE")) {
                                         if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                                        if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                                        if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                                         if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
                                     } else {
                                         if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
-                                        if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+                                        if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
                                         if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
                                     }
                                 }
@@ -785,15 +785,15 @@ public class OptionArbitrageController {
             if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
                 if (action.contains("BUY CE+PE")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
                 } else if (action.contains("SELL CE+PE")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
                     if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
                 } else {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
                 }
             }
@@ -907,11 +907,11 @@ public class OptionArbitrageController {
                 double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
                 if (action.contains("BUY CE+PE")) {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                     if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
                 } else {
                     if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
                     if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
                 }
                 pnl *= lotSize * lots;

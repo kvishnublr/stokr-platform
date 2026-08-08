@@ -61,6 +61,7 @@ public class ArbitrageOpportunity {
         map.put("edgeAfterCosts", Math.round(edgeAfterCosts * 100.0) / 100.0);
         map.put("daysToExpiry", daysToExpiry);
         map.put("confidence", Math.round(confidence));
+        map.put("status", "RUNNING");
         map.put("detectedAt", detectedAt.atZone(java.time.ZoneId.systemDefault()).withZoneSameInstant(java.time.ZoneId.of("Asia/Kolkata")).toLocalDateTime().atOffset(java.time.ZoneOffset.ofHoursMinutes(5, 30)).toString());
         if (costBreakdown != null) {
             map.put("costBreakdown", costBreakdown);

@@ -59,10 +59,14 @@ public class BoxSpreadService {
                     for (int idx = 0; idx < opps.size(); idx++) {
                         Map<String, Object> map = opps.get(idx).toMap();
                         map.put("strategyType", "BOX_SPREAD");
+                        map.put("status", "RUNNING");
                         map.put("guaranteedFill", true);
                         map.put("boxEdgeInr", opps.get(idx).edgeAfterCosts);
+                        map.put("scanTime", java.time.LocalDateTime.now().toString());
+                        map.put("detectedAt", java.time.LocalDateTime.now().toString());
                         if (idx < savedEntities.size()) {
                             map.put("id", savedEntities.get(idx).getId());
+                            map.put("expiryDate", savedEntities.get(idx).getExpiryDate() != null ? savedEntities.get(idx).getExpiryDate().toString() : null);
                         }
                         results.add(map);
                     }

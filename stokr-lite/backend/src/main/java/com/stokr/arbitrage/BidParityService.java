@@ -21,7 +21,7 @@ public class BidParityService {
 
     private static final double RISK_FREE_RATE = 0.065;
     private static final double MIN_PARITY_DEVIATION_BID = 1.5;
-    private static final double MIN_EDGE_AFTER_COSTS = 50.0;
+    private static final double MIN_EDGE_AFTER_COSTS = 300.0;
     private static final int MIN_VOLUME = 500;
     private static final int MIN_OI = 2000;
 
@@ -115,7 +115,7 @@ public class BidParityService {
         int atmStrike = optionChainService.getATMStrike(underlying, spot);
         int step = OptionChainService.getStrikeStep(underlying);
         List<Integer> strikes = new ArrayList<>();
-        for (int i = -10; i <= 10; i++) {
+        for (int i = -5; i <= 5; i++) {
             strikes.add(atmStrike + i * step);
         }
 
@@ -165,14 +165,14 @@ public class BidParityService {
 
             if (isConvergent) {
                 edgePoints = parityDev1;
-                action = "BUY CE+PE / SELL FUT";
-                legs = String.format("BUY %d CE @ %.1f | BUY %d PE @ %.1f | SELL %s FUT @ %.1f",
-                    strike, ceQuote.ask, strike, peQuote.bid, underlying, fut);
+                action = "BUY FUT / SELL CE+PE";
+                legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
+                    strike, ceQuote.bid, strike, peQuote.ask, underlying, fut);
             } else {
                 edgePoints = parityDev2;
-                action = "BUY FUT / SELL CE+PE";
-                legs = String.format("SELL %d CE @ %.1f | SELL %d PE @ %.1f | BUY %s FUT @ %.1f",
-                    strike, ceQuote.bid, strike, peQuote.ask, underlying, fut);
+                action = "BUY CE+PE / SELL FUT";
+                legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
+                    strike, ceQuote.ask, strike, peQuote.bid, underlying, fut);
             }
 
             double grossEdge = edgePoints * lotSize;
@@ -182,18 +182,27 @@ public class BidParityService {
 
             foundOpps++;
 
+            String description = String.format("%s %s %s | Spot %.1f vs Fut %.1f | Edge ₹%.0f/lot",
+                underlying, expiry, action, spot, fut, edgePoints * lotSize);
+
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("strategyType", "BID_PARITY");
+            map.put("type", "PARITY_BREAK");
             map.put("underlying", underlying);
             map.put("strike", strike);
             map.put("action", action);
             map.put("legs", legs);
+            map.put("description", description);
             map.put("spotPrice", spot);
             map.put("futuresPrice", fut);
             map.put("ceBid", ceQuote.bid);
             map.put("ceAsk", ceQuote.ask);
+            map.put("ceEntryPrice", ceQuote.lastPrice);
             map.put("peBid", peQuote.bid);
             map.put("peAsk", peQuote.ask);
+            map.put("peEntryPrice", peQuote.lastPrice);
+            map.put("cePrice", ceQuote.lastPrice);
+            map.put("pePrice", peQuote.lastPrice);
             map.put("ceVolume", ceQuote.volume);
             map.put("ceOI", ceQuote.openInterest);
             map.put("peVolume", peQuote.volume);
@@ -202,10 +211,14 @@ public class BidParityService {
             map.put("edgeAfterCosts", Math.round(edgeAfterCosts * 100.0) / 100.0);
             map.put("grossEdge", Math.round(grossEdge * 100.0) / 100.0);
             map.put("daysToExpiry", daysToExpiry);
+            map.put("expiryDate", expiry.toString());
             map.put("lotSize", lotSize);
             map.put("confidence", Math.min(99.0, 70.0 + edgePoints * 1.5));
             map.put("guaranteedFill", true);
             map.put("bidEdgeInr", Math.round(edgeAfterCosts * 100.0) / 100.0);
+            map.put("status", "RUNNING");
+            map.put("scanTime", java.time.LocalDateTime.now().toString());
+            map.put("detectedAt", java.time.LocalDateTime.now().toString());
 
             double stt = grossEdge * 0.001;
             double brokerage = 120.0;
