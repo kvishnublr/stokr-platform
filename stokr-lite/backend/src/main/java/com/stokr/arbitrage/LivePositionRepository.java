@@ -14,8 +14,15 @@ public interface LivePositionRepository extends JpaRepository<LivePosition, Long
 
     List<LivePosition> findByUserIdOrderByEnteredAtDesc(Long userId);
 
+    List<LivePosition> findByOpportunityIdIn(List<Long> opportunityIds);
+
+    List<LivePosition> findAllByOrderByEnteredAtDesc();
+
     @Query("SELECT p FROM LivePosition p WHERE p.status = 'OPEN' ORDER BY p.enteredAt DESC")
     List<LivePosition> findAllOpen();
+
+    @Query("SELECT p FROM LivePosition p WHERE p.status IN ('CLOSED','EXITED') ORDER BY p.exitedAt DESC")
+    List<LivePosition> findAllClosed();
 
     @Query("SELECT COUNT(p) FROM LivePosition p WHERE p.status = 'OPEN' AND p.underlying = :underlying")
     long countOpenByUnderlying(@Param("underlying") String underlying);

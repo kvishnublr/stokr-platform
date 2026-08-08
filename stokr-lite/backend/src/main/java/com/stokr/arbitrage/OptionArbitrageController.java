@@ -121,7 +121,9 @@ public class OptionArbitrageController {
         List<Map<String, Object>> boxOpps = boxSpreadService.scanBoxSpread(underlying);
         if (boxOpps != null) opps.addAll(boxOpps);
 
-        if (!opps.isEmpty()) triggerAutoExec();
+        if (!opps.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from scan failed: {}", e.getMessage()); }
+        }
 
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
@@ -148,7 +150,9 @@ public class OptionArbitrageController {
             ));
         }
         List<Map<String, Object>> opps = bidParityService.scanBidParity(underlying);
-        if (opps != null && !opps.isEmpty()) triggerAutoExec();
+        if (opps != null && !opps.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from bid-parity scan failed: {}", e.getMessage()); }
+        }
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
@@ -172,7 +176,9 @@ public class OptionArbitrageController {
             ));
         }
         List<Map<String, Object>> opps = boxSpreadService.scanBoxSpread(underlying);
-        if (opps != null && !opps.isEmpty()) triggerAutoExec();
+        if (opps != null && !opps.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from box-spread scan failed: {}", e.getMessage()); }
+        }
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
@@ -272,7 +278,9 @@ public class OptionArbitrageController {
         resp.put("marketClosed", false);
         resp.put("opportunities", allOpps);
         resp.put("count", allOpps.size());
-        if (!allOpps.isEmpty()) triggerAutoExec();
+        if (!allOpps.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(allOpps); } catch (Exception e) { log.debug("Auto-exec from iron-condor scan failed: {}", e.getMessage()); }
+        }
         return ResponseEntity.ok(resp);
     }
 
@@ -584,84 +592,121 @@ public class OptionArbitrageController {
         resp.put("timestamp", System.currentTimeMillis());
         try {
             Map<String, Object> pnlMap = new LinkedHashMap<>();
+            Map<String, Object> statusMap = new LinkedHashMap<>();
             LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
             boolean marketOpen = !nowIST.isBefore(LocalTime.of(9, 15)) && !nowIST.isAfter(LocalTime.of(15, 30));
 
-            List<OptionArbOpportunity> allOpen = new ArrayList<>();
             if (ids != null && !ids.isEmpty()) {
                 List<Long> idList = Arrays.stream(ids.split(","))
                     .map(String::trim).filter(s -> !s.isEmpty())
                     .map(Long::parseLong).collect(Collectors.toList());
+
                 if (!idList.isEmpty()) {
-                    allOpen.addAll(historyService.getRepository().findAllById(idList));
-                }
-            } else {
-                LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
-                LocalDateTime since = today.minusDays(1).atStartOfDay();
-                allOpen.addAll(historyService.getRepository().findRecentByStatusLimited("RUNNING", since, 500));
-                allOpen.addAll(historyService.getRepository().findRecentByStatusLimited("OPEN", since, 100));
-                allOpen.addAll(historyService.getRepository().findRecentByStatusLimited("DETECTED", since, 100));
-                allOpen = allOpen.stream().distinct().limit(500).collect(Collectors.toList());
-            }
-
-            Map<String, OptionChainService.OptionQuote> allQuotes = Map.of();
-            try {
-                List<String> symbols = new ArrayList<>();
-                for (OptionArbOpportunity opp : allOpen) {
-                    if (opp.getExpiryDate() != null && opp.getStrike() != null) {
-                        symbols.add(optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE"));
-                        symbols.add(optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE"));
-                        symbols.add(optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate()));
+                    List<LivePosition> positions = livePositionRepo.findByOpportunityIdIn(idList);
+                    Map<Long, LivePosition> posByOpp = new LinkedHashMap<>();
+                    for (LivePosition p : positions) {
+                        if (p.getOpportunityId() != null) posByOpp.put(p.getOpportunityId(), p);
                     }
-                }
-                allQuotes = optionChainService.fetchQuotes(symbols);
-            } catch (Exception e) {
-                log.debug("Batch quote fetch failed: {}", e.getMessage());
-            }
 
-            for (OptionArbOpportunity opp : allOpen) {
-                int lotSize = OptionChainService.getLotSize(opp.getUnderlying());
-                double ceP = opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() : 0;
-                double peP = opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0;
-                double futP = opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0;
+                    List<String> symbols = new ArrayList<>();
+                    for (LivePosition p : positions) {
+                        if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
+                        if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
+                        if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+                    }
 
-                double currentCe = 0;
-                double currentPe = 0;
-                double currentFut = 0;
-                if (opp.getExpiryDate() != null && opp.getStrike() != null) {
+                    Map<String, OptionChainService.OptionQuote> quotes = Map.of();
                     try {
-                        String ceSym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
-                        String peSym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
-                        String futSym = optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate());
-                        if (allQuotes.containsKey(ceSym) && allQuotes.get(ceSym).lastPrice > 0) currentCe = allQuotes.get(ceSym).lastPrice;
-                        if (allQuotes.containsKey(peSym) && allQuotes.get(peSym).lastPrice > 0) currentPe = allQuotes.get(peSym).lastPrice;
-                        if (allQuotes.containsKey(futSym) && allQuotes.get(futSym).lastPrice > 0) currentFut = allQuotes.get(futSym).lastPrice;
+                        quotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
                     } catch (Exception e) {
-                        log.debug("Quote lookup failed for {} {}: {}", opp.getUnderlying(), opp.getStrike(), e.getMessage());
+                        log.debug("History live-pnl quote fetch failed: {}", e.getMessage());
                     }
-                }
 
-                double pnl = 0;
-                String act = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
-                if (currentCe > 0 || currentPe > 0 || currentFut > 0) {
-                    if ("CONVERSION".equalsIgnoreCase(opp.getAction()) || act.contains("BUY CE+PE")) {
-                        if (currentCe > 0 && ceP > 0) pnl += currentCe - ceP;
-                        if (currentPe > 0 && peP > 0) pnl += currentPe - peP;
-                        if (currentFut > 0 && futP > 0) pnl += futP - currentFut;
-                    } else if ("REVERSAL".equalsIgnoreCase(opp.getAction()) || act.contains("SELL CE+PE")) {
-                        if (currentCe > 0 && ceP > 0) pnl += ceP - currentCe;
-                        if (currentPe > 0 && peP > 0) pnl += peP - currentPe;
-                        if (currentFut > 0 && futP > 0) pnl += currentFut - futP;
+                    for (Long oppId : idList) {
+                        LivePosition pos = posByOpp.get(oppId);
+                        String oppIdStr = String.valueOf(oppId);
+
+                        if (pos != null) {
+                            statusMap.put(oppIdStr, pos.getStatus());
+
+                            // For CLOSED/EXITED positions, use stored P&L from DB
+                            // If NULL (old positions), compute from exit prices
+                            if ("CLOSED".equals(pos.getStatus()) || "EXITED".equals(pos.getStatus())) {
+                                if (pos.getCurrentPnl() != null) {
+                                    pnlMap.put(oppIdStr, Math.round(pos.getCurrentPnl().doubleValue()));
+                                } else if (pos.getCeExitPrice() != null || pos.getPeExitPrice() != null || pos.getFutExitPrice() != null) {
+                                    // Compute from exit prices
+                                    double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
+                                    double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
+                                    double futEntry = pos.getFutEntryPrice() != null ? pos.getFutEntryPrice().doubleValue() : 0;
+                                    double ceExit = pos.getCeExitPrice() != null ? pos.getCeExitPrice().doubleValue() : 0;
+                                    double peExit = pos.getPeExitPrice() != null ? pos.getPeExitPrice().doubleValue() : 0;
+                                    double futExit = pos.getFutExitPrice() != null ? pos.getFutExitPrice().doubleValue() : 0;
+                                    int lotSz = pos.getLotSize() != null ? pos.getLotSize() : OptionChainService.getLotSize(pos.getUnderlying());
+                                    int lotCount = pos.getLots() != null ? pos.getLots() : 1;
+                                    double pnl = 0;
+                                    String act = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
+                                    if (act.contains("BUY CE+PE")) {
+                                        if (ceExit > 0 && ceEntry > 0) pnl += ceExit - ceEntry;
+                                        if (peExit > 0 && peEntry > 0) pnl += peExit - peEntry;
+                                        if (futExit > 0 && futEntry > 0) pnl += futEntry - futExit;
+                                    } else {
+                                        if (ceExit > 0 && ceEntry > 0) pnl += ceEntry - ceExit;
+                                        if (peExit > 0 && peEntry > 0) pnl += peEntry - peExit;
+                                        if (futExit > 0 && futEntry > 0) pnl += futExit - futEntry;
+                                    }
+                                    pnl *= lotSz * lotCount;
+                                    pnlMap.put(oppIdStr, Math.round(pnl));
+                                    // Also persist so we don't recompute next time
+                                    try {
+                                        pos.setCurrentPnl(BigDecimal.valueOf(pnl));
+                                        livePositionRepo.save(pos);
+                                    } catch (Exception ignored) {}
+                                } else {
+                                    pnlMap.put(oppIdStr, 0);
+                                }
+                            } else {
+                                double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
+                                if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
+                                if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
+                                if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+
+                                double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
+                                double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
+                                double futEntry = pos.getFutEntryPrice() != null ? pos.getFutEntryPrice().doubleValue() : 0;
+                                int lotSize = pos.getLotSize() != null ? pos.getLotSize() : OptionChainService.getLotSize(pos.getUnderlying());
+                                int lots = pos.getLots() != null ? pos.getLots() : 1;
+
+                                double pnl = 0;
+                                String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
+                                if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
+                                    if (action.contains("BUY CE+PE")) {
+                                        if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
+                                        if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                                        if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+                                    } else {
+                                        if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
+                                        if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+                                        if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
+                                    }
+                                }
+                                pnl *= lotSize * lots;
+                                pnlMap.put(oppIdStr, Math.round(pnl));
+                            }
+                        } else {
+                            pnlMap.put(oppIdStr, null);
+                        }
                     }
-                    pnl *= lotSize;
                 }
-                pnlMap.put(String.valueOf(opp.getId()), Math.round(pnl * 100.0) / 100.0);
             }
+
             resp.put("pnlMap", pnlMap);
+            resp.put("statusMap", statusMap);
             resp.put("marketOpen", marketOpen);
         } catch (Exception e) {
             log.error("Failed to compute live P&L: {}", e.getMessage());
             resp.put("pnlMap", Map.of());
+            resp.put("statusMap", Map.of());
         }
         return ResponseEntity.ok(resp);
     }
@@ -778,6 +823,111 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
+    @GetMapping("/paper-trades")
+    public ResponseEntity<Map<String, Object>> getPaperTrades(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String underlying) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        List<LivePosition> positions;
+        if ("CLOSED".equalsIgnoreCase(status) || "EXITED".equalsIgnoreCase(status)) {
+            positions = livePositionRepo.findAllClosed();
+        } else if ("OPEN".equalsIgnoreCase(status)) {
+            positions = livePositionRepo.findAllOpen();
+        } else {
+            positions = livePositionRepo.findAllByOrderByEnteredAtDesc();
+        }
+        if (underlying != null && !underlying.isEmpty() && !"ALL".equalsIgnoreCase(underlying)) {
+            positions = positions.stream().filter(p -> underlying.equalsIgnoreCase(p.getUnderlying())).toList();
+        }
+
+        // Compute P&L for all positions
+        List<String> symbols = new ArrayList<>();
+        for (LivePosition p : positions) {
+            if ("OPEN".equals(p.getStatus())) {
+                if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
+                if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
+                if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+            }
+        }
+        Map<String, OptionChainService.OptionQuote> quotes = Map.of();
+        try {
+            quotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+        } catch (Exception e) {
+            log.debug("Paper trades quote fetch failed: {}", e.getMessage());
+        }
+
+        final Map<String, OptionChainService.OptionQuote> q = quotes;
+        List<Map<String, Object>> posList = positions.stream().map(p -> {
+            Map<String, Object> m = p.toMap();
+            double pnl = 0;
+            String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
+            int lotSize = p.getLotSize() != null ? p.getLotSize() : getLotSize(p.getUnderlying());
+            int lots = p.getLots() != null ? p.getLots() : 1;
+
+            if ("CLOSED".equals(p.getStatus()) || "EXITED".equals(p.getStatus())) {
+                // Use stored P&L or compute from exit prices
+                if (p.getCurrentPnl() != null) {
+                    pnl = p.getCurrentPnl().doubleValue();
+                } else if (p.getCeExitPrice() != null || p.getPeExitPrice() != null || p.getFutExitPrice() != null) {
+                    double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
+                    double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
+                    double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
+                    double ceExit = p.getCeExitPrice() != null ? p.getCeExitPrice().doubleValue() : 0;
+                    double peExit = p.getPeExitPrice() != null ? p.getPeExitPrice().doubleValue() : 0;
+                    double futExit = p.getFutExitPrice() != null ? p.getFutExitPrice().doubleValue() : 0;
+                    if (action.contains("BUY CE+PE")) {
+                        if (ceExit > 0 && ceEntry > 0) pnl += ceExit - ceEntry;
+                        if (peExit > 0 && peEntry > 0) pnl += peExit - peEntry;
+                        if (futExit > 0 && futEntry > 0) pnl += futEntry - futExit;
+                    } else {
+                        if (ceExit > 0 && ceEntry > 0) pnl += ceEntry - ceExit;
+                        if (peExit > 0 && peEntry > 0) pnl += peEntry - peExit;
+                        if (futExit > 0 && futEntry > 0) pnl += futExit - futEntry;
+                    }
+                    pnl *= lotSize * lots;
+                }
+            } else {
+                // OPEN — compute from live quotes
+                double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
+                if (p.getCeSymbol() != null && q.containsKey(p.getCeSymbol())) ceCurrent = q.get(p.getCeSymbol()).lastPrice;
+                if (p.getPeSymbol() != null && q.containsKey(p.getPeSymbol())) peCurrent = q.get(p.getPeSymbol()).lastPrice;
+                if (p.getFutSymbol() != null && q.containsKey(p.getFutSymbol())) futCurrent = q.get(p.getFutSymbol()).lastPrice;
+                double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
+                double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
+                double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
+                if (action.contains("BUY CE+PE")) {
+                    if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+                } else {
+                    if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
+                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+                    if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
+                }
+                pnl *= lotSize * lots;
+                m.put("ceCurrent", ceCurrent);
+                m.put("peCurrent", peCurrent);
+                m.put("futCurrent", futCurrent);
+            }
+            m.put("pnl", Math.round(pnl));
+            return m;
+        }).toList();
+
+        long openCount = positions.stream().filter(p -> "OPEN".equals(p.getStatus())).count();
+        long closedCount = positions.stream().filter(p -> "CLOSED".equals(p.getStatus()) || "EXITED".equals(p.getStatus())).count();
+        double totalPnl = posList.stream().mapToDouble(m -> {
+            Object pnl = m.get("pnl");
+            return pnl != null ? ((Number) pnl).doubleValue() : 0;
+        }).sum();
+
+        resp.put("positions", posList);
+        resp.put("total", posList.size());
+        resp.put("openCount", openCount);
+        resp.put("closedCount", closedCount);
+        resp.put("totalPnl", Math.round(totalPnl));
+        return ResponseEntity.ok(resp);
+    }
+
     private int getLotSize(String underlying) {
         return switch (underlying) {
             case "NIFTY" -> 25;
@@ -786,6 +936,23 @@ public class OptionArbitrageController {
             case "FINNIFTY" -> 25;
             default -> 25;
         };
+    }
+
+    private double recalculateTargetEdge(double ceEntry, double peEntry, double futEntry, int strike, String action, String underlying) {
+        if (ceEntry <= 0 || peEntry <= 0 || futEntry <= 0) return 0;
+
+        double synthetic = ceEntry - peEntry + strike;
+        double parityDev = Math.abs(futEntry - synthetic);
+
+        double grossEdge = parityDev * getLotSize(underlying);
+        double stt = grossEdge * 0.001;
+        double brokerage = 120.0;
+        double exchange = grossEdge * 0.000345 * 6;
+        double sebi = grossEdge * 0.00001;
+        double gst = (brokerage + exchange + sebi) * 0.18;
+        double ipft = grossEdge * 0.00001;
+        double totalCosts = stt + brokerage + exchange + sebi + gst + ipft;
+        return Math.max(0, grossEdge - totalCosts);
     }
 
     @GetMapping("/auto-execute/execute")
@@ -807,25 +974,57 @@ public class OptionArbitrageController {
         resp.put("timestamp", System.currentTimeMillis());
         try {
             Number opportunityId = (Number) body.get("opportunityId");
-            if (opportunityId == null) {
-                resp.put("status", "ERROR");
-                resp.put("message", "Missing opportunityId");
-                return ResponseEntity.badRequest().body(resp);
+            OptionArbOpportunity opp = null;
+
+            if (opportunityId != null) {
+                Optional<OptionArbOpportunity> opt = historyService.getRepository().findById(opportunityId.longValue());
+                if (opt.isPresent()) {
+                    opp = opt.get();
+                    String currentStatus = opp.getStatus();
+                    if ("CLOSED".equals(currentStatus) || "EXPIRED".equals(currentStatus)) {
+                        resp.put("status", "ERROR");
+                        resp.put("message", "Trade already " + currentStatus);
+                        return ResponseEntity.badRequest().body(resp);
+                    }
+                }
             }
 
-            Optional<OptionArbOpportunity> opt = historyService.getRepository().findById(opportunityId.longValue());
-            if (opt.isEmpty()) {
-                resp.put("status", "ERROR");
-                resp.put("message", "Opportunity not found: " + opportunityId);
-                return ResponseEntity.badRequest().body(resp);
-            }
+            // If no DB opportunity found, create one from the scan data in the request
+            if (opp == null) {
+                String underlying = (String) body.getOrDefault("underlying", "NIFTY");
+                Number strikeNum = (Number) body.get("strike");
+                String action = (String) body.getOrDefault("action", "BUY FUT / SELL CE+PE");
+                String strategyType = (String) body.getOrDefault("strategyType", "BID_PARITY");
+                String description = (String) body.getOrDefault("description", strategyType + " " + underlying + " " + (strikeNum != null ? strikeNum.intValue() : ""));
+                Number edgeNum = (Number) body.getOrDefault("edgeAfterCosts", 0);
+                Number ceEntry = (Number) body.getOrDefault("ceEntryPrice", 0);
+                Number peEntry = (Number) body.getOrDefault("peEntryPrice", 0);
+                Number spotPrice = (Number) body.getOrDefault("spotPrice", 0);
+                Number futPrice = (Number) body.getOrDefault("futuresPrice", 0);
 
-            OptionArbOpportunity opp = opt.get();
-            String currentStatus = opp.getStatus();
-            if ("CLOSED".equals(currentStatus) || "EXPIRED".equals(currentStatus)) {
-                resp.put("status", "ERROR");
-                resp.put("message", "Trade already " + currentStatus);
-                return ResponseEntity.badRequest().body(resp);
+                LocalDate expiry = optionChainService.getWeeklyExpiryDate(underlying);
+                int lotSize = getLotSize(underlying);
+
+                opp = OptionArbOpportunity.builder()
+                    .scanTime(LocalDateTime.now())
+                    .underlying(underlying)
+                    .type(strategyType)
+                    .strike(strikeNum != null ? strikeNum.intValue() : 0)
+                    .action(action)
+                    .legs(action + " " + underlying + " " + (strikeNum != null ? strikeNum.intValue() : ""))
+                    .strategyType(strategyType)
+                    .description(description)
+                    .spotPrice(spotPrice != null ? BigDecimal.valueOf(spotPrice.doubleValue()) : BigDecimal.ZERO)
+                    .futuresPrice(futPrice != null ? BigDecimal.valueOf(futPrice.doubleValue()) : BigDecimal.ZERO)
+                    .edgePoints(BigDecimal.ZERO)
+                    .edgeAfterCosts(BigDecimal.valueOf(edgeNum.doubleValue()))
+                    .ceEntryPrice(ceEntry != null ? BigDecimal.valueOf(ceEntry.doubleValue()) : BigDecimal.ZERO)
+                    .peEntryPrice(peEntry != null ? BigDecimal.valueOf(peEntry.doubleValue()) : BigDecimal.ZERO)
+                    .expiryDate(expiry)
+                    .status("RUNNING")
+                    .build();
+                opp = historyService.getRepository().save(opp);
+                log.info("Created opportunity from scan data: id={}", opp.getId());
             }
 
             // Fetch live CE/PE prices as entry prices
@@ -881,7 +1080,8 @@ public class OptionArbitrageController {
                     .futSymbol(futSymbol)
                     .ceSymbol(optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE"))
                     .peSymbol(optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE"))
-                    .targetEdge(opp.getEdgeAfterCosts())
+                    .targetEdge(BigDecimal.valueOf(recalculateTargetEdge(
+                        ceLive, peLive, futLive, opp.getStrike(), opp.getAction(), opp.getUnderlying())))
                     .entryCost(BigDecimal.valueOf((ceLive + peLive + futLive) * lotSize))
                     .status("OPEN")
                     .enteredAt(LocalDateTime.now())
