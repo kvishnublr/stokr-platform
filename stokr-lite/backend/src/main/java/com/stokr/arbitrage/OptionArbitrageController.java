@@ -31,6 +31,7 @@ public class OptionArbitrageController {
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
     private final LivePositionRepository livePositionRepo;
+    private final OptionArbOpportunityRepository oppRepo;
 
     private final Map<String, Object> autoExecSettings = new ConcurrentHashMap<>();
     private final List<Map<String, Object>> auditLogs = Collections.synchronizedList(new ArrayList<>());
@@ -42,7 +43,8 @@ public class OptionArbitrageController {
                                      CalendarSpreadService calendarSpreadService,
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
-                                     LivePositionRepository livePositionRepo) {
+                                     LivePositionRepository livePositionRepo,
+                                     OptionArbOpportunityRepository oppRepo) {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.bidParityService = bidParityService;
@@ -51,6 +53,7 @@ public class OptionArbitrageController {
         this.spotFetcher = spotFetcher;
         this.autoExecService = autoExecService;
         this.livePositionRepo = livePositionRepo;
+        this.oppRepo = oppRepo;
 
         autoExecSettings.put("normalParityEnabled", true);
         autoExecSettings.put("normalEntryEdge", 150.0);
@@ -593,6 +596,7 @@ public class OptionArbitrageController {
         try {
             Map<String, Object> pnlMap = new LinkedHashMap<>();
             Map<String, Object> statusMap = new LinkedHashMap<>();
+            Map<String, Object> exitTimeMap = new LinkedHashMap<>();
             LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
             boolean marketOpen = !nowIST.isBefore(LocalTime.of(9, 15)) && !nowIST.isAfter(LocalTime.of(15, 30));
 
@@ -628,6 +632,11 @@ public class OptionArbitrageController {
 
                         if (pos != null) {
                             statusMap.put(oppIdStr, pos.getStatus());
+                            if (pos.getExitedAt() != null) {
+                                exitTimeMap.put(oppIdStr, pos.getExitedAt().toString());
+                            } else if ("CLOSED".equals(pos.getStatus()) || "EXITED".equals(pos.getStatus())) {
+                                exitTimeMap.put(oppIdStr, pos.getEnteredAt() != null ? pos.getEnteredAt().toString() : null);
+                            }
 
                             // For CLOSED/EXITED positions, use stored P&L from DB
                             // If NULL (old positions), compute from exit prices
@@ -694,7 +703,29 @@ public class OptionArbitrageController {
                                 pnlMap.put(oppIdStr, Math.round(pnl));
                             }
                         } else {
-                            pnlMap.put(oppIdStr, null);
+                            // No live_positions record — check opportunity status from DB
+                            try {
+                                var oppOpt = oppRepo.findById(oppId);
+                                if (oppOpt.isPresent()) {
+                                    var opp = oppOpt.get();
+                                    String oppStatus = opp.getStatus() != null ? opp.getStatus() : "EXPIRED";
+                                    statusMap.put(oppIdStr, oppStatus);
+                                    if (opp.getExitTime() != null) {
+                                        exitTimeMap.put(oppIdStr, opp.getExitTime().toString());
+                                    }
+                                    if ("EXITED".equals(oppStatus) || "CLOSED".equals(oppStatus)) {
+                                        pnlMap.put(oppIdStr, opp.getPnlAfterCosts() != null ? Math.round(opp.getPnlAfterCosts().doubleValue()) : 0);
+                                    } else {
+                                        pnlMap.put(oppIdStr, 0);
+                                    }
+                                } else {
+                                    statusMap.put(oppIdStr, "EXPIRED");
+                                    pnlMap.put(oppIdStr, 0);
+                                }
+                            } catch (Exception ex) {
+                                statusMap.put(oppIdStr, "EXPIRED");
+                                pnlMap.put(oppIdStr, 0);
+                            }
                         }
                     }
                 }
@@ -702,6 +733,7 @@ public class OptionArbitrageController {
 
             resp.put("pnlMap", pnlMap);
             resp.put("statusMap", statusMap);
+            resp.put("exitTimeMap", exitTimeMap);
             resp.put("marketOpen", marketOpen);
         } catch (Exception e) {
             log.error("Failed to compute live P&L: {}", e.getMessage());
