@@ -1287,12 +1287,14 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
     refetchInterval: 30000
   });
 
-  const today2 = new Date().toLocaleDateString('en-CA');
+  const histDate = new Date(); histDate.setDate(histDate.getDate() - 6);
+  const today2 = histDate.toISOString().split('T')[0];
+  const todayEnd = new Date().toISOString().split('T')[0];
 
   const { data: historyData } = useQuery({
     queryKey: ['box-history', underlying, histPage],
     queryFn: async () => {
-      const params = { page: histPage, size: PAGE_SIZE, strategyType: 'BOX_SPREAD', startDate: today2, endDate: today2 };
+      const params = { page: histPage, size: PAGE_SIZE, strategyType: 'BOX_SPREAD', startDate: today2, endDate: todayEnd };
       if (underlying !== 'ALL') params.underlying = underlying;
       const res = await client.get('/option-arbitrage/history', { params });
       return res.data;
@@ -2380,6 +2382,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
 
   const livePnlMap = livePnlData?.pnlMap || {};
   const liveStatusMap = livePnlData?.statusMap || {};
+  const liveExitTimeMap = livePnlData?.exitTimeMap || {};
 
   const handleSort = (col) => {
     if (sortColumn === col) {
@@ -2402,6 +2405,9 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
       }
       if (isLive && livePnlMap[idStr] != null) {
         updated = { ...updated, pnlAfterCosts: livePnlMap[idStr] };
+      }
+      if (liveExitTimeMap[idStr] && !updated.exitTime) {
+        updated = { ...updated, exitTime: liveExitTimeMap[idStr] };
       }
       return updated;
     });
@@ -2683,18 +2689,37 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                   const rowId = item.id || idx;
                   const isExp = expandedId === rowId;
                   const statusStr = String(item.status || 'RUNNING').toUpperCase();
-                  const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED';
+                  const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED' || statusStr === 'EXECUTING';
+                  const isExited = statusStr === 'EXITED' || statusStr === 'CLOSED';
+                  const isExpired = statusStr === 'EXPIRED';
+                  const mergedStatus = liveStatusMap[String(item.id)] || statusStr;
+                  const isMissed = statusStr === 'MISSED' || mergedStatus === 'MISSED';
                   const pnlVal = (() => {
-                    const pnl = item.pnlAfterCosts != null ? Number(item.pnlAfterCosts) : null;
-                    if (pnl != null && pnl !== 0) return pnl;
-                    const isInPosition = liveStatusMap[String(item.id)] != null;
-                    if (isInPosition) return pnl;
+                    // 1. Check live P&L map from backend
+                    const livePnl = livePnlMap[String(item.id)];
+                    if (livePnl != null) return Number(livePnl);
+                    // 2. Check stored P&L on opportunity
+                    const storedPnl = item.pnlAfterCosts != null ? Number(item.pnlAfterCosts) : null;
+                    if (storedPnl != null && storedPnl !== 0) return storedPnl;
+                    // 3. For EXITED/CLOSED without P&L, show 0
+                    if (isExited || mergedStatus === 'EXITED' || mergedStatus === 'CLOSED') return 0;
+                    // 4. For MISSED (never entered), no P&L
+                    if (isMissed) return null;
+                    // 5. Running signals without live position = null (shows --)
                     if (isRunning) return null;
-                    return item.edgeAfterCosts != null ? Number(item.edgeAfterCosts) : 0.0;
+                    return 0;
                   })();
 
                   const signalTimeFormatted = fmtTime(item.scanTime || item.createdAt);
-                  const exitTimeFormatted = fmtTime(item.exitTime);
+                  const exitTimeFormatted = (() => {
+                    // For MISSED: no exit (never entered)
+                    if (isMissed) return '';
+                    // For EXPIRED: contract expired, use expiry date
+                    if (isExpired || mergedStatus === 'EXPIRED') {
+                      return item.expiryDate || '';
+                    }
+                    return fmtTime(item.exitTime);
+                  })();
 
                   const ceVal = Number(item.ceEntryPrice || item.cePrice || 0).toFixed(1);
                   const peVal = Number(item.peEntryPrice || item.pePrice || 0).toFixed(1);
