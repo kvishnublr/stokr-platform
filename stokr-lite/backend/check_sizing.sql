@@ -1,0 +1,1 @@
+SELECT setting_key, setting_value FROM option_arb_auto_exec_settings WHERE setting_key LIKE '%lot%' OR setting_key LIKE '%size%' OR setting_key LIKE '%qty%' OR setting_key LIKE '%quantity%' OR setting_key LIKE '%set%' ORDER BY setting_key;

@@ -95,6 +95,14 @@ public interface OptionArbOpportunityRepository extends JpaRepository<OptionArbO
 
     Page<OptionArbOpportunity> findByStrategyTypeOrderByScanTimeDesc(String strategyType, Pageable pageable);
 
+    Page<OptionArbOpportunity> findByStrategyTypeAndUnderlyingOrderByScanTimeDesc(String strategyType, String underlying, Pageable pageable);
+
+    Page<OptionArbOpportunity> findByStrategyTypeAndScanTimeBetweenOrderByScanTimeDesc(String strategyType, LocalDateTime start, LocalDateTime end, Pageable pageable);
+
+    Page<OptionArbOpportunity> findByUnderlyingAndScanTimeBetweenOrderByScanTimeDesc(String underlying, LocalDateTime start, LocalDateTime end, Pageable pageable);
+
+    Page<OptionArbOpportunity> findByStrategyTypeAndUnderlyingAndScanTimeBetweenOrderByScanTimeDesc(String strategyType, String underlying, LocalDateTime start, LocalDateTime end, Pageable pageable);
+
     @Query("SELECT COALESCE(SUM(o.edgeAfterCosts), 0) FROM OptionArbOpportunity o WHERE o.strategyType = :strategyType")
     java.math.BigDecimal sumEdgeByStrategy(@Param("strategyType") String strategyType);
 

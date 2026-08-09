@@ -26,7 +26,7 @@ public class OptionChainService {
 
     private static final double RISK_FREE_RATE = 0.065;
     private static final double MIN_PARITY_DEVIATION = 0.5;
-    private static final double MIN_EDGE_AFTER_COSTS = 10.0;
+    private static final double MIN_EDGE_AFTER_COSTS = 300.0;
 
     private final ConcurrentHashMap<String, Long> cooldownMap = new ConcurrentHashMap<>();
 
@@ -80,7 +80,8 @@ public class OptionChainService {
                     ceExec, peExec, strike, RISK_FREE_RATE, yearsToExpiry, futuresPrice);
 
                 if (Math.abs(parityDev) >= MIN_PARITY_DEVIATION) {
-                    double edgeAfterCosts = calculateParityEdge(parityDev, underlying);
+                    double grossEdge = Math.abs(parityDev) * getLotSize(underlying);
+                    double edgeAfterCosts = calculateParityEdge(ceQuote.lastPrice, peQuote.lastPrice, futuresPrice, getLotSize(underlying), grossEdge);
                     opportunities.add(buildParityOpportunity(
                         underlying, strike, ceQuote, peQuote, parityDev,
                         edgeAfterCosts, daysToExpiry, spotPrice, futuresPrice));
@@ -206,7 +207,7 @@ public class OptionChainService {
     public List<Integer> generateStrikes(int atmStrike, String underlying) {
         int step = getStrikeStep(underlying);
         List<Integer> strikes = new ArrayList<>();
-        for (int i = -10; i <= 10; i++) {
+        for (int i = -5; i <= 5; i++) {
             strikes.add(atmStrike + i * step);
         }
         return strikes;
@@ -288,24 +289,18 @@ public class OptionChainService {
         return String.format("%s%02d%sFUT", clean, yy, mon);
     }
 
-    private double calculateParityEdge(double parityDev, String underlying) {
-        double pts = Math.abs(parityDev);
-        int lotSize = getLotSize(underlying);
-        double grossEdge = pts * lotSize;
+    private double calculateParityEdge(double cePrice, double pePrice, double futPrice, int lotSize, double grossEdge) {
+        if (cePrice <= 0 || pePrice <= 0 || futPrice <= 0 || lotSize <= 0) return 0;
 
-        // 3-leg box trade: CE + PE + FUT = 6 orders (3 buy + 3 sell)
-        // STT: 0.1% on sell-side only (options), 0.0125% on sell-side (futures)
-        // Approximate: 3 sell legs × 0.1% of grossEdge (conservative)
-        double stt = grossEdge * 0.001;
-        // Brokerage: flat ₹20/order × 6 orders = ₹120
         double brokerage = 120.0;
-        // Exchange txn: 0.00345% per side × 6 sides
-        double exchange = grossEdge * 0.000345 * 6;
-        // SEBI: 0.0001% of turnover
-        double sebi = grossEdge * 0.000001;
-        // GST: 18% on (brokerage + exchange + SEBI)
+        double stt = (pePrice * lotSize * 0.00125) + (futPrice * lotSize * 0.00025);
+        double totalTurnover = (cePrice + pePrice + futPrice) * lotSize * 2;
+        double exchange = totalTurnover * 0.0000345;
+        double sebi = totalTurnover * 0.000001;
         double gst = (brokerage + exchange + sebi) * 0.18;
-        double totalCosts = stt + brokerage + exchange + sebi + gst;
+        double stamp = (cePrice + pePrice + futPrice) * lotSize * 0.00005;
+        double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
+
         return Math.max(0, grossEdge - totalCosts);
     }
 
@@ -332,11 +327,11 @@ public class OptionChainService {
         opp.daysToExpiry = daysToExpiry;
 
         if (parityDev > 0) {
-            opp.action = "BUY CE+PE / SELL FUT";
+            opp.action = "BUY FUT + SELL CE + BUY PE";
             opp.legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %s FUT @ %.1f",
-                strike, ceQuote.bid, strike, ceQuote.ask, underlying, futuresPrice);
+                strike, ceQuote.bid, strike, peQuote.ask, underlying, futuresPrice);
         } else {
-            opp.action = "BUY FUT / SELL CE+PE";
+            opp.action = "BUY CE + SELL PE + SELL FUT";
             opp.legs = String.format("BUY %d CE @ %.1f | SELL %d PE @ %.1f | SELL %s FUT @ %.1f",
                 strike, ceQuote.ask, strike, peQuote.bid, underlying, futuresPrice);
         }

@@ -192,11 +192,17 @@ export default function OptionArbitrage() {
   const handleExecuteInline = async (opp, lots = 1) => {
     try {
       const res = await client.post('/option-arbitrage/paper-trade/execute', {
-        opportunityId: opp.id,
+        opportunityId: opp.id || undefined,
         underlying: opp.underlying || opp.symbol,
         strike: opp.strike || opp.atmStrike || 0,
         action: opp.action || 'BUY',
         strategyType: opp.strategyType || opp.type || 'ARBITRAGE',
+        description: opp.description || opp.legs || '',
+        edgeAfterCosts: opp.edgeAfterCosts || opp.boxEdgeInr || 0,
+        ceEntryPrice: opp.ceEntryPrice || opp.cePrice || 0,
+        peEntryPrice: opp.peEntryPrice || opp.pePrice || 0,
+        spotPrice: opp.spotPrice || 0,
+        futuresPrice: opp.futuresPrice || 0,
         lots: lots,
         broker: executionBroker
       });
@@ -279,6 +285,7 @@ export default function OptionArbitrage() {
             { key: 'bidparity', label: '🎯 Bid Parity' },
             { key: 'box', label: '💎 Box Spread' },
             { key: 'autotrade', label: '🤖 Auto-Trade' },
+            { key: 'papertrades', label: '📋 Paper Trades' },
             { key: 'ironcondor', label: '🛡️ Iron Condor' },
             { key: 'cashsurge', label: '🔥 Cash Surge' },
             { key: 'cashswing', label: '🚀 Cash Swing' },
@@ -355,6 +362,7 @@ export default function OptionArbitrage() {
 
         {activeTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'autotrade' && <AutoExecSettingsPanel />}
+        {activeTab === 'papertrades' && <PaperTradesView />}
         {activeTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
@@ -501,30 +509,43 @@ function AutoExecSettingsPanel() {
         </div>
       </div>
 
-      {/* Roll-Over Settings */}
+      {/* Auto-Exit Settings */}
       <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-slate-100">
         <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold text-slate-500 uppercase">Auto Roll-Over:</span>
+          <span className="text-[10px] font-bold text-slate-500 uppercase">Auto Exit on Target:</span>
           <button
-            onClick={() => updateSetting('rolloverEnabled', !settings.rolloverEnabled)}
-            className={`relative w-11 h-6 rounded-full transition-colors ${settings.rolloverEnabled ? 'bg-amber-500' : 'bg-slate-300'}`}
+            onClick={() => updateSetting('autoExitEnabled', !settings.autoExitEnabled)}
+            className={`relative w-11 h-6 rounded-full transition-colors ${settings.autoExitEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
           >
-            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.rolloverEnabled ? 'translate-x-5' : ''}`} />
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.autoExitEnabled ? 'translate-x-5' : ''}`} />
           </button>
-          <span className={`text-xs font-bold ${settings.rolloverEnabled ? 'text-amber-600' : 'text-slate-400'}`}>
-            {settings.rolloverEnabled ? 'ON' : 'OFF'}
+          <span className={`text-xs font-bold ${settings.autoExitEnabled ? 'text-emerald-600' : 'text-slate-400'}`}>
+            {settings.autoExitEnabled ? 'ON' : 'OFF'}
           </span>
         </div>
         <div className="space-y-1">
-          <label className="text-[9px] font-bold text-slate-500 uppercase">Roll-Over at % Target</label>
-          <input type="number" value={settings.rolloverThresholdPct || 90} min={50} max={99}
-            onChange={(e) => setSettings(prev => ({ ...prev, rolloverThresholdPct: Number(e.target.value) }))}
-            onBlur={(e) => updateSetting('rolloverThresholdPct', e.target.value)}
+          <label className="text-[9px] font-bold text-slate-500 uppercase">Exit at % Target</label>
+          <input type="number" value={settings.autoExitThresholdPct || 90} min={50} max={99}
+            onChange={(e) => setSettings(prev => ({ ...prev, autoExitThresholdPct: Number(e.target.value) }))}
+            onBlur={(e) => updateSetting('autoExitThresholdPct', e.target.value)}
             className="w-16 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
           <span className="text-[9px] text-slate-400">%</span>
         </div>
         <div className="text-[9px] text-slate-400 italic">
-          When a position reaches {settings.rolloverThresholdPct || 90}% of target edge, auto square-off and take new position
+          When a position reaches {settings.autoExitThresholdPct || 90}% of target edge, auto square-off (no re-entry)
+        </div>
+      </div>
+
+      {/* Roll-Over Info */}
+      <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-slate-100">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold text-slate-500 uppercase">Roll-Over:</span>
+          <span className="px-2 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-200">
+            🔄 MANUAL — Click "Roll CE+PE" on any OPEN position
+          </span>
+        </div>
+        <div className="text-[9px] text-slate-400 italic">
+          Only CE+PE legs are rolled. FUT position stays, saving ~₹384 per rollover.
         </div>
       </div>
     </div>
@@ -534,6 +555,7 @@ function AutoExecSettingsPanel() {
 /* Live Positions Section — standalone, always visible, 2s tick-by-tick refresh */
 function LivePositionsSection() {
   const [collapsed, setCollapsed] = useState(true);
+  const [rollingId, setRollingId] = useState(null);
   const { data, refetch } = useQuery({
     queryKey: ['livePositions'],
     queryFn: async () => {
@@ -545,6 +567,21 @@ function LivePositionsSection() {
   });
 
   const positions = data?.positions || [];
+  const openPositions = positions.filter(p => p.status === 'OPEN');
+
+  const handleRollover = async (positionId, underlying, strike) => {
+    if (!window.confirm(`Roll CE+PE for ${underlying} ${strike}?\n\nFUT position stays, only options are rolled.`)) return;
+    setRollingId(positionId);
+    try {
+      const res = await client.post(`/option-arbitrage/rollover/${positionId}`);
+      alert(`✅ Rolled! P&L: ₹${res.data.pnl}`);
+      refetch();
+    } catch (e) {
+      alert(`❌ Failed: ${e.response?.data?.error || e.message}`);
+    } finally {
+      setRollingId(null);
+    }
+  };
 
   const statusColor = (s) => {
     switch (s) {
@@ -597,6 +634,7 @@ function LivePositionsSection() {
                   <th className="px-3 py-2 text-right">Live P&amp;L</th>
                   <th className="px-3 py-2 text-right">Lots</th>
                   <th className="px-3 py-2 text-center">Status</th>
+                  <th className="px-3 py-2 text-center">Rollover</th>
                   <th className="px-3 py-2 text-center">Error</th>
                 </tr>
               </thead>
@@ -630,6 +668,21 @@ function LivePositionsSection() {
                       <td className="px-3 py-2 text-right font-bold">{p.lots}</td>
                       <td className="px-3 py-2 text-center">
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${statusColor(p.status)}`}>{p.status}</span>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {p.status === 'OPEN' && (
+                          <button
+                            disabled={rollingId === p.id}
+                            onClick={() => handleRollover(p.id, p.underlying, p.strike)}
+                            className={`px-2 py-1 rounded-lg text-[9px] font-bold transition border ${
+                              rollingId === p.id
+                                ? 'bg-slate-200 text-slate-500 border-slate-300 cursor-wait'
+                                : 'bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100 hover:border-indigo-400'
+                            }`}
+                          >
+                            {rollingId === p.id ? '⏳ Rolling...' : '🔄 Roll CE+PE'}
+                          </button>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-[9px] text-red-600 max-w-[200px] truncate">{p.errorMessage || '--'}</td>
                     </tr>
@@ -940,7 +993,7 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
 
 /* 2. BID PARITY VIEW */
 function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {
-  const [underlying, setUnderlying] = useState('NIFTY');
+  const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(300);
   const [customEdge, setCustomEdge] = useState('');
   const [expandedId, setExpandedId] = useState(null);
@@ -999,22 +1052,28 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const toggleSort = (col) => { if (sortCol === col) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(false); } };
   const sortIcon = (col) => sortCol === col ? (sortAsc ? ' ▲' : ' ▼') : ' ↕';
 
-  const runningIds = sortedOpps.filter(o => o.id).map(o => o.id).slice(0, 100);
-  const { data: pnlData } = useQuery({
-    queryKey: ['bid-parity-pnl', runningIds.join(',')],
+  const allIds = sortedOpps.filter(o => o.id).map(o => o.id);
+  const { data: livePnlRes } = useQuery({
+    queryKey: ['bid-parity-pnl', allIds.join(',')],
     queryFn: async () => {
-      if (runningIds.length === 0) return {};
-      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: runningIds.join(',') } });
-      return res.data?.pnlMap || {};
+      if (allIds.length === 0) return { pnlMap: {}, statusMap: {} };
+      const idsParam = allIds.slice(0, 500).join(',');
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: idsParam } });
+      return { pnlMap: res.data?.pnlMap || {}, statusMap: res.data?.statusMap || {} };
     },
     refetchInterval: 10000,
-    enabled: runningIds.length > 0
+    enabled: allIds.length > 0
   });
-  const pnlMap = pnlData || {};
+  const pnlMap = livePnlRes?.pnlMap || {};
+  const statusMap = livePnlRes?.statusMap || {};
 
   const statsByUnderlying = useMemo(() => {
     return allUnds.map(u => {
       const items = allOpps.filter(o => o.underlying === u);
+      const getMergedStatus = (o) => {
+        const posStatus = statusMap[String(o.id)];
+        return posStatus || o.status || 'RUNNING';
+      };
       const getPnl = (o) => {
         const live = pnlMap[String(o.id)];
         if (live != null) return Number(live);
@@ -1022,8 +1081,8 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       };
       const inProfit = items.filter(o => { const p = getPnl(o); return p != null && p > 0; }).length;
       const inLoss = items.filter(o => { const p = getPnl(o); return p != null && p < 0; }).length;
-      const running = items.filter(o => { const s = String(o.status || 'RUNNING').toUpperCase(); return s === 'RUNNING' || s === 'OPEN' || s === 'DETECTED'; }).length;
-      const exited = items.filter(o => { const s = String(o.status || '').toUpperCase(); return s === 'EXITED' || s === 'CLOSED'; }).length;
+      const running = items.filter(o => { const s = String(getMergedStatus(o)).toUpperCase(); return s === 'RUNNING' || s === 'OPEN' || s === 'DETECTED' || s === 'EXECUTING'; }).length;
+      const exited = items.filter(o => { const s = String(getMergedStatus(o)).toUpperCase(); return s === 'EXITED' || s === 'CLOSED'; }).length;
       const maxEdge = items.length > 0 ? Math.max(...items.map(o => Number(o.edgeAfterCosts) || 0)) : 0;
       const hitTarget = items.filter(o => {
         const p = getPnl(o);
@@ -1032,7 +1091,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       }).length;
       return { underlying: u, total: items.length, inProfit, inLoss, running, exited, maxEdge, hitTarget };
     }).filter(s => s.total > 0);
-  }, [allOpps, pnlMap]);
+  }, [allOpps, pnlMap, statusMap]);
 
   return (
     <div className="space-y-4 w-full">
@@ -1109,13 +1168,15 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
               <tbody className="divide-y divide-slate-100">
                 {sortedOpps.map((opp, idx) => {
                   const isExp = expandedId === (opp.id || idx);
-                  const statusStr = String(opp.status || 'RUNNING').toUpperCase();
-                  const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED';
-                  const livePnl = opp.id && pnlMap[String(opp.id)] != null ? pnlMap[String(opp.id)] : null;
-                  const pnlDisplay = opp.pnlAfterCosts != null ? Number(opp.pnlAfterCosts) : livePnl;
+                  const posStatus = opp.id && statusMap[String(opp.id)] ? String(statusMap[String(opp.id)]).toUpperCase() : null;
+                  const statusStr = posStatus || String(opp.status || 'RUNNING').toUpperCase();
+                  const isLive = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED' || statusStr === 'EXECUTING';
+                  const isExited = statusStr === 'EXITED' || statusStr === 'CLOSED';
+                  const livePnl = opp.id && pnlMap[String(opp.id)] != null ? Number(pnlMap[String(opp.id)]) : null;
+                  const pnlDisplay = livePnl != null ? livePnl : (opp.pnlAfterCosts != null ? Number(opp.pnlAfterCosts) : null);
 
                   const timeStr = fmtTime(opp.scanTime || opp.entryTime);
-                  const exitStr = fmtTime(opp.exitTime);
+                  const exitStr = isExited ? fmtTime(opp.exitTime) : '';
                   const ceVal = Number(opp.ceEntryPrice || opp.cePrice || opp.ceBid || 0).toFixed(1);
                   const peVal = Number(opp.peEntryPrice || opp.pePrice || opp.peBid || 0).toFixed(1);
                   const futVal = Number(opp.futuresPrice || 0).toFixed(1);
@@ -1136,14 +1197,16 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                         </td>
                         <td className="px-2 py-1.5 text-center">
                           <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${
-                            isRunning ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                            isLive ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                            isExited ? 'bg-slate-200 text-slate-600 border-slate-300' :
                             statusStr === 'DETECTED' ? 'bg-blue-100 text-blue-800 border-blue-300' :
                             statusStr === 'MISSED' ? 'bg-slate-100 text-slate-600 border-slate-300' :
                             statusStr === 'FAILED' ? 'bg-red-100 text-red-800 border-red-300' :
                             statusStr === 'EXPIRED' ? 'bg-amber-100 text-amber-800 border-amber-300' :
                             'bg-blue-100 text-blue-800 border-blue-300'
                           }`}>
-                            {isRunning ? '🟢 RUNNING' : statusStr === 'DETECTED' ? '🔵 DETECTED' :
+                            {isLive ? '🟢 RUNNING' : isExited ? '⏹ EXITED' :
+                             statusStr === 'DETECTED' ? '🔵 DETECTED' :
                              statusStr === 'EXPIRED' ? '⏰ EXPIRED' : statusStr === 'MISSED' ? '⚪ MISSED' :
                              statusStr === 'FAILED' ? '❌ FAILED' : statusStr}
                           </span>
@@ -1206,7 +1269,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
 
 /* 3. BOX SPREAD VIEW */
 function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {
-  const [underlying, setUnderlying] = useState('NIFTY');
+  const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(0);
   const [customEdge, setCustomEdge] = useState('');
   const [expandedId, setExpandedId] = useState(null);
@@ -1249,23 +1312,29 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
-  const boxRunningIds = allOpps.filter(o => o.id).map(o => o.id).slice(0, 100);
-  const { data: boxPnlData } = useQuery({
-    queryKey: ['box-pnl', boxRunningIds.join(',')],
+  const boxAllIds = allOpps.filter(o => o.id).map(o => o.id);
+  const { data: boxLivePnlRes } = useQuery({
+    queryKey: ['box-pnl', boxAllIds.join(',')],
     queryFn: async () => {
-      if (boxRunningIds.length === 0) return {};
-      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: boxRunningIds.join(',') } });
-      return res.data?.pnlMap || {};
+      if (boxAllIds.length === 0) return { pnlMap: {}, statusMap: {} };
+      const idsParam = boxAllIds.slice(0, 500).join(',');
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: idsParam } });
+      return { pnlMap: res.data?.pnlMap || {}, statusMap: res.data?.statusMap || {} };
     },
     refetchInterval: 10000,
-    enabled: boxRunningIds.length > 0
+    enabled: boxAllIds.length > 0
   });
-  const boxPnlMap = boxPnlData || {};
+  const boxPnlMap = boxLivePnlRes?.pnlMap || {};
+  const boxStatusMap = boxLivePnlRes?.statusMap || {};
 
   const boxUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
   const boxStats = useMemo(() => {
     return boxUnds.map(u => {
       const items = allOpps.filter(o => o.underlying === u);
+      const getMergedStatus = (o) => {
+        const posStatus = boxStatusMap[String(o.id)];
+        return posStatus || o.status || 'RUNNING';
+      };
       const getPnl = (o) => {
         const live = boxPnlMap[String(o.id)];
         if (live != null) return Number(live);
@@ -1273,8 +1342,8 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       };
       const inProfit = items.filter(o => { const p = getPnl(o); return p != null && p > 0; }).length;
       const inLoss = items.filter(o => { const p = getPnl(o); return p != null && p < 0; }).length;
-      const running = items.filter(o => { const s = String(o.status || 'RUNNING').toUpperCase(); return s === 'RUNNING' || s === 'OPEN' || s === 'DETECTED'; }).length;
-      const exited = items.filter(o => { const s = String(o.status || '').toUpperCase(); return s === 'EXITED' || s === 'CLOSED'; }).length;
+      const running = items.filter(o => { const s = String(getMergedStatus(o)).toUpperCase(); return s === 'RUNNING' || s === 'OPEN' || s === 'DETECTED' || s === 'EXECUTING'; }).length;
+      const exited = items.filter(o => { const s = String(getMergedStatus(o)).toUpperCase(); return s === 'EXITED' || s === 'CLOSED'; }).length;
       const maxEdge = items.length > 0 ? Math.max(...items.map(o => Number(o.edgeAfterCosts || o.boxEdgeInr) || 0)) : 0;
       const hitTarget = items.filter(o => {
         const p = getPnl(o);
@@ -1283,7 +1352,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       }).length;
       return { underlying: u, total: items.length, inProfit, inLoss, running, exited, maxEdge, hitTarget };
     }).filter(s => s.total > 0);
-  }, [allOpps, boxPnlMap]);
+  }, [allOpps, boxPnlMap, boxStatusMap]);
 
   const sortedOpps = [...filteredByUnderlying].sort((a, b) => {
     let va, vb;
@@ -1373,14 +1442,18 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
               <tbody className="divide-y divide-slate-100">
                 {sortedOpps.map((opp, idx) => {
                   const isExp = expandedId === (opp.id || idx);
-                  const statusStr = String(opp.status || 'RUNNING').toUpperCase();
-                  const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED';
+                  const posStatus = opp.id && boxStatusMap[String(opp.id)] ? String(boxStatusMap[String(opp.id)]).toUpperCase() : null;
+                  const statusStr = posStatus || String(opp.status || 'RUNNING').toUpperCase();
+                  const isLive = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED' || statusStr === 'EXECUTING';
+                  const isExited = statusStr === 'EXITED' || statusStr === 'CLOSED';
+                  const livePnl = opp.id && boxPnlMap[String(opp.id)] != null ? Number(boxPnlMap[String(opp.id)]) : null;
+                  const pnlDisplay = livePnl != null ? livePnl : (opp.pnlAfterCosts != null ? Number(opp.pnlAfterCosts) : null);
                   const strike1 = opp.strike || 0;
                   const strike2 = opp.action ? parseInt(opp.action.match(/\d+\/(\d+)/)?.[1] || 0) : strike1 + 50;
                   const edgeVal = Number(opp.edgeAfterCosts || opp.boxEdgeInr || 0);
 
                   const timeStr = fmtTime(opp.scanTime || opp.entryTime);
-                  const exitStr = fmtTime(opp.exitTime);
+                  const exitStr = isExited ? fmtTime(opp.exitTime) : '';
                   const ceVal = Number(opp.ceEntryPrice || opp.cePrice || 0).toFixed(1);
                   const peVal = Number(opp.peEntryPrice || opp.pePrice || 0).toFixed(1);
 
@@ -1399,16 +1472,17 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                         </td>
                         <td className="px-2 py-1.5 text-center">
                           <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${
-                            isRunning ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                            isLive ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                            isExited ? 'bg-slate-200 text-slate-600 border-slate-300' :
                             statusStr === 'EXPIRED' ? 'bg-amber-100 text-amber-800 border-amber-300' :
                             'bg-blue-100 text-blue-800 border-blue-300'
                           }`}>
-                            {isRunning ? '🟢 RUNNING' : statusStr === 'EXPIRED' ? '⏰ EXPIRED' : statusStr}
+                            {isLive ? '🟢 RUNNING' : isExited ? '⏹ EXITED' : statusStr === 'EXPIRED' ? '⏰ EXPIRED' : statusStr}
                           </span>
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold">
-                          {opp.pnlAfterCosts != null
-                            ? <span className={opp.pnlAfterCosts >= 0 ? 'text-emerald-600' : 'text-red-600'}>₹{Math.round(opp.pnlAfterCosts).toLocaleString('en-IN')}</span>
+                          {pnlDisplay != null && !isNaN(pnlDisplay)
+                            ? <span className={pnlDisplay >= 0 ? 'text-emerald-600' : 'text-red-600'}>₹{Math.round(pnlDisplay).toLocaleString('en-IN')}</span>
                             : <span className="text-slate-400">--</span>}
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
@@ -1500,23 +1574,29 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
   const totalHistory = historyData?.totalElements || 0;
   const totalHistoryPages = historyData?.totalPages || 0;
 
-  const icRunningIds = allOpps.filter(o => o.id).map(o => o.id).slice(0, 100);
-  const { data: icPnlData } = useQuery({
-    queryKey: ['ic-pnl', icRunningIds.join(',')],
+  const icAllIds = allOpps.filter(o => o.id).map(o => o.id);
+  const { data: icLivePnlRes } = useQuery({
+    queryKey: ['ic-pnl', icAllIds.join(',')],
     queryFn: async () => {
-      if (icRunningIds.length === 0) return {};
-      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: icRunningIds.join(',') } });
-      return res.data?.pnlMap || {};
+      if (icAllIds.length === 0) return { pnlMap: {}, statusMap: {} };
+      const idsParam = icAllIds.slice(0, 500).join(',');
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: idsParam } });
+      return { pnlMap: res.data?.pnlMap || {}, statusMap: res.data?.statusMap || {} };
     },
     refetchInterval: 10000,
-    enabled: icRunningIds.length > 0
+    enabled: icAllIds.length > 0
   });
-  const icPnlMap = icPnlData || {};
+  const icPnlMap = icLivePnlRes?.pnlMap || {};
+  const icStatusMap = icLivePnlRes?.statusMap || {};
 
   const icUnds = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
   const icStats = useMemo(() => {
     return icUnds.map(u => {
       const items = allOpps.filter(o => o.underlying === u);
+      const getMergedStatus = (o) => {
+        const posStatus = icStatusMap[String(o.id)];
+        return posStatus || o.status || 'RUNNING';
+      };
       const getPnl = (o) => {
         const live = icPnlMap[String(o.id)];
         if (live != null) return Number(live);
@@ -1524,7 +1604,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
       };
       const inProfit = items.filter(o => { const p = getPnl(o); return p != null && p > 0; }).length;
       const inLoss = items.filter(o => { const p = getPnl(o); return p != null && p < 0; }).length;
-      const running = items.filter(o => { const s = String(o.status || 'RUNNING').toUpperCase(); return s === 'RUNNING' || s === 'OPEN' || s === 'DETECTED'; }).length;
+      const running = items.filter(o => { const s = String(getMergedStatus(o)).toUpperCase(); return s === 'RUNNING' || s === 'OPEN' || s === 'DETECTED' || s === 'EXECUTING'; }).length;
       const maxEdge = items.length > 0 ? Math.max(...items.map(o => Number(o.edgeAfterCosts) || 0)) : 0;
       const hitTarget = items.filter(o => {
         const p = getPnl(o);
@@ -1533,7 +1613,7 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
       }).length;
       return { underlying: u, total: items.length, inProfit, inLoss, running, maxEdge, hitTarget };
     }).filter(s => s.total > 0);
-  }, [allOpps, icPnlMap]);
+  }, [allOpps, icPnlMap, icStatusMap]);
 
   const sortedOpps = [...filteredByUnderlying].sort((a, b) => {
     const av = a[sortCol]; const bv = b[sortCol];
@@ -1623,9 +1703,10 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
               <tbody className="divide-y divide-slate-100">
                 {sortedOpps.map((opp, idx) => {
                   const isExp = expandedId === opp.id;
-                  const st = String(opp.status || 'RUNNING').toUpperCase();
-                  const stColor = st === 'RUNNING' || st === 'OPEN' || st === 'DETECTED' ? 'bg-blue-100 text-blue-700' : st === 'EXITED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500';
-                  const pnlVal = icPnlMap[String(opp.id)];
+                  const posStatus = opp.id && icStatusMap[String(opp.id)] ? String(icStatusMap[String(opp.id)]).toUpperCase() : null;
+                  const st = posStatus || String(opp.status || 'RUNNING').toUpperCase();
+                  const stColor = st === 'RUNNING' || st === 'OPEN' || st === 'DETECTED' || st === 'EXECUTING' ? 'bg-blue-100 text-blue-700' : st === 'EXITED' || st === 'CLOSED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500';
+                  const pnlVal = icPnlMap[String(opp.id)] != null ? Number(icPnlMap[String(opp.id)]) : null;
                   const edge = Number(opp.edgeAfterCosts) || 0;
                   return (
                     <React.Fragment key={opp.id || idx}>
@@ -1995,6 +2076,226 @@ function CalendarSpreadView({ handleExecuteInline, executionBroker }) {
   );
 }
 
+/* PAPER TRADES VIEW — Dedicated view for executed + exited paper trades with P&L */
+function PaperTradesView() {
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [underlyingFilter, setUnderlyingFilter] = useState('ALL');
+  const [modeFilter, setModeFilter] = useState('ALL');
+  const [sortCol, setSortCol] = useState('enteredAt');
+  const [sortAsc, setSortAsc] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['paperTrades', statusFilter, underlyingFilter, modeFilter],
+    queryFn: async () => {
+      const params = {};
+      if (statusFilter !== 'ALL') params.status = statusFilter;
+      if (underlyingFilter !== 'ALL') params.underlying = underlyingFilter;
+      if (modeFilter !== 'ALL') params.mode = modeFilter;
+      const res = await client.get('/option-arbitrage/paper-trades', { params });
+      return res.data;
+    },
+    refetchInterval: 5000,
+  });
+
+  const positions = data?.positions || [];
+  const totalPnl = data?.totalPnl || 0;
+  const openCount = data?.openCount || 0;
+  const closedCount = data?.closedCount || 0;
+  const failedCount = data?.failedCount || 0;
+  const paperCount = data?.paperCount || 0;
+  const liveCount = data?.liveCount || 0;
+
+  const sorted = [...positions].sort((a, b) => {
+    let va, vb;
+    if (sortCol === 'enteredAt') { va = a.enteredAt || ''; vb = b.enteredAt || ''; }
+    else if (sortCol === 'underlying') { va = a.underlying || ''; vb = b.underlying || ''; }
+    else if (sortCol === 'strike') { va = a.strike || 0; vb = b.strike || 0; }
+    else if (sortCol === 'pnl') { va = a.pnl || 0; vb = b.pnl || 0; }
+    else if (sortCol === 'status') { va = a.status || ''; vb = b.status || ''; }
+    else { va = a[sortCol] || ''; vb = b[sortCol] || ''; }
+    if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortAsc ? va - vb : vb - va;
+  });
+
+  const toggleSort = (col) => { if (sortCol === col) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(false); } };
+  const sortIcon = (col) => sortCol === col ? (sortAsc ? ' ▲' : ' ▼') : '';
+
+  const statusColor = (s) => {
+    if (s === 'OPEN') return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+    if (s === 'CLOSED' || s === 'EXITED') return 'bg-slate-200 text-slate-600 border-slate-300';
+    if (s === 'FAILED' || s === 'REJECTED') return 'bg-red-100 text-red-800 border-red-300';
+    return 'bg-blue-100 text-blue-800 border-blue-300';
+  };
+
+  return (
+    <div className="space-y-4 w-full">
+      {/* Header */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+              📋 Paper Trade / Live Execution
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">All executed positions with entry, exit & P&amp;L</p>
+          </div>
+          <div className={`px-3 py-1.5 rounded-xl text-sm font-black ${totalPnl >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            Total P&amp;L: {totalPnl >= 0 ? '+' : ''}₹{totalPnl.toLocaleString('en-IN')}
+          </div>
+        </div>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-5 gap-3 mb-3">
+          <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-3 text-center">
+            <div className="text-[10px] font-bold text-slate-500 uppercase">Total Trades</div>
+            <div className="text-xl font-black text-slate-800">{positions.length}</div>
+          </div>
+          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl border border-emerald-200 p-3 text-center">
+            <div className="text-[10px] font-bold text-emerald-600 uppercase">Open</div>
+            <div className="text-xl font-black text-emerald-700">{openCount}</div>
+          </div>
+          <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-3 text-center">
+            <div className="text-[10px] font-bold text-slate-500 uppercase">Exited</div>
+            <div className="text-xl font-black text-slate-600">{closedCount}</div>
+          </div>
+          <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl border border-red-200 p-3 text-center">
+            <div className="text-[10px] font-bold text-red-500 uppercase">Failed</div>
+            <div className="text-xl font-black text-red-700">{failedCount}</div>
+          </div>
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border border-blue-200 p-3 text-center">
+            <div className="text-[10px] font-bold text-blue-500 uppercase">PAPER / LIVE</div>
+            <div className="text-lg font-black text-blue-700">{paperCount} / {liveCount}</div>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            {['ALL', 'OPEN', 'EXITED', 'FAILED'].map(s => (
+              <button key={s} onClick={() => setStatusFilter(s)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition ${statusFilter === s ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                {s === 'ALL' ? '📋 All' : s === 'OPEN' ? '🟢 Open' : s === 'EXITED' ? '⏹ Exited' : '❌ Failed'}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            {['ALL', 'PAPER', 'LIVE'].map(m => (
+              <button key={m} onClick={() => setModeFilter(m)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition ${modeFilter === m ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                {m === 'ALL' ? '📋 All' : m === 'PAPER' ? '📝 Paper' : '⚡ Live'}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+              <button key={u} onClick={() => setUnderlyingFilter(u)}
+                className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${underlyingFilter === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                {u === 'ALL' ? 'ALL' : u}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading paper trades...</div>
+        ) : positions.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No paper trades executed yet. Use the ⚡ Trade button on any signal to execute.</div>
+        ) : (
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('enteredAt')}>Entry Time{sortIcon('enteredAt')}</th>
+                  <th className="px-2 py-2">Mode</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('strike')}>Strike{sortIcon('strike')}</th>
+                  <th className="px-2 py-2">Action</th>
+                  <th className="px-2 py-2 text-right">CE Entry</th>
+                  <th className="px-2 py-2 text-right">PE Entry</th>
+                  <th className="px-2 py-2 text-right">FUT Entry</th>
+                  <th className="px-2 py-2 text-center">Lots</th>
+                  <th className="px-2 py-2 text-center cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('status')}>Status{sortIcon('status')}</th>
+                  <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('pnl')}>P&amp;L{sortIcon('pnl')}</th>
+                  <th className="px-2 py-2 text-center">Exit Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {sorted.map((pos) => {
+                  const isExp = expandedId === pos.id;
+                  const pnl = pos.pnl || 0;
+                  const isPaper = pos.ceOrderId && pos.ceOrderId.startsWith('PAPER');
+                  return (
+                    <React.Fragment key={pos.id}>
+                      <tr onClick={() => setExpandedId(isExp ? null : pos.id)}
+                        className={`transition cursor-pointer ${isExp ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'}`}>
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(pos.enteredAt)}</td>
+                        <td className="px-2 py-1.5">
+                          <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${isPaper ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                            {isPaper ? '📝 PAPER' : '⚡ LIVE'}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 font-bold text-slate-800">{pos.underlying}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-700">{pos.strike}</td>
+                        <td className="px-2 py-1.5 font-bold text-purple-700 truncate max-w-[100px]">{pos.action}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{pos.ceEntryPrice != null ? Number(pos.ceEntryPrice).toFixed(1) : '--'}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{pos.peEntryPrice != null ? Number(pos.peEntryPrice).toFixed(1) : '--'}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{pos.futEntryPrice != null ? Number(pos.futEntryPrice).toFixed(1) : '--'}</td>
+                        <td className="px-2 py-1.5 text-center font-bold">{pos.lots}</td>
+                        <td className="px-2 py-1.5 text-center">
+                          <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${statusColor(pos.status)}`}>
+                            {pos.status === 'OPEN' ? '🟢 OPEN' : pos.status === 'CLOSED' || pos.status === 'EXITED' ? '⏹ EXITED' : pos.status === 'FAILED' ? '❌ FAILED' : pos.status === 'REJECTED' ? '🚫 REJECTED' : pos.status}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold">
+                          {pnl !== 0
+                            ? <span className={pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}>{pnl >= 0 ? '+' : ''}₹{Math.round(pnl).toLocaleString('en-IN')}</span>
+                            : <span className="text-slate-400">₹0</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{pos.exitedAt ? fmtTime(pos.exitedAt) : '--'}</td>
+                      </tr>
+                      {(isExp || (pos.status === 'FAILED' || pos.status === 'REJECTED') && pos.errorMessage) && (
+                        <tr className="bg-indigo-50/40 border-b border-indigo-100">
+                          <td colSpan={12} className="p-3">
+                            <div className="bg-white rounded-xl p-3 border border-indigo-200 shadow-md space-y-2">
+                              <span className="font-bold text-slate-800 text-xs uppercase block">Position Details:</span>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] font-mono">
+                                <div><span className="text-slate-500">CE Symbol:</span> <span className="font-bold">{pos.ceSymbol || '--'}</span></div>
+                                <div><span className="text-slate-500">PE Symbol:</span> <span className="font-bold">{pos.peSymbol || '--'}</span></div>
+                                <div><span className="text-slate-500">FUT Symbol:</span> <span className="font-bold">{pos.futSymbol || '--'}</span></div>
+                                <div><span className="text-slate-500">Lot Size:</span> <span className="font-bold">{pos.lotSize}</span></div>
+                                <div><span className="text-slate-500">Target Edge:</span> <span className="font-bold">₹{pos.targetEdge != null ? Math.round(pos.targetEdge) : '--'}</span></div>
+                                <div><span className="text-slate-500">Strategy:</span> <span className="font-bold">{pos.strategyType || '--'}</span></div>
+                                <div><span className="text-slate-500">CE Exit:</span> <span className="font-bold">{pos.ceExitPrice != null ? Number(pos.ceExitPrice).toFixed(1) : '--'}</span></div>
+                                <div><span className="text-slate-500">PE Exit:</span> <span className="font-bold">{pos.peExitPrice != null ? Number(pos.peExitPrice).toFixed(1) : '--'}</span></div>
+                                <div><span className="text-slate-500">FUT Exit:</span> <span className="font-bold">{pos.futExitPrice != null ? Number(pos.futExitPrice).toFixed(1) : '--'}</span></div>
+                                <div><span className="text-slate-500">Entry Cost:</span> <span className="font-bold">₹{pos.entryCost != null ? Math.round(pos.entryCost) : '--'}</span></div>
+                                <div><span className="text-slate-500">Order IDs:</span> <span className="font-bold text-[9px]">{pos.ceOrderId || '--'}</span></div>
+                                <div><span className="text-slate-500">Mode:</span> <span className="font-bold">{isPaper ? 'PAPER' : 'LIVE'}</span></div>
+                              </div>
+                              {pos.errorMessage && (
+                                <div className={`text-[10px] font-mono mt-1 p-2 rounded-lg ${(pos.status === 'FAILED' || pos.status === 'REJECTED') ? 'bg-red-50 text-red-700 border border-red-200' : 'text-amber-600'}`}>
+                                  <span className="font-bold">Error/Log:</span> {pos.errorMessage}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* 8. HISTORY VIEW */
 function HistoryView({ calendarOpportunities, handleExecuteInline, executionBroker, underlyings }) {
   const [strategyFilter, setStrategyFilter] = useState('ALL');
@@ -2028,9 +2329,8 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
         return { start: y.toISOString().split('T')[0], end: y.toISOString().split('T')[0] };
       }
       case 'WEEK': {
-        const d = new Date(istNow); d.setDate(d.getDate() - d.getDay());
-        const e = new Date(istNow); e.setDate(e.getDate() + (6 - d.getDay()));
-        return { start: d.toISOString().split('T')[0], end: e.toISOString().split('T')[0] };
+        const d = new Date(istNow); d.setDate(d.getDate() - 6);
+        return { start: d.toISOString().split('T')[0], end: istDate };
       }
       case 'MONTH': {
         const s = new Date(istNow.getFullYear(), istNow.getMonth(), 1);
@@ -2066,19 +2366,20 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
   const { data: livePnlData } = useQuery({
     queryKey: ['hist-pnl', pnlQueryTick],
     queryFn: async () => {
-      const runningIds = historyItems
-        .filter(i => { const s = String(i.status || 'RUNNING').toUpperCase(); return s === 'RUNNING' || s === 'OPEN'; })
+      const relevantIds = historyItems
+        .filter(i => { const s = String(i.status || 'RUNNING').toUpperCase(); return s === 'RUNNING' || s === 'OPEN' || s === 'EXECUTING' || s === 'EXITED' || s === 'CLOSED'; })
         .map(i => i.id).slice(0, 500);
-      if (runningIds.length === 0) return {};
-      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: runningIds.join(',') } });
-      return res.data?.pnlMap || {};
+      if (relevantIds.length === 0) return {};
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: relevantIds.join(',') } });
+      return res.data || {};
     },
     refetchInterval: 10000,
     staleTime: 8000,
     enabled: historyItems.length > 0,
   });
 
-  const livePnlMap = livePnlData || {};
+  const livePnlMap = livePnlData?.pnlMap || {};
+  const liveStatusMap = livePnlData?.statusMap || {};
 
   const handleSort = (col) => {
     if (sortColumn === col) {
@@ -2090,29 +2391,34 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
   };
 
   const filteredItems = useMemo(() => {
-    let items = historyItems.filter(item => {
+    let items = historyItems.map(item => {
+      const statusStr = String(item.status || 'RUNNING').toUpperCase();
+      const isLive = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED' || statusStr === 'EXECUTING' || statusStr === 'EXITED' || statusStr === 'CLOSED';
+      const idStr = String(item.id);
+      let updated = item;
+
+      if (isLive && liveStatusMap[idStr]) {
+        updated = { ...updated, status: liveStatusMap[idStr] };
+      }
+      if (isLive && livePnlMap[idStr] != null) {
+        updated = { ...updated, pnlAfterCosts: livePnlMap[idStr] };
+      }
+      return updated;
+    });
+
+    items = items.filter(item => {
       const edge = Number(item.edgeAfterCosts) || Number(item.grossEdge) || 0;
       const statusStr = String(item.status || 'RUNNING').toUpperCase();
 
       if (edge < minEdgeFilter) return false;
 
-      if (statusFilter === 'RUNNING' && statusStr !== 'RUNNING' && statusStr !== 'OPEN') return false;
+      if (statusFilter === 'RUNNING' && statusStr !== 'RUNNING' && statusStr !== 'OPEN' && statusStr !== 'EXECUTING' && statusStr !== 'DETECTED') return false;
       if (statusFilter === 'DETECTED' && statusStr !== 'DETECTED' && statusStr !== 'NEW') return false;
       if (statusFilter === 'EXITED' && statusStr !== 'EXITED' && statusStr !== 'CLOSED' && statusStr !== 'EXECUTED') return false;
       if (statusFilter === 'MISSED' && statusStr !== 'MISSED' && statusStr !== 'SKIPPED') return false;
       if (statusFilter === 'FAILED' && statusStr !== 'FAILED' && statusStr !== 'REJECTED') return false;
 
       return true;
-    });
-
-    // Merge live P&L for running/open items
-    items = items.map(item => {
-      const statusStr = String(item.status || 'RUNNING').toUpperCase();
-      const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN';
-      if (isRunning && livePnlMap[String(item.id)] != null) {
-        return { ...item, pnlAfterCosts: livePnlMap[String(item.id)] };
-      }
-      return item;
     });
 
     // Fallback: If filtering by Calendar returns 0 db items, merge live scanned calendar opportunities
@@ -2378,9 +2684,14 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                   const isExp = expandedId === rowId;
                   const statusStr = String(item.status || 'RUNNING').toUpperCase();
                   const isRunning = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED';
-                  const pnlVal = item.pnlAfterCosts != null 
-                    ? Number(item.pnlAfterCosts) 
-                    : (isRunning ? null : (item.edgeAfterCosts != null ? Number(item.edgeAfterCosts) : 0.0));
+                  const pnlVal = (() => {
+                    const pnl = item.pnlAfterCosts != null ? Number(item.pnlAfterCosts) : null;
+                    if (pnl != null && pnl !== 0) return pnl;
+                    const isInPosition = liveStatusMap[String(item.id)] != null;
+                    if (isInPosition) return pnl;
+                    if (isRunning) return null;
+                    return item.edgeAfterCosts != null ? Number(item.edgeAfterCosts) : 0.0;
+                  })();
 
                   const signalTimeFormatted = fmtTime(item.scanTime || item.createdAt);
                   const exitTimeFormatted = fmtTime(item.exitTime);
@@ -2419,6 +2730,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                             statusStr === 'MISSED' || statusStr === 'SKIPPED' ? 'bg-slate-100 text-slate-600 border-slate-300' :
                             statusStr === 'FAILED' || statusStr === 'REJECTED' ? 'bg-red-100 text-red-800 border-red-300' :
                             statusStr === 'EXPIRED' ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                            statusStr === 'EXITED' || statusStr === 'CLOSED' ? 'bg-slate-200 text-slate-600 border-slate-300' :
                             'bg-blue-100 text-blue-800 border-blue-300'
                           }`}>
                             {statusStr === 'RUNNING' || statusStr === 'OPEN' ? '🟢 RUNNING' :
@@ -2426,6 +2738,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                              statusStr === 'MISSED' || statusStr === 'SKIPPED' ? '⚪ MISSED' :
                              statusStr === 'FAILED' || statusStr === 'REJECTED' ? '❌ FAILED' :
                              statusStr === 'EXPIRED' ? '⏰ EXPIRED' :
+                             statusStr === 'EXITED' || statusStr === 'CLOSED' ? '⏹ EXITED' :
                              `🔴 ${statusStr}`}
                           </span>
                         </td>

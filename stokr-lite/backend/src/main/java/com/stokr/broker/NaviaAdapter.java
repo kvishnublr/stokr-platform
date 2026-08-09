@@ -152,16 +152,19 @@ public class NaviaAdapter implements BrokerAdapter {
         }
 
         try {
+            log.info("Navia PlaceOrder request body: {}", body);
             String respJson = naviaPost("PlaceOrder", body, "OrderService", extractToken(accessToken));
+            log.info("Navia PlaceOrder raw response: {}", respJson);
             JsonNode root = MAPPER.readTree(respJson);
             String status = root.path("Status").asText("");
             String message = root.path("Message").asText("");
             if ("OK".equalsIgnoreCase(status)) {
                 String orderId = root.path("ResponceDataObject").path("cl_ord_id").asText(null);
-                log.info("Navia order placed: {} -> {}", request.symbol(), orderId);
+                log.info("Navia order placed: {} -> {} (message={})", request.symbol(), orderId, message);
                 return new BrokerOrderResponse(orderId, "OPEN", message);
             }
-            log.warn("Navia order rejected: {}", message);
+            log.warn("Navia order REJECTED: symbol={} side={} prctyp={} prc={} qty={} status={} message={}",
+                    request.symbol(), request.side(), body.get("prctyp"), body.get("prc"), request.quantity(), status, message);
             return new BrokerOrderResponse(null, "REJECTED", message);
         } catch (Exception e) {
             log.error("Navia placeOrder failed for {}: {}", request.symbol(), e.getMessage());
@@ -266,15 +269,22 @@ public class NaviaAdapter implements BrokerAdapter {
         try {
             Map<String, Object> body = Map.of("uid", extractUid(accessToken));
             String respJson = naviaPost("OrderBook", body, "OrderService", extractToken(accessToken));
+            log.info("Navia OrderBook response for orderId {}: {}", orderId, respJson);
             JsonNode root = MAPPER.readTree(respJson);
             JsonNode orders = root.path("ResponceDataObject").path("AllOrders");
             if (orders.isArray()) {
                 for (JsonNode o : orders) {
                     if (orderId.equals(o.path("cl_ord_id").asText(""))) {
-                        return o.path("status").asText("UNKNOWN");
+                        String status = o.path("OrderStatusMessage").asText(null);
+                        if (status == null || status.isBlank()) {
+                            status = o.path("status").asText("UNKNOWN");
+                        }
+                        log.info("Navia order {} status: {}", orderId, status);
+                        return status;
                     }
                 }
             }
+            log.warn("Navia OrderBook: orderId {} not found in {} orders", orderId, orders.isArray() ? orders.size() : 0);
         } catch (Exception e) {
             log.warn("Navia getOrderStatus {} failed: {}", orderId, e.getMessage());
         }
