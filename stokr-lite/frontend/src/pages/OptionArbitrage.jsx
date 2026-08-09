@@ -2329,9 +2329,8 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
         return { start: y.toISOString().split('T')[0], end: y.toISOString().split('T')[0] };
       }
       case 'WEEK': {
-        const d = new Date(istNow); d.setDate(d.getDate() - d.getDay());
-        const e = new Date(istNow); e.setDate(e.getDate() + (6 - d.getDay()));
-        return { start: d.toISOString().split('T')[0], end: e.toISOString().split('T')[0] };
+        const d = new Date(istNow); d.setDate(d.getDate() - 6);
+        return { start: d.toISOString().split('T')[0], end: istDate };
       }
       case 'MONTH': {
         const s = new Date(istNow.getFullYear(), istNow.getMonth(), 1);
