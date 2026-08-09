@@ -713,18 +713,20 @@ public class OptionArbitrageController {
 
                                     // For EXITED/CLOSED: use exitTime from live_positions or opportunity
                                     if ("EXITED".equals(oppStatus) || "CLOSED".equals(oppStatus)) {
+                                        // EXITED/CLOSED: actual P&L and exit time
                                         if (opp.getExitTime() != null) {
                                             exitTimeMap.put(oppIdStr, opp.getExitTime().toString());
                                         }
                                         pnlMap.put(oppIdStr, opp.getPnlAfterCosts() != null ? Math.round(opp.getPnlAfterCosts().doubleValue()) : 0);
                                     } else if ("EXPIRED".equals(oppStatus)) {
-                                        // EXPIRED: exit time = expiry date, P&L = expected edge (what you'd have earned)
+                                        // EXPIRED: contract expired, never entered — show edge as potential
                                         if (opp.getExpiryDate() != null) {
                                             exitTimeMap.put(oppIdStr, opp.getExpiryDate().toString());
                                         }
                                         pnlMap.put(oppIdStr, opp.getEdgeAfterCosts() != null ? Math.round(opp.getEdgeAfterCosts().doubleValue()) : 0);
                                     } else {
-                                        pnlMap.put(oppIdStr, 0);
+                                        // MISSED / other: never entered, no P&L, no exit
+                                        pnlMap.put(oppIdStr, null);
                                     }
                                 } else {
                                     statusMap.put(oppIdStr, "EXPIRED");

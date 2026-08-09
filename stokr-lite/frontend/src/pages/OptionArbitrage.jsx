@@ -2693,6 +2693,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                   const isExited = statusStr === 'EXITED' || statusStr === 'CLOSED';
                   const isExpired = statusStr === 'EXPIRED';
                   const mergedStatus = liveStatusMap[String(item.id)] || statusStr;
+                  const isMissed = statusStr === 'MISSED' || mergedStatus === 'MISSED';
                   const pnlVal = (() => {
                     // 1. Check live P&L map from backend
                     const livePnl = livePnlMap[String(item.id)];
@@ -2702,10 +2703,8 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                     if (storedPnl != null && storedPnl !== 0) return storedPnl;
                     // 3. For EXITED/CLOSED without P&L, show 0
                     if (isExited || mergedStatus === 'EXITED' || mergedStatus === 'CLOSED') return 0;
-                    // 4. For EXPIRED: show edge (expected profit if entered)
-                    if (isExpired || mergedStatus === 'EXPIRED') {
-                      return item.edgeAfterCosts != null ? Number(item.edgeAfterCosts) : 0;
-                    }
+                    // 4. For MISSED (never entered), no P&L
+                    if (isMissed) return null;
                     // 5. Running signals without live position = null (shows --)
                     if (isRunning) return null;
                     return 0;
@@ -2713,7 +2712,9 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
 
                   const signalTimeFormatted = fmtTime(item.scanTime || item.createdAt);
                   const exitTimeFormatted = (() => {
-                    // For EXPIRED: use expiry date as exit time
+                    // For MISSED: no exit (never entered)
+                    if (isMissed) return '';
+                    // For EXPIRED: contract expired, use expiry date
                     if (isExpired || mergedStatus === 'EXPIRED') {
                       return item.expiryDate || '';
                     }
@@ -2770,7 +2771,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                         {/* Captured P&L Badge */}
                         <td className="px-1.5 py-1.5 text-right font-mono font-bold truncate">
                           {pnlVal !== null && !isNaN(pnlVal) 
-                            ? <span className={isRunning ? 'text-emerald-600 font-bold' : isExpired ? 'px-1 py-0.2 bg-amber-100 text-amber-800 rounded border border-amber-300 font-bold' : 'px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded border border-emerald-300 font-bold'}>
+                            ? <span className={isRunning ? 'text-emerald-600 font-bold' : 'px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded border border-emerald-300 font-bold'}>
                                 {pnlVal >= 0 ? '+' : ''}₹{Math.round(pnlVal).toLocaleString('en-IN')}
                               </span>
                             : <span className="text-slate-400">--</span>}
