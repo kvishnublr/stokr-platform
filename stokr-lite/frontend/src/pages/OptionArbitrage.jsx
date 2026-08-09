@@ -1287,12 +1287,14 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
     refetchInterval: 30000
   });
 
-  const today2 = new Date().toLocaleDateString('en-CA');
+  const histDate = new Date(); histDate.setDate(histDate.getDate() - 6);
+  const today2 = histDate.toISOString().split('T')[0];
+  const todayEnd = new Date().toISOString().split('T')[0];
 
   const { data: historyData } = useQuery({
     queryKey: ['box-history', underlying, histPage],
     queryFn: async () => {
-      const params = { page: histPage, size: PAGE_SIZE, strategyType: 'BOX_SPREAD', startDate: today2, endDate: today2 };
+      const params = { page: histPage, size: PAGE_SIZE, strategyType: 'BOX_SPREAD', startDate: today2, endDate: todayEnd };
       if (underlying !== 'ALL') params.underlying = underlying;
       const res = await client.get('/option-arbitrage/history', { params });
       return res.data;
