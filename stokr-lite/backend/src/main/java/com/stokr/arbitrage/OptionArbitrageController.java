@@ -710,11 +710,19 @@ public class OptionArbitrageController {
                                     var opp = oppOpt.get();
                                     String oppStatus = opp.getStatus() != null ? opp.getStatus() : "EXPIRED";
                                     statusMap.put(oppIdStr, oppStatus);
-                                    if (opp.getExitTime() != null) {
-                                        exitTimeMap.put(oppIdStr, opp.getExitTime().toString());
-                                    }
+
+                                    // For EXITED/CLOSED: use exitTime from live_positions or opportunity
                                     if ("EXITED".equals(oppStatus) || "CLOSED".equals(oppStatus)) {
+                                        if (opp.getExitTime() != null) {
+                                            exitTimeMap.put(oppIdStr, opp.getExitTime().toString());
+                                        }
                                         pnlMap.put(oppIdStr, opp.getPnlAfterCosts() != null ? Math.round(opp.getPnlAfterCosts().doubleValue()) : 0);
+                                    } else if ("EXPIRED".equals(oppStatus)) {
+                                        // EXPIRED: exit time = expiry date, P&L = expected edge (what you'd have earned)
+                                        if (opp.getExpiryDate() != null) {
+                                            exitTimeMap.put(oppIdStr, opp.getExpiryDate().toString());
+                                        }
+                                        pnlMap.put(oppIdStr, opp.getEdgeAfterCosts() != null ? Math.round(opp.getEdgeAfterCosts().doubleValue()) : 0);
                                     } else {
                                         pnlMap.put(oppIdStr, 0);
                                     }

@@ -2700,17 +2700,25 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                     // 2. Check stored P&L on opportunity
                     const storedPnl = item.pnlAfterCosts != null ? Number(item.pnlAfterCosts) : null;
                     if (storedPnl != null && storedPnl !== 0) return storedPnl;
-                    // 3. For EXITED/CLOSED without P&L, show 0 (was executed but P&L not computed)
+                    // 3. For EXITED/CLOSED without P&L, show 0
                     if (isExited || mergedStatus === 'EXITED' || mergedStatus === 'CLOSED') return 0;
-                    // 4. For EXPIRED (never traded), show 0
-                    if (isExpired || mergedStatus === 'EXPIRED') return 0;
+                    // 4. For EXPIRED: show edge (expected profit if entered)
+                    if (isExpired || mergedStatus === 'EXPIRED') {
+                      return item.edgeAfterCosts != null ? Number(item.edgeAfterCosts) : 0;
+                    }
                     // 5. Running signals without live position = null (shows --)
                     if (isRunning) return null;
                     return 0;
                   })();
 
                   const signalTimeFormatted = fmtTime(item.scanTime || item.createdAt);
-                  const exitTimeFormatted = fmtTime(item.exitTime);
+                  const exitTimeFormatted = (() => {
+                    // For EXPIRED: use expiry date as exit time
+                    if (isExpired || mergedStatus === 'EXPIRED') {
+                      return item.expiryDate || '';
+                    }
+                    return fmtTime(item.exitTime);
+                  })();
 
                   const ceVal = Number(item.ceEntryPrice || item.cePrice || 0).toFixed(1);
                   const peVal = Number(item.peEntryPrice || item.pePrice || 0).toFixed(1);
@@ -2762,7 +2770,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                         {/* Captured P&L Badge */}
                         <td className="px-1.5 py-1.5 text-right font-mono font-bold truncate">
                           {pnlVal !== null && !isNaN(pnlVal) 
-                            ? <span className={isRunning ? 'text-emerald-600 font-bold' : 'px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded border border-emerald-300 font-bold'}>
+                            ? <span className={isRunning ? 'text-emerald-600 font-bold' : isExpired ? 'px-1 py-0.2 bg-amber-100 text-amber-800 rounded border border-amber-300 font-bold' : 'px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded border border-emerald-300 font-bold'}>
                                 {pnlVal >= 0 ? '+' : ''}₹{Math.round(pnlVal).toLocaleString('en-IN')}
                               </span>
                             : <span className="text-slate-400">--</span>}
