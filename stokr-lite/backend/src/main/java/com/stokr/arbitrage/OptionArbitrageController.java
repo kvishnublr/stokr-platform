@@ -1047,10 +1047,10 @@ public class OptionArbitrageController {
                 if (opt.isPresent()) {
                     opp = opt.get();
                     String currentStatus = opp.getStatus();
-                    if ("CLOSED".equals(currentStatus) || "EXPIRED".equals(currentStatus)) {
+                    if ("CLOSED".equals(currentStatus) || "EXPIRED".equals(currentStatus) || "EXITED".equals(currentStatus)) {
                         resp.put("status", "ERROR");
                         resp.put("message", "Trade already " + currentStatus);
-                        return ResponseEntity.badRequest().body(resp);
+                        return ResponseEntity.ok(resp);
                     }
                 }
             }
@@ -1120,7 +1120,9 @@ public class OptionArbitrageController {
             try {
                 long openCount = livePositionRepo.countAllOpen();
                 if (openCount >= 1) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "Already have 1 open position. Close it first."));
+                    resp.put("status", "ERROR");
+                    resp.put("message", "Already have 1 open position. Close it first.");
+                    return ResponseEntity.badRequest().body(resp);
                 }
                 int lotSize = getLotSize(opp.getUnderlying());
                 String futSymbol = opp.getExpiryDate() != null
