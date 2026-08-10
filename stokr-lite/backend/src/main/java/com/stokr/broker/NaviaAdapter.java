@@ -265,6 +265,70 @@ public class NaviaAdapter implements BrokerAdapter {
     }
 
     @Override
+    public BigDecimal getHedgedMargin(String accessToken, String underlying, String futSymbol, String ceSymbol, String peSymbol, int qty) {
+        try {
+            String uid = resolveUid(accessToken);
+            if (uid == null) return null;
+            Map<String, Object> baseOrder = new LinkedHashMap<>();
+            baseOrder.put("uid", uid);
+            baseOrder.put("actid", uid);
+            baseOrder.put("exch", "NFO");
+            baseOrder.put("qty", qty);
+            baseOrder.put("prc", "0");
+            baseOrder.put("prctyp", "MKT");
+            baseOrder.put("prd", "MIS");
+            baseOrder.put("ret", "DAY");
+            baseOrder.put("ordersource", "Web");
+            baseOrder.put("segment", "NFO");
+            baseOrder.put("dscqty", 0);
+            baseOrder.put("mkt_protection", "0");
+            baseOrder.put("remarks", "");
+            baseOrder.put("ext_remarks", "");
+            baseOrder.put("algo_id", "0");
+
+            Map<String, Object> futOrder = new LinkedHashMap<>(baseOrder);
+            futOrder.put("trantype", "B");
+            futOrder.put("tsym", futSymbol != null ? futSymbol : "");
+
+            Map<String, Object> ceOrder = new LinkedHashMap<>(baseOrder);
+            ceOrder.put("trantype", "B");
+            ceOrder.put("tsym", ceSymbol != null ? ceSymbol : "");
+
+            Map<String, Object> peOrder = new LinkedHashMap<>(baseOrder);
+            peOrder.put("trantype", "B");
+            peOrder.put("tsym", peSymbol != null ? peSymbol : "");
+
+            List<Map<String, Object>> orders = List.of(futOrder, ceOrder, peOrder);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("uid", uid);
+            body.put("actid", uid);
+            body.put("orders", orders);
+            String respJson = naviaPost("GetOrderMargin", body, "OrderService", extractToken(accessToken));
+            JsonNode root = MAPPER.readTree(respJson);
+            String status = root.path("Status").asText("");
+            if ("OK".equalsIgnoreCase(status)) {
+                JsonNode rd = root.path("ResponceDataObject");
+                JsonNode margins = rd.path("orderMarginDetails");
+                if (margins.isArray() && margins.size() > 0) {
+                    double totalMargin = 0;
+                    for (JsonNode m : margins) {
+                        totalMargin += m.path("spanMargin").asDouble(0) + m.path("exposureMargin").asDouble(0);
+                    }
+                    log.info("Navia hedged margin for {} {} lots={}: ₹{}", underlying, futSymbol, qty, String.format("%.0f", totalMargin));
+                    return BigDecimal.valueOf(totalMargin);
+                }
+                BigDecimal avail = new BigDecimal(rd.path("AvailableMargin").asText("0"));
+                log.info("Navia hedged margin fallback (AvailableMargin) for {}: ₹{}", underlying, avail);
+                return avail;
+            }
+            log.warn("Navia GetOrderMargin for hedged NFO failed: {}", root.path("Message").asText());
+        } catch (Exception e) {
+            log.warn("Navia getHedgedMargin for {} failed: {}", underlying, e.getMessage());
+        }
+        return null;
+    }
+
+    @Override
     public String getOrderStatus(String accessToken, String orderId) {
         try {
             Map<String, Object> body = Map.of("uid", extractUid(accessToken));

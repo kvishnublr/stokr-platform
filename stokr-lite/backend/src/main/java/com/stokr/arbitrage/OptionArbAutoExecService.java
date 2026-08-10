@@ -147,6 +147,7 @@ public class OptionArbAutoExecService {
         if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
 
         String broker = (String) settings.getOrDefault("broker", "NAVIA");
+        if ("PAPER".equalsIgnoreCase(broker)) return;
         int maxPositions = (int) settings.getOrDefault("maxOpenPositions", 1);
         long currentOpen = positionRepo.countAllOpen();
         if (currentOpen >= maxPositions) return;
@@ -164,16 +165,6 @@ public class OptionArbAutoExecService {
             adapter = brokerService.getAdapter(broker);
         } catch (Exception e) {
             log.error("Auto-exec: broker setup failed: {}", e.getMessage());
-            return;
-        }
-
-        double availableMargin = 0;
-        try {
-            BigDecimal margin = adapter.getAvailableMargin(account.getAccessToken());
-            availableMargin = margin != null ? margin.doubleValue() : 0;
-        } catch (Exception e) {
-            log.error("Auto-exec: margin check failed: {}", e.getMessage());
-            addLog("MARGIN", "ERROR", "Failed to fetch margin: " + e.getMessage());
             return;
         }
 
@@ -228,7 +219,37 @@ public class OptionArbAutoExecService {
                     .anyMatch(p -> opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
 
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
-            double hedgedMargin = estimateHedgedMargin(opp.getUnderlying(), lots);
+
+            // CRITICAL: Check margin BEFORE every single trade
+            double availableMargin = 0;
+            try {
+                BigDecimal margin = adapter.getAvailableMargin(account.getAccessToken());
+                availableMargin = margin != null ? margin.doubleValue() : 0;
+            } catch (Exception e) {
+                log.error("Auto-exec: margin check failed mid-loop: {}", e.getMessage());
+                addLog("MARGIN", "ERROR", "Failed to fetch margin mid-loop: " + e.getMessage());
+                break;
+            }
+
+            double hedgedMargin = 0;
+            try {
+                int lotSize = getLotSize(opp.getUnderlying());
+                int marginQty = lotSize * lots;
+                // Build symbols for NAVIA margin API (OptionArbOpportunity doesn't store them)
+                String futSym = null, ceSym = null, peSym = null;
+                if (opp.getExpiryDate() != null && opp.getStrike() != null) {
+                    futSym = optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate());
+                    ceSym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
+                    peSym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
+                }
+                BigDecimal realMargin = adapter.getHedgedMargin(
+                    account.getAccessToken(), opp.getUnderlying(), futSym, ceSym, peSym, marginQty);
+                hedgedMargin = realMargin != null ? realMargin.doubleValue() : estimateHedgedMargin(opp.getUnderlying(), lots);
+                log.info("Margin for {} {}: ₹{} (real={})", opp.getUnderlying(), opp.getStrike(),
+                    String.format("%.0f", hedgedMargin), realMargin != null);
+            } catch (Exception e) {
+                hedgedMargin = estimateHedgedMargin(opp.getUnderlying(), lots);
+            }
             if (hedgedMargin > availableMargin * 0.9) {
                 addLog("MARGIN", "SKIP", opp.getUnderlying() + " " + opp.getStrike()
                         + " needs ₹" + String.format("%.0f", hedgedMargin)
@@ -446,6 +467,7 @@ public class OptionArbAutoExecService {
                 );
             }
 
+            boolean allFilled = true;
             for (PlannedLeg leg : closePlan) {
                 BrokerOrderRequest req = BrokerOrderRequest.builder()
                         .symbol(leg.symbol()).exchange("NFO")
@@ -456,10 +478,11 @@ public class OptionArbAutoExecService {
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
                 if (!resp.isSuccess()) {
                     addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
+                    allFilled = false;
                 }
                 try { Thread.sleep(300); } catch (InterruptedException ignored) {}
             }
-            return true;
+            return allFilled;
         } catch (Exception e) {
             log.error("Rollover square-off failed: {}", e.getMessage());
             return false;
@@ -797,10 +820,11 @@ public class OptionArbAutoExecService {
             if (allComplete || anyTerminalFailure) {
                 return;
             }
-            if (anyUnknown && attempt >= 3) {
+            if (anyUnknown && attempt >= 5) {
                 log.warn("Navia OrderBook auth failing after {} polls — orders likely filled on exchange, marking all as COMPLETE", attempt + 1);
                 for (PlacedLeg leg : placedLegs) {
                     if (!isCompleteStatus(leg.status) && !isFailureStatus(leg.status)) {
+                        log.warn("Marking {} as COMPLETE (OrderBook auth failure after {} polls)", leg.leg.legKey(), attempt + 1);
                         leg.status = "COMPLETE";
                     }
                 }
@@ -879,13 +903,14 @@ public class OptionArbAutoExecService {
     private double estimateHedgedMargin(String underlying, int lots) {
         // Hedged margin for box spread (FUT + CE + PE) — margin is the max of individual legs, not sum
         // With SEBI SPAN+Exposure, hedged NFO positions get ~60-70% margin benefit
+        // Fallback: use controller-consistent estimates when NAVIA API unavailable
         Map<String, Double> baseMargins = Map.of(
-            "NIFTY", 120000.0,
-            "BANKNIFTY", 200000.0,
-            "MIDCPNIFTY", 150000.0,
-            "FINNIFTY", 160000.0
+            "NIFTY", 150000.0,
+            "BANKNIFTY", 250000.0,
+            "MIDCPNIFTY", 180000.0,
+            "FINNIFTY", 200000.0
         );
-        double base = baseMargins.getOrDefault(underlying, 150000.0);
+        double base = baseMargins.getOrDefault(underlying, 200000.0);
         return base * lots * 1.15; // 15% buffer for slippage
     }
 
