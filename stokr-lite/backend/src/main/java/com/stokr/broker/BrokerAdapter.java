@@ -17,6 +17,11 @@ public interface BrokerAdapter {
 
     String getOrderStatus(String accessToken, String orderId);
 
+    // Calculate actual hedged margin for NFO positions from broker
+    default BigDecimal getHedgedMargin(String accessToken, String underlying, String futSymbol, String ceSymbol, String peSymbol, int qty) {
+        return null; // fallback to hardcoded estimate
+    }
+
     // OAuth flow
     String getAuthUrl();
 
