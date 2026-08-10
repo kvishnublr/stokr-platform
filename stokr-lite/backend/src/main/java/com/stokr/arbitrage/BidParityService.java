@@ -212,6 +212,11 @@ public class BidParityService {
             map.put("grossEdge", Math.round(grossEdge * 100.0) / 100.0);
             map.put("daysToExpiry", daysToExpiry);
             map.put("expiryDate", expiry.toString());
+            ArbitrageCosts.CostResult costs = ArbitrageCosts.calculate(
+                    ceQuote.lastPrice, peQuote.lastPrice, fut, lotSize, grossEdge, action);
+            double totalCosts = costs.breakdown().getOrDefault("totalCosts", 0.0);
+            edgeAfterCosts = Math.max(0, grossEdge - totalCosts);
+
             map.put("lotSize", lotSize);
             map.put("confidence", Math.min(99.0, 70.0 + edgePoints * 1.5));
             map.put("guaranteedFill", true);
@@ -220,24 +225,7 @@ public class BidParityService {
             map.put("scanTime", java.time.LocalDateTime.now().toString());
             map.put("detectedAt", java.time.LocalDateTime.now().toString());
 
-            double stt = (peQuote.lastPrice * lotSize * 0.00125) + (fut * lotSize * 0.00025);
-            double brokerage = 120.0;
-            double totalTurnover = (ceQuote.lastPrice + peQuote.lastPrice + fut) * lotSize * 2;
-            double exchange = totalTurnover * 0.0000345;
-            double sebi = totalTurnover * 0.000001;
-            double gst = (brokerage + exchange + sebi) * 0.18;
-            double stamp = (ceQuote.lastPrice + peQuote.lastPrice + fut) * lotSize * 0.00005;
-            double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
-
-            Map<String, Double> costBreakdown = new LinkedHashMap<>();
-            costBreakdown.put("grossEdge", Math.round(grossEdge * 100.0) / 100.0);
-            costBreakdown.put("stt", Math.round(stt * 100.0) / 100.0);
-            costBreakdown.put("brokerage", brokerage);
-            costBreakdown.put("exchange", Math.round(exchange * 100.0) / 100.0);
-            costBreakdown.put("sebi", Math.round(sebi * 100.0) / 100.0);
-            costBreakdown.put("gst", Math.round(gst * 100.0) / 100.0);
-            costBreakdown.put("stamp", Math.round(stamp * 100.0) / 100.0);
-            costBreakdown.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
+            Map<String, Double> costBreakdown = new LinkedHashMap<>(costs.breakdown());
             costBreakdown.put("netEdge", Math.round(edgeAfterCosts * 100.0) / 100.0);
             costBreakdown.put("lotSize", (double) lotSize);
             map.put("costBreakdown", costBreakdown);
@@ -279,21 +267,6 @@ public class BidParityService {
     }
 
     private double calculateEdgeCosts(double cePrice, double pePrice, double futPrice, int lotSize, double grossEdge) {
-        if (cePrice <= 0 || pePrice <= 0 || futPrice <= 0 || lotSize <= 0) return 0;
-
-        double ceTurnover = cePrice * lotSize * 2;
-        double peTurnover = pePrice * lotSize * 2;
-        double futTurnover = futPrice * lotSize * 2;
-        double totalTurnover = ceTurnover + peTurnover + futTurnover;
-
-        double brokerage = 120.0;
-        double stt = (pePrice * lotSize * 0.00125) + (futPrice * lotSize * 0.00025);
-        double exchange = totalTurnover * 0.0000345;
-        double sebi = totalTurnover * 0.000001;
-        double gst = (brokerage + exchange + sebi) * 0.18;
-        double stamp = (cePrice + pePrice + futPrice) * lotSize * 0.00005;
-        double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
-
-        return Math.max(0, grossEdge - totalCosts);
+        return ArbitrageCosts.netEdge(cePrice, pePrice, futPrice, lotSize, grossEdge);
     }
 }

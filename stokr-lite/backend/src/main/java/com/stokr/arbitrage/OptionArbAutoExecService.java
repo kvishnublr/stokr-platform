@@ -690,7 +690,8 @@ public class OptionArbAutoExecService {
                     opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() : 0,
                     opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0,
                     opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0,
-                    opp.getStrike(), opp.getAction(), opp.getUnderlying())))
+                    opp.getStrike(), opp.getAction(), opp.getUnderlying(),
+                    opp.getExpiryDate() != null ? java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), opp.getExpiryDate()) : 0)))
                 .status("EXECUTING")
                 .enteredAt(LocalDateTime.now())
                 .createdAt(LocalDateTime.now())
@@ -925,23 +926,19 @@ public class OptionArbAutoExecService {
     }
 
     private double recalculateTargetEdge(double ceEntry, double peEntry, double futEntry, int strike, String action, String underlying) {
+        return recalculateTargetEdge(ceEntry, peEntry, futEntry, strike, action, underlying, 0);
+    }
+
+    private double recalculateTargetEdge(double ceEntry, double peEntry, double futEntry, int strike, String action, String underlying, double daysToExpiry) {
         if (ceEntry <= 0 || peEntry <= 0 || futEntry <= 0) return 0;
 
         int lotSize = getLotSize(underlying);
-        double synthetic = ceEntry - peEntry + strike;
+        double discountedStrike = ArbitrageCosts.discountedStrike(strike, daysToExpiry);
+        double synthetic = ceEntry - peEntry + discountedStrike;
         double parityDev = Math.abs(futEntry - synthetic);
         double grossEdge = parityDev * lotSize;
 
-        double brokerage = 120.0;
-        double stt = (peEntry * lotSize * 0.00125) + (futEntry * lotSize * 0.00025);
-        double totalTurnover = (ceEntry + peEntry + futEntry) * lotSize * 2;
-        double exchange = totalTurnover * 0.0000345;
-        double sebi = totalTurnover * 0.000001;
-        double gst = (brokerage + exchange + sebi) * 0.18;
-        double stamp = (ceEntry + peEntry + futEntry) * lotSize * 0.00005;
-        double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
-
-        return Math.max(0, grossEdge - totalCosts);
+        return ArbitrageCosts.netEdge(ceEntry, peEntry, futEntry, lotSize, grossEdge, action);
     }
 
     private double computePnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {

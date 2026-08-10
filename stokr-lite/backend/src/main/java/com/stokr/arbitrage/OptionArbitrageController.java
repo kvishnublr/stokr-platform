@@ -938,11 +938,11 @@ public class OptionArbitrageController {
                     double futExit = p.getFutExitPrice() != null ? p.getFutExitPrice().doubleValue() : 0;
                     if (action.contains("BUY CE +")) {
                         if (ceExit > 0 && ceEntry > 0) pnl += ceExit - ceEntry;
-                        if (peExit > 0 && peEntry > 0) pnl += peExit - peEntry;
+                        if (peExit > 0 && peEntry > 0) pnl += peEntry - peExit;
                         if (futExit > 0 && futEntry > 0) pnl += futEntry - futExit;
                     } else {
                         if (ceExit > 0 && ceEntry > 0) pnl += ceEntry - ceExit;
-                        if (peExit > 0 && peEntry > 0) pnl += peEntry - peExit;
+                        if (peExit > 0 && peEntry > 0) pnl += peExit - peEntry;
                         if (futExit > 0 && futEntry > 0) pnl += futExit - futEntry;
                     }
                     pnl *= lotSize * lots;
@@ -1006,23 +1006,19 @@ public class OptionArbitrageController {
     }
 
     private double recalculateTargetEdge(double ceEntry, double peEntry, double futEntry, int strike, String action, String underlying) {
+        return recalculateTargetEdge(ceEntry, peEntry, futEntry, strike, action, underlying, 0);
+    }
+
+    private double recalculateTargetEdge(double ceEntry, double peEntry, double futEntry, int strike, String action, String underlying, double daysToExpiry) {
         if (ceEntry <= 0 || peEntry <= 0 || futEntry <= 0) return 0;
 
         int lotSize = getLotSize(underlying);
-        double synthetic = ceEntry - peEntry + strike;
+        double discountedStrike = ArbitrageCosts.discountedStrike(strike, daysToExpiry);
+        double synthetic = ceEntry - peEntry + discountedStrike;
         double parityDev = Math.abs(futEntry - synthetic);
         double grossEdge = parityDev * lotSize;
 
-        double brokerage = 120.0;
-        double stt = (peEntry * lotSize * 0.00125) + (futEntry * lotSize * 0.00025);
-        double totalTurnover = (ceEntry + peEntry + futEntry) * lotSize * 2;
-        double exchange = totalTurnover * 0.0000345;
-        double sebi = totalTurnover * 0.000001;
-        double gst = (brokerage + exchange + sebi) * 0.18;
-        double stamp = (ceEntry + peEntry + futEntry) * lotSize * 0.00005;
-        double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
-
-        return Math.max(0, grossEdge - totalCosts);
+        return ArbitrageCosts.netEdge(ceEntry, peEntry, futEntry, lotSize, grossEdge, action);
     }
 
     @GetMapping("/auto-execute/execute")
@@ -1155,7 +1151,8 @@ public class OptionArbitrageController {
                     .ceSymbol(optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE"))
                     .peSymbol(optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE"))
                     .targetEdge(BigDecimal.valueOf(recalculateTargetEdge(
-                        ceLive, peLive, futLive, opp.getStrike(), opp.getAction(), opp.getUnderlying())))
+                        ceLive, peLive, futLive, opp.getStrike(), opp.getAction(), opp.getUnderlying(),
+                        opp.getExpiryDate() != null ? java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), opp.getExpiryDate()) : 0)))
                     .entryCost(BigDecimal.valueOf((ceLive + peLive + futLive) * lotSize))
                     .status("OPEN")
                     .enteredAt(LocalDateTime.now())

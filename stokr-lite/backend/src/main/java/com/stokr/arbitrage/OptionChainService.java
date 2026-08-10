@@ -290,18 +290,7 @@ public class OptionChainService {
     }
 
     private double calculateParityEdge(double cePrice, double pePrice, double futPrice, int lotSize, double grossEdge) {
-        if (cePrice <= 0 || pePrice <= 0 || futPrice <= 0 || lotSize <= 0) return 0;
-
-        double brokerage = 120.0;
-        double stt = (pePrice * lotSize * 0.00125) + (futPrice * lotSize * 0.00025);
-        double totalTurnover = (cePrice + pePrice + futPrice) * lotSize * 2;
-        double exchange = totalTurnover * 0.0000345;
-        double sebi = totalTurnover * 0.000001;
-        double gst = (brokerage + exchange + sebi) * 0.18;
-        double stamp = (cePrice + pePrice + futPrice) * lotSize * 0.00005;
-        double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
-
-        return Math.max(0, grossEdge - totalCosts);
+        return ArbitrageCosts.netEdge(cePrice, pePrice, futPrice, lotSize, grossEdge);
     }
 
     private ArbitrageOpportunity buildParityOpportunity(String underlying, int strike,
