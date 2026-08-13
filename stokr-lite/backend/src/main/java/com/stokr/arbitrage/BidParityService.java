@@ -21,7 +21,7 @@ public class BidParityService {
 
     private static final double RISK_FREE_RATE = 0.065;
     private static final double MIN_PARITY_DEVIATION_BID = 1.5;
-    private static final double MIN_EDGE_AFTER_COSTS = 800.0;
+    private static final double MIN_EDGE_AFTER_COSTS = 300.0;
     private static final int MIN_VOLUME = 500;
     private static final int MIN_OI = 2000;
 
@@ -139,12 +139,12 @@ public class BidParityService {
             OptionChainService.OptionQuote ceQuote = (ceSym != null) ? quotes.get(ceSym) : null;
             OptionChainService.OptionQuote peQuote = (peSym != null) ? quotes.get(peSym) : null;
 
-            if (ceQuote == null || peQuote == null) continue;
-            if (ceQuote.lastPrice <= 0 || peQuote.lastPrice <= 0) continue;
-            if (ceQuote.bid <= 0 || peQuote.bid <= 0) continue;
-            if (ceQuote.ask <= 0 || peQuote.ask <= 0) continue;
-            if (ceQuote.volume < MIN_VOLUME || peQuote.volume < MIN_VOLUME) continue;
-            if (ceQuote.openInterest < MIN_OI || peQuote.openInterest < MIN_OI) continue;
+            if (ceQuote == null || peQuote == null) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} null quotes ce={} pe={}", underlying, strike, ceQuote!=null, peQuote!=null); continue; }
+            if (ceQuote.lastPrice <= 0 || peQuote.lastPrice <= 0) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} zero price CE={} PE={}", underlying, strike, ceQuote.lastPrice, peQuote.lastPrice); continue; }
+            if (ceQuote.bid <= 0 || peQuote.bid <= 0) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} zero bid CE_bid={} PE_bid={}", underlying, strike, ceQuote.bid, peQuote.bid); continue; }
+            if (ceQuote.ask <= 0 || peQuote.ask <= 0) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} zero ask CE_ask={} PE_ask={}", underlying, strike, ceQuote.ask, peQuote.ask); continue; }
+            if (ceQuote.volume < MIN_VOLUME || peQuote.volume < MIN_VOLUME) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} low volume CE={} PE={} min={}", underlying, strike, ceQuote.volume, peQuote.volume, MIN_VOLUME); continue; }
+            if (ceQuote.openInterest < MIN_OI || peQuote.openInterest < MIN_OI) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} low OI CE={} PE={} min={}", underlying, strike, ceQuote.openInterest, peQuote.openInterest, MIN_OI); continue; }
 
             double synthetic1 = BlackScholesCalculator.syntheticFutures(
                 ceQuote.ask, peQuote.bid, strike, RISK_FREE_RATE, yearsToExpiry);
@@ -156,6 +156,12 @@ public class BidParityService {
 
             boolean isConvergent = parityDev1 >= MIN_PARITY_DEVIATION_BID;
             boolean isReversal = parityDev2 >= MIN_PARITY_DEVIATION_BID;
+
+            if (strike == atmStrike) {
+                log.info("PARITY_DEV {}: K={} CE={}/{} PE={}/{} FUT={} synth1={} dev1={} synth2={} dev2={} (min={})",
+                    underlying, strike, ceQuote.bid, ceQuote.ask, peQuote.bid, peQuote.ask, fut,
+                    synthetic1, parityDev1, synthetic2, parityDev2, MIN_PARITY_DEVIATION_BID);
+            }
 
             if (!isConvergent && !isReversal) continue;
 
@@ -176,7 +182,10 @@ public class BidParityService {
             }
 
             double grossEdge = edgePoints * lotSize;
-            double edgeAfterCosts = calculateEdgeCosts(ceQuote.lastPrice, peQuote.lastPrice, fut, lotSize, grossEdge);
+            double edgeAfterCosts = calculateEdgeCosts(ceQuote.lastPrice, peQuote.lastPrice, fut, lotSize, grossEdge, action);
+
+            log.info("PARITY_EDGE {}: K={} action={} edgePts={} grossEdge={} afterCosts={} (min={})",
+                underlying, strike, action, edgePoints, grossEdge, edgeAfterCosts, MIN_EDGE_AFTER_COSTS);
 
             if (edgeAfterCosts < MIN_EDGE_AFTER_COSTS) continue;
 
@@ -266,7 +275,7 @@ public class BidParityService {
         return results;
     }
 
-    private double calculateEdgeCosts(double cePrice, double pePrice, double futPrice, int lotSize, double grossEdge) {
-        return ArbitrageCosts.netEdge(cePrice, pePrice, futPrice, lotSize, grossEdge);
+    private double calculateEdgeCosts(double cePrice, double pePrice, double futPrice, int lotSize, double grossEdge, String action) {
+        return ArbitrageCosts.netEdge(cePrice, pePrice, futPrice, lotSize, grossEdge, action);
     }
 }
