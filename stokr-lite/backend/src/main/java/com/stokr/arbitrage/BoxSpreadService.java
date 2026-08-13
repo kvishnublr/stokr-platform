@@ -142,6 +142,12 @@ public class BoxSpreadService {
                     double totalCosts = stt + brokerage + exchange + sebi + gst + ipft;
                     double netBuyEdge = grossBuyEdge - totalCosts;
 
+                    if (k1 == atmStrike || (i == 0 && j == strikes.size() - 1)) {
+                        log.info("BOX_DEV {}: K1={} K2={} width={} CE1={}/{} PE1={}/{} CE2={}/{} PE2={}/{} cost={} edgePts={} grossEdge={} netEdge={}",
+                            underlying, k1, k2, width, ce1.bid, ce1.ask, pe1.bid, pe1.ask, ce2.bid, ce2.ask, pe2.bid, pe2.ask,
+                            buyBoxCost, buyBoxEdgePoints, grossBuyEdge, netBuyEdge);
+                    }
+
                     if (netBuyEdge >= MIN_BOX_EDGE_AFTER_COSTS) {
                         long daysToExpiry = java.time.Duration.between(
                             LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays();
