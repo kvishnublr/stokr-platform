@@ -91,7 +91,7 @@ public class BidParityService {
         return results;
     }
 
-    private List<Map<String, Object>> scanBidParitySingle(String underlying) {
+    public List<Map<String, Object>> scanBidParitySingle(String underlying) {
         List<Map<String, Object>> results = new ArrayList<>();
 
         String spotKey = CONFIGS_SPOT.getOrDefault(underlying, "NSE:NIFTY 50");

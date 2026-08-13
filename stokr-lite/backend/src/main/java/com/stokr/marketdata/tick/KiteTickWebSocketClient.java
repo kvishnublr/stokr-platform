@@ -47,6 +47,12 @@ public class KiteTickWebSocketClient {
     private volatile long lastAutoReconnectAttemptMs = 0L;
     private final Set<Integer> subscribedTokens = ConcurrentHashMap.newKeySet();
     private final Set<String> subscribedSymbols = ConcurrentHashMap.newKeySet();
+    private final List<java.util.function.Consumer<TickData>> extraListeners = new CopyOnWriteArrayList<>();
+
+    /** Register to receive every parsed tick, in addition to the built-in candle aggregator. */
+    public void addTickListener(java.util.function.Consumer<TickData> listener) {
+        extraListeners.add(listener);
+    }
 
     @PostConstruct
     public void init() {
@@ -193,6 +199,13 @@ public class KiteTickWebSocketClient {
             List<TickData> ticks = KiteTickParser.parse(buffer, subscribedSymbols);
             for (TickData tick : ticks) {
                 aggregator.onTick(tick);
+                for (var listener : extraListeners) {
+                    try {
+                        listener.accept(tick);
+                    } catch (Exception e) {
+                        log.debug("Tick listener failed: {}", e.getMessage());
+                    }
+                }
             }
             if (count % 1000 == 0) {
                 log.debug("Processed {} ticks", count);

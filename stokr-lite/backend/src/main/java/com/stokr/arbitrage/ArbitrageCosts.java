@@ -12,14 +12,16 @@ public final class ArbitrageCosts {
     private ArbitrageCosts() {}
 
     public static final double RISK_FREE_RATE = 0.065;
-    private static final double STT_OPTION_SELL = 0.00125;
-    private static final double STT_OPTION_BUY = 0.00025;
+    public static final double STT_OPTION_SELL = 0.00125;
+    public static final double STT_OPTION_BUY = 0.00025;
     private static final double STT_FUTURES = 0.00025;
     private static final double BROKERAGE = 120.0;
-    private static final double EXCHANGE_RATE = 0.0000345;
-    private static final double SEBI_RATE = 0.000001;
-    private static final double GST_RATE = 0.18;
-    private static final double STAMP_RATE = 0.00005;
+    /** Flat per-order brokerage estimate, derived from the 3-leg BROKERAGE convention above. */
+    public static final double PER_LEG_BROKERAGE = BROKERAGE / 3.0;
+    public static final double EXCHANGE_RATE = 0.0000345;
+    public static final double SEBI_RATE = 0.000001;
+    public static final double GST_RATE = 0.18;
+    public static final double STAMP_RATE = 0.00005;
 
     /**
      * Result of a cost calculation, containing both the net edge and breakdown.

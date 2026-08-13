@@ -315,9 +315,24 @@ public class OptionArbitrageController {
             double maxLoss = (double) step - credit;
             if (maxLoss <= 0) continue;
             double riskReward = credit / maxLoss;
-            double netEdge = credit * lotSize - 200.0;
 
-            if (riskReward >= 0.2) {
+            // Real fee schedule (STT/brokerage/exchange/SEBI/GST/stamp) instead of a flat
+            // guess -- was previously a fictional flat Rs 200 regardless of premium/lot size.
+            double sttPutSell = psBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
+            double sttPutBuy = pbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
+            double sttCallSell = csBid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
+            double sttCallBuy = cbAsk * lotSize * ArbitrageCosts.STT_OPTION_BUY;
+            double stt = sttPutSell + sttPutBuy + sttCallSell + sttCallBuy;
+            double brokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 4;
+            double turnover = (psBid + pbAsk + csBid + cbAsk) * lotSize;
+            double exchange = turnover * ArbitrageCosts.EXCHANGE_RATE;
+            double sebi = turnover * ArbitrageCosts.SEBI_RATE;
+            double gst = (brokerage + exchange + sebi) * ArbitrageCosts.GST_RATE;
+            double stamp = turnover * ArbitrageCosts.STAMP_RATE;
+            double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
+            double netEdge = credit * lotSize - totalCosts;
+
+            if (riskReward >= 0.2 && netEdge > 0) {
                 Map<String, Object> opp = new LinkedHashMap<>();
                 opp.put("type", "IRON_CONDOR");
                 opp.put("underlying", underlying);
@@ -328,6 +343,7 @@ public class OptionArbitrageController {
                 opp.put("credit", Math.round(credit * 100.0) / 100.0);
                 opp.put("maxLoss", Math.round(maxLoss * 100.0) / 100.0);
                 opp.put("riskReward", Math.round(riskReward * 100.0) / 100.0);
+                opp.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
                 opp.put("edgeAfterCosts", Math.round(netEdge * 10.0) / 10.0);
                 opp.put("expiry", expiry.toString());
                 opp.put("lotSize", lotSize);
