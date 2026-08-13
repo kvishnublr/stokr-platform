@@ -289,7 +289,6 @@ export default function OptionArbitrage() {
             { key: 'ironcondor', label: '🛡️ Iron Condor' },
             { key: 'cashsurge', label: '🔥 Cash Surge' },
             { key: 'cashswing', label: '🚀 Cash Swing' },
-            { key: 'calendar', label: '⏳ Calendar' },
             { key: 'history', label: '📊 History' },
           ].map(tab => (
             <button
@@ -367,7 +366,6 @@ export default function OptionArbitrage() {
         {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'cashswing' && <CashSwingView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'calendar' && <CalendarSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'history' && <HistoryView calendarOpportunities={calendarOpportunities} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} underlyings={underlyings} />}
       </div>
     </div>

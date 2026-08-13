@@ -194,48 +194,18 @@ public class OptionArbitrageController {
     @GetMapping("/calendar/scan")
     public ResponseEntity<Map<String, Object>> scanCalendarSpread(
             @RequestParam(defaultValue = "ALL") String underlying) {
-        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
-            return ResponseEntity.ok(Map.of(
-                "timestamp", System.currentTimeMillis(),
-                "underlying", underlying,
-                "marketClosed", true,
-                "opportunities", Collections.emptyList(),
-                "count", 0,
-                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
-            ));
-        }
-        List<String> targets = "ALL".equalsIgnoreCase(underlying)
-            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
-            : List.of(underlying);
-        Map<String, String> spotKeys = Map.of(
-            "NIFTY", "NSE:NIFTY 50",
-            "BANKNIFTY", "NSE:NIFTY BANK",
-            "MIDCPNIFTY", "NSE:NIFTY MID SELECT",
-            "FINNIFTY", "NSE:NIFTY FIN SERVICE"
-        );
-        List<Map<String, Object>> allOpps = new ArrayList<>();
-        for (String u : targets) {
-            try {
-                String spotKey = spotKeys.getOrDefault(u, "NSE:NIFTY 50");
-                String futKey = FuturesKeyResolver.resolveFuturesKey(u, spotFetcher, spotKey);
-                double[] spotFut = spotFetcher.getSpotAndFutures(spotKey, futKey);
-                double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
-                double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : spot;
-                if (spot <= 0) continue;
-                List<Map<String, Object>> opps = calendarSpreadService.scanCalendarSpreads(u, spot, fut);
-                allOpps.addAll(opps);
-            } catch (Exception e) {
-                log.error("Calendar scan error for {}: {}", u, e.getMessage());
-            }
-        }
-        Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("timestamp", System.currentTimeMillis());
-        resp.put("underlying", underlying);
-        resp.put("marketClosed", false);
-        resp.put("opportunities", allOpps);
-        resp.put("count", allOpps.size());
-        return ResponseEntity.ok(resp);
+        // Disabled: CalendarSpreadService's "expected carry" benchmark has no basis in option
+        // pricing theory (real time-value comes from vega/theta, not futures cost-of-carry),
+        // so its reported "edge" does not represent a genuine arbitrage opportunity. Re-enable
+        // only after the pricing model is rebuilt and the strategy is honestly relabeled.
+        return ResponseEntity.ok(Map.of(
+            "timestamp", System.currentTimeMillis(),
+            "underlying", underlying,
+            "disabled", true,
+            "opportunities", Collections.emptyList(),
+            "count", 0,
+            "reason", "Calendar Spread is temporarily disabled pending a pricing model review."
+        ));
     }
 
     @GetMapping("/iron-condor/scan")
