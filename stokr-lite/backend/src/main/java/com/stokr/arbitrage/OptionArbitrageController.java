@@ -32,6 +32,7 @@ public class OptionArbitrageController {
     private final OptionArbAutoExecService autoExecService;
     private final LivePositionRepository livePositionRepo;
     private final OptionArbOpportunityRepository oppRepo;
+    private final com.stokr.delivery.CashScannerService cashScannerService;
 
     private final Map<String, Object> autoExecSettings = new ConcurrentHashMap<>();
     private final List<Map<String, Object>> auditLogs = Collections.synchronizedList(new ArrayList<>());
@@ -44,7 +45,8 @@ public class OptionArbitrageController {
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
                                      LivePositionRepository livePositionRepo,
-                                     OptionArbOpportunityRepository oppRepo) {
+                                     OptionArbOpportunityRepository oppRepo,
+                                     com.stokr.delivery.CashScannerService cashScannerService) {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.bidParityService = bidParityService;
@@ -54,6 +56,7 @@ public class OptionArbitrageController {
         this.autoExecService = autoExecService;
         this.livePositionRepo = livePositionRepo;
         this.oppRepo = oppRepo;
+        this.cashScannerService = cashScannerService;
 
         autoExecSettings.put("normalParityEnabled", true);
         autoExecSettings.put("normalEntryEdge", 150.0);
@@ -362,9 +365,19 @@ public class OptionArbitrageController {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
-        resp.put("opportunities", Collections.emptyList());
-        resp.put("count", 0);
-        resp.put("message", "Cash surge scanner requires stock delivery data feed. Not available via NFO options.");
+        try {
+            List<Map<String, Object>> opps = cashScannerService.scanCashSurge();
+            resp.put("opportunities", opps);
+            resp.put("count", opps.size());
+            if (opps.isEmpty()) {
+                resp.put("message", "No delivery/volume surge setups in the latest EOD data.");
+            }
+        } catch (Exception e) {
+            log.error("Cash surge scan failed: {}", e.getMessage());
+            resp.put("opportunities", Collections.emptyList());
+            resp.put("count", 0);
+            resp.put("message", "Cash surge scan failed: " + e.getMessage());
+        }
         return ResponseEntity.ok(resp);
     }
 
@@ -373,9 +386,19 @@ public class OptionArbitrageController {
             @RequestParam(defaultValue = "ALL") String underlying) {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
-        resp.put("opportunities", Collections.emptyList());
-        resp.put("count", 0);
-        resp.put("message", "Cash momentum scanner is a stub. Implement with real stock data feed.");
+        try {
+            List<Map<String, Object>> opps = cashScannerService.scanCashSwing();
+            resp.put("opportunities", opps);
+            resp.put("count", opps.size());
+            if (opps.isEmpty()) {
+                resp.put("message", "No RSI 60-68 swing setups with sustained delivery accumulation right now.");
+            }
+        } catch (Exception e) {
+            log.error("Cash swing scan failed: {}", e.getMessage());
+            resp.put("opportunities", Collections.emptyList());
+            resp.put("count", 0);
+            resp.put("message", "Cash swing scan failed: " + e.getMessage());
+        }
         return ResponseEntity.ok(resp);
     }
 

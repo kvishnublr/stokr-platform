@@ -1789,8 +1789,8 @@ function CashSurgeView({ handleExecuteInline, executionBroker }) {
   return (
     <div className="space-y-4 w-full">
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-        <h2 className="text-base font-bold text-slate-800">🔥 10%+ Cash Surge Breakout Scanner</h2>
-        <p className="text-xs text-slate-500">Detects high-volume institutional delivery surges with 3.5x volume expansion and 87.5% est. win rate</p>
+        <h2 className="text-base font-bold text-slate-800">🔥 Cash Surge Breakout Scanner</h2>
+        <p className="text-xs text-slate-500">EOD delivery % and volume surge vs 20-day average, from real NSE bhavcopy data. Directional cash-equity risk, not arbitrage — no validated win rate.</p>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
@@ -1808,8 +1808,8 @@ function CashSurgeView({ handleExecuteInline, executionBroker }) {
                   <th className="px-2 py-2 text-right">Entry (₹)</th>
                   <th className="px-2 py-2 text-right text-emerald-600 font-bold">Target (₹)</th>
                   <th className="px-2 py-2 text-right text-red-500 font-bold">Stop Loss (₹)</th>
+                  <th className="px-2 py-2 text-center">Delivery Surge</th>
                   <th className="px-2 py-2 text-center">Volume Surge</th>
-                  <th className="px-2 py-2 text-center font-bold text-emerald-600">Win Rate</th>
                   <th className="px-2 py-2 text-center">Action</th>
                 </tr>
               </thead>
@@ -1827,8 +1827,8 @@ function CashSurgeView({ handleExecuteInline, executionBroker }) {
                         <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-800">₹{Number(opp.entryPrice || 0).toLocaleString('en-IN')}</td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">₹{Number(opp.targetPrice || 0).toLocaleString('en-IN')} (+{opp.expectedGainPct}%)</td>
                         <td className="px-2 py-1.5 text-right font-mono text-red-500 font-bold">₹{Number(opp.stopLossPrice || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-2 py-1.5 text-center font-bold text-indigo-600">{opp.deliverySurgeMultiplier || '4.0x'}</td>
-                        <td className="px-2 py-1.5 text-center font-bold text-emerald-600">{opp.winProbability || 87.5}%</td>
+                        <td className="px-2 py-1.5 text-center font-bold text-indigo-600">{opp.deliverySurgeMultiplier || '—'}</td>
+                        <td className="px-2 py-1.5 text-center font-bold text-slate-600">{opp.volumeSurgeMultiplier || '—'}</td>
                         <td className="px-2 py-1.5 text-center">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
@@ -1887,7 +1887,7 @@ function CashSwingView({ handleExecuteInline, executionBroker }) {
     <div className="space-y-4 w-full">
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <h2 className="text-base font-bold text-slate-800">🚀 2-5 Day Cash Swing Momentum Scanner</h2>
-        <p className="text-xs text-slate-500">RSI 60-68 zone momentum filter combined with NIFTY market regime trend confirmation</p>
+        <p className="text-xs text-slate-500">Real RSI(14) 60-68 zone, computed from EOD closes, filtered for sustained delivery accumulation (5d avg &gt;= 20d avg). Directional cash-equity risk — no validated win rate.</p>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
