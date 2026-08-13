@@ -1020,7 +1020,8 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       if (underlying !== 'ALL') params.underlying = underlying;
       const res = await client.get('/option-arbitrage/history', { params });
       return res.data;
-    }
+    },
+    refetchInterval: 15000
   });
 
   const liveOpps = (liveData?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) >= minEdge);
@@ -1056,16 +1057,17 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
   const { data: livePnlRes } = useQuery({
     queryKey: ['bid-parity-pnl', allIds.join(',')],
     queryFn: async () => {
-      if (allIds.length === 0) return { pnlMap: {}, statusMap: {} };
+      if (allIds.length === 0) return { pnlMap: {}, statusMap: {}, exitTimeMap: {} };
       const idsParam = allIds.slice(0, 500).join(',');
       const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: idsParam } });
-      return { pnlMap: res.data?.pnlMap || {}, statusMap: res.data?.statusMap || {} };
+      return { pnlMap: res.data?.pnlMap || {}, statusMap: res.data?.statusMap || {}, exitTimeMap: res.data?.exitTimeMap || {} };
     },
     refetchInterval: 10000,
     enabled: allIds.length > 0
   });
   const pnlMap = livePnlRes?.pnlMap || {};
   const statusMap = livePnlRes?.statusMap || {};
+  const exitTimeMap = livePnlRes?.exitTimeMap || {};
 
   const statsByUnderlying = useMemo(() => {
     return allUnds.map(u => {
@@ -1176,7 +1178,8 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                   const pnlDisplay = livePnl != null ? livePnl : (opp.pnlAfterCosts != null ? Number(opp.pnlAfterCosts) : null);
 
                   const timeStr = fmtTime(opp.scanTime || opp.entryTime);
-                  const exitStr = isExited ? fmtTime(opp.exitTime) : '';
+                  const exitTimeVal = (opp.id && exitTimeMap[String(opp.id)]) || opp.exitTime;
+                  const exitStr = isExited ? fmtTime(exitTimeVal) : '';
                   const ceVal = Number(opp.ceEntryPrice || opp.cePrice || opp.ceBid || 0).toFixed(1);
                   const peVal = Number(opp.peEntryPrice || opp.pePrice || opp.peBid || 0).toFixed(1);
                   const futVal = Number(opp.futuresPrice || 0).toFixed(1);

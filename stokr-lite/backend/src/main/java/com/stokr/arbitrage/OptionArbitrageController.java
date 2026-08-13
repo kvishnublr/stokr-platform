@@ -626,6 +626,43 @@ public class OptionArbitrageController {
                         log.debug("History live-pnl quote fetch failed: {}", e.getMessage());
                     }
 
+                    // Untraded RUNNING bid-parity signals have no LivePosition — simulate
+                    // mark-to-market P&L against live quotes and auto-exit once the edge target is hit.
+                    List<Long> missingIds = idList.stream()
+                        .filter(id -> !posByOpp.containsKey(id)).collect(Collectors.toList());
+                    Map<Long, OptionArbOpportunity> missingOppMap = new LinkedHashMap<>();
+                    if (!missingIds.isEmpty()) {
+                        for (OptionArbOpportunity o : oppRepo.findAllById(missingIds)) {
+                            missingOppMap.put(o.getId(), o);
+                        }
+                    }
+
+                    Map<String, String> spotKeyMap = Map.of(
+                        "NIFTY", "NSE:NIFTY 50", "BANKNIFTY", "NSE:NIFTY BANK",
+                        "MIDCPNIFTY", "NSE:NIFTY MID SELECT", "FINNIFTY", "NSE:NIFTY FIN SERVICE"
+                    );
+                    Map<Long, String> ceSymByOpp = new LinkedHashMap<>();
+                    Map<Long, String> peSymByOpp = new LinkedHashMap<>();
+                    List<String> bpSymbols = new ArrayList<>();
+                    for (OptionArbOpportunity o : missingOppMap.values()) {
+                        if ("RUNNING".equals(o.getStatus()) && "BID_PARITY".equals(o.getStrategyType())
+                                && o.getExpiryDate() != null && o.getStrike() != null) {
+                            try {
+                                String ceSym = optionChainService.buildNfoSymbol(o.getUnderlying(), o.getExpiryDate(), o.getStrike(), "CE");
+                                String peSym = optionChainService.buildNfoSymbol(o.getUnderlying(), o.getExpiryDate(), o.getStrike(), "PE");
+                                if (ceSym != null) { bpSymbols.add(ceSym); ceSymByOpp.put(o.getId(), ceSym); }
+                                if (peSym != null) { bpSymbols.add(peSym); peSymByOpp.put(o.getId(), peSym); }
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                    Map<String, OptionChainService.OptionQuote> bpQuotes = Map.of();
+                    try {
+                        bpQuotes = bpSymbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(bpSymbols);
+                    } catch (Exception e) {
+                        log.debug("Bid parity live-pnl quote fetch failed: {}", e.getMessage());
+                    }
+                    Map<String, double[]> futLiveByUnderlying = new LinkedHashMap<>();
+
                     for (Long oppId : idList) {
                         LivePosition pos = posByOpp.get(oppId);
                         String oppIdStr = String.valueOf(oppId);
@@ -705,26 +742,85 @@ public class OptionArbitrageController {
                         } else {
                             // No live_positions record — check opportunity status from DB
                             try {
-                                var oppOpt = oppRepo.findById(oppId);
-                                if (oppOpt.isPresent()) {
-                                    var opp = oppOpt.get();
+                                var opp = missingOppMap.get(oppId);
+                                if (opp != null) {
                                     String oppStatus = opp.getStatus() != null ? opp.getStatus() : "EXPIRED";
-                                    statusMap.put(oppIdStr, oppStatus);
 
                                     // For EXITED/CLOSED: use exitTime from live_positions or opportunity
                                     if ("EXITED".equals(oppStatus) || "CLOSED".equals(oppStatus)) {
+                                        statusMap.put(oppIdStr, oppStatus);
                                         // EXITED/CLOSED: actual P&L and exit time
                                         if (opp.getExitTime() != null) {
                                             exitTimeMap.put(oppIdStr, opp.getExitTime().toString());
                                         }
                                         pnlMap.put(oppIdStr, opp.getPnlAfterCosts() != null ? Math.round(opp.getPnlAfterCosts().doubleValue()) : 0);
                                     } else if ("EXPIRED".equals(oppStatus)) {
+                                        statusMap.put(oppIdStr, oppStatus);
                                         // EXPIRED: contract expired, never entered — show edge as potential
                                         if (opp.getExpiryDate() != null) {
                                             exitTimeMap.put(oppIdStr, opp.getExpiryDate().toString());
                                         }
                                         pnlMap.put(oppIdStr, opp.getEdgeAfterCosts() != null ? Math.round(opp.getEdgeAfterCosts().doubleValue()) : 0);
+                                    } else if ("RUNNING".equals(oppStatus) && "BID_PARITY".equals(opp.getStrategyType())) {
+                                        // RUNNING bid-parity signal, never traded — simulate live mark-to-market
+                                        // P&L against current quotes and auto-exit once edge target is hit.
+                                        String ceSym = ceSymByOpp.get(oppId);
+                                        String peSym = peSymByOpp.get(oppId);
+                                        double ceCurrent = (ceSym != null && bpQuotes.containsKey(ceSym)) ? bpQuotes.get(ceSym).lastPrice : 0;
+                                        double peCurrent = (peSym != null && bpQuotes.containsKey(peSym)) ? bpQuotes.get(peSym).lastPrice : 0;
+
+                                        double[] futSpotFut = futLiveByUnderlying.computeIfAbsent(opp.getUnderlying(), u -> {
+                                            try {
+                                                String spotKey = spotKeyMap.getOrDefault(u, "NSE:NIFTY 50");
+                                                String futKey = FuturesKeyResolver.resolveFuturesKey(u, spotFetcher, spotKey);
+                                                return spotFetcher.getSpotAndFutures(spotKey, futKey);
+                                            } catch (Exception e) {
+                                                return new double[]{0, 0};
+                                            }
+                                        });
+                                        double futCurrent = (futSpotFut != null && futSpotFut.length > 1) ? futSpotFut[1] : 0;
+
+                                        double ceEntry = opp.getCeEntryPrice() != null ? opp.getCeEntryPrice().doubleValue() : 0;
+                                        double peEntry = opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0;
+                                        double futEntry = opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0;
+                                        int lotSz = OptionChainService.getLotSize(opp.getUnderlying());
+                                        String action = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+
+                                        boolean havePrices = ceCurrent > 0 || peCurrent > 0 || futCurrent > 0;
+                                        double pnl = 0;
+                                        if (havePrices) {
+                                            if (action.contains("BUY CE +")) {
+                                                if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
+                                                if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
+                                                if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+                                            } else {
+                                                if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
+                                                if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
+                                                if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
+                                            }
+                                            pnl *= lotSz;
+                                        }
+
+                                        double edgeTarget = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0;
+                                        if (havePrices && edgeTarget > 0 && pnl >= edgeTarget) {
+                                            opp.setStatus("EXITED");
+                                            opp.setExitTime(LocalDateTime.now());
+                                            opp.setCeExitPrice(BigDecimal.valueOf(ceCurrent));
+                                            opp.setPeExitPrice(BigDecimal.valueOf(peCurrent));
+                                            opp.setExitSpotPrice(BigDecimal.valueOf(futCurrent));
+                                            opp.setPnlPoints(BigDecimal.valueOf(lotSz > 0 ? pnl / lotSz : 0));
+                                            opp.setPnlAmount(BigDecimal.valueOf(pnl));
+                                            opp.setPnlAfterCosts(BigDecimal.valueOf(pnl));
+                                            try { oppRepo.save(opp); } catch (Exception ignored) {}
+                                            statusMap.put(oppIdStr, "EXITED");
+                                            exitTimeMap.put(oppIdStr, opp.getExitTime().toString());
+                                            pnlMap.put(oppIdStr, Math.round(pnl));
+                                        } else {
+                                            statusMap.put(oppIdStr, oppStatus);
+                                            pnlMap.put(oppIdStr, havePrices ? Math.round(pnl) : null);
+                                        }
                                     } else {
+                                        statusMap.put(oppIdStr, oppStatus);
                                         // MISSED / other: never entered, no P&L, no exit
                                         pnlMap.put(oppIdStr, null);
                                     }
