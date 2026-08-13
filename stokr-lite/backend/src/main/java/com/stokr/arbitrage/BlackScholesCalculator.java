@@ -122,11 +122,15 @@ public class BlackScholesCalculator {
     }
 
     /**
-     * Put-Call Parity: synthetic futures price from call and put
-     * Synthetic = Call - Put + K * e^(-rT)
+     * Put-Call Parity: synthetic futures price from call and put.
+     * For European options priced against a futures price F (not spot), parity is
+     * C - P = e^(-rT) * (F - K), so F = K + (C - P) * e^(rT).
+     * (Previously this discounted K by e^(-rT) without growing (C-P), which compares
+     * a synthetic SPOT price against the FUTURES price and inflates the apparent
+     * edge by the futures cost-of-carry basis ~ spot * r * T.)
      */
     public static double syntheticFutures(double callPrice, double putPrice, double K, double r, double T) {
-        return callPrice - putPrice + K * Math.exp(-r * T);
+        return K + (callPrice - putPrice) * Math.exp(r * T);
     }
 
     /**
