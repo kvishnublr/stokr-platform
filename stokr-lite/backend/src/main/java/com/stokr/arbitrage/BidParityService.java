@@ -2,6 +2,7 @@ package com.stokr.arbitrage;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -52,6 +53,20 @@ public class BidParityService {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.spotPriceFetcher = spotPriceFetcher;
+    }
+
+    /**
+     * Continuous background scan so opportunities are detected as soon as they appear,
+     * not only when someone happens to have the dashboard open. Same 15s cadence used
+     * elsewhere in this codebase for market data (see ActiveSymbolPoller).
+     */
+    @Scheduled(cron = "0/15 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void scheduledScan() {
+        try {
+            scanBidParity("ALL");
+        } catch (Exception e) {
+            log.error("Scheduled bid parity scan failed: {}", e.getMessage(), e);
+        }
     }
 
     public List<Map<String, Object>> scanBidParity(String underlying) {

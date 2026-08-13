@@ -1006,7 +1006,7 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
       const res = await client.get('/option-arbitrage/bid-parity/scan', { params: { underlying } });
       return res.data;
     },
-    refetchInterval: 30000
+    refetchInterval: 15000
   });
 
   const today = new Date().toLocaleDateString('en-CA');
