@@ -3,6 +3,7 @@ package com.stokr.engine;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -63,6 +64,7 @@ public class PairsLiveController {
     }
 
     @PostMapping("/mode")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, String>> setMode(@RequestParam String mode) {
         if (!mode.equals("PAPER") && !mode.equals("LIVE")) {
             return ResponseEntity.badRequest().body(Map.of("error", "mode must be PAPER or LIVE"));
