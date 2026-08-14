@@ -26,6 +26,17 @@ public class BidParityService {
     private static final int MIN_VOLUME = 500;
     private static final int MIN_OI = 2000;
 
+    /**
+     * Last known-good futures price per underlying, used to sanity-check freshly resolved
+     * fut prices. FuturesKeyResolver can occasionally resolve to the wrong contract month
+     * (e.g. next month instead of the current one) on a transient quote-fetch blip -- since
+     * different months trade at genuinely different levels, that produces a fake ~1%+ "parity
+     * deviation" against same-month options that isn't real mispricing. A sudden implausible
+     * jump vs the last reading is a strong signal of exactly that, not a real market move.
+     */
+    private final Map<String, Double> lastValidFut = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final double MAX_FUT_JUMP_PCT = 0.02;
+
     private static final Map<String, double[]> DTE_RANGES = Map.of(
         "NIFTY", new double[]{0.0, 60.0},
         "BANKNIFTY", new double[]{0.0, 60.0},
@@ -105,6 +116,17 @@ public class BidParityService {
         double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
         double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
         double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : spot;
+
+        Double lastFut = lastValidFut.get(underlying);
+        if (lastFut != null && lastFut > 0 && fut > 0) {
+            double jumpPct = Math.abs(fut - lastFut) / lastFut;
+            if (jumpPct > MAX_FUT_JUMP_PCT) {
+                log.warn("Rejecting implausible fut jump for {}: last={} new={} ({}%) -- likely wrong contract month resolved, using last known-good value",
+                    underlying, lastFut, fut, Math.round(jumpPct * 10000.0) / 100.0);
+                fut = lastFut;
+            }
+        }
+        if (fut > 0) lastValidFut.put(underlying, fut);
 
         if (spot <= 0 && fut > 0) spot = fut;
         if (fut <= 0 && spot > 0) fut = spot;
