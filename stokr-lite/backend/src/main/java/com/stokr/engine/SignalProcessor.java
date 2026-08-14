@@ -1,6 +1,7 @@
 package com.stokr.engine;
 
 import com.stokr.marketdata.Candle;
+import com.stokr.marketdata.DailyCandleBuilder;
 import com.stokr.marketdata.MarketDataService;
 import com.stokr.marketdata.Universe;
 import com.stokr.marketdata.ZerodhaLiveDataScheduler;
@@ -33,8 +34,17 @@ public class SignalProcessor {
     private final EntryManager entryManager;
     private final SignalRepository signalRepository;
     private final Universe universe;
+    private final DailyCandleBuilder dailyCandleBuilder;
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    /**
+     * These strategies are written around multi-day-hold, daily-bar logic (e.g. 50-day EMA,
+     * RSI(14) over trading days) -- they need real daily candles, not 1-minute intraday bars.
+     */
+    private static final java.util.Set<String> DAILY_CANDLE_STRATEGY_TYPES = java.util.Set.of(
+        "OVERSOLD_BOUNCE", "EMA50_DISTANCE", "THREE_RED_DAYS", "RSI_OVERSOLD");
+    private static final int DAILY_LOOKBACK_DAYS = 90;
 
     public void processDeployment(Deployment deployment) {
         try {
@@ -45,9 +55,13 @@ public class SignalProcessor {
             LocalDateTime todayOpen = LocalDate.now(IST).atTime(9, 15);
             List<String> symbols = universe.getSymbols();
 
+            boolean dailyStrategy = DAILY_CANDLE_STRATEGY_TYPES.contains(strategy.getStrategyType());
+
             for (String symbol : symbols) {
                 try {
-                    List<Candle> candles = marketDataService.getCandlesBetween(symbol, "1min", todayOpen, istNow);
+                    List<Candle> candles = dailyStrategy
+                        ? dailyCandleBuilder.build(symbol, DAILY_LOOKBACK_DAYS)
+                        : marketDataService.getCandlesBetween(symbol, "1min", todayOpen, istNow);
                     if (candles.size() < 16) continue;
 
                     BigDecimal ltp = candles.get(candles.size() - 1).close();
