@@ -139,8 +139,10 @@ public class VerticalSpreadService {
         // possible liability (width) -- net edge = credit - width.
         double sellCredit = c1.bid - c2.ask;
         if (sellCredit > width) {
+            double turnover = (c1.bid + c2.ask) * lotSize;
+            double stt = c1.bid * lotSize * ArbitrageCosts.STT_OPTION_SELL + c2.ask * lotSize * ArbitrageCosts.STT_OPTION_BUY;
             addOpportunity(opps, underlying, expiry, k1, k2, width, "CE", "SELL_SPREAD",
-                sellCredit - width, c1.bid, c2.ask, lotSize, spot, fut,
+                sellCredit - width, stt, turnover, lotSize, spot, fut,
                 String.format("SELL %d CE @ %.1f | BUY %d CE @ %.1f", k1, c1.bid, k2, c2.ask));
             return;
         }
@@ -149,8 +151,10 @@ public class VerticalSpreadService {
         // cost) -- you're paid now to hold a position worth >= 0 at expiry.
         double buyCost = c1.ask - c2.bid;
         if (buyCost < 0) {
+            double turnover = (c1.ask + c2.bid) * lotSize;
+            double stt = c1.ask * lotSize * ArbitrageCosts.STT_OPTION_BUY + c2.bid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
             addOpportunity(opps, underlying, expiry, k1, k2, width, "CE", "BUY_SPREAD",
-                -buyCost, c1.ask, c2.bid, lotSize, spot, fut,
+                -buyCost, stt, turnover, lotSize, spot, fut,
                 String.format("BUY %d CE @ %.1f | SELL %d CE @ %.1f", k1, c1.ask, k2, c2.bid));
         }
     }
@@ -166,8 +170,10 @@ public class VerticalSpreadService {
         // Direction A: sell the spread (sell K2 put, buy K1 put) for more credit than width.
         double sellCredit = p2.bid - p1.ask;
         if (sellCredit > width) {
+            double turnover = (p2.bid + p1.ask) * lotSize;
+            double stt = p2.bid * lotSize * ArbitrageCosts.STT_OPTION_SELL + p1.ask * lotSize * ArbitrageCosts.STT_OPTION_BUY;
             addOpportunity(opps, underlying, expiry, k1, k2, width, "PE", "SELL_SPREAD",
-                sellCredit - width, p2.bid, p1.ask, lotSize, spot, fut,
+                sellCredit - width, stt, turnover, lotSize, spot, fut,
                 String.format("SELL %d PE @ %.1f | BUY %d PE @ %.1f", k2, p2.bid, k1, p1.ask));
             return;
         }
@@ -175,24 +181,24 @@ public class VerticalSpreadService {
         // Direction B: buy the spread (buy K2 put, sell K1 put) for a net credit.
         double buyCost = p2.ask - p1.bid;
         if (buyCost < 0) {
+            double turnover = (p2.ask + p1.bid) * lotSize;
+            double stt = p2.ask * lotSize * ArbitrageCosts.STT_OPTION_BUY + p1.bid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
             addOpportunity(opps, underlying, expiry, k1, k2, width, "PE", "BUY_SPREAD",
-                -buyCost, p2.ask, p1.bid, lotSize, spot, fut,
+                -buyCost, stt, turnover, lotSize, spot, fut,
                 String.format("BUY %d PE @ %.1f | SELL %d PE @ %.1f", k2, p2.ask, k1, p1.bid));
         }
     }
 
     private void addOpportunity(List<ArbitrageOpportunity> opps, String underlying, LocalDate expiry,
                                  int k1, int k2, double width, String optionType, String direction,
-                                 double edgePoints, double priceNear, double priceFar,
+                                 double edgePoints, double stt, double turnover,
                                  int lotSize, double spot, double fut, String legs) {
         double grossEdge = edgePoints * lotSize;
 
-        // 2-leg fee estimate: one buy + one sell option order, real STT/brokerage/exchange/GST/stamp.
-        double sttBuy = priceFar * lotSize * ArbitrageCosts.STT_OPTION_BUY;
-        double sttSell = priceNear * lotSize * ArbitrageCosts.STT_OPTION_SELL;
-        double stt = sttBuy + sttSell;
+        // 2-leg fee estimate: one buy + one sell option order, real STT/brokerage/exchange/GST/stamp,
+        // computed by the caller per-direction (STT rate depends on which leg is actually bought
+        // vs sold, which differs between the two violation directions).
         double brokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 2;
-        double turnover = (priceNear + priceFar) * lotSize;
         double exchange = turnover * ArbitrageCosts.EXCHANGE_RATE;
         double sebi = turnover * ArbitrageCosts.SEBI_RATE;
         double gst = (brokerage + exchange + sebi) * ArbitrageCosts.GST_RATE;

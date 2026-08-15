@@ -137,13 +137,21 @@ public class BoxSpreadService {
                     double buyBoxCost = ce1Ask - pe1Bid - ce2Bid + pe2Ask;
                     double buyBoxEdgePoints = width - buyBoxCost;
                     double grossBuyEdge = buyBoxEdgePoints * lotSize;
-                    double brokerage = 120.0;
-                    double stt = grossBuyEdge * 0.001;
-                    double exchange = grossBuyEdge * 0.000345 * 4;
-                    double sebi = grossBuyEdge * 0.00001;
-                    double gst = (brokerage + exchange + sebi) * 0.18;
-                    double ipft = grossBuyEdge * 0.00001;
-                    double totalCosts = stt + brokerage + exchange + sebi + gst + ipft;
+
+                    // Real STT/brokerage/exchange/GST/stamp computed from actual quoted prices
+                    // (turnover-based, matching Vertical/Butterfly/Condor) -- NOT a percentage
+                    // of the edge itself, which massively understates real costs since the
+                    // edge is supposed to be small while the actual premium turnover is not.
+                    double turnover = (ce1Ask + pe1Bid + ce2Bid + pe2Ask) * lotSize;
+                    double sttBuy = (ce1Ask + pe2Ask) * lotSize * ArbitrageCosts.STT_OPTION_BUY;
+                    double sttSell = (pe1Bid + ce2Bid) * lotSize * ArbitrageCosts.STT_OPTION_SELL;
+                    double stt = sttBuy + sttSell;
+                    double brokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 4;
+                    double exchange = turnover * ArbitrageCosts.EXCHANGE_RATE;
+                    double sebi = turnover * ArbitrageCosts.SEBI_RATE;
+                    double gst = (brokerage + exchange + sebi) * ArbitrageCosts.GST_RATE;
+                    double stamp = turnover * ArbitrageCosts.STAMP_RATE;
+                    double totalCosts = stt + brokerage + exchange + sebi + gst + stamp;
                     double netBuyEdge = grossBuyEdge - totalCosts;
 
                     if (k1 == atmStrike || (i == 0 && j == strikes.size() - 1)) {
@@ -183,9 +191,69 @@ public class BoxSpreadService {
                         costs.put("exchange", Math.round(exchange * 100.0) / 100.0);
                         costs.put("sebi", Math.round(sebi * 100.0) / 100.0);
                         costs.put("gst", Math.round(gst * 100.0) / 100.0);
-                        costs.put("ipft", Math.round(ipft * 100.0) / 100.0);
+                        costs.put("stamp", Math.round(stamp * 100.0) / 100.0);
                         costs.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
                         costs.put("netEdge", Math.round(netBuyEdge * 100.0) / 100.0);
+                        opp.costBreakdown = costs;
+
+                        opps.add(opp);
+                        continue;
+                    }
+
+                    // Short box: sell CE1, buy PE1, buy CE2, sell PE2 -- a box's payoff at
+                    // expiry is exactly `width`, always. If you can collect MORE than width
+                    // selling it, that's equally a locked-in profit as buying it for less.
+                    double sellBoxCredit = ce1.bid - pe1.ask - ce2.ask + pe2.bid;
+                    double sellBoxEdgePoints = sellBoxCredit - width;
+                    if (sellBoxEdgePoints <= 0) continue;
+
+                    double grossSellEdge = sellBoxEdgePoints * lotSize;
+                    double sellTurnover = (ce1.bid + pe1.ask + ce2.ask + pe2.bid) * lotSize;
+                    double sellSttSell = (ce1.bid + pe2.bid) * lotSize * ArbitrageCosts.STT_OPTION_SELL;
+                    double sellSttBuy = (pe1.ask + ce2.ask) * lotSize * ArbitrageCosts.STT_OPTION_BUY;
+                    double sellStt = sellSttSell + sellSttBuy;
+                    double sellBrokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 4;
+                    double sellExchange = sellTurnover * ArbitrageCosts.EXCHANGE_RATE;
+                    double sellSebi = sellTurnover * ArbitrageCosts.SEBI_RATE;
+                    double sellGst = (sellBrokerage + sellExchange + sellSebi) * ArbitrageCosts.GST_RATE;
+                    double sellStamp = sellTurnover * ArbitrageCosts.STAMP_RATE;
+                    double sellTotalCosts = sellStt + sellBrokerage + sellExchange + sellSebi + sellGst + sellStamp;
+                    double netSellEdge = grossSellEdge - sellTotalCosts;
+
+                    if (netSellEdge >= MIN_BOX_EDGE_AFTER_COSTS) {
+                        long daysToExpiry = java.time.Duration.between(
+                            LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays();
+
+                        ArbitrageOpportunity opp = new ArbitrageOpportunity();
+                        opp.underlying = underlying;
+                        opp.strike = k1;
+                        opp.type = "BOX_SPREAD";
+                        opp.action = "SHORT BOX (" + k1 + "/" + k2 + ")";
+                        opp.legs = String.format("SELL %d CE @ %.1f | BUY %d PE @ %.1f | BUY %d CE @ %.1f | SELL %d PE @ %.1f",
+                            k1, ce1.bid, k1, pe1.ask, k2, ce2.ask, k2, pe2.bid);
+                        opp.description = String.format("Width=%d | Credit=%.1f | Net=%.1f", (int) width, sellBoxCredit, netSellEdge);
+                        opp.spotPrice = spotPrice;
+                        opp.futuresPrice = futuresPrice;
+                        opp.cePrice = ce1.lastPrice;
+                        opp.pePrice = pe1.lastPrice;
+                        opp.ceBid = ce1.bid;
+                        opp.ceAsk = ce1.ask;
+                        opp.peBid = pe1.bid;
+                        opp.peAsk = pe1.ask;
+                        opp.edgePoints = Math.round(sellBoxEdgePoints * 100.0) / 100.0;
+                        opp.edgeAfterCosts = Math.round(netSellEdge * 100.0) / 100.0;
+                        opp.daysToExpiry = daysToExpiry;
+                        opp.confidence = 95.0;
+
+                        Map<String, Double> costs = new LinkedHashMap<>();
+                        costs.put("stt", Math.round(sellStt * 100.0) / 100.0);
+                        costs.put("brokerage", sellBrokerage);
+                        costs.put("exchange", Math.round(sellExchange * 100.0) / 100.0);
+                        costs.put("sebi", Math.round(sellSebi * 100.0) / 100.0);
+                        costs.put("gst", Math.round(sellGst * 100.0) / 100.0);
+                        costs.put("stamp", Math.round(sellStamp * 100.0) / 100.0);
+                        costs.put("totalCosts", Math.round(sellTotalCosts * 100.0) / 100.0);
+                        costs.put("netEdge", Math.round(netSellEdge * 100.0) / 100.0);
                         opp.costBreakdown = costs;
 
                         opps.add(opp);
