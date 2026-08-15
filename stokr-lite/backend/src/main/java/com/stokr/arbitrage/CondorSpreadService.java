@@ -200,6 +200,7 @@ public class CondorSpreadService {
         opp.futuresPrice = fut;
         opp.edgePoints = Math.round(edgePoints * 100.0) / 100.0;
         opp.edgeAfterCosts = Math.round(netEdge * 100.0) / 100.0;
+        opp.daysToExpiry = java.time.Duration.between(LocalDate.now().atStartOfDay(), expiry.atStartOfDay()).toDays();
         opp.confidence = 95.0;
 
         Map<String, Double> costs = new LinkedHashMap<>();
