@@ -162,6 +162,16 @@ export default function OptionArbitrage() {
     refetchInterval: 30000
   });
 
+  // Butterfly Spread Scan Query
+  const { data: butterflyLiveData } = useQuery({
+    queryKey: ['butterfly-scan-fallback'],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/butterfly-spread/scan', { params: { underlying: 'ALL' } });
+      return res.data;
+    },
+    refetchInterval: 30000
+  });
+
   // History & Signals Log Query - fetches up to 50K, server-side date filtered
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['option-arb-history', maxSignals],
@@ -181,6 +191,7 @@ export default function OptionArbitrage() {
   const opportunities = liveData?.opportunities || [];
   const calendarOpportunities = calendarLiveData?.opportunities || [];
   const verticalOpportunities = verticalLiveData?.opportunities || [];
+  const butterflyOpportunities = butterflyLiveData?.opportunities || [];
   const summary = liveData?.summary || {};
   const historyItems = historyData?.items || [];
 
@@ -296,6 +307,7 @@ export default function OptionArbitrage() {
             { key: 'bidparity', label: '🎯 Bid Parity' },
             { key: 'box', label: '💎 Box Spread' },
             { key: 'vertical', label: '📐 Vertical Spread' },
+            { key: 'butterfly', label: '🦋 Butterfly Spread' },
             { key: 'autotrade', label: '🤖 Auto-Trade' },
             { key: 'papertrades', label: '📋 Paper Trades' },
             { key: 'ironcondor', label: '🛡️ Iron Condor' },
@@ -365,6 +377,7 @@ export default function OptionArbitrage() {
             opportunities={opportunities}
             calendarOpportunities={calendarOpportunities}
             verticalOpportunities={verticalOpportunities}
+            butterflyOpportunities={butterflyOpportunities}
             summary={summary}
             scanLoading={scanLoading}
             handleExecuteInline={handleExecuteInline}
@@ -377,6 +390,7 @@ export default function OptionArbitrage() {
         {activeTab === 'papertrades' && <PaperTradesView />}
         {activeTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'vertical' && <VerticalSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
+        {activeTab === 'butterfly' && <ButterflySpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'ironcondor' && <IronCondorView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'cashsurge' && <CashSurgeView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'cashswing' && <CashSwingView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
@@ -731,7 +745,7 @@ function SubTabButton({ id, label, active, onClick, count }) {
 }
 
 /* 1. SIGNALS VIEW */
-function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpportunities, verticalOpportunities, summary, scanLoading, handleExecuteInline, executionBroker }) {
+function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpportunities, verticalOpportunities, butterflyOpportunities, summary, scanLoading, handleExecuteInline, executionBroker }) {
   const [strategyTypeFilter, setStrategyTypeFilter] = useState('ALL');
   const [minEdge, setMinEdge] = useState(300);
   const [customEdge, setCustomEdge] = useState('');
@@ -755,8 +769,8 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
       legs: `BUY NEAR (${c.nearSymbol || ''} @ ₹${c.nearPrice}) | SELL FAR (${c.farSymbol || ''} @ ₹${c.farPrice})`
     }));
 
-    return [...opportunities, ...mappedCal, ...(verticalOpportunities || [])];
-  }, [opportunities, calendarOpportunities, verticalOpportunities]);
+    return [...opportunities, ...mappedCal, ...(verticalOpportunities || []), ...(butterflyOpportunities || [])];
+  }, [opportunities, calendarOpportunities, verticalOpportunities, butterflyOpportunities]);
 
   const filteredOpps = useMemo(() => {
     return combinedOpps.filter(o => {
@@ -764,6 +778,7 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
       if (strategyTypeFilter === 'PARITY' && !typeStr.includes('PARITY') && !typeStr.includes('BID')) return false;
       if (strategyTypeFilter === 'BOX' && !typeStr.includes('BOX')) return false;
       if (strategyTypeFilter === 'VERTICAL' && !typeStr.includes('VERTICAL')) return false;
+      if (strategyTypeFilter === 'BUTTERFLY' && !typeStr.includes('BUTTERFLY')) return false;
       if (strategyTypeFilter === 'CALENDAR' && !typeStr.includes('CALENDAR') && !typeStr.includes('TIME')) return false;
       if (strategyTypeFilter === 'CONDOR' && !typeStr.includes('CONDOR') && !typeStr.includes('IRON')) return false;
       if ((Number(o.edgeAfterCosts) || 0) < minEdge) return false;
@@ -817,6 +832,7 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
             { id: 'PARITY', label: '⚡ Bid Parity' },
             { id: 'BOX', label: '💎 Box Spread' },
             { id: 'VERTICAL', label: '📐 Vertical' },
+            { id: 'BUTTERFLY', label: '🦋 Butterfly' },
             { id: 'CALENDAR', label: '⏳ Calendar' },
             { id: 'CONDOR', label: '🛡️ Condor' },
           ].map(f => (
@@ -1761,6 +1777,219 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
   );
 }
 
+/* 3c. BUTTERFLY SPREAD VIEW */
+function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
+  const [underlying, setUnderlying] = useState('ALL');
+  const [minEdge, setMinEdge] = useState(0);
+  const [customEdge, setCustomEdge] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+  const [sortCol, setSortCol] = useState('scanTime');
+  const [sortAsc, setSortAsc] = useState(false);
+  const [histPage, setHistPage] = useState(0);
+  const PAGE_SIZE = 200;
+
+  const { data: liveData, isLoading } = useQuery({
+    queryKey: ['butterfly-spread-scan', underlying],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/butterfly-spread/scan', { params: { underlying } });
+      return res.data;
+    },
+    refetchInterval: 30000
+  });
+
+  const histDate = new Date(); histDate.setDate(histDate.getDate() - 6);
+  const today2 = histDate.toISOString().split('T')[0];
+  const todayEnd = new Date().toISOString().split('T')[0];
+
+  const { data: historyData } = useQuery({
+    queryKey: ['butterfly-history', underlying, histPage],
+    queryFn: async () => {
+      const params = { page: histPage, size: PAGE_SIZE, strategyType: 'BUTTERFLY_SPREAD', startDate: today2, endDate: todayEnd };
+      if (underlying !== 'ALL') params.underlying = underlying;
+      const res = await client.get('/option-arbitrage/history', { params });
+      return res.data;
+    }
+  });
+
+  const liveOpps = (liveData?.opportunities || []).filter(o => (o.edgeAfterCosts || 0) >= minEdge);
+  const historyOpps = (historyData?.items || []).filter(i => (i.edgeAfterCosts || 0) >= minEdge);
+
+  const allOpps = [...liveOpps];
+  const liveIds = new Set(liveOpps.map(o => o.id));
+  historyOpps.forEach(h => { if (!liveIds.has(h.id)) allOpps.push(h); });
+
+  const filteredByUnderlying = underlying === 'ALL' ? allOpps : allOpps.filter(o => o.underlying === underlying);
+  const totalHistory = historyData?.totalElements || 0;
+  const totalHistoryPages = historyData?.totalPages || 0;
+
+  const bfAllIds = allOpps.filter(o => o.id).map(o => o.id);
+  const { data: bfLivePnlRes } = useQuery({
+    queryKey: ['butterfly-pnl', bfAllIds.join(',')],
+    queryFn: async () => {
+      if (bfAllIds.length === 0) return { pnlMap: {}, statusMap: {} };
+      const idsParam = bfAllIds.slice(0, 500).join(',');
+      const res = await client.get('/option-arbitrage/history/live-pnl', { params: { ids: idsParam } });
+      return { pnlMap: res.data?.pnlMap || {}, statusMap: res.data?.statusMap || {} };
+    },
+    refetchInterval: 10000,
+    enabled: bfAllIds.length > 0
+  });
+  const bfPnlMap = bfLivePnlRes?.pnlMap || {};
+  const bfStatusMap = bfLivePnlRes?.statusMap || {};
+
+  const sortedOpps = [...filteredByUnderlying].sort((a, b) => {
+    let va, vb;
+    if (sortCol === 'scanTime') { va = a.scanTime || a.entryTime || ''; vb = b.scanTime || b.entryTime || ''; }
+    else if (sortCol === 'underlying') { va = a.underlying || ''; vb = b.underlying || ''; }
+    else if (sortCol === 'edge') { va = a.edgeAfterCosts || 0; vb = b.edgeAfterCosts || 0; }
+    else if (sortCol === 'pnl') { va = a.pnlAfterCosts || 0; vb = b.pnlAfterCosts || 0; }
+    else { va = a[sortCol] || ''; vb = b[sortCol] || ''; }
+    if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortAsc ? va - vb : vb - va;
+  });
+  const toggleSort = (col) => { if (sortCol === col) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(false); } };
+  const sortIcon = (col) => sortCol === col ? (sortAsc ? ' ▲' : ' ▼') : ' ↕';
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">Butterfly Spread No-Arbitrage Bound Scanner</h2>
+          <p className="text-xs text-slate-500">{sortedOpps.length} signals shown{totalHistory > 0 ? ` of ${totalHistory.toLocaleString('en-IN')} total today` : ''} — model-free convexity bound (0 ≤ price ≤ width), no interest-rate or futures assumption</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button key={u} onClick={() => { setUnderlying(u); setHistPage(0); }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-fuchsia-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              {u}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          <span className="text-[10px] font-bold text-slate-500 px-1">EDGE ≥</span>
+          {[0, 100, 300].map(e => (
+            <button key={e} onClick={() => { setMinEdge(e); setCustomEdge(''); setHistPage(0); }}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${minEdge === e && !customEdge ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              ₹{e}
+            </button>
+          ))}
+          <input type="number" placeholder="Custom" value={customEdge} onChange={e => { setCustomEdge(e.target.value); setMinEdge(Number(e.target.value) || 0); setHistPage(0); }}
+            className="w-16 px-1.5 py-1 rounded-lg text-[10px] font-bold border border-slate-300 focus:outline-none focus:border-emerald-500" />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning Butterfly Spreads...</div>
+        ) : sortedOpps.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No butterfly spread bound violations for {underlying}</div>
+        ) : (
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('scanTime')}>Time{sortIcon('scanTime')}</th>
+                  <th className="px-2 py-2 cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('underlying')}>Symbol{sortIcon('underlying')}</th>
+                  <th className="px-2 py-2">Strikes</th>
+                  <th className="px-2 py-2">Action</th>
+                  <th className="px-2 py-2 text-right text-emerald-600 font-bold cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('edge')}>Net Edge{sortIcon('edge')}</th>
+                  <th className="px-2 py-2 text-center">Status</th>
+                  <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('pnl')}>P&amp;L{sortIcon('pnl')}</th>
+                  <th className="px-2 py-2 text-center">Exit</th>
+                  <th className="px-2 py-2 text-center">Trade</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {sortedOpps.map((opp, idx) => {
+                  const isExp = expandedId === (opp.id || idx);
+                  const posStatus = opp.id && bfStatusMap[String(opp.id)] ? String(bfStatusMap[String(opp.id)]).toUpperCase() : null;
+                  const statusStr = posStatus || String(opp.status || 'RUNNING').toUpperCase();
+                  const isLive = statusStr === 'RUNNING' || statusStr === 'OPEN' || statusStr === 'DETECTED' || statusStr === 'EXECUTING';
+                  const isExited = statusStr === 'EXITED' || statusStr === 'CLOSED';
+                  const livePnl = opp.id && bfPnlMap[String(opp.id)] != null ? Number(bfPnlMap[String(opp.id)]) : null;
+                  const pnlDisplay = livePnl != null ? livePnl : (opp.pnlAfterCosts != null ? Number(opp.pnlAfterCosts) : null);
+                  const strikeMatch = opp.action ? opp.action.match(/\((\d+)\/(\d+)\/(\d+)\)/) : null;
+                  const strike1 = strikeMatch ? strikeMatch[1] : (opp.strike || 0);
+                  const strike2 = strikeMatch ? strikeMatch[2] : '';
+                  const strike3 = strikeMatch ? strikeMatch[3] : '';
+                  const edgeVal = Number(opp.edgeAfterCosts || 0);
+
+                  const timeStr = fmtTime(opp.scanTime || opp.entryTime);
+                  const exitStr = isExited ? fmtTime(opp.exitTime) : '';
+
+                  return (
+                    <React.Fragment key={opp.id || idx}>
+                      <tr onClick={() => setExpandedId(isExp ? null : (opp.id || idx))}
+                        className={`transition cursor-pointer ${isExp ? 'bg-fuchsia-50/70 border-l-4 border-fuchsia-600' : 'hover:bg-slate-50'}`}>
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{timeStr}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-800">{opp.underlying}</td>
+                        <td className="px-2 py-1.5 font-bold text-slate-700">{strike1}/{strike2}/{strike3}</td>
+                        <td className="px-2 py-1.5 font-bold text-fuchsia-700 truncate max-w-[160px]">{opp.action}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-600">
+                          +₹{Math.round(edgeVal).toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold border ${
+                            isLive ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                            isExited ? 'bg-slate-200 text-slate-600 border-slate-300' :
+                            statusStr === 'EXPIRED' ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                            'bg-blue-100 text-blue-800 border-blue-300'
+                          }`}>
+                            {isLive ? '🟢 RUNNING' : isExited ? '⏹ EXITED' : statusStr === 'EXPIRED' ? '⏰ EXPIRED' : statusStr}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold">
+                          {pnlDisplay != null && !isNaN(pnlDisplay)
+                            ? <span className={pnlDisplay >= 0 ? 'text-emerald-600' : 'text-red-600'}>₹{Math.round(pnlDisplay).toLocaleString('en-IN')}</span>
+                            : <span className="text-slate-400">--</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-500">{exitStr}</td>
+                        <td className="px-2 py-1.5 text-center">
+                          <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }}
+                            className="px-2 py-0.5 bg-fuchsia-600 text-white text-[10px] font-bold rounded shadow-sm">
+                            ⚡ Trade
+                          </button>
+                        </td>
+                      </tr>
+                      {isExp && (
+                        <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
+                          <td colSpan={9} className="p-3">
+                            <div className="bg-white rounded-xl p-3 border border-fuchsia-200 shadow-md space-y-2">
+                              <span className="font-bold text-slate-800 text-xs uppercase block">Butterfly Spread Breakdown:</span>
+                              <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
+                              <p className="text-[10px] text-slate-500">{opp.description}</p>
+                              <div className="flex justify-end pt-1">
+                                <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-fuchsia-600 text-white rounded-lg text-xs font-bold shadow-md">
+                                  ⚡ Submit ({executionBroker})
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {totalHistoryPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50">
+            <span className="text-xs text-slate-500">Page {histPage + 1} of {totalHistoryPages} ({totalHistory.toLocaleString('en-IN')} signals today)</span>
+            <div className="flex gap-1">
+              <button disabled={histPage === 0} onClick={() => setHistPage(0)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">First</button>
+              <button disabled={histPage === 0} onClick={() => setHistPage(histPage - 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Prev</button>
+              <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(histPage + 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Next</button>
+              <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(totalHistoryPages - 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Last</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* 4. 0DTE IRON CONDOR VIEW */
 function IronCondorView({ handleExecuteInline, executionBroker }) {
   const [underlying, setUnderlying] = useState('ALL');
@@ -2576,7 +2805,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
   };
 
   const dr = getDateRange();
-  const strategyParam = strategyFilter === 'PARITY' ? 'BID_PARITY' : strategyFilter === 'BOX' ? 'BOX_SPREAD' : strategyFilter === 'VERTICAL' ? 'VERTICAL_SPREAD' : strategyFilter === 'CONDOR' ? 'IRON_CONDOR' : null;
+  const strategyParam = strategyFilter === 'PARITY' ? 'BID_PARITY' : strategyFilter === 'BOX' ? 'BOX_SPREAD' : strategyFilter === 'VERTICAL' ? 'VERTICAL_SPREAD' : strategyFilter === 'BUTTERFLY' ? 'BUTTERFLY_SPREAD' : strategyFilter === 'CONDOR' ? 'IRON_CONDOR' : null;
   const underlyingParam = underlyingFilter !== 'ALL' ? underlyingFilter : null;
 
   const { data: histData, isLoading: histLoading } = useQuery({
@@ -2787,6 +3016,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                 { id: 'PARITY', label: '⚡ Parity' },
                 { id: 'BOX', label: '💎 Box' },
                 { id: 'VERTICAL', label: '📐 Vertical' },
+                { id: 'BUTTERFLY', label: '🦋 Butterfly' },
                 { id: 'CALENDAR', label: '⏳ Calendar' },
                 { id: 'CONDOR', label: '🛡️ Condor' },
               ].map(s => (
