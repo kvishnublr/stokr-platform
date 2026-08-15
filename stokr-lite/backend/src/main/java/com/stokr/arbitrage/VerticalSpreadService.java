@@ -143,7 +143,8 @@ public class VerticalSpreadService {
             double stt = c1.bid * lotSize * ArbitrageCosts.STT_OPTION_SELL + c2.ask * lotSize * ArbitrageCosts.STT_OPTION_BUY;
             addOpportunity(opps, underlying, expiry, k1, k2, width, "CE", "SELL_SPREAD",
                 sellCredit - width, stt, turnover, lotSize, spot, fut,
-                String.format("SELL %d CE @ %.1f | BUY %d CE @ %.1f", k1, c1.bid, k2, c2.ask));
+                String.format("SELL %d CE @ %.1f | BUY %d CE @ %.1f", k1, c1.bid, k2, c2.ask),
+                List.of(leg(k1, "CE", "SELL", 1, c1.bid), leg(k2, "CE", "BUY", 1, c2.ask)));
             return;
         }
 
@@ -155,7 +156,8 @@ public class VerticalSpreadService {
             double stt = c1.ask * lotSize * ArbitrageCosts.STT_OPTION_BUY + c2.bid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
             addOpportunity(opps, underlying, expiry, k1, k2, width, "CE", "BUY_SPREAD",
                 -buyCost, stt, turnover, lotSize, spot, fut,
-                String.format("BUY %d CE @ %.1f | SELL %d CE @ %.1f", k1, c1.ask, k2, c2.bid));
+                String.format("BUY %d CE @ %.1f | SELL %d CE @ %.1f", k1, c1.ask, k2, c2.bid),
+                List.of(leg(k1, "CE", "BUY", 1, c1.ask), leg(k2, "CE", "SELL", 1, c2.bid)));
         }
     }
 
@@ -174,7 +176,8 @@ public class VerticalSpreadService {
             double stt = p2.bid * lotSize * ArbitrageCosts.STT_OPTION_SELL + p1.ask * lotSize * ArbitrageCosts.STT_OPTION_BUY;
             addOpportunity(opps, underlying, expiry, k1, k2, width, "PE", "SELL_SPREAD",
                 sellCredit - width, stt, turnover, lotSize, spot, fut,
-                String.format("SELL %d PE @ %.1f | BUY %d PE @ %.1f", k2, p2.bid, k1, p1.ask));
+                String.format("SELL %d PE @ %.1f | BUY %d PE @ %.1f", k2, p2.bid, k1, p1.ask),
+                List.of(leg(k2, "PE", "SELL", 1, p2.bid), leg(k1, "PE", "BUY", 1, p1.ask)));
             return;
         }
 
@@ -185,14 +188,16 @@ public class VerticalSpreadService {
             double stt = p2.ask * lotSize * ArbitrageCosts.STT_OPTION_BUY + p1.bid * lotSize * ArbitrageCosts.STT_OPTION_SELL;
             addOpportunity(opps, underlying, expiry, k1, k2, width, "PE", "BUY_SPREAD",
                 -buyCost, stt, turnover, lotSize, spot, fut,
-                String.format("BUY %d PE @ %.1f | SELL %d PE @ %.1f", k2, p2.ask, k1, p1.bid));
+                String.format("BUY %d PE @ %.1f | SELL %d PE @ %.1f", k2, p2.ask, k1, p1.bid),
+                List.of(leg(k2, "PE", "BUY", 1, p2.ask), leg(k1, "PE", "SELL", 1, p1.bid)));
         }
     }
 
     private void addOpportunity(List<ArbitrageOpportunity> opps, String underlying, LocalDate expiry,
                                  int k1, int k2, double width, String optionType, String direction,
                                  double edgePoints, double stt, double turnover,
-                                 int lotSize, double spot, double fut, String legs) {
+                                 int lotSize, double spot, double fut, String legs,
+                                 List<Map<String, Object>> legList) {
         double grossEdge = edgePoints * lotSize;
 
         // 2-leg fee estimate: one buy + one sell option order, real STT/brokerage/exchange/GST/stamp,
@@ -232,7 +237,18 @@ public class VerticalSpreadService {
         costs.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
         costs.put("netEdge", Math.round(netEdge * 100.0) / 100.0);
         opp.costBreakdown = costs;
+        opp.legList = legList;
 
         opps.add(opp);
+    }
+
+    static Map<String, Object> leg(int strike, String optionType, String side, int qty, double price) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("strike", strike);
+        m.put("optionType", optionType);
+        m.put("side", side);
+        m.put("qty", qty);
+        m.put("price", price);
+        return m;
     }
 }

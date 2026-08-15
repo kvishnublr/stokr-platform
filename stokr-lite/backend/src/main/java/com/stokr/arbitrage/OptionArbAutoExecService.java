@@ -133,6 +133,14 @@ public class OptionArbAutoExecService {
                 if (fut instanceof Number n) opp.setFuturesPrice(BigDecimal.valueOf(n.doubleValue()));
                 Object id = m.get("id");
                 if (id instanceof Number n) opp.setId(n.longValue());
+                Object legListObj = m.get("legList");
+                if (legListObj instanceof List<?> ll) {
+                    try {
+                        @SuppressWarnings("unchecked")
+                        List<Map<String, Object>> cast = (List<Map<String, Object>>) ll;
+                        opp.setLegList(cast);
+                    } catch (Exception ignored) {}
+                }
                 opps.add(opp);
             } catch (Exception ignored) {}
         }
@@ -178,10 +186,17 @@ public class OptionArbAutoExecService {
                     if (p.getCeSymbol() != null) syms.add(p.getCeSymbol());
                     if (p.getPeSymbol() != null) syms.add(p.getPeSymbol());
                     if (p.getFutSymbol() != null) syms.add(p.getFutSymbol());
+                    if (p.getLegs() != null) {
+                        for (Map<String, Object> leg : p.getLegs()) {
+                            Object sym = leg.get("symbol");
+                            if (sym instanceof String s) syms.add(s);
+                        }
+                    }
                 }
                 Map<String, OptionChainService.OptionQuote> q = syms.isEmpty() ? Map.of() : optionChainService.fetchQuotes(syms);
                 for (LivePosition p : openPos) {
-                    todayPnl += computePnl(p, q);
+                    boolean isMultiLegPos = p.getLegs() != null && !p.getLegs().isEmpty();
+                    todayPnl += isMultiLegPos ? computeMultiLegPnl(p, q) : computePnl(p, q);
                 }
             }
         } catch (Exception e) {
@@ -219,6 +234,8 @@ public class OptionArbAutoExecService {
                     .anyMatch(p -> opp.getId() != null && opp.getId().equals(p.getOpportunityId()))) continue;
 
             int lots = ((Number) settings.getOrDefault(key + "Lots", 1)).intValue();
+            List<Map<String, Object>> legs = opp.getLegList();
+            boolean isMultiLeg = legs != null && !legs.isEmpty();
 
             // CRITICAL: Check margin BEFORE every single trade
             double availableMargin = 0;
@@ -231,24 +248,37 @@ public class OptionArbAutoExecService {
                 break;
             }
 
-            double hedgedMargin = 0;
-            try {
+            double hedgedMargin;
+            if (isMultiLeg) {
+                // Vertical/Butterfly/Condor/Box/Iron Condor spreads are risk-defined (max loss
+                // is bounded by the strike span) and carry no futures leg -- NAVIA's hedged-margin
+                // API is shaped for the CE+PE+FUT conversion/reversal triple and doesn't apply
+                // here. Use a conservative estimate (full strike span, always >= true max loss).
                 int lotSize = getLotSize(opp.getUnderlying());
-                int marginQty = lotSize * lots;
-                // Build symbols for NAVIA margin API (OptionArbOpportunity doesn't store them)
-                String futSym = null, ceSym = null, peSym = null;
-                if (opp.getExpiryDate() != null && opp.getStrike() != null) {
-                    futSym = optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate());
-                    ceSym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
-                    peSym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
+                hedgedMargin = estimateMultiLegMargin(legs, lotSize, lots);
+                log.info("Multi-leg margin estimate for {} {} ({} legs): ₹{}", opp.getUnderlying(), opp.getStrike(),
+                    legs.size(), String.format("%.0f", hedgedMargin));
+            } else {
+                double margin = 0;
+                try {
+                    int lotSize = getLotSize(opp.getUnderlying());
+                    int marginQty = lotSize * lots;
+                    // Build symbols for NAVIA margin API (OptionArbOpportunity doesn't store them)
+                    String futSym = null, ceSym = null, peSym = null;
+                    if (opp.getExpiryDate() != null && opp.getStrike() != null) {
+                        futSym = optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate());
+                        ceSym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
+                        peSym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
+                    }
+                    BigDecimal realMargin = adapter.getHedgedMargin(
+                        account.getAccessToken(), opp.getUnderlying(), futSym, ceSym, peSym, marginQty);
+                    margin = realMargin != null ? realMargin.doubleValue() : estimateHedgedMargin(opp.getUnderlying(), lots);
+                    log.info("Margin for {} {}: ₹{} (real={})", opp.getUnderlying(), opp.getStrike(),
+                        String.format("%.0f", margin), realMargin != null);
+                } catch (Exception e) {
+                    margin = estimateHedgedMargin(opp.getUnderlying(), lots);
                 }
-                BigDecimal realMargin = adapter.getHedgedMargin(
-                    account.getAccessToken(), opp.getUnderlying(), futSym, ceSym, peSym, marginQty);
-                hedgedMargin = realMargin != null ? realMargin.doubleValue() : estimateHedgedMargin(opp.getUnderlying(), lots);
-                log.info("Margin for {} {}: ₹{} (real={})", opp.getUnderlying(), opp.getStrike(),
-                    String.format("%.0f", hedgedMargin), realMargin != null);
-            } catch (Exception e) {
-                hedgedMargin = estimateHedgedMargin(opp.getUnderlying(), lots);
+                hedgedMargin = margin;
             }
             if (hedgedMargin > availableMargin * 0.9) {
                 addLog("MARGIN", "SKIP", opp.getUnderlying() + " " + opp.getStrike()
@@ -260,7 +290,9 @@ public class OptionArbAutoExecService {
             addLog("SIGNAL", "FIRING", opp.getUnderlying() + " " + opp.getStrike()
                     + " Edge=₹" + String.format("%.0f", opp.getEdgeAfterCosts().doubleValue())
                     + " > threshold ₹" + String.format("%.0f", minEdge) + " — executing NOW");
-            boolean opened = executeTrade(account, adapter, opp, lots, userId);
+            boolean opened = isMultiLeg
+                    ? executeMultiLegTrade(account, adapter, opp, lots, userId, legs)
+                    : executeTrade(account, adapter, opp, lots, userId);
             if (opened) {
                 currentOpen++;
                 availableMargin -= hedgedMargin;
@@ -294,6 +326,12 @@ public class OptionArbAutoExecService {
             if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
             if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
             if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+            if (p.getLegs() != null) {
+                for (Map<String, Object> leg : p.getLegs()) {
+                    Object sym = leg.get("symbol");
+                    if (sym instanceof String s) symbols.add(s);
+                }
+            }
         }
         if (symbols.isEmpty()) return;
 
@@ -326,38 +364,47 @@ public class OptionArbAutoExecService {
         }
 
         for (LivePosition pos : openPositions) {
+            boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
             double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-            if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
-            if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
-            if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
 
-            double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
-            double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
-            double futEntry = pos.getFutEntryPrice() != null ? pos.getFutEntryPrice().doubleValue() : 0;
-            int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
+            double pnl;
+            if (isMultiLeg) {
+                pnl = computeMultiLegPnl(pos, quotes);
+            } else {
+                if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
+                if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
+                if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+
+                double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
+                double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
+                double futEntry = pos.getFutEntryPrice() != null ? pos.getFutEntryPrice().doubleValue() : 0;
+                int lotSize0 = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
+                int lots0 = pos.getLots() != null ? pos.getLots() : 1;
+
+                double legacyPnl = 0;
+                String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
+                if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
+                    if (action.contains("BUY CE +")) {
+                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceCurrent - ceEntry;
+                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peEntry - peCurrent;
+                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futEntry - futCurrent;
+                    } else if (action.contains("SELL CE +")) {
+                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceEntry - ceCurrent;
+                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peCurrent - peEntry;
+                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futCurrent - futEntry;
+                    } else {
+                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceCurrent - ceEntry;
+                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peEntry - peCurrent;
+                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futEntry - futCurrent;
+                    }
+                }
+                pnl = legacyPnl * lotSize0 * lots0;
+            }
+
             int lots = pos.getLots() != null ? pos.getLots() : 1;
             double targetEdge = pos.getTargetEdge() != null ? pos.getTargetEdge().doubleValue() : 0;
 
             if (targetEdge <= 0) continue;
-
-            double pnl = 0;
-            String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
-            if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-                if (action.contains("BUY CE +")) {
-                    if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
-                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
-                } else if (action.contains("SELL CE +")) {
-                    if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
-                    if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
-                } else {
-                    if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
-                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
-                }
-            }
-            pnl *= lotSize * lots;
 
             double pnlPerLot = lots > 0 ? pnl / lots : 0;
             double pctAchieved = targetEdge > 0 ? (pnlPerLot / targetEdge) * 100 : 0;
@@ -401,7 +448,7 @@ public class OptionArbAutoExecService {
                 addLog(exitReason, "SQUARED_OFF", pos.getUnderlying() + " " + pos.getStrike()
                         + " — PAPER mode, closing at market price (P&L ₹" + String.format("%.0f", pnl) + ")");
             } else {
-                squaredOff = squareOffPosition(account, adapter, pos);
+                squaredOff = isMultiLeg ? squareOffMultiLegPosition(account, adapter, pos) : squareOffPosition(account, adapter, pos);
             }
             if (!squaredOff) {
                 addLog(exitReason, "SQUAREOFF_FAILED", "Failed to square off " + pos.getUnderlying() + " " + pos.getStrike());
@@ -412,9 +459,20 @@ public class OptionArbAutoExecService {
             pos.setStatus("CLOSED");
             pos.setExitedAt(LocalDateTime.now());
             pos.setCurrentPnl(BigDecimal.valueOf(pnl));
-            pos.setCeExitPrice(BigDecimal.valueOf(ceCurrent));
-            pos.setPeExitPrice(BigDecimal.valueOf(peCurrent));
-            pos.setFutExitPrice(BigDecimal.valueOf(futCurrent));
+            if (isMultiLeg) {
+                List<Map<String, Object>> legs = pos.getLegs();
+                for (Map<String, Object> leg : legs) {
+                    String symbol = (String) leg.get("symbol");
+                    if (symbol != null && quotes.containsKey(symbol)) {
+                        leg.put("exitPrice", quotes.get(symbol).lastPrice);
+                    }
+                }
+                pos.setLegs(legs);
+            } else {
+                pos.setCeExitPrice(BigDecimal.valueOf(ceCurrent));
+                pos.setPeExitPrice(BigDecimal.valueOf(peCurrent));
+                pos.setFutExitPrice(BigDecimal.valueOf(futCurrent));
+            }
             positionRepo.save(pos);
 
             // Update opportunity with exit time + P&L
@@ -494,6 +552,10 @@ public class OptionArbAutoExecService {
         LivePosition pos = positionRepo.findById(positionId).orElse(null);
         if (pos == null) { result.put("error", "Position not found"); return result; }
         if (!"OPEN".equals(pos.getStatus())) { result.put("error", "Position is " + pos.getStatus() + ", not OPEN"); return result; }
+        if (pos.getLegs() != null && !pos.getLegs().isEmpty()) {
+            result.put("error", "Manual rollover isn't supported for multi-leg spreads (Box/Vertical/Butterfly/Condor/Iron Condor) — square off and re-enter manually instead.");
+            return result;
+        }
 
         Map<String, Object> settings = getSettings();
         String broker = (String) settings.getOrDefault("broker", "NAVIA");
@@ -799,6 +861,225 @@ public class OptionArbAutoExecService {
             return false;
         }
     }
+
+    /**
+     * Generic N-leg executor for spreads with no futures leg and 2-4 same-underlying option
+     * legs (Vertical/Butterfly/Condor/Box/Iron Condor). Reuses the existing order-placement,
+     * cancel, square-off, and status-polling machinery below -- those are already leg-agnostic;
+     * only leg construction and P&L accounting differ from the CE+PE+FUT executor above.
+     */
+    private boolean executeMultiLegTrade(BrokerAccount account, BrokerAdapter adapter, OptionArbOpportunity opp,
+                                          int lots, Long userId, List<Map<String, Object>> rawLegs) {
+        int lotSize = getLotSize(opp.getUnderlying());
+
+        // Scanners compute edgeAfterCosts for exactly 1 lot's quantity (grossEdge = edgePoints *
+        // lotSize, no `lots` multiplier) -- matches the legacy executor's targetEdge convention
+        // (per-lot edge, compared against per-lot P&L in checkRollover), so it's usable as-is.
+        double targetEdge = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0;
+
+        LivePosition position = LivePosition.builder()
+                .userId(userId)
+                .opportunityId(opp.getId())
+                .underlying(opp.getUnderlying())
+                .strike(opp.getStrike())
+                .action(opp.getAction())
+                .strategyType(opp.getStrategyType())
+                .lots(lots)
+                .lotSize(lotSize)
+                .targetEdge(BigDecimal.valueOf(targetEdge))
+                .status("EXECUTING")
+                .enteredAt(LocalDateTime.now())
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        try {
+            List<LegPair> pairs = new ArrayList<>();
+            for (Map<String, Object> spec : rawLegs) {
+                int strike = ((Number) spec.get("strike")).intValue();
+                String optionType = (String) spec.get("optionType");
+                String side = (String) spec.get("side");
+                int qtyMult = spec.get("qty") instanceof Number n ? n.intValue() : 1;
+                String symbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
+                int qty = lots * lotSize * qtyMult;
+                PlannedLeg planned = new PlannedLeg(symbol,
+                        "BUY".equals(side) ? BrokerOrderRequest.Side.BUY : BrokerOrderRequest.Side.SELL,
+                        qty, 0.0, optionType + strike);
+                pairs.add(new LegPair(spec, planned));
+            }
+
+            // BUY-first ordering, matching the existing 3-leg executor's convention.
+            pairs.sort((a, b) -> {
+                boolean aBuy = a.planned().side() == BrokerOrderRequest.Side.BUY;
+                boolean bBuy = b.planned().side() == BrokerOrderRequest.Side.BUY;
+                return aBuy == bBuy ? 0 : (aBuy ? -1 : 1);
+            });
+
+            List<PlacedLeg> placedLegs = new ArrayList<>();
+            for (LegPair pair : pairs) {
+                PlannedLeg leg = pair.planned();
+                BrokerOrderRequest req = BrokerOrderRequest.builder()
+                        .symbol(leg.symbol()).exchange("NFO")
+                        .side(leg.side())
+                        .quantity(leg.quantity()).price(leg.price())
+                        .orderType(BrokerOrderRequest.OrderType.MARKET)
+                        .productType("MIS").build();
+                BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
+
+                if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
+                    log.warn("Auto-exec multi-leg: {} {} order failed: {}", leg.legKey(), leg.symbol(), resp.message());
+                    addLog("EXEC", "LEG_FAILED", leg.legKey() + " " + leg.symbol() + " " + leg.side() + ": " + resp.message());
+                    cancelPendingLegs(account, adapter, placedLegs);
+                    squareOffFilledLegs(account, adapter, placedLegs);
+                    position.setStatus("FAILED");
+                    position.setErrorMessage(leg.legKey() + " order failed: " + resp.message());
+                    position.setLegs(buildLegsJson(pairs, placedLegs));
+                    positionRepo.save(position);
+                    addLog("EXEC", "FAILED", opp.getUnderlying() + " " + opp.getStrike() + " — cancelled all legs (" + pairs.size() + "-leg)");
+                    return false;
+                }
+
+                placedLegs.add(new PlacedLeg(leg, resp.orderId(), resp.status()));
+                try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+            }
+
+            awaitFinalStatuses(account, adapter, placedLegs);
+            List<PlacedLeg> filledLegs = placedLegs.stream().filter(l -> isCompleteStatus(l.status)).toList();
+            List<PlacedLeg> nonCompleteLegs = placedLegs.stream().filter(l -> !isCompleteStatus(l.status)).toList();
+
+            if (filledLegs.size() != pairs.size()) {
+                cancelPendingLegs(account, adapter, nonCompleteLegs);
+                squareOffFilledLegs(account, adapter, filledLegs);
+                position.setStatus(filledLegs.isEmpty() ? "FAILED" : "PARTIAL");
+                position.setErrorMessage("Only " + filledLegs.size() + "/" + pairs.size() + " legs filled. Pending orders cancelled and filled legs squared off.");
+                position.setLegs(buildLegsJson(pairs, placedLegs));
+                positionRepo.save(position);
+                addLog("EXEC", "FAILED", opp.getUnderlying() + " " + opp.getStrike()
+                        + " — only " + filledLegs.size() + "/" + pairs.size() + " legs filled; reverted trade (" + pairs.size() + "-leg)");
+                return false;
+            }
+
+            position.setStatus("OPEN");
+            position.setLegs(buildLegsJson(pairs, placedLegs));
+            double entryCost = pairs.stream().mapToDouble(p -> {
+                double price = p.spec().get("price") instanceof Number n ? n.doubleValue() : 0;
+                int qtyMult = p.spec().get("qty") instanceof Number n ? n.intValue() : 1;
+                boolean isBuy = p.planned().side() == BrokerOrderRequest.Side.BUY;
+                return (isBuy ? price : -price) * qtyMult;
+            }).sum() * lotSize * lots;
+            position.setEntryCost(BigDecimal.valueOf(Math.abs(entryCost)));
+            positionRepo.save(position);
+
+            addLog("EXEC", "SUCCESS", opp.getUnderlying() + " " + opp.getStrike() + " " + opp.getAction()
+                    + " | Lots=" + lots + " Edge=₹" + String.format("%.0f", opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0)
+                    + " | " + pairs.size() + "-leg spread fully filled");
+            return true;
+
+        } catch (Exception e) {
+            position.setStatus("FAILED");
+            position.setErrorMessage(e.getMessage());
+            positionRepo.save(position);
+            addLog("EXEC", "ERROR", opp.getUnderlying() + " " + opp.getStrike() + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    private List<Map<String, Object>> buildLegsJson(List<LegPair> pairs, List<PlacedLeg> placedLegs) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (int i = 0; i < pairs.size(); i++) {
+            LegPair p = pairs.get(i);
+            PlacedLeg placed = i < placedLegs.size() ? placedLegs.get(i) : null;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("strike", p.spec().get("strike"));
+            m.put("optionType", p.spec().get("optionType"));
+            m.put("side", p.spec().get("side"));
+            m.put("qty", p.spec().get("qty"));
+            m.put("price", p.spec().get("price"));
+            m.put("symbol", p.planned().symbol());
+            m.put("orderId", placed != null ? placed.orderId : null);
+            m.put("status", placed != null ? placed.status : null);
+            out.add(m);
+        }
+        return out;
+    }
+
+    /**
+     * Conservative margin estimate for a defined-risk multi-leg spread with no futures leg:
+     * the full strike span times lot size is always >= the true max loss (width minus any net
+     * credit received / debit paid), so this never under-reserves margin.
+     */
+    private double estimateMultiLegMargin(List<Map<String, Object>> legs, int lotSize, int lots) {
+        int minStrike = Integer.MAX_VALUE, maxStrike = Integer.MIN_VALUE;
+        for (Map<String, Object> leg : legs) {
+            int strike = ((Number) leg.get("strike")).intValue();
+            minStrike = Math.min(minStrike, strike);
+            maxStrike = Math.max(maxStrike, strike);
+        }
+        double span = Math.max(0, maxStrike - minStrike);
+        return span * lotSize * lots * 1.15;
+    }
+
+    /**
+     * Generic mark-to-market P&L for a multi-leg (no-futures) position: sum of per-leg
+     * (current - entry) for BUY legs, (entry - current) for SELL legs, scaled by each leg's
+     * quantity multiplier and lot size.
+     */
+    public double computeMultiLegPnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
+        List<Map<String, Object>> legs = pos.getLegs();
+        if (legs == null || legs.isEmpty()) return 0;
+        int lotSize = pos.getLotSize() != null ? pos.getLotSize() : 25;
+        int lots = pos.getLots() != null ? pos.getLots() : 1;
+        double pnl = 0;
+        for (Map<String, Object> leg : legs) {
+            String symbol = (String) leg.get("symbol");
+            if (symbol == null || !quotes.containsKey(symbol)) continue;
+            double current = quotes.get(symbol).lastPrice;
+            double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
+            if (current <= 0 || entry <= 0) continue;
+            int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+            String side = (String) leg.get("side");
+            double legPnl = "BUY".equals(side) ? (current - entry) : (entry - current);
+            pnl += legPnl * qtyMult;
+        }
+        return pnl * lotSize * lots;
+    }
+
+    /**
+     * Generic square-off for a multi-leg position: reverse each leg's side, MARKET order.
+     */
+    private boolean squareOffMultiLegPosition(BrokerAccount account, BrokerAdapter adapter, LivePosition pos) {
+        List<Map<String, Object>> legs = pos.getLegs();
+        if (legs == null || legs.isEmpty()) return false;
+        int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
+        int lots = pos.getLots() != null ? pos.getLots() : 1;
+        boolean allFilled = true;
+        for (Map<String, Object> leg : legs) {
+            String symbol = (String) leg.get("symbol");
+            String side = (String) leg.get("side");
+            int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+            if (symbol == null || side == null) { allFilled = false; continue; }
+            BrokerOrderRequest.Side closeSide = "BUY".equals(side) ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
+            BrokerOrderRequest req = BrokerOrderRequest.builder()
+                    .symbol(symbol).exchange("NFO")
+                    .side(closeSide).quantity(lotSize * lots * qtyMult)
+                    .price(0.0).orderType(BrokerOrderRequest.OrderType.MARKET)
+                    .productType("MIS").build();
+            try {
+                BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
+                if (!resp.isSuccess()) {
+                    addLog("EXIT", "LEG_FAIL", symbol + ": " + resp.message());
+                    allFilled = false;
+                }
+            } catch (Exception e) {
+                log.error("Multi-leg square-off failed for {}: {}", symbol, e.getMessage());
+                addLog("EXIT", "LEG_FAIL", symbol + ": " + e.getMessage());
+                allFilled = false;
+            }
+            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+        }
+        return allFilled;
+    }
+
+    private record LegPair(Map<String, Object> spec, PlannedLeg planned) {}
 
     private void awaitFinalStatuses(BrokerAccount account, BrokerAdapter adapter, List<PlacedLeg> placedLegs) {
         for (int attempt = 0; attempt < 10; attempt++) {

@@ -219,6 +219,9 @@ public class OptionArbitrageController {
             ));
         }
         List<Map<String, Object>> opps = verticalSpreadService.scanVerticalSpread(underlying);
+        if (opps != null && !opps.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from vertical-spread scan failed: {}", e.getMessage()); }
+        }
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
@@ -243,6 +246,9 @@ public class OptionArbitrageController {
             ));
         }
         List<Map<String, Object>> opps = butterflySpreadService.scanButterflySpread(underlying);
+        if (opps != null && !opps.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from butterfly-spread scan failed: {}", e.getMessage()); }
+        }
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
@@ -267,6 +273,9 @@ public class OptionArbitrageController {
             ));
         }
         List<Map<String, Object>> opps = condorSpreadService.scanCondorSpread(underlying);
+        if (opps != null && !opps.isEmpty()) {
+            try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from condor-spread scan failed: {}", e.getMessage()); }
+        }
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
@@ -435,10 +444,23 @@ public class OptionArbitrageController {
                 opp.put("spotPrice", spot);
                 opp.put("wingWidth", wingWidth * step);
                 opp.put("confidence", Math.min(95, 60 + riskReward * 100));
+                opp.put("legList", List.of(
+                    ironLeg(putSell, "PE", "SELL", 1, psBid), ironLeg(putBuy, "PE", "BUY", 1, pbAsk),
+                    ironLeg(callSell, "CE", "SELL", 1, csBid), ironLeg(callBuy, "CE", "BUY", 1, cbAsk)));
                 results.add(opp);
             }
         }
         return results;
+    }
+
+    private static Map<String, Object> ironLeg(int strike, String optionType, String side, int qty, double price) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("strike", strike);
+        m.put("optionType", optionType);
+        m.put("side", side);
+        m.put("qty", qty);
+        m.put("price", price);
+        return m;
     }
 
     @GetMapping("/cash-surge/scan")
@@ -708,6 +730,12 @@ public class OptionArbitrageController {
                         if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
                         if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
                         if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+                        if (p.getLegs() != null) {
+                            for (Map<String, Object> leg : p.getLegs()) {
+                                Object sym = leg.get("symbol");
+                                if (sym instanceof String s) symbols.add(s);
+                            }
+                        }
                     }
 
                     Map<String, OptionChainService.OptionQuote> quotes = Map.of();
@@ -746,6 +774,30 @@ public class OptionArbitrageController {
                             } catch (Exception ignored) {}
                         }
                     }
+
+                    // Untraded RUNNING Box/Vertical/Butterfly/Condor Spread signals -- same
+                    // mark-to-market simulation idea as Bid Parity above, generalized over
+                    // each opportunity's stored legList (no futures leg, 2-4 same-type legs).
+                    Set<String> multiLegTypes = Set.of("BOX_SPREAD", "VERTICAL_SPREAD", "BUTTERFLY_SPREAD", "CONDOR_SPREAD");
+                    Map<Long, List<Map<String, Object>>> legSymbolsByOpp = new LinkedHashMap<>();
+                    for (OptionArbOpportunity o : missingOppMap.values()) {
+                        if ("RUNNING".equals(o.getStatus()) && multiLegTypes.contains(o.getStrategyType())
+                                && o.getExpiryDate() != null && o.getLegList() != null) {
+                            try {
+                                List<Map<String, Object>> resolvedLegs = new ArrayList<>();
+                                for (Map<String, Object> leg : o.getLegList()) {
+                                    int strike = ((Number) leg.get("strike")).intValue();
+                                    String optionType = (String) leg.get("optionType");
+                                    String sym = optionChainService.buildNfoSymbol(o.getUnderlying(), o.getExpiryDate(), strike, optionType);
+                                    Map<String, Object> resolved = new LinkedHashMap<>(leg);
+                                    resolved.put("symbol", sym);
+                                    resolvedLegs.add(resolved);
+                                    if (sym != null) bpSymbols.add(sym);
+                                }
+                                legSymbolsByOpp.put(o.getId(), resolvedLegs);
+                            } catch (Exception ignored) {}
+                        }
+                    }
                     Map<String, OptionChainService.OptionQuote> bpQuotes = Map.of();
                     try {
                         bpQuotes = bpSymbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(bpSymbols);
@@ -771,6 +823,24 @@ public class OptionArbitrageController {
                             if ("CLOSED".equals(pos.getStatus()) || "EXITED".equals(pos.getStatus())) {
                                 if (pos.getCurrentPnl() != null) {
                                     pnlMap.put(oppIdStr, Math.round(pos.getCurrentPnl().doubleValue()));
+                                } else if (pos.getLegs() != null && !pos.getLegs().isEmpty()) {
+                                    int lotSz = pos.getLotSize() != null ? pos.getLotSize() : OptionChainService.getLotSize(pos.getUnderlying());
+                                    int lotCount = pos.getLots() != null ? pos.getLots() : 1;
+                                    double pnl = 0;
+                                    for (Map<String, Object> leg : pos.getLegs()) {
+                                        double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
+                                        double exit = leg.get("exitPrice") instanceof Number n ? n.doubleValue() : 0;
+                                        if (entry <= 0 || exit <= 0) continue;
+                                        int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                                        String side = (String) leg.get("side");
+                                        pnl += ("BUY".equals(side) ? (exit - entry) : (entry - exit)) * qtyMult;
+                                    }
+                                    pnl *= lotSz * lotCount;
+                                    pnlMap.put(oppIdStr, Math.round(pnl));
+                                    try {
+                                        pos.setCurrentPnl(BigDecimal.valueOf(pnl));
+                                        livePositionRepo.save(pos);
+                                    } catch (Exception ignored) {}
                                 } else if (pos.getCeExitPrice() != null || pos.getPeExitPrice() != null || pos.getFutExitPrice() != null) {
                                     // Compute from exit prices
                                     double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
@@ -802,6 +872,9 @@ public class OptionArbitrageController {
                                 } else {
                                     pnlMap.put(oppIdStr, 0);
                                 }
+                            } else if (pos.getLegs() != null && !pos.getLegs().isEmpty()) {
+                                double pnl = autoExecService.computeMultiLegPnl(pos, quotes);
+                                pnlMap.put(oppIdStr, Math.round(pnl));
                             } else {
                                 double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
                                 if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
@@ -899,6 +972,42 @@ public class OptionArbitrageController {
                                             opp.setCeExitPrice(BigDecimal.valueOf(ceCurrent));
                                             opp.setPeExitPrice(BigDecimal.valueOf(peCurrent));
                                             opp.setExitSpotPrice(BigDecimal.valueOf(futCurrent));
+                                            opp.setPnlPoints(BigDecimal.valueOf(lotSz > 0 ? pnl / lotSz : 0));
+                                            opp.setPnlAmount(BigDecimal.valueOf(pnl));
+                                            opp.setPnlAfterCosts(BigDecimal.valueOf(pnl));
+                                            try { oppRepo.save(opp); } catch (Exception ignored) {}
+                                            statusMap.put(oppIdStr, "EXITED");
+                                            exitTimeMap.put(oppIdStr, opp.getExitTime().toString());
+                                            pnlMap.put(oppIdStr, Math.round(pnl));
+                                        } else {
+                                            statusMap.put(oppIdStr, oppStatus);
+                                            pnlMap.put(oppIdStr, havePrices ? Math.round(pnl) : null);
+                                        }
+                                    } else if ("RUNNING".equals(oppStatus) && multiLegTypes.contains(opp.getStrategyType())
+                                            && legSymbolsByOpp.containsKey(oppId)) {
+                                        // RUNNING multi-leg spread signal, never traded — simulate live
+                                        // mark-to-market P&L against current quotes and auto-exit once
+                                        // the edge target is hit (same idea as BID_PARITY above).
+                                        List<Map<String, Object>> resolvedLegs = legSymbolsByOpp.get(oppId);
+                                        int lotSz = OptionChainService.getLotSize(opp.getUnderlying());
+                                        boolean havePrices = false;
+                                        double pnl = 0;
+                                        for (Map<String, Object> leg : resolvedLegs) {
+                                            String sym = (String) leg.get("symbol");
+                                            double current = (sym != null && bpQuotes.containsKey(sym)) ? bpQuotes.get(sym).lastPrice : 0;
+                                            double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
+                                            if (current <= 0 || entry <= 0) continue;
+                                            havePrices = true;
+                                            int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                                            String side = (String) leg.get("side");
+                                            pnl += ("BUY".equals(side) ? (current - entry) : (entry - current)) * qtyMult;
+                                        }
+                                        pnl *= lotSz;
+
+                                        double edgeTarget = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0;
+                                        if (havePrices && edgeTarget > 0 && pnl >= edgeTarget) {
+                                            opp.setStatus("EXITED");
+                                            opp.setExitTime(LocalDateTime.now());
                                             opp.setPnlPoints(BigDecimal.valueOf(lotSz > 0 ? pnl / lotSz : 0));
                                             opp.setPnlAmount(BigDecimal.valueOf(pnl));
                                             opp.setPnlAfterCosts(BigDecimal.valueOf(pnl));

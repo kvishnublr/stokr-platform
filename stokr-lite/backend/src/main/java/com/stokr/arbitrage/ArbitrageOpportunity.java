@@ -31,6 +31,14 @@ public class ArbitrageOpportunity {
     // Cost breakdown (for parity break opportunities)
     public Map<String, Double> costBreakdown;
 
+    /**
+     * Structured trade legs for strategies that aren't the CE+PE+FUT conversion/reversal
+     * shape (Box/Vertical/Butterfly/Condor spreads: 2-4 same-underlying legs, no futures).
+     * Each entry: {strike: int, optionType: "CE"|"PE", side: "BUY"|"SELL", qty: int}.
+     * Null/empty means "use the legacy CE+PE+FUT executor".
+     */
+    public java.util.List<Map<String, Object>> legList;
+
     public LocalDateTime detectedAt;
 
     public ArbitrageOpportunity() {
@@ -65,6 +73,9 @@ public class ArbitrageOpportunity {
         map.put("detectedAt", detectedAt.atZone(java.time.ZoneId.systemDefault()).withZoneSameInstant(java.time.ZoneId.of("Asia/Kolkata")).toLocalDateTime().atOffset(java.time.ZoneOffset.ofHoursMinutes(5, 30)).toString());
         if (costBreakdown != null) {
             map.put("costBreakdown", costBreakdown);
+        }
+        if (legList != null) {
+            map.put("legList", legList);
         }
         return map;
     }

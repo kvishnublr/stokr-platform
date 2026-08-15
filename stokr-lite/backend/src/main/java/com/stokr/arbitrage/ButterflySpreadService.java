@@ -150,7 +150,8 @@ public class ButterflySpreadService {
             addOpportunity(opps, underlying, expiry, k1, k2, k3, width, optionType, "BUY_FLY",
                 -buyCost, sttBuy + sttSell, turnover, lotSize, spot, fut,
                 String.format("BUY %d %s @ %.1f | SELL 2x %d %s @ %.1f | BUY %d %s @ %.1f",
-                    k1, optionType, q1.ask, k2, optionType, q2.bid, k3, optionType, q3.ask));
+                    k1, optionType, q1.ask, k2, optionType, q2.bid, k3, optionType, q3.ask),
+                List.of(leg(k1, optionType, "BUY", 1, q1.ask), leg(k2, optionType, "SELL", 2, q2.bid), leg(k3, optionType, "BUY", 1, q3.ask)));
             return;
         }
 
@@ -164,14 +165,16 @@ public class ButterflySpreadService {
             addOpportunity(opps, underlying, expiry, k1, k2, k3, width, optionType, "SELL_FLY",
                 sellCredit - width, sttBuy + sttSell, turnover, lotSize, spot, fut,
                 String.format("SELL %d %s @ %.1f | BUY 2x %d %s @ %.1f | SELL %d %s @ %.1f",
-                    k1, optionType, q1.bid, k2, optionType, q2.ask, k3, optionType, q3.bid));
+                    k1, optionType, q1.bid, k2, optionType, q2.ask, k3, optionType, q3.bid),
+                List.of(leg(k1, optionType, "SELL", 1, q1.bid), leg(k2, optionType, "BUY", 2, q2.ask), leg(k3, optionType, "SELL", 1, q3.bid)));
         }
     }
 
     private void addOpportunity(List<ArbitrageOpportunity> opps, String underlying, LocalDate expiry,
                                  int k1, int k2, int k3, double width, String optionType, String direction,
                                  double edgePoints, double stt, double turnover,
-                                 int lotSize, double spot, double fut, String legs) {
+                                 int lotSize, double spot, double fut, String legs,
+                                 List<Map<String, Object>> legList) {
         double grossEdge = edgePoints * lotSize;
 
         // 4-leg fee estimate (1 + 2 + 1 orders): real STT/brokerage/exchange/GST/stamp,
@@ -210,7 +213,18 @@ public class ButterflySpreadService {
         costs.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
         costs.put("netEdge", Math.round(netEdge * 100.0) / 100.0);
         opp.costBreakdown = costs;
+        opp.legList = legList;
 
         opps.add(opp);
+    }
+
+    static Map<String, Object> leg(int strike, String optionType, String side, int qty, double price) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("strike", strike);
+        m.put("optionType", optionType);
+        m.put("side", side);
+        m.put("qty", qty);
+        m.put("price", price);
+        return m;
     }
 }

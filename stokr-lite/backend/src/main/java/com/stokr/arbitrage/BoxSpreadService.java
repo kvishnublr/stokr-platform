@@ -195,6 +195,10 @@ public class BoxSpreadService {
                         costs.put("totalCosts", Math.round(totalCosts * 100.0) / 100.0);
                         costs.put("netEdge", Math.round(netBuyEdge * 100.0) / 100.0);
                         opp.costBreakdown = costs;
+                        opp.legList = List.of(
+                            leg(k1, "CE", "BUY", 1, ce1Ask), leg(k1, "PE", "SELL", 1, pe1Bid),
+                            leg(k2, "CE", "SELL", 1, ce2Bid), leg(k2, "PE", "BUY", 1, pe2Ask)
+                        );
 
                         opps.add(opp);
                         continue;
@@ -255,6 +259,10 @@ public class BoxSpreadService {
                         costs.put("totalCosts", Math.round(sellTotalCosts * 100.0) / 100.0);
                         costs.put("netEdge", Math.round(netSellEdge * 100.0) / 100.0);
                         opp.costBreakdown = costs;
+                        opp.legList = List.of(
+                            leg(k1, "CE", "SELL", 1, ce1.bid), leg(k1, "PE", "BUY", 1, pe1.ask),
+                            leg(k2, "CE", "BUY", 1, ce2.ask), leg(k2, "PE", "SELL", 1, pe2.bid)
+                        );
 
                         opps.add(opp);
                     }
@@ -267,5 +275,15 @@ public class BoxSpreadService {
             log.error("Error calculating Box Spread for {}: {}", underlying, e.getMessage(), e);
         }
         return opps;
+    }
+
+    static Map<String, Object> leg(int strike, String optionType, String side, int qty, double price) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("strike", strike);
+        m.put("optionType", optionType);
+        m.put("side", side);
+        m.put("qty", qty);
+        m.put("price", price);
+        return m;
     }
 }

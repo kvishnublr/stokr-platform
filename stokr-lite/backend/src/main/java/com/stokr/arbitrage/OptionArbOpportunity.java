@@ -90,6 +90,12 @@ public class OptionArbOpportunity {
     @Column(columnDefinition = "jsonb")
     private String costBreakdownJson;
 
+    /**
+     * Structured trade legs for non-CE+PE+FUT strategies (Box/Vertical/Butterfly/Condor/
+     * Iron Condor spreads). Null means "legacy CE+PE+FUT conversion/reversal shape".
+     */
+    private String legsJson;
+
     private String notes;
 
     private LocalDateTime createdAt;
@@ -112,6 +118,27 @@ public class OptionArbOpportunity {
             this.costBreakdownJson = mapper.writeValueAsString(breakdown);
         } catch (Exception e) {
             this.costBreakdownJson = null;
+        }
+    }
+
+    @Transient
+    public java.util.List<java.util.Map<String, Object>> getLegList() {
+        if (legsJson == null || legsJson.isEmpty()) return null;
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var typeRef = new com.fasterxml.jackson.core.type.TypeReference<java.util.List<java.util.Map<String, Object>>>() {};
+            return mapper.readValue(legsJson, typeRef);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public void setLegList(java.util.List<java.util.Map<String, Object>> legs) {
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            this.legsJson = (legs == null || legs.isEmpty()) ? null : mapper.writeValueAsString(legs);
+        } catch (Exception e) {
+            this.legsJson = null;
         }
     }
 
@@ -159,6 +186,8 @@ public class OptionArbOpportunity {
         map.put("createdAt", createdAt != null ? createdAt.toString() : null);
         var costs = getCostBreakdown();
         if (costs != null) map.put("costBreakdown", costs);
+        var legs2 = getLegList();
+        if (legs2 != null) map.put("legList", legs2);
         return map;
     }
 }
