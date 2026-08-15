@@ -689,9 +689,15 @@ function LivePositionsSection() {
                       <td className="px-3 py-2 font-bold text-slate-800">{p.underlying}</td>
                       <td className="px-3 py-2 font-bold text-slate-700">{p.strike}</td>
                       <td className="px-3 py-2 text-purple-700 font-bold text-[10px]">{p.action?.substring(0, 18)}</td>
-                      <td className="px-3 py-2 text-right font-mono">₹{p.ceEntryPrice?.toFixed(1) || '--'}</td>
-                      <td className="px-3 py-2 text-right font-mono">₹{p.peEntryPrice?.toFixed(1) || '--'}</td>
-                      <td className="px-3 py-2 text-right font-mono">₹{p.futEntryPrice?.toFixed(1) || '--'}</td>
+                      {p.isMultiLeg ? (
+                        <td colSpan={3} className="px-3 py-2 text-[10px] text-slate-500 font-mono">{p.legList?.length || 0}-leg spread (no futures)</td>
+                      ) : (
+                        <>
+                          <td className="px-3 py-2 text-right font-mono">₹{p.ceEntryPrice?.toFixed(1) || '--'}</td>
+                          <td className="px-3 py-2 text-right font-mono">₹{p.peEntryPrice?.toFixed(1) || '--'}</td>
+                          <td className="px-3 py-2 text-right font-mono">₹{p.futEntryPrice?.toFixed(1) || '--'}</td>
+                        </>
+                      )}
                       <td className="px-3 py-2 text-right font-mono font-bold text-indigo-700">₹{target?.toFixed(0) || '--'}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1.5">
@@ -710,7 +716,7 @@ function LivePositionsSection() {
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${statusColor(p.status)}`}>{p.status}</span>
                       </td>
                       <td className="px-3 py-2 text-center">
-                        {p.status === 'OPEN' && (
+                        {p.status === 'OPEN' && !p.isMultiLeg && (
                           <button
                             disabled={rollingId === p.id}
                             onClick={() => handleRollover(p.id, p.underlying, p.strike)}

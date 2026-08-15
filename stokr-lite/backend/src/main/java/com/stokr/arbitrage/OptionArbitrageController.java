@@ -1092,6 +1092,12 @@ public class OptionArbitrageController {
                 if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
                 if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
                 if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+                if (p.getLegs() != null) {
+                    for (Map<String, Object> leg : p.getLegs()) {
+                        Object sym = leg.get("symbol");
+                        if (sym instanceof String s) symbols.add(s);
+                    }
+                }
             }
             allQuotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
         } catch (Exception e) {
@@ -1106,46 +1112,56 @@ public class OptionArbitrageController {
 
         List<Map<String, Object>> posList = openPositions.stream().map(p -> {
             Map<String, Object> map = p.toMap();
-
-            double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
-            if (p.getCeSymbol() != null && quotes.containsKey(p.getCeSymbol())) ceCurrent = quotes.get(p.getCeSymbol()).lastPrice;
-            if (p.getPeSymbol() != null && quotes.containsKey(p.getPeSymbol())) peCurrent = quotes.get(p.getPeSymbol()).lastPrice;
-            if (p.getFutSymbol() != null && quotes.containsKey(p.getFutSymbol())) futCurrent = quotes.get(p.getFutSymbol()).lastPrice;
-
-            double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
-            double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
-            double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
+            boolean isMultiLeg = p.getLegs() != null && !p.getLegs().isEmpty();
             int lotSize = p.getLotSize() != null ? p.getLotSize() : getLotSize(p.getUnderlying());
             int lots = p.getLots() != null ? p.getLots() : 1;
 
-            double pnl = 0;
-            String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
-            if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
-                if (action.contains("BUY CE +")) {
-                    if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
-                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
-                } else if (action.contains("SELL CE +")) {
-                    if (ceCurrent > 0 && ceEntry > 0) pnl += ceEntry - ceCurrent;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peCurrent - peEntry;
-                    if (futCurrent > 0 && futEntry > 0) pnl += futCurrent - futEntry;
-                } else {
-                    if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
-                    if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
-                    if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
+            double pnl;
+            if (isMultiLeg) {
+                pnl = autoExecService.computeMultiLegPnl(p, quotes);
+                map.put("ceCurrent", 0);
+                map.put("peCurrent", 0);
+                map.put("futCurrent", 0);
+            } else {
+                double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
+                if (p.getCeSymbol() != null && quotes.containsKey(p.getCeSymbol())) ceCurrent = quotes.get(p.getCeSymbol()).lastPrice;
+                if (p.getPeSymbol() != null && quotes.containsKey(p.getPeSymbol())) peCurrent = quotes.get(p.getPeSymbol()).lastPrice;
+                if (p.getFutSymbol() != null && quotes.containsKey(p.getFutSymbol())) futCurrent = quotes.get(p.getFutSymbol()).lastPrice;
+
+                double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
+                double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
+                double futEntry = p.getFutEntryPrice() != null ? p.getFutEntryPrice().doubleValue() : 0;
+
+                double legacyPnl = 0;
+                String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
+                if (ceCurrent > 0 || peCurrent > 0 || futCurrent > 0) {
+                    if (action.contains("BUY CE +")) {
+                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceCurrent - ceEntry;
+                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peEntry - peCurrent;
+                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futEntry - futCurrent;
+                    } else if (action.contains("SELL CE +")) {
+                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceEntry - ceCurrent;
+                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peCurrent - peEntry;
+                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futCurrent - futEntry;
+                    } else {
+                        if (ceCurrent > 0 && ceEntry > 0) legacyPnl += ceCurrent - ceEntry;
+                        if (peCurrent > 0 && peEntry > 0) legacyPnl += peEntry - peCurrent;
+                        if (futCurrent > 0 && futEntry > 0) legacyPnl += futEntry - futCurrent;
+                    }
                 }
+                pnl = legacyPnl * lotSize * lots;
+                map.put("ceCurrent", ceCurrent);
+                map.put("peCurrent", peCurrent);
+                map.put("futCurrent", futCurrent);
             }
-            pnl *= lotSize * lots;
             map.put("currentPnl", Math.round(pnl));
-            map.put("ceCurrent", ceCurrent);
-            map.put("peCurrent", peCurrent);
-            map.put("futCurrent", futCurrent);
 
             double target = p.getTargetEdge() != null ? p.getTargetEdge().doubleValue() : 0;
             double pnlPerLot = lots > 0 ? Math.abs(pnl) / lots : 0;
             double edgeCaptured = target > 0 ? Math.min(100, Math.round(pnlPerLot / target * 100)) : 0;
             map.put("edgeCaptured", edgeCaptured);
             map.put("marketOpen", marketOpen);
+            map.put("isMultiLeg", isMultiLeg);
 
             return map;
         }).toList();
@@ -1204,6 +1220,12 @@ public class OptionArbitrageController {
                 if (p.getCeSymbol() != null) symbols.add(p.getCeSymbol());
                 if (p.getPeSymbol() != null) symbols.add(p.getPeSymbol());
                 if (p.getFutSymbol() != null) symbols.add(p.getFutSymbol());
+                if (p.getLegs() != null) {
+                    for (Map<String, Object> leg : p.getLegs()) {
+                        Object sym = leg.get("symbol");
+                        if (sym instanceof String s) symbols.add(s);
+                    }
+                }
             }
         }
         Map<String, OptionChainService.OptionQuote> quotes = Map.of();
@@ -1220,11 +1242,22 @@ public class OptionArbitrageController {
             String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
             int lotSize = p.getLotSize() != null ? p.getLotSize() : getLotSize(p.getUnderlying());
             int lots = p.getLots() != null ? p.getLots() : 1;
+            boolean isMultiLeg = p.getLegs() != null && !p.getLegs().isEmpty();
 
             if ("CLOSED".equals(p.getStatus()) || "EXITED".equals(p.getStatus())) {
                 // Use stored P&L or compute from exit prices
                 if (p.getCurrentPnl() != null) {
                     pnl = p.getCurrentPnl().doubleValue();
+                } else if (isMultiLeg) {
+                    for (Map<String, Object> leg : p.getLegs()) {
+                        double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
+                        double exit = leg.get("exitPrice") instanceof Number n ? n.doubleValue() : 0;
+                        if (entry <= 0 || exit <= 0) continue;
+                        int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                        String side = (String) leg.get("side");
+                        pnl += ("BUY".equals(side) ? (exit - entry) : (entry - exit)) * qtyMult;
+                    }
+                    pnl *= lotSize * lots;
                 } else if (p.getCeExitPrice() != null || p.getPeExitPrice() != null || p.getFutExitPrice() != null) {
                     double ceEntry = p.getCeEntryPrice() != null ? p.getCeEntryPrice().doubleValue() : 0;
                     double peEntry = p.getPeEntryPrice() != null ? p.getPeEntryPrice().doubleValue() : 0;
@@ -1243,6 +1276,11 @@ public class OptionArbitrageController {
                     }
                     pnl *= lotSize * lots;
                 }
+            } else if (isMultiLeg) {
+                pnl = autoExecService.computeMultiLegPnl(p, q);
+                m.put("ceCurrent", 0);
+                m.put("peCurrent", 0);
+                m.put("futCurrent", 0);
             } else {
                 // OPEN — compute from live quotes
                 double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
