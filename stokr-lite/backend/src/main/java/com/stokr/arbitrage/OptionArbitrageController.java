@@ -198,9 +198,10 @@ public class OptionArbitrageController {
     }
 
     @GetMapping("/vertical-spread/scan")
-    public ResponseEntity<Map<String, Object>> scanVerticalSpread(@RequestParam(defaultValue = "ALL") String underlying) {
+    public ResponseEntity<Map<String, Object>> scanVerticalSpread(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                    @RequestParam(defaultValue = "false") boolean force) {
         java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
             return ResponseEntity.ok(Map.of(
                 "timestamp", System.currentTimeMillis(),
                 "underlying", underlying,
