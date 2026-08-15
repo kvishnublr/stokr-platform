@@ -27,6 +27,7 @@ public class OptionArbitrageController {
     private final OptionArbHistoryService historyService;
     private final BidParityService bidParityService;
     private final BoxSpreadService boxSpreadService;
+    private final VerticalSpreadService verticalSpreadService;
     private final CalendarSpreadService calendarSpreadService;
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
@@ -41,6 +42,7 @@ public class OptionArbitrageController {
                                      OptionArbHistoryService historyService,
                                      BidParityService bidParityService,
                                      BoxSpreadService boxSpreadService,
+                                     VerticalSpreadService verticalSpreadService,
                                      CalendarSpreadService calendarSpreadService,
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
@@ -51,6 +53,7 @@ public class OptionArbitrageController {
         this.historyService = historyService;
         this.bidParityService = bidParityService;
         this.boxSpreadService = boxSpreadService;
+        this.verticalSpreadService = verticalSpreadService;
         this.calendarSpreadService = calendarSpreadService;
         this.spotFetcher = spotFetcher;
         this.autoExecService = autoExecService;
@@ -185,6 +188,29 @@ public class OptionArbitrageController {
         if (opps != null && !opps.isEmpty()) {
             try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from box-spread scan failed: {}", e.getMessage()); }
         }
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("opportunities", opps);
+        resp.put("count", opps.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/vertical-spread/scan")
+    public ResponseEntity<Map<String, Object>> scanVerticalSpread(@RequestParam(defaultValue = "ALL") String underlying) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<Map<String, Object>> opps = verticalSpreadService.scanVerticalSpread(underlying);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);

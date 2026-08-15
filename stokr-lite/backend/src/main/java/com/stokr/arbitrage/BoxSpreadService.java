@@ -123,12 +123,16 @@ public class BoxSpreadService {
 
                     if (ce1 == null || pe1 == null || ce2 == null || pe2 == null) continue;
 
-                    double ce1Ask = ce1.ask > 0 ? ce1.ask : ce1.lastPrice;
-                    double pe1Bid = pe1.bid > 0 ? pe1.bid : pe1.lastPrice;
-                    double ce2Bid = ce2.bid > 0 ? ce2.bid : ce2.lastPrice;
-                    double pe2Ask = pe2.ask > 0 ? pe2.ask : pe2.lastPrice;
+                    // Require real live bid/ask -- no fallback to lastPrice. A missing quote
+                    // (empty order book, illiquid strike, or market closed) must be skipped,
+                    // not silently priced off a stale last-traded print that isn't actually
+                    // tradeable right now. Matches BidParityService's convention.
+                    if (ce1.ask <= 0 || pe1.bid <= 0 || ce2.bid <= 0 || pe2.ask <= 0) continue;
 
-                    if (ce1Ask <= 0 || pe1Bid <= 0 || ce2Bid <= 0 || pe2Ask <= 0) continue;
+                    double ce1Ask = ce1.ask;
+                    double pe1Bid = pe1.bid;
+                    double ce2Bid = ce2.bid;
+                    double pe2Ask = pe2.ask;
 
                     double buyBoxCost = ce1Ask - pe1Bid - ce2Bid + pe2Ask;
                     double buyBoxEdgePoints = width - buyBoxCost;
