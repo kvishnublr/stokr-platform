@@ -152,6 +152,16 @@ export default function OptionArbitrage() {
     refetchInterval: 30000
   });
 
+  // Vertical Spread Scan Query
+  const { data: verticalLiveData } = useQuery({
+    queryKey: ['vertical-scan-fallback'],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/vertical-spread/scan', { params: { underlying: 'ALL' } });
+      return res.data;
+    },
+    refetchInterval: 30000
+  });
+
   // History & Signals Log Query - fetches up to 50K, server-side date filtered
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['option-arb-history', maxSignals],
@@ -170,6 +180,7 @@ export default function OptionArbitrage() {
 
   const opportunities = liveData?.opportunities || [];
   const calendarOpportunities = calendarLiveData?.opportunities || [];
+  const verticalOpportunities = verticalLiveData?.opportunities || [];
   const summary = liveData?.summary || {};
   const historyItems = historyData?.items || [];
 
@@ -353,6 +364,7 @@ export default function OptionArbitrage() {
             toggleUnderlying={toggleUnderlying}
             opportunities={opportunities}
             calendarOpportunities={calendarOpportunities}
+            verticalOpportunities={verticalOpportunities}
             summary={summary}
             scanLoading={scanLoading}
             handleExecuteInline={handleExecuteInline}
@@ -719,7 +731,7 @@ function SubTabButton({ id, label, active, onClick, count }) {
 }
 
 /* 1. SIGNALS VIEW */
-function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpportunities, summary, scanLoading, handleExecuteInline, executionBroker }) {
+function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpportunities, verticalOpportunities, summary, scanLoading, handleExecuteInline, executionBroker }) {
   const [strategyTypeFilter, setStrategyTypeFilter] = useState('ALL');
   const [minEdge, setMinEdge] = useState(300);
   const [customEdge, setCustomEdge] = useState('');
@@ -743,14 +755,15 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
       legs: `BUY NEAR (${c.nearSymbol || ''} @ ₹${c.nearPrice}) | SELL FAR (${c.farSymbol || ''} @ ₹${c.farPrice})`
     }));
 
-    return [...opportunities, ...mappedCal];
-  }, [opportunities, calendarOpportunities]);
+    return [...opportunities, ...mappedCal, ...(verticalOpportunities || [])];
+  }, [opportunities, calendarOpportunities, verticalOpportunities]);
 
   const filteredOpps = useMemo(() => {
     return combinedOpps.filter(o => {
       const typeStr = String(o.type || o.strategyType || '').toUpperCase();
       if (strategyTypeFilter === 'PARITY' && !typeStr.includes('PARITY') && !typeStr.includes('BID')) return false;
       if (strategyTypeFilter === 'BOX' && !typeStr.includes('BOX')) return false;
+      if (strategyTypeFilter === 'VERTICAL' && !typeStr.includes('VERTICAL')) return false;
       if (strategyTypeFilter === 'CALENDAR' && !typeStr.includes('CALENDAR') && !typeStr.includes('TIME')) return false;
       if (strategyTypeFilter === 'CONDOR' && !typeStr.includes('CONDOR') && !typeStr.includes('IRON')) return false;
       if ((Number(o.edgeAfterCosts) || 0) < minEdge) return false;
@@ -803,6 +816,7 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
             { id: 'ALL', label: 'All Types' },
             { id: 'PARITY', label: '⚡ Bid Parity' },
             { id: 'BOX', label: '💎 Box Spread' },
+            { id: 'VERTICAL', label: '📐 Vertical' },
             { id: 'CALENDAR', label: '⏳ Calendar' },
             { id: 'CONDOR', label: '🛡️ Condor' },
           ].map(f => (
@@ -2562,7 +2576,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
   };
 
   const dr = getDateRange();
-  const strategyParam = strategyFilter === 'PARITY' ? 'BID_PARITY' : strategyFilter === 'BOX' ? 'BOX_SPREAD' : strategyFilter === 'CONDOR' ? 'IRON_CONDOR' : null;
+  const strategyParam = strategyFilter === 'PARITY' ? 'BID_PARITY' : strategyFilter === 'BOX' ? 'BOX_SPREAD' : strategyFilter === 'VERTICAL' ? 'VERTICAL_SPREAD' : strategyFilter === 'CONDOR' ? 'IRON_CONDOR' : null;
   const underlyingParam = underlyingFilter !== 'ALL' ? underlyingFilter : null;
 
   const { data: histData, isLoading: histLoading } = useQuery({
@@ -2772,6 +2786,7 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                 { id: 'ALL', label: 'All' },
                 { id: 'PARITY', label: '⚡ Parity' },
                 { id: 'BOX', label: '💎 Box' },
+                { id: 'VERTICAL', label: '📐 Vertical' },
                 { id: 'CALENDAR', label: '⏳ Calendar' },
                 { id: 'CONDOR', label: '🛡️ Condor' },
               ].map(s => (
