@@ -110,6 +110,63 @@ public class OptionArbAutoExecService {
     }
 
     /**
+     * Manual "Trade" button with a real (non-PAPER) broker selected. Reuses the same
+     * order-placement machinery as auto-exec (dispatching on legList presence), but is
+     * user-triggered rather than threshold-triggered, so it has its own broker resolution
+     * and open-position gate instead of going through evaluateAndExecute's settings.
+     */
+    public Map<String, Object> manualExecuteLive(OptionArbOpportunity opp, int lots, String broker) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (opp == null) {
+            result.put("status", "ERROR");
+            result.put("message", "Opportunity not found");
+            return result;
+        }
+
+        long openCount = positionRepo.countAllOpen();
+        if (openCount >= 1) {
+            result.put("status", "ERROR");
+            result.put("message", "Already have an open position. Close it first.");
+            return result;
+        }
+
+        Long userId;
+        BrokerAccount account;
+        BrokerAdapter adapter;
+        try {
+            userId = brokerAccountRepo.findByStatus("ACTIVE").stream()
+                    .findFirst().map(BrokerAccount::getUserId).orElse(null);
+            if (userId == null) { result.put("status", "ERROR"); result.put("message", "No active broker account"); return result; }
+            List<BrokerAccount> accounts = brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(userId, broker, "ACTIVE");
+            if (accounts.isEmpty()) { result.put("status", "ERROR"); result.put("message", "No " + broker + " account found"); return result; }
+            account = accounts.get(0);
+            adapter = brokerService.getAdapter(broker);
+        } catch (Exception e) {
+            result.put("status", "ERROR");
+            result.put("message", "Broker setup failed: " + e.getMessage());
+            return result;
+        }
+
+        List<Map<String, Object>> legs = opp.getLegList();
+        boolean isMultiLeg = legs != null && !legs.isEmpty();
+        boolean opened = isMultiLeg
+                ? executeMultiLegTrade(account, adapter, opp, lots, userId, legs)
+                : executeTrade(account, adapter, opp, lots, userId);
+
+        if (opened) {
+            result.put("status", "SUCCESS");
+            result.put("underlying", opp.getUnderlying());
+            result.put("strike", opp.getStrike());
+            result.put("action", opp.getAction());
+            result.put("message", opp.getUnderlying() + " " + opp.getStrike() + " " + opp.getAction() + " entered LIVE via " + broker);
+        } else {
+            result.put("status", "ERROR");
+            result.put("message", "Live order failed — check Auto-Exec logs for the failed leg");
+        }
+        return result;
+    }
+
+    /**
      * IMMEDIATE: called right after scan saves new opportunities.
      * Evaluates each new signal against thresholds and executes instantly.
      */

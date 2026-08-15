@@ -1389,30 +1389,26 @@ public class OptionArbitrageController {
                 log.info("Created opportunity from scan data: id={}", opp.getId());
             }
 
-            // Fetch live CE/PE prices as entry prices
-            double ceLive = 0, peLive = 0;
-            try {
-                if (opp.getExpiryDate() != null && opp.getStrike() != null) {
-                    String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
-                    String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
-                    Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
-                    if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
-                    if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
-                }
-            } catch (Exception e) {
-                log.warn("Could not fetch live prices for entry: {}", e.getMessage());
+            int lots = body.get("lots") instanceof Number n ? Math.max(1, n.intValue()) : 1;
+            String broker = (String) body.getOrDefault("broker", "PAPER");
+            List<Map<String, Object>> legs = opp.getLegList();
+            boolean isMultiLeg = legs != null && !legs.isEmpty();
+
+            if (broker != null && !broker.isBlank() && !"PAPER".equalsIgnoreCase(broker)) {
+                // Real broker selected -- place an actual order via the same engine auto-exec
+                // uses, dispatching on legList presence for the correct leg shape.
+                Map<String, Object> liveResult = autoExecService.manualExecuteLive(opp, lots, broker);
+                resp.putAll(liveResult);
+                addAuditLog("MANUAL_LIVE_TRADE", resp.get("status") != null ? resp.get("status").toString() : "ERROR",
+                    "Manual LIVE trade via " + broker + " for " + opp.getUnderlying() + " " + opp.getStrike()
+                    + ": " + resp.get("message"));
+                return ResponseEntity.ok(resp);
             }
 
-            // Update entry prices with live quotes
-            if (ceLive > 0) opp.setCeEntryPrice(BigDecimal.valueOf(ceLive));
-            if (peLive > 0) opp.setPeEntryPrice(BigDecimal.valueOf(peLive));
-
-            // Update status to RUNNING
+            // PAPER: simulate a fill using live quotes and record it directly (no broker call).
             opp.setStatus("RUNNING");
-
             historyService.getRepository().save(opp);
 
-            // Create a LivePosition so it shows in Live Positions section
             try {
                 long openCount = livePositionRepo.countAllOpen();
                 if (openCount >= 1) {
@@ -1421,6 +1417,77 @@ public class OptionArbitrageController {
                     return ResponseEntity.badRequest().body(resp);
                 }
                 int lotSize = getLotSize(opp.getUnderlying());
+
+                if (isMultiLeg) {
+                    List<String> symbols = new ArrayList<>();
+                    List<Map<String, Object>> resolvedLegs = new ArrayList<>();
+                    for (Map<String, Object> leg : legs) {
+                        int strike = ((Number) leg.get("strike")).intValue();
+                        String optionType = (String) leg.get("optionType");
+                        String sym = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), strike, optionType);
+                        Map<String, Object> resolved = new LinkedHashMap<>(leg);
+                        resolved.put("symbol", sym);
+                        resolvedLegs.add(resolved);
+                        if (sym != null) symbols.add(sym);
+                    }
+                    Map<String, OptionChainService.OptionQuote> legQuotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+                    double entryCost = 0;
+                    for (Map<String, Object> leg : resolvedLegs) {
+                        String sym = (String) leg.get("symbol");
+                        double live = (sym != null && legQuotes.containsKey(sym) && legQuotes.get(sym).lastPrice > 0)
+                            ? legQuotes.get(sym).lastPrice
+                            : (leg.get("price") instanceof Number n ? n.doubleValue() : 0);
+                        leg.put("price", live);
+                        int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
+                        boolean isBuy = "BUY".equals(leg.get("side"));
+                        entryCost += (isBuy ? live : -live) * qtyMult;
+                    }
+                    entryCost = Math.abs(entryCost) * lotSize * lots;
+
+                    LivePosition livePos = LivePosition.builder()
+                        .userId(1L)
+                        .opportunityId(opp.getId())
+                        .underlying(opp.getUnderlying())
+                        .strike(opp.getStrike())
+                        .action(opp.getAction())
+                        .strategyType(opp.getStrategyType())
+                        .lots(lots)
+                        .lotSize(lotSize)
+                        .targetEdge(opp.getEdgeAfterCosts())
+                        .entryCost(BigDecimal.valueOf(entryCost))
+                        .status("OPEN")
+                        .enteredAt(LocalDateTime.now())
+                        .createdAt(LocalDateTime.now())
+                        .build();
+                    livePos.setLegs(resolvedLegs);
+                    livePositionRepo.save(livePos);
+                    resp.put("livePositionId", livePos.getId());
+
+                    addAuditLog("PAPER_TRADE", "SUCCESS",
+                        "Entered " + opp.getUnderlying() + " " + opp.getAction() + " (" + resolvedLegs.size() + "-leg, PAPER)");
+                    resp.put("status", "SUCCESS");
+                    resp.put("opportunityId", opp.getId());
+                    resp.put("underlying", opp.getUnderlying());
+                    resp.put("strike", opp.getStrike());
+                    resp.put("action", opp.getAction());
+                    resp.put("tradeStatus", "RUNNING");
+                    resp.put("message", opp.getUnderlying() + " " + opp.getAction() + " entered as PAPER trade (" + resolvedLegs.size() + " legs)");
+                    return ResponseEntity.ok(resp);
+                }
+
+                // Legacy single-strike CE+PE+FUT shape (Bid Parity / normal parity)
+                double ceLive = 0, peLive = 0;
+                if (opp.getExpiryDate() != null && opp.getStrike() != null) {
+                    String ceSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "CE");
+                    String peSymbol = optionChainService.buildNfoSymbol(opp.getUnderlying(), opp.getExpiryDate(), opp.getStrike(), "PE");
+                    Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(List.of(ceSymbol, peSymbol));
+                    if (quotes.containsKey(ceSymbol) && quotes.get(ceSymbol).lastPrice > 0) ceLive = quotes.get(ceSymbol).lastPrice;
+                    if (quotes.containsKey(peSymbol) && quotes.get(peSymbol).lastPrice > 0) peLive = quotes.get(peSymbol).lastPrice;
+                }
+                if (ceLive > 0) opp.setCeEntryPrice(BigDecimal.valueOf(ceLive));
+                if (peLive > 0) opp.setPeEntryPrice(BigDecimal.valueOf(peLive));
+                historyService.getRepository().save(opp);
+
                 String futSymbol = opp.getExpiryDate() != null
                     ? optionChainService.buildNfoFutSymbol(opp.getUnderlying(), opp.getExpiryDate()) : null;
                 double futLive = 0;
@@ -1440,7 +1507,7 @@ public class OptionArbitrageController {
                     .strike(opp.getStrike())
                     .action(opp.getAction())
                     .strategyType(opp.getStrategyType())
-                    .lots(1)
+                    .lots(lots)
                     .lotSize(lotSize)
                     .ceEntryPrice(ceLive > 0 ? BigDecimal.valueOf(ceLive) : null)
                     .peEntryPrice(peLive > 0 ? BigDecimal.valueOf(peLive) : null)
@@ -1458,26 +1525,28 @@ public class OptionArbitrageController {
                     .build();
                 livePositionRepo.save(livePos);
                 resp.put("livePositionId", livePos.getId());
+
+                addAuditLog("PAPER_TRADE", "SUCCESS",
+                    "Entered " + opp.getUnderlying() + " " + opp.getStrike() + " " + opp.getAction()
+                    + " | CE=" + String.format("%.1f", ceLive) + " PE=" + String.format("%.1f", peLive));
+
+                resp.put("status", "SUCCESS");
+                resp.put("opportunityId", opp.getId());
+                resp.put("underlying", opp.getUnderlying());
+                resp.put("strike", opp.getStrike());
+                resp.put("action", opp.getAction());
+                resp.put("ceEntryPrice", ceLive);
+                resp.put("peEntryPrice", peLive);
+                resp.put("tradeStatus", "RUNNING");
+                resp.put("message", opp.getUnderlying() + " " + opp.getStrike() + " entered as PAPER trade");
             } catch (Exception e) {
                 log.warn("Failed to create live position: {}", e.getMessage());
+                resp.put("status", "ERROR");
+                resp.put("message", "Failed to record paper trade: " + e.getMessage());
             }
 
-            addAuditLog("PAPER_TRADE", "SUCCESS",
-                "Entered " + opp.getUnderlying() + " " + opp.getStrike() + " " + opp.getAction()
-                + " | CE=" + String.format("%.1f", ceLive) + " PE=" + String.format("%.1f", peLive));
-
-            resp.put("status", "SUCCESS");
-            resp.put("opportunityId", opp.getId());
-            resp.put("underlying", opp.getUnderlying());
-            resp.put("strike", opp.getStrike());
-            resp.put("action", opp.getAction());
-            resp.put("ceEntryPrice", ceLive);
-            resp.put("peEntryPrice", peLive);
-            resp.put("tradeStatus", "RUNNING");
-            resp.put("message", opp.getUnderlying() + " " + opp.getStrike() + " entered as PAPER trade");
-
         } catch (Exception e) {
-            log.error("Paper trade execution failed: {}", e.getMessage(), e);
+            log.error("Trade execution failed: {}", e.getMessage(), e);
             resp.put("status", "ERROR");
             resp.put("message", "Execution failed: " + e.getMessage());
         }
