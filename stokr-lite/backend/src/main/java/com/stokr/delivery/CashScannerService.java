@@ -48,8 +48,12 @@ public class CashScannerService {
             Long todayQty = today.getTotalQty();
             if (todayDelivPct == null || closeP == null || prevCloseP == null || prevCloseP == 0 || todayQty == null) continue;
 
-            double avgDelivPct = avg(priorRows, r -> dbl(r.getDelivPct()));
-            double avgQty = avg(priorRows, r -> r.getTotalQty() != null ? r.getTotalQty().doubleValue() : null);
+            // Genuine trailing-20-day baseline (matches Cash Swing's window) -- not "all
+            // available prior history", which varies per symbol with data availability and
+            // made the surge multiplier inconsistent across symbols/days.
+            List<NseDeliveryData> baseline = priorRows.subList(Math.max(0, priorRows.size() - 20), priorRows.size());
+            double avgDelivPct = avg(baseline, r -> dbl(r.getDelivPct()));
+            double avgQty = avg(baseline, r -> r.getTotalQty() != null ? r.getTotalQty().doubleValue() : null);
             if (avgDelivPct <= 0 || avgQty <= 0) continue;
 
             double priceChangePct = (closeP - prevCloseP) / prevCloseP * 100.0;
@@ -164,18 +168,31 @@ public class CashScannerService {
         return rows.stream().collect(Collectors.groupingBy(NseDeliveryData::getSymbol, LinkedHashMap::new, Collectors.toList()));
     }
 
-    /** Wilder's RSI over the last `period` changes in `closes` (closes must be chronological, oldest first). */
+    /**
+     * True Wilder's RSI(period): bootstrap avgGain/avgLoss as a simple average of the first
+     * `period` changes in the available history, then smooth forward through the rest with
+     * Wilder's recursive formula, so the result reflects the full history the same way every
+     * standard charting platform computes it -- not a flat re-average of just the trailing
+     * window (that's Cutler's RSI, a different and less standard variant).
+     * `closes` must be chronological, oldest first.
+     */
     private Double computeRSI(List<Double> closes, int period) {
         if (closes.size() < period + 1) return null;
-        List<Double> window = closes.subList(closes.size() - (period + 1), closes.size());
-        double gainSum = 0, lossSum = 0;
-        for (int i = 1; i < window.size(); i++) {
-            double change = window.get(i) - window.get(i - 1);
-            if (change > 0) gainSum += change;
-            else lossSum += -change;
+        double avgGain = 0, avgLoss = 0;
+        for (int i = 1; i <= period; i++) {
+            double change = closes.get(i) - closes.get(i - 1);
+            if (change > 0) avgGain += change;
+            else avgLoss += -change;
         }
-        double avgGain = gainSum / period;
-        double avgLoss = lossSum / period;
+        avgGain /= period;
+        avgLoss /= period;
+        for (int i = period + 1; i < closes.size(); i++) {
+            double change = closes.get(i) - closes.get(i - 1);
+            double gain = Math.max(change, 0);
+            double loss = Math.max(-change, 0);
+            avgGain = (avgGain * (period - 1) + gain) / period;
+            avgLoss = (avgLoss * (period - 1) + loss) / period;
+        }
         if (avgLoss == 0) return 100.0;
         double rs = avgGain / avgLoss;
         return 100.0 - (100.0 / (1.0 + rs));

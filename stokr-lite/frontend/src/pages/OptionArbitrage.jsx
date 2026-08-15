@@ -223,7 +223,30 @@ export default function OptionArbitrage() {
   };
 
   const handleExecuteInline = async (opp, lots = 1) => {
+    // Cash Surge/Swing signals are plain stock picks (symbol, no underlying/strike) --
+    // route to the equity execution endpoint instead of the options-shaped one.
+    const isCashEquity = !opp.underlying && !!opp.symbol;
     try {
+      if (isCashEquity) {
+        const res = await client.post('/option-arbitrage/cash-trade/execute', {
+          symbol: opp.symbol,
+          strategyType: opp.strategyType || (opp.rsiMomentum != null ? 'CASH_SWING' : 'CASH_SURGE'),
+          targetPrice: opp.targetPrice || 0,
+          stopLossPrice: opp.stopLossPrice || 0,
+          broker: executionBroker
+        });
+        const data = res.data;
+        if (data?.status === 'SUCCESS') {
+          const msg = `BUY ${data.quantity} ${data.symbol} @ ₹${data.entryPrice?.toFixed(1)}`;
+          showToast(`⚡ ${msg}`, 'success');
+          notifyBrowser('Trade Entered', msg);
+        } else {
+          showToast(`❌ Trade failed: ${data?.message || 'Unknown error'}`, 'error');
+          notifyBrowser('Trade Failed', data?.message || 'Unknown error');
+        }
+        return;
+      }
+
       const res = await client.post('/option-arbitrage/paper-trade/execute', {
         opportunityId: opp.id || undefined,
         underlying: opp.underlying || opp.symbol,
@@ -379,6 +402,7 @@ export default function OptionArbitrage() {
 
       {/* Live Positions — always visible */}
       <LivePositionsSection />
+      <CashPositionsSection />
 
       {/* Active Tab View Rendering */}
       <div className="space-y-5 w-full">
@@ -739,6 +763,83 @@ function LivePositionsSection() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function CashPositionsSection() {
+  const [collapsed, setCollapsed] = useState(true);
+  const { data, refetch } = useQuery({
+    queryKey: ['cashPositions'],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/cash-positions');
+      return res.data;
+    },
+    refetchInterval: 5000,
+    staleTime: 2000,
+  });
+
+  const positions = data?.positions || [];
+  if (positions.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 bg-gradient-to-r from-amber-900 to-orange-950 flex items-center justify-between cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🔥</span>
+          <h3 className="text-sm font-black text-white">Cash Positions</h3>
+          <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full">{positions.length}</span>
+          {data?.totalPnl != null && (
+            <span className={`px-2.5 py-0.5 text-[11px] font-black rounded-full ${data.totalPnl >= 0 ? 'bg-emerald-500/30 text-emerald-300' : 'bg-red-500/30 text-red-300'}`}>
+              Total P&L: ₹{Math.round(data.totalPnl).toLocaleString('en-IN')}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition">Refresh</button>
+          <span className="text-white/60 text-xs">{collapsed ? '▼' : '▲'}</span>
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px] text-left">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
+              <tr>
+                <th className="px-3 py-2">Time</th>
+                <th className="px-3 py-2">Symbol</th>
+                <th className="px-3 py-2">Strategy</th>
+                <th className="px-3 py-2 text-right">Qty</th>
+                <th className="px-3 py-2 text-right">Entry</th>
+                <th className="px-3 py-2 text-right">Current</th>
+                <th className="px-3 py-2 text-right">Target</th>
+                <th className="px-3 py-2 text-right">Stop Loss</th>
+                <th className="px-3 py-2 text-right">Live P&amp;L</th>
+                <th className="px-3 py-2 text-center">Broker</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {positions.map(p => {
+                const pnl = p.currentPnl || 0;
+                return (
+                  <tr key={p.id} className="hover:bg-slate-50">
+                    <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{fmtTime(p.enteredAt)}</td>
+                    <td className="px-3 py-2 font-bold text-slate-800">{p.symbol}</td>
+                    <td className="px-3 py-2 text-slate-500 text-[10px]">{p.strategyType}</td>
+                    <td className="px-3 py-2 text-right font-bold">{p.quantity}</td>
+                    <td className="px-3 py-2 text-right font-mono">₹{Number(p.entryPrice || 0).toFixed(1)}</td>
+                    <td className="px-3 py-2 text-right font-mono">₹{Number(p.currentPrice || 0).toFixed(1)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-emerald-600">₹{Number(p.targetPrice || 0).toFixed(1)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-red-500">₹{Number(p.stopLossPrice || 0).toFixed(1)}</td>
+                    <td className={`px-3 py-2 text-right font-mono font-bold ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>₹{Math.round(pnl).toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-2 text-center text-[10px] text-slate-500">{p.broker}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

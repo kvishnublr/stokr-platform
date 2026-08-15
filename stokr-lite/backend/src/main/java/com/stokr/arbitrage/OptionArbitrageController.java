@@ -36,6 +36,7 @@ public class OptionArbitrageController {
     private final LivePositionRepository livePositionRepo;
     private final OptionArbOpportunityRepository oppRepo;
     private final com.stokr.delivery.CashScannerService cashScannerService;
+    private final com.stokr.delivery.CashExecutionService cashExecutionService;
 
     private final Map<String, Object> autoExecSettings = new ConcurrentHashMap<>();
     private final List<Map<String, Object>> auditLogs = Collections.synchronizedList(new ArrayList<>());
@@ -52,7 +53,8 @@ public class OptionArbitrageController {
                                      OptionArbAutoExecService autoExecService,
                                      LivePositionRepository livePositionRepo,
                                      OptionArbOpportunityRepository oppRepo,
-                                     com.stokr.delivery.CashScannerService cashScannerService) {
+                                     com.stokr.delivery.CashScannerService cashScannerService,
+                                     com.stokr.delivery.CashExecutionService cashExecutionService) {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.bidParityService = bidParityService;
@@ -66,6 +68,7 @@ public class OptionArbitrageController {
         this.livePositionRepo = livePositionRepo;
         this.oppRepo = oppRepo;
         this.cashScannerService = cashScannerService;
+        this.cashExecutionService = cashExecutionService;
 
         autoExecSettings.put("normalParityEnabled", true);
         autoExecSettings.put("normalEntryEdge", 150.0);
@@ -506,6 +509,33 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
+    @PostMapping(value = "/cash-trade/execute", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> executeCashTrade(@RequestBody Map<String, Object> body) {
+        String symbol = (String) body.get("symbol");
+        String strategyType = (String) body.getOrDefault("strategyType", "CASH_SURGE");
+        double targetPrice = body.get("targetPrice") instanceof Number n ? n.doubleValue() : 0;
+        double stopLossPrice = body.get("stopLossPrice") instanceof Number n ? n.doubleValue() : 0;
+        String broker = (String) body.getOrDefault("broker", "PAPER");
+        Map<String, Object> result = cashExecutionService.execute(symbol, strategyType, targetPrice, stopLossPrice, broker);
+        addAuditLog("CASH_TRADE", result.get("status") != null ? result.get("status").toString() : "ERROR",
+            "Cash trade " + symbol + " via " + broker + ": " + result.get("message"));
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/cash-positions")
+    public ResponseEntity<Map<String, Object>> getCashPositions() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        List<Map<String, Object>> positions = cashExecutionService.getOpenPositionsWithLivePnl();
+        resp.put("positions", positions);
+        resp.put("count", positions.size());
+        double totalPnl = positions.stream().mapToDouble(p -> {
+            Object pnl = p.get("currentPnl");
+            return pnl != null ? ((Number) pnl).doubleValue() : 0;
+        }).sum();
+        resp.put("totalPnl", Math.round(totalPnl));
+        return ResponseEntity.ok(resp);
+    }
+
     @GetMapping("/signals")
     public ResponseEntity<Map<String, Object>> getSignals(
             @RequestParam(defaultValue = "ALL") String underlying,
@@ -778,7 +808,7 @@ public class OptionArbitrageController {
                     // Untraded RUNNING Box/Vertical/Butterfly/Condor Spread signals -- same
                     // mark-to-market simulation idea as Bid Parity above, generalized over
                     // each opportunity's stored legList (no futures leg, 2-4 same-type legs).
-                    Set<String> multiLegTypes = Set.of("BOX_SPREAD", "VERTICAL_SPREAD", "BUTTERFLY_SPREAD", "CONDOR_SPREAD");
+                    Set<String> multiLegTypes = Set.of("BOX_SPREAD", "VERTICAL_SPREAD", "BUTTERFLY_SPREAD", "CONDOR_SPREAD", "IRON_CONDOR");
                     Map<Long, List<Map<String, Object>>> legSymbolsByOpp = new LinkedHashMap<>();
                     for (OptionArbOpportunity o : missingOppMap.values()) {
                         if ("RUNNING".equals(o.getStatus()) && multiLegTypes.contains(o.getStrategyType())
