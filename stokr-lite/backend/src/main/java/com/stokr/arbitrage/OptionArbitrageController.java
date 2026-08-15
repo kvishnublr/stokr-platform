@@ -29,6 +29,7 @@ public class OptionArbitrageController {
     private final BoxSpreadService boxSpreadService;
     private final VerticalSpreadService verticalSpreadService;
     private final ButterflySpreadService butterflySpreadService;
+    private final CondorSpreadService condorSpreadService;
     private final CalendarSpreadService calendarSpreadService;
     private final ZerodhaSpotPriceFetcher spotFetcher;
     private final OptionArbAutoExecService autoExecService;
@@ -45,6 +46,7 @@ public class OptionArbitrageController {
                                      BoxSpreadService boxSpreadService,
                                      VerticalSpreadService verticalSpreadService,
                                      ButterflySpreadService butterflySpreadService,
+                                     CondorSpreadService condorSpreadService,
                                      CalendarSpreadService calendarSpreadService,
                                      ZerodhaSpotPriceFetcher spotFetcher,
                                      OptionArbAutoExecService autoExecService,
@@ -57,6 +59,7 @@ public class OptionArbitrageController {
         this.boxSpreadService = boxSpreadService;
         this.verticalSpreadService = verticalSpreadService;
         this.butterflySpreadService = butterflySpreadService;
+        this.condorSpreadService = condorSpreadService;
         this.calendarSpreadService = calendarSpreadService;
         this.spotFetcher = spotFetcher;
         this.autoExecService = autoExecService;
@@ -239,6 +242,30 @@ public class OptionArbitrageController {
             ));
         }
         List<Map<String, Object>> opps = butterflySpreadService.scanButterflySpread(underlying);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("opportunities", opps);
+        resp.put("count", opps.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/condor-spread/scan")
+    public ResponseEntity<Map<String, Object>> scanCondorSpread(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                  @RequestParam(defaultValue = "false") boolean force) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "opportunities", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<Map<String, Object>> opps = condorSpreadService.scanCondorSpread(underlying);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
