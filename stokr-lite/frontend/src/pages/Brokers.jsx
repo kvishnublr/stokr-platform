@@ -32,6 +32,13 @@ const BROKER_META = {
     glow: 'rgba(245,158,11,0.3)',
     primary: false,
   },
+  MOTILALOSWAL: {
+    color: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+    letter: 'M',
+    desc: 'Motilal Oswal — TOTP-based API',
+    glow: 'rgba(139,92,246,0.3)',
+    primary: false,
+  },
 };
 
 const BROKER_OAUTH_MESSAGE = 'stokr_broker_oauth';
@@ -68,6 +75,14 @@ export default function Brokers() {
   const [naviaUid, setNaviaUid] = useState('');
   const [naviaPassword, setNaviaPassword] = useState('');
   const [naviaTotpSecret, setNaviaTotpSecret] = useState('');
+
+  // Motilal Oswal TOTP form state
+  const [mofslFormOpen, setMofslFormOpen] = useState(false);
+  const [mofslClientCode, setMofslClientCode] = useState('');
+  const [mofslPassword, setMofslPassword] = useState('');
+  const [mofslTotpSecret, setMofslTotpSecret] = useState('');
+  const [mofslSaving, setMofslSaving] = useState(false);
+  const [mofslMsg, setMofslMsg] = useState(null);
   const [naviaSaving, setNaviaSaving] = useState(false);
   const [naviaMsg, setNaviaMsg] = useState(null);
 
@@ -141,6 +156,28 @@ export default function Brokers() {
     } catch(e) {
       setNaviaMsg({ ok: false, text: e.response?.data?.error || e.message || 'Connection failed' });
     } finally { setNaviaSaving(false); }
+  };
+
+  const saveMofsl = async () => {
+    if (!mofslClientCode.trim() || !mofslPassword.trim() || !mofslTotpSecret.trim()) {
+      setMofslMsg({ ok: false, text: 'Client Code, Password, and TOTP Secret are all required' }); return;
+    }
+    setMofslSaving(true); setMofslMsg(null);
+    try {
+      await client.post('/brokers/motilaloswal/connect', {
+        clientCode: mofslClientCode.trim(),
+        password: mofslPassword.trim(),
+        totpSecret: mofslTotpSecret.trim()
+      });
+      setMofslMsg({ ok: true, text: 'Motilal Oswal connected successfully!' });
+      setMofslFormOpen(false);
+      setMofslClientCode(''); setMofslPassword(''); setMofslTotpSecret('');
+      queryClient.invalidateQueries({ queryKey: ['brokers'] });
+      queryClient.invalidateQueries({ queryKey: ['broker-health'] });
+      refetchHealth();
+    } catch(e) {
+      setMofslMsg({ ok: false, text: e.response?.data?.error || e.message || 'Connection failed' });
+    } finally { setMofslSaving(false); }
   };
 
   const disconnectMutation = useMutation({
@@ -218,6 +255,11 @@ export default function Brokers() {
     if (brokerName === 'NAVIA') {
       setNaviaFormOpen(true);
       setNaviaMsg(null);
+      return;
+    }
+    if (brokerName === 'MOTILALOSWAL') {
+      setMofslFormOpen(true);
+      setMofslMsg(null);
       return;
     }
     setOauthResult(null);
@@ -598,11 +640,66 @@ export default function Brokers() {
         </div>
       )}
 
+      {/* Motilal Oswal TOTP Form */}
+      {mofslFormOpen && (
+        <div className="card-crystal animate-fade-in-up" style={{ marginBottom: '28px', padding: '28px',
+          border: '2px solid rgba(139,92,246,0.3)', background: 'linear-gradient(135deg, rgba(139,92,246,0.06), rgba(124,58,237,0.03))' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Connect Motilal Oswal</h3>
+            <button onClick={() => setMofslFormOpen(false)}
+              style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+          </div>
+          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
+            Enter your MOFSL login credentials. The TOTP secret is from your authenticator app setup.
+            This integration is newly built and unverified against a real account — test with margin-check
+            before trusting it for live orders.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>Client Code</label>
+              <input type="text" value={mofslClientCode} onChange={e => setMofslClientCode(e.target.value)}
+                placeholder="Enter your MOFSL client code"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
+                  background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>Password</label>
+              <input type="password" value={mofslPassword} onChange={e => setMofslPassword(e.target.value)}
+                placeholder="Enter your MOFSL login password"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
+                  background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'block' }}>TOTP Secret</label>
+              <input type="text" value={mofslTotpSecret} onChange={e => setMofslTotpSecret(e.target.value)}
+                placeholder="Enter your MOFSL TOTP secret (base32 key)"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid rgba(148,163,184,0.2)',
+                  background: 'rgba(255,255,255,0.8)', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          {mofslMsg && (
+            <div style={{ padding: '10px 14px', borderRadius: '8px', marginTop: '14px',
+              background: mofslMsg.ok ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+              border: `1.5px solid ${mofslMsg.ok ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+              color: mofslMsg.ok ? '#059669' : '#dc2626', fontSize: '12px', fontWeight: 600 }}>
+              {mofslMsg.ok ? '✅' : '❌'} {mofslMsg.text}
+            </div>
+          )}
+          <button onClick={saveMofsl} disabled={mofslSaving}
+            style={{ marginTop: '16px', padding: '12px 28px', borderRadius: '12px', border: 'none',
+              background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+              color: 'white', fontWeight: 700, fontSize: '14px', cursor: mofslSaving ? 'not-allowed' : 'pointer',
+              opacity: mofslSaving ? 0.6 : 1 }}>
+            {mofslSaving ? 'Connecting...' : 'Connect Motilal Oswal'}
+          </button>
+        </div>
+      )}
+
       {/* Available Brokers */}
       <div>
         <SectionTitle color="linear-gradient(180deg, #6366f1, #a78bfa)">Available Brokers</SectionTitle>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '18px' }}>
-          {(supported || ['ZERODHA', 'DHAN', 'FYERS', 'NAVIA']).map((name, i) => {
+          {(supported || ['ZERODHA', 'DHAN', 'FYERS', 'NAVIA', 'MOTILALOSWAL']).map((name, i) => {
             const brokerName = typeof name === 'string' ? name : name.name;
             const meta = BROKER_META[brokerName] || {
               color: 'linear-gradient(135deg, #64748b, #475569)', letter: brokerName[0],

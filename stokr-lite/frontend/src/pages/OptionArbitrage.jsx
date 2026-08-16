@@ -317,6 +317,7 @@ export default function OptionArbitrage() {
             >
               <option value="PAPER">📝 Paper Trading (Virtual ₹1 Cr)</option>
               <option value="NAVIA">⚡ Navia Markets</option>
+              <option value="MOTILALOSWAL">🟣 Motilal Oswal</option>
               <option value="ICICI_DIRECT">🏦 ICICI Direct Breeze</option>
               <option value="ZERODHA">🚀 Zerodha Kite</option>
               <option value="DHAN">🎯 DhanHQ</option>

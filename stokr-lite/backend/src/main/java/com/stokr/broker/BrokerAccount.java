@@ -52,6 +52,12 @@ public class BrokerAccount {
     @Column(name = "navia_api_secret", columnDefinition = "TEXT")
     private String naviaApiSecret;
 
+    @Column(name = "mofsl_password", columnDefinition = "TEXT")
+    private String mofslPassword;
+
+    @Column(name = "mofsl_totp_secret", columnDefinition = "TEXT")
+    private String mofslTotpSecret;
+
     @Column(name = "auto_reconnect")
     @Builder.Default
     private Boolean autoReconnect = false;
