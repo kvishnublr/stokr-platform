@@ -259,6 +259,7 @@ export default function OptionArbitrage() {
         peEntryPrice: opp.peEntryPrice || opp.pePrice || 0,
         spotPrice: opp.spotPrice || 0,
         futuresPrice: opp.futuresPrice || 0,
+        legList: opp.legList || undefined,
         lots: lots,
         broker: executionBroker
       });
@@ -1902,6 +1903,7 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
 
 /* 3c. BUTTERFLY SPREAD VIEW */
 function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
+  const [subTab, setSubTab] = useState('signals');
   const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(0);
   const [customEdge, setCustomEdge] = useState('');
@@ -1975,6 +1977,21 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
 
   return (
     <div className="space-y-4 w-full">
+      <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
+        <button onClick={() => setSubTab('signals')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'signals' ? 'bg-fuchsia-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          Arbitrage Signals
+        </button>
+        <button onClick={() => setSubTab('candidates')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'candidates' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          🔍 Candidates (Not Arbitrage)
+        </button>
+      </div>
+
+      {subTab === 'candidates' ? (
+        <ButterflyCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+      ) : (
+      <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-800">Butterfly Spread No-Arbitrage Bound Scanner</h2>
@@ -2106,6 +2123,192 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
               <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(histPage + 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Next</button>
               <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(totalHistoryPages - 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Last</button>
             </div>
+          </div>
+        )}
+      </div>
+      </>
+      )}
+    </div>
+  );
+}
+
+/* Butterfly "cheap fly" candidate discovery panel -- NOT arbitrage, pure evaluation tool.
+   Lets the user select several candidates and see the combined payoff curve across a
+   settlement-price range, so the shape (capped loss, where it's profitable) is visible
+   before deciding to trade anything manually. No execution wiring beyond the existing
+   per-row manual Trade button. */
+function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
+  const [underlying, setUnderlying] = useState('ALL');
+  const [maxCostRatio, setMaxCostRatio] = useState(0.35);
+  const [selected, setSelected] = useState({});
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['butterfly-candidates', underlying, maxCostRatio],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/butterfly-spread/candidates', { params: { underlying, maxCostRatio } });
+      return res.data;
+    },
+    refetchInterval: 30000
+  });
+
+  const candidates = data?.candidates || [];
+  const rowKey = (c, idx) => `${c.underlying}-${c.optionType}-${c.k1}-${c.k2}-${c.k3}-${idx}`;
+  const selectedCandidates = candidates.filter((c, idx) => selected[rowKey(c, idx)]);
+
+  const toggle = (key) => setSelected(prev => ({ ...prev, [key]: !prev[key] }));
+
+  // Combined payoff across a settlement-price range spanning all selected candidates.
+  const payoffChart = useMemo(() => {
+    if (selectedCandidates.length === 0) return null;
+    const spot = selectedCandidates[0].spotPrice || selectedCandidates.reduce((s, c) => s + c.spotPrice, 0) / selectedCandidates.length;
+    const lo = Math.min(...selectedCandidates.map(c => c.k1)) - 300;
+    const hi = Math.max(...selectedCandidates.map(c => c.k3)) + 300;
+    const steps = 120;
+    const stepSize = (hi - lo) / steps;
+    const points = [];
+    let minY = 0, maxY = 0;
+    for (let i = 0; i <= steps; i++) {
+      const x = lo + i * stepSize;
+      let total = 0;
+      for (const c of selectedCandidates) {
+        const lotSize = c.maxLoss > 0 && c.costPerLot > 0 ? Math.round(c.maxLoss / c.costPerLot) : 25;
+        let payoff;
+        if (c.optionType === 'CE') {
+          payoff = Math.max(x - c.k1, 0) - 2 * Math.max(x - c.k2, 0) + Math.max(x - c.k3, 0);
+        } else {
+          payoff = Math.max(c.k1 - x, 0) - 2 * Math.max(c.k2 - x, 0) + Math.max(c.k3 - x, 0);
+        }
+        total += (payoff - c.costPerLot) * lotSize;
+      }
+      points.push({ x, y: total });
+      minY = Math.min(minY, total);
+      maxY = Math.max(maxY, total);
+    }
+    return { points, spot, lo, hi, minY, maxY };
+  }, [selectedCandidates]);
+
+  const totalMaxLoss = selectedCandidates.reduce((s, c) => s + c.maxLoss, 0);
+  const totalMaxProfit = selectedCandidates.reduce((s, c) => s + c.maxProfit, 0);
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-xs text-amber-900">
+        <p className="font-bold mb-1">⚠️ Not arbitrage — evaluation tool only</p>
+        <p>These are butterflies priced cheap relative to their width (small debit vs. potential payoff if NIFTY pins near the center strike) — a directional bet on low movement, not a guaranteed-profit position. No backtested win rate. Select a few below to see the combined payoff shape before deciding anything.</p>
+      </div>
+
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">Cheap Butterfly Candidates</h2>
+          <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button key={u} onClick={() => setUnderlying(u)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              {u}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          <span className="text-[10px] font-bold text-slate-500 px-1">MAX COST/WIDTH</span>
+          {[0.2, 0.35, 0.5].map(r => (
+            <button key={r} onClick={() => setMaxCostRatio(r)}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${maxCostRatio === r ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              {Math.round(r * 100)}%
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {selectedCandidates.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="text-sm font-bold text-slate-800">{selectedCandidates.length} selected</span>
+            <span className="text-xs text-red-600 font-bold">Combined Max Loss (if all expire worthless): ₹{Math.round(totalMaxLoss).toLocaleString('en-IN')}</span>
+            <span className="text-xs text-emerald-600 font-bold">Combined Max Profit (if all pin exactly): ₹{Math.round(totalMaxProfit).toLocaleString('en-IN')}</span>
+          </div>
+          {payoffChart && (
+            <div className="overflow-x-auto">
+              <svg viewBox="0 0 700 220" className="w-full h-[220px]">
+                {/* zero line */}
+                <line x1="0" y1={220 - 20 - ((0 - payoffChart.minY) / (payoffChart.maxY - payoffChart.minY || 1)) * 180}
+                  x2="700" y2={220 - 20 - ((0 - payoffChart.minY) / (payoffChart.maxY - payoffChart.minY || 1)) * 180}
+                  stroke="#cbd5e1" strokeWidth="1" strokeDasharray="4,4" />
+                {/* spot marker */}
+                <line x1={((payoffChart.spot - payoffChart.lo) / (payoffChart.hi - payoffChart.lo)) * 700} y1="0"
+                  x2={((payoffChart.spot - payoffChart.lo) / (payoffChart.hi - payoffChart.lo)) * 700} y2="220"
+                  stroke="#6366f1" strokeWidth="1" strokeDasharray="3,3" />
+                <polyline
+                  fill="none" stroke="#d97706" strokeWidth="2"
+                  points={payoffChart.points.map(p => {
+                    const px = ((p.x - payoffChart.lo) / (payoffChart.hi - payoffChart.lo)) * 700;
+                    const py = 220 - 20 - ((p.y - payoffChart.minY) / (payoffChart.maxY - payoffChart.minY || 1)) * 180;
+                    return `${px},${py}`;
+                  }).join(' ')}
+                />
+              </svg>
+              <div className="flex justify-between text-[10px] text-slate-500 px-1">
+                <span>{Math.round(payoffChart.lo).toLocaleString('en-IN')}</span>
+                <span className="text-indigo-600 font-bold">Spot {Math.round(payoffChart.spot).toLocaleString('en-IN')}</span>
+                <span>{Math.round(payoffChart.hi).toLocaleString('en-IN')}</span>
+              </div>
+              <p className="text-[10px] text-slate-400 text-center">Combined P&amp;L (₹) vs. NIFTY settlement price at expiry — dashed line is breakeven (₹0)</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning for cheap butterfly candidates...</div>
+        ) : candidates.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidates under {Math.round(maxCostRatio * 100)}% cost/width right now</div>
+        ) : (
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2"></th>
+                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Strikes</th>
+                  <th className="px-2 py-2">Type</th>
+                  <th className="px-2 py-2 text-right">Cost/Width</th>
+                  <th className="px-2 py-2 text-right text-red-600">Max Loss</th>
+                  <th className="px-2 py-2 text-right text-emerald-600">Max Profit</th>
+                  <th className="px-2 py-2 text-right">R:R</th>
+                  <th className="px-2 py-2 text-right">Breakevens</th>
+                  <th className="px-2 py-2 text-center">Trade</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {candidates.map((c, idx) => {
+                  const key = rowKey(c, idx);
+                  const isSel = !!selected[key];
+                  return (
+                    <tr key={key} className={`transition ${isSel ? 'bg-amber-50' : 'hover:bg-slate-50'}`}>
+                      <td className="px-2 py-1.5 text-center">
+                        <input type="checkbox" checked={isSel} onChange={() => toggle(key)} className="w-3.5 h-3.5" />
+                      </td>
+                      <td className="px-2 py-1.5 font-bold text-slate-800">{c.underlying}</td>
+                      <td className="px-2 py-1.5 font-bold text-slate-700">{c.strikes}</td>
+                      <td className="px-2 py-1.5 text-slate-600">{c.optionType}</td>
+                      <td className="px-2 py-1.5 text-right font-mono">{Math.round(c.costRatio * 100)}%</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-red-600">₹{Math.round(c.maxLoss).toLocaleString('en-IN')}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-emerald-600">₹{Math.round(c.maxProfit).toLocaleString('en-IN')}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold">{c.riskReward}x</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-500">{c.breakevenLower}/{c.breakevenUpper}</td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button onClick={() => handleExecuteInline(c)}
+                          className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm">
+                          ⚡ Trade
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

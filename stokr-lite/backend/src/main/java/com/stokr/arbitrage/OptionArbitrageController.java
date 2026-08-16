@@ -261,6 +261,32 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
+    @GetMapping("/butterfly-spread/candidates")
+    public ResponseEntity<Map<String, Object>> scanButterflyCandidates(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                          @RequestParam(defaultValue = "0.35") double maxCostRatio,
+                                                                          @RequestParam(defaultValue = "false") boolean force) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "candidates", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<Map<String, Object>> candidates = butterflySpreadService.scanCandidates(underlying, maxCostRatio);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("candidates", candidates);
+        resp.put("count", candidates.size());
+        resp.put("note", "Discovery/evaluation tool -- these are NOT arbitrage and have no backtested win rate.");
+        return ResponseEntity.ok(resp);
+    }
+
     @GetMapping("/condor-spread/scan")
     public ResponseEntity<Map<String, Object>> scanCondorSpread(@RequestParam(defaultValue = "ALL") String underlying,
                                                                   @RequestParam(defaultValue = "false") boolean force) {
@@ -1453,6 +1479,14 @@ public class OptionArbitrageController {
                     .expiryDate(expiry)
                     .status("RUNNING")
                     .build();
+                Object legListObj = body.get("legList");
+                if (legListObj instanceof List<?> ll) {
+                    try {
+                        @SuppressWarnings("unchecked")
+                        List<Map<String, Object>> cast = (List<Map<String, Object>>) ll;
+                        opp.setLegList(cast);
+                    } catch (Exception ignored) {}
+                }
                 opp = historyService.getRepository().save(opp);
                 log.info("Created opportunity from scan data: id={}", opp.getId());
             }

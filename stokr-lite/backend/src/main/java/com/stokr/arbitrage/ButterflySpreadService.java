@@ -82,6 +82,115 @@ public class ButterflySpreadService {
         return results;
     }
 
+    /**
+     * "Cheap butterfly" candidates: NOT arbitrage (no bound violation), just butterflies
+     * where the debit paid is a small fraction of the width -- a defined-risk bet that price
+     * pins near the center strike by expiry, evaluated here purely for the user to inspect.
+     * No backtested win-rate, no execution wiring -- this is a discovery/evaluation tool, not
+     * a recommended strategy.
+     */
+    public List<Map<String, Object>> scanCandidates(String underlying, double maxCostRatio) {
+        List<String> targets = "ALL".equalsIgnoreCase(underlying)
+            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            : List.of(underlying);
+
+        Map<String, String> spotKeys = Map.of(
+            "NIFTY", "NSE:NIFTY 50",
+            "BANKNIFTY", "NSE:NIFTY BANK",
+            "MIDCPNIFTY", "NSE:NIFTY MID SELECT",
+            "FINNIFTY", "NSE:NIFTY FIN SERVICE"
+        );
+
+        List<Map<String, Object>> candidates = new ArrayList<>();
+        for (String u : targets) {
+            try {
+                String spotKey = spotKeys.getOrDefault(u, "NSE:NIFTY 50");
+                String futKey = FuturesKeyResolver.resolveFuturesKey(u, spotPriceFetcher, spotKey);
+                double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
+                double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
+                if (spot <= 0) continue;
+
+                int step = OptionChainService.getStrikeStep(u);
+                int atmStrike = (int) (Math.round(spot / step) * step);
+                int lotSize = OptionChainService.getLotSize(u);
+
+                LocalDate weeklyExpiry = optionChainService.getWeeklyExpiryDate(u);
+                if (weeklyExpiry == null) continue;
+
+                List<Integer> strikes = new ArrayList<>();
+                for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
+
+                List<String> instruments = new ArrayList<>();
+                for (int strike : strikes) {
+                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "CE"));
+                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "PE"));
+                }
+                Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
+
+                for (int c = 0; c < strikes.size(); c++) {
+                    for (int n = 1; c - n >= 0 && c + n < strikes.size(); n++) {
+                        int k1 = strikes.get(c - n);
+                        int k2 = strikes.get(c);
+                        int k3 = strikes.get(c + n);
+                        double width = k2 - k1;
+
+                        for (String optionType : List.of("CE", "PE")) {
+                            OptionChainService.OptionQuote q1 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k1, optionType));
+                            OptionChainService.OptionQuote q2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, optionType));
+                            OptionChainService.OptionQuote q3 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k3, optionType));
+                            if (q1 == null || q2 == null || q3 == null) continue;
+                            if (q1.ask <= 0 || q2.bid <= 0 || q3.ask <= 0) continue;
+
+                            double cost = q1.ask - 2 * q2.bid + q3.ask;
+                            // Only genuinely-priced (cost > 0) butterflies -- cost <= 0 is a real
+                            // arbitrage violation and already surfaced by scanButterflySpread.
+                            if (cost <= 0 || cost >= width) continue;
+                            double costRatio = cost / width;
+                            if (costRatio > maxCostRatio) continue;
+
+                            double maxLoss = cost * lotSize;
+                            double maxProfit = (width - cost) * lotSize;
+
+                            Map<String, Object> m = new LinkedHashMap<>();
+                            m.put("underlying", u);
+                            m.put("optionType", optionType);
+                            m.put("strikes", k1 + "/" + k2 + "/" + k3);
+                            m.put("k1", k1); m.put("k2", k2); m.put("k3", k3);
+                            m.put("strike", k2);
+                            m.put("action", "BUY_FLY " + optionType + " (" + k1 + "/" + k2 + "/" + k3 + ")");
+                            m.put("strategyType", "BUTTERFLY_SPREAD");
+                            m.put("width", (int) width);
+                            m.put("costPerLot", Math.round(cost * 100.0) / 100.0);
+                            m.put("costRatio", Math.round(costRatio * 1000.0) / 1000.0);
+                            m.put("maxLoss", Math.round(maxLoss * 100.0) / 100.0);
+                            m.put("maxProfit", Math.round(maxProfit * 100.0) / 100.0);
+                            // Used as the auto-exit/stop-loss target-edge if this candidate is
+                            // ever traded (not a real arbitrage edge -- this is max profit potential).
+                            m.put("edgeAfterCosts", Math.round(maxProfit * 100.0) / 100.0);
+                            m.put("riskReward", maxLoss > 0 ? Math.round((maxProfit / maxLoss) * 100.0) / 100.0 : 0);
+                            m.put("pinStrike", k2);
+                            m.put("breakevenLower", Math.round((k1 + cost) * 100.0) / 100.0);
+                            m.put("breakevenUpper", Math.round((k3 - cost) * 100.0) / 100.0);
+                            m.put("spotPrice", spot);
+                            m.put("daysToExpiry", java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays());
+                            m.put("expiryDate", weeklyExpiry.toString());
+                            m.put("legs", String.format("BUY %d %s @ %.1f | SELL 2x %d %s @ %.1f | BUY %d %s @ %.1f",
+                                k1, optionType, q1.ask, k2, optionType, q2.bid, k3, optionType, q3.ask));
+                            m.put("legList", List.of(leg(k1, optionType, "BUY", 1, q1.ask), leg(k2, optionType, "SELL", 2, q2.bid), leg(k3, optionType, "BUY", 1, q3.ask)));
+                            m.put("disclaimer", "Not arbitrage. Directional pin-risk bet with no backtested win rate -- evaluate before trading.");
+                            candidates.add(m);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Error scanning Butterfly candidates for {}: {}", u, e.getMessage(), e);
+            }
+        }
+
+        candidates.sort((a, b) -> Double.compare((double) a.get("costRatio"), (double) b.get("costRatio")));
+        return candidates;
+    }
+
     private List<ArbitrageOpportunity> scanForUnderlying(String underlying, double spotPrice, double futuresPrice) {
         List<ArbitrageOpportunity> opps = new ArrayList<>();
         try {
