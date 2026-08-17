@@ -183,12 +183,18 @@ public class BidParityService {
             if (ceQuote.volume < MIN_VOLUME || peQuote.volume < MIN_VOLUME) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} low volume CE={} PE={} min={}", underlying, strike, ceQuote.volume, peQuote.volume, MIN_VOLUME); continue; }
             if (ceQuote.openInterest < MIN_OI || peQuote.openInterest < MIN_OI) { if (strike == atmStrike) log.info("PARITY_SKIP {}: K={} low OI CE={} PE={} min={}", underlying, strike, ceQuote.openInterest, peQuote.openInterest, MIN_OI); continue; }
 
+            // Convergent (SELL CE + BUY PE + BUY FUT) actually sells the call at its bid and
+            // buys the put at its ask -- the synthetic price used to decide whether this is
+            // profitable must be priced the same way, or it's comparing against a synthetic
+            // that isn't actually achievable at real market prices.
             double synthetic1 = BlackScholesCalculator.syntheticFutures(
-                ceQuote.ask, peQuote.bid, strike, RISK_FREE_RATE, yearsToExpiry);
+                ceQuote.bid, peQuote.ask, strike, RISK_FREE_RATE, yearsToExpiry);
             double parityDev1 = synthetic1 - fut;
 
+            // Reversal (BUY CE + SELL PE + SELL FUT) buys the call at its ask and sells the
+            // put at its bid -- same reasoning, mirrored.
             double synthetic2 = BlackScholesCalculator.syntheticFutures(
-                ceQuote.bid, peQuote.ask, strike, RISK_FREE_RATE, yearsToExpiry);
+                ceQuote.ask, peQuote.bid, strike, RISK_FREE_RATE, yearsToExpiry);
             double parityDev2 = fut - synthetic2;
 
             boolean isConvergent = parityDev1 >= MIN_PARITY_DEVIATION_BID;

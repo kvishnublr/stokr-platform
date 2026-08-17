@@ -1513,9 +1513,10 @@ public class OptionArbitrageController {
 
             try {
                 long openCount = livePositionRepo.countAllOpen();
-                if (openCount >= 1) {
+                int maxOpen = ((Number) autoExecService.getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
+                if (openCount >= maxOpen) {
                     resp.put("status", "ERROR");
-                    resp.put("message", "Already have 1 open position. Close it first.");
+                    resp.put("message", "Already have " + openCount + "/" + maxOpen + " open positions. Close one first or raise Max Open Positions in Auto-Trade settings.");
                     return ResponseEntity.badRequest().body(resp);
                 }
                 int lotSize = getLotSize(opp.getUnderlying());

@@ -124,9 +124,10 @@ public class OptionArbAutoExecService {
         }
 
         long openCount = positionRepo.countAllOpen();
-        if (openCount >= 1) {
+        int maxOpen = ((Number) getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
+        if (openCount >= maxOpen) {
             result.put("status", "ERROR");
-            result.put("message", "Already have an open position. Close it first.");
+            result.put("message", "Already have " + openCount + "/" + maxOpen + " open positions. Close one first or raise Max Open Positions in Auto-Trade settings.");
             return result;
         }
 

@@ -471,10 +471,10 @@ function AutoExecSettingsPanel() {
   if (!settings) return null;
 
   const underlyings = [
-    { key: 'nifty', label: 'NIFTY', lotSize: 50 },
+    { key: 'nifty', label: 'NIFTY', lotSize: 25 },
     { key: 'banknifty', label: 'BANKNIFTY', lotSize: 15 },
-    { key: 'finnifty', label: 'FINNIFTY', lotSize: 60 },
-    { key: 'midcpnifty', label: 'MIDCPNIFTY', lotSize: 120 },
+    { key: 'finnifty', label: 'FINNIFTY', lotSize: 25 },
+    { key: 'midcpnifty', label: 'MIDCPNIFTY', lotSize: 50 },
   ];
 
   return (
@@ -569,7 +569,10 @@ function AutoExecSettingsPanel() {
             onChange={(e) => updateSetting('broker', e.target.value)}
             className="px-2 py-1 text-xs font-bold border border-slate-300 rounded-lg bg-white outline-none">
             <option value="NAVIA">Navia Markets</option>
+            <option value="MOTILALOSWAL">Motilal Oswal</option>
             <option value="ZERODHA">Zerodha Kite</option>
+            <option value="DHAN">DhanHQ</option>
+            <option value="FYERS">Fyers API</option>
             <option value="PAPER">Paper Trading</option>
           </select>
         </div>
@@ -602,12 +605,39 @@ function AutoExecSettingsPanel() {
         </div>
       </div>
 
+      {/* Stop-Loss Settings */}
+      <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-slate-100">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold text-slate-500 uppercase">Stop-Loss:</span>
+          <button
+            onClick={() => updateSetting('stopLossEnabled', !settings.stopLossEnabled)}
+            className={`relative w-11 h-6 rounded-full transition-colors ${settings.stopLossEnabled ? 'bg-red-500' : 'bg-slate-300'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.stopLossEnabled ? 'translate-x-5' : ''}`} />
+          </button>
+          <span className={`text-xs font-bold ${settings.stopLossEnabled ? 'text-red-600' : 'text-slate-400'}`}>
+            {settings.stopLossEnabled ? 'ON' : 'OFF'}
+          </span>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-500 uppercase">Loss at % of Target</label>
+          <input type="number" value={settings.stopLossPct || 50} min={10} max={100}
+            onChange={(e) => setSettings(prev => ({ ...prev, stopLossPct: Number(e.target.value) }))}
+            onBlur={(e) => updateSetting('stopLossPct', e.target.value)}
+            className="w-16 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+          <span className="text-[9px] text-slate-400">%</span>
+        </div>
+        <div className="text-[9px] text-slate-400 italic">
+          When a position's loss reaches {settings.stopLossPct || 50}% of target edge, auto square-off
+        </div>
+      </div>
+
       {/* Roll-Over Info */}
       <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-slate-100">
         <div className="flex items-center gap-3">
           <span className="text-[10px] font-bold text-slate-500 uppercase">Roll-Over:</span>
           <span className="px-2 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-200">
-            🔄 MANUAL — Click "Roll CE+PE" on any OPEN position
+            🔄 MANUAL — Click "Roll CE+PE" on any OPEN Bid Parity position (not available for multi-leg spreads)
           </span>
         </div>
         <div className="text-[9px] text-slate-400 italic">
