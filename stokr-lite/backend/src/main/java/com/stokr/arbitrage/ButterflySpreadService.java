@@ -154,6 +154,21 @@ public class ButterflySpreadService {
 
                             double maxLoss = cost * lotSize;
                             double maxProfit = (width - cost) * lotSize;
+                            double breakevenLower = k1 + cost;
+                            double breakevenUpper = k3 - cost;
+
+                            // Model probability of profit: IV from the center strike's mid price,
+                            // then P(breakevenLower <= settlement <= breakevenUpper) under the
+                            // standard Black-Scholes lognormal assumption. A theoretical figure
+                            // driven by current IV, not a backtested/historical win rate.
+                            double yearsToExpiry = Math.max(
+                                java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays(), 0.5) / 365.0;
+                            double centerMid = (q2.bid + q2.ask) / 2.0;
+                            double iv = BlackScholesCalculator.impliedVolatility(
+                                centerMid, spot, k2, yearsToExpiry, ArbitrageCosts.RISK_FREE_RATE,
+                                "CE".equals(optionType), 0.01, 50);
+                            double pop = BlackScholesCalculator.probabilityInRange(
+                                spot, breakevenLower, breakevenUpper, yearsToExpiry, ArbitrageCosts.RISK_FREE_RATE, iv);
 
                             Map<String, Object> m = new LinkedHashMap<>();
                             m.put("underlying", u);
@@ -173,15 +188,17 @@ public class ButterflySpreadService {
                             m.put("edgeAfterCosts", Math.round(maxProfit * 100.0) / 100.0);
                             m.put("riskReward", maxLoss > 0 ? Math.round((maxProfit / maxLoss) * 100.0) / 100.0 : 0);
                             m.put("pinStrike", k2);
-                            m.put("breakevenLower", Math.round((k1 + cost) * 100.0) / 100.0);
-                            m.put("breakevenUpper", Math.round((k3 - cost) * 100.0) / 100.0);
+                            m.put("breakevenLower", Math.round(breakevenLower * 100.0) / 100.0);
+                            m.put("breakevenUpper", Math.round(breakevenUpper * 100.0) / 100.0);
+                            m.put("pop", Math.round(pop * 1000.0) / 10.0);
+                            m.put("impliedVol", Math.round(iv * 1000.0) / 10.0);
                             m.put("spotPrice", spot);
                             m.put("daysToExpiry", java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays());
                             m.put("expiryDate", weeklyExpiry.toString());
                             m.put("legs", String.format("BUY %d %s @ %.1f | SELL 2x %d %s @ %.1f | BUY %d %s @ %.1f",
                                 k1, optionType, q1.ask, k2, optionType, q2.bid, k3, optionType, q3.ask));
                             m.put("legList", List.of(leg(k1, optionType, "BUY", 1, q1.ask), leg(k2, optionType, "SELL", 2, q2.bid), leg(k3, optionType, "BUY", 1, q3.ask)));
-                            m.put("disclaimer", "Not arbitrage. Directional pin-risk bet with no backtested win rate -- evaluate before trading.");
+                            m.put("disclaimer", "Not arbitrage. POP is a Black-Scholes model estimate from current implied volatility, not a backtested or historical win rate -- evaluate before trading.");
                             candidates.add(m);
                         }
                     }
@@ -191,7 +208,9 @@ public class ButterflySpreadService {
             }
         }
 
-        candidates.sort((a, b) -> Double.compare((double) a.get("costRatio"), (double) b.get("costRatio")));
+        // Highest model probability-of-profit first, so the "safest" (by this one model
+        // metric) candidates surface without the user having to sort manually.
+        candidates.sort((a, b) -> Double.compare((double) b.get("pop"), (double) a.get("pop")));
         return candidates;
     }
 

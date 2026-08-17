@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 
@@ -2172,6 +2172,9 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
   const [underlying, setUnderlying] = useState('ALL');
   const [maxCostRatio, setMaxCostRatio] = useState(0.35);
   const [selected, setSelected] = useState({});
+  const [hover, setHover] = useState(null);
+  const [autoSelected, setAutoSelected] = useState(false);
+  const chartRef = useRef(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['butterfly-candidates', underlying, maxCostRatio],
@@ -2182,10 +2185,20 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
     refetchInterval: 30000
   });
 
+  // Backend already sorts by model POP descending -- the safest-by-this-metric candidate
+  // is always first. Auto-select it once per dataset load so the payoff/POP panel is
+  // populated immediately instead of requiring a manual click.
   const candidates = data?.candidates || [];
   const rowKey = (c, idx) => `${c.underlying}-${c.optionType}-${c.k1}-${c.k2}-${c.k3}-${idx}`;
-  const selectedCandidates = candidates.filter((c, idx) => selected[rowKey(c, idx)]);
 
+  useEffect(() => {
+    if (!autoSelected && candidates.length > 0) {
+      setSelected({ [rowKey(candidates[0], 0)]: true });
+      setAutoSelected(true);
+    }
+  }, [candidates, autoSelected]);
+
+  const selectedCandidates = candidates.filter((c, idx) => selected[rowKey(c, idx)]);
   const toggle = (key) => setSelected(prev => ({ ...prev, [key]: !prev[key] }));
 
   // Combined payoff across a settlement-price range spanning all selected candidates.
@@ -2194,7 +2207,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
     const spot = selectedCandidates[0].spotPrice || selectedCandidates.reduce((s, c) => s + c.spotPrice, 0) / selectedCandidates.length;
     const lo = Math.min(...selectedCandidates.map(c => c.k1)) - 300;
     const hi = Math.max(...selectedCandidates.map(c => c.k3)) + 300;
-    const steps = 120;
+    const steps = 200;
     const stepSize = (hi - lo) / steps;
     const points = [];
     let minY = 0, maxY = 0;
@@ -2215,27 +2228,59 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
       minY = Math.min(minY, total);
       maxY = Math.max(maxY, total);
     }
-    return { points, spot, lo, hi, minY, maxY };
+    return { points, spot, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0) };
   }, [selectedCandidates]);
 
   const totalMaxLoss = selectedCandidates.reduce((s, c) => s + c.maxLoss, 0);
   const totalMaxProfit = selectedCandidates.reduce((s, c) => s + c.maxProfit, 0);
+  const avgPop = selectedCandidates.length > 0
+    ? selectedCandidates.reduce((s, c) => s + c.pop, 0) / selectedCandidates.length : null;
+
+  const CHART_W = 700, CHART_H = 260, PAD_TOP = 16, PAD_BOTTOM = 34;
+  const plotH = CHART_H - PAD_TOP - PAD_BOTTOM;
+  const xToPx = (x) => payoffChart ? ((x - payoffChart.lo) / (payoffChart.hi - payoffChart.lo)) * CHART_W : 0;
+  const yToPx = (y) => payoffChart
+    ? PAD_TOP + plotH - ((y - payoffChart.minY) / (payoffChart.maxY - payoffChart.minY || 1)) * plotH
+    : 0;
+  const pxToX = (px) => payoffChart ? payoffChart.lo + (px / CHART_W) * (payoffChart.hi - payoffChart.lo) : 0;
+
+  const handleChartMove = (e) => {
+    if (!payoffChart || !chartRef.current) return;
+    const rect = chartRef.current.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / rect.width;
+    const px = relX * CHART_W;
+    const priceAtCursor = pxToX(px);
+    // nearest computed point
+    let nearest = payoffChart.points[0];
+    let bestDist = Infinity;
+    for (const p of payoffChart.points) {
+      const d = Math.abs(p.x - priceAtCursor);
+      if (d < bestDist) { bestDist = d; nearest = p; }
+    }
+    setHover({ px: xToPx(nearest.x), py: yToPx(nearest.y), price: nearest.x, pnl: nearest.y });
+  };
+
+  const zeroPx = payoffChart ? yToPx(0) : 0;
+  const areaPath = payoffChart ? (() => {
+    const pts = payoffChart.points.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' L ');
+    return `M ${xToPx(payoffChart.points[0].x)},${zeroPx} L ${pts} L ${xToPx(payoffChart.points[payoffChart.points.length - 1].x)},${zeroPx} Z`;
+  })() : '';
 
   return (
     <div className="space-y-4 w-full">
       <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-xs text-amber-900">
         <p className="font-bold mb-1">⚠️ Not arbitrage — evaluation tool only</p>
-        <p>These are butterflies priced cheap relative to their width (small debit vs. potential payoff if NIFTY pins near the center strike) — a directional bet on low movement, not a guaranteed-profit position. No backtested win rate. Select a few below to see the combined payoff shape before deciding anything.</p>
+        <p>These are butterflies priced cheap relative to their width (small debit vs. potential payoff if NIFTY pins near the center strike) — a directional bet on low movement, not a guaranteed-profit position. POP (probability of profit) is a Black-Scholes model estimate from current implied volatility, not a backtested or historical win rate. Move your mouse over the chart to see P&amp;L at any settlement price.</p>
       </div>
 
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-800">Cheap Butterfly Candidates</h2>
-          <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width</p>
+          <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width, sorted by model POP (highest first)</p>
         </div>
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
           {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
-            <button key={u} onClick={() => setUnderlying(u)}
+            <button key={u} onClick={() => { setUnderlying(u); setAutoSelected(false); }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {u}
             </button>
@@ -2244,7 +2289,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
         <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
           <span className="text-[10px] font-bold text-slate-500 px-1">MAX COST/WIDTH</span>
           {[0.2, 0.35, 0.5].map(r => (
-            <button key={r} onClick={() => setMaxCostRatio(r)}
+            <button key={r} onClick={() => { setMaxCostRatio(r); setAutoSelected(false); }}
               className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${maxCostRatio === r ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
               {Math.round(r * 100)}%
             </button>
@@ -2253,38 +2298,95 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
       </div>
 
       {selectedCandidates.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
-          <div className="flex flex-wrap items-center gap-4">
-            <span className="text-sm font-bold text-slate-800">{selectedCandidates.length} selected</span>
-            <span className="text-xs text-red-600 font-bold">Combined Max Loss (if all expire worthless): ₹{Math.round(totalMaxLoss).toLocaleString('en-IN')}</span>
-            <span className="text-xs text-emerald-600 font-bold">Combined Max Profit (if all pin exactly): ₹{Math.round(totalMaxProfit).toLocaleString('en-IN')}</span>
+        <div className="bg-gradient-to-br from-white to-amber-50/40 rounded-2xl border-2 border-amber-200 shadow-md p-5 space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm font-black text-slate-800">📈 {selectedCandidates.length} selected</span>
+            {avgPop != null && (
+              <span className={`px-3 py-1 rounded-full text-xs font-black ${avgPop >= 60 ? 'bg-emerald-500 text-white' : avgPop >= 40 ? 'bg-amber-500 text-white' : 'bg-slate-400 text-white'}`}>
+                POP {avgPop.toFixed(1)}%
+              </span>
+            )}
+            <span className="text-xs text-red-600 font-bold">Max Loss ₹{Math.round(totalMaxLoss).toLocaleString('en-IN')}</span>
+            <span className="text-xs text-emerald-600 font-bold">Max Profit ₹{Math.round(totalMaxProfit).toLocaleString('en-IN')}</span>
+            {totalMaxLoss > 0 && (
+              <span className="text-xs text-indigo-600 font-bold">R:R {(totalMaxProfit / totalMaxLoss).toFixed(1)}x</span>
+            )}
           </div>
+
           {payoffChart && (
-            <div className="overflow-x-auto">
-              <svg viewBox="0 0 700 220" className="w-full h-[220px]">
-                {/* zero line */}
-                <line x1="0" y1={220 - 20 - ((0 - payoffChart.minY) / (payoffChart.maxY - payoffChart.minY || 1)) * 180}
-                  x2="700" y2={220 - 20 - ((0 - payoffChart.minY) / (payoffChart.maxY - payoffChart.minY || 1)) * 180}
-                  stroke="#cbd5e1" strokeWidth="1" strokeDasharray="4,4" />
-                {/* spot marker */}
-                <line x1={((payoffChart.spot - payoffChart.lo) / (payoffChart.hi - payoffChart.lo)) * 700} y1="0"
-                  x2={((payoffChart.spot - payoffChart.lo) / (payoffChart.hi - payoffChart.lo)) * 700} y2="220"
-                  stroke="#6366f1" strokeWidth="1" strokeDasharray="3,3" />
-                <polyline
-                  fill="none" stroke="#d97706" strokeWidth="2"
-                  points={payoffChart.points.map(p => {
-                    const px = ((p.x - payoffChart.lo) / (payoffChart.hi - payoffChart.lo)) * 700;
-                    const py = 220 - 20 - ((p.y - payoffChart.minY) / (payoffChart.maxY - payoffChart.minY || 1)) * 180;
-                    return `${px},${py}`;
-                  }).join(' ')}
-                />
-              </svg>
-              <div className="flex justify-between text-[10px] text-slate-500 px-1">
+            <div>
+              <div className="relative overflow-x-auto">
+                <svg ref={chartRef} viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-[260px] cursor-crosshair"
+                  onMouseMove={handleChartMove} onMouseLeave={() => setHover(null)}>
+                  <defs>
+                    <linearGradient id="profitGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
+                      <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
+                    </linearGradient>
+                    <linearGradient id="lossGrad" x1="0" y1="1" x2="0" y2="0">
+                      <stop offset="0%" stopColor="#ef4444" stopOpacity="0.3" />
+                      <stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  {/* profit/loss shaded area, clipped by direction relative to zero line */}
+                  <clipPath id="aboveZero"><rect x="0" y="0" width={CHART_W} height={zeroPx} /></clipPath>
+                  <clipPath id="belowZero"><rect x="0" y={zeroPx} width={CHART_W} height={CHART_H - zeroPx} /></clipPath>
+                  <path d={areaPath} fill="url(#profitGrad)" clipPath="url(#aboveZero)" />
+                  <path d={areaPath} fill="url(#lossGrad)" clipPath="url(#belowZero)" />
+
+                  {/* zero line */}
+                  <line x1="0" y1={zeroPx} x2={CHART_W} y2={zeroPx} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4,4" />
+                  {/* spot marker */}
+                  <line x1={xToPx(payoffChart.spot)} y1={PAD_TOP} x2={xToPx(payoffChart.spot)} y2={CHART_H - PAD_BOTTOM}
+                    stroke="#6366f1" strokeWidth="1.5" strokeDasharray="3,3" />
+                  <text x={xToPx(payoffChart.spot)} y={PAD_TOP - 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="#6366f1">
+                    Spot {Math.round(payoffChart.spot).toLocaleString('en-IN')}
+                  </text>
+
+                  {/* payoff curve */}
+                  <polyline
+                    fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinejoin="round"
+                    points={payoffChart.points.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' ')}
+                  />
+
+                  {/* hover crosshair + tooltip */}
+                  {hover && (
+                    <g>
+                      <line x1={hover.px} y1={PAD_TOP} x2={hover.px} y2={CHART_H - PAD_BOTTOM} stroke="#0f172a" strokeWidth="1" strokeDasharray="2,2" opacity="0.4" />
+                      <circle cx={hover.px} cy={hover.py} r="4.5" fill={hover.pnl >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="1.5" />
+                      {(() => {
+                        const boxW = 132, boxH = 44;
+                        const bx = Math.min(Math.max(hover.px - boxW / 2, 2), CHART_W - boxW - 2);
+                        const by = hover.py > 70 ? hover.py - boxH - 10 : hover.py + 12;
+                        return (
+                          <g>
+                            <rect x={bx} y={by} width={boxW} height={boxH} rx="6" fill="#0f172a" opacity="0.92" />
+                            <text x={bx + 8} y={by + 16} fontSize="10" fill="#cbd5e1">
+                              @ {Math.round(hover.price).toLocaleString('en-IN')}
+                            </text>
+                            <text x={bx + 8} y={by + 33} fontSize="12" fontWeight="800" fill={hover.pnl >= 0 ? '#34d399' : '#f87171'}>
+                              {hover.pnl >= 0 ? '+' : ''}₹{Math.round(hover.pnl).toLocaleString('en-IN')}
+                            </text>
+                          </g>
+                        );
+                      })()}
+                    </g>
+                  )}
+
+                  {/* breakeven markers for single selection */}
+                  {selectedCandidates.length === 1 && (
+                    <>
+                      <line x1={xToPx(selectedCandidates[0].breakevenLower)} y1={PAD_TOP} x2={xToPx(selectedCandidates[0].breakevenLower)} y2={CHART_H - PAD_BOTTOM} stroke="#94a3b8" strokeWidth="1" strokeDasharray="2,3" opacity="0.6" />
+                      <line x1={xToPx(selectedCandidates[0].breakevenUpper)} y1={PAD_TOP} x2={xToPx(selectedCandidates[0].breakevenUpper)} y2={CHART_H - PAD_BOTTOM} stroke="#94a3b8" strokeWidth="1" strokeDasharray="2,3" opacity="0.6" />
+                    </>
+                  )}
+                </svg>
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-500 px-1 mt-1">
                 <span>{Math.round(payoffChart.lo).toLocaleString('en-IN')}</span>
-                <span className="text-indigo-600 font-bold">Spot {Math.round(payoffChart.spot).toLocaleString('en-IN')}</span>
                 <span>{Math.round(payoffChart.hi).toLocaleString('en-IN')}</span>
               </div>
-              <p className="text-[10px] text-slate-400 text-center">Combined P&amp;L (₹) vs. NIFTY settlement price at expiry — dashed line is breakeven (₹0)</p>
+              <p className="text-[10px] text-slate-400 text-center mt-1">Combined P&amp;L (₹) vs. NIFTY settlement price at expiry — hover to inspect any price point</p>
             </div>
           )}
         </div>
@@ -2305,6 +2407,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                   <th className="px-2 py-2">Strikes</th>
                   <th className="px-2 py-2">Type</th>
                   <th className="px-2 py-2 text-right">Cost/Width</th>
+                  <th className="px-2 py-2 text-right text-indigo-600">POP</th>
                   <th className="px-2 py-2 text-right text-red-600">Max Loss</th>
                   <th className="px-2 py-2 text-right text-emerald-600">Max Profit</th>
                   <th className="px-2 py-2 text-right">R:R</th>
@@ -2325,6 +2428,11 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                       <td className="px-2 py-1.5 font-bold text-slate-700">{c.strikes}</td>
                       <td className="px-2 py-1.5 text-slate-600">{c.optionType}</td>
                       <td className="px-2 py-1.5 text-right font-mono">{Math.round(c.costRatio * 100)}%</td>
+                      <td className="px-2 py-1.5 text-right">
+                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${c.pop >= 60 ? 'bg-emerald-100 text-emerald-700' : c.pop >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {c.pop}%
+                        </span>
+                      </td>
                       <td className="px-2 py-1.5 text-right font-mono text-red-600">₹{Math.round(c.maxLoss).toLocaleString('en-IN')}</td>
                       <td className="px-2 py-1.5 text-right font-mono text-emerald-600">₹{Math.round(c.maxProfit).toLocaleString('en-IN')}</td>
                       <td className="px-2 py-1.5 text-right font-mono font-bold">{c.riskReward}x</td>

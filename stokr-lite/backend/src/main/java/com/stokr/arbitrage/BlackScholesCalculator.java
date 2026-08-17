@@ -122,6 +122,22 @@ public class BlackScholesCalculator {
     }
 
     /**
+     * Probability that the underlying settles within [lower, upper] at expiry, under the
+     * standard Black-Scholes risk-neutral lognormal assumption. This is a MODEL probability
+     * driven by the implied volatility input, not a backtested or historical win rate --
+     * it's the same "POP" figure every options analytics platform (Sensibull, AlgoTest,
+     * ToS) computes the same way, and it's only as good as the IV estimate feeding it.
+     */
+    public static double probabilityInRange(double S, double lower, double upper, double T, double r, double sigma) {
+        if (T <= 0 || sigma <= 0 || S <= 0) return 0;
+        double denom = sigma * Math.sqrt(T);
+        double drift = (r - 0.5 * sigma * sigma) * T;
+        double dUpper = (Math.log(upper / S) - drift) / denom;
+        double dLower = (Math.log(lower / S) - drift) / denom;
+        return Math.max(0, Math.min(1, normCDF(dUpper) - normCDF(dLower)));
+    }
+
+    /**
      * Put-Call Parity: synthetic futures price from call and put.
      * For European options priced against a futures price F (not spot), parity is
      * C - P = e^(-rT) * (F - K), so F = K + (C - P) * e^(rT).
