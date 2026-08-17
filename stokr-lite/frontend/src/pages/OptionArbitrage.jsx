@@ -2201,6 +2201,13 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
   const totalCharges = selectedCandidates.reduce((s, c) => s + (c.entryCosts || 0), 0);
   const avgPop = selectedCandidates.length > 0
     ? selectedCandidates.reduce((s, c) => s + c.pop, 0) / selectedCandidates.length : null;
+  const breakevenGap = (c) => {
+    if (c.spotPrice == null) return null;
+    if (c.breakevenUpper != null) return c.spotPrice - c.breakevenUpper;
+    if (c.breakevenLower != null) return c.breakevenLower - c.spotPrice;
+    return null;
+  };
+  const soloBreakevenGap = selectedCandidates.length === 1 ? breakevenGap(selectedCandidates[0]) : null;
 
   const CHART_W = 700, CHART_H = 260, PAD_TOP = 24, PAD_BOTTOM = 34;
   const plotH = CHART_H - PAD_TOP - PAD_BOTTOM;
@@ -2265,7 +2272,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
       {selectedCandidates.length > 0 && (
         <div className="bg-gradient-to-br from-white via-amber-50/30 to-indigo-50/30 rounded-2xl border-2 border-amber-200 shadow-lg p-5 space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
             <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
               <div className="text-[9px] font-bold text-slate-400 uppercase">POP</div>
               <div className={`text-lg font-black ${avgPop >= 60 ? 'text-emerald-600' : avgPop >= 40 ? 'text-amber-600' : 'text-slate-500'}`}>{avgPop?.toFixed(1)}%</div>
@@ -2290,8 +2297,17 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
               <div className="text-[9px] font-bold text-slate-400 uppercase">Charges</div>
               <div className="text-lg font-black text-slate-700">₹{Math.round(totalCharges).toLocaleString('en-IN')}</div>
             </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">To Breakeven</div>
+              <div className={`text-lg font-black ${soloBreakevenGap == null ? 'text-slate-300' : soloBreakevenGap >= 0 ? 'text-emerald-600' : Math.abs(soloBreakevenGap) < 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                {soloBreakevenGap == null ? '—' : soloBreakevenGap >= 0 ? `✅ +${Math.round(soloBreakevenGap)}` : `${Math.round(soloBreakevenGap)}`}
+              </div>
+            </div>
           </div>
           <p className="text-[9px] text-slate-400 -mt-3">*Margin is a conservative estimate (worst-case cash outflow) — actual broker SPAN+exposure margin may differ; verify with your broker before trading.</p>
+          {soloBreakevenGap != null && soloBreakevenGap < 0 && (
+            <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 -mt-1">⚠️ Spot still needs to move {Math.round(Math.abs(soloBreakevenGap))} points to reach breakeven — currently outside the profit zone.</p>
+          )}
 
           {payoffChart && (
             <div>
@@ -2445,6 +2461,7 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('riskReward')}>R:R{sortIcon('riskReward')}</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('impliedVol')}>IV{sortIcon('impliedVol')}</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('daysToExpiry')}>DTE{sortIcon('daysToExpiry')}</th>
+                  <th className="px-2 py-2 text-right">To BE</th>
                   <th className="px-2 py-2 text-center">Trade</th>
                 </tr>
               </thead>
@@ -2473,6 +2490,9 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
                       <td className="px-2 py-1.5 text-right font-mono font-bold">{c.riskReward}x</td>
                       <td className="px-2 py-1.5 text-right font-mono text-slate-500">{c.impliedVol}%</td>
                       <td className="px-2 py-1.5 text-right font-mono text-slate-500">{c.daysToExpiry}d</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-[10px]">
+                        {(() => { const g = breakevenGap(c); return g == null ? '—' : g >= 0 ? <span className="text-emerald-600 font-bold">✅+{Math.round(g)}</span> : <span className={Math.abs(g) < 50 ? 'text-amber-600 font-bold' : 'text-red-600 font-bold'}>{Math.round(g)}</span>; })()}
+                      </td>
                       <td className="px-2 py-1.5 text-center">
                         <button onClick={() => handleExecuteInline(c)}
                           className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm">
@@ -2830,6 +2850,11 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
   const totalCharges = selectedCandidates.reduce((s, c) => s + (c.entryCosts || 0), 0);
   const avgPop = selectedCandidates.length > 0
     ? selectedCandidates.reduce((s, c) => s + c.pop, 0) / selectedCandidates.length : null;
+  const breakevenGap = (c) => {
+    if (c.breakevenLower == null || c.breakevenUpper == null || c.spotPrice == null) return null;
+    return Math.min(c.spotPrice - c.breakevenLower, c.breakevenUpper - c.spotPrice);
+  };
+  const soloBreakevenGap = selectedCandidates.length === 1 ? breakevenGap(selectedCandidates[0]) : null;
 
   const CHART_W = 700, CHART_H = 260, PAD_TOP = 24, PAD_BOTTOM = 34;
   const plotH = CHART_H - PAD_TOP - PAD_BOTTOM;
@@ -2895,7 +2920,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
       {selectedCandidates.length > 0 && (
         <div className="bg-gradient-to-br from-white via-amber-50/30 to-indigo-50/30 rounded-2xl border-2 border-amber-200 shadow-lg p-5 space-y-5">
           {/* Stat strip */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
             <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
               <div className="text-[9px] font-bold text-slate-400 uppercase">POP</div>
               <div className={`text-lg font-black ${avgPop >= 60 ? 'text-emerald-600' : avgPop >= 40 ? 'text-amber-600' : 'text-slate-500'}`}>{avgPop?.toFixed(1)}%</div>
@@ -2920,8 +2945,17 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
               <div className="text-[9px] font-bold text-slate-400 uppercase">Charges</div>
               <div className="text-lg font-black text-slate-700">₹{Math.round(totalCharges).toLocaleString('en-IN')}</div>
             </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Breakeven Gap</div>
+              <div className={`text-lg font-black ${soloBreakevenGap == null ? 'text-slate-300' : soloBreakevenGap < 0 ? 'text-red-600' : soloBreakevenGap < 50 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                {soloBreakevenGap == null ? '—' : soloBreakevenGap < 0 ? `⚠️ -${Math.round(Math.abs(soloBreakevenGap))}` : `±${Math.round(soloBreakevenGap)}`}
+              </div>
+            </div>
           </div>
           <p className="text-[9px] text-slate-400 -mt-3">*Margin is a conservative estimate (worst-case cash outflow) — actual broker SPAN+exposure margin may differ; verify with your broker before trading.</p>
+          {soloBreakevenGap != null && soloBreakevenGap < 0 && (
+            <p className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5 -mt-1">⚠️ Spot has already moved outside this candidate's profit zone by {Math.round(Math.abs(soloBreakevenGap))} points — this is now a probable loss unless price reverses before expiry.</p>
+          )}
 
           {payoffChart && (
             <div>
@@ -3084,6 +3118,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                   <th className="px-2 py-2 text-right">Breakevens</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('impliedVol')}>IV{sortIcon('impliedVol')}</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('daysToExpiry')}>DTE{sortIcon('daysToExpiry')}</th>
+                  <th className="px-2 py-2 text-right">To BE</th>
                   <th className="px-2 py-2 text-center">Trade</th>
                 </tr>
               </thead>
@@ -3112,6 +3147,9 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                       <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-500">{c.breakevenLower}/{c.breakevenUpper}</td>
                       <td className="px-2 py-1.5 text-right font-mono text-slate-500">{c.impliedVol}%</td>
                       <td className="px-2 py-1.5 text-right font-mono text-slate-500">{c.daysToExpiry}d</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-[10px]">
+                        {(() => { const g = breakevenGap(c); return g == null ? '—' : g < 0 ? <span className="text-red-600 font-bold">⚠️{Math.round(Math.abs(g))}</span> : <span className={g < 50 ? 'text-amber-600 font-bold' : 'text-slate-500'}>±{Math.round(g)}</span>; })()}
+                      </td>
                       <td className="px-2 py-1.5 text-center">
                         <button onClick={() => handleExecuteInline(c)}
                           className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm">
@@ -3460,6 +3498,11 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
   const totalCharges = selectedCandidates.reduce((s, c) => s + (c.entryCosts || 0), 0);
   const avgPop = selectedCandidates.length > 0
     ? selectedCandidates.reduce((s, c) => s + c.pop, 0) / selectedCandidates.length : null;
+  const breakevenGap = (c) => {
+    if (c.breakevenLower == null || c.breakevenUpper == null || c.spotPrice == null) return null;
+    return Math.min(c.spotPrice - c.breakevenLower, c.breakevenUpper - c.spotPrice);
+  };
+  const soloBreakevenGap = selectedCandidates.length === 1 ? breakevenGap(selectedCandidates[0]) : null;
 
   const CHART_W = 700, CHART_H = 260, PAD_TOP = 24, PAD_BOTTOM = 34;
   const plotH = CHART_H - PAD_TOP - PAD_BOTTOM;
@@ -3524,7 +3567,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
       {selectedCandidates.length > 0 && (
         <div className="bg-gradient-to-br from-white via-amber-50/30 to-indigo-50/30 rounded-2xl border-2 border-amber-200 shadow-lg p-5 space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
             <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
               <div className="text-[9px] font-bold text-slate-400 uppercase">POP</div>
               <div className={`text-lg font-black ${avgPop >= 60 ? 'text-emerald-600' : avgPop >= 40 ? 'text-amber-600' : 'text-slate-500'}`}>{avgPop?.toFixed(1)}%</div>
@@ -3549,8 +3592,17 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
               <div className="text-[9px] font-bold text-slate-400 uppercase">Charges</div>
               <div className="text-lg font-black text-slate-700">₹{Math.round(totalCharges).toLocaleString('en-IN')}</div>
             </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Breakeven Gap</div>
+              <div className={`text-lg font-black ${soloBreakevenGap == null ? 'text-slate-300' : soloBreakevenGap < 0 ? 'text-red-600' : soloBreakevenGap < 50 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                {soloBreakevenGap == null ? '—' : soloBreakevenGap < 0 ? `⚠️ -${Math.round(Math.abs(soloBreakevenGap))}` : `±${Math.round(soloBreakevenGap)}`}
+              </div>
+            </div>
           </div>
           <p className="text-[9px] text-slate-400 -mt-3">*Capital required is a conservative estimate (worst-case cash outflow) — actual broker SPAN+exposure margin may differ; verify with your broker before trading.</p>
+          {soloBreakevenGap != null && soloBreakevenGap < 0 && (
+            <p className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5 -mt-1">⚠️ Spot has already moved outside this candidate's profit zone by {Math.round(Math.abs(soloBreakevenGap))} points — this is now a probable loss unless price reverses before expiry.</p>
+          )}
 
           {payoffChart && (
             <div>
@@ -3705,6 +3757,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
                   <th className="px-2 py-2 text-right">Breakevens</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('impliedVol')}>IV{sortIcon('impliedVol')}</th>
                   <th className="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 select-none" onClick={() => toggleSort('daysToExpiry')}>DTE{sortIcon('daysToExpiry')}</th>
+                  <th className="px-2 py-2 text-right">To BE</th>
                   <th className="px-2 py-2 text-center">Trade</th>
                 </tr>
               </thead>
@@ -3733,6 +3786,9 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
                       <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-500">{c.breakevenLower}/{c.breakevenUpper}</td>
                       <td className="px-2 py-1.5 text-right font-mono text-slate-500">{c.impliedVol}%</td>
                       <td className="px-2 py-1.5 text-right font-mono text-slate-500">{c.daysToExpiry}d</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-[10px]">
+                        {(() => { const g = breakevenGap(c); return g == null ? '—' : g < 0 ? <span className="text-red-600 font-bold">⚠️{Math.round(Math.abs(g))}</span> : <span className={g < 50 ? 'text-amber-600 font-bold' : 'text-slate-500'}>±{Math.round(g)}</span>; })()}
+                      </td>
                       <td className="px-2 py-1.5 text-center">
                         <button onClick={() => handleExecuteInline(c)}
                           className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm">
