@@ -137,6 +137,18 @@ public class BlackScholesCalculator {
         return Math.max(0, Math.min(1, normCDF(dUpper) - normCDF(dLower)));
     }
 
+    /** P(underlying settles above `threshold` at expiry), same lognormal model as probabilityInRange. */
+    public static double probabilityAbove(double S, double threshold, double T, double r, double sigma) {
+        if (T <= 0 || sigma <= 0 || S <= 0) return threshold < S ? 1 : 0;
+        double d = (Math.log(threshold / S) - (r - 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+        return Math.max(0, Math.min(1, 1 - normCDF(d)));
+    }
+
+    /** P(underlying settles below `threshold` at expiry), same lognormal model as probabilityInRange. */
+    public static double probabilityBelow(double S, double threshold, double T, double r, double sigma) {
+        return Math.max(0, Math.min(1, 1 - probabilityAbove(S, threshold, T, r, sigma)));
+    }
+
     /**
      * Put-Call Parity: synthetic futures price from call and put.
      * For European options priced against a futures price F (not spot), parity is

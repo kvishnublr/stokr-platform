@@ -83,6 +83,170 @@ public class VerticalSpreadService {
         return results;
     }
 
+    /**
+     * "Cheap vertical" candidates: NOT arbitrage, just debit spreads where the cost paid is a
+     * small fraction of the width -- a directional bet (profits if price clears the breakeven
+     * by expiry), not a guaranteed-profit position. Unlike butterflies these are directional,
+     * not a pin bet, so POP here is P(settle beyond breakeven), not P(settle within a range).
+     */
+    public List<Map<String, Object>> scanCandidates(String underlying, double maxCostRatio) {
+        List<String> targets = "ALL".equalsIgnoreCase(underlying)
+            ? List.of("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
+            : List.of(underlying);
+
+        Map<String, String> spotKeys = Map.of(
+            "NIFTY", "NSE:NIFTY 50",
+            "BANKNIFTY", "NSE:NIFTY BANK",
+            "MIDCPNIFTY", "NSE:NIFTY MID SELECT",
+            "FINNIFTY", "NSE:NIFTY FIN SERVICE"
+        );
+
+        List<Map<String, Object>> candidates = new ArrayList<>();
+        for (String u : targets) {
+            try {
+                String spotKey = spotKeys.getOrDefault(u, "NSE:NIFTY 50");
+                String futKey = FuturesKeyResolver.resolveFuturesKey(u, spotPriceFetcher, spotKey);
+                double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
+                double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
+                double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : spot;
+                if (spot <= 0 && fut > 0) spot = fut;
+                if (spot <= 0) continue;
+
+                int step = OptionChainService.getStrikeStep(u);
+                int atmStrike = (int) (Math.round(spot / step) * step);
+                int lotSize = OptionChainService.getLotSize(u);
+
+                LocalDate weeklyExpiry = optionChainService.getWeeklyExpiryDate(u);
+                if (weeklyExpiry == null) continue;
+
+                List<Integer> strikes = new ArrayList<>();
+                for (int i = -4; i <= 4; i++) strikes.add(atmStrike + i * step);
+
+                List<String> instruments = new ArrayList<>();
+                for (int strike : strikes) {
+                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "CE"));
+                    instruments.add(optionChainService.buildNfoSymbol(u, weeklyExpiry, strike, "PE"));
+                }
+                Map<String, OptionChainService.OptionQuote> quotes = optionChainService.fetchQuotes(instruments);
+
+                double yearsToExpiry = Math.max(
+                    java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays(), 0.5) / 365.0;
+
+                for (int i = 0; i < strikes.size(); i++) {
+                    for (int j = i + 1; j < strikes.size(); j++) {
+                        int k1 = strikes.get(i);
+                        int k2 = strikes.get(j);
+                        double width = k2 - k1;
+
+                        OptionChainService.OptionQuote c1 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k1, "CE"));
+                        OptionChainService.OptionQuote c2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, "CE"));
+                        OptionChainService.OptionQuote p1 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k1, "PE"));
+                        OptionChainService.OptionQuote p2 = quotes.get(optionChainService.buildNfoSymbol(u, weeklyExpiry, k2, "PE"));
+
+                        // Call debit spread: BUY K1 CE, SELL K2 CE -- profits above breakeven.
+                        if (c1 != null && c2 != null && c1.ask > 0 && c2.bid > 0) {
+                            double cost = c1.ask - c2.bid;
+                            if (cost > 0 && cost < width) {
+                                double costRatio = cost / width;
+                                if (costRatio <= maxCostRatio) {
+                                    double breakeven = k1 + cost;
+                                    double iv = BlackScholesCalculator.impliedVolatility(
+                                        (c1.bid + c1.ask) / 2.0, spot, k1, yearsToExpiry, ArbitrageCosts.RISK_FREE_RATE, true, 0.01, 50);
+                                    double pop = BlackScholesCalculator.probabilityAbove(spot, breakeven, yearsToExpiry, ArbitrageCosts.RISK_FREE_RATE, iv);
+                                    candidates.add(buildCandidate(u, "CE", k1, k2, width, cost, costRatio, lotSize,
+                                        breakeven, null, pop, iv, spot, weeklyExpiry,
+                                        String.format("BUY %d CE @ %.1f | SELL %d CE @ %.1f", k1, c1.ask, k2, c2.bid),
+                                        List.of(leg(k1, "CE", "BUY", 1, c1.ask), leg(k2, "CE", "SELL", 1, c2.bid)),
+                                        c1.ask, c2.bid, ArbitrageCosts.STT_OPTION_BUY, ArbitrageCosts.STT_OPTION_SELL));
+                                }
+                            }
+                        }
+
+                        // Put debit spread: BUY K2 PE, SELL K1 PE -- profits below breakeven.
+                        if (p1 != null && p2 != null && p1.bid > 0 && p2.ask > 0) {
+                            double cost = p2.ask - p1.bid;
+                            if (cost > 0 && cost < width) {
+                                double costRatio = cost / width;
+                                if (costRatio <= maxCostRatio) {
+                                    double breakeven = k2 - cost;
+                                    double iv = BlackScholesCalculator.impliedVolatility(
+                                        (p2.bid + p2.ask) / 2.0, spot, k2, yearsToExpiry, ArbitrageCosts.RISK_FREE_RATE, false, 0.01, 50);
+                                    double pop = BlackScholesCalculator.probabilityBelow(spot, breakeven, yearsToExpiry, ArbitrageCosts.RISK_FREE_RATE, iv);
+                                    candidates.add(buildCandidate(u, "PE", k1, k2, width, cost, costRatio, lotSize,
+                                        null, breakeven, pop, iv, spot, weeklyExpiry,
+                                        String.format("BUY %d PE @ %.1f | SELL %d PE @ %.1f", k2, p2.ask, k1, p1.bid),
+                                        List.of(leg(k2, "PE", "BUY", 1, p2.ask), leg(k1, "PE", "SELL", 1, p1.bid)),
+                                        p2.ask, p1.bid, ArbitrageCosts.STT_OPTION_BUY, ArbitrageCosts.STT_OPTION_SELL));
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Error scanning Vertical candidates for {}: {}", u, e.getMessage(), e);
+            }
+        }
+
+        candidates.sort((a, b) -> Double.compare((double) b.get("pop"), (double) a.get("pop")));
+        return candidates;
+    }
+
+    private Map<String, Object> buildCandidate(String u, String optionType, int k1, int k2, double width,
+                                                double cost, double costRatio, int lotSize,
+                                                Double breakevenUpper, Double breakevenLower,
+                                                double pop, double iv, double spot, LocalDate weeklyExpiry,
+                                                String legs, List<Map<String, Object>> legList,
+                                                double buyPrice, double sellPrice, double sttBuyRate, double sttSellRate) {
+        double grossLoss = cost * lotSize;
+        double grossProfit = (width - cost) * lotSize;
+
+        double turnover = (buyPrice + sellPrice) * lotSize;
+        double stt = buyPrice * lotSize * sttBuyRate + sellPrice * lotSize * sttSellRate;
+        double brokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 2;
+        double exchange = turnover * ArbitrageCosts.EXCHANGE_RATE;
+        double sebi = turnover * ArbitrageCosts.SEBI_RATE;
+        double gst = (brokerage + exchange + sebi) * ArbitrageCosts.GST_RATE;
+        double stamp = turnover * ArbitrageCosts.STAMP_RATE;
+        double entryCosts = stt + brokerage + exchange + sebi + gst + stamp;
+
+        double maxLoss = grossLoss + entryCosts;
+        double maxProfit = Math.max(0, grossProfit - entryCosts);
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("underlying", u);
+        m.put("optionType", optionType);
+        m.put("strikes", k1 + "/" + k2);
+        m.put("k1", k1); m.put("k2", k2);
+        m.put("strike", k1);
+        m.put("action", "BUY_SPREAD " + optionType + " (" + k1 + "/" + k2 + ")");
+        m.put("strategyType", "VERTICAL_SPREAD");
+        m.put("width", (int) width);
+        m.put("costPerLot", Math.round(cost * 100.0) / 100.0);
+        m.put("costRatio", Math.round(costRatio * 1000.0) / 1000.0);
+        m.put("maxLoss", Math.round(maxLoss * 100.0) / 100.0);
+        m.put("maxProfit", Math.round(maxProfit * 100.0) / 100.0);
+        m.put("grossMaxLoss", Math.round(grossLoss * 100.0) / 100.0);
+        m.put("grossMaxProfit", Math.round(grossProfit * 100.0) / 100.0);
+        m.put("entryCosts", Math.round(entryCosts * 100.0) / 100.0);
+        m.put("marginEstimate", Math.round(maxLoss * 100.0) / 100.0);
+        m.put("lotSize", lotSize);
+        m.put("riskFreeRate", ArbitrageCosts.RISK_FREE_RATE);
+        m.put("edgeAfterCosts", Math.round(maxProfit * 100.0) / 100.0);
+        m.put("riskReward", maxLoss > 0 ? Math.round((maxProfit / maxLoss) * 100.0) / 100.0 : 0);
+        m.put("breakevenLower", breakevenLower != null ? Math.round(breakevenLower * 100.0) / 100.0 : null);
+        m.put("breakevenUpper", breakevenUpper != null ? Math.round(breakevenUpper * 100.0) / 100.0 : null);
+        m.put("direction", breakevenUpper != null ? "Profits ABOVE breakeven" : "Profits BELOW breakeven");
+        m.put("pop", Math.round(pop * 1000.0) / 10.0);
+        m.put("impliedVol", Math.round(iv * 1000.0) / 10.0);
+        m.put("spotPrice", spot);
+        m.put("daysToExpiry", java.time.Duration.between(LocalDate.now().atStartOfDay(), weeklyExpiry.atStartOfDay()).toDays());
+        m.put("expiryDate", weeklyExpiry.toString());
+        m.put("legs", legs);
+        m.put("legList", legList);
+        m.put("disclaimer", "Not arbitrage. Directional bet -- POP is a Black-Scholes model estimate from current implied volatility, not a backtested or historical win rate.");
+        return m;
+    }
+
     private List<ArbitrageOpportunity> scanForUnderlying(String underlying, double spotPrice, double futuresPrice) {
         List<ArbitrageOpportunity> opps = new ArrayList<>();
         try {

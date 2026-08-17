@@ -1750,6 +1750,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
 
 /* 3b. VERTICAL SPREAD VIEW */
 function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
+  const [subTab, setSubTab] = useState('signals');
   const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(0);
   const [customEdge, setCustomEdge] = useState('');
@@ -1823,6 +1824,21 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
 
   return (
     <div className="space-y-4 w-full">
+      <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
+        <button onClick={() => setSubTab('signals')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'signals' ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          Arbitrage Signals
+        </button>
+        <button onClick={() => setSubTab('candidates')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'candidates' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          🔍 Candidates (Not Arbitrage)
+        </button>
+      </div>
+
+      {subTab === 'candidates' ? (
+        <VerticalCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+      ) : (
+      <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-800">Vertical Spread No-Arbitrage Bound Scanner</h2>
@@ -1952,6 +1968,378 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
               <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(histPage + 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Next</button>
               <button disabled={histPage >= totalHistoryPages - 1} onClick={() => setHistPage(totalHistoryPages - 1)} className="px-2 py-1 bg-white border rounded text-xs font-bold disabled:opacity-40">Last</button>
             </div>
+          </div>
+        )}
+      </div>
+      </>
+      )}
+    </div>
+  );
+}
+
+/* Vertical "cheap debit spread" candidate discovery panel -- NOT arbitrage, evaluation only.
+   Directional (single breakeven), unlike Butterfly's pin-bet range -- structure mirrors
+   ButterflyCandidatesPanel (Today/Expiry chart, positions, margin, exit rules) but with
+   2-leg payoff math and one-sided POP. */
+function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
+  const [underlying, setUnderlying] = useState('ALL');
+  const [maxCostRatio, setMaxCostRatio] = useState(0.35);
+  const [selected, setSelected] = useState({});
+  const [hover, setHover] = useState(null);
+  const [autoSelected, setAutoSelected] = useState(false);
+  const chartRef = useRef(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['vertical-candidates', underlying, maxCostRatio],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/vertical-spread/candidates', { params: { underlying, maxCostRatio } });
+      return res.data;
+    },
+    refetchInterval: 30000
+  });
+
+  const { data: execSettings } = useQuery({
+    queryKey: ['autoExecSettingsForVerticalCandidates'],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    refetchInterval: 60000
+  });
+
+  const candidates = data?.candidates || [];
+  const rowKey = (c, idx) => `${c.underlying}-${c.optionType}-${c.k1}-${c.k2}-${idx}`;
+
+  useEffect(() => {
+    if (!autoSelected && candidates.length > 0) {
+      setSelected({ [rowKey(candidates[0], 0)]: true });
+      setAutoSelected(true);
+    }
+  }, [candidates, autoSelected]);
+
+  const selectedCandidates = candidates.filter((c, idx) => selected[rowKey(c, idx)]);
+  const toggle = (key) => setSelected(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const payoffChart = useMemo(() => {
+    if (selectedCandidates.length === 0) return null;
+    const spot = selectedCandidates[0].spotPrice || selectedCandidates.reduce((s, c) => s + c.spotPrice, 0) / selectedCandidates.length;
+    const lo = Math.min(...selectedCandidates.map(c => c.k1)) - 300;
+    const hi = Math.max(...selectedCandidates.map(c => c.k2)) + 300;
+    const steps = 200;
+    const stepSize = (hi - lo) / steps;
+    const points = [];
+    const todayPoints = [];
+    let minY = 0, maxY = 0;
+    for (let i = 0; i <= steps; i++) {
+      const x = lo + i * stepSize;
+      let expiryTotal = 0, todayTotal = 0;
+      for (const c of selectedCandidates) {
+        const lotSize = c.lotSize || 25;
+        const T = Math.max(c.daysToExpiry, 0.5) / 365;
+        const r = c.riskFreeRate || 0.065;
+        const sigma = (c.impliedVol || 20) / 100;
+
+        let expiryPayoff, todayValue;
+        if (c.optionType === 'CE') {
+          expiryPayoff = Math.max(x - c.k1, 0) - Math.max(x - c.k2, 0);
+          todayValue = bsCallPrice(x, c.k1, T, r, sigma) - bsCallPrice(x, c.k2, T, r, sigma);
+        } else {
+          expiryPayoff = Math.max(c.k2 - x, 0) - Math.max(c.k1 - x, 0);
+          todayValue = bsPutPrice(x, c.k2, T, r, sigma) - bsPutPrice(x, c.k1, T, r, sigma);
+        }
+        expiryTotal += (expiryPayoff - c.costPerLot) * lotSize;
+        todayTotal += (todayValue - c.costPerLot) * lotSize;
+      }
+      points.push({ x, y: expiryTotal });
+      todayPoints.push({ x, y: todayTotal });
+      minY = Math.min(minY, expiryTotal, todayTotal);
+      maxY = Math.max(maxY, expiryTotal, todayTotal);
+    }
+    return { points, todayPoints, spot, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0) };
+  }, [selectedCandidates]);
+
+  const totalMaxLoss = selectedCandidates.reduce((s, c) => s + c.maxLoss, 0);
+  const totalMaxProfit = selectedCandidates.reduce((s, c) => s + c.maxProfit, 0);
+  const totalMargin = selectedCandidates.reduce((s, c) => s + (c.marginEstimate || c.maxLoss), 0);
+  const totalCharges = selectedCandidates.reduce((s, c) => s + (c.entryCosts || 0), 0);
+  const avgPop = selectedCandidates.length > 0
+    ? selectedCandidates.reduce((s, c) => s + c.pop, 0) / selectedCandidates.length : null;
+
+  const CHART_W = 700, CHART_H = 260, PAD_TOP = 24, PAD_BOTTOM = 34;
+  const plotH = CHART_H - PAD_TOP - PAD_BOTTOM;
+  const xToPx = (x) => payoffChart ? ((x - payoffChart.lo) / (payoffChart.hi - payoffChart.lo)) * CHART_W : 0;
+  const yToPx = (y) => payoffChart
+    ? PAD_TOP + plotH - ((y - payoffChart.minY) / (payoffChart.maxY - payoffChart.minY || 1)) * plotH
+    : 0;
+  const pxToX = (px) => payoffChart ? payoffChart.lo + (px / CHART_W) * (payoffChart.hi - payoffChart.lo) : 0;
+
+  const handleChartMove = (e) => {
+    if (!payoffChart || !chartRef.current) return;
+    const rect = chartRef.current.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / rect.width;
+    const px = relX * CHART_W;
+    const priceAtCursor = pxToX(px);
+    let nearestIdx = 0, bestDist = Infinity;
+    payoffChart.points.forEach((p, i) => {
+      const d = Math.abs(p.x - priceAtCursor);
+      if (d < bestDist) { bestDist = d; nearestIdx = i; }
+    });
+    const expiry = payoffChart.points[nearestIdx];
+    const today = payoffChart.todayPoints[nearestIdx];
+    setHover({ px: xToPx(expiry.x), pyExpiry: yToPx(expiry.y), pyToday: yToPx(today.y), price: expiry.x, pnlExpiry: expiry.y, pnlToday: today.y });
+  };
+
+  const zeroPx = payoffChart ? yToPx(0) : 0;
+  const areaPath = payoffChart ? (() => {
+    const pts = payoffChart.points.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' L ');
+    return `M ${xToPx(payoffChart.points[0].x)},${zeroPx} L ${pts} L ${xToPx(payoffChart.points[payoffChart.points.length - 1].x)},${zeroPx} Z`;
+  })() : '';
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-xs text-amber-900">
+        <p className="font-bold mb-1">⚠️ Not arbitrage — evaluation tool only</p>
+        <p>These are debit spreads priced cheap relative to their width — a directional bet (profits if price clears the breakeven by expiry), not a guaranteed-profit position. POP is a Black-Scholes model estimate from current implied volatility, not a backtested or historical win rate. Move your mouse over the chart to see P&amp;L at any settlement price.</p>
+      </div>
+
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">Cheap Vertical Spread Candidates</h2>
+          <p className="text-xs text-slate-500">{candidates.length} candidates — cost ≤ {Math.round(maxCostRatio * 100)}% of width, sorted by model POP (highest first)</p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+            <button key={u} onClick={() => { setUnderlying(u); setAutoSelected(false); }}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${underlying === u ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              {u}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+          <span className="text-[10px] font-bold text-slate-500 px-1">MAX COST/WIDTH</span>
+          {[0.2, 0.35, 0.5].map(r => (
+            <button key={r} onClick={() => { setMaxCostRatio(r); setAutoSelected(false); }}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${maxCostRatio === r ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              {Math.round(r * 100)}%
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {selectedCandidates.length > 0 && (
+        <div className="bg-gradient-to-br from-white via-amber-50/30 to-indigo-50/30 rounded-2xl border-2 border-amber-200 shadow-lg p-5 space-y-5">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">POP</div>
+              <div className={`text-lg font-black ${avgPop >= 60 ? 'text-emerald-600' : avgPop >= 40 ? 'text-amber-600' : 'text-slate-500'}`}>{avgPop?.toFixed(1)}%</div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Max Loss</div>
+              <div className="text-lg font-black text-red-600">₹{Math.round(totalMaxLoss).toLocaleString('en-IN')}</div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Max Profit</div>
+              <div className="text-lg font-black text-emerald-600">₹{Math.round(totalMaxProfit).toLocaleString('en-IN')}</div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Risk:Reward</div>
+              <div className="text-lg font-black text-indigo-600">{totalMaxLoss > 0 ? (totalMaxProfit / totalMaxLoss).toFixed(1) : '0'}x</div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Margin Req.*</div>
+              <div className="text-lg font-black text-slate-700">₹{Math.round(totalMargin).toLocaleString('en-IN')}</div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Charges</div>
+              <div className="text-lg font-black text-slate-700">₹{Math.round(totalCharges).toLocaleString('en-IN')}</div>
+            </div>
+          </div>
+          <p className="text-[9px] text-slate-400 -mt-3">*Margin is a conservative estimate (worst-case cash outflow) — actual broker SPAN+exposure margin may differ; verify with your broker before trading.</p>
+
+          {payoffChart && (
+            <div>
+              <div className="flex items-center gap-4 mb-1 px-1">
+                <span className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700"><span className="w-3 h-0.5 bg-amber-600 inline-block rounded" /> At Expiry</span>
+                <span className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600"><span className="w-3 h-0.5 bg-blue-500 inline-block rounded" /> Today (Black-Scholes est.)</span>
+              </div>
+              <div className="relative overflow-x-auto bg-white rounded-xl border border-slate-100 p-2">
+                <svg ref={chartRef} viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-[260px] cursor-crosshair"
+                  onMouseMove={handleChartMove} onMouseLeave={() => setHover(null)}>
+                  <defs>
+                    <linearGradient id="vProfitGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
+                      <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
+                    </linearGradient>
+                    <linearGradient id="vLossGrad" x1="0" y1="1" x2="0" y2="0">
+                      <stop offset="0%" stopColor="#ef4444" stopOpacity="0.3" />
+                      <stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  <clipPath id="vAboveZero"><rect x="0" y="0" width={CHART_W} height={zeroPx} /></clipPath>
+                  <clipPath id="vBelowZero"><rect x="0" y={zeroPx} width={CHART_W} height={CHART_H - zeroPx} /></clipPath>
+                  <path d={areaPath} fill="url(#vProfitGrad)" clipPath="url(#vAboveZero)" />
+                  <path d={areaPath} fill="url(#vLossGrad)" clipPath="url(#vBelowZero)" />
+
+                  <line x1="0" y1={zeroPx} x2={CHART_W} y2={zeroPx} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4,4" />
+                  <line x1={xToPx(payoffChart.spot)} y1={PAD_TOP} x2={xToPx(payoffChart.spot)} y2={CHART_H - PAD_BOTTOM}
+                    stroke="#6366f1" strokeWidth="1.5" strokeDasharray="3,3" />
+                  <text x={xToPx(payoffChart.spot)} y={PAD_TOP - 8} textAnchor="middle" fontSize="10" fontWeight="700" fill="#6366f1">
+                    Spot {Math.round(payoffChart.spot).toLocaleString('en-IN')}
+                  </text>
+
+                  <polyline
+                    fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" opacity="0.85"
+                    points={payoffChart.todayPoints.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' ')}
+                  />
+                  <polyline
+                    fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinejoin="round"
+                    points={payoffChart.points.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' ')}
+                  />
+
+                  {hover && (
+                    <g>
+                      <line x1={hover.px} y1={PAD_TOP} x2={hover.px} y2={CHART_H - PAD_BOTTOM} stroke="#0f172a" strokeWidth="1" strokeDasharray="2,2" opacity="0.4" />
+                      <circle cx={hover.px} cy={hover.pyToday} r="4" fill="#3b82f6" stroke="white" strokeWidth="1.5" />
+                      <circle cx={hover.px} cy={hover.pyExpiry} r="4.5" fill={hover.pnlExpiry >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="1.5" />
+                      {(() => {
+                        const boxW = 150, boxH = 62;
+                        const bx = Math.min(Math.max(hover.px - boxW / 2, 2), CHART_W - boxW - 2);
+                        const anchorY = Math.min(hover.pyExpiry, hover.pyToday);
+                        const by = anchorY > 90 ? anchorY - boxH - 10 : Math.max(hover.pyExpiry, hover.pyToday) + 14;
+                        return (
+                          <g>
+                            <rect x={bx} y={by} width={boxW} height={boxH} rx="6" fill="#0f172a" opacity="0.94" />
+                            <text x={bx + 8} y={by + 15} fontSize="10" fill="#cbd5e1">
+                              @ {Math.round(hover.price).toLocaleString('en-IN')}
+                            </text>
+                            <text x={bx + 8} y={by + 32} fontSize="11" fontWeight="700" fill="#93c5fd">
+                              Today: {hover.pnlToday >= 0 ? '+' : ''}₹{Math.round(hover.pnlToday).toLocaleString('en-IN')}
+                            </text>
+                            <text x={bx + 8} y={by + 49} fontSize="11" fontWeight="800" fill={hover.pnlExpiry >= 0 ? '#34d399' : '#f87171'}>
+                              Expiry: {hover.pnlExpiry >= 0 ? '+' : ''}₹{Math.round(hover.pnlExpiry).toLocaleString('en-IN')}
+                            </text>
+                          </g>
+                        );
+                      })()}
+                    </g>
+                  )}
+
+                  {selectedCandidates.length === 1 && (selectedCandidates[0].breakevenLower || selectedCandidates[0].breakevenUpper) && (
+                    <line x1={xToPx(selectedCandidates[0].breakevenLower || selectedCandidates[0].breakevenUpper)} y1={PAD_TOP}
+                      x2={xToPx(selectedCandidates[0].breakevenLower || selectedCandidates[0].breakevenUpper)} y2={CHART_H - PAD_BOTTOM}
+                      stroke="#94a3b8" strokeWidth="1" strokeDasharray="2,3" opacity="0.6" />
+                  )}
+                </svg>
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-500 px-1 mt-1">
+                <span>{Math.round(payoffChart.lo).toLocaleString('en-IN')}</span>
+                <span>{Math.round(payoffChart.hi).toLocaleString('en-IN')}</span>
+              </div>
+              <p className="text-[10px] text-slate-400 text-center mt-1">P&amp;L (₹) vs. settlement price — hover to inspect any price point</p>
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-600 uppercase">
+              📋 Positions to be taken
+            </div>
+            <table className="w-full text-[11px]">
+              <thead className="text-slate-400 text-[9px] uppercase">
+                <tr>
+                  <th className="px-3 py-1.5 text-left">Symbol</th>
+                  <th className="px-3 py-1.5 text-left">Side</th>
+                  <th className="px-3 py-1.5 text-right">Strike</th>
+                  <th className="px-3 py-1.5 text-right">Qty (lots)</th>
+                  <th className="px-3 py-1.5 text-right">Price</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {selectedCandidates.flatMap((c, ci) => (c.legList || []).map((leg, li) => (
+                  <tr key={`${ci}-${li}`}>
+                    <td className="px-3 py-1.5 font-bold text-slate-700">{c.underlying} {leg.optionType}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${leg.side === 'BUY' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{leg.side}</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono">{leg.strike}</td>
+                    <td className="px-3 py-1.5 text-right font-mono">{leg.qty}</td>
+                    <td className="px-3 py-1.5 text-right font-mono">₹{leg.price?.toFixed(2)}</td>
+                  </tr>
+                )))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="bg-indigo-50 rounded-xl border border-indigo-200 p-3 text-[11px] text-indigo-900 space-y-1">
+            <p className="font-black uppercase text-[10px] text-indigo-600">🛡️ If you trade this — what happens automatically</p>
+            {execSettings ? (
+              <>
+                <p><strong>Auto-exit on target:</strong> {execSettings.autoExitEnabled ? `ON — squares off at ${execSettings.autoExitThresholdPct ?? 90}% of max profit` : 'OFF'}</p>
+                <p><strong>Stop-loss:</strong> {execSettings.stopLossEnabled ? `ON — squares off at ${execSettings.stopLossPct ?? 50}% of max loss` : 'OFF'}</p>
+                <p className="text-indigo-500">Change these in the Auto-Trade tab. Only applies if you actually execute the trade (paper or live) — this panel is not a live position.</p>
+              </>
+            ) : (
+              <p className="text-indigo-400">Loading current settings…</p>
+            )}
+            <p className="text-red-600 font-bold pt-1">⚠️ No automatic strike-adjustment or rolling exists for these spreads. If price moves against the position, it holds until it hits the stop-loss, hits the target, or expires — nothing rebalances it for you.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning for cheap vertical spread candidates...</div>
+        ) : candidates.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidates under {Math.round(maxCostRatio * 100)}% cost/width right now</div>
+        ) : (
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2"></th>
+                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2">Strikes</th>
+                  <th className="px-2 py-2">Type</th>
+                  <th className="px-2 py-2">Direction</th>
+                  <th className="px-2 py-2 text-right">Cost/Width</th>
+                  <th className="px-2 py-2 text-right text-indigo-600">POP</th>
+                  <th className="px-2 py-2 text-right text-red-600">Max Loss</th>
+                  <th className="px-2 py-2 text-right text-emerald-600">Max Profit</th>
+                  <th className="px-2 py-2 text-right">Margin*</th>
+                  <th className="px-2 py-2 text-right">R:R</th>
+                  <th className="px-2 py-2 text-center">Trade</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {candidates.map((c, idx) => {
+                  const key = rowKey(c, idx);
+                  const isSel = !!selected[key];
+                  return (
+                    <tr key={key} className={`transition ${isSel ? 'bg-amber-50' : 'hover:bg-slate-50'}`}>
+                      <td className="px-2 py-1.5 text-center">
+                        <input type="checkbox" checked={isSel} onChange={() => toggle(key)} className="w-3.5 h-3.5" />
+                      </td>
+                      <td className="px-2 py-1.5 font-bold text-slate-800">{c.underlying}</td>
+                      <td className="px-2 py-1.5 font-bold text-slate-700">{c.strikes}</td>
+                      <td className="px-2 py-1.5 text-slate-600">{c.optionType}</td>
+                      <td className="px-2 py-1.5 text-[10px] text-slate-500">{c.direction}</td>
+                      <td className="px-2 py-1.5 text-right font-mono">{Math.round(c.costRatio * 100)}%</td>
+                      <td className="px-2 py-1.5 text-right">
+                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${c.pop >= 60 ? 'bg-emerald-100 text-emerald-700' : c.pop >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {c.pop}%
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono text-red-600">₹{Math.round(c.maxLoss).toLocaleString('en-IN')}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-emerald-600">₹{Math.round(c.maxProfit).toLocaleString('en-IN')}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-slate-500">₹{Math.round(c.marginEstimate || c.maxLoss).toLocaleString('en-IN')}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold">{c.riskReward}x</td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button onClick={() => handleExecuteInline(c)}
+                          className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm">
+                          ⚡ Trade
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
