@@ -108,6 +108,10 @@ public class ButterflySpreadService {
                 String futKey = FuturesKeyResolver.resolveFuturesKey(u, spotPriceFetcher, spotKey);
                 double[] spotFut = spotPriceFetcher.getSpotAndFutures(spotKey, futKey);
                 double spot = (spotFut != null && spotFut.length > 0 && spotFut[0] > 0) ? spotFut[0] : 0;
+                double fut = (spotFut != null && spotFut.length > 1 && spotFut[1] > 0) ? spotFut[1] : spot;
+                // Spot feed occasionally has a transient hiccup while futures still resolves --
+                // fall back to futures as an ATM-strike proxy, matching every other scanner here.
+                if (spot <= 0 && fut > 0) spot = fut;
                 if (spot <= 0) continue;
 
                 int step = OptionChainService.getStrikeStep(u);
