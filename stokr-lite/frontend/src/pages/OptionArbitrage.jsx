@@ -2634,6 +2634,12 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning for cheap vertical spread candidates...</div>
+        ) : data?.marketClosed ? (
+          <div className="p-12 text-center text-sm font-semibold">
+            <div className="text-3xl mb-2">🌙</div>
+            <div className="text-slate-500">Market is closed</div>
+            <div className="text-slate-400 text-xs font-normal mt-1">{data?.reason || 'NSE/NFO hours: Mon-Fri 09:15-15:30 IST'}</div>
+          </div>
         ) : candidates.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidates under {Math.round(maxCostRatio * 100)}% cost/width right now</div>
         ) : (
@@ -3388,6 +3394,12 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning for cheap butterfly candidates...</div>
+        ) : data?.marketClosed ? (
+          <div className="p-12 text-center text-sm font-semibold">
+            <div className="text-3xl mb-2">🌙</div>
+            <div className="text-slate-500">Market is closed</div>
+            <div className="text-slate-400 text-xs font-normal mt-1">{data?.reason || 'NSE/NFO hours: Mon-Fri 09:15-15:30 IST'}</div>
+          </div>
         ) : candidates.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidates under {Math.round(maxCostRatio * 100)}% cost/width right now</div>
         ) : (
@@ -4039,6 +4051,12 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">Scanning for cheap condor candidates...</div>
+        ) : data?.marketClosed ? (
+          <div className="p-12 text-center text-sm font-semibold">
+            <div className="text-3xl mb-2">🌙</div>
+            <div className="text-slate-500">Market is closed</div>
+            <div className="text-slate-400 text-xs font-normal mt-1">{data?.reason || 'NSE/NFO hours: Mon-Fri 09:15-15:30 IST'}</div>
+          </div>
         ) : candidates.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidates under {Math.round(maxCostRatio * 100)}% cost/width right now</div>
         ) : (
