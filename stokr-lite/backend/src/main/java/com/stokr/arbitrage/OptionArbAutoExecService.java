@@ -31,23 +31,45 @@ public class OptionArbAutoExecService {
 
     private final List<Map<String, Object>> execLogs = Collections.synchronizedList(new ArrayList<>());
 
+    /** Settings-key prefixes for each of the 6 real auto-executing strategies. */
+    private static final List<String> STRATEGY_PREFIXES =
+        List.of("bidParity", "box", "vertical", "butterfly", "condor", "ironCondor");
+
+    private static String strategyPrefix(String strategyType) {
+        String s = strategyType == null ? "" : strategyType.toUpperCase();
+        if (s.contains("BID")) return "bidParity";
+        if (s.contains("BOX")) return "box";
+        if (s.contains("VERTICAL")) return "vertical";
+        if (s.contains("BUTTERFLY")) return "butterfly";
+        if (s.contains("IRON")) return "ironCondor";
+        if (s.contains("CONDOR")) return "condor";
+        return "bidParity";
+    }
+
+    private static String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return s.substring(0, 1).toUpperCase() + s.substring(1).toLowerCase();
+    }
+
     @PostConstruct
     public void init() {
         Map<String, Object> defaults = new LinkedHashMap<>();
         defaults.put("enabled", true);
         defaults.put("broker", "NAVIA");
-        defaults.put("niftyEnabled", true);
-        defaults.put("niftyMinEdge", 800.0);
-        defaults.put("niftyLots", 1);
-        defaults.put("bankniftyEnabled", true);
-        defaults.put("bankniftyMinEdge", 800.0);
-        defaults.put("bankniftyLots", 1);
-        defaults.put("finniftyEnabled", true);
-        defaults.put("finniftyMinEdge", 800.0);
-        defaults.put("finniftyLots", 1);
-        defaults.put("midcpniftyEnabled", true);
-        defaults.put("midcpniftyMinEdge", 800.0);
-        defaults.put("midcpniftyLots", 1);
+        // Per-strategy, per-underlying entry thresholds -- each of the 6 real auto-executing
+        // strategies (Bid Parity/Box/Vertical/Butterfly/Condor/Iron Condor) gets its own
+        // enabled/minEdge/lots per symbol, e.g. "boxNiftyMinEdge" vs "bidParityNiftyMinEdge".
+        // Previously these were ONE shared set of thresholds (niftyEnabled/niftyMinEdge/
+        // niftyLots) gated only by a coarse ALL/PARITY/BOX filter, so e.g. Box and Bid Parity
+        // couldn't have different edge requirements, and Vertical/Butterfly/Condor/Iron Condor
+        // had no dedicated control at all (they rode on "ALL").
+        for (String prefix : STRATEGY_PREFIXES) {
+            for (String u : List.of("Nifty", "Banknifty", "Finnifty", "Midcpnifty")) {
+                defaults.put(prefix + u + "Enabled", true);
+                defaults.put(prefix + u + "MinEdge", 800.0);
+                defaults.put(prefix + u + "Lots", 1);
+            }
+        }
         defaults.put("maxOpenPositions", 1);
         defaults.put("maxDailyLoss", 5000.0);
         defaults.put("stopLossEnabled", true);
@@ -56,7 +78,6 @@ public class OptionArbAutoExecService {
         defaults.put("rolloverThresholdPct", 90.0);
         defaults.put("autoExitEnabled", true);
         defaults.put("autoExitThresholdPct", 90.0);
-        defaults.put("strategyFilter", "ALL");
         // Auto-roll: if a Butterfly position sits outside its profit zone continuously for
         // <symbol>AutoRollBreachMinutes, close it automatically and propose a re-centered
         // replacement (which still requires a one-click confirm before it's actually entered --
@@ -280,22 +301,19 @@ public class OptionArbAutoExecService {
             return;
         }
 
-        String strategyFilter = (String) settings.getOrDefault("strategyFilter", "ALL");
-
         for (OptionArbOpportunity opp : newOpps) {
             if (currentOpen >= maxPositions) break;
             if (opp.getUnderlying() == null || opp.getEdgeAfterCosts() == null) continue;
 
-            String key = opp.getUnderlying().toLowerCase();
+            // Per-strategy, per-underlying key -- e.g. BOX_SPREAD on NIFTY reads
+            // "boxNiftyEnabled"/"boxNiftyMinEdge"/"boxNiftyLots", independent of Bid Parity's
+            // "bidParityNiftyEnabled" etc, even for the same underlying.
+            String prefix = strategyPrefix(opp.getStrategyType());
+            String key = prefix + capitalize(opp.getUnderlying());
             boolean enabled = Boolean.TRUE.equals(settings.get(key + "Enabled"));
             if (!enabled) continue;
 
-            String stratType = opp.getStrategyType() != null ? opp.getStrategyType().toUpperCase() : "";
-            String oppAction = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
-            if ("PARITY".equals(strategyFilter) && !stratType.contains("PARITY") && !stratType.contains("BID")) continue;
-            if ("BOX".equals(strategyFilter) && !stratType.contains("BOX")) continue;
-
-            double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 2000.0)).doubleValue();
+            double minEdge = ((Number) settings.getOrDefault(key + "MinEdge", 800.0)).doubleValue();
             if (opp.getEdgeAfterCosts().doubleValue() < minEdge) continue;
             if (opp.getExpiryDate() == null || opp.getStrike() == null) continue;
 

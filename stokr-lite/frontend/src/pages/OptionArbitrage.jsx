@@ -502,13 +502,6 @@ function AutoExecSettingsPanel() {
 
   if (!settings) return null;
 
-  const underlyings = [
-    { key: 'nifty', label: 'NIFTY', lotSize: 25 },
-    { key: 'banknifty', label: 'BANKNIFTY', lotSize: 15 },
-    { key: 'finnifty', label: 'FINNIFTY', lotSize: 25 },
-    { key: 'midcpnifty', label: 'MIDCPNIFTY', lotSize: 50 },
-  ];
-
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
       <div className="flex items-center justify-between">
@@ -516,7 +509,7 @@ function AutoExecSettingsPanel() {
           <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
             <span className="text-lg">🤖</span> Auto-Execute Engine
           </h3>
-          <p className="text-[10px] text-slate-500 mt-0.5">Automatically place trades when edge exceeds threshold. Checks margin before execution.</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Master switch + shared risk/exit controls. Each strategy's own entry thresholds (min edge, lots, per underlying) now live on that strategy's own "⚡ Auto-Trade" sub-tab.</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[10px] text-slate-500">Engine:</span>
@@ -532,55 +525,7 @@ function AutoExecSettingsPanel() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {underlyings.map(u => (
-          <div key={u.key} className={`rounded-xl border p-3 space-y-2 transition-colors ${settings[u.key + 'Enabled'] ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50 border-slate-200'}`}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-slate-800">{u.label}</span>
-              <button
-                onClick={() => updateSetting(u.key + 'Enabled', !settings[u.key + 'Enabled'])}
-                className={`relative w-9 h-5 rounded-full transition-colors ${settings[u.key + 'Enabled'] ? 'bg-emerald-500' : 'bg-slate-300'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${settings[u.key + 'Enabled'] ? 'translate-x-4' : ''}`} />
-              </button>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-bold text-slate-500 uppercase">Min Edge (₹)</label>
-              <input type="number" value={settings[u.key + 'MinEdge'] || 2000}
-                onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'MinEdge']: Number(e.target.value) }))}
-                onBlur={(e) => updateSetting(u.key + 'MinEdge', e.target.value)}
-                className="w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-bold text-slate-500 uppercase">Lots</label>
-              <input type="number" value={settings[u.key + 'Lots'] || 1} min={1} max={10}
-                onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'Lots']: Number(e.target.value) }))}
-                onBlur={(e) => updateSetting(u.key + 'Lots', e.target.value)}
-                className="w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none" />
-            </div>
-            <div className="text-[9px] text-slate-400">
-              Est. cost: ₹{((settings[u.key + 'MinEdge'] || 2000) * 0.3 * (settings[u.key + 'Lots'] || 1)).toFixed(0)} per lot
-            </div>
-          </div>
-        ))}
-      </div>
-
       <div className="flex flex-wrap gap-4 items-center pt-1 border-t border-slate-100">
-        <div className="space-y-1">
-          <label className="text-[9px] font-bold text-slate-500 uppercase">Strategy Filter</label>
-          <div className="flex items-center gap-1">
-            {['ALL', 'PARITY', 'BOX'].map(s => (
-              <button key={s}
-                onClick={() => updateSetting('strategyFilter', s)}
-                className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${
-                  (settings.strategyFilter || 'ALL') === s ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {s === 'ALL' ? '🔀 All' : s === 'PARITY' ? '⚡ Parity' : '💎 Box'}
-              </button>
-            ))}
-          </div>
-        </div>
         <div className="space-y-1">
           <label className="text-[9px] font-bold text-slate-500 uppercase">Max Open Positions</label>
           <input type="number" value={settings.maxOpenPositions || 5} min={1} max={20}
@@ -762,6 +707,98 @@ function AutoRollSettingsPanel() {
               </div>
               <div className="text-[9px] text-slate-400">
                 {enabled ? `Watching ${u.label} flies — closes after ${settings[u.key + 'AutoRollBreachMinutes'] ?? 5}min outside zone` : 'Not monitored'}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* Per-strategy Auto-Trade entry settings -- reusable across every strategy's own "Auto-Trade"
+   sub-tab. Each strategy (Bid Parity/Box/Vertical/Butterfly/Condor/Iron Condor) reads/writes
+   its own settings-key prefix (e.g. "box" -> boxNiftyEnabled/boxNiftyMinEdge/boxNiftyLots),
+   completely independent of every other strategy's thresholds for the same underlying. */
+function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
+  const [settings, setSettings] = useState(null);
+
+  const { data } = useQuery({
+    queryKey: ['autoExecSettings'],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    refetchInterval: 30000,
+  });
+
+  useEffect(() => { if (data) setSettings(data); }, [data]);
+
+  const updateSetting = async (key, value) => {
+    try {
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}`);
+      setSettings(prev => ({ ...prev, [key]: value }));
+      showToast(`Setting updated: ${key} = ${value}`, 'success');
+    } catch (e) {
+      showToast('Failed to update setting', 'error');
+    }
+  };
+
+  if (!settings) return null;
+
+  const underlyings = [
+    { key: prefix + 'Nifty', label: 'NIFTY' },
+    { key: prefix + 'Banknifty', label: 'BANKNIFTY' },
+    { key: prefix + 'Finnifty', label: 'FINNIFTY' },
+    { key: prefix + 'Midcpnifty', label: 'MIDCPNIFTY' },
+  ];
+  const anyEnabled = underlyings.some(u => settings[u.key + 'Enabled']);
+  const accentBg = { indigo: 'bg-indigo-50 border-indigo-300', emerald: 'bg-emerald-50 border-emerald-300' }[accent] || 'bg-indigo-50 border-indigo-300';
+  const accentBtn = { indigo: 'bg-indigo-500', emerald: 'bg-emerald-500' }[accent] || 'bg-indigo-500';
+  const accentText = { indigo: 'text-indigo-700', emerald: 'text-emerald-700' }[accent] || 'text-indigo-700';
+  const accentRing = { indigo: 'focus:ring-indigo-500 focus:border-indigo-500', emerald: 'focus:ring-emerald-500 focus:border-emerald-500' }[accent] || 'focus:ring-indigo-500';
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+            <span className="text-lg">⚡</span> {label} Auto-Trade
+          </h3>
+          <p className="text-[10px] text-slate-500 mt-0.5">
+            Entry thresholds for this strategy only — independent of every other strategy's settings.
+            Requires the master Engine switch (Auto-Trade tab) to be ON, and a live broker selected there.
+          </p>
+        </div>
+        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${anyEnabled ? `${accentBg} ${accentText}` : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
+          {anyEnabled ? '● ACTIVE ON SOME SYMBOLS' : 'OFF'}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        {underlyings.map(u => {
+          const enabled = !!settings[u.key + 'Enabled'];
+          return (
+            <div key={u.key} className={`rounded-xl border p-3 space-y-2 transition-colors ${enabled ? accentBg : 'bg-slate-50 border-slate-200'}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-slate-800">{u.label}</span>
+                <button
+                  onClick={() => updateSetting(u.key + 'Enabled', !enabled)}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${enabled ? accentBtn : 'bg-slate-300'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-4' : ''}`} />
+                </button>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Min Edge (₹)</label>
+                <input type="number" value={settings[u.key + 'MinEdge'] ?? 800}
+                  onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'MinEdge']: Number(e.target.value) }))}
+                  onBlur={(e) => updateSetting(u.key + 'MinEdge', e.target.value)}
+                  className={`w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 outline-none ${accentRing}`} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Lots</label>
+                <input type="number" value={settings[u.key + 'Lots'] ?? 1} min={1} max={10}
+                  onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'Lots']: Number(e.target.value) }))}
+                  onBlur={(e) => updateSetting(u.key + 'Lots', e.target.value)}
+                  className={`w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 outline-none ${accentRing}`} />
               </div>
             </div>
           );
@@ -1301,6 +1338,7 @@ function SignalsView({ underlyings, toggleUnderlying, opportunities, calendarOpp
 
 /* 2. BID PARITY VIEW */
 function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, executionBroker }) {
+  const [subTab, setSubTab] = useState('signals');
   const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(300);
   const [customEdge, setCustomEdge] = useState('');
@@ -1405,6 +1443,21 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
 
   return (
     <div className="space-y-4 w-full">
+      <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
+        <button onClick={() => setSubTab('signals')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'signals' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          Arbitrage Signals
+        </button>
+        <button onClick={() => setSubTab('autotrade')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          ⚡ Auto-Trade
+        </button>
+      </div>
+
+      {subTab === 'autotrade' ? (
+        <StrategyAutoTradePanel prefix="bidParity" label="Bid Parity" accent="indigo" />
+      ) : (
+      <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-800">Bid Parity Conversion &amp; Reversal Scanner</h2>
@@ -1574,6 +1627,8 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
@@ -1692,9 +1747,15 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'nearmiss' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
           🔎 Near-Miss Watchlist
         </button>
+        <button onClick={() => setSubTab('autotrade')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          ⚡ Auto-Trade
+        </button>
       </div>
 
-      {subTab === 'nearmiss' ? (
+      {subTab === 'autotrade' ? (
+        <StrategyAutoTradePanel prefix="box" label="Box Spread" accent="indigo" />
+      ) : subTab === 'nearmiss' ? (
         <BoxNearMissPanel />
       ) : (
       <>
@@ -2055,9 +2116,15 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'candidates' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
           🔍 Candidates (Not Arbitrage)
         </button>
+        <button onClick={() => setSubTab('autotrade')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          ⚡ Auto-Trade
+        </button>
       </div>
 
-      {subTab === 'candidates' ? (
+      {subTab === 'autotrade' ? (
+        <StrategyAutoTradePanel prefix="vertical" label="Vertical Spread" accent="indigo" />
+      ) : subTab === 'candidates' ? (
         <VerticalCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
       ) : (
       <>
@@ -2780,9 +2847,18 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'candidates' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
           🔍 Candidates (Not Arbitrage)
         </button>
+        <button onClick={() => setSubTab('autotrade')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          ⚡ Auto-Trade
+        </button>
       </div>
 
-      {subTab === 'candidates' ? (
+      {subTab === 'autotrade' ? (
+        <div className="space-y-4">
+          <StrategyAutoTradePanel prefix="butterfly" label="Butterfly Spread" accent="indigo" />
+          <AutoRollSettingsPanel />
+        </div>
+      ) : subTab === 'candidates' ? (
         <ButterflyCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
       ) : (
       <>
@@ -3443,9 +3519,15 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'candidates' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
           🔍 Candidates (Not Arbitrage)
         </button>
+        <button onClick={() => setSubTab('autotrade')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          ⚡ Auto-Trade
+        </button>
       </div>
 
-      {subTab === 'candidates' ? (
+      {subTab === 'autotrade' ? (
+        <StrategyAutoTradePanel prefix="condor" label="Condor Spread" accent="indigo" />
+      ) : subTab === 'candidates' ? (
         <CondorCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
       ) : (
       <>
@@ -4005,6 +4087,7 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
 
 /* 4. 0DTE IRON CONDOR VIEW */
 function IronCondorView({ handleExecuteInline, executionBroker }) {
+  const [subTab, setSubTab] = useState('signals');
   const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(300);
   const [customEdge, setCustomEdge] = useState('');
@@ -4106,6 +4189,21 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
 
   return (
     <div className="space-y-4 w-full">
+      <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
+        <button onClick={() => setSubTab('signals')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'signals' ? 'bg-indigo-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          Signals
+        </button>
+        <button onClick={() => setSubTab('autotrade')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          ⚡ Auto-Trade
+        </button>
+      </div>
+
+      {subTab === 'autotrade' ? (
+        <StrategyAutoTradePanel prefix="ironCondor" label="Iron Condor" accent="indigo" />
+      ) : (
+      <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-800">0DTE Delta-Neutral Iron Condor Scanner</h2>
@@ -4236,6 +4334,8 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
