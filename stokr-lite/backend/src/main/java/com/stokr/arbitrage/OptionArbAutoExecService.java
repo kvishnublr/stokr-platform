@@ -57,6 +57,13 @@ public class OptionArbAutoExecService {
         defaults.put("autoExitEnabled", true);
         defaults.put("autoExitThresholdPct", 90.0);
         defaults.put("strategyFilter", "ALL");
+        // Auto-roll: if a Butterfly position sits outside its profit zone continuously for
+        // autoRollBreachMinutes, close it automatically and propose a re-centered replacement
+        // (which still requires a one-click confirm before it's actually entered -- see
+        // AutoRollService). Off by default -- this is a new, higher-risk automation.
+        defaults.put("autoRollEnabled", false);
+        defaults.put("autoRollBreachMinutes", 5);
+        defaults.put("autoRollMaxRolls", 2);
 
         // Load persisted settings from DB, overlay on defaults
         try {
@@ -68,7 +75,8 @@ public class OptionArbAutoExecService {
                 else if (key.endsWith("Enabled")) defaults.put(key, Boolean.parseBoolean(val));
                 else if (key.endsWith("MinEdge") || key.equals("maxDailyLoss") || key.equals("rolloverThresholdPct") || key.equals("autoExitThresholdPct"))
                     defaults.put(key, Double.parseDouble(val));
-                else if (key.endsWith("Lots") || key.equals("maxOpenPositions")) defaults.put(key, Integer.parseInt(val));
+                else if (key.endsWith("Lots") || key.equals("maxOpenPositions") || key.equals("autoRollBreachMinutes") || key.equals("autoRollMaxRolls"))
+                    defaults.put(key, Integer.parseInt(val));
                 else defaults.put(key, val);
             }
             log.info("Loaded {} auto-exec settings from DB", dbSettings.size());
@@ -88,7 +96,7 @@ public class OptionArbAutoExecService {
         if ("enabled".equals(key)) s.put("enabled", Boolean.parseBoolean(value));
         else if (key.endsWith("Enabled")) s.put(key, Boolean.parseBoolean(value));
         else if (key.endsWith("MinEdge") || key.equals("maxDailyLoss") || key.equals("rolloverThresholdPct") || key.equals("autoExitThresholdPct")) s.put(key, Double.parseDouble(value));
-        else if (key.endsWith("Lots") || key.equals("maxOpenPositions")) s.put(key, Integer.parseInt(value));
+        else if (key.endsWith("Lots") || key.equals("maxOpenPositions") || key.equals("autoRollBreachMinutes") || key.equals("autoRollMaxRolls")) s.put(key, Integer.parseInt(value));
         else s.put(key, value);
 
         // Persist to DB
@@ -1104,7 +1112,7 @@ public class OptionArbAutoExecService {
     /**
      * Generic square-off for a multi-leg position: reverse each leg's side, MARKET order.
      */
-    private boolean squareOffMultiLegPosition(BrokerAccount account, BrokerAdapter adapter, LivePosition pos) {
+    public boolean squareOffMultiLegPosition(BrokerAccount account, BrokerAdapter adapter, LivePosition pos) {
         List<Map<String, Object>> legs = pos.getLegs();
         if (legs == null || legs.isEmpty()) return false;
         int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
@@ -1310,7 +1318,7 @@ public class OptionArbAutoExecService {
         return pnl * lotSize * lots;
     }
 
-    private void addLog(String type, String status, String message) {
+    public void addLog(String type, String status, String message) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("id", System.currentTimeMillis());
         entry.put("time", LocalTime.now(ZoneId.of("Asia/Kolkata")).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")));

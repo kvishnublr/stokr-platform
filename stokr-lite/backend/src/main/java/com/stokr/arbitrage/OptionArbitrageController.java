@@ -37,6 +37,7 @@ public class OptionArbitrageController {
     private final OptionArbOpportunityRepository oppRepo;
     private final com.stokr.delivery.CashScannerService cashScannerService;
     private final com.stokr.delivery.CashExecutionService cashExecutionService;
+    private final AutoRollService autoRollService;
 
     private final Map<String, Object> autoExecSettings = new ConcurrentHashMap<>();
     private final List<Map<String, Object>> auditLogs = Collections.synchronizedList(new ArrayList<>());
@@ -54,7 +55,8 @@ public class OptionArbitrageController {
                                      LivePositionRepository livePositionRepo,
                                      OptionArbOpportunityRepository oppRepo,
                                      com.stokr.delivery.CashScannerService cashScannerService,
-                                     com.stokr.delivery.CashExecutionService cashExecutionService) {
+                                     com.stokr.delivery.CashExecutionService cashExecutionService,
+                                     AutoRollService autoRollService) {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.bidParityService = bidParityService;
@@ -69,6 +71,7 @@ public class OptionArbitrageController {
         this.oppRepo = oppRepo;
         this.cashScannerService = cashScannerService;
         this.cashExecutionService = cashExecutionService;
+        this.autoRollService = autoRollService;
 
         autoExecSettings.put("normalParityEnabled", true);
         autoExecSettings.put("normalEntryEdge", 150.0);
@@ -1186,6 +1189,28 @@ public class OptionArbitrageController {
     @GetMapping("/auto-execute/settings")
     public ResponseEntity<Map<String, Object>> getSettings() {
         return ResponseEntity.ok(autoExecService.getSettings());
+    }
+
+    @GetMapping("/auto-roll/pending")
+    public ResponseEntity<Map<String, Object>> getPendingRolls() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("pending", autoRollService.listPending());
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/auto-roll/{id}/confirm")
+    public ResponseEntity<Map<String, Object>> confirmRoll(@PathVariable Long id) {
+        Map<String, Object> result = autoRollService.confirmRoll(id);
+        addAuditLog("AUTO_ROLL", result.get("status") != null ? result.get("status").toString() : "ERROR",
+            "Roll #" + id + " confirmed: " + result.get("message"));
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/auto-roll/{id}/dismiss")
+    public ResponseEntity<Map<String, Object>> dismissRoll(@PathVariable Long id) {
+        Map<String, Object> result = autoRollService.dismissRoll(id);
+        addAuditLog("AUTO_ROLL", "INFO", "Roll #" + id + " dismissed");
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping("/auto-execute/settings")

@@ -659,6 +659,41 @@ function AutoExecSettingsPanel() {
         </div>
       </div>
 
+      {/* Auto-Roll on Breakeven Breach (Butterfly only) */}
+      <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-slate-100">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold text-slate-500 uppercase">Auto-Roll on Breach:</span>
+          <button
+            onClick={() => updateSetting('autoRollEnabled', !settings.autoRollEnabled)}
+            className={`relative w-11 h-6 rounded-full transition-colors ${settings.autoRollEnabled ? 'bg-purple-500' : 'bg-slate-300'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.autoRollEnabled ? 'translate-x-5' : ''}`} />
+          </button>
+          <span className={`text-xs font-bold ${settings.autoRollEnabled ? 'text-purple-600' : 'text-slate-400'}`}>
+            {settings.autoRollEnabled ? 'ON' : 'OFF'}
+          </span>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-500 uppercase">Breach for (min)</label>
+          <input type="number" value={settings.autoRollBreachMinutes ?? 5} min={1} max={60}
+            onChange={(e) => setSettings(prev => ({ ...prev, autoRollBreachMinutes: Number(e.target.value) }))}
+            onBlur={(e) => updateSetting('autoRollBreachMinutes', e.target.value)}
+            className="w-16 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-bold text-slate-500 uppercase">Max Rolls</label>
+          <input type="number" value={settings.autoRollMaxRolls ?? 2} min={1} max={5}
+            onChange={(e) => setSettings(prev => ({ ...prev, autoRollMaxRolls: Number(e.target.value) }))}
+            onBlur={(e) => updateSetting('autoRollMaxRolls', e.target.value)}
+            className="w-16 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
+        </div>
+        <div className="text-[9px] text-slate-400 italic max-w-md">
+          Butterfly positions only. If spot sits outside the profit zone continuously for the set
+          minutes, the position closes automatically; a re-centered replacement is proposed but needs
+          a one-click confirm to actually enter. After Max Rolls, it's left to ride on Auto-Exit/Stop-Loss.
+        </div>
+      </div>
+
       {/* Roll-Over Info */}
       <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-slate-100">
         <div className="flex items-center gap-3">
@@ -2517,6 +2552,87 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
   );
 }
 
+/* Auto-roll pending-confirmation banner -- a Butterfly position was closed automatically
+   after sitting outside its profit zone past the configured breach window, and a
+   re-centered replacement is proposed here. Closing was automatic; entering the
+   replacement is not -- this always needs a one-click confirm. */
+function AutoRollPendingPanel() {
+  const [pending, setPending] = useState([]);
+  const [busyId, setBusyId] = useState(null);
+
+  const load = async () => {
+    try {
+      const res = await client.get('/option-arbitrage/auto-roll/pending');
+      setPending(res.data?.pending || []);
+    } catch (e) { /* silent -- non-critical polling */ }
+  };
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, []);
+
+  const confirm = async (id) => {
+    setBusyId(id);
+    try {
+      await client.post(`/option-arbitrage/auto-roll/${id}/confirm`);
+      await load();
+    } catch (e) { /* keep in list so user can retry */ }
+    setBusyId(null);
+  };
+
+  const dismiss = async (id) => {
+    setBusyId(id);
+    try {
+      await client.post(`/option-arbitrage/auto-roll/${id}/dismiss`);
+      await load();
+    } catch (e) { /* keep in list so user can retry */ }
+    setBusyId(null);
+  };
+
+  if (pending.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      {pending.map(p => {
+        const c = p.proposal;
+        return (
+          <div key={p.id} className="bg-purple-50 border-2 border-purple-300 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex-1 min-w-[280px]">
+              <p className="text-xs font-black text-purple-700 uppercase mb-1">🔄 Auto-Roll Awaiting Confirm — Roll {p.rollCount}</p>
+              <p className="text-sm text-slate-700">
+                {p.underlying} butterfly closed after breaching breakeven
+                {p.lastClosedPnl != null && (
+                  <span className={p.lastClosedPnl >= 0 ? 'text-emerald-600 font-bold' : 'text-red-600 font-bold'}>
+                    {' '}(P&amp;L ₹{Math.round(p.lastClosedPnl).toLocaleString('en-IN')})
+                  </span>
+                )}
+                {c ? (
+                  <> — proposing a new one at <strong>{c.strikes}</strong> {c.optionType}, cost ₹{c.costPerLot}/lot,
+                  max loss ₹{Math.round(c.maxLoss).toLocaleString('en-IN')}, max profit ₹{Math.round(c.maxProfit).toLocaleString('en-IN')}.</>
+                ) : ' — no re-entry could be constructed.'}
+              </p>
+            </div>
+            {c && (
+              <div className="flex gap-2">
+                <button disabled={busyId === p.id} onClick={() => confirm(p.id)}
+                  className="px-3 py-1.5 bg-purple-600 text-white text-xs font-bold rounded-lg shadow-sm disabled:opacity-50">
+                  ✓ Confirm Roll
+                </button>
+                <button disabled={busyId === p.id} onClick={() => dismiss(p.id)}
+                  className="px-3 py-1.5 bg-white text-slate-600 border border-slate-300 text-xs font-bold rounded-lg disabled:opacity-50">
+                  ✕ Dismiss
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* 3c. BUTTERFLY SPREAD VIEW */
 function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
   const [subTab, setSubTab] = useState('signals');
@@ -2593,6 +2709,7 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
 
   return (
     <div className="space-y-4 w-full">
+      <AutoRollPendingPanel handleExecuteInline={handleExecuteInline} />
       <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
         <button onClick={() => setSubTab('signals')}
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'signals' ? 'bg-fuchsia-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
