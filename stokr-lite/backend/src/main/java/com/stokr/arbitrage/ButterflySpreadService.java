@@ -152,10 +152,31 @@ public class ButterflySpreadService {
                             double costRatio = cost / width;
                             if (costRatio > maxCostRatio) continue;
 
-                            double maxLoss = cost * lotSize;
-                            double maxProfit = (width - cost) * lotSize;
+                            double grossLoss = cost * lotSize;
+                            double grossProfit = (width - cost) * lotSize;
+
+                            // Real entry transaction costs (STT/brokerage/exchange/SEBI/GST/stamp),
+                            // same formula as the main arbitrage scanner's BUY_FLY branch -- these
+                            // candidates were previously shown gross, overstating real profit and
+                            // understating real max loss.
+                            double turnover = (q1.ask + 2 * q2.bid + q3.ask) * lotSize;
+                            double sttBuy = (q1.ask + q3.ask) * lotSize * ArbitrageCosts.STT_OPTION_BUY;
+                            double sttSell = (2 * q2.bid) * lotSize * ArbitrageCosts.STT_OPTION_SELL;
+                            double brokerage = ArbitrageCosts.PER_LEG_BROKERAGE * 4;
+                            double exchange = turnover * ArbitrageCosts.EXCHANGE_RATE;
+                            double sebi = turnover * ArbitrageCosts.SEBI_RATE;
+                            double gst = (brokerage + exchange + sebi) * ArbitrageCosts.GST_RATE;
+                            double stamp = turnover * ArbitrageCosts.STAMP_RATE;
+                            double entryCosts = sttBuy + sttSell + brokerage + exchange + sebi + gst + stamp;
+
+                            double maxLoss = grossLoss + entryCosts;
+                            double maxProfit = Math.max(0, grossProfit - entryCosts);
                             double breakevenLower = k1 + cost;
                             double breakevenUpper = k3 - cost;
+                            // Conservative margin estimate for a bought (debit) defined-risk combo:
+                            // worst-case cash outflow (premium + costs). Real broker margin for the
+                            // short middle leg may differ -- verify with your broker before trading.
+                            double marginEstimate = maxLoss;
 
                             // Model probability of profit: IV from the center strike's mid price,
                             // then P(breakevenLower <= settlement <= breakevenUpper) under the
@@ -183,6 +204,12 @@ public class ButterflySpreadService {
                             m.put("costRatio", Math.round(costRatio * 1000.0) / 1000.0);
                             m.put("maxLoss", Math.round(maxLoss * 100.0) / 100.0);
                             m.put("maxProfit", Math.round(maxProfit * 100.0) / 100.0);
+                            m.put("grossMaxLoss", Math.round(grossLoss * 100.0) / 100.0);
+                            m.put("grossMaxProfit", Math.round(grossProfit * 100.0) / 100.0);
+                            m.put("entryCosts", Math.round(entryCosts * 100.0) / 100.0);
+                            m.put("marginEstimate", Math.round(marginEstimate * 100.0) / 100.0);
+                            m.put("lotSize", lotSize);
+                            m.put("riskFreeRate", ArbitrageCosts.RISK_FREE_RATE);
                             // Used as the auto-exit/stop-loss target-edge if this candidate is
                             // ever traded (not a real arbitrage edge -- this is max profit potential).
                             m.put("edgeAfterCosts", Math.round(maxProfit * 100.0) / 100.0);

@@ -2,6 +2,33 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 
+// Black-Scholes helpers for the "Today" MTM curve (theoretical value if spot moved to X
+// right now, same remaining time-to-expiry -- not a decay simulation). Mirrors
+// BlackScholesCalculator.java on the backend so both curves use the same math.
+function bsErf(x) {
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const sign = x >= 0 ? 1 : -1;
+  x = Math.abs(x);
+  const t = 1 / (1 + p * x);
+  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  return sign * y;
+}
+function bsNormCDF(x) { return 0.5 * (1 + bsErf(x / Math.SQRT2)); }
+function bsCallPrice(S, K, T, r, sigma) {
+  if (T <= 0) return Math.max(S - K, 0);
+  if (sigma <= 0) return Math.max(S - K * Math.exp(-r * T), 0);
+  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+  const d2 = d1 - sigma * Math.sqrt(T);
+  return S * bsNormCDF(d1) - K * Math.exp(-r * T) * bsNormCDF(d2);
+}
+function bsPutPrice(S, K, T, r, sigma) {
+  if (T <= 0) return Math.max(K - S, 0);
+  if (sigma <= 0) return Math.max(K * Math.exp(-r * T) - S, 0);
+  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+  const d2 = d1 - sigma * Math.sqrt(T);
+  return K * Math.exp(-r * T) * bsNormCDF(-d2) - S * bsNormCDF(-d1);
+}
+
 function fmtTime(dt) {
   if (!dt) return '--';
   const d = new Date(dt);
@@ -2185,6 +2212,14 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
     refetchInterval: 30000
   });
 
+  // Real exit rules that would apply if this were traded -- surfaced here so "what happens
+  // if it moves against me" has an honest answer instead of a guess.
+  const { data: execSettings } = useQuery({
+    queryKey: ['autoExecSettingsForCandidates'],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    refetchInterval: 60000
+  });
+
   // Backend already sorts by model POP descending -- the safest-by-this-metric candidate
   // is always first. Auto-select it once per dataset load so the payoff/POP panel is
   // populated immediately instead of requiring a manual click.
@@ -2201,7 +2236,10 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
   const selectedCandidates = candidates.filter((c, idx) => selected[rowKey(c, idx)]);
   const toggle = (key) => setSelected(prev => ({ ...prev, [key]: !prev[key] }));
 
-  // Combined payoff across a settlement-price range spanning all selected candidates.
+  // Combined payoff across a settlement-price range spanning all selected candidates --
+  // both the "At Expiry" curve (final payoff) and a "Today" curve (Black-Scholes
+  // theoretical value if spot moved there right now, same remaining time/IV -- not a
+  // decay simulation), matching the two-curve view standard options tools show.
   const payoffChart = useMemo(() => {
     if (selectedCandidates.length === 0) return null;
     const spot = selectedCandidates[0].spotPrice || selectedCandidates.reduce((s, c) => s + c.spotPrice, 0) / selectedCandidates.length;
@@ -2210,33 +2248,45 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
     const steps = 200;
     const stepSize = (hi - lo) / steps;
     const points = [];
+    const todayPoints = [];
     let minY = 0, maxY = 0;
     for (let i = 0; i <= steps; i++) {
       const x = lo + i * stepSize;
-      let total = 0;
+      let expiryTotal = 0, todayTotal = 0;
       for (const c of selectedCandidates) {
-        const lotSize = c.maxLoss > 0 && c.costPerLot > 0 ? Math.round(c.maxLoss / c.costPerLot) : 25;
-        let payoff;
+        const lotSize = c.lotSize || (c.maxLoss > 0 && c.costPerLot > 0 ? Math.round(c.maxLoss / c.costPerLot) : 25);
+        const T = Math.max(c.daysToExpiry, 0.5) / 365;
+        const r = c.riskFreeRate || 0.065;
+        const sigma = (c.impliedVol || 20) / 100;
+        const priceFn = c.optionType === 'CE' ? bsCallPrice : bsPutPrice;
+
+        let expiryPayoff;
         if (c.optionType === 'CE') {
-          payoff = Math.max(x - c.k1, 0) - 2 * Math.max(x - c.k2, 0) + Math.max(x - c.k3, 0);
+          expiryPayoff = Math.max(x - c.k1, 0) - 2 * Math.max(x - c.k2, 0) + Math.max(x - c.k3, 0);
         } else {
-          payoff = Math.max(c.k1 - x, 0) - 2 * Math.max(c.k2 - x, 0) + Math.max(c.k3 - x, 0);
+          expiryPayoff = Math.max(c.k1 - x, 0) - 2 * Math.max(c.k2 - x, 0) + Math.max(c.k3 - x, 0);
         }
-        total += (payoff - c.costPerLot) * lotSize;
+        expiryTotal += (expiryPayoff - c.costPerLot) * lotSize;
+
+        const todayValue = priceFn(x, c.k1, T, r, sigma) - 2 * priceFn(x, c.k2, T, r, sigma) + priceFn(x, c.k3, T, r, sigma);
+        todayTotal += (todayValue - c.costPerLot) * lotSize;
       }
-      points.push({ x, y: total });
-      minY = Math.min(minY, total);
-      maxY = Math.max(maxY, total);
+      points.push({ x, y: expiryTotal });
+      todayPoints.push({ x, y: todayTotal });
+      minY = Math.min(minY, expiryTotal, todayTotal);
+      maxY = Math.max(maxY, expiryTotal, todayTotal);
     }
-    return { points, spot, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0) };
+    return { points, todayPoints, spot, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0) };
   }, [selectedCandidates]);
 
   const totalMaxLoss = selectedCandidates.reduce((s, c) => s + c.maxLoss, 0);
   const totalMaxProfit = selectedCandidates.reduce((s, c) => s + c.maxProfit, 0);
+  const totalMargin = selectedCandidates.reduce((s, c) => s + (c.marginEstimate || c.maxLoss), 0);
+  const totalCharges = selectedCandidates.reduce((s, c) => s + (c.entryCosts || 0), 0);
   const avgPop = selectedCandidates.length > 0
     ? selectedCandidates.reduce((s, c) => s + c.pop, 0) / selectedCandidates.length : null;
 
-  const CHART_W = 700, CHART_H = 260, PAD_TOP = 16, PAD_BOTTOM = 34;
+  const CHART_W = 700, CHART_H = 260, PAD_TOP = 24, PAD_BOTTOM = 34;
   const plotH = CHART_H - PAD_TOP - PAD_BOTTOM;
   const xToPx = (x) => payoffChart ? ((x - payoffChart.lo) / (payoffChart.hi - payoffChart.lo)) * CHART_W : 0;
   const yToPx = (y) => payoffChart
@@ -2250,14 +2300,14 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
     const relX = (e.clientX - rect.left) / rect.width;
     const px = relX * CHART_W;
     const priceAtCursor = pxToX(px);
-    // nearest computed point
-    let nearest = payoffChart.points[0];
-    let bestDist = Infinity;
-    for (const p of payoffChart.points) {
+    let nearestIdx = 0, bestDist = Infinity;
+    payoffChart.points.forEach((p, i) => {
       const d = Math.abs(p.x - priceAtCursor);
-      if (d < bestDist) { bestDist = d; nearest = p; }
-    }
-    setHover({ px: xToPx(nearest.x), py: yToPx(nearest.y), price: nearest.x, pnl: nearest.y });
+      if (d < bestDist) { bestDist = d; nearestIdx = i; }
+    });
+    const expiry = payoffChart.points[nearestIdx];
+    const today = payoffChart.todayPoints[nearestIdx];
+    setHover({ px: xToPx(expiry.x), pyExpiry: yToPx(expiry.y), pyToday: yToPx(today.y), price: expiry.x, pnlExpiry: expiry.y, pnlToday: today.y });
   };
 
   const zeroPx = payoffChart ? yToPx(0) : 0;
@@ -2298,24 +2348,43 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
       </div>
 
       {selectedCandidates.length > 0 && (
-        <div className="bg-gradient-to-br from-white to-amber-50/40 rounded-2xl border-2 border-amber-200 shadow-md p-5 space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm font-black text-slate-800">📈 {selectedCandidates.length} selected</span>
-            {avgPop != null && (
-              <span className={`px-3 py-1 rounded-full text-xs font-black ${avgPop >= 60 ? 'bg-emerald-500 text-white' : avgPop >= 40 ? 'bg-amber-500 text-white' : 'bg-slate-400 text-white'}`}>
-                POP {avgPop.toFixed(1)}%
-              </span>
-            )}
-            <span className="text-xs text-red-600 font-bold">Max Loss ₹{Math.round(totalMaxLoss).toLocaleString('en-IN')}</span>
-            <span className="text-xs text-emerald-600 font-bold">Max Profit ₹{Math.round(totalMaxProfit).toLocaleString('en-IN')}</span>
-            {totalMaxLoss > 0 && (
-              <span className="text-xs text-indigo-600 font-bold">R:R {(totalMaxProfit / totalMaxLoss).toFixed(1)}x</span>
-            )}
+        <div className="bg-gradient-to-br from-white via-amber-50/30 to-indigo-50/30 rounded-2xl border-2 border-amber-200 shadow-lg p-5 space-y-5">
+          {/* Stat strip */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">POP</div>
+              <div className={`text-lg font-black ${avgPop >= 60 ? 'text-emerald-600' : avgPop >= 40 ? 'text-amber-600' : 'text-slate-500'}`}>{avgPop?.toFixed(1)}%</div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Max Loss</div>
+              <div className="text-lg font-black text-red-600">₹{Math.round(totalMaxLoss).toLocaleString('en-IN')}</div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Max Profit</div>
+              <div className="text-lg font-black text-emerald-600">₹{Math.round(totalMaxProfit).toLocaleString('en-IN')}</div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Risk:Reward</div>
+              <div className="text-lg font-black text-indigo-600">{totalMaxLoss > 0 ? (totalMaxProfit / totalMaxLoss).toFixed(1) : '0'}x</div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Margin Req.*</div>
+              <div className="text-lg font-black text-slate-700">₹{Math.round(totalMargin).toLocaleString('en-IN')}</div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Charges</div>
+              <div className="text-lg font-black text-slate-700">₹{Math.round(totalCharges).toLocaleString('en-IN')}</div>
+            </div>
           </div>
+          <p className="text-[9px] text-slate-400 -mt-3">*Margin is a conservative estimate (worst-case cash outflow) — actual broker SPAN+exposure margin may differ; verify with your broker before trading.</p>
 
           {payoffChart && (
             <div>
-              <div className="relative overflow-x-auto">
+              <div className="flex items-center gap-4 mb-1 px-1">
+                <span className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700"><span className="w-3 h-0.5 bg-amber-600 inline-block rounded" /> At Expiry</span>
+                <span className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600"><span className="w-3 h-0.5 bg-blue-500 inline-block rounded" /> Today (Black-Scholes est.)</span>
+              </div>
+              <div className="relative overflow-x-auto bg-white rounded-xl border border-slate-100 p-2">
                 <svg ref={chartRef} viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-[260px] cursor-crosshair"
                   onMouseMove={handleChartMove} onMouseLeave={() => setHover(null)}>
                   <defs>
@@ -2328,44 +2397,50 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                       <stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" />
                     </linearGradient>
                   </defs>
-                  {/* profit/loss shaded area, clipped by direction relative to zero line */}
                   <clipPath id="aboveZero"><rect x="0" y="0" width={CHART_W} height={zeroPx} /></clipPath>
                   <clipPath id="belowZero"><rect x="0" y={zeroPx} width={CHART_W} height={CHART_H - zeroPx} /></clipPath>
                   <path d={areaPath} fill="url(#profitGrad)" clipPath="url(#aboveZero)" />
                   <path d={areaPath} fill="url(#lossGrad)" clipPath="url(#belowZero)" />
 
-                  {/* zero line */}
                   <line x1="0" y1={zeroPx} x2={CHART_W} y2={zeroPx} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4,4" />
-                  {/* spot marker */}
                   <line x1={xToPx(payoffChart.spot)} y1={PAD_TOP} x2={xToPx(payoffChart.spot)} y2={CHART_H - PAD_BOTTOM}
                     stroke="#6366f1" strokeWidth="1.5" strokeDasharray="3,3" />
-                  <text x={xToPx(payoffChart.spot)} y={PAD_TOP - 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="#6366f1">
+                  <text x={xToPx(payoffChart.spot)} y={PAD_TOP - 8} textAnchor="middle" fontSize="10" fontWeight="700" fill="#6366f1">
                     Spot {Math.round(payoffChart.spot).toLocaleString('en-IN')}
                   </text>
 
-                  {/* payoff curve */}
+                  {/* Today curve (blue), behind the expiry curve */}
+                  <polyline
+                    fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" opacity="0.85"
+                    points={payoffChart.todayPoints.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' ')}
+                  />
+                  {/* Expiry curve (amber) */}
                   <polyline
                     fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinejoin="round"
                     points={payoffChart.points.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' ')}
                   />
 
-                  {/* hover crosshair + tooltip */}
                   {hover && (
                     <g>
                       <line x1={hover.px} y1={PAD_TOP} x2={hover.px} y2={CHART_H - PAD_BOTTOM} stroke="#0f172a" strokeWidth="1" strokeDasharray="2,2" opacity="0.4" />
-                      <circle cx={hover.px} cy={hover.py} r="4.5" fill={hover.pnl >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="1.5" />
+                      <circle cx={hover.px} cy={hover.pyToday} r="4" fill="#3b82f6" stroke="white" strokeWidth="1.5" />
+                      <circle cx={hover.px} cy={hover.pyExpiry} r="4.5" fill={hover.pnlExpiry >= 0 ? '#10b981' : '#ef4444'} stroke="white" strokeWidth="1.5" />
                       {(() => {
-                        const boxW = 132, boxH = 44;
+                        const boxW = 150, boxH = 62;
                         const bx = Math.min(Math.max(hover.px - boxW / 2, 2), CHART_W - boxW - 2);
-                        const by = hover.py > 70 ? hover.py - boxH - 10 : hover.py + 12;
+                        const anchorY = Math.min(hover.pyExpiry, hover.pyToday);
+                        const by = anchorY > 90 ? anchorY - boxH - 10 : Math.max(hover.pyExpiry, hover.pyToday) + 14;
                         return (
                           <g>
-                            <rect x={bx} y={by} width={boxW} height={boxH} rx="6" fill="#0f172a" opacity="0.92" />
-                            <text x={bx + 8} y={by + 16} fontSize="10" fill="#cbd5e1">
+                            <rect x={bx} y={by} width={boxW} height={boxH} rx="6" fill="#0f172a" opacity="0.94" />
+                            <text x={bx + 8} y={by + 15} fontSize="10" fill="#cbd5e1">
                               @ {Math.round(hover.price).toLocaleString('en-IN')}
                             </text>
-                            <text x={bx + 8} y={by + 33} fontSize="12" fontWeight="800" fill={hover.pnl >= 0 ? '#34d399' : '#f87171'}>
-                              {hover.pnl >= 0 ? '+' : ''}₹{Math.round(hover.pnl).toLocaleString('en-IN')}
+                            <text x={bx + 8} y={by + 32} fontSize="11" fontWeight="700" fill="#93c5fd">
+                              Today: {hover.pnlToday >= 0 ? '+' : ''}₹{Math.round(hover.pnlToday).toLocaleString('en-IN')}
+                            </text>
+                            <text x={bx + 8} y={by + 49} fontSize="11" fontWeight="800" fill={hover.pnlExpiry >= 0 ? '#34d399' : '#f87171'}>
+                              Expiry: {hover.pnlExpiry >= 0 ? '+' : ''}₹{Math.round(hover.pnlExpiry).toLocaleString('en-IN')}
                             </text>
                           </g>
                         );
@@ -2373,7 +2448,6 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                     </g>
                   )}
 
-                  {/* breakeven markers for single selection */}
                   {selectedCandidates.length === 1 && (
                     <>
                       <line x1={xToPx(selectedCandidates[0].breakevenLower)} y1={PAD_TOP} x2={xToPx(selectedCandidates[0].breakevenLower)} y2={CHART_H - PAD_BOTTOM} stroke="#94a3b8" strokeWidth="1" strokeDasharray="2,3" opacity="0.6" />
@@ -2386,9 +2460,59 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                 <span>{Math.round(payoffChart.lo).toLocaleString('en-IN')}</span>
                 <span>{Math.round(payoffChart.hi).toLocaleString('en-IN')}</span>
               </div>
-              <p className="text-[10px] text-slate-400 text-center mt-1">Combined P&amp;L (₹) vs. NIFTY settlement price at expiry — hover to inspect any price point</p>
+              <p className="text-[10px] text-slate-400 text-center mt-1">P&amp;L (₹) vs. NIFTY settlement price — hover to inspect any price point</p>
             </div>
           )}
+
+          {/* Positions that will actually be taken */}
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-600 uppercase">
+              📋 Positions to be taken
+            </div>
+            <table className="w-full text-[11px]">
+              <thead className="text-slate-400 text-[9px] uppercase">
+                <tr>
+                  <th className="px-3 py-1.5 text-left">Symbol</th>
+                  <th className="px-3 py-1.5 text-left">Side</th>
+                  <th className="px-3 py-1.5 text-right">Strike</th>
+                  <th className="px-3 py-1.5 text-right">Qty (lots)</th>
+                  <th className="px-3 py-1.5 text-right">Price</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {selectedCandidates.flatMap((c, ci) => (c.legList || []).map((leg, li) => (
+                  <tr key={`${ci}-${li}`}>
+                    <td className="px-3 py-1.5 font-bold text-slate-700">{c.underlying} {leg.optionType}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${leg.side === 'BUY' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{leg.side}</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono">{leg.strike}</td>
+                    <td className="px-3 py-1.5 text-right font-mono">{leg.qty}</td>
+                    <td className="px-3 py-1.5 text-right font-mono">₹{leg.price?.toFixed(2)}</td>
+                  </tr>
+                )))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Honest exit-rules panel */}
+          <div className="bg-indigo-50 rounded-xl border border-indigo-200 p-3 text-[11px] text-indigo-900 space-y-1">
+            <p className="font-black uppercase text-[10px] text-indigo-600">🛡️ If you trade this — what happens automatically</p>
+            {execSettings ? (
+              <>
+                <p>
+                  <strong>Auto-exit on target:</strong> {execSettings.autoExitEnabled ? `ON — squares off at ${execSettings.autoExitThresholdPct ?? 90}% of max profit` : 'OFF'}
+                </p>
+                <p>
+                  <strong>Stop-loss:</strong> {execSettings.stopLossEnabled ? `ON — squares off at ${execSettings.stopLossPct ?? 50}% of max loss` : 'OFF'}
+                </p>
+                <p className="text-indigo-500">Change these in the Auto-Trade tab. Only applies if you actually execute the trade (paper or live) — this panel is not a live position.</p>
+              </>
+            ) : (
+              <p className="text-indigo-400">Loading current settings…</p>
+            )}
+            <p className="text-red-600 font-bold pt-1">⚠️ No automatic strike-adjustment or rolling exists for these spreads. If price moves against the position, it holds until it hits the stop-loss, hits the target, or expires — nothing rebalances it for you.</p>
+          </div>
         </div>
       )}
 
@@ -2410,6 +2534,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                   <th className="px-2 py-2 text-right text-indigo-600">POP</th>
                   <th className="px-2 py-2 text-right text-red-600">Max Loss</th>
                   <th className="px-2 py-2 text-right text-emerald-600">Max Profit</th>
+                  <th className="px-2 py-2 text-right">Margin*</th>
                   <th className="px-2 py-2 text-right">R:R</th>
                   <th className="px-2 py-2 text-right">Breakevens</th>
                   <th className="px-2 py-2 text-center">Trade</th>
@@ -2435,6 +2560,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
                       </td>
                       <td className="px-2 py-1.5 text-right font-mono text-red-600">₹{Math.round(c.maxLoss).toLocaleString('en-IN')}</td>
                       <td className="px-2 py-1.5 text-right font-mono text-emerald-600">₹{Math.round(c.maxProfit).toLocaleString('en-IN')}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-slate-500">₹{Math.round(c.marginEstimate || c.maxLoss).toLocaleString('en-IN')}</td>
                       <td className="px-2 py-1.5 text-right font-mono font-bold">{c.riskReward}x</td>
                       <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-500">{c.breakevenLower}/{c.breakevenUpper}</td>
                       <td className="px-2 py-1.5 text-center">
