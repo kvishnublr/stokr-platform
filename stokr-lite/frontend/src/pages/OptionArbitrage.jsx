@@ -2268,6 +2268,12 @@ function VerticalCandidatesPanel({ handleExecuteInline, executionBroker }) {
             </button>
           ))}
         </div>
+        {selectedCandidates.length > 0 && (
+          <button onClick={() => setSelected({})}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition">
+            ✕ Clear Selection ({selectedCandidates.length})
+          </button>
+        )}
       </div>
 
       {selectedCandidates.length > 0 && (
@@ -2915,6 +2921,12 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
             </button>
           ))}
         </div>
+        {selectedCandidates.length > 0 && (
+          <button onClick={() => setSelected({})}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition">
+            ✕ Clear Selection ({selectedCandidates.length})
+          </button>
+        )}
       </div>
 
       {selectedCandidates.length > 0 && (
@@ -3563,6 +3575,12 @@ function CondorCandidatesPanel({ handleExecuteInline, executionBroker }) {
             </button>
           ))}
         </div>
+        {selectedCandidates.length > 0 && (
+          <button onClick={() => setSelected({})}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition">
+            ✕ Clear Selection ({selectedCandidates.length})
+          </button>
+        )}
       </div>
 
       {selectedCandidates.length > 0 && (
