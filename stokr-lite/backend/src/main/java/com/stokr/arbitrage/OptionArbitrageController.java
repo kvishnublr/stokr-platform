@@ -207,6 +207,32 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
+    @GetMapping("/box-spread/near-miss")
+    public ResponseEntity<Map<String, Object>> scanBoxNearMiss(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                  @RequestParam(defaultValue = "0.15") double maxGapPct,
+                                                                  @RequestParam(defaultValue = "false") boolean force) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "nearMisses", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<Map<String, Object>> nearMisses = boxSpreadService.scanNearMiss(underlying, maxGapPct);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("nearMisses", nearMisses);
+        resp.put("count", nearMisses.size());
+        resp.put("note", "Watchlist tool -- these are NOT arbitrage yet. A box's payoff is fixed regardless of settlement, so any box priced below width is already genuine arbitrage and shown in the main scan; this list is combos close to crossing that line.");
+        return ResponseEntity.ok(resp);
+    }
+
     @GetMapping("/vertical-spread/scan")
     public ResponseEntity<Map<String, Object>> scanVerticalSpread(@RequestParam(defaultValue = "ALL") String underlying,
                                                                     @RequestParam(defaultValue = "false") boolean force) {
@@ -337,6 +363,32 @@ public class OptionArbitrageController {
         resp.put("marketClosed", false);
         resp.put("opportunities", opps);
         resp.put("count", opps.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/condor-spread/candidates")
+    public ResponseEntity<Map<String, Object>> scanCondorCandidates(@RequestParam(defaultValue = "ALL") String underlying,
+                                                                        @RequestParam(defaultValue = "0.35") double maxCostRatio,
+                                                                        @RequestParam(defaultValue = "false") boolean force) {
+        java.time.LocalTime nowIST = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!force && (nowIST.isBefore(java.time.LocalTime.of(9, 15)) || nowIST.isAfter(java.time.LocalTime.of(15, 30)))) {
+            return ResponseEntity.ok(Map.of(
+                "timestamp", System.currentTimeMillis(),
+                "underlying", underlying,
+                "marketClosed", true,
+                "candidates", Collections.emptyList(),
+                "count", 0,
+                "reason", "Market closed. NSE/NFO hours: Mon-Fri 09:15-15:30 IST."
+            ));
+        }
+        List<Map<String, Object>> candidates = condorSpreadService.scanCandidates(underlying, maxCostRatio);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("timestamp", System.currentTimeMillis());
+        resp.put("underlying", underlying);
+        resp.put("marketClosed", false);
+        resp.put("candidates", candidates);
+        resp.put("count", candidates.size());
+        resp.put("note", "Discovery/evaluation tool -- these are NOT arbitrage and have no backtested win rate.");
         return ResponseEntity.ok(resp);
     }
 
