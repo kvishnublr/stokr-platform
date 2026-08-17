@@ -39,6 +39,10 @@ export default function Deployments() {
     mutationFn: (id) => client.delete(`/deployments/${id}`).then(r => r.data),
     onSuccess: () => { qc.invalidateQueries(['deployments']); setConfirmStop(null); },
   });
+  const resumeMut = useMutation({
+    mutationFn: (id) => client.patch(`/deployments/${id}/status`, { status: 'ACTIVE' }).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries(['deployments']); },
+  });
 
   const active   = deployments.filter(d => d.status === 'ACTIVE');
   const totalCap = active.reduce((s, d) => s + (d.capital || 0), 0);
@@ -182,7 +186,11 @@ export default function Deployments() {
                   </button>
                 )}
                 {!isActive && (
-                  <span style={{ flex: 1, textAlign: 'center', fontSize: '12px', color: '#9ca3af', padding: '8px' }}>Inactive</span>
+                  <button className="btn btn-ghost" style={{ flex: 1, background: '#f0fdf4', color: '#15803d', border: '1px solid #86efac' }}
+                    disabled={resumeMut.isPending}
+                    onClick={() => resumeMut.mutate(d.id)}>
+                    {resumeMut.isPending ? 'Starting...' : 'Resume'}
+                  </button>
                 )}
               </div>
             </div>

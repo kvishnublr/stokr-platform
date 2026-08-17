@@ -71,6 +71,9 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
         double avgVol = volLen > 0 ? (double) volSum / volLen : 1;
         if (avgVol == 0 || latest.volume() < avgVol * 2.5) return null;
 
+        // Liquidity check: Minimum 1 Crore daily turnover on average
+        if (close.doubleValue() * avgVol < 10000000) return null;
+
         // Strong bearish body (>= 70%)
         BigDecimal range = latest.high().subtract(latest.low());
         double bodyPct = 0;
@@ -113,6 +116,7 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                     }
 
                     String label = failedBreakout ? "FAILED_BREAKOUT" : "BREAKDOWN";
+                    double targetPct = (close.doubleValue() - target.doubleValue()) / close.doubleValue() * 100.0;
                     return new Signal(
                         context.symbol(), Signal.Side.SELL, close, sl, target, score / 100.0,
                         "MSR_SHORT " + label + " score=" + score + "/100"
@@ -120,7 +124,7 @@ public class MorningSurgeReversalStrategy implements StrategyPlugin {
                             + " orb=[" + orbLow.setScale(2, RoundingMode.HALF_UP) + "-" + orbHigh.setScale(2, RoundingMode.HALF_UP) + "]"
                             + " tgt=" + target + " rr=" + String.format("%.1f", rrRatio)
                             + " vol=" + String.format("%.1fx", volMult),
-                        999.0, 0.5);
+                        targetPct, 0.5);
                 }
             }
         }
