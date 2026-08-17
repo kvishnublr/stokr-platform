@@ -652,65 +652,76 @@ function AutoRollSettingsPanel() {
   if (!settings) return null;
 
   const underlyings = [
-    { key: 'nifty', label: 'NIFTY' },
-    { key: 'banknifty', label: 'BANKNIFTY' },
-    { key: 'finnifty', label: 'FINNIFTY' },
-    { key: 'midcpnifty', label: 'MIDCPNIFTY' },
+    { key: 'nifty', label: 'NIFTY', dot: 'bg-blue-500' },
+    { key: 'banknifty', label: 'BANKNIFTY', dot: 'bg-violet-500' },
+    { key: 'finnifty', label: 'FINNIFTY', dot: 'bg-rose-500' },
+    { key: 'midcpnifty', label: 'MIDCPNIFTY', dot: 'bg-amber-500' },
   ];
-  const anyEnabled = underlyings.some(u => settings[u.key + 'AutoRollEnabled']);
+  const activeCount = underlyings.filter(u => settings[u.key + 'AutoRollEnabled']).length;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-            <span className="text-lg">🔄</span> Auto-Roll on Breakeven Breach
-          </h3>
-          <p className="text-[10px] text-slate-500 mt-0.5">
-            Butterfly positions only. If spot sits outside the profit zone continuously for the breach
-            window, the position closes automatically; a re-centered replacement is proposed but needs
-            a one-click confirm to actually enter. After Max Rolls, it rides on Auto-Exit/Stop-Loss instead.
-          </p>
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-gradient-to-r from-purple-500 to-fuchsia-600 px-4 py-3.5 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center text-base">🔄</div>
+          <div>
+            <h3 className="text-sm font-black text-white">Auto-Roll on Breakeven Breach</h3>
+            <p className="text-[10px] text-white/80 mt-0.5">Butterfly only — auto-close on sustained breach, re-entry needs your confirm</p>
+          </div>
         </div>
-        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${anyEnabled ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
-          {anyEnabled ? '● ACTIVE ON SOME SYMBOLS' : 'OFF'}
-        </span>
+        <div className="flex items-center gap-1.5 bg-white/15 backdrop-blur px-3 py-1.5 rounded-full">
+          <span className={`w-1.5 h-1.5 rounded-full ${activeCount > 0 ? 'bg-emerald-300 animate-pulse' : 'bg-white/40'}`} />
+          <span className="text-[11px] font-bold text-white">{activeCount}/4 active</span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {underlyings.map(u => {
-          const enabled = !!settings[u.key + 'AutoRollEnabled'];
-          return (
-            <div key={u.key} className={`rounded-xl border p-3 space-y-2 transition-colors ${enabled ? 'bg-purple-50 border-purple-300' : 'bg-slate-50 border-slate-200'}`}>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-slate-800">{u.label}</span>
-                <button
-                  onClick={() => updateSetting(u.key + 'AutoRollEnabled', !enabled)}
-                  className={`relative w-9 h-5 rounded-full transition-colors ${enabled ? 'bg-purple-500' : 'bg-slate-300'}`}
-                >
-                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-4' : ''}`} />
-                </button>
+      <div className="p-4 space-y-3">
+        <p className="text-[10px] text-slate-400">
+          If spot sits outside the profit zone continuously for the breach window, the position closes
+          automatically; a re-centered replacement is proposed but needs a one-click confirm to actually
+          enter. After Max Rolls, it rides on Auto-Exit/Stop-Loss instead.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {underlyings.map(u => {
+            const enabled = !!settings[u.key + 'AutoRollEnabled'];
+            return (
+              <div key={u.key}
+                className={`rounded-xl border p-3 space-y-2.5 transition-all ${enabled ? 'bg-purple-50 border-purple-300 shadow-sm shadow-purple-200' : 'bg-slate-50 border-slate-200 hover:border-slate-300'}`}>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-black text-slate-800">
+                    <span className={`w-1.5 h-1.5 rounded-full ${u.dot}`} />
+                    {u.label}
+                  </span>
+                  <button
+                    onClick={() => updateSetting(u.key + 'AutoRollEnabled', !enabled)}
+                    className={`relative w-9 h-5 rounded-full transition-colors ${enabled ? 'bg-purple-500' : 'bg-slate-300'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-4' : ''}`} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-bold text-slate-400 uppercase tracking-wide">Breach (min)</label>
+                    <input type="number" value={settings[u.key + 'AutoRollBreachMinutes'] ?? 5} min={1} max={60}
+                      onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'AutoRollBreachMinutes']: Number(e.target.value) }))}
+                      onBlur={(e) => updateSetting(u.key + 'AutoRollBreachMinutes', e.target.value)}
+                      className="w-full px-2 py-1 text-xs font-mono font-bold border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-bold text-slate-400 uppercase tracking-wide">Max Rolls</label>
+                    <input type="number" value={settings[u.key + 'AutoRollMaxRolls'] ?? 2} min={1} max={5}
+                      onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'AutoRollMaxRolls']: Number(e.target.value) }))}
+                      onBlur={(e) => updateSetting(u.key + 'AutoRollMaxRolls', e.target.value)}
+                      className="w-full px-2 py-1 text-xs font-mono font-bold border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none" />
+                  </div>
+                </div>
+                <div className={`text-[9px] font-semibold ${enabled ? 'text-purple-700' : 'text-slate-400'}`}>
+                  {enabled ? `✓ Watching — closes after ${settings[u.key + 'AutoRollBreachMinutes'] ?? 5}min outside zone` : 'Not monitored'}
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-500 uppercase">Breach for (min)</label>
-                <input type="number" value={settings[u.key + 'AutoRollBreachMinutes'] ?? 5} min={1} max={60}
-                  onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'AutoRollBreachMinutes']: Number(e.target.value) }))}
-                  onBlur={(e) => updateSetting(u.key + 'AutoRollBreachMinutes', e.target.value)}
-                  className="w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-500 uppercase">Max Rolls</label>
-                <input type="number" value={settings[u.key + 'AutoRollMaxRolls'] ?? 2} min={1} max={5}
-                  onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'AutoRollMaxRolls']: Number(e.target.value) }))}
-                  onBlur={(e) => updateSetting(u.key + 'AutoRollMaxRolls', e.target.value)}
-                  className="w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none" />
-              </div>
-              <div className="text-[9px] text-slate-400">
-                {enabled ? `Watching ${u.label} flies — closes after ${settings[u.key + 'AutoRollBreachMinutes'] ?? 5}min outside zone` : 'Not monitored'}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -744,65 +755,78 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
   if (!settings) return null;
 
   const underlyings = [
-    { key: prefix + 'Nifty', label: 'NIFTY' },
-    { key: prefix + 'Banknifty', label: 'BANKNIFTY' },
-    { key: prefix + 'Finnifty', label: 'FINNIFTY' },
-    { key: prefix + 'Midcpnifty', label: 'MIDCPNIFTY' },
+    { key: prefix + 'Nifty', label: 'NIFTY', dot: 'bg-blue-500' },
+    { key: prefix + 'Banknifty', label: 'BANKNIFTY', dot: 'bg-violet-500' },
+    { key: prefix + 'Finnifty', label: 'FINNIFTY', dot: 'bg-rose-500' },
+    { key: prefix + 'Midcpnifty', label: 'MIDCPNIFTY', dot: 'bg-amber-500' },
   ];
-  const anyEnabled = underlyings.some(u => settings[u.key + 'Enabled']);
-  const accentBg = { indigo: 'bg-indigo-50 border-indigo-300', emerald: 'bg-emerald-50 border-emerald-300' }[accent] || 'bg-indigo-50 border-indigo-300';
-  const accentBtn = { indigo: 'bg-indigo-500', emerald: 'bg-emerald-500' }[accent] || 'bg-indigo-500';
-  const accentText = { indigo: 'text-indigo-700', emerald: 'text-emerald-700' }[accent] || 'text-indigo-700';
-  const accentRing = { indigo: 'focus:ring-indigo-500 focus:border-indigo-500', emerald: 'focus:ring-emerald-500 focus:border-emerald-500' }[accent] || 'focus:ring-indigo-500';
+  const activeCount = underlyings.filter(u => settings[u.key + 'Enabled']).length;
+  const theme = {
+    indigo: { grad: 'from-indigo-500 to-violet-600', bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', btn: 'bg-indigo-500', ring: 'focus:ring-indigo-500 focus:border-indigo-500', glow: 'shadow-indigo-200' },
+    emerald: { grad: 'from-emerald-500 to-teal-600', bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700', btn: 'bg-emerald-500', ring: 'focus:ring-emerald-500 focus:border-emerald-500', glow: 'shadow-emerald-200' },
+  }[accent] || { grad: 'from-indigo-500 to-violet-600', bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', btn: 'bg-indigo-500', ring: 'focus:ring-indigo-500 focus:border-indigo-500', glow: 'shadow-indigo-200' };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-            <span className="text-lg">⚡</span> {label} Auto-Trade
-          </h3>
-          <p className="text-[10px] text-slate-500 mt-0.5">
-            Entry thresholds for this strategy only — independent of every other strategy's settings.
-            Requires the master Engine switch (Auto-Trade tab) to be ON, and a live broker selected there.
-          </p>
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className={`bg-gradient-to-r ${theme.grad} px-4 py-3.5 flex items-center justify-between`}>
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center text-base">⚡</div>
+          <div>
+            <h3 className="text-sm font-black text-white">{label} Auto-Trade</h3>
+            <p className="text-[10px] text-white/80 mt-0.5">Entry thresholds for this strategy only, independent of every other tab</p>
+          </div>
         </div>
-        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${anyEnabled ? `${accentBg} ${accentText}` : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
-          {anyEnabled ? '● ACTIVE ON SOME SYMBOLS' : 'OFF'}
-        </span>
+        <div className="flex items-center gap-1.5 bg-white/15 backdrop-blur px-3 py-1.5 rounded-full">
+          <span className={`w-1.5 h-1.5 rounded-full ${activeCount > 0 ? 'bg-emerald-300 animate-pulse' : 'bg-white/40'}`} />
+          <span className="text-[11px] font-bold text-white">{activeCount}/4 active</span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {underlyings.map(u => {
-          const enabled = !!settings[u.key + 'Enabled'];
-          return (
-            <div key={u.key} className={`rounded-xl border p-3 space-y-2 transition-colors ${enabled ? accentBg : 'bg-slate-50 border-slate-200'}`}>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-slate-800">{u.label}</span>
-                <button
-                  onClick={() => updateSetting(u.key + 'Enabled', !enabled)}
-                  className={`relative w-9 h-5 rounded-full transition-colors ${enabled ? accentBtn : 'bg-slate-300'}`}
-                >
-                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-4' : ''}`} />
-                </button>
+      <div className="p-4 space-y-3">
+        <p className="text-[10px] text-slate-400">
+          Requires the master Engine switch (main Auto-Trade tab) to be ON, with a live broker selected there.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {underlyings.map(u => {
+            const enabled = !!settings[u.key + 'Enabled'];
+            return (
+              <div key={u.key}
+                className={`rounded-xl border p-3 space-y-2.5 transition-all ${enabled ? `${theme.bg} ${theme.border} shadow-sm ${theme.glow}` : 'bg-slate-50 border-slate-200 hover:border-slate-300'}`}>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-black text-slate-800">
+                    <span className={`w-1.5 h-1.5 rounded-full ${u.dot}`} />
+                    {u.label}
+                  </span>
+                  <button
+                    onClick={() => updateSetting(u.key + 'Enabled', !enabled)}
+                    className={`relative w-9 h-5 rounded-full transition-colors ${enabled ? theme.btn : 'bg-slate-300'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-4' : ''}`} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-bold text-slate-400 uppercase tracking-wide">Min Edge ₹</label>
+                    <input type="number" value={settings[u.key + 'MinEdge'] ?? 800}
+                      onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'MinEdge']: Number(e.target.value) }))}
+                      onBlur={(e) => updateSetting(u.key + 'MinEdge', e.target.value)}
+                      className={`w-full px-2 py-1 text-xs font-mono font-bold border border-slate-300 rounded-lg bg-white focus:ring-2 outline-none ${theme.ring}`} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-bold text-slate-400 uppercase tracking-wide">Lots</label>
+                    <input type="number" value={settings[u.key + 'Lots'] ?? 1} min={1} max={10}
+                      onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'Lots']: Number(e.target.value) }))}
+                      onBlur={(e) => updateSetting(u.key + 'Lots', e.target.value)}
+                      className={`w-full px-2 py-1 text-xs font-mono font-bold border border-slate-300 rounded-lg bg-white focus:ring-2 outline-none ${theme.ring}`} />
+                  </div>
+                </div>
+                <div className={`text-[9px] font-semibold ${enabled ? theme.text : 'text-slate-400'}`}>
+                  {enabled ? `✓ Live — fires above ₹${settings[u.key + 'MinEdge'] ?? 800} edge` : 'Not monitored'}
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-500 uppercase">Min Edge (₹)</label>
-                <input type="number" value={settings[u.key + 'MinEdge'] ?? 800}
-                  onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'MinEdge']: Number(e.target.value) }))}
-                  onBlur={(e) => updateSetting(u.key + 'MinEdge', e.target.value)}
-                  className={`w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 outline-none ${accentRing}`} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-500 uppercase">Lots</label>
-                <input type="number" value={settings[u.key + 'Lots'] ?? 1} min={1} max={10}
-                  onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'Lots']: Number(e.target.value) }))}
-                  onBlur={(e) => updateSetting(u.key + 'Lots', e.target.value)}
-                  className={`w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 outline-none ${accentRing}`} />
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
