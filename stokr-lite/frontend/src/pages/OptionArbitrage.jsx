@@ -1476,10 +1476,16 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
           ⚡ Auto-Trade
         </button>
+        <button onClick={() => setSubTab('history')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'history' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          📊 History
+        </button>
       </div>
 
       {subTab === 'autotrade' ? (
         <StrategyAutoTradePanel prefix="bidParity" label="Bid Parity" accent="indigo" />
+      ) : subTab === 'history' ? (
+        <HistoryView lockedStrategy="PARITY" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
       ) : (
       <>
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -1775,10 +1781,16 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
           ⚡ Auto-Trade
         </button>
+        <button onClick={() => setSubTab('history')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'history' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          📊 History
+        </button>
       </div>
 
       {subTab === 'autotrade' ? (
         <StrategyAutoTradePanel prefix="box" label="Box Spread" accent="indigo" />
+      ) : subTab === 'history' ? (
+        <HistoryView lockedStrategy="BOX" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
       ) : subTab === 'nearmiss' ? (
         <BoxNearMissPanel />
       ) : (
@@ -2144,10 +2156,16 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
           ⚡ Auto-Trade
         </button>
+        <button onClick={() => setSubTab('history')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'history' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          📊 History
+        </button>
       </div>
 
       {subTab === 'autotrade' ? (
         <StrategyAutoTradePanel prefix="vertical" label="Vertical Spread" accent="indigo" />
+      ) : subTab === 'history' ? (
+        <HistoryView lockedStrategy="VERTICAL" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
       ) : subTab === 'candidates' ? (
         <VerticalCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
       ) : (
@@ -2881,9 +2899,15 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
           ⚡ Auto-Trade
         </button>
+        <button onClick={() => setSubTab('history')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'history' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          📊 History
+        </button>
       </div>
 
-      {subTab === 'autotrade' ? (
+      {subTab === 'history' ? (
+        <HistoryView lockedStrategy="BUTTERFLY" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+      ) : subTab === 'autotrade' ? (
         <div className="space-y-4">
           <StrategyAutoTradePanel prefix="butterfly" label="Butterfly Spread" accent="indigo" />
           <AutoRollSettingsPanel />
@@ -3559,9 +3583,15 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
           ⚡ Auto-Trade
         </button>
+        <button onClick={() => setSubTab('history')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'history' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          📊 History
+        </button>
       </div>
 
-      {subTab === 'autotrade' ? (
+      {subTab === 'history' ? (
+        <HistoryView lockedStrategy="CONDORSPREAD" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+      ) : subTab === 'autotrade' ? (
         <StrategyAutoTradePanel prefix="condor" label="Condor Spread" accent="indigo" />
       ) : subTab === 'candidates' ? (
         <CondorCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
@@ -4240,9 +4270,15 @@ function IronCondorView({ handleExecuteInline, executionBroker }) {
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'autotrade' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
           ⚡ Auto-Trade
         </button>
+        <button onClick={() => setSubTab('history')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${subTab === 'history' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+          📊 History
+        </button>
       </div>
 
-      {subTab === 'autotrade' ? (
+      {subTab === 'history' ? (
+        <HistoryView lockedStrategy="CONDOR" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+      ) : subTab === 'autotrade' ? (
         <StrategyAutoTradePanel prefix="ironCondor" label="Iron Condor" accent="indigo" />
       ) : (
       <>
@@ -4911,8 +4947,17 @@ function PaperTradesView() {
 }
 
 /* 8. HISTORY VIEW */
-function HistoryView({ calendarOpportunities, handleExecuteInline, executionBroker, underlyings }) {
-  const [strategyFilter, setStrategyFilter] = useState('ALL');
+const STRATEGY_LOCK_LABELS = {
+  PARITY: '⚡ Bid Parity',
+  BOX: '💎 Box Spread',
+  VERTICAL: '📐 Vertical Spread',
+  BUTTERFLY: '🦋 Butterfly Spread',
+  CONDORSPREAD: '🎯 Condor Spread',
+  CONDOR: '🛡️ Iron Condor',
+};
+
+function HistoryView({ calendarOpportunities, handleExecuteInline, executionBroker, underlyings, lockedStrategy }) {
+  const [strategyFilter, setStrategyFilter] = useState(lockedStrategy || 'ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [underlyingFilter, setUnderlyingFilter] = useState('ALL');
   const [minEdgeFilter, setMinEdgeFilter] = useState(300);
@@ -5130,8 +5175,13 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold text-slate-800">Arbitrage Signals &amp; Trade Analytics</h2>
-            <p className="text-xs text-slate-500">Audit historical scans, track live MTM P&amp;L &amp; exit timestamps</p>
+            <h2 className="text-base font-bold text-slate-800">
+              {lockedStrategy ? `${STRATEGY_LOCK_LABELS[lockedStrategy] || lockedStrategy} History` : 'Arbitrage Signals & Trade Analytics'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              <span className="font-bold text-slate-700">{filteredItems.length.toLocaleString('en-IN')}</span> signals generated
+              {' '}in this range — audit scans, track live MTM P&amp;L &amp; exit timestamps
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -5164,29 +5214,32 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
               </div>
             )}
 
-            {/* Strategy Filters */}
-            <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
-              {[
-                { id: 'ALL', label: 'All' },
-                { id: 'PARITY', label: '⚡ Parity' },
-                { id: 'BOX', label: '💎 Box' },
-                { id: 'VERTICAL', label: '📐 Vertical' },
-                { id: 'BUTTERFLY', label: '🦋 Butterfly' },
-                { id: 'CONDORSPREAD', label: '🎯 Condor Spread' },
-                { id: 'CALENDAR', label: '⏳ Calendar' },
-                { id: 'CONDOR', label: '🛡️ Iron Condor' },
-              ].map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => { setStrategyFilter(s.id); setCurrentPage(1); }}
-                  className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${
-                    strategyFilter === s.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
+            {/* Strategy Filters -- hidden when embedded in a strategy's own History sub-tab,
+                since the strategy is already implied by context (locked, not a free filter). */}
+            {!lockedStrategy && (
+              <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                {[
+                  { id: 'ALL', label: 'All' },
+                  { id: 'PARITY', label: '⚡ Parity' },
+                  { id: 'BOX', label: '💎 Box' },
+                  { id: 'VERTICAL', label: '📐 Vertical' },
+                  { id: 'BUTTERFLY', label: '🦋 Butterfly' },
+                  { id: 'CONDORSPREAD', label: '🎯 Condor Spread' },
+                  { id: 'CALENDAR', label: '⏳ Calendar' },
+                  { id: 'CONDOR', label: '🛡️ Iron Condor' },
+                ].map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => { setStrategyFilter(s.id); setCurrentPage(1); }}
+                    className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${
+                      strategyFilter === s.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Underlying Filter */}
             <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
