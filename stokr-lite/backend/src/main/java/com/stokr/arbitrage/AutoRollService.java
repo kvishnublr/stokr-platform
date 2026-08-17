@@ -50,13 +50,9 @@ public class AutoRollService {
     @Scheduled(fixedDelayString = "60000", initialDelay = 45000)
     public synchronized void monitorAndRoll() {
         Map<String, Object> settings = autoExecService.getSettings();
-        if (!Boolean.TRUE.equals(settings.get("autoRollEnabled"))) return;
 
         LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
         if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 25))) return;
-
-        int breachMinutes = ((Number) settings.getOrDefault("autoRollBreachMinutes", 5)).intValue();
-        int maxRolls = ((Number) settings.getOrDefault("autoRollMaxRolls", 2)).intValue();
 
         List<LivePosition> flies = positionRepo.findAllOpen().stream()
             .filter(p -> "BUTTERFLY_SPREAD".equals(p.getStrategyType()))
@@ -66,6 +62,12 @@ public class AutoRollService {
 
         for (LivePosition pos : flies) {
             try {
+                // Per-underlying settings, same pattern as the Auto-Execute Engine cards --
+                // e.g. "nifty" + "AutoRollEnabled" -> settings.get("niftyAutoRollEnabled").
+                String uKey = pos.getUnderlying() != null ? pos.getUnderlying().toLowerCase() : "";
+                if (!Boolean.TRUE.equals(settings.get(uKey + "AutoRollEnabled"))) continue;
+                int breachMinutes = ((Number) settings.getOrDefault(uKey + "AutoRollBreachMinutes", 5)).intValue();
+                int maxRolls = ((Number) settings.getOrDefault(uKey + "AutoRollMaxRolls", 2)).intValue();
                 monitorOne(pos, breachMinutes, maxRolls, settings);
             } catch (Exception e) {
                 log.error("Auto-roll monitor failed for position {}: {}", pos.getId(), e.getMessage(), e);

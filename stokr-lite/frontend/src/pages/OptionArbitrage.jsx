@@ -452,7 +452,12 @@ export default function OptionArbitrage() {
         )}
 
         {activeTab === 'bidparity' && <BidParityView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
-        {activeTab === 'autotrade' && <AutoExecSettingsPanel />}
+        {activeTab === 'autotrade' && (
+          <div className="space-y-4">
+            <AutoExecSettingsPanel />
+            <AutoRollSettingsPanel />
+          </div>
+        )}
         {activeTab === 'papertrades' && <PaperTradesView />}
         {activeTab === 'box' && <BoxSpreadView underlyings={underlyings} toggleUnderlying={toggleUnderlying} handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
         {activeTab === 'vertical' && <VerticalSpreadView handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />}
@@ -659,41 +664,6 @@ function AutoExecSettingsPanel() {
         </div>
       </div>
 
-      {/* Auto-Roll on Breakeven Breach (Butterfly only) */}
-      <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-slate-100">
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold text-slate-500 uppercase">Auto-Roll on Breach:</span>
-          <button
-            onClick={() => updateSetting('autoRollEnabled', !settings.autoRollEnabled)}
-            className={`relative w-11 h-6 rounded-full transition-colors ${settings.autoRollEnabled ? 'bg-purple-500' : 'bg-slate-300'}`}
-          >
-            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.autoRollEnabled ? 'translate-x-5' : ''}`} />
-          </button>
-          <span className={`text-xs font-bold ${settings.autoRollEnabled ? 'text-purple-600' : 'text-slate-400'}`}>
-            {settings.autoRollEnabled ? 'ON' : 'OFF'}
-          </span>
-        </div>
-        <div className="space-y-1">
-          <label className="text-[9px] font-bold text-slate-500 uppercase">Breach for (min)</label>
-          <input type="number" value={settings.autoRollBreachMinutes ?? 5} min={1} max={60}
-            onChange={(e) => setSettings(prev => ({ ...prev, autoRollBreachMinutes: Number(e.target.value) }))}
-            onBlur={(e) => updateSetting('autoRollBreachMinutes', e.target.value)}
-            className="w-16 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
-        </div>
-        <div className="space-y-1">
-          <label className="text-[9px] font-bold text-slate-500 uppercase">Max Rolls</label>
-          <input type="number" value={settings.autoRollMaxRolls ?? 2} min={1} max={5}
-            onChange={(e) => setSettings(prev => ({ ...prev, autoRollMaxRolls: Number(e.target.value) }))}
-            onBlur={(e) => updateSetting('autoRollMaxRolls', e.target.value)}
-            className="w-16 px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white outline-none" />
-        </div>
-        <div className="text-[9px] text-slate-400 italic max-w-md">
-          Butterfly positions only. If spot sits outside the profit zone continuously for the set
-          minutes, the position closes automatically; a re-centered replacement is proposed but needs
-          a one-click confirm to actually enter. After Max Rolls, it's left to ride on Auto-Exit/Stop-Loss.
-        </div>
-      </div>
-
       {/* Roll-Over Info */}
       <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-slate-100">
         <div className="flex items-center gap-3">
@@ -705,6 +675,97 @@ function AutoExecSettingsPanel() {
         <div className="text-[9px] text-slate-400 italic">
           Only CE+PE legs are rolled. FUT position stays, saving ~₹384 per rollover.
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* Auto-Roll on Breakeven Breach -- Butterfly only, configured per underlying (same pattern
+   as the Auto-Execute Engine cards above). Off by default; each symbol has its own
+   enable/breach-window/max-rolls so e.g. NIFTY can run this while BANKNIFTY stays manual. */
+function AutoRollSettingsPanel() {
+  const [settings, setSettings] = useState(null);
+
+  const { data } = useQuery({
+    queryKey: ['autoExecSettings'],
+    queryFn: async () => (await client.get('/option-arbitrage/auto-execute/settings')).data,
+    refetchInterval: 30000,
+  });
+
+  useEffect(() => { if (data) setSettings(data); }, [data]);
+
+  const updateSetting = async (key, value) => {
+    try {
+      await client.post(`/option-arbitrage/auto-execute/settings?key=${encodeURIComponent(key)}&value=${encodeURIComponent(String(value))}`);
+      setSettings(prev => ({ ...prev, [key]: value }));
+      showToast(`Setting updated: ${key} = ${value}`, 'success');
+    } catch (e) {
+      showToast('Failed to update setting', 'error');
+    }
+  };
+
+  if (!settings) return null;
+
+  const underlyings = [
+    { key: 'nifty', label: 'NIFTY' },
+    { key: 'banknifty', label: 'BANKNIFTY' },
+    { key: 'finnifty', label: 'FINNIFTY' },
+    { key: 'midcpnifty', label: 'MIDCPNIFTY' },
+  ];
+  const anyEnabled = underlyings.some(u => settings[u.key + 'AutoRollEnabled']);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+            <span className="text-lg">🔄</span> Auto-Roll on Breakeven Breach
+          </h3>
+          <p className="text-[10px] text-slate-500 mt-0.5">
+            Butterfly positions only. If spot sits outside the profit zone continuously for the breach
+            window, the position closes automatically; a re-centered replacement is proposed but needs
+            a one-click confirm to actually enter. After Max Rolls, it rides on Auto-Exit/Stop-Loss instead.
+          </p>
+        </div>
+        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${anyEnabled ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
+          {anyEnabled ? '● ACTIVE ON SOME SYMBOLS' : 'OFF'}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        {underlyings.map(u => {
+          const enabled = !!settings[u.key + 'AutoRollEnabled'];
+          return (
+            <div key={u.key} className={`rounded-xl border p-3 space-y-2 transition-colors ${enabled ? 'bg-purple-50 border-purple-300' : 'bg-slate-50 border-slate-200'}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-slate-800">{u.label}</span>
+                <button
+                  onClick={() => updateSetting(u.key + 'AutoRollEnabled', !enabled)}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${enabled ? 'bg-purple-500' : 'bg-slate-300'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-4' : ''}`} />
+                </button>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Breach for (min)</label>
+                <input type="number" value={settings[u.key + 'AutoRollBreachMinutes'] ?? 5} min={1} max={60}
+                  onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'AutoRollBreachMinutes']: Number(e.target.value) }))}
+                  onBlur={(e) => updateSetting(u.key + 'AutoRollBreachMinutes', e.target.value)}
+                  className="w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-500 uppercase">Max Rolls</label>
+                <input type="number" value={settings[u.key + 'AutoRollMaxRolls'] ?? 2} min={1} max={5}
+                  onChange={(e) => setSettings(prev => ({ ...prev, [u.key + 'AutoRollMaxRolls']: Number(e.target.value) }))}
+                  onBlur={(e) => updateSetting(u.key + 'AutoRollMaxRolls', e.target.value)}
+                  className="w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none" />
+              </div>
+              <div className="text-[9px] text-slate-400">
+                {enabled ? `Watching ${u.label} flies — closes after ${settings[u.key + 'AutoRollBreachMinutes'] ?? 5}min outside zone` : 'Not monitored'}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
