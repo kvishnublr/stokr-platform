@@ -155,7 +155,9 @@ public class OptionArbAutoExecService {
             return result;
         }
 
-        long openCount = positionRepo.countAllOpen();
+        // LIVE positions only -- paper trades sitting open (from earlier testing, a different
+        // mode, whatever) must never block a real order from being attempted.
+        long openCount = positionRepo.countOpenLive();
         int maxOpen = ((Number) getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
         if (openCount >= maxOpen) {
             result.put("status", "ERROR");
@@ -286,7 +288,7 @@ public class OptionArbAutoExecService {
         String broker = (String) settings.getOrDefault("broker", "NAVIA");
         if ("PAPER".equalsIgnoreCase(broker)) return;
         int maxPositions = (int) settings.getOrDefault("maxOpenPositions", 1);
-        long currentOpen = positionRepo.countAllOpen();
+        long currentOpen = positionRepo.countOpenLive();
         if (currentOpen >= maxPositions) return;
 
         Long userId;

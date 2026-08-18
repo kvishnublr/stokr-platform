@@ -30,6 +30,15 @@ public interface LivePositionRepository extends JpaRepository<LivePosition, Long
     @Query("SELECT COUNT(p) FROM LivePosition p WHERE p.status = 'OPEN'")
     long countAllOpen();
 
+    /** Open LIVE positions only (excludes paper) -- used to gate live order placement so
+     *  stale paper positions can't block a real trade from ever being attempted. */
+    @Query("SELECT COUNT(p) FROM LivePosition p WHERE p.status = 'OPEN' AND p.broker IS NOT NULL AND p.broker != 'PAPER'")
+    long countOpenLive();
+
+    /** Open PAPER positions only -- used to gate paper trade entry independently of live. */
+    @Query("SELECT COUNT(p) FROM LivePosition p WHERE p.status = 'OPEN' AND (p.broker IS NULL OR p.broker = 'PAPER')")
+    long countOpenPaper();
+
     @Query("SELECT p FROM LivePosition p WHERE p.status IN ('FAILED','REJECTED') ORDER BY p.enteredAt DESC")
     List<LivePosition> findAllFailed();
 

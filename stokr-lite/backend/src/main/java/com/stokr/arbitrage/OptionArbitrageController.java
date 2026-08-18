@@ -1635,7 +1635,9 @@ public class OptionArbitrageController {
             historyService.getRepository().save(opp);
 
             try {
-                long openCount = livePositionRepo.countAllOpen();
+                // Paper positions gated against paper count, not mixed with live -- opening
+                // a paper trade shouldn't be blocked by real live positions or vice versa.
+                long openCount = livePositionRepo.countOpenPaper();
                 int maxOpen = ((Number) autoExecService.getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
                 if (openCount >= maxOpen) {
                     resp.put("status", "ERROR");
