@@ -193,8 +193,16 @@ public class OptionArbAutoExecService {
             result.put("action", opp.getAction());
             result.put("message", opp.getUnderlying() + " " + opp.getStrike() + " " + opp.getAction() + " entered LIVE via " + broker);
         } else {
+            // executeMultiLegTrade/executeTrade already saved the real broker rejection
+            // reason onto the LivePosition they created before returning false -- surface
+            // that directly instead of a generic "check the logs" dead end.
+            String detail = positionRepo.findByOpportunityIdIn(List.of(opp.getId())).stream()
+                    .filter(p -> p.getErrorMessage() != null)
+                    .reduce((first, second) -> second)
+                    .map(LivePosition::getErrorMessage)
+                    .orElse(null);
             result.put("status", "ERROR");
-            result.put("message", "Live order failed — check Auto-Exec logs for the failed leg");
+            result.put("message", detail != null ? detail : "Live order failed — no error detail was recorded, check Auto-Exec logs");
         }
         return result;
     }

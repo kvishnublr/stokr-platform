@@ -466,7 +466,7 @@ export default function OptionArbitrage() {
       </div>
 
       {/* Live Positions — always visible */}
-      <LivePositionsSection />
+      <LivePositionsSection executionBroker={executionBroker} />
       <CashPositionsSection />
 
       {/* Active Tab View Rendering */}
@@ -869,9 +869,22 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
 }
 
 /* Live Positions Section — standalone, always visible, 2s tick-by-tick refresh */
-function LivePositionsSection() {
+function LivePositionsSection({ executionBroker }) {
   const [collapsed, setCollapsed] = useState(true);
   const [rollingId, setRollingId] = useState(null);
+  // Defaults to whatever mode the Execution Broker dropdown is currently in, so switching
+  // to a live broker doesn't leave old paper positions looking like they might be real --
+  // "Live Positions" was showing paper trades with no way to tell them apart or filter
+  // them out. Still overridable via the pills below.
+  const [brokerFilter, setBrokerFilter] = useState(executionBroker === 'PAPER' ? 'PAPER' : 'LIVE');
+  const prevExecBroker = useRef(executionBroker);
+  useEffect(() => {
+    if (executionBroker !== prevExecBroker.current) {
+      setBrokerFilter(executionBroker === 'PAPER' ? 'PAPER' : 'LIVE');
+      prevExecBroker.current = executionBroker;
+    }
+  }, [executionBroker]);
+
   const { data, refetch } = useQuery({
     queryKey: ['livePositions'],
     queryFn: async () => {
@@ -882,7 +895,12 @@ function LivePositionsSection() {
     staleTime: 1000,
   });
 
-  const positions = data?.positions || [];
+  const allPositions = data?.positions || [];
+  const isPaper = (p) => !p.broker || p.broker === 'PAPER';
+  const positions = brokerFilter === 'ALL' ? allPositions
+    : brokerFilter === 'PAPER' ? allPositions.filter(isPaper)
+    : allPositions.filter(p => !isPaper(p));
+  const filteredTotalPnl = positions.reduce((s, p) => s + (p.currentPnl || 0), 0);
   const openPositions = positions.filter(p => p.status === 'OPEN');
 
   const handleRollover = async (positionId, underlying, strike) => {
@@ -910,22 +928,36 @@ function LivePositionsSection() {
     }
   };
 
-  if (positions.length === 0) return null;
+  if (allPositions.length === 0) return null;
 
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-4 py-3 bg-gradient-to-r from-slate-900 to-indigo-950 flex items-center justify-between cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">📊</span>
-            <h3 className="text-sm font-black text-white">Live Positions</h3>
+            <h3 className="text-sm font-black text-white">
+              {brokerFilter === 'PAPER' ? 'Paper Positions' : brokerFilter === 'LIVE' ? 'Live Positions' : 'All Positions'}
+            </h3>
             <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full">{positions.length}</span>
             <span className="px-2 py-0.5 bg-white/10 text-white/60 text-[9px] font-bold rounded-full">2s tick</span>
-            {data?.totalPnl != null && (
-              <span className={`px-2.5 py-0.5 text-[11px] font-black rounded-full ${data.totalPnl >= 0 ? 'bg-emerald-500/30 text-emerald-300' : 'bg-red-500/30 text-red-300'}`}>
-                Total P&L: ₹{Math.round(data.totalPnl).toLocaleString('en-IN')}
+            {positions.length > 0 && (
+              <span className={`px-2.5 py-0.5 text-[11px] font-black rounded-full ${filteredTotalPnl >= 0 ? 'bg-emerald-500/30 text-emerald-300' : 'bg-red-500/30 text-red-300'}`}>
+                {brokerFilter === 'PAPER' ? 'Paper' : 'Total'} P&L: ₹{Math.round(filteredTotalPnl).toLocaleString('en-IN')}
               </span>
             )}
+            <div className="flex items-center gap-0.5 bg-white/10 rounded-full p-0.5" onClick={(e) => e.stopPropagation()}>
+              {[
+                { id: 'LIVE', label: '🔴 Live' },
+                { id: 'PAPER', label: '📄 Paper' },
+                { id: 'ALL', label: 'All' },
+              ].map(f => (
+                <button key={f.id} onClick={() => setBrokerFilter(f.id)}
+                  className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition ${brokerFilter === f.id ? 'bg-white text-slate-900' : 'text-white/60 hover:text-white'}`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition">Refresh</button>
@@ -933,7 +965,13 @@ function LivePositionsSection() {
           </div>
         </div>
 
-        {!collapsed && (
+        {!collapsed && positions.length === 0 && (
+          <div className="p-8 text-center text-slate-400 text-sm font-semibold">
+            No {brokerFilter === 'PAPER' ? 'paper' : brokerFilter === 'LIVE' ? 'live' : ''} positions right now
+          </div>
+        )}
+
+        {!collapsed && positions.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] text-left">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">

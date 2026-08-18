@@ -196,15 +196,27 @@ public class ZerodhaAdapter implements BrokerAdapter {
     private double fetchLtp(String accessToken, String exchange, String symbol) {
         try {
             String instrument = exchange + ":" + symbol;
+            // RestClient's .uri(String) overload treats the string as a URI TEMPLATE and
+            // re-encodes it -- manually URL-encoding the ":" here first (as the old code did)
+            // got double-encoded into %253A, which Kite doesn't match to any instrument and
+            // silently returns empty data (no error, no exception -- just a wrong answer).
+            // Building a raw java.net.URI bypasses template processing entirely.
+            java.net.URI uri = java.net.URI.create(
+                KITE_API_BASE + "/quote/ltp?i=" + java.net.URLEncoder.encode(instrument, StandardCharsets.UTF_8));
             String body = http.get()
-                    .uri(KITE_API_BASE + "/quote/ltp?i=" + java.net.URLEncoder.encode(instrument, StandardCharsets.UTF_8))
+                    .uri(uri)
                     .header("X-Kite-Version", "3")
                     .header("Authorization", "token " + apiKey + ":" + accessToken)
                     .retrieve()
                     .body(String.class);
             JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
-            if (!"success".equalsIgnoreCase(root.path("status").asText())) return 0;
-            return root.path("data").path(instrument).path("last_price").asDouble(0);
+            if (!"success".equalsIgnoreCase(root.path("status").asText())) {
+                log.warn("Zerodha LTP fetch for {} returned non-success: {}", instrument, body);
+                return 0;
+            }
+            double ltp = root.path("data").path(instrument).path("last_price").asDouble(0);
+            if (ltp <= 0) log.warn("Zerodha LTP fetch for {} returned no price: {}", instrument, body);
+            return ltp;
         } catch (Exception e) {
             log.warn("Zerodha LTP fetch failed for {}: {}", symbol, e.getMessage());
             return 0;
