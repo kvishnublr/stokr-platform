@@ -2070,6 +2070,7 @@ function BoxNearMissPanel() {
 /* 3b. VERTICAL SPREAD VIEW */
 function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
   const [subTab, setSubTab] = useState('signals');
+  const [historyMode, setHistoryMode] = useState('arbitrage');
   const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(0);
   const [customEdge, setCustomEdge] = useState('');
@@ -2165,7 +2166,23 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
       {subTab === 'autotrade' ? (
         <StrategyAutoTradePanel prefix="vertical" label="Vertical Spread" accent="indigo" />
       ) : subTab === 'history' ? (
-        <HistoryView lockedStrategy="VERTICAL" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <div className="space-y-3">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
+            <button onClick={() => setHistoryMode('arbitrage')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${historyMode === 'arbitrage' ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              Arbitrage Signals
+            </button>
+            <button onClick={() => setHistoryMode('candidates')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${historyMode === 'candidates' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              🔍 Candidates
+            </button>
+          </div>
+          {historyMode === 'candidates' ? (
+            <CandidateHistoryPanel strategyType="VERTICAL_SPREAD" label="Vertical Spread" />
+          ) : (
+            <HistoryView lockedStrategy="VERTICAL" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+          )}
+        </div>
       ) : subTab === 'candidates' ? (
         <VerticalCandidatesPanel handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
       ) : (
@@ -2812,6 +2829,7 @@ function AutoRollPendingPanel() {
 /* 3c. BUTTERFLY SPREAD VIEW */
 function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
   const [subTab, setSubTab] = useState('signals');
+  const [historyMode, setHistoryMode] = useState('arbitrage');
   const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(0);
   const [customEdge, setCustomEdge] = useState('');
@@ -2906,7 +2924,23 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
       </div>
 
       {subTab === 'history' ? (
-        <HistoryView lockedStrategy="BUTTERFLY" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <div className="space-y-3">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
+            <button onClick={() => setHistoryMode('arbitrage')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${historyMode === 'arbitrage' ? 'bg-fuchsia-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              Arbitrage Signals
+            </button>
+            <button onClick={() => setHistoryMode('candidates')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${historyMode === 'candidates' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              🔍 Candidates
+            </button>
+          </div>
+          {historyMode === 'candidates' ? (
+            <CandidateHistoryPanel strategyType="BUTTERFLY_SPREAD" label="Butterfly Spread" />
+          ) : (
+            <HistoryView lockedStrategy="BUTTERFLY" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+          )}
+        </div>
       ) : subTab === 'autotrade' ? (
         <div className="space-y-4">
           <StrategyAutoTradePanel prefix="butterfly" label="Butterfly Spread" accent="indigo" />
@@ -3497,6 +3531,7 @@ function ButterflyCandidatesPanel({ handleExecuteInline, executionBroker }) {
 /* 3d. CONDOR SPREAD VIEW (model-free, distinct from Iron Condor below) */
 function CondorSpreadView({ handleExecuteInline, executionBroker }) {
   const [subTab, setSubTab] = useState('signals');
+  const [historyMode, setHistoryMode] = useState('arbitrage');
   const [underlying, setUnderlying] = useState('ALL');
   const [minEdge, setMinEdge] = useState(0);
   const [customEdge, setCustomEdge] = useState('');
@@ -3590,7 +3625,23 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
       </div>
 
       {subTab === 'history' ? (
-        <HistoryView lockedStrategy="CONDORSPREAD" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+        <div className="space-y-3">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl w-fit">
+            <button onClick={() => setHistoryMode('arbitrage')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${historyMode === 'arbitrage' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              Arbitrage Signals
+            </button>
+            <button onClick={() => setHistoryMode('candidates')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${historyMode === 'candidates' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+              🔍 Candidates
+            </button>
+          </div>
+          {historyMode === 'candidates' ? (
+            <CandidateHistoryPanel strategyType="CONDOR_SPREAD" label="Condor Spread" />
+          ) : (
+            <HistoryView lockedStrategy="CONDORSPREAD" handleExecuteInline={handleExecuteInline} executionBroker={executionBroker} />
+          )}
+        </div>
       ) : subTab === 'autotrade' ? (
         <StrategyAutoTradePanel prefix="condor" label="Condor Spread" accent="indigo" />
       ) : subTab === 'candidates' ? (
@@ -4947,6 +4998,161 @@ function PaperTradesView() {
 }
 
 /* 8. HISTORY VIEW */
+/* History for the Candidates (not arbitrage) discovery scan -- Vertical/Butterfly/Condor
+   only. These were never persisted before; CandidateSnapshotService now snapshots count +
+   top candidate per underlying every 15 min during market hours, and this panel reads it
+   back with the same day/week/month/custom range pattern as the arbitrage HistoryView. */
+function CandidateHistoryPanel({ strategyType, label }) {
+  const [dateRange, setDateRange] = useState('TODAY');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [underlyingFilter, setUnderlyingFilter] = useState('ALL');
+
+  const getDateRange = () => {
+    const now = new Date();
+    const istNow = new Date(now.getTime() + (now.getTimezoneOffset() + 330) * 60000);
+    const istDate = istNow.toISOString().split('T')[0];
+    switch (dateRange) {
+      case 'TODAY': return { start: istDate, end: istDate };
+      case 'YESTERDAY': {
+        const y = new Date(istNow); y.setDate(y.getDate() - 1);
+        return { start: y.toISOString().split('T')[0], end: y.toISOString().split('T')[0] };
+      }
+      case 'WEEK': {
+        const d = new Date(istNow); d.setDate(d.getDate() - 6);
+        return { start: d.toISOString().split('T')[0], end: istDate };
+      }
+      case 'MONTH': {
+        const s = new Date(istNow.getFullYear(), istNow.getMonth(), 1);
+        const en = new Date(istNow.getFullYear(), istNow.getMonth() + 1, 0);
+        return { start: s.toISOString().split('T')[0], end: en.toISOString().split('T')[0] };
+      }
+      case 'CUSTOM': {
+        if (customStartDate && customEndDate) return { start: customStartDate, end: customEndDate };
+        return { start: istDate, end: istDate };
+      }
+      default: return { start: istDate, end: istDate };
+    }
+  };
+  const dr = getDateRange();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['candidate-history', strategyType, underlyingFilter, dr.start, dr.end],
+    queryFn: async () => {
+      const params = { strategyType, startDate: dr.start, endDate: dr.end };
+      if (underlyingFilter !== 'ALL') params.underlying = underlyingFilter;
+      const res = await client.get('/option-arbitrage/candidate-history', { params });
+      return res.data;
+    },
+    staleTime: 30000,
+  });
+
+  const items = data?.items || [];
+  const totalCandidatesSeen = items.reduce((s, i) => s + (i.candidateCount || 0), 0);
+  const avgPopOverall = items.length > 0
+    ? items.reduce((s, i) => s + (i.avgPop || 0), 0) / items.length : null;
+
+  return (
+    <div className="space-y-4 w-full">
+      <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-xs text-amber-900">
+        <p className="font-bold mb-1">🔍 Candidates history — not arbitrage</p>
+        <p>Periodic snapshots (every 15 min, market hours) of the Candidates discovery scan — count and the top (highest-POP) candidate per underlying at each snapshot, not every single candidate. Nothing here was ever executed automatically.</p>
+      </div>
+
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-800">{label} Candidates History</h2>
+            <p className="text-xs text-slate-500">
+              <span className="font-bold text-slate-700">{items.length}</span> snapshots,{' '}
+              <span className="font-bold text-slate-700">{totalCandidatesSeen.toLocaleString('en-IN')}</span> total candidate-sightings in this range
+              {avgPopOverall != null && <> — avg POP <span className="font-bold text-slate-700">{avgPopOverall.toFixed(1)}%</span></>}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              {[
+                { id: 'TODAY', label: 'Today' },
+                { id: 'YESTERDAY', label: 'Yesterday' },
+                { id: 'WEEK', label: 'This Week' },
+                { id: 'MONTH', label: 'This Month' },
+                { id: 'CUSTOM', label: 'Custom' },
+              ].map(d => (
+                <button key={d.id} onClick={() => setDateRange(d.id)}
+                  className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${dateRange === d.id ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                  {d.label}
+                </button>
+              ))}
+            </div>
+            {dateRange === 'CUSTOM' && (
+              <div className="flex items-center gap-1">
+                <input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-xs font-mono text-slate-800 outline-none focus:border-amber-500" />
+                <span className="text-[10px] text-slate-400">to</span>
+                <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-xs font-mono text-slate-800 outline-none focus:border-amber-500" />
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              {['ALL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'].map(u => (
+                <button key={u} onClick={() => setUnderlyingFilter(u)}
+                  className={`px-2 py-0.5 rounded-lg text-xs font-bold transition ${underlyingFilter === u ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-200'}`}>
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
+        {isLoading ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">Loading candidate history...</div>
+        ) : items.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-sm font-semibold">No candidate snapshots in this range</div>
+        ) : (
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="px-2 py-2">Time</th>
+                  <th className="px-2 py-2">Symbol</th>
+                  <th className="px-2 py-2 text-right">Count</th>
+                  <th className="px-2 py-2 text-right">Avg POP</th>
+                  <th className="px-2 py-2">Top Strikes</th>
+                  <th className="px-2 py-2 text-right">Top POP</th>
+                  <th className="px-2 py-2 text-right">Top Cost</th>
+                  <th className="px-2 py-2 text-right">Top Max Loss</th>
+                  <th className="px-2 py-2 text-right">Top Max Profit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {items.map(i => (
+                  <tr key={i.id} className="hover:bg-slate-50">
+                    <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500">{fmtTime(i.snapshotTime)}</td>
+                    <td className="px-2 py-1.5 font-bold text-slate-800">{i.underlying}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-bold">{i.candidateCount}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{i.avgPop != null ? `${i.avgPop}%` : '—'}</td>
+                    <td className="px-2 py-1.5 font-mono text-slate-700">{i.topOptionType} {i.topStrikes}</td>
+                    <td className="px-2 py-1.5 text-right">
+                      {i.topPop != null && (
+                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${i.topPop >= 60 ? 'bg-emerald-100 text-emerald-700' : i.topPop >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {i.topPop}%
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono">{i.topCostPerLot != null ? `₹${i.topCostPerLot}` : '—'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-red-600">{i.topMaxLoss != null ? `₹${Math.round(i.topMaxLoss).toLocaleString('en-IN')}` : '—'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-emerald-600">{i.topMaxProfit != null ? `₹${Math.round(i.topMaxProfit).toLocaleString('en-IN')}` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const STRATEGY_LOCK_LABELS = {
   PARITY: '⚡ Bid Parity',
   BOX: '💎 Box Spread',

@@ -38,6 +38,7 @@ public class OptionArbitrageController {
     private final com.stokr.delivery.CashScannerService cashScannerService;
     private final com.stokr.delivery.CashExecutionService cashExecutionService;
     private final AutoRollService autoRollService;
+    private final CandidateSnapshotRepository candidateSnapshotRepo;
 
     private final Map<String, Object> autoExecSettings = new ConcurrentHashMap<>();
     private final List<Map<String, Object>> auditLogs = Collections.synchronizedList(new ArrayList<>());
@@ -56,7 +57,8 @@ public class OptionArbitrageController {
                                      OptionArbOpportunityRepository oppRepo,
                                      com.stokr.delivery.CashScannerService cashScannerService,
                                      com.stokr.delivery.CashExecutionService cashExecutionService,
-                                     AutoRollService autoRollService) {
+                                     AutoRollService autoRollService,
+                                     CandidateSnapshotRepository candidateSnapshotRepo) {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.bidParityService = bidParityService;
@@ -72,6 +74,7 @@ public class OptionArbitrageController {
         this.cashScannerService = cashScannerService;
         this.cashExecutionService = cashExecutionService;
         this.autoRollService = autoRollService;
+        this.candidateSnapshotRepo = candidateSnapshotRepo;
 
         autoExecSettings.put("normalParityEnabled", true);
         autoExecSettings.put("normalEntryEdge", 150.0);
@@ -1189,6 +1192,23 @@ public class OptionArbitrageController {
     @GetMapping("/auto-execute/settings")
     public ResponseEntity<Map<String, Object>> getSettings() {
         return ResponseEntity.ok(autoExecService.getSettings());
+    }
+
+    @GetMapping("/candidate-history")
+    public ResponseEntity<Map<String, Object>> getCandidateHistory(
+            @RequestParam String strategyType,
+            @RequestParam(required = false) String underlying,
+            @RequestParam String startDate,
+            @RequestParam String endDate) {
+        LocalDateTime start = LocalDate.parse(startDate).atStartOfDay();
+        LocalDateTime end = LocalDate.parse(endDate).atTime(23, 59, 59);
+        String u = (underlying == null || underlying.isBlank() || "ALL".equalsIgnoreCase(underlying)) ? null : underlying;
+        List<CandidateSnapshot> rows = candidateSnapshotRepo.findInRange(strategyType, u, start, end);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("items", rows);
+        resp.put("count", rows.size());
+        resp.put("note", "Periodic snapshots (every 15 min, market hours) of the Candidates discovery scan -- count + top candidate per underlying, not every candidate shown.");
+        return ResponseEntity.ok(resp);
     }
 
     @GetMapping("/auto-roll/pending")
