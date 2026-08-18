@@ -226,17 +226,27 @@ public class ZerodhaAdapter implements BrokerAdapter {
             for (int i = 1; i < lines.length; i++) {
                 String[] cols = lines[i].split(",");
                 if (cols.length <= Math.max(nameIdx, lotIdx)) continue;
-                String name = cols[nameIdx].trim();
+                // Kite quotes the "name" field ("NIFTY" not NIFTY) -- unstripped, every key
+                // came out wrong and every lookup by bare underlying name silently missed,
+                // which is exactly why the first deploy of this fix logged NIFTY=null instead
+                // of catching the value that was sitting right there in the response.
+                String name = stripQuotes(cols[nameIdx].trim());
                 if (name.isEmpty() || result.containsKey(name)) continue;
                 try {
-                    int lot = Integer.parseInt(cols[lotIdx].trim());
+                    int lot = Integer.parseInt(stripQuotes(cols[lotIdx].trim()));
                     if (lot > 0) result.put(name, lot);
                 } catch (NumberFormatException ignored) {}
             }
         } catch (Exception e) {
             log.error("Failed to fetch Zerodha instruments for lot sizes: {}", e.getMessage());
         }
+        log.info("Zerodha instruments: parsed {} distinct underlyings for lot size", result.size());
         return result;
+    }
+
+    private static String stripQuotes(String s) {
+        if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")) return s.substring(1, s.length() - 1);
+        return s;
     }
 
     private double fetchLtp(String accessToken, String exchange, String symbol) {

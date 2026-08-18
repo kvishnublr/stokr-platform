@@ -195,10 +195,12 @@ public class OptionChainService {
     }
 
     /** Refreshed daily from Zerodha's live instrument dump by LotSizeService -- NSE revises
-     *  lot sizes periodically (confirmed: NIFTY is 65 as of a real live order, not the 25
-     *  this used to hardcode), so a static table here goes stale on its own schedule with no
-     *  warning. This cache is the source of truth when populated; the switch below is only
-     *  the fallback for before the first successful refresh or if a refresh fails. */
+     *  lot sizes periodically (confirmed via a real Kite instruments fetch: NIFTY=65,
+     *  BANKNIFTY=30, not the 25/15 that used to be hardcoded), so a static table here goes
+     *  stale on its own schedule with no warning. This cache is the source of truth when
+     *  populated; the switch below is only the fallback for before the first successful
+     *  refresh or if a refresh fails -- kept as current as the values were last confirmed,
+     *  but never a substitute for the live fetch actually working. */
     private static final Map<String, Integer> DYNAMIC_LOT_SIZES = new ConcurrentHashMap<>();
 
     public static void updateLotSizes(Map<String, Integer> fresh) {
@@ -211,7 +213,7 @@ public class OptionChainService {
         if (dynamic != null && dynamic > 0) return dynamic;
         return switch (key) {
             case "NIFTY" -> 65;
-            case "BANKNIFTY" -> 15;
+            case "BANKNIFTY" -> 30;
             case "MIDCPNIFTY" -> 50;
             case "FINNIFTY" -> 25;
             default -> 25;
