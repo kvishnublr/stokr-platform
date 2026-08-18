@@ -155,17 +155,6 @@ public class OptionArbAutoExecService {
             return result;
         }
 
-        // This path (the manual "Trade" button) had neither of these checks -- it would go
-        // straight to the broker and only find out it's after-hours or under-margined from
-        // whatever error the broker happened to return. The auto-exec scan loop already does
-        // both; do the same here before ever touching the broker API.
-        LocalTime nowIST = LocalTime.now(ZoneId.of("Asia/Kolkata"));
-        if (nowIST.isBefore(LocalTime.of(9, 15)) || nowIST.isAfter(LocalTime.of(15, 30))) {
-            result.put("status", "ERROR");
-            result.put("message", "Market is closed (NSE/NFO hours: Mon-Fri 09:15-15:30 IST). Live orders can't be placed right now.");
-            return result;
-        }
-
         long openCount = positionRepo.countAllOpen();
         int maxOpen = ((Number) getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
         if (openCount >= maxOpen) {
@@ -194,6 +183,10 @@ public class OptionArbAutoExecService {
         List<Map<String, Object>> legs = opp.getLegList();
         boolean isMultiLeg = legs != null && !legs.isEmpty();
 
+        // Informational only -- logged so it's visible in Auto-Exec logs, but the manual
+        // "Trade" button is user-initiated and should always actually reach the broker and
+        // surface whatever the broker itself says (insufficient margin, market closed, AMO
+        // rejection, whatever) rather than the app pre-judging and short-circuiting the call.
         try {
             BigDecimal availableMarginBd = adapter.getAvailableMargin(account.getAccessToken());
             double availableMargin = availableMarginBd != null ? availableMarginBd.doubleValue() : 0;
@@ -212,18 +205,12 @@ public class OptionArbAutoExecService {
                 requiredMargin = realMargin != null ? realMargin.doubleValue() : estimateHedgedMargin(opp.getUnderlying(), lots);
             }
             if (requiredMargin > availableMargin * 0.9) {
-                result.put("status", "ERROR");
-                result.put("message", "Insufficient margin: needs ~₹" + String.format("%.0f", requiredMargin)
-                    + " but only ₹" + String.format("%.0f", availableMargin) + " available in " + broker + ".");
-                addLog("MARGIN", "MANUAL_SKIP", opp.getUnderlying() + " " + opp.getStrike()
-                    + " needs ₹" + String.format("%.0f", requiredMargin) + " but only ₹" + String.format("%.0f", availableMargin) + " available");
-                return result;
+                addLog("MARGIN", "MANUAL_LOW", opp.getUnderlying() + " " + opp.getStrike()
+                    + " needs ~₹" + String.format("%.0f", requiredMargin) + " but only ₹" + String.format("%.0f", availableMargin)
+                    + " available -- attempting anyway, broker will be the final word");
             }
         } catch (Exception e) {
             log.warn("Manual live-trade margin check failed for {}: {}", opp.getUnderlying(), e.getMessage());
-            // Margin check itself failing (e.g. broker API hiccup) shouldn't silently block a
-            // trade the user explicitly clicked -- fall through and let the broker's own order
-            // validation be the final word, same as before this check existed.
         }
 
         boolean opened = isMultiLeg
