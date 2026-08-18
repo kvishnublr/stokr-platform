@@ -137,7 +137,6 @@ public class NaviaAdapter implements BrokerAdapter {
         body.put("ret", "DAY");
         body.put("ordersource", "Web");
         body.put("segment", "FNO");
-        body.put("mkt_protection", "0");
         body.put("remarks", "");
         body.put("ext_remarks", "");
         body.put("cl_ord_id", "");
@@ -146,9 +145,15 @@ public class NaviaAdapter implements BrokerAdapter {
         if (request.price() != null && request.price() > 0) {
             body.put("prctyp", "LIMIT");
             body.put("prc", String.valueOf(request.price()));
+            body.put("mkt_protection", "0");
         } else {
+            // Navia now rejects market orders with mkt_protection=0 ("Market orders without
+            // market protection are not allowed via API"). This is a % price-band the fill is
+            // allowed to slip within before Navia caps/rejects it -- 5% is a conservative,
+            // commonly-used default that still guarantees a fill for liquid index options.
             body.put("prctyp", "MKT");
             body.put("prc", "0");
+            body.put("mkt_protection", "5");
         }
 
         try {
