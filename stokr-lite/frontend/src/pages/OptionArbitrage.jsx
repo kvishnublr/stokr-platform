@@ -40,9 +40,12 @@ function fmtTime(dt) {
 let _toastListeners = [];
 let _toastId = 0;
 function _notifyToast(toast) { _toastListeners.forEach(fn => fn(toast)); }
-export function showToast(message, type = 'info', duration = 4000) {
+export function showToast(message, type = 'info', duration, title) {
   const id = ++_toastId;
-  _notifyToast({ id, message, type, duration });
+  // Errors get more time on screen by default -- they need to actually be read, not
+  // just glimpsed for 4 seconds while looking away from a trading screen.
+  const resolvedDuration = duration != null ? duration : (type === 'error' ? 9000 : type === 'warning' ? 7000 : 4500);
+  _notifyToast({ id, message, type, duration: resolvedDuration, title });
 }
 
 function useToastState() {
@@ -64,10 +67,10 @@ function useToastState() {
 }
 
 const TOAST_STYLES = {
-  success: 'bg-emerald-600 text-white',
-  error: 'bg-red-600 text-white',
-  warning: 'bg-amber-500 text-white',
-  info: 'bg-indigo-600 text-white',
+  success: { bg: 'bg-white', border: 'border-emerald-400', bar: 'bg-emerald-500', icon: '✅', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600', titleText: 'text-emerald-700', defaultTitle: 'Success' },
+  error: { bg: 'bg-white', border: 'border-red-400', bar: 'bg-red-500', icon: '❌', iconBg: 'bg-red-100', iconText: 'text-red-600', titleText: 'text-red-700', defaultTitle: 'Error' },
+  warning: { bg: 'bg-white', border: 'border-amber-400', bar: 'bg-amber-500', icon: '⚠️', iconBg: 'bg-amber-100', iconText: 'text-amber-600', titleText: 'text-amber-700', defaultTitle: 'Warning' },
+  info: { bg: 'bg-white', border: 'border-indigo-400', bar: 'bg-indigo-500', icon: 'ℹ️', iconBg: 'bg-indigo-100', iconText: 'text-indigo-600', titleText: 'text-indigo-700', defaultTitle: 'Notice' },
 };
 
 function notifyBrowser(title, body) {
@@ -82,18 +85,51 @@ function notifyBrowser(title, body) {
   }
 }
 
+function ToastCard({ t, dismiss }) {
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const style = TOAST_STYLES[t.type] || TOAST_STYLES.info;
+
+  return (
+    <div
+      className={`pointer-events-auto w-[380px] max-w-[92vw] rounded-2xl border-2 ${style.border} ${style.bg} shadow-2xl overflow-hidden transition-all duration-300 ease-out ${entered ? 'translate-x-0 opacity-100' : 'translate-x-8 opacity-0'}`}
+    >
+      <div className="flex items-start gap-3 p-4">
+        <div className={`shrink-0 w-9 h-9 rounded-full ${style.iconBg} flex items-center justify-center text-lg`}>
+          {style.icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className={`text-sm font-black ${style.titleText}`}>{t.title || style.defaultTitle}</div>
+          <div className="text-[13px] text-slate-700 mt-0.5 break-words leading-snug">{t.message}</div>
+        </div>
+        <button onClick={() => dismiss(t.id)} className="shrink-0 text-slate-400 hover:text-slate-600 text-lg leading-none px-1">
+          ×
+        </button>
+      </div>
+      {t.duration > 0 && (
+        <div className="h-1 w-full bg-slate-100">
+          <div
+            className={`h-full ${style.bar}`}
+            style={{ animation: `stokr-toast-shrink ${t.duration}ms linear forwards` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToastContainer({ toasts, dismiss }) {
   if (!toasts || toasts.length === 0) return null;
   return (
-    <div className="fixed top-4 right-4 z-[9999] space-y-2 pointer-events-none">
-      {toasts.map(t => (
-        <div key={t.id}
-          onClick={() => dismiss(t.id)}
-          className={`pointer-events-auto px-4 py-3 rounded-xl shadow-lg text-sm font-medium flex items-center gap-2 cursor-pointer ${TOAST_STYLES[t.type] || TOAST_STYLES.info}`}>
-          <span>{t.message}</span>
-        </div>
-      ))}
-    </div>
+    <>
+      <style>{`@keyframes stokr-toast-shrink { from { width: 100%; } to { width: 0%; } }`}</style>
+      <div className="fixed top-5 right-5 z-[9999] space-y-3 pointer-events-none">
+        {toasts.map(t => <ToastCard key={t.id} t={t} dismiss={dismiss} />)}
+      </div>
+    </>
   );
 }
 
@@ -265,10 +301,10 @@ export default function OptionArbitrage() {
         const data = res.data;
         if (data?.status === 'SUCCESS') {
           const msg = `BUY ${data.quantity} ${data.symbol} @ ₹${data.entryPrice?.toFixed(1)}`;
-          showToast(`⚡ ${msg}`, 'success');
+          showToast(msg, 'success', undefined, 'Trade Entered');
           notifyBrowser('Trade Entered', msg);
         } else {
-          showToast(`❌ Trade failed: ${data?.message || 'Unknown error'}`, 'error');
+          showToast(data?.message || 'Unknown error', 'error', undefined, 'Trade Failed');
           notifyBrowser('Trade Failed', data?.message || 'Unknown error');
         }
         return;
@@ -293,18 +329,18 @@ export default function OptionArbitrage() {
       const data = res.data;
       if (data?.status === 'SUCCESS') {
         const msg = `${data.underlying} ${data.strike} entered! CE=₹${data.ceEntryPrice?.toFixed(1)} PE=₹${data.peEntryPrice?.toFixed(1)}`;
-        showToast(`⚡ ${msg}`, 'success');
+        showToast(msg, 'success', undefined, 'Trade Entered');
         notifyBrowser('Trade Entered', msg);
       } else if (data?.status === 'ERROR') {
-        showToast(`❌ Trade failed: ${data.message || 'Unknown error'}`, 'error');
+        showToast(data.message || 'Unknown error', 'error', undefined, 'Trade Failed');
         notifyBrowser('Trade Failed', data.message || 'Unknown error');
       } else {
-        showToast(`⚡ Order submitted via ${executionBroker}!`, 'success');
+        showToast(`Order submitted via ${executionBroker}!`, 'success', undefined, 'Order Submitted');
         notifyBrowser('Order Submitted', `${opp.underlying} order via ${executionBroker}`);
       }
     } catch (e) {
       const errMsg = e.response?.data?.message || e.message || 'Network error';
-      showToast(`❌ Trade failed: ${errMsg}`, 'error');
+      showToast(errMsg, 'error', undefined, 'Trade Failed');
       notifyBrowser('Trade Failed', errMsg);
     }
   };
