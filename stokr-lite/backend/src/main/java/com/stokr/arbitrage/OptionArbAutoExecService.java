@@ -825,6 +825,7 @@ public class OptionArbAutoExecService {
 
         LivePosition position = LivePosition.builder()
                 .userId(userId)
+                .broker(account.getBrokerName())
                 .opportunityId(opp.getId())
                 .underlying(opp.getUnderlying())
                 .strike(opp.getStrike())
@@ -966,6 +967,7 @@ public class OptionArbAutoExecService {
 
         LivePosition position = LivePosition.builder()
                 .userId(userId)
+                .broker(account.getBrokerName())
                 .opportunityId(opp.getId())
                 .underlying(opp.getUnderlying())
                 .strike(opp.getStrike())

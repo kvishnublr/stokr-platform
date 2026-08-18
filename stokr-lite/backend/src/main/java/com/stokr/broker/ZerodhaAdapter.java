@@ -149,8 +149,22 @@ public class ZerodhaAdapter implements BrokerAdapter {
             form.add("order_type", "LIMIT");
             form.add("price", String.valueOf(limitPrice));
         } else {
-            form.add("order_type", "MARKET");
-            form.add("disclosed_quantity", "0");
+            // NSE now rejects bare F&O market orders ("Market orders without market
+            // protection are not allowed... use a Limit order"), and Kite Connect has no
+            // request field to supply protection like Navia's mkt_protection does -- its
+            // own error says to use a Limit order instead. Fetch the current LTP and place
+            // an aggressive marketable limit (wider buffer than the explicit-price branch,
+            // since this is standing in for "just fill me now" rather than a targeted close).
+            double ltp = fetchLtp(accessToken, request.exchange() != null ? request.exchange() : "NFO", request.symbol());
+            if (ltp > 0) {
+                double bufferFactor = request.side() == BrokerOrderRequest.Side.BUY ? 1.01 : 0.99;
+                double limitPrice = Math.round(ltp * bufferFactor * 100.0) / 100.0;
+                form.add("order_type", "LIMIT");
+                form.add("price", String.valueOf(limitPrice));
+            } else {
+                form.add("order_type", "MARKET");
+                form.add("disclosed_quantity", "0");
+            }
         }
 
         try {
@@ -176,6 +190,24 @@ public class ZerodhaAdapter implements BrokerAdapter {
             String msg = extractZerodhaMessage(e);
             log.error("Zerodha placeOrder failed for {}: {}", request.symbol(), msg != null ? msg : e.getMessage());
             return new BrokerOrderResponse(null, "REJECTED", msg != null ? msg : e.getMessage());
+        }
+    }
+
+    private double fetchLtp(String accessToken, String exchange, String symbol) {
+        try {
+            String instrument = exchange + ":" + symbol;
+            String body = http.get()
+                    .uri(KITE_API_BASE + "/quote/ltp?i=" + java.net.URLEncoder.encode(instrument, StandardCharsets.UTF_8))
+                    .header("X-Kite-Version", "3")
+                    .header("Authorization", "token " + apiKey + ":" + accessToken)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            if (!"success".equalsIgnoreCase(root.path("status").asText())) return 0;
+            return root.path("data").path(instrument).path("last_price").asDouble(0);
+        } catch (Exception e) {
+            log.warn("Zerodha LTP fetch failed for {}: {}", symbol, e.getMessage());
+            return 0;
         }
     }
 

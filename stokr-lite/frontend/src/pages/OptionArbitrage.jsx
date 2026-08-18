@@ -939,6 +939,7 @@ function LivePositionsSection() {
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
                 <tr>
                   <th className="px-3 py-2">Time</th>
+                  <th className="px-3 py-2">Broker</th>
                   <th className="px-3 py-2">Underlying</th>
                   <th className="px-3 py-2">Strike</th>
                   <th className="px-3 py-2">Action</th>
@@ -962,6 +963,11 @@ function LivePositionsSection() {
                   return (
                     <tr key={p.id} className={`hover:bg-slate-50 ${captured >= 90 ? 'bg-amber-50' : ''}`}>
                       <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{fmtTime(p.enteredAt)}</td>
+                      <td className="px-3 py-2">
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${p.broker === 'PAPER' || !p.broker ? 'bg-slate-100 text-slate-500 border-slate-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
+                          {p.broker === 'PAPER' || !p.broker ? '📄 PAPER' : `🔴 ${p.broker}`}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 font-bold text-slate-800">{p.underlying}</td>
                       <td className="px-3 py-2 font-bold text-slate-700">{p.strike}</td>
                       <td className="px-3 py-2 text-purple-700 font-bold text-[10px]">{p.action?.substring(0, 18)}</td>

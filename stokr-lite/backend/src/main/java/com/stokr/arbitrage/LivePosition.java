@@ -19,6 +19,11 @@ public class LivePosition {
 
     private Long userId;
 
+    /** "PAPER" or the live broker name (e.g. "NAVIA", "ZERODHA") this position was actually
+     *  entered through -- lets the Live Positions view tell real orders apart from paper
+     *  ones even after the execution broker dropdown is switched to something else. */
+    private String broker;
+
     private Long opportunityId;
 
     private String underlying;
@@ -99,6 +104,7 @@ public class LivePosition {
     public java.util.Map<String, Object> toMap() {
         java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("id", id);
+        map.put("broker", broker);
         map.put("opportunityId", opportunityId);
         map.put("underlying", underlying);
         map.put("strike", strike);

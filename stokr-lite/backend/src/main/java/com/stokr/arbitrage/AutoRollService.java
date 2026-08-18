@@ -421,6 +421,7 @@ public class AutoRollService {
 
             LivePosition livePos = LivePosition.builder()
                 .userId(1L)
+                .broker("PAPER")
                 .opportunityId(opp.getId())
                 .underlying(opp.getUnderlying())
                 .strike(opp.getStrike())
