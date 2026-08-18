@@ -194,9 +194,23 @@ public class OptionChainService {
         };
     }
 
+    /** Refreshed daily from Zerodha's live instrument dump by LotSizeService -- NSE revises
+     *  lot sizes periodically (confirmed: NIFTY is 65 as of a real live order, not the 25
+     *  this used to hardcode), so a static table here goes stale on its own schedule with no
+     *  warning. This cache is the source of truth when populated; the switch below is only
+     *  the fallback for before the first successful refresh or if a refresh fails. */
+    private static final Map<String, Integer> DYNAMIC_LOT_SIZES = new ConcurrentHashMap<>();
+
+    public static void updateLotSizes(Map<String, Integer> fresh) {
+        if (fresh != null && !fresh.isEmpty()) DYNAMIC_LOT_SIZES.putAll(fresh);
+    }
+
     public static int getLotSize(String underlying) {
-        return switch (underlying.toUpperCase()) {
-            case "NIFTY" -> 25;
+        String key = underlying.toUpperCase();
+        Integer dynamic = DYNAMIC_LOT_SIZES.get(key);
+        if (dynamic != null && dynamic > 0) return dynamic;
+        return switch (key) {
+            case "NIFTY" -> 65;
             case "BANKNIFTY" -> 15;
             case "MIDCPNIFTY" -> 50;
             case "FINNIFTY" -> 25;

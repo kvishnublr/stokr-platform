@@ -193,6 +193,52 @@ public class ZerodhaAdapter implements BrokerAdapter {
         }
     }
 
+    /**
+     * Real lot size per underlying, straight from Zerodha's own instrument dump -- avoids
+     * hardcoding numbers that go stale whenever NSE revises them (which already happened:
+     * NIFTY's real lot size is 65, not the 25 that used to be hardcoded here). NFO's dump
+     * has one row per strike/expiry per underlying; lot size is invariant per underlying at
+     * any point in time, so the first row seen per "name" is kept.
+     */
+    public Map<String, Integer> fetchLotSizes(String accessToken) {
+        Map<String, Integer> result = new LinkedHashMap<>();
+        try {
+            String csv = http.get()
+                    .uri(java.net.URI.create(KITE_API_BASE + "/instruments/NFO"))
+                    .header("X-Kite-Version", "3")
+                    .header("Authorization", "token " + apiKey + ":" + accessToken)
+                    .retrieve()
+                    .body(String.class);
+            if (csv == null || csv.isBlank()) return result;
+            String[] lines = csv.split("\n");
+            if (lines.length < 2) return result;
+            String[] header = lines[0].split(",");
+            int nameIdx = -1, lotIdx = -1;
+            for (int i = 0; i < header.length; i++) {
+                String h = header[i].trim();
+                if ("name".equalsIgnoreCase(h)) nameIdx = i;
+                if ("lot_size".equalsIgnoreCase(h)) lotIdx = i;
+            }
+            if (nameIdx < 0 || lotIdx < 0) {
+                log.warn("Zerodha instruments CSV missing name/lot_size columns: {}", lines[0]);
+                return result;
+            }
+            for (int i = 1; i < lines.length; i++) {
+                String[] cols = lines[i].split(",");
+                if (cols.length <= Math.max(nameIdx, lotIdx)) continue;
+                String name = cols[nameIdx].trim();
+                if (name.isEmpty() || result.containsKey(name)) continue;
+                try {
+                    int lot = Integer.parseInt(cols[lotIdx].trim());
+                    if (lot > 0) result.put(name, lot);
+                } catch (NumberFormatException ignored) {}
+            }
+        } catch (Exception e) {
+            log.error("Failed to fetch Zerodha instruments for lot sizes: {}", e.getMessage());
+        }
+        return result;
+    }
+
     private double fetchLtp(String accessToken, String exchange, String symbol) {
         try {
             String instrument = exchange + ":" + symbol;
