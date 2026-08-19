@@ -14,6 +14,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -1231,17 +1232,30 @@ public class OptionArbAutoExecService {
             // scanner saw when it FOUND the signal, not what actually got filled -- by
             // execution time the book can have moved (or the order can even AMO-queue for
             // hours), so the "edge" that was real at detection may have partly or fully
-            // evaporated, or moved further in the other direction. Recompute from the real
-            // filled-request prices instead: for any of these bound-violation structures
-            // (Vertical/Butterfly/Condor/Box), payoff at expiry is bounded between 0 and the
-            // strike width, so (width - cost) is the real best-case per-lot profit given what
-            // was actually paid -- this is what the payoff chart's Max Profit already shows,
-            // now the auto-exit/stop-loss threshold and Edge Progress % match it instead of a
-            // stale number from before the order was even placed.
-            int minStrike = pairs.stream().mapToInt(p -> ((Number) p.spec().get("strike")).intValue()).min().orElse(0);
-            int maxStrike = pairs.stream().mapToInt(p -> ((Number) p.spec().get("strike")).intValue()).max().orElse(0);
-            double width = maxStrike - minStrike;
-            double realTargetEdge = (width - costPerShare) * lotSize;
+            // evaporated, or moved further in the other direction. Recompute the real best-case
+            // per-lot profit from the actual filled-request legs: payoff(x) is piecewise-linear
+            // in settlement price with kinks only at the position's own strikes, so its maximum
+            // is guaranteed to land exactly on one of those strikes -- no need to sweep a price
+            // range, just evaluate profit at each distinct strike and take the best.
+            // (Earlier version of this fix used maxStrike-minStrike as "width", which is wrong
+            // for a butterfly: peak profit is at the CENTER strike, e.g. 200 points for a
+            // 24050/24250/24450 fly, not the full 400-point outer span -- caught by hand-cross-
+            // checking against AlgoTest's numbers before this shipped.)
+            Set<Integer> candidateStrikes = pairs.stream()
+                    .map(p -> ((Number) p.spec().get("strike")).intValue())
+                    .collect(Collectors.toCollection(TreeSet::new));
+            double maxProfitPerShare = candidateStrikes.stream().mapToDouble(x -> {
+                double payoff = pairs.stream().mapToDouble(p -> {
+                    int strike = ((Number) p.spec().get("strike")).intValue();
+                    String optType = (String) p.spec().get("optionType");
+                    int qtyMult = p.spec().get("qty") instanceof Number n ? n.intValue() : 1;
+                    boolean isBuy = p.planned().side() == BrokerOrderRequest.Side.BUY;
+                    double intrinsic = "PE".equalsIgnoreCase(optType) ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
+                    return (isBuy ? intrinsic : -intrinsic) * qtyMult;
+                }).sum();
+                return payoff - costPerShare;
+            }).max().orElse(-costPerShare);
+            double realTargetEdge = maxProfitPerShare * lotSize;
             position.setTargetEdge(BigDecimal.valueOf(realTargetEdge));
 
             positionRepo.save(position);
@@ -1304,7 +1318,7 @@ public class OptionArbAutoExecService {
     public double computeMultiLegPnl(LivePosition pos, Map<String, OptionChainService.OptionQuote> quotes) {
         List<Map<String, Object>> legs = pos.getLegs();
         if (legs == null || legs.isEmpty()) return 0;
-        int lotSize = pos.getLotSize() != null ? pos.getLotSize() : 25;
+        int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
         int lots = pos.getLots() != null ? pos.getLots() : 1;
         double pnl = 0;
         for (Map<String, Object> leg : legs) {
@@ -1474,14 +1488,16 @@ public class OptionArbAutoExecService {
         return base * lots * 1.15; // 15% buffer for slippage
     }
 
+    /** This used to be its own hardcoded switch (NIFTY=25, BANKNIFTY=15, ...) completely
+     *  independent of OptionChainService's dynamic Zerodha-fetched lot sizes -- so fixing the
+     *  dynamic fetch earlier never touched THIS copy, and every live order quantity computed
+     *  here kept using the old stale numbers. Concrete symptom: a BANKNIFTY order rejected by
+     *  Zerodha with "quantity should be multiple of 30" because qty was computed from
+     *  lotSize=15 here while the real, current lot size is 30. Delegate to the single source
+     *  of truth instead of maintaining a second copy that silently drifts out of sync.
+     */
     private int getLotSize(String underlying) {
-        return switch (underlying) {
-            case "NIFTY" -> 25;
-            case "BANKNIFTY" -> 15;
-            case "MIDCPNIFTY" -> 50;
-            case "FINNIFTY" -> 25;
-            default -> 25;
-        };
+        return optionChainService.getLotSize(underlying);
     }
 
     private double recalculateTargetEdge(double ceEntry, double peEntry, double futEntry, int strike, String action, String underlying) {
@@ -1508,7 +1524,7 @@ public class OptionArbAutoExecService {
         double ceEntry = pos.getCeEntryPrice() != null ? pos.getCeEntryPrice().doubleValue() : 0;
         double peEntry = pos.getPeEntryPrice() != null ? pos.getPeEntryPrice().doubleValue() : 0;
         double futEntry = pos.getFutEntryPrice() != null ? pos.getFutEntryPrice().doubleValue() : 0;
-        int lotSize = pos.getLotSize() != null ? pos.getLotSize() : 25;
+        int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
         int lots = pos.getLots() != null ? pos.getLots() : 1;
         String action = pos.getAction() != null ? pos.getAction().toUpperCase() : "";
         double pnl = 0;

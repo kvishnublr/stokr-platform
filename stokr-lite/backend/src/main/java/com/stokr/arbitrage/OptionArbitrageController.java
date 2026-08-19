@@ -1545,14 +1545,11 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
+    /** Same fix as OptionArbAutoExecService.getLotSize -- this was its own hardcoded switch
+     *  (NIFTY=25, BANKNIFTY=15, ...) independent of OptionChainService's dynamic Zerodha-fetched
+     *  values, so it kept using stale numbers after the dynamic fetch was added elsewhere. */
     private int getLotSize(String underlying) {
-        return switch (underlying) {
-            case "NIFTY" -> 25;
-            case "BANKNIFTY" -> 15;
-            case "MIDCPNIFTY" -> 50;
-            case "FINNIFTY" -> 25;
-            default -> 25;
-        };
+        return optionChainService.getLotSize(underlying);
     }
 
     private double recalculateTargetEdge(double ceEntry, double peEntry, double futEntry, int strike, String action, String underlying) {
