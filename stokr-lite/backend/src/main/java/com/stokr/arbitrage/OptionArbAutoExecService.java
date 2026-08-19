@@ -782,22 +782,11 @@ public class OptionArbAutoExecService {
                 );
             }
 
-            boolean allFilled = true;
+            boolean allConfirmed = true;
             for (PlannedLeg leg : closePlan) {
-                BrokerOrderRequest req = BrokerOrderRequest.builder()
-                        .symbol(leg.symbol()).exchange("NFO")
-                        .side(leg.side()).quantity(leg.quantity())
-                        .price(leg.price())
-                        .orderType(BrokerOrderRequest.OrderType.MARKET)
-                        .productType("MIS").build();
-                BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
-                if (!resp.isSuccess()) {
-                    addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
-                    allFilled = false;
-                }
-                try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+                allConfirmed &= placeAndVerifyCloseOrder(account, adapter, leg.symbol(), leg.side(), leg.quantity(), leg.legKey());
             }
-            return allFilled;
+            return allConfirmed;
         } catch (Exception e) {
             log.error("Rollover square-off failed: {}", e.getMessage());
             return false;
@@ -1188,9 +1177,11 @@ public class OptionArbAutoExecService {
                     log.warn("Auto-exec multi-leg: {} {} order failed: {}", leg.legKey(), leg.symbol(), resp.message());
                     addLog("EXEC", "LEG_FAILED", leg.legKey() + " " + leg.symbol() + " " + leg.side() + ": " + resp.message());
                     cancelPendingLegs(account, adapter, placedLegs);
-                    squareOffFilledLegs(account, adapter, placedLegs);
+                    boolean squaredOffOk = squareOffFilledLegs(account, adapter, placedLegs);
                     position.setStatus("FAILED");
-                    position.setErrorMessage(leg.legKey() + " order failed: " + resp.message());
+                    position.setErrorMessage(leg.legKey() + " order failed: " + resp.message()
+                            + (squaredOffOk ? " (other legs squared off, confirmed flat)"
+                                            : " (WARNING: one or more other legs may still be open -- square-off unconfirmed, check Auto-Exec logs)"));
                     position.setLegs(buildLegsJson(pairs, placedLegs));
                     positionRepo.save(position);
                     addLog("EXEC", "FAILED", opp.getUnderlying() + " " + opp.getStrike() + " — cancelled all legs (" + pairs.size() + "-leg)");
@@ -1207,9 +1198,11 @@ public class OptionArbAutoExecService {
 
             if (filledLegs.size() != pairs.size()) {
                 cancelPendingLegs(account, adapter, nonCompleteLegs);
-                squareOffFilledLegs(account, adapter, filledLegs);
+                boolean squaredOffOk = squareOffFilledLegs(account, adapter, filledLegs);
                 position.setStatus(filledLegs.isEmpty() ? "FAILED" : "PARTIAL");
-                position.setErrorMessage("Only " + filledLegs.size() + "/" + pairs.size() + " legs filled. Pending orders cancelled and filled legs squared off.");
+                position.setErrorMessage("Only " + filledLegs.size() + "/" + pairs.size() + " legs filled. Pending orders cancelled, "
+                        + (squaredOffOk ? "filled legs confirmed squared off."
+                                        : "WARNING: filled-leg square-off unconfirmed -- one or more legs may still be open, check Auto-Exec logs."));
                 position.setLegs(buildLegsJson(pairs, placedLegs));
                 positionRepo.save(position);
                 addLog("EXEC", "FAILED", opp.getUnderlying() + " " + opp.getStrike()
@@ -1338,37 +1331,23 @@ public class OptionArbAutoExecService {
     /**
      * Generic square-off for a multi-leg position: reverse each leg's side, MARKET order.
      */
+    /** @return true only if every leg's closing order was confirmed FILLED (see
+     *  placeAndVerifyCloseOrder), not merely accepted by the broker. */
     public boolean squareOffMultiLegPosition(BrokerAccount account, BrokerAdapter adapter, LivePosition pos) {
         List<Map<String, Object>> legs = pos.getLegs();
         if (legs == null || legs.isEmpty()) return false;
         int lotSize = pos.getLotSize() != null ? pos.getLotSize() : getLotSize(pos.getUnderlying());
         int lots = pos.getLots() != null ? pos.getLots() : 1;
-        boolean allFilled = true;
+        boolean allConfirmed = true;
         for (Map<String, Object> leg : legs) {
             String symbol = (String) leg.get("symbol");
             String side = (String) leg.get("side");
             int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
-            if (symbol == null || side == null) { allFilled = false; continue; }
+            if (symbol == null || side == null) { allConfirmed = false; continue; }
             BrokerOrderRequest.Side closeSide = "BUY".equals(side) ? BrokerOrderRequest.Side.SELL : BrokerOrderRequest.Side.BUY;
-            BrokerOrderRequest req = BrokerOrderRequest.builder()
-                    .symbol(symbol).exchange("NFO")
-                    .side(closeSide).quantity(lotSize * lots * qtyMult)
-                    .price(0.0).orderType(BrokerOrderRequest.OrderType.MARKET)
-                    .productType("MIS").build();
-            try {
-                BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
-                if (!resp.isSuccess()) {
-                    addLog("EXIT", "LEG_FAIL", symbol + ": " + resp.message());
-                    allFilled = false;
-                }
-            } catch (Exception e) {
-                log.error("Multi-leg square-off failed for {}: {}", symbol, e.getMessage());
-                addLog("EXIT", "LEG_FAIL", symbol + ": " + e.getMessage());
-                allFilled = false;
-            }
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+            allConfirmed &= placeAndVerifyCloseOrder(account, adapter, symbol, closeSide, lotSize * lots * qtyMult, symbol);
         }
-        return allFilled;
+        return allConfirmed;
     }
 
     private record LegPair(Map<String, Object> spec, PlannedLeg planned) {}
@@ -1413,6 +1392,53 @@ public class OptionArbAutoExecService {
         }
     }
 
+    /**
+     * Places a closing order and polls it to a FINAL status before trusting it -- the broker's
+     * immediate response only confirms the order was accepted (e.g. "OPEN"), not that it
+     * actually filled. Every square-off call site used to fire-and-forget on that acceptance
+     * alone, so a close order that got rejected, stuck, or partially filled left a real naked
+     * leg on the books with nothing retrying it and nothing loudly flagging it. Retries once,
+     * and if still unconfirmed, logs a CRITICAL entry -- that state needs a human, not another
+     * silent retry loop.
+     */
+    private boolean placeAndVerifyCloseOrder(BrokerAccount account, BrokerAdapter adapter,
+                                              String symbol, BrokerOrderRequest.Side closeSide, int qty, String legKey) {
+        if (symbol == null || symbol.isBlank()) return true;
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            BrokerOrderRequest closeReq = BrokerOrderRequest.builder()
+                    .symbol(symbol).exchange("NFO")
+                    .side(closeSide).quantity(qty)
+                    .price(0.0).orderType(BrokerOrderRequest.OrderType.MARKET)
+                    .productType("MIS").build();
+            BrokerOrderResponse closeResp;
+            try {
+                closeResp = adapter.placeOrder(account.getAccessToken(), closeReq);
+            } catch (Exception e) {
+                log.error("Square-off placement failed for {} {} (attempt {}): {}", legKey, symbol, attempt, e.getMessage());
+                addLog("EXEC", "SQUARE_OFF_FAILED", legKey + " " + symbol + " attempt " + attempt + ": " + e.getMessage());
+                continue;
+            }
+            if (!closeResp.isSuccess() || closeResp.orderId() == null || closeResp.orderId().isBlank()) {
+                addLog("EXEC", "SQUARE_OFF_FAILED", legKey + " " + symbol + " attempt " + attempt + ": " + closeResp.message());
+                continue;
+            }
+            String status = closeResp.status();
+            for (int poll = 0; poll < 10 && !isCompleteStatus(status) && !isFailureStatus(status); poll++) {
+                try { Thread.sleep(1000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                String latest = adapter.getOrderStatus(account.getAccessToken(), closeResp.orderId());
+                if (latest != null && !latest.isBlank() && !"UNKNOWN".equalsIgnoreCase(latest)) status = latest;
+            }
+            if (isCompleteStatus(status)) {
+                addLog("EXEC", "SQUARE_OFF", legKey + " " + symbol + " -> " + closeSide + " CONFIRMED FILLED");
+                return true;
+            }
+            addLog("EXEC", "SQUARE_OFF_UNCONFIRMED", legKey + " " + symbol + " attempt " + attempt + " ended status=" + status);
+        }
+        log.error("CRITICAL: square-off for {} {} did NOT confirm a fill after 2 attempts -- naked exposure, needs manual intervention", legKey, symbol);
+        addLog("EXEC", "SQUARE_OFF_CRITICAL", legKey + " " + symbol + " -- NOT CONFIRMED CLOSED after 2 attempts. MANUAL INTERVENTION NEEDED.");
+        return false;
+    }
+
     private void cancelPendingLegs(BrokerAccount account, BrokerAdapter adapter, List<PlacedLeg> legs) {
         for (PlacedLeg leg : legs) {
             if (leg.orderId == null || leg.orderId.isBlank() || isCompleteStatus(leg.status)) {
@@ -1426,29 +1452,23 @@ public class OptionArbAutoExecService {
         }
     }
 
-    private void squareOffFilledLegs(BrokerAccount account, BrokerAdapter adapter, List<PlacedLeg> legs) {
+    /**
+     * @return true only if every leg's closing order was confirmed FILLED, not just accepted.
+     * Deliberately attempts to close every leg passed in regardless of its last-known status
+     * (callers sometimes pass legs whose status hasn't been polled to a final value yet) --
+     * closing an order that never actually filled just gets rejected by the broker as "no
+     * position", which is harmless; skipping a leg that WAS filled because of a stale status
+     * read would leave real naked exposure, which is not.
+     */
+    private boolean squareOffFilledLegs(BrokerAccount account, BrokerAdapter adapter, List<PlacedLeg> legs) {
+        boolean allConfirmed = true;
         for (PlacedLeg leg : legs) {
             BrokerOrderRequest.Side closeSide = leg.leg.side() == BrokerOrderRequest.Side.BUY
                     ? BrokerOrderRequest.Side.SELL
                     : BrokerOrderRequest.Side.BUY;
-            BrokerOrderRequest closeReq = BrokerOrderRequest.builder()
-                    .symbol(leg.leg.symbol())
-                    .exchange("NFO")
-                    .side(closeSide)
-                    .quantity(leg.leg.quantity())
-                    .price(0.0)
-                    .orderType(BrokerOrderRequest.OrderType.MARKET)
-                    .productType("MIS")
-                    .build();
-            try {
-                BrokerOrderResponse closeResp = adapter.placeOrder(account.getAccessToken(), closeReq);
-                addLog("EXEC", "SQUARE_OFF", leg.leg.legKey() + " " + leg.leg.symbol() + " -> "
-                        + closeSide + " [" + closeResp.status() + "]");
-            } catch (Exception e) {
-                log.error("Failed to square off {} {}: {}", leg.leg.legKey(), leg.leg.symbol(), e.getMessage());
-                addLog("EXEC", "SQUARE_OFF_FAILED", leg.leg.legKey() + " " + leg.leg.symbol() + ": " + e.getMessage());
-            }
+            allConfirmed &= placeAndVerifyCloseOrder(account, adapter, leg.leg.symbol(), closeSide, leg.leg.quantity(), leg.leg.legKey());
         }
+        return allConfirmed;
     }
 
     private boolean isCompleteStatus(String status) {
