@@ -872,6 +872,7 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
 function LivePositionsSection({ executionBroker }) {
   const [collapsed, setCollapsed] = useState(true);
   const [rollingId, setRollingId] = useState(null);
+  const [expandedPosId, setExpandedPosId] = useState(null);
   // Defaults to whatever mode the Execution Broker dropdown is currently in, so switching
   // to a live broker doesn't leave old paper positions looking like they might be real --
   // "Live Positions" was showing paper trades with no way to tell them apart or filter
@@ -998,8 +999,12 @@ function LivePositionsSection({ executionBroker }) {
                   const pnl = p.currentPnl || 0;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
+                  const canShowPayoff = p.strategyType === 'BUTTERFLY_SPREAD' && Array.isArray(p.legList) && p.legList.length >= 3;
+                  const isExpanded = expandedPosId === p.id;
                   return (
-                    <tr key={p.id} className={`hover:bg-slate-50 ${captured >= 90 ? 'bg-amber-50' : ''}`}>
+                    <React.Fragment key={p.id}>
+                    <tr onClick={() => canShowPayoff && setExpandedPosId(isExpanded ? null : p.id)}
+                      className={`hover:bg-slate-50 ${captured >= 90 ? 'bg-amber-50' : ''} ${canShowPayoff ? 'cursor-pointer' : ''} ${isExpanded ? 'bg-fuchsia-50/60' : ''}`}>
                       <td className="px-3 py-2 font-mono text-[10px] text-slate-600">{fmtTime(p.enteredAt)}</td>
                       <td className="px-3 py-2">
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${p.broker === 'PAPER' || !p.broker ? 'bg-slate-100 text-slate-500 border-slate-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
@@ -1052,6 +1057,17 @@ function LivePositionsSection({ executionBroker }) {
                       </td>
                       <td className="px-3 py-2 text-[9px] text-red-600 max-w-[200px] truncate">{p.errorMessage || '--'}</td>
                     </tr>
+                    {isExpanded && canShowPayoff && (
+                      <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
+                        <td colSpan={15} className="p-3">
+                          <div className="bg-white rounded-xl p-3 border border-fuchsia-200 shadow-md space-y-2">
+                            <span className="font-bold text-slate-800 text-xs uppercase block">Open Position Payoff -- {p.underlying} {p.action}:</span>
+                            <ArbitrageSignalPayoffChart opp={p} />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
