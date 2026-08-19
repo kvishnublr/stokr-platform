@@ -3006,6 +3006,8 @@ function ArbitrageSignalPayoffChart({ opp }) {
   const optionType = opp.action && opp.action.toUpperCase().includes('PE') ? 'PE' : 'CE';
   const hasLegs = Array.isArray(opp.legList) && opp.legList.length >= 3;
 
+  const lotSize = Number(opp.lotSize) > 0 ? Number(opp.lotSize) : 1;
+
   const chart = useMemo(() => {
     if (!strikeMatch || !hasLegs) return null;
     const k1 = Number(strikeMatch[1]), k2 = Number(strikeMatch[2]), k3 = Number(strikeMatch[3]);
@@ -3028,18 +3030,32 @@ function ArbitrageSignalPayoffChart({ opp }) {
       points.push({ x, y: pnl });
       minY = Math.min(minY, pnl); maxY = Math.max(maxY, pnl);
     }
-    return { points, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0), k1, k2, k3, cost };
+    // Breakeven(s): where the payoff line crosses zero, found by scanning for sign changes
+    // and linearly interpolating -- matches AlgoTest's "Breakeven" figures for a direct check.
+    const breakevens = [];
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      if ((a.y < 0 && b.y >= 0) || (a.y >= 0 && b.y < 0)) {
+        const t = a.y === b.y ? 0 : (0 - a.y) / (b.y - a.y);
+        breakevens.push(a.x + t * (b.x - a.x));
+      }
+    }
+    return { points, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0), k1, k2, k3, cost, breakevens };
   }, [strikeMatch?.[0], hasLegs, opp.legList, optionType]);
 
   if (!chart) return null;
 
-  const CHART_W = 600, CHART_H = 190, PAD_TOP = 20, PAD_BOTTOM = 26;
+  const CHART_W = 600, CHART_H = 190, PAD_TOP = 20, PAD_BOTTOM = 26, PAD_LEFT = 54;
   const plotH = CHART_H - PAD_TOP - PAD_BOTTOM;
-  const xToPx = (x) => ((x - chart.lo) / (chart.hi - chart.lo)) * CHART_W;
+  const plotW = CHART_W - PAD_LEFT;
+  const xToPx = (x) => PAD_LEFT + ((x - chart.lo) / (chart.hi - chart.lo)) * plotW;
   const yToPx = (y) => PAD_TOP + plotH - ((y - chart.minY) / ((chart.maxY - chart.minY) || 1)) * plotH;
-  const pxToX = (px) => chart.lo + (px / CHART_W) * (chart.hi - chart.lo);
+  const pxToX = (px) => chart.lo + ((px - PAD_LEFT) / plotW) * (chart.hi - chart.lo);
   const zeroPx = yToPx(0);
   const spot = opp.spotPrice || chart.k2;
+  const maxProfitPerShare = chart.maxY;
+  const maxLossPerShare = chart.minY;
+  const yTicks = [chart.minY, chart.minY + (chart.maxY - chart.minY) * 0.5, chart.maxY];
   const areaPath = (() => {
     const pts = chart.points.map(p => `${xToPx(p.x)},${yToPx(p.y)}`).join(' L ');
     return `M ${xToPx(chart.points[0].x)},${zeroPx} L ${pts} L ${xToPx(chart.points[chart.points.length - 1].x)},${zeroPx} Z`;
@@ -3056,10 +3072,32 @@ function ArbitrageSignalPayoffChart({ opp }) {
     setHover({ px: xToPx(pt.x), py: yToPx(pt.y), price: pt.x, pnl: pt.y });
   };
 
+  const totalMax = maxProfitPerShare * lotSize;
+  const totalMin = maxLossPerShare * lotSize;
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-3">
-      <div className="text-[10px] font-black text-slate-500 uppercase mb-1">
-        Payoff at Expiry (₹ per share) — guaranteed by the convexity bound, not a probability estimate
+      <div className="text-[10px] font-black text-slate-500 uppercase mb-2">
+        Payoff at Expiry — guaranteed by the convexity bound, not a probability estimate
+      </div>
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5">
+          <div className="text-[9px] font-bold text-emerald-700 uppercase">Max Profit</div>
+          <div className="text-sm font-black text-emerald-700">₹{Math.round(totalMax).toLocaleString('en-IN')}</div>
+          <div className="text-[9px] text-emerald-600">₹{maxProfitPerShare.toFixed(2)}/share × {lotSize}</div>
+        </div>
+        <div className="bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
+          <div className="text-[9px] font-bold text-red-700 uppercase">Max Loss</div>
+          <div className="text-sm font-black text-red-700">₹{Math.round(totalMin).toLocaleString('en-IN')}</div>
+          <div className="text-[9px] text-red-600">₹{maxLossPerShare.toFixed(2)}/share × {lotSize}</div>
+        </div>
+        <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1.5">
+          <div className="text-[9px] font-bold text-indigo-700 uppercase">Breakeven</div>
+          <div className="text-sm font-black text-indigo-700">
+            {chart.breakevens.length > 0 ? chart.breakevens.map(b => Math.round(b).toLocaleString('en-IN')).join(' / ') : '--'}
+          </div>
+          <div className="text-[9px] text-indigo-600">cost: ₹{chart.cost.toFixed(2)}/share</div>
+        </div>
       </div>
       <div className="relative overflow-x-auto">
         <svg ref={chartRef} viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-[180px] cursor-crosshair"
@@ -3070,8 +3108,16 @@ function ArbitrageSignalPayoffChart({ opp }) {
               <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
             </linearGradient>
           </defs>
+          {yTicks.map((ty, i) => (
+            <g key={i}>
+              <line x1={PAD_LEFT} y1={yToPx(ty)} x2={CHART_W} y2={yToPx(ty)} stroke="#e2e8f0" strokeWidth="1" />
+              <text x={PAD_LEFT - 6} y={yToPx(ty) + 3} textAnchor="end" fontSize="8" fill="#94a3b8">
+                ₹{Math.round(ty * lotSize).toLocaleString('en-IN')}
+              </text>
+            </g>
+          ))}
           <path d={areaPath} fill="url(#arbPayoffGrad)" />
-          <line x1="0" y1={zeroPx} x2={CHART_W} y2={zeroPx} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4,4" />
+          <line x1={PAD_LEFT} y1={zeroPx} x2={CHART_W} y2={zeroPx} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4,4" />
           <line x1={xToPx(spot)} y1={PAD_TOP} x2={xToPx(spot)} y2={CHART_H - PAD_BOTTOM} stroke="#6366f1" strokeWidth="1.5" strokeDasharray="3,3" />
           <text x={xToPx(spot)} y={PAD_TOP - 6} textAnchor="middle" fontSize="9" fontWeight="700" fill="#6366f1">
             Spot {Math.round(spot).toLocaleString('en-IN')}
@@ -3090,7 +3136,7 @@ function ArbitrageSignalPayoffChart({ opp }) {
         <span className="text-slate-400">{Math.round(chart.lo).toLocaleString('en-IN')}</span>
         {hover ? (
           <span className="font-bold">
-            @ {Math.round(hover.price).toLocaleString('en-IN')}: <span className={hover.pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}>{hover.pnl >= 0 ? '+' : ''}₹{hover.pnl.toFixed(2)}/share</span>
+            @ {Math.round(hover.price).toLocaleString('en-IN')}: <span className={hover.pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}>{hover.pnl >= 0 ? '+' : ''}₹{Math.round(hover.pnl * lotSize).toLocaleString('en-IN')} ({hover.pnl >= 0 ? '+' : ''}₹{hover.pnl.toFixed(2)}/share)</span>
           </span>
         ) : (
           <span className="text-slate-400">hover to inspect any settlement price</span>

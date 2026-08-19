@@ -373,6 +373,7 @@ public class ButterflySpreadService {
         costs.put("netEdge", Math.round(netEdge * 100.0) / 100.0);
         opp.costBreakdown = costs;
         opp.legList = legList;
+        opp.lotSize = lotSize;
 
         opps.add(opp);
     }
