@@ -1129,9 +1129,9 @@ public class OptionArbAutoExecService {
                                           int lots, Long userId, List<Map<String, Object>> rawLegs) {
         int lotSize = getLotSize(opp.getUnderlying());
 
-        // Scanners compute edgeAfterCosts for exactly 1 lot's quantity (grossEdge = edgePoints *
-        // lotSize, no `lots` multiplier) -- matches the legacy executor's targetEdge convention
-        // (per-lot edge, compared against per-lot P&L in checkRollover), so it's usable as-is.
+        // Placeholder for FAILED/PARTIAL outcomes below, where no real fill price exists to
+        // compute from -- overwritten with a real fill-price-based figure once legs actually
+        // fill (see realTargetEdge further down).
         double targetEdge = opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0;
 
         LivePosition position = LivePosition.builder()
@@ -1218,17 +1218,37 @@ public class OptionArbAutoExecService {
 
             position.setStatus("OPEN");
             position.setLegs(buildLegsJson(pairs, placedLegs));
-            double entryCost = pairs.stream().mapToDouble(p -> {
+            double costPerShare = pairs.stream().mapToDouble(p -> {
                 double price = p.spec().get("price") instanceof Number n ? n.doubleValue() : 0;
                 int qtyMult = p.spec().get("qty") instanceof Number n ? n.intValue() : 1;
                 boolean isBuy = p.planned().side() == BrokerOrderRequest.Side.BUY;
                 return (isBuy ? price : -price) * qtyMult;
-            }).sum() * lotSize * lots;
+            }).sum();
+            double entryCost = costPerShare * lotSize * lots;
             position.setEntryCost(BigDecimal.valueOf(Math.abs(entryCost)));
+
+            // Target edge at detection time (opp.edgeAfterCosts) reflects the quotes the
+            // scanner saw when it FOUND the signal, not what actually got filled -- by
+            // execution time the book can have moved (or the order can even AMO-queue for
+            // hours), so the "edge" that was real at detection may have partly or fully
+            // evaporated, or moved further in the other direction. Recompute from the real
+            // filled-request prices instead: for any of these bound-violation structures
+            // (Vertical/Butterfly/Condor/Box), payoff at expiry is bounded between 0 and the
+            // strike width, so (width - cost) is the real best-case per-lot profit given what
+            // was actually paid -- this is what the payoff chart's Max Profit already shows,
+            // now the auto-exit/stop-loss threshold and Edge Progress % match it instead of a
+            // stale number from before the order was even placed.
+            int minStrike = pairs.stream().mapToInt(p -> ((Number) p.spec().get("strike")).intValue()).min().orElse(0);
+            int maxStrike = pairs.stream().mapToInt(p -> ((Number) p.spec().get("strike")).intValue()).max().orElse(0);
+            double width = maxStrike - minStrike;
+            double realTargetEdge = (width - costPerShare) * lotSize;
+            position.setTargetEdge(BigDecimal.valueOf(realTargetEdge));
+
             positionRepo.save(position);
 
             addLog("EXEC", "SUCCESS", opp.getUnderlying() + " " + opp.getStrike() + " " + opp.getAction()
-                    + " | Lots=" + lots + " Edge=₹" + String.format("%.0f", opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0)
+                    + " | Lots=" + lots + " Edge=₹" + String.format("%.0f", realTargetEdge)
+                    + " (detection-time was ₹" + String.format("%.0f", opp.getEdgeAfterCosts() != null ? opp.getEdgeAfterCosts().doubleValue() : 0) + ")"
                     + " | " + pairs.size() + "-leg spread fully filled");
             return true;
 
