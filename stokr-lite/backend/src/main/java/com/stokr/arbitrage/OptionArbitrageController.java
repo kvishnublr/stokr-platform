@@ -1393,6 +1393,15 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(result);
     }
 
+    @PostMapping("/positions/{positionId}/exit")
+    public ResponseEntity<Map<String, Object>> exitPosition(@PathVariable Long positionId) {
+        Map<String, Object> result = autoExecService.manualExitPosition(positionId);
+        if ("ERROR".equals(result.get("status"))) {
+            return ResponseEntity.badRequest().body(result);
+        }
+        return ResponseEntity.ok(result);
+    }
+
     @GetMapping("/paper-trades")
     public ResponseEntity<Map<String, Object>> getPaperTrades(
             @RequestParam(required = false) String status,

@@ -872,6 +872,7 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
 function LivePositionsSection({ executionBroker }) {
   const [collapsed, setCollapsed] = useState(true);
   const [rollingId, setRollingId] = useState(null);
+  const [closingId, setClosingId] = useState(null);
   const [expandedPosId, setExpandedPosId] = useState(null);
   // Defaults to whatever mode the Execution Broker dropdown is currently in, so switching
   // to a live broker doesn't leave old paper positions looking like they might be real --
@@ -915,6 +916,21 @@ function LivePositionsSection({ executionBroker }) {
       alert(`❌ Failed: ${e.response?.data?.error || e.message}`);
     } finally {
       setRollingId(null);
+    }
+  };
+
+  const handleClosePosition = async (positionId, underlying, strike, broker) => {
+    const brokerLabel = broker === 'PAPER' || !broker ? 'PAPER' : broker;
+    if (!window.confirm(`Close ${underlying} ${strike} (${brokerLabel})?\n\nThis places market closing orders for every leg right now.`)) return;
+    setClosingId(positionId);
+    try {
+      const res = await client.post(`/option-arbitrage/positions/${positionId}/exit`);
+      alert(`✅ Closed! P&L: ₹${res.data.pnl}`);
+      refetch();
+    } catch (e) {
+      alert(`❌ Failed: ${e.response?.data?.message || e.response?.data?.error || e.message}`);
+    } finally {
+      setClosingId(null);
     }
   };
 
@@ -991,6 +1007,7 @@ function LivePositionsSection({ executionBroker }) {
                   <th className="px-3 py-2 text-right">Lots</th>
                   <th className="px-3 py-2 text-center">Status</th>
                   <th className="px-3 py-2 text-center">Rollover</th>
+                  <th className="px-3 py-2 text-center">Close</th>
                   <th className="px-3 py-2 text-center">Error</th>
                 </tr>
               </thead>
@@ -1015,7 +1032,15 @@ function LivePositionsSection({ executionBroker }) {
                       <td className="px-3 py-2 font-bold text-slate-700">{p.strike}</td>
                       <td className="px-3 py-2 text-purple-700 font-bold text-[10px]">{p.action?.substring(0, 18)}</td>
                       {p.isMultiLeg ? (
-                        <td colSpan={3} className="px-3 py-2 text-[10px] text-slate-500 font-mono">{p.legList?.length || 0}-leg spread (no futures)</td>
+                        <td colSpan={3} className="px-3 py-2 text-[9px] text-slate-600 font-mono">
+                          {Array.isArray(p.legList) && p.legList.length > 0
+                            ? p.legList.map((leg, i) => (
+                                <span key={i} className={`inline-block mr-2 ${leg.side === 'BUY' ? 'text-emerald-700' : 'text-red-600'}`}>
+                                  {leg.strike}{leg.optionType} {leg.side}@{Number(leg.price || 0).toFixed(1)}
+                                </span>
+                              ))
+                            : `${p.legList?.length || 0}-leg spread (no futures)`}
+                        </td>
                       ) : (
                         <>
                           <td className="px-3 py-2 text-right font-mono">₹{p.ceEntryPrice?.toFixed(1) || '--'}</td>
@@ -1055,11 +1080,26 @@ function LivePositionsSection({ executionBroker }) {
                           </button>
                         )}
                       </td>
+                      <td className="px-3 py-2 text-center">
+                        {p.status === 'OPEN' && (
+                          <button
+                            disabled={closingId === p.id}
+                            onClick={(e) => { e.stopPropagation(); handleClosePosition(p.id, p.underlying, p.strike, p.broker); }}
+                            className={`px-2 py-1 rounded-lg text-[9px] font-bold transition border ${
+                              closingId === p.id
+                                ? 'bg-slate-200 text-slate-500 border-slate-300 cursor-wait'
+                                : 'bg-red-50 text-red-700 border-red-300 hover:bg-red-100 hover:border-red-400'
+                            }`}
+                          >
+                            {closingId === p.id ? '⏳ Closing...' : '✖ Close'}
+                          </button>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-[9px] text-red-600 max-w-[200px] truncate">{p.errorMessage || '--'}</td>
                     </tr>
                     {isExpanded && canShowPayoff && (
                       <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
-                        <td colSpan={15} className="p-3">
+                        <td colSpan={16} className="p-3">
                           <div className="bg-white rounded-xl p-3 border border-fuchsia-200 shadow-md space-y-2">
                             <span className="font-bold text-slate-800 text-xs uppercase block">Open Position Payoff -- {p.underlying} {p.action}:</span>
                             <ArbitrageSignalPayoffChart opp={p} />

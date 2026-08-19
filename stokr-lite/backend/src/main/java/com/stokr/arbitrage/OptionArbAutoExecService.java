@@ -241,6 +241,134 @@ public class OptionArbAutoExecService {
     }
 
     /**
+     * User-initiated close of a single OPEN position (any strategy type, PAPER or live) --
+     * reuses the same square-off + quote-mark-exit-price path the auto-exit/stop-loss loop
+     * already uses, just triggered on demand instead of by a threshold. Uses the position's
+     * own recorded broker (not the global auto-exec broker setting) since a position entered
+     * live must be closed against the broker it was actually opened on.
+     */
+    public Map<String, Object> manualExitPosition(Long positionId) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        LivePosition pos = positionRepo.findById(positionId).orElse(null);
+        if (pos == null) {
+            result.put("status", "ERROR");
+            result.put("message", "Position not found");
+            return result;
+        }
+        if (!"OPEN".equals(pos.getStatus())) {
+            result.put("status", "ERROR");
+            result.put("message", "Position is " + pos.getStatus() + ", not OPEN -- nothing to close");
+            return result;
+        }
+
+        boolean isMultiLeg = pos.getLegs() != null && !pos.getLegs().isEmpty();
+        boolean isPaper = pos.getBroker() == null || "PAPER".equalsIgnoreCase(pos.getBroker());
+
+        List<String> symbols = new ArrayList<>();
+        if (isMultiLeg) {
+            for (Map<String, Object> leg : pos.getLegs()) {
+                Object sym = leg.get("symbol");
+                if (sym instanceof String s) symbols.add(s);
+            }
+        } else {
+            if (pos.getCeSymbol() != null) symbols.add(pos.getCeSymbol());
+            if (pos.getPeSymbol() != null) symbols.add(pos.getPeSymbol());
+            if (pos.getFutSymbol() != null) symbols.add(pos.getFutSymbol());
+        }
+
+        Map<String, OptionChainService.OptionQuote> quotes;
+        try {
+            quotes = symbols.isEmpty() ? Map.of() : optionChainService.fetchQuotes(symbols);
+        } catch (Exception e) {
+            log.warn("Manual exit quote fetch failed for position {}: {}", positionId, e.getMessage());
+            quotes = Map.of();
+        }
+
+        double pnl = isMultiLeg ? computeMultiLegPnl(pos, quotes) : computePnl(pos, quotes);
+
+        double ceCurrent = 0, peCurrent = 0, futCurrent = 0;
+        if (!isMultiLeg) {
+            if (pos.getCeSymbol() != null && quotes.containsKey(pos.getCeSymbol())) ceCurrent = quotes.get(pos.getCeSymbol()).lastPrice;
+            if (pos.getPeSymbol() != null && quotes.containsKey(pos.getPeSymbol())) peCurrent = quotes.get(pos.getPeSymbol()).lastPrice;
+            if (pos.getFutSymbol() != null && quotes.containsKey(pos.getFutSymbol())) futCurrent = quotes.get(pos.getFutSymbol()).lastPrice;
+        }
+
+        boolean squaredOff;
+        if (isPaper) {
+            squaredOff = true;
+            addLog("MANUAL_EXIT", "SQUARED_OFF", pos.getUnderlying() + " " + pos.getStrike()
+                    + " — PAPER mode, closing at market price (P&L ₹" + String.format("%.0f", pnl) + ")");
+        } else {
+            try {
+                Long userId = brokerAccountRepo.findByStatus("ACTIVE").stream()
+                        .findFirst().map(BrokerAccount::getUserId).orElse(null);
+                List<BrokerAccount> accounts = userId != null
+                        ? brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(userId, pos.getBroker(), "ACTIVE")
+                        : List.of();
+                if (accounts.isEmpty()) {
+                    result.put("status", "ERROR");
+                    result.put("message", "No active " + pos.getBroker() + " account found -- cannot place closing orders");
+                    return result;
+                }
+                BrokerAccount account = accounts.get(0);
+                BrokerAdapter adapter = brokerService.getAdapter(pos.getBroker());
+                squaredOff = isMultiLeg ? squareOffMultiLegPosition(account, adapter, pos) : squareOffPosition(account, adapter, pos);
+            } catch (Exception e) {
+                result.put("status", "ERROR");
+                result.put("message", "Broker close failed: " + e.getMessage());
+                return result;
+            }
+        }
+
+        if (!squaredOff) {
+            addLog("MANUAL_EXIT", "SQUAREOFF_FAILED", "Failed to square off " + pos.getUnderlying() + " " + pos.getStrike());
+            result.put("status", "ERROR");
+            result.put("message", "Broker rejected one or more closing orders -- check Auto-Exec logs for the per-leg reason");
+            return result;
+        }
+
+        pos.setStatus("CLOSED");
+        pos.setExitedAt(LocalDateTime.now());
+        pos.setCurrentPnl(BigDecimal.valueOf(pnl));
+        if (isMultiLeg) {
+            List<Map<String, Object>> legs = pos.getLegs();
+            for (Map<String, Object> leg : legs) {
+                String symbol = (String) leg.get("symbol");
+                if (symbol != null && quotes.containsKey(symbol)) {
+                    leg.put("exitPrice", quotes.get(symbol).lastPrice);
+                }
+            }
+            pos.setLegs(legs);
+        } else {
+            pos.setCeExitPrice(BigDecimal.valueOf(ceCurrent));
+            pos.setPeExitPrice(BigDecimal.valueOf(peCurrent));
+            pos.setFutExitPrice(BigDecimal.valueOf(futCurrent));
+        }
+        positionRepo.save(pos);
+
+        if (pos.getOpportunityId() != null) {
+            try {
+                oppRepo.findById(pos.getOpportunityId()).ifPresent(oppEntity -> {
+                    oppEntity.setStatus("EXITED");
+                    oppEntity.setExitTime(LocalDateTime.now());
+                    oppEntity.setPnlAfterCosts(pos.getCurrentPnl());
+                    oppRepo.save(oppEntity);
+                });
+            } catch (Exception e) {
+                log.debug("Manual exit: opportunity update failed for {}: {}", pos.getOpportunityId(), e.getMessage());
+            }
+        }
+
+        addLog("MANUAL_EXIT", "SUCCESS", pos.getUnderlying() + " " + pos.getStrike() + " " + pos.getAction()
+                + " closed manually | P&L ₹" + String.format("%.0f", pnl));
+
+        result.put("status", "SUCCESS");
+        result.put("pnl", Math.round(pnl));
+        result.put("message", pos.getUnderlying() + " " + pos.getStrike() + " closed | P&L ₹" + Math.round(pnl));
+        return result;
+    }
+
+    /**
      * IMMEDIATE: called right after scan saves new opportunities.
      * Evaluates each new signal against thresholds and executes instantly.
      */
