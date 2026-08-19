@@ -1684,6 +1684,11 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                              statusStr === 'EXPIRED' ? '⏰ EXPIRED' : statusStr === 'MISSED' ? '⚪ MISSED' :
                              statusStr === 'FAILED' ? '❌ FAILED' : statusStr}
                           </span>
+                          {opp.existingOpenPosition && (
+                            <span className="block mt-1 px-1.5 py-0.2 rounded-full text-[8px] font-bold border bg-amber-100 text-amber-800 border-amber-300" title={`You already hold an OPEN ${opp.existingPositionBroker || 'PAPER'} position for this signal`}>
+                              📌 Already holding
+                            </span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold">
                           {pnlDisplay != null && !isNaN(pnlDisplay)
@@ -1703,6 +1708,11 @@ function BidParityView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                           <td colSpan={12} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-amber-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">Bid Parity Leg Breakdown:</span>
+                              {opp.existingOpenPosition && (
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                </p>
+                              )}
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || `BUY ${opp.strike} CE @ ${ceVal} | SELL ${opp.strike} PE @ ${peVal} | ${opp.action}`}</p>
                               {opp.costBreakdown && (
                                 <div className="text-[10px] font-mono text-slate-600 grid grid-cols-4 gap-1">
@@ -1985,6 +1995,11 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                           }`}>
                             {isLive ? '🟢 RUNNING' : isExited ? '⏹ EXITED' : statusStr === 'EXPIRED' ? '⏰ EXPIRED' : statusStr}
                           </span>
+                          {opp.existingOpenPosition && (
+                            <span className="block mt-1 px-1.5 py-0.2 rounded-full text-[8px] font-bold border bg-amber-100 text-amber-800 border-amber-300" title={`You already hold an OPEN ${opp.existingPositionBroker || 'PAPER'} position for this signal`}>
+                              📌 Already holding
+                            </span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold">
                           {pnlDisplay != null && !isNaN(pnlDisplay)
@@ -2004,6 +2019,11 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                           <td colSpan={11} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-purple-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">4-Leg Box Spread Breakdown:</span>
+                              {opp.existingOpenPosition && (
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                </p>
+                              )}
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || 'BUY CE1 | SELL PE1 | SELL CE2 | BUY PE2'}</p>
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-purple-600 text-white rounded-lg text-xs font-bold shadow-md">
@@ -2350,6 +2370,11 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
                           }`}>
                             {isLive ? '🟢 RUNNING' : isExited ? '⏹ EXITED' : statusStr === 'EXPIRED' ? '⏰ EXPIRED' : statusStr}
                           </span>
+                          {opp.existingOpenPosition && (
+                            <span className="block mt-1 px-1.5 py-0.2 rounded-full text-[8px] font-bold border bg-amber-100 text-amber-800 border-amber-300" title={`You already hold an OPEN ${opp.existingPositionBroker || 'PAPER'} position for this signal`}>
+                              📌 Already holding
+                            </span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold">
                           {pnlDisplay != null && !isNaN(pnlDisplay)
@@ -2369,6 +2394,11 @@ function VerticalSpreadView({ handleExecuteInline, executionBroker }) {
                           <td colSpan={9} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-teal-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">Vertical Spread Breakdown:</span>
+                              {opp.existingOpenPosition && (
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                </p>
+                              )}
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
                               <p className="text-[10px] text-slate-500">{opp.description}</p>
                               <div className="flex justify-end pt-1">
@@ -3223,6 +3253,11 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
                           }`}>
                             {isLive ? '🟢 RUNNING' : isExited ? '⏹ EXITED' : statusStr === 'EXPIRED' ? '⏰ EXPIRED' : statusStr}
                           </span>
+                          {opp.existingOpenPosition && (
+                            <span className="block mt-1 px-1.5 py-0.2 rounded-full text-[8px] font-bold border bg-amber-100 text-amber-800 border-amber-300" title={`You already hold an OPEN ${opp.existingPositionBroker || 'PAPER'} position for this signal`}>
+                              📌 Already holding
+                            </span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold">
                           {pnlDisplay != null && !isNaN(pnlDisplay)
@@ -3242,6 +3277,11 @@ function ButterflySpreadView({ handleExecuteInline, executionBroker }) {
                           <td colSpan={9} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-fuchsia-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">Butterfly Spread Breakdown:</span>
+                              {opp.existingOpenPosition && (
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                </p>
+                              )}
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
                               <p className="text-[10px] text-slate-500">{opp.description}</p>
                               <ArbitrageSignalPayoffChart opp={opp} />
@@ -3923,6 +3963,11 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
                           }`}>
                             {isLive ? '🟢 RUNNING' : isExited ? '⏹ EXITED' : statusStr === 'EXPIRED' ? '⏰ EXPIRED' : statusStr}
                           </span>
+                          {opp.existingOpenPosition && (
+                            <span className="block mt-1 px-1.5 py-0.2 rounded-full text-[8px] font-bold border bg-amber-100 text-amber-800 border-amber-300" title={`You already hold an OPEN ${opp.existingPositionBroker || 'PAPER'} position for this signal`}>
+                              📌 Already holding
+                            </span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono font-bold">
                           {pnlDisplay != null && !isNaN(pnlDisplay)
@@ -3942,6 +3987,11 @@ function CondorSpreadView({ handleExecuteInline, executionBroker }) {
                           <td colSpan={9} className="p-3">
                             <div className="bg-white rounded-xl p-3 border border-cyan-200 shadow-md space-y-2">
                               <span className="font-bold text-slate-800 text-xs uppercase block">Condor Spread Breakdown:</span>
+                              {opp.existingOpenPosition && (
+                                <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                                  📌 You already have an OPEN {opp.existingPositionBroker || 'PAPER'} position for this exact signal. Trading again will open an additional position, not add to or replace the existing one.
+                                </p>
+                              )}
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || '—'}</p>
                               <p className="text-[10px] text-slate-500">{opp.description}</p>
                               <div className="flex justify-end pt-1">

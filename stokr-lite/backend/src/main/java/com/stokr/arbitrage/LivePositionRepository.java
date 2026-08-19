@@ -47,4 +47,10 @@ public interface LivePositionRepository extends JpaRepository<LivePosition, Long
 
     @Query("SELECT p FROM LivePosition p WHERE p.status = :status ORDER BY p.enteredAt DESC")
     List<LivePosition> findByStatusExact(@Param("status") String status);
+
+    /** Open positions (any broker, including PAPER) for a batch of opportunity ids -- used to
+     *  warn "you already hold this" on a signal without blocking re-entry (Trade must always
+     *  still reach the broker per product decision). */
+    @Query("SELECT p FROM LivePosition p WHERE p.status = 'OPEN' AND p.opportunityId IN :opportunityIds")
+    List<LivePosition> findOpenByOpportunityIdIn(@Param("opportunityIds") List<Long> opportunityIds);
 }

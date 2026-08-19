@@ -93,6 +93,29 @@ public class OptionArbitrageController {
         addAuditLog("SYSTEM", "INFO", "Option Arbitrage Engine initialized. Ready for scanning.");
     }
 
+    /** Marks each opportunity map with whether an OPEN position (paper or live) already exists
+     *  for it, so the UI can warn "you already hold this" -- without blocking re-entry, since
+     *  the manual Trade button must always still reach the broker. */
+    private void markExistingPositions(List<Map<String, Object>> opps) {
+        if (opps == null || opps.isEmpty()) return;
+        List<Long> ids = opps.stream()
+                .map(m -> m.get("id"))
+                .filter(id -> id instanceof Number)
+                .map(id -> ((Number) id).longValue())
+                .collect(Collectors.toList());
+        if (ids.isEmpty()) return;
+        Map<Long, String> openBrokerByOppId = livePositionRepo.findOpenByOpportunityIdIn(ids).stream()
+                .collect(Collectors.toMap(LivePosition::getOpportunityId, p -> p.getBroker() != null ? p.getBroker() : "PAPER",
+                        (a, b) -> b));
+        for (Map<String, Object> m : opps) {
+            Object idObj = m.get("id");
+            if (!(idObj instanceof Number)) continue;
+            String existingBroker = openBrokerByOppId.get(((Number) idObj).longValue());
+            m.put("existingOpenPosition", existingBroker != null);
+            if (existingBroker != null) m.put("existingPositionBroker", existingBroker);
+        }
+    }
+
     private void addAuditLog(String type, String status, String message) {
         Map<String, Object> logEntry = new LinkedHashMap<>();
         logEntry.put("id", System.currentTimeMillis());
@@ -177,6 +200,7 @@ public class OptionArbitrageController {
         if (opps != null && !opps.isEmpty()) {
             try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from bid-parity scan failed: {}", e.getMessage()); }
         }
+        markExistingPositions(opps);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
@@ -204,6 +228,7 @@ public class OptionArbitrageController {
         if (opps != null && !opps.isEmpty()) {
             try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from box-spread scan failed: {}", e.getMessage()); }
         }
+        markExistingPositions(opps);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
@@ -257,6 +282,7 @@ public class OptionArbitrageController {
         if (opps != null && !opps.isEmpty()) {
             try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from vertical-spread scan failed: {}", e.getMessage()); }
         }
+        markExistingPositions(opps);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
@@ -310,6 +336,7 @@ public class OptionArbitrageController {
         if (opps != null && !opps.isEmpty()) {
             try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from butterfly-spread scan failed: {}", e.getMessage()); }
         }
+        markExistingPositions(opps);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
@@ -363,6 +390,7 @@ public class OptionArbitrageController {
         if (opps != null && !opps.isEmpty()) {
             try { autoExecService.evaluateAndExecuteFromMaps(opps); } catch (Exception e) { log.debug("Auto-exec from condor-spread scan failed: {}", e.getMessage()); }
         }
+        markExistingPositions(opps);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("timestamp", System.currentTimeMillis());
         resp.put("underlying", underlying);
