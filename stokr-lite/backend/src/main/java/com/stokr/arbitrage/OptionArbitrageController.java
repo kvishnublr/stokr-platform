@@ -39,6 +39,8 @@ public class OptionArbitrageController {
     private final com.stokr.delivery.CashExecutionService cashExecutionService;
     private final AutoRollService autoRollService;
     private final CandidateSnapshotRepository candidateSnapshotRepo;
+    private final com.stokr.broker.BrokerAccountRepository brokerAccountRepo;
+    private final com.stokr.broker.BrokerService brokerService;
 
     private final Map<String, Object> autoExecSettings = new ConcurrentHashMap<>();
     private final List<Map<String, Object>> auditLogs = Collections.synchronizedList(new ArrayList<>());
@@ -58,7 +60,9 @@ public class OptionArbitrageController {
                                      com.stokr.delivery.CashScannerService cashScannerService,
                                      com.stokr.delivery.CashExecutionService cashExecutionService,
                                      AutoRollService autoRollService,
-                                     CandidateSnapshotRepository candidateSnapshotRepo) {
+                                     CandidateSnapshotRepository candidateSnapshotRepo,
+                                     com.stokr.broker.BrokerAccountRepository brokerAccountRepo,
+                                     com.stokr.broker.BrokerService brokerService) {
         this.optionChainService = optionChainService;
         this.historyService = historyService;
         this.bidParityService = bidParityService;
@@ -75,6 +79,8 @@ public class OptionArbitrageController {
         this.cashExecutionService = cashExecutionService;
         this.autoRollService = autoRollService;
         this.candidateSnapshotRepo = candidateSnapshotRepo;
+        this.brokerAccountRepo = brokerAccountRepo;
+        this.brokerService = brokerService;
 
         autoExecSettings.put("normalParityEnabled", true);
         autoExecSettings.put("normalEntryEdge", 150.0);
@@ -1285,6 +1291,45 @@ public class OptionArbitrageController {
     @GetMapping("/auto-execute/logs")
     public ResponseEntity<List<Map<String, Object>>> getAuditLogs() {
         return ResponseEntity.ok(autoExecService.getExecLogs());
+    }
+
+    /**
+     * Real positions straight from the broker's own portfolio API -- our own live_positions
+     * table is only as accurate as our order-tracking logic; the user asked for something that
+     * shows exactly what Zerodha itself reports as held, to cross-check against it directly
+     * rather than trust our DB alone.
+     */
+    @GetMapping("/broker-positions")
+    public ResponseEntity<Map<String, Object>> getBrokerPositions(@RequestParam(defaultValue = "ZERODHA") String broker) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        if ("PAPER".equalsIgnoreCase(broker)) {
+            resp.put("broker", broker);
+            resp.put("positions", List.of());
+            resp.put("note", "PAPER has no real broker positions to reconcile against.");
+            return ResponseEntity.ok(resp);
+        }
+        try {
+            List<com.stokr.broker.BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
+            if (accounts.isEmpty()) {
+                resp.put("broker", broker);
+                resp.put("positions", List.of());
+                resp.put("error", "No active " + broker + " account found");
+                return ResponseEntity.ok(resp);
+            }
+            com.stokr.broker.BrokerAccount account = accounts.get(0);
+            com.stokr.broker.BrokerAdapter adapter = brokerService.getAdapter(broker);
+            List<com.stokr.broker.BrokerPosition> positions = adapter.getPositions(account.getAccessToken());
+            resp.put("broker", broker);
+            resp.put("positions", positions);
+            resp.put("count", positions.size());
+            resp.put("fetchedAt", System.currentTimeMillis());
+        } catch (Exception e) {
+            log.warn("Broker positions fetch failed for {}: {}", broker, e.getMessage());
+            resp.put("broker", broker);
+            resp.put("positions", List.of());
+            resp.put("error", "Fetch failed: " + e.getMessage());
+        }
+        return ResponseEntity.ok(resp);
     }
 
     @GetMapping("/live-positions")

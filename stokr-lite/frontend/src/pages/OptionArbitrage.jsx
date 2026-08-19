@@ -467,6 +467,7 @@ export default function OptionArbitrage() {
 
       {/* Live Positions — always visible */}
       <LivePositionsSection executionBroker={executionBroker} />
+      <BrokerPositionsPanel executionBroker={executionBroker} />
       <CashPositionsSection />
 
       {/* Active Tab View Rendering */}
@@ -1115,6 +1116,93 @@ function LivePositionsSection({ executionBroker }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* Ground-truth reconciliation: shows real positions straight from the broker's own portfolio
+   API, not our DB's live_positions table. Our own tracking can drift from reality (a missed
+   webhook, a race, a bug) -- this is the same view you'd see logging into Zerodha directly,
+   so any mismatch between this and the Live Positions table above is visible immediately
+   instead of discovered by surprise later. */
+function BrokerPositionsPanel({ executionBroker }) {
+  const [collapsed, setCollapsed] = useState(true);
+  const broker = executionBroker && executionBroker !== 'PAPER' ? executionBroker : 'ZERODHA';
+
+  const { data, refetch, isFetching } = useQuery({
+    queryKey: ['brokerPositions', broker],
+    queryFn: async () => {
+      const res = await client.get('/option-arbitrage/broker-positions', { params: { broker } });
+      return res.data;
+    },
+    refetchInterval: 5000,
+    staleTime: 2000,
+  });
+
+  const positions = data?.positions || [];
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 bg-gradient-to-r from-orange-900 to-red-950 flex items-center justify-between cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-lg">🏦</span>
+          <h3 className="text-sm font-black text-white">{broker} Broker Positions (Ground Truth)</h3>
+          <span className="px-2 py-0.5 bg-orange-500/20 text-orange-300 text-[10px] font-bold rounded-full">{positions.length}</span>
+          <span className="px-2 py-0.5 bg-white/10 text-white/60 text-[9px] font-bold rounded-full">5s tick</span>
+          {data?.error && (
+            <span className="px-2 py-0.5 bg-red-500/30 text-red-200 text-[10px] font-bold rounded-full">{data.error}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition">
+            {isFetching ? '...' : 'Refresh'}
+          </button>
+          <span className="text-white/60 text-xs">{collapsed ? '▼' : '▲'}</span>
+        </div>
+      </div>
+
+      {!collapsed && positions.length === 0 && !data?.error && (
+        <div className="p-8 text-center text-slate-400 text-sm font-semibold">No open positions at {broker} right now</div>
+      )}
+
+      {!collapsed && positions.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px] text-left">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-tight font-bold">
+              <tr>
+                <th className="px-3 py-2">Symbol</th>
+                <th className="px-3 py-2">Exchange</th>
+                <th className="px-3 py-2">Product</th>
+                <th className="px-3 py-2 text-right">Qty</th>
+                <th className="px-3 py-2 text-right">Avg Price</th>
+                <th className="px-3 py-2 text-right">Last Price</th>
+                <th className="px-3 py-2 text-right">Unrealized P&amp;L</th>
+                <th className="px-3 py-2 text-right">Realized P&amp;L</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {positions.map((p, i) => (
+                <tr key={i} className="hover:bg-slate-50">
+                  <td className="px-3 py-2 font-bold text-slate-800">{p.symbol}</td>
+                  <td className="px-3 py-2 text-slate-500">{p.exchange}</td>
+                  <td className="px-3 py-2">
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border bg-slate-100 text-slate-600 border-slate-300">{p.productType}</span>
+                  </td>
+                  <td className={`px-3 py-2 text-right font-mono font-bold ${p.quantity >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{p.quantity}</td>
+                  <td className="px-3 py-2 text-right font-mono">₹{Number(p.avgPrice || 0).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right font-mono">₹{Number(p.lastPrice || 0).toFixed(2)}</td>
+                  <td className={`px-3 py-2 text-right font-mono font-bold ${Number(p.unrealizedPnl || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    ₹{Math.round(Number(p.unrealizedPnl || 0)).toLocaleString('en-IN')}
+                  </td>
+                  <td className={`px-3 py-2 text-right font-mono font-bold ${Number(p.realizedPnl || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    ₹{Math.round(Number(p.realizedPnl || 0)).toLocaleString('en-IN')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

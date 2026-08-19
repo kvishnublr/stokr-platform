@@ -170,12 +170,15 @@ public class OptionArbAutoExecService {
         BrokerAccount account;
         BrokerAdapter adapter;
         try {
-            userId = brokerAccountRepo.findByStatus("ACTIVE").stream()
-                    .findFirst().map(BrokerAccount::getUserId).orElse(null);
-            if (userId == null) { result.put("status", "ERROR"); result.put("message", "No active broker account"); return result; }
-            List<BrokerAccount> accounts = brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(userId, broker, "ACTIVE");
+            // Look up the account directly by the broker the caller actually asked to trade
+            // on, instead of guessing a userId from "whichever account is ACTIVE and sorts
+            // first" then hoping THAT user also has the requested broker active -- with
+            // multiple users/brokers active at once that guess can resolve to the wrong user
+            // entirely, producing "No <broker> account found" even when one clearly exists.
+            List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
             if (accounts.isEmpty()) { result.put("status", "ERROR"); result.put("message", "No " + broker + " account found"); return result; }
             account = accounts.get(0);
+            userId = account.getUserId();
             adapter = brokerService.getAdapter(broker);
         } catch (Exception e) {
             result.put("status", "ERROR");
@@ -301,14 +304,22 @@ public class OptionArbAutoExecService {
                     + " — PAPER mode, closing at market price (P&L ₹" + String.format("%.0f", pnl) + ")");
         } else {
             try {
-                Long userId = brokerAccountRepo.findByStatus("ACTIVE").stream()
-                        .findFirst().map(BrokerAccount::getUserId).orElse(null);
+                // The position already knows exactly which user opened it (pos.userId, set at
+                // entry) -- picking "whichever account happens to be ACTIVE and sorts first"
+                // instead was the bug: with multiple users/brokers ACTIVE at once (PAPER for
+                // user 2, ZERODHA for user 1, etc), findFirst() could resolve to a completely
+                // different user than the one who actually holds this position, so the
+                // broker-account lookup for the right broker+user combo came up empty even
+                // though a valid ZERODHA account existed -- just not under the user id this
+                // path guessed. Concrete symptom: closing a real open ZERODHA position failed
+                // with "No active ZERODHA account found" while the account clearly existed.
+                Long userId = pos.getUserId();
                 List<BrokerAccount> accounts = userId != null
                         ? brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(userId, pos.getBroker(), "ACTIVE")
                         : List.of();
                 if (accounts.isEmpty()) {
                     result.put("status", "ERROR");
-                    result.put("message", "No active " + pos.getBroker() + " account found -- cannot place closing orders");
+                    result.put("message", "No active " + pos.getBroker() + " account found for this position's user -- cannot place closing orders");
                     return result;
                 }
                 BrokerAccount account = accounts.get(0);
@@ -424,12 +435,12 @@ public class OptionArbAutoExecService {
         BrokerAccount account;
         BrokerAdapter adapter;
         try {
-            userId = brokerAccountRepo.findByStatus("ACTIVE").stream()
-                    .findFirst().map(BrokerAccount::getUserId).orElse(null);
-            if (userId == null) return;
-            List<BrokerAccount> accounts = brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(userId, broker, "ACTIVE");
+            // See manualExecuteLive's fix for why this looks up by broker name directly
+            // instead of guessing a userId from "whichever account is ACTIVE and sorts first".
+            List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
             if (accounts.isEmpty()) return;
             account = accounts.get(0);
+            userId = account.getUserId();
             adapter = brokerService.getAdapter(broker);
         } catch (Exception e) {
             log.error("Auto-exec: broker setup failed: {}", e.getMessage());
@@ -607,12 +618,10 @@ public class OptionArbAutoExecService {
         BrokerAdapter adapter = null;
         if (!isPaper) {
             try {
-                userId = brokerAccountRepo.findByStatus("ACTIVE").stream()
-                        .findFirst().map(BrokerAccount::getUserId).orElse(null);
-                if (userId == null) return;
-                List<BrokerAccount> accounts = brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(userId, broker, "ACTIVE");
+                List<BrokerAccount> accounts = brokerAccountRepo.findByBrokerNameAndStatus(broker, "ACTIVE");
                 if (accounts.isEmpty()) return;
                 account = accounts.get(0);
+                userId = account.getUserId();
                 adapter = brokerService.getAdapter(broker);
             } catch (Exception e) {
                 log.error("Rollover: broker setup failed: {}", e.getMessage());
@@ -853,11 +862,11 @@ public class OptionArbAutoExecService {
             BrokerAccount account = null;
             BrokerAdapter adapter = null;
             try {
-                Long userId = brokerAccountRepo.findByStatus("ACTIVE").stream()
-                        .findFirst().map(BrokerAccount::getUserId).orElse(null);
-                if (userId == null) { result.put("error", "No active broker account"); return result; }
-                List<BrokerAccount> accounts = brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(userId, broker, "ACTIVE");
-                if (accounts.isEmpty()) { result.put("error", "No " + broker + " account found"); return result; }
+                Long userId = pos.getUserId();
+                List<BrokerAccount> accounts = userId != null
+                        ? brokerAccountRepo.findByUserIdAndBrokerNameAndStatus(userId, broker, "ACTIVE")
+                        : List.of();
+                if (accounts.isEmpty()) { result.put("error", "No " + broker + " account found for this position's user"); return result; }
                 account = accounts.get(0);
                 adapter = brokerService.getAdapter(broker);
             } catch (Exception e) {
@@ -914,7 +923,7 @@ public class OptionArbAutoExecService {
                         .side(leg.side()).quantity(leg.quantity())
                         .price(leg.price())
                         .orderType(BrokerOrderRequest.OrderType.MARKET)
-                        .productType("MIS").build();
+                        .productType("NRML").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
                 if (!resp.isSuccess()) {
                     addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
@@ -946,7 +955,7 @@ public class OptionArbAutoExecService {
                         .side(leg.side()).quantity(leg.quantity())
                         .price(leg.price())
                         .orderType(BrokerOrderRequest.OrderType.MARKET)
-                        .productType("MIS").build();
+                        .productType("NRML").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
                 if (!resp.isSuccess()) {
                     addLog("ROLLOVER", "LEG_FAIL", leg.legKey() + " " + leg.symbol() + ": " + resp.message());
@@ -1050,7 +1059,7 @@ public class OptionArbAutoExecService {
                         .side(side)
                         .quantity(qty).price(price)
                         .orderType(price > 0 ? BrokerOrderRequest.OrderType.LIMIT : BrokerOrderRequest.OrderType.MARKET)
-                        .productType("MIS").build();
+                        .productType("NRML").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1170,7 +1179,7 @@ public class OptionArbAutoExecService {
                         .side(leg.side())
                         .quantity(leg.quantity()).price(leg.price())
                         .orderType(BrokerOrderRequest.OrderType.MARKET)
-                        .productType("MIS").build();
+                        .productType("NRML").build();
                 BrokerOrderResponse resp = adapter.placeOrder(account.getAccessToken(), req);
 
                 if (!resp.isSuccess() || resp.orderId() == null || resp.orderId().isBlank()) {
@@ -1409,7 +1418,7 @@ public class OptionArbAutoExecService {
                     .symbol(symbol).exchange("NFO")
                     .side(closeSide).quantity(qty)
                     .price(0.0).orderType(BrokerOrderRequest.OrderType.MARKET)
-                    .productType("MIS").build();
+                    .productType("NRML").build();
             BrokerOrderResponse closeResp;
             try {
                 closeResp = adapter.placeOrder(account.getAccessToken(), closeReq);
