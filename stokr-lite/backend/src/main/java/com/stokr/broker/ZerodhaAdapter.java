@@ -131,6 +131,16 @@ public class ZerodhaAdapter implements BrokerAdapter {
         }
     }
 
+    /** NSE F&O tick size is Rs0.05 -- a limit price rounded only to paise (e.g. 668.17) gets
+     *  rejected with "Order price is not a multiple of tick size" even though it looks like a
+     *  perfectly normal price. Every limit price sent to Kite must be rounded to this grid. */
+    private static double roundToTick(double price) {
+        // Extra round to 2dp cleans up float noise (0.05 isn't exactly representable in
+        // binary, so price/0.05*0.05 alone can land on 668.1500000000001) which Kite would
+        // otherwise reject the same way as an unrounded price.
+        return Math.round(Math.round(price / 0.05) * 0.05 * 100.0) / 100.0;
+    }
+
     @Override
     public BrokerOrderResponse placeOrder(String accessToken, BrokerOrderRequest request) {
         log.info("Placing Zerodha order: {} {} qty={} price={}", request.side(), request.symbol(), request.quantity(), request.price());
@@ -145,7 +155,7 @@ public class ZerodhaAdapter implements BrokerAdapter {
 
         if (request.price() != null && request.price() > 0) {
             double bufferFactor = request.side() == BrokerOrderRequest.Side.BUY ? 1.0015 : 0.9985;
-            double limitPrice = Math.round(request.price() * bufferFactor * 100.0) / 100.0;
+            double limitPrice = roundToTick(request.price() * bufferFactor);
             form.add("order_type", "LIMIT");
             form.add("price", String.valueOf(limitPrice));
         } else {
@@ -158,7 +168,7 @@ public class ZerodhaAdapter implements BrokerAdapter {
             double ltp = fetchLtp(accessToken, request.exchange() != null ? request.exchange() : "NFO", request.symbol());
             if (ltp > 0) {
                 double bufferFactor = request.side() == BrokerOrderRequest.Side.BUY ? 1.01 : 0.99;
-                double limitPrice = Math.round(ltp * bufferFactor * 100.0) / 100.0;
+                double limitPrice = roundToTick(ltp * bufferFactor);
                 form.add("order_type", "LIMIT");
                 form.add("price", String.valueOf(limitPrice));
             } else {
