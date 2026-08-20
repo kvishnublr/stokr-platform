@@ -3,6 +3,7 @@ package com.stokr.arbitrage;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -30,6 +31,13 @@ public class LivePosition {
     private Integer strike;
     private String action;
     private String strategyType;
+
+    /** Contract expiry this position was actually traded on -- the payoff chart shows this
+     *  now because a user comparing our numbers against another tool (AlgoTest etc) with a
+     *  different expiry selected saw wildly different premiums and assumed a pricing bug,
+     *  when it was really just two different contracts (this platform trades the near WEEKLY
+     *  expiry; the comparison had a monthly-out expiry selected). */
+    private LocalDate expiryDate;
 
     private String ceSymbol;
     private String peSymbol;
@@ -110,6 +118,7 @@ public class LivePosition {
         map.put("strike", strike);
         map.put("action", action);
         map.put("strategyType", strategyType);
+        map.put("expiryDate", expiryDate != null ? expiryDate.toString() : null);
         map.put("ceSymbol", ceSymbol);
         map.put("peSymbol", peSymbol);
         map.put("lots", lots);

@@ -3205,10 +3205,21 @@ function ArbitrageSignalPayoffChart({ opp }) {
   const totalMax = maxProfitPerShare * lotSize;
   const totalMin = maxLossPerShare * lotSize;
 
+  const expiryLabel = opp.expiryDate
+    ? new Date(opp.expiryDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : null;
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-3">
-      <div className="text-[10px] font-black text-slate-500 uppercase mb-2">
-        Payoff at Expiry — guaranteed by the convexity bound, not a probability estimate
+      <div className="flex items-center justify-between flex-wrap gap-1 mb-2">
+        <div className="text-[10px] font-black text-slate-500 uppercase">
+          Payoff at Expiry — guaranteed by the convexity bound, not a probability estimate
+        </div>
+        {expiryLabel && (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-violet-50 text-violet-700 border-violet-200" title="This payoff is priced off THIS contract expiry -- comparing against another tool with a different expiry selected will show different premiums even for identical strikes.">
+            📅 Expiry {expiryLabel}
+          </span>
+        )}
       </div>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5">
