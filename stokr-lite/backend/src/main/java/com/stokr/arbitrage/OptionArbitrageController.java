@@ -1250,6 +1250,111 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(autoExecService.getSettings());
     }
 
+    /**
+     * Per-strategy performance breakdown from ACTUALLY TRADED positions (live_positions), not
+     * from signal-level simulations -- the Arbitrage Signals feed's win-rate counters include
+     * never-traded signals marked to market, which is a different (and more flattering) number
+     * than what real entries and exits produced. This answers "which strategies are actually
+     * carrying their weight", split by paper vs live since mixing them hides whether a
+     * strategy's record survived contact with a real broker.
+     */
+    @GetMapping("/performance")
+    public ResponseEntity<Map<String, Object>> getPerformance(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(defaultValue = "ALL") String mode) {
+
+        List<LivePosition> closed = livePositionRepo.findAllClosed().stream()
+                .filter(p -> p.getCurrentPnl() != null)
+                .filter(p -> {
+                    if ("ALL".equalsIgnoreCase(mode)) return true;
+                    boolean isPaper = p.getBroker() == null || "PAPER".equalsIgnoreCase(p.getBroker());
+                    return "PAPER".equalsIgnoreCase(mode) == isPaper;
+                })
+                .filter(p -> {
+                    if (startDate == null || endDate == null || p.getEnteredAt() == null) return true;
+                    LocalDate d = p.getEnteredAt().toLocalDate();
+                    return !d.isBefore(LocalDate.parse(startDate)) && !d.isAfter(LocalDate.parse(endDate));
+                })
+                .toList();
+
+        Map<String, List<LivePosition>> byStrategy = closed.stream()
+                .collect(Collectors.groupingBy(p -> p.getStrategyType() != null ? p.getStrategyType() : "UNKNOWN"));
+
+        List<Map<String, Object>> strategies = new ArrayList<>();
+        for (Map.Entry<String, List<LivePosition>> e : byStrategy.entrySet()) {
+            strategies.add(summarize(e.getKey(), e.getValue(), true));
+        }
+        strategies.sort((a, b) -> Integer.compare((Integer) b.get("trades"), (Integer) a.get("trades")));
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("strategies", strategies);
+        resp.put("overall", summarize("ALL", closed, false));
+        resp.put("mode", mode);
+        resp.put("note", "Computed from real closed positions only (entered and exited). Never-traded signals are excluded -- their simulated results are not trading performance.");
+        return ResponseEntity.ok(resp);
+    }
+
+    private Map<String, Object> summarize(String label, List<LivePosition> rows, boolean includeUnderlyings) {
+        int trades = rows.size();
+        long wins = rows.stream().filter(p -> p.getCurrentPnl().doubleValue() > 0).count();
+        long losses = rows.stream().filter(p -> p.getCurrentPnl().doubleValue() < 0).count();
+        double total = rows.stream().mapToDouble(p -> p.getCurrentPnl().doubleValue()).sum();
+        double best = rows.stream().mapToDouble(p -> p.getCurrentPnl().doubleValue()).max().orElse(0);
+        double worst = rows.stream().mapToDouble(p -> p.getCurrentPnl().doubleValue()).min().orElse(0);
+
+        // Average win and average loss separately: a strategy can show a strong win rate while
+        // its rare losses dwarf its many small wins, which a single avg-P&L number hides.
+        double avgWin = rows.stream().filter(p -> p.getCurrentPnl().doubleValue() > 0)
+                .mapToDouble(p -> p.getCurrentPnl().doubleValue()).average().orElse(0);
+        double avgLoss = rows.stream().filter(p -> p.getCurrentPnl().doubleValue() < 0)
+                .mapToDouble(p -> p.getCurrentPnl().doubleValue()).average().orElse(0);
+
+        double avgHoldMin = rows.stream()
+                .filter(p -> p.getEnteredAt() != null && p.getExitedAt() != null)
+                .mapToDouble(p -> java.time.Duration.between(p.getEnteredAt(), p.getExitedAt()).toSeconds() / 60.0)
+                .average().orElse(0);
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("strategyType", label);
+        m.put("trades", trades);
+        m.put("wins", (int) wins);
+        m.put("losses", (int) losses);
+        m.put("winRate", trades > 0 ? Math.round(wins * 1000.0 / trades) / 10.0 : 0.0);
+        m.put("totalPnl", Math.round(total));
+        m.put("avgPnl", trades > 0 ? Math.round(total / trades) : 0);
+        m.put("avgWin", Math.round(avgWin));
+        m.put("avgLoss", Math.round(avgLoss));
+        // Expectancy per trade -- the number that actually decides whether repeating this
+        // strategy makes or loses money over time, unlike win rate on its own.
+        m.put("expectancy", trades > 0 ? Math.round(total / trades) : 0);
+        m.put("bestTrade", Math.round(best));
+        m.put("worstTrade", Math.round(worst));
+        m.put("avgHoldMinutes", Math.round(avgHoldMin * 10.0) / 10.0);
+
+        if (includeUnderlyings) {
+            Map<String, List<LivePosition>> byU = rows.stream()
+                    .collect(Collectors.groupingBy(p -> p.getUnderlying() != null ? p.getUnderlying() : "UNKNOWN"));
+            List<Map<String, Object>> uList = new ArrayList<>();
+            for (Map.Entry<String, List<LivePosition>> ue : byU.entrySet()) {
+                List<LivePosition> ur = ue.getValue();
+                double uTotal = ur.stream().mapToDouble(p -> p.getCurrentPnl().doubleValue()).sum();
+                long uWins = ur.stream().filter(p -> p.getCurrentPnl().doubleValue() > 0).count();
+                Map<String, Object> um = new LinkedHashMap<>();
+                um.put("underlying", ue.getKey());
+                um.put("trades", ur.size());
+                um.put("wins", (int) uWins);
+                um.put("winRate", ur.isEmpty() ? 0.0 : Math.round(uWins * 1000.0 / ur.size()) / 10.0);
+                um.put("totalPnl", Math.round(uTotal));
+                um.put("avgPnl", ur.isEmpty() ? 0 : Math.round(uTotal / ur.size()));
+                uList.add(um);
+            }
+            uList.sort((a, b) -> Integer.compare((Integer) b.get("trades"), (Integer) a.get("trades")));
+            m.put("underlyings", uList);
+        }
+        return m;
+    }
+
     @GetMapping("/candidate-history")
     public ResponseEntity<Map<String, Object>> getCandidateHistory(
             @RequestParam String strategyType,
