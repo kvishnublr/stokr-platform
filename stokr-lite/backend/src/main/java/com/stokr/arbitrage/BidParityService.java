@@ -247,12 +247,22 @@ public class BidParityService {
             map.put("description", description);
             map.put("spotPrice", spot);
             map.put("futuresPrice", fut);
+            // Entry price tracked for later P&L must be the side actually achievable at fill
+            // (bid to sell, ask to buy) -- the edge/legs above already use these correctly;
+            // using lastPrice here instead made the tracked "entry" look better than the real
+            // fill (bid <= LTP <= ask), so mark-to-market P&L crossed the edge threshold faster
+            // than a real fill ever could, inflating the apparent win rate on signals that were
+            // never actually traded (see the RUNNING BID_PARITY mark-to-market path in
+            // OptionArbitrageController, which now closes this loop by also marking-to-market
+            // against the correct closing side instead of lastPrice).
+            double ceEntryFill = isConvergent ? ceQuote.bid : ceQuote.ask;
+            double peEntryFill = isConvergent ? peQuote.ask : peQuote.bid;
             map.put("ceBid", ceQuote.bid);
             map.put("ceAsk", ceQuote.ask);
-            map.put("ceEntryPrice", ceQuote.lastPrice);
+            map.put("ceEntryPrice", ceEntryFill);
             map.put("peBid", peQuote.bid);
             map.put("peAsk", peQuote.ask);
-            map.put("peEntryPrice", peQuote.lastPrice);
+            map.put("peEntryPrice", peEntryFill);
             map.put("cePrice", ceQuote.lastPrice);
             map.put("pePrice", peQuote.lastPrice);
             map.put("ceVolume", ceQuote.volume);
@@ -292,8 +302,10 @@ public class BidParityService {
             opp.legs = legs;
             opp.spotPrice = spot;
             opp.futuresPrice = fut;
-            opp.cePrice = ceQuote.lastPrice;
-            opp.pePrice = peQuote.lastPrice;
+            // Persisted as ce_entry_price/pe_entry_price and used for all later P&L tracking --
+            // must be the real achievable fill, not lastPrice (see comment above on map.put).
+            opp.cePrice = ceEntryFill;
+            opp.pePrice = peEntryFill;
             opp.ceBid = ceQuote.bid;
             opp.ceAsk = ceQuote.ask;
             opp.peBid = peQuote.bid;

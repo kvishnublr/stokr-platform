@@ -1102,10 +1102,21 @@ public class OptionArbitrageController {
                                     } else if ("RUNNING".equals(oppStatus) && "BID_PARITY".equals(opp.getStrategyType())) {
                                         // RUNNING bid-parity signal, never traded — simulate live mark-to-market
                                         // P&L against current quotes and auto-exit once edge target is hit.
+                                        String actionForClose = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
+                                        boolean ceIsLong = actionForClose.contains("BUY CE +");
                                         String ceSym = ceSymByOpp.get(oppId);
                                         String peSym = peSymByOpp.get(oppId);
-                                        double ceCurrent = (ceSym != null && bpQuotes.containsKey(ceSym)) ? bpQuotes.get(ceSym).lastPrice : 0;
-                                        double peCurrent = (peSym != null && bpQuotes.containsKey(peSym)) ? bpQuotes.get(peSym).lastPrice : 0;
+                                        // Closing a long leg means SELLING it (get the bid); closing a short leg
+                                        // means BUYING it back (pay the ask) -- using lastPrice here instead let
+                                        // the simulated exit dodge the spread it would actually have to cross,
+                                        // on top of ceEntryPrice/peEntryPrice previously making the same mistake
+                                        // at entry (fixed in BidParityService) -- together those made every
+                                        // never-actually-traded signal look like it converged to profit far
+                                        // faster and more reliably than a real fill ever could.
+                                        OptionChainService.OptionQuote ceQ = ceSym != null ? bpQuotes.get(ceSym) : null;
+                                        OptionChainService.OptionQuote peQ = peSym != null ? bpQuotes.get(peSym) : null;
+                                        double ceCurrent = ceQ != null ? (ceIsLong ? ceQ.bid : ceQ.ask) : 0;
+                                        double peCurrent = peQ != null ? (ceIsLong ? peQ.ask : peQ.bid) : 0;
 
                                         double[] futSpotFut = futLiveByUnderlying.computeIfAbsent(opp.getUnderlying(), u -> {
                                             try {
@@ -1122,12 +1133,11 @@ public class OptionArbitrageController {
                                         double peEntry = opp.getPeEntryPrice() != null ? opp.getPeEntryPrice().doubleValue() : 0;
                                         double futEntry = opp.getFuturesPrice() != null ? opp.getFuturesPrice().doubleValue() : 0;
                                         int lotSz = OptionChainService.getLotSize(opp.getUnderlying());
-                                        String action = opp.getAction() != null ? opp.getAction().toUpperCase() : "";
 
                                         boolean havePrices = ceCurrent > 0 || peCurrent > 0 || futCurrent > 0;
                                         double pnl = 0;
                                         if (havePrices) {
-                                            if (action.contains("BUY CE +")) {
+                                            if (ceIsLong) {
                                                 if (ceCurrent > 0 && ceEntry > 0) pnl += ceCurrent - ceEntry;
                                                 if (peCurrent > 0 && peEntry > 0) pnl += peEntry - peCurrent;
                                                 if (futCurrent > 0 && futEntry > 0) pnl += futEntry - futCurrent;
