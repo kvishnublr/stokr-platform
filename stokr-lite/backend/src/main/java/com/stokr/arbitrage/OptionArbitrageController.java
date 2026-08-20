@@ -1332,6 +1332,113 @@ public class OptionArbitrageController {
         return ResponseEntity.ok(resp);
     }
 
+    /**
+     * Flattens every position into individual leg-level order rows -- Zerodha's own Orders page
+     * shows one row per actual order (not per position), and this platform never had an
+     * equivalent: the only order-level visibility was buried inside each position's expanded
+     * breakdown. Emits one row per leg's entry order, plus a second synthetic row for the exit
+     * once a position is closed (we don't persist a separate order id/status for the closing
+     * leg today, only its fill price, so that row's status is inferred as COMPLETE from the
+     * exit price being present -- everything else here reflects a real recorded order state).
+     */
+    @GetMapping("/orders")
+    public ResponseEntity<Map<String, Object>> getOrders(@RequestParam(required = false) String status,
+                                                            @RequestParam(defaultValue = "200") int limit) {
+        List<LivePosition> positions = livePositionRepo.findAllByOrderByEnteredAtDesc();
+        List<Map<String, Object>> rows = new ArrayList<>();
+
+        for (LivePosition p : positions) {
+            String broker = p.getBroker() != null ? p.getBroker() : "PAPER";
+            String product = "PAPER".equalsIgnoreCase(broker) ? "PAPER" : "NRML";
+            boolean isMultiLeg = p.getLegs() != null && !p.getLegs().isEmpty();
+
+            if (isMultiLeg) {
+                for (Map<String, Object> leg : p.getLegs()) {
+                    String legStatus = leg.get("status") instanceof String s && !s.isBlank() ? s : mapPositionStatus(p.getStatus());
+                    rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), (String) leg.get("symbol"),
+                            (String) leg.get("side"), toQty(leg.get("qty"), p.getLotSize(), p.getLots()),
+                            leg.get("price"), product, broker, legStatus, (String) leg.get("orderId")));
+                    Object exitPrice = leg.get("exitPrice");
+                    if (exitPrice != null && p.getExitedAt() != null) {
+                        String closeSide = "BUY".equals(leg.get("side")) ? "SELL" : "BUY";
+                        rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), (String) leg.get("symbol"),
+                                closeSide, toQty(leg.get("qty"), p.getLotSize(), p.getLots()),
+                                exitPrice, product, broker, "COMPLETE", null));
+                    }
+                }
+            } else {
+                String action = p.getAction() != null ? p.getAction().toUpperCase() : "";
+                boolean buyCe = !action.contains("SELL CE +");
+                int qty = (p.getLotSize() != null ? p.getLotSize() : 1) * (p.getLots() != null ? p.getLots() : 1);
+                String legStatus = mapPositionStatus(p.getStatus());
+                if (p.getCeSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getCeSymbol(),
+                        buyCe ? "BUY" : "SELL", qty, p.getCeEntryPrice(), product, broker, legStatus, p.getCeOrderId()));
+                if (p.getPeSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getPeSymbol(),
+                        buyCe ? "SELL" : "BUY", qty, p.getPeEntryPrice(), product, broker, legStatus, p.getPeOrderId()));
+                if (p.getFutSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getFutSymbol(),
+                        buyCe ? "BUY" : "SELL", qty, p.getFutEntryPrice(), product, broker, legStatus, p.getFutOrderId()));
+                if (p.getExitedAt() != null && (p.getCeExitPrice() != null || p.getPeExitPrice() != null || p.getFutExitPrice() != null)) {
+                    if (p.getCeSymbol() != null && p.getCeExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getCeSymbol(),
+                            buyCe ? "SELL" : "BUY", qty, p.getCeExitPrice(), product, broker, "COMPLETE", null));
+                    if (p.getPeSymbol() != null && p.getPeExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getPeSymbol(),
+                            buyCe ? "BUY" : "SELL", qty, p.getPeExitPrice(), product, broker, "COMPLETE", null));
+                    if (p.getFutSymbol() != null && p.getFutExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getFutSymbol(),
+                            buyCe ? "SELL" : "BUY", qty, p.getFutExitPrice(), product, broker, "COMPLETE", null));
+                }
+            }
+        }
+
+        rows.sort((a, b) -> {
+            String ta = (String) a.get("time"), tb = (String) b.get("time");
+            if (ta == null || tb == null) return 0;
+            return tb.compareTo(ta);
+        });
+
+        if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status)) {
+            rows = rows.stream().filter(r -> status.equalsIgnoreCase((String) r.get("status"))).collect(Collectors.toList());
+        }
+        if (rows.size() > limit) rows = rows.subList(0, limit);
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("orders", rows);
+        resp.put("count", rows.size());
+        return ResponseEntity.ok(resp);
+    }
+
+    private String mapPositionStatus(String positionStatus) {
+        if (positionStatus == null) return "UNKNOWN";
+        return switch (positionStatus) {
+            case "OPEN", "CLOSED", "EXITED", "PARTIAL" -> "COMPLETE";
+            case "FAILED", "REJECTED" -> "REJECTED";
+            case "EXECUTING" -> "OPEN";
+            default -> positionStatus;
+        };
+    }
+
+    private int toQty(Object qtyMult, Integer lotSize, Integer lots) {
+        int mult = qtyMult instanceof Number n ? n.intValue() : 1;
+        int ls = lotSize != null ? lotSize : 1;
+        int lt = lots != null ? lots : 1;
+        return mult * ls * lt;
+    }
+
+    private Map<String, Object> orderRow(LocalDateTime time, String underlying, String symbol, String side,
+                                          int qty, Object price, String product, String broker, String status, String orderId) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("time", time != null ? time.toString() : null);
+        row.put("underlying", underlying);
+        row.put("symbol", symbol);
+        row.put("side", side);
+        row.put("qty", qty);
+        double priceVal = price instanceof Number n ? n.doubleValue() : (price instanceof BigDecimal bd ? bd.doubleValue() : 0);
+        row.put("price", Math.round(priceVal * 100.0) / 100.0);
+        row.put("product", product);
+        row.put("broker", broker);
+        row.put("status", status);
+        row.put("orderId", orderId);
+        return row;
+    }
+
     @GetMapping("/live-positions")
     public ResponseEntity<Map<String, Object>> getLivePositions() {
         Map<String, Object> resp = new LinkedHashMap<>();
