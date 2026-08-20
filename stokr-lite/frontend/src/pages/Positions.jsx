@@ -2,8 +2,14 @@ import { useState, useEffect } from 'react';
 import client from '../api/client';
 import { LivePositionsSection, BrokerPositionsPanel } from './OptionArbitrage';
 
+const TABS = [
+  { id: 'mine', label: '📊 My Positions' },
+  { id: 'broker', label: '🏦 Broker Positions (Ground Truth)' },
+];
+
 export default function Positions() {
   const [executionBroker, setExecutionBroker] = useState('PAPER');
+  const [activeTab, setActiveTab] = useState('mine');
 
   useEffect(() => {
     client.get('/brokers/decoupled-routing')
@@ -21,8 +27,24 @@ export default function Positions() {
         <p style={{ color: '#94a3b8', fontSize: '14px', margin: 0, paddingLeft: '16px' }}>Live option-arbitrage positions across every strategy, plus real broker positions for reconciliation</p>
       </div>
 
-      <LivePositionsSection executionBroker={executionBroker} />
-      <BrokerPositionsPanel executionBroker={executionBroker} />
+      <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm w-fit">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition ${
+              activeTab === t.id
+                ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md'
+                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'mine' && <LivePositionsSection executionBroker={executionBroker} defaultExpanded />}
+      {activeTab === 'broker' && <BrokerPositionsPanel executionBroker={executionBroker} defaultExpanded />}
     </div>
   );
 }

@@ -870,8 +870,8 @@ function StrategyAutoTradePanel({ prefix, label, accent = 'indigo' }) {
 }
 
 /* Live Positions Section — standalone, always visible, 2s tick-by-tick refresh */
-function LivePositionsSection({ executionBroker }) {
-  const [collapsed, setCollapsed] = useState(true);
+function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
+  const [collapsed, setCollapsed] = useState(!defaultExpanded);
   const [rollingId, setRollingId] = useState(null);
   const [closingId, setClosingId] = useState(null);
   const [expandedPosId, setExpandedPosId] = useState(null);
@@ -946,40 +946,40 @@ function LivePositionsSection({ executionBroker }) {
     }
   };
 
-  if (allPositions.length === 0) return null;
+  if (allPositions.length === 0 && !defaultExpanded) return null;
 
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 bg-gradient-to-r from-slate-900 to-indigo-950 flex items-center justify-between cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
+        <div className="px-4 py-3 bg-gradient-to-r from-indigo-50 via-violet-50 to-white border-b border-indigo-100 flex items-center justify-between cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">📊</span>
-            <h3 className="text-sm font-black text-white">
+            <h3 className="text-sm font-black text-slate-800">
               {brokerFilter === 'PAPER' ? 'Paper Positions' : brokerFilter === 'LIVE' ? 'Live Positions' : 'All Positions'}
             </h3>
-            <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full">{positions.length}</span>
-            <span className="px-2 py-0.5 bg-white/10 text-white/60 text-[9px] font-bold rounded-full">2s tick</span>
+            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full">{positions.length}</span>
+            <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold rounded-full">2s tick</span>
             {positions.length > 0 && (
-              <span className={`px-2.5 py-0.5 text-[11px] font-black rounded-full ${filteredTotalPnl >= 0 ? 'bg-emerald-500/30 text-emerald-300' : 'bg-red-500/30 text-red-300'}`}>
+              <span className={`px-2.5 py-0.5 text-[11px] font-black rounded-full border ${filteredTotalPnl >= 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
                 {brokerFilter === 'PAPER' ? 'Paper' : 'Total'} P&L: ₹{Math.round(filteredTotalPnl).toLocaleString('en-IN')}
               </span>
             )}
-            <div className="flex items-center gap-0.5 bg-white/10 rounded-full p-0.5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-full p-0.5" onClick={(e) => e.stopPropagation()}>
               {[
                 { id: 'LIVE', label: '🔴 Live' },
                 { id: 'PAPER', label: '📄 Paper' },
                 { id: 'ALL', label: 'All' },
               ].map(f => (
                 <button key={f.id} onClick={() => setBrokerFilter(f.id)}
-                  className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition ${brokerFilter === f.id ? 'bg-white text-slate-900' : 'text-white/60 hover:text-white'}`}>
+                  className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition ${brokerFilter === f.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
                   {f.label}
                 </button>
               ))}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition">Refresh</button>
-            <span className="text-white/60 text-xs">{collapsed ? '▼' : '▲'}</span>
+            <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2 py-1 bg-white border border-slate-200 hover:bg-indigo-50 hover:border-indigo-300 text-slate-600 text-[10px] font-bold rounded-lg transition">Refresh</button>
+            <span className="text-slate-400 text-xs">{collapsed ? '▼' : '▲'}</span>
           </div>
         </div>
 
@@ -1125,8 +1125,8 @@ function LivePositionsSection({ executionBroker }) {
    webhook, a race, a bug) -- this is the same view you'd see logging into Zerodha directly,
    so any mismatch between this and the Live Positions table above is visible immediately
    instead of discovered by surprise later. */
-function BrokerPositionsPanel({ executionBroker }) {
-  const [collapsed, setCollapsed] = useState(true);
+function BrokerPositionsPanel({ executionBroker, defaultExpanded = false }) {
+  const [collapsed, setCollapsed] = useState(!defaultExpanded);
   const broker = executionBroker && executionBroker !== 'PAPER' ? executionBroker : 'ZERODHA';
 
   const { data, refetch, isFetching } = useQuery({
@@ -1143,21 +1143,21 @@ function BrokerPositionsPanel({ executionBroker }) {
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-4 py-3 bg-gradient-to-r from-orange-900 to-red-950 flex items-center justify-between cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
+      <div className="px-4 py-3 bg-gradient-to-r from-amber-50 via-orange-50 to-white border-b border-amber-100 flex items-center justify-between cursor-pointer" onClick={() => setCollapsed(!collapsed)}>
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-lg">🏦</span>
-          <h3 className="text-sm font-black text-white">{broker} Broker Positions (Ground Truth)</h3>
-          <span className="px-2 py-0.5 bg-orange-500/20 text-orange-300 text-[10px] font-bold rounded-full">{positions.length}</span>
-          <span className="px-2 py-0.5 bg-white/10 text-white/60 text-[9px] font-bold rounded-full">5s tick</span>
+          <h3 className="text-sm font-black text-slate-800">{broker} Broker Positions (Ground Truth)</h3>
+          <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full">{positions.length}</span>
+          <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold rounded-full">5s tick</span>
           {data?.error && (
-            <span className="px-2 py-0.5 bg-red-500/30 text-red-200 text-[10px] font-bold rounded-full">{data.error}</span>
+            <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold rounded-full">{data.error}</span>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition">
+          <button onClick={(e) => { e.stopPropagation(); refetch(); }} className="px-2 py-1 bg-white border border-slate-200 hover:bg-amber-50 hover:border-amber-300 text-slate-600 text-[10px] font-bold rounded-lg transition">
             {isFetching ? '...' : 'Refresh'}
           </button>
-          <span className="text-white/60 text-xs">{collapsed ? '▼' : '▲'}</span>
+          <span className="text-slate-400 text-xs">{collapsed ? '▼' : '▲'}</span>
         </div>
       </div>
 
