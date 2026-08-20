@@ -1178,12 +1178,18 @@ public class OptionArbitrageController {
                                         double pnl = 0;
                                         for (Map<String, Object> leg : resolvedLegs) {
                                             String sym = (String) leg.get("symbol");
-                                            double current = (sym != null && bpQuotes.containsKey(sym)) ? bpQuotes.get(sym).lastPrice : 0;
+                                            String side = (String) leg.get("side");
+                                            // Same fix as BID_PARITY above: closing a long leg (BUY) means
+                                            // SELLING it back (get the bid), closing a short leg (SELL) means
+                                            // BUYING it back (pay the ask) -- lastPrice here let the simulated
+                                            // exit dodge the real spread cost, on never-actually-traded signals,
+                                            // the same way it did for Bid Parity.
+                                            OptionChainService.OptionQuote q = sym != null ? bpQuotes.get(sym) : null;
+                                            double current = q != null ? ("BUY".equals(side) ? q.bid : q.ask) : 0;
                                             double entry = leg.get("price") instanceof Number n ? n.doubleValue() : 0;
                                             if (current <= 0 || entry <= 0) continue;
                                             havePrices = true;
                                             int qtyMult = leg.get("qty") instanceof Number n ? n.intValue() : 1;
-                                            String side = (String) leg.get("side");
                                             pnl += ("BUY".equals(side) ? (current - entry) : (entry - current)) * qtyMult;
                                         }
                                         pnl *= lotSz;
