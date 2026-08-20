@@ -41,10 +41,23 @@ public class SignalProcessor {
     /**
      * These strategies are written around multi-day-hold, daily-bar logic (e.g. 50-day EMA,
      * RSI(14) over trading days) -- they need real daily candles, not 1-minute intraday bars.
+     *
+     * VCP_BREAKOUT was missing from this set -- it evaluated on 1-minute intraday candles
+     * instead of daily bars, so its "ATR(14)" and 50/150/200-EMA Trend Template were computed
+     * over 14 one-MINUTE bars instead of 14 trading DAYS. That collapsed the stop-loss distance
+     * (1.5x ATR) to a few paise (e.g. WIPRO SL only Rs0.04 from entry), triggering SL_HIT within
+     * minutes on ordinary bid-ask noise, and the still-true breakout condition kept re-firing on
+     * the same symbol every ~1-min scan cycle, showing up as repeated REJECTED signals from the
+     * cooldown/min-gap risk rules. Caught via the Signals dashboard: SL/target bands a fraction
+     * of a rupee wide on stocks trading in the hundreds, and a 22% win rate driven almost
+     * entirely by SL_HIT within single-digit minutes of entry.
      */
     private static final java.util.Set<String> DAILY_CANDLE_STRATEGY_TYPES = java.util.Set.of(
-        "OVERSOLD_BOUNCE", "EMA50_DISTANCE", "THREE_RED_DAYS", "RSI_OVERSOLD");
-    private static final int DAILY_LOOKBACK_DAYS = 90;
+        "OVERSOLD_BOUNCE", "EMA50_DISTANCE", "THREE_RED_DAYS", "RSI_OVERSOLD", "VCP_BREAKOUT");
+    // VCP_BREAKOUT requires n>=210 daily bars (200-day EMA + Trend Template) and scans up to
+    // n-250 for a 52-week high -- 90 was plenty for the other daily strategies but far short of
+    // what VCP needs, so it would never generate a signal even once fed real daily candles.
+    private static final int DAILY_LOOKBACK_DAYS = 260;
 
     public void processDeployment(Deployment deployment) {
         try {
