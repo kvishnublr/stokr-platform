@@ -66,6 +66,15 @@ function useToastState() {
   return { toasts, dismiss };
 }
 
+const STRATEGY_LABELS = {
+  BID_PARITY: '⚡ Bid Parity',
+  BOX_SPREAD: '💎 Box Spread',
+  VERTICAL_SPREAD: '📐 Vertical',
+  BUTTERFLY_SPREAD: '🦋 Butterfly',
+  CONDOR_SPREAD: '🎯 Condor',
+  IRON_CONDOR: '🛡️ Iron Condor',
+};
+
 const TOAST_STYLES = {
   success: { bg: 'bg-white', border: 'border-emerald-400', bar: 'bg-emerald-500', icon: '✅', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600', titleText: 'text-emerald-700', defaultTitle: 'Success' },
   error: { bg: 'bg-white', border: 'border-red-400', bar: 'bg-red-500', icon: '❌', iconBg: 'bg-red-100', iconText: 'text-red-600', titleText: 'text-red-700', defaultTitle: 'Error' },
@@ -995,13 +1004,14 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                 <tr>
                   <th className="px-3 py-2">Time</th>
                   <th className="px-3 py-2">Broker</th>
+                  <th className="px-3 py-2">Strategy</th>
                   <th className="px-3 py-2">Underlying</th>
                   <th className="px-3 py-2">Strike</th>
                   <th className="px-3 py-2">Action</th>
                   <th className="px-3 py-2 text-right">CE Entry</th>
                   <th className="px-3 py-2 text-right">PE Entry</th>
                   <th className="px-3 py-2 text-right">FUT Entry</th>
-                  <th className="px-3 py-2 text-right">Target Edge</th>
+                  <th className="px-3 py-2 text-right">Edge</th>
                   <th className="px-3 py-2 text-center">Edge Progress</th>
                   <th className="px-3 py-2 text-right">Live P&amp;L</th>
                   <th className="px-3 py-2 text-right">Lots</th>
@@ -1027,6 +1037,11 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                       <td className="px-3 py-2">
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${p.broker === 'PAPER' || !p.broker ? 'bg-slate-100 text-slate-500 border-slate-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>
                           {p.broker === 'PAPER' || !p.broker ? '📄 PAPER' : `🔴 ${p.broker}`}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
+                          {STRATEGY_LABELS[p.strategyType] || p.strategyType || '—'}
                         </span>
                       </td>
                       <td className="px-3 py-2 font-bold text-slate-800">{p.underlying}</td>
@@ -1100,7 +1115,7 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                     </tr>
                     {isExpanded && canShowPayoff && (
                       <tr className="bg-fuchsia-50/40 border-b border-fuchsia-100">
-                        <td colSpan={16} className="p-3">
+                        <td colSpan={17} className="p-3">
                           <div className="bg-white rounded-xl p-3 border border-fuchsia-200 shadow-md space-y-2">
                             <span className="font-bold text-slate-800 text-xs uppercase block">Open Position Payoff -- {p.underlying} {p.action}:</span>
                             <ArbitrageSignalPayoffChart opp={p} />
