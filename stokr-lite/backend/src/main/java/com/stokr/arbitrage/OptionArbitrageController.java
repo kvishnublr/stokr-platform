@@ -1094,11 +1094,17 @@ public class OptionArbitrageController {
                                         pnlMap.put(oppIdStr, opp.getPnlAfterCosts() != null ? Math.round(opp.getPnlAfterCosts().doubleValue()) : 0);
                                     } else if ("EXPIRED".equals(oppStatus)) {
                                         statusMap.put(oppIdStr, oppStatus);
-                                        // EXPIRED: contract expired, never entered — show edge as potential
+                                        // EXPIRED means the contract expired with this signal NEVER traded --
+                                        // nothing was ever captured, so it has no P&L, real or simulated. This
+                                        // used to show the original detected edge in the P&L column, which
+                                        // reads exactly like a realized win and was inflating the profit/win-
+                                        // rate counts shown on the strategy summary cards with signals nobody
+                                        // ever acted on. Null here (same as the MISSED case below) is the
+                                        // honest answer: no P&L exists for a position that was never opened.
                                         if (opp.getExpiryDate() != null) {
                                             exitTimeMap.put(oppIdStr, opp.getExpiryDate().toString());
                                         }
-                                        pnlMap.put(oppIdStr, opp.getEdgeAfterCosts() != null ? Math.round(opp.getEdgeAfterCosts().doubleValue()) : 0);
+                                        pnlMap.put(oppIdStr, null);
                                     } else if ("RUNNING".equals(oppStatus) && "BID_PARITY".equals(opp.getStrategyType())) {
                                         // RUNNING bid-parity signal, never traded — simulate live mark-to-market
                                         // P&L against current quotes and auto-exit once edge target is hit.

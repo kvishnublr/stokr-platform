@@ -1016,7 +1016,8 @@ function LivePositionsSection({ executionBroker, defaultExpanded = false }) {
                   const pnl = p.currentPnl || 0;
                   const target = p.targetEdge || 0;
                   const captured = p.edgeCaptured || 0;
-                  const canShowPayoff = p.strategyType === 'BUTTERFLY_SPREAD' && Array.isArray(p.legList) && p.legList.length >= 3;
+                  const PAYOFF_CHART_TYPES = ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR'];
+                  const canShowPayoff = PAYOFF_CHART_TYPES.includes(p.strategyType) && Array.isArray(p.legList) && p.legList.length >= 2;
                   const isExpanded = expandedPosId === p.id;
                   return (
                     <React.Fragment key={p.id}>
@@ -2168,6 +2169,7 @@ function BoxSpreadView({ underlyings, toggleUnderlying, handleExecuteInline, exe
                                 </p>
                               )}
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">{opp.legs || 'BUY CE1 | SELL PE1 | SELL CE2 | BUY PE2'}</p>
+                              <ArbitrageSignalPayoffChart opp={opp} />
                               <div className="flex justify-end pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); handleExecuteInline(opp); }} className="px-3 py-1 bg-purple-600 text-white rounded-lg text-xs font-bold shadow-md">
                                   ⚡ Submit ({executionBroker})
@@ -3089,30 +3091,39 @@ function ArbitrageSignalPayoffChart({ opp }) {
   const chartRef = useRef(null);
   const [hover, setHover] = useState(null);
 
-  const strikeMatch = opp.action ? opp.action.match(/\((\d+)\/(\d+)\/(\d+)\)/) : null;
-  const optionType = opp.action && opp.action.toUpperCase().includes('PE') ? 'PE' : 'CE';
-  const hasLegs = Array.isArray(opp.legList) && opp.legList.length >= 3;
+  const hasLegs = Array.isArray(opp.legList) && opp.legList.length >= 2;
 
   const lotSize = Number(opp.lotSize) > 0 ? Number(opp.lotSize) : 1;
 
   const chart = useMemo(() => {
-    if (!strikeMatch || !hasLegs) return null;
-    const k1 = Number(strikeMatch[1]), k2 = Number(strikeMatch[2]), k3 = Number(strikeMatch[3]);
-    if (!(k1 < k2 && k2 < k3)) return null;
+    if (!hasLegs) return null;
+    // Generic across every multi-leg strategy (Vertical/Butterfly/Condor/Box, CE-only,
+    // PE-only, or mixed CE+PE like a box spread) -- payoff(x) is just the sum of each leg's
+    // own intrinsic value at settlement x, signed by side and scaled by its qty multiplier.
+    // This replaced a version hardcoded to 3-leg CE-only butterflies (regex-parsed from the
+    // action string), which silently produced nothing for box spreads or any PE leg.
+    const strikes = [...new Set(opp.legList.map(l => Number(l.strike)).filter(n => !isNaN(n)))].sort((a, b) => a - b);
+    if (strikes.length < 2) return null;
+    const k1 = strikes[0], k2 = strikes[strikes.length - 1];
+
     const cost = opp.legList.reduce((s, leg) => {
       const sign = leg.side === 'BUY' ? 1 : -1;
       return s + sign * (Number(leg.price) || 0) * (Number(leg.qty) || 1);
     }, 0);
-    const width = k3 - k1;
-    const lo = k1 - width * 0.4, hi = k3 + width * 0.4;
+    const width = k2 - k1;
+    const lo = k1 - Math.max(width, 1) * 0.4, hi = k2 + Math.max(width, 1) * 0.4;
     const steps = 150;
     const points = [];
     let minY = 0, maxY = 0;
     for (let i = 0; i <= steps; i++) {
       const x = lo + (hi - lo) * i / steps;
-      const payoff = optionType === 'CE'
-        ? Math.max(x - k1, 0) - 2 * Math.max(x - k2, 0) + Math.max(x - k3, 0)
-        : Math.max(k1 - x, 0) - 2 * Math.max(k2 - x, 0) + Math.max(k3 - x, 0);
+      const payoff = opp.legList.reduce((sum, leg) => {
+        const strike = Number(leg.strike);
+        const isPe = String(leg.optionType).toUpperCase() === 'PE';
+        const intrinsic = isPe ? Math.max(strike - x, 0) : Math.max(x - strike, 0);
+        const sign = leg.side === 'BUY' ? 1 : -1;
+        return sum + sign * intrinsic * (Number(leg.qty) || 1);
+      }, 0);
       const pnl = payoff - cost;
       points.push({ x, y: pnl });
       minY = Math.min(minY, pnl); maxY = Math.max(maxY, pnl);
@@ -3127,8 +3138,8 @@ function ArbitrageSignalPayoffChart({ opp }) {
         breakevens.push(a.x + t * (b.x - a.x));
       }
     }
-    return { points, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0), k1, k2, k3, cost, breakevens };
-  }, [strikeMatch?.[0], hasLegs, opp.legList, optionType]);
+    return { points, lo, hi, minY: Math.min(minY, 0), maxY: Math.max(maxY, 0), k1, k2, cost, breakevens };
+  }, [hasLegs, opp.legList]);
 
   if (!chart) return null;
 
@@ -6097,7 +6108,9 @@ function HistoryView({ calendarOpportunities, handleExecuteInline, executionBrok
                               <p className="text-xs font-mono font-bold text-slate-800 bg-slate-50 p-2 rounded-lg border">
                                 {item.legs || `${item.action} on ${item.underlying} ${item.strike}`}
                               </p>
-                              {(item.strategyType === 'BUTTERFLY_SPREAD' || item.type === 'BUTTERFLY_SPREAD') && (
+                              {(['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR'].includes(item.strategyType)
+                                || ['BUTTERFLY_SPREAD', 'BOX_SPREAD', 'VERTICAL_SPREAD', 'CONDOR_SPREAD', 'IRON_CONDOR'].includes(item.type))
+                                && Array.isArray(item.legList) && item.legList.length >= 2 && (
                                 <ArbitrageSignalPayoffChart opp={item} />
                               )}
                               <div className="flex justify-end pt-1">
