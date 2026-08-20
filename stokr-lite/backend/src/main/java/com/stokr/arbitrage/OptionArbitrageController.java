@@ -1919,15 +1919,11 @@ public class OptionArbitrageController {
             historyService.getRepository().save(opp);
 
             try {
-                // Paper positions gated against paper count, not mixed with live -- opening
-                // a paper trade shouldn't be blocked by real live positions or vice versa.
-                long openCount = livePositionRepo.countOpenPaper();
-                int maxOpen = ((Number) autoExecService.getSettings().getOrDefault("maxOpenPositions", 1)).intValue();
-                if (openCount >= maxOpen) {
-                    resp.put("status", "ERROR");
-                    resp.put("message", "Already have " + openCount + "/" + maxOpen + " open positions. Close one first or raise Max Open Positions in Auto-Trade settings.");
-                    return ResponseEntity.badRequest().body(resp);
-                }
+                // No cap on paper trades -- Max Open Positions is a real risk control meant for
+                // LIVE capital exposure (still enforced there, user-configurable in Auto-Trade
+                // settings); paper trading has no real money or margin at stake, so restricting
+                // how many a user can explore at once serves no purpose and was just getting in
+                // the way of testing strategies.
                 int lotSize = getLotSize(opp.getUnderlying());
 
                 if (isMultiLeg) {
