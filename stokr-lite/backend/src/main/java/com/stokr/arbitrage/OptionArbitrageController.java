@@ -1357,7 +1357,7 @@ public class OptionArbitrageController {
                     String legStatus = leg.get("status") instanceof String s && !s.isBlank() ? s : mapPositionStatus(p.getStatus());
                     rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), (String) leg.get("symbol"),
                             (String) leg.get("side"), toQty(leg.get("qty"), p.getLotSize(), p.getLots()),
-                            leg.get("price"), product, broker, legStatus, (String) leg.get("orderId")));
+                            leg.get("price"), product, broker, legStatus, (String) leg.get("orderId"), p.getErrorMessage()));
                     Object exitPrice = leg.get("exitPrice");
                     if (exitPrice != null && p.getExitedAt() != null) {
                         String closeSide = "BUY".equals(leg.get("side")) ? "SELL" : "BUY";
@@ -1372,11 +1372,11 @@ public class OptionArbitrageController {
                 int qty = (p.getLotSize() != null ? p.getLotSize() : 1) * (p.getLots() != null ? p.getLots() : 1);
                 String legStatus = mapPositionStatus(p.getStatus());
                 if (p.getCeSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getCeSymbol(),
-                        buyCe ? "BUY" : "SELL", qty, p.getCeEntryPrice(), product, broker, legStatus, p.getCeOrderId()));
+                        buyCe ? "BUY" : "SELL", qty, p.getCeEntryPrice(), product, broker, legStatus, p.getCeOrderId(), p.getErrorMessage()));
                 if (p.getPeSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getPeSymbol(),
-                        buyCe ? "SELL" : "BUY", qty, p.getPeEntryPrice(), product, broker, legStatus, p.getPeOrderId()));
+                        buyCe ? "SELL" : "BUY", qty, p.getPeEntryPrice(), product, broker, legStatus, p.getPeOrderId(), p.getErrorMessage()));
                 if (p.getFutSymbol() != null) rows.add(orderRow(p.getEnteredAt(), p.getUnderlying(), p.getFutSymbol(),
-                        buyCe ? "BUY" : "SELL", qty, p.getFutEntryPrice(), product, broker, legStatus, p.getFutOrderId()));
+                        buyCe ? "BUY" : "SELL", qty, p.getFutEntryPrice(), product, broker, legStatus, p.getFutOrderId(), p.getErrorMessage()));
                 if (p.getExitedAt() != null && (p.getCeExitPrice() != null || p.getPeExitPrice() != null || p.getFutExitPrice() != null)) {
                     if (p.getCeSymbol() != null && p.getCeExitPrice() != null) rows.add(orderRow(p.getExitedAt(), p.getUnderlying(), p.getCeSymbol(),
                             buyCe ? "SELL" : "BUY", qty, p.getCeExitPrice(), product, broker, "COMPLETE", null));
@@ -1424,6 +1424,12 @@ public class OptionArbitrageController {
 
     private Map<String, Object> orderRow(LocalDateTime time, String underlying, String symbol, String side,
                                           int qty, Object price, String product, String broker, String status, String orderId) {
+        return orderRow(time, underlying, symbol, side, qty, price, product, broker, status, orderId, null);
+    }
+
+    private Map<String, Object> orderRow(LocalDateTime time, String underlying, String symbol, String side,
+                                          int qty, Object price, String product, String broker, String status,
+                                          String orderId, String reason) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("time", time != null ? time.toString() : null);
         row.put("underlying", underlying);
@@ -1436,6 +1442,13 @@ public class OptionArbitrageController {
         row.put("broker", broker);
         row.put("status", status);
         row.put("orderId", orderId);
+        // The broker's real rejection text (e.g. Zerodha's "could not be converted to AMO",
+        // "quantity should be multiple of 30") -- shown only for REJECTED rows since that's
+        // where "why" actually matters; a raw status pill alone forces the user to go dig
+        // through Auto-Exec logs or SSH into the server to find out what Zerodha actually said.
+        if ("REJECTED".equalsIgnoreCase(status) && reason != null && !reason.isBlank()) {
+            row.put("reason", reason);
+        }
         return row;
     }
 

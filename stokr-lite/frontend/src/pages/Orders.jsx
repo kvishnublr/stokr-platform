@@ -94,11 +94,12 @@ export default function Orders() {
                   <th className="px-4 py-3 text-right">Qty</th>
                   <th className="px-4 py-3 text-right">Price</th>
                   <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3">Reason</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {orders.map((o, i) => (
-                  <tr key={i} className="hover:bg-slate-50">
+                  <tr key={i} className={`hover:bg-slate-50 ${o.reason ? 'bg-rose-50/30' : ''}`}>
                     <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500">{fmtTime(o.time)}</td>
                     <td className="px-4 py-2.5">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${o.side === 'BUY' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-rose-50 text-rose-600 border-rose-200'}`}>
@@ -116,6 +117,9 @@ export default function Orders() {
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_STYLE[o.status] || STATUS_STYLE.UNKNOWN}`}>
                         {o.status}
                       </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-[11px] text-rose-700 max-w-[320px]" title={o.reason || ''}>
+                      {o.reason || <span className="text-slate-300">--</span>}
                     </td>
                   </tr>
                 ))}
